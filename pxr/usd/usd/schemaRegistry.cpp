@@ -49,7 +49,6 @@
 #include "pxr/base/tf/token.h"
 #include "pxr/base/tf/type.h"
 #include "pxr/base/work/loops.h"
-#include "pxr/base/work/withScopedParallelism.h"
 
 #include <set>
 #include <utility>
@@ -1002,7 +1001,9 @@ _InitializePrimDefsAndSchematicsForPluginSchemas()
     
     // For each plugin, if it has generated schema, add it to the schematics.
     std::vector<SdfLayerRefPtr> generatedSchemas(plugins.size());
-    WorkWithScopedParallelism([&plugins, &generatedSchemas]() {
+    {
+        WorkArenaDispatcher dispatcher;
+        dispatcher.Run([&plugins, &generatedSchemas]() {
             WorkParallelForN(
                 plugins.size(), 
                 [&plugins, &generatedSchemas](size_t begin, size_t end) {
@@ -1011,7 +1012,8 @@ _InitializePrimDefsAndSchematicsForPluginSchemas()
                             _GetGeneratedSchema(plugins[begin]);
                     }
                 });
-        });
+            });
+    }
 
     SdfChangeBlock block;
 

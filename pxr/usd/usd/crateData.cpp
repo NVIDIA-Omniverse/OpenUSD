@@ -39,7 +39,6 @@
 #include "pxr/base/work/dispatcher.h"
 #include "pxr/base/work/loops.h"
 #include "pxr/base/work/utils.h"
-#include "pxr/base/work/withScopedParallelism.h"
 
 #include "pxr/usd/sdf/payload.h"
 #include "pxr/usd/sdf/schema.h"

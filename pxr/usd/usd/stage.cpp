@@ -90,10 +90,9 @@
 #include "pxr/base/tf/span.h"
 #include "pxr/base/tf/stl.h"
 #include "pxr/base/tf/stringUtils.h"
-#include "pxr/base/work/dispatcher.h"
+#include "pxr/base/work/arenaDispatcher.h"
 #include "pxr/base/work/loops.h"
 #include "pxr/base/work/utils.h"
-#include "pxr/base/work/withScopedParallelism.h"
 
 #include <boost/optional.hpp>
 #include <boost/iterator/transform_iterator.hpp>
@@ -525,45 +524,38 @@ UsdStage::_Close()
 
     TF_PY_ALLOW_THREADS_IN_SCOPE();
 
-    WorkWithScopedParallelism([this]() {
+    WorkArenaDispatcher wd;
 
-            // Destroy prim structure.
-            vector<SdfPath> primsToDestroy;
-            {
-                // Scope the dispatcher so that its dtor Wait()s for work to
-                // complete before primsToDestroy is destroyed, since tasks we
-                // schedule in the dispatcher access it.
-                WorkDispatcher wd;
-
-                // Stop listening for notices.
-                wd.Run([this]() {
-                        for (auto &p: _layersAndNoticeKeys)
-                            TfNotice::Revoke(p.second);
-                        TfNotice::Revoke(_resolverChangeKey);
-                    });
-                
-                if (_pseudoRoot) {
-                    // Instancing prototypes are not children of the pseudo-root
-                    // so we need to explicitly destroy those subtrees.
-                    primsToDestroy = _instanceCache->GetAllPrototypes();
-                    wd.Run([this, &primsToDestroy]() {
-                            primsToDestroy.push_back(
-                                SdfPath::AbsoluteRootPath());
-                            _DestroyPrimsInParallel(primsToDestroy);
-                            _pseudoRoot = nullptr;
-                            WorkMoveDestroyAsync(primsToDestroy);
-                        });
-                }
-    
-                // Clear members.
-                wd.Run([this]() { _cache.reset(); });
-                wd.Run([this]() { _clipCache.reset(); });
-                wd.Run([this]() { _instanceCache.reset(); });
-                wd.Run([this]() { _sessionLayer.Reset(); });
-                wd.Run([this]() { _rootLayer.Reset(); });
-                _editTarget = UsdEditTarget();
-            }
+    // Stop listening for notices.
+    wd.Run([this]() {
+            for (auto &p: _layersAndNoticeKeys)
+                TfNotice::Revoke(p.second);
+            TfNotice::Revoke(_resolverChangeKey);
         });
+
+    // Destroy prim structure.
+    vector<SdfPath> primsToDestroy;
+    if (_pseudoRoot) {
+        // Instancing prototypes are not children of the pseudo-root so
+        // we need to explicitly destroy those subtrees.
+        primsToDestroy = _instanceCache->GetAllPrototypes();
+        wd.Run([this, &primsToDestroy]() {
+                primsToDestroy.push_back(SdfPath::AbsoluteRootPath());
+                _DestroyPrimsInParallel(primsToDestroy);
+                _pseudoRoot = nullptr;
+                WorkMoveDestroyAsync(primsToDestroy);
+            });
+    }
+    
+    // Clear members.
+    wd.Run([this]() { _cache.reset(); });
+    wd.Run([this]() { _clipCache.reset(); });
+    wd.Run([this]() { _instanceCache.reset(); });
+    wd.Run([this]() { _sessionLayer.Reset(); });
+    wd.Run([this]() { _rootLayer.Reset(); });
+    _editTarget = UsdEditTarget();
+
+    wd.Wait();
 
     WorkSwapDestroyAsync(_primMap);
     // XXX: Do not do this async, since python might shut down concurrently with
@@ -2950,30 +2942,28 @@ UsdStage::_ComposeSubtreesInParallel(
     TRACE_FUNCTION();
 
     // Begin a subtree composition in parallel.
-    WorkWithScopedParallelism([this, &prims, &primIndexPaths]() {
-            _dispatcher = boost::in_place();
-            // We populate the clip cache concurrently during composition, so we
-            // need to enable concurrent population here.
-            Usd_ClipCache::ConcurrentPopulationContext
-                clipConcurrentPopContext(*_clipCache);
-            try {
-                for (size_t i = 0; i != prims.size(); ++i) {
-                    Usd_PrimDataPtr p = prims[i];
-                    _dispatcher->Run([this, p, &primIndexPaths, i]() {
-                        _ComposeSubtreeImpl(
-                            p, p->GetParent(), &_populationMask,
-                            primIndexPaths
-                            ? (*primIndexPaths)[i] : p->GetPath());
-                    });
-                }
-            }
-            catch (...) {
-                _dispatcher = boost::none;
-                throw;
-            }
-            
-            _dispatcher = boost::none;
-        });
+    _dispatcher = boost::in_place();
+    // We populate the clip cache concurrently during composition, so we need to
+    // enable concurrent population here.
+    Usd_ClipCache::ConcurrentPopulationContext
+        clipConcurrentPopContext(*_clipCache);
+    try {
+        for (size_t i = 0; i != prims.size(); ++i) {
+            Usd_PrimDataPtr p = prims[i];
+                _dispatcher->Run([this, p, &primIndexPaths, i]() {
+                    _ComposeSubtreeImpl(
+                        p, p->GetParent(), &_populationMask,
+                        primIndexPaths
+                        ? (*primIndexPaths)[i] : p->GetPath());
+                });
+        }
+    }
+    catch (...) {
+        _dispatcher = boost::none;
+        throw;
+    }
+
+    _dispatcher = boost::none;
 }
 
 void
@@ -3102,22 +3092,21 @@ UsdStage::_DestroyPrimsInParallel(const vector<SdfPath>& paths)
 
     TF_AXIOM(!_dispatcher);
 
-    WorkWithScopedParallelism([&]() {
-        _dispatcher = boost::in_place();
-        for (const auto& path : paths) {
-            Usd_PrimDataPtr prim = _GetPrimDataAtPath(path);
-            // We *expect* every prim in paths to be valid as we iterate,
-            // but at one time had issues with deactivated prototype prims,
-            // so we preserve a guard for resiliency.  See
-            // testUsdBug141491.py
-            if (TF_VERIFY(prim)) {
-                _dispatcher->Run([this, prim]() {
-                    _DestroyPrim(prim);
-                });
-            }
+    _dispatcher = boost::in_place();
+
+    for (const auto& path : paths) {
+        Usd_PrimDataPtr prim = _GetPrimDataAtPath(path);
+        // We *expect* every prim in paths to be valid as we iterate, but at
+        // one time had issues with deactivated prototype prims, so we preserve
+        // a guard for resiliency.  See testUsdBug141491.py
+        if (TF_VERIFY(prim)) {
+            _dispatcher->Run([this, prim]() {
+                _DestroyPrim(prim);
+            });
         }
-        _dispatcher = boost::none;
-    });
+    }
+
+    _dispatcher = boost::none;
 }
 
 void

@@ -71,7 +71,6 @@
 #include "pxr/base/work/dispatcher.h"
 #include "pxr/base/work/singularTask.h"
 #include "pxr/base/work/utils.h"
-#include "pxr/base/work/withScopedParallelism.h"
 #include "pxr/usd/ar/asset.h"
 #include "pxr/usd/ar/resolvedPath.h"
 #include "pxr/usd/ar/resolver.h"

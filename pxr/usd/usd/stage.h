@@ -48,7 +48,7 @@
 #include "pxr/usd/sdf/types.h"
 #include "pxr/usd/pcp/cache.h"
 #include "pxr/base/vt/value.h"
-#include "pxr/base/work/dispatcher.h"
+#include "pxr/base/work/arenaDispatcher.h"
 
 #include <boost/optional.hpp>
 
@@ -2295,7 +2295,7 @@ private:
     class _PendingChanges;
     _PendingChanges* _pendingChanges;
 
-    boost::optional<WorkDispatcher> _dispatcher;
+    boost::optional<WorkArenaDispatcher> _dispatcher;
 
     // To provide useful aggregation of malloc stats, we bill everything
     // for this stage - from all access points - to this tag.

@@ -46,11 +46,10 @@
 #include "pxr/usd/sdf/primSpec.h"
 
 #include "pxr/base/plug/registry.h"
-#include "pxr/base/work/dispatcher.h"
+#include "pxr/base/work/arenaDispatcher.h"
 #include "pxr/base/work/loops.h"
 #include "pxr/base/work/singularTask.h"
 #include "pxr/base/work/utils.h"
-#include "pxr/base/work/withScopedParallelism.h"
 
 #include "pxr/base/tf/ostreamMethods.h"
 #include "pxr/base/tf/pxrTslRobinMap/robin_set.h"
@@ -1123,12 +1122,16 @@ private:
     void _Find() {
         TF_PY_ALLOW_THREADS_IN_SCOPE();
 
-        WorkWithScopedParallelism([this]() {
-                _VisitSubtree(_prim);
-                _dispatcher.Wait();
+        _dispatcher.Run([this]() { _VisitSubtree(_prim); });
+        _dispatcher.Wait();
+
+        // (We run this parallel_sort in the arena dispatcher to avoid the TBB
+        // deadlock issue).
+        _dispatcher.Run([this]() {
                 tbb::parallel_sort(_result.begin(), _result.end(),
                                    SdfPath::FastLessThan());
             });
+        _dispatcher.Wait();
 
         _result.erase(unique(_result.begin(), _result.end()), _result.end());
     }
@@ -1141,7 +1144,7 @@ private:
     }
 
     UsdPrim _prim;
-    WorkDispatcher _dispatcher;
+    WorkArenaDispatcher _dispatcher;
     WorkSingularTask _consumerTask;
     Predicate const &_predicate;
     tbb::concurrent_queue<SdfPath> _workQueue;
