@@ -25,9 +25,8 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/pcp/layerPrefetchRequest.h"
 #include "pxr/usd/pcp/layerStackRegistry.h"
-#include "pxr/base/work/dispatcher.h"
+#include "pxr/base/work/arenaDispatcher.h"
 #include "pxr/base/work/threadLimits.h"
-#include "pxr/base/work/withScopedParallelism.h"
 
 #include <tbb/spin_mutex.h>
 
@@ -78,7 +77,7 @@ private:
         }
     }
 
-    WorkDispatcher _dispatcher;
+    WorkArenaDispatcher _dispatcher;
     const Pcp_MutedLayers& _mutedLayers;
     std::set<SdfLayerRefPtr> *_retainedLayers;
     mutable tbb::spin_mutex _retainedLayersMutex;
@@ -112,11 +111,9 @@ PcpLayerPrefetchRequest::Run(const Pcp_MutedLayers& mutedLayers)
     requests.swap(_sublayerRequests);
 
     // Open all the sublayers in the request.
-    WorkWithScopedParallelism([&]() {
-            _Opener opener(mutedLayers, &_retainedLayers);
-            TF_FOR_ALL(req, requests)
-                opener.OpenSublayers(req->first, req->second);
-        });
+    _Opener opener(mutedLayers, &_retainedLayers);
+    TF_FOR_ALL(req, requests)
+        opener.OpenSublayers(req->first, req->second);
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE
