@@ -11,6 +11,7 @@ pxr_library(work
         ${TBB_INCLUDE_DIRS}
 
     PUBLIC_CLASSES
+        arenaDispatcher
         detachedTask
         dispatcher
         loops

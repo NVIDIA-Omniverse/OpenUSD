@@ -25,6 +25,7 @@
 #include "pxr/pxr.h"
 #include "pxr/base/work/loops.h"
 
+#include "pxr/base/work/arenaDispatcher.h"
 #include "pxr/base/work/threadLimits.h"
 
 #include "pxr/base/tf/stopwatch.h"
@@ -37,7 +38,6 @@
 #include <cstdio>
 #include <numeric>
 #include <iostream>
-#include <vector>
 
 using namespace std::placeholders;
 
