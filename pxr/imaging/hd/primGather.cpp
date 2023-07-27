@@ -25,8 +25,7 @@
 #include "pxr/imaging/hd/primGather.h"
 #include "pxr/imaging/hd/perfLog.h"
 #include "pxr/base/tf/diagnostic.h"
-#include "pxr/base/work/dispatcher.h"
-#include "pxr/base/work/withScopedParallelism.h"
+#include "pxr/base/work/arenaDispatcher.h"
 #include <tbb/parallel_for.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -73,21 +72,20 @@ HdPrimGather::PredicatedFilter(const SdfPathVector &paths,
 
         size_t numRanges = _gatheredRanges.size();
         if (numRanges > MIN_RANGES_FOR_PARALLEL) {
+            WorkArenaDispatcher rangeDispatcher;
 
-            WorkWithScopedParallelism([&]() {
-                WorkDispatcher rangeDispatcher;
+            for (size_t rangeNum = 0; rangeNum < numRanges; ++rangeNum) {
+                const _Range &range = _gatheredRanges[rangeNum];
 
-                for (size_t rangeNum = 0; rangeNum < numRanges; ++rangeNum) {
-                    const _Range &range = _gatheredRanges[rangeNum];
+                rangeDispatcher.Run(&HdPrimGather::_DoPredicateTestOnRange,
+                                    this,
+                                    std::cref(paths),
+                                    range,
+                                    predicateFn,
+                                    predicateParam);
+            }
 
-                    rangeDispatcher.Run(&HdPrimGather::_DoPredicateTestOnRange,
-                                        this,
-                                        std::cref(paths),
-                                        range,
-                                        predicateFn,
-                                        predicateParam);
-                }
-            });
+            rangeDispatcher.Wait();
         } else {
             size_t numRanges = _gatheredRanges.size();
             for (size_t rangeNum = 0; rangeNum < numRanges; ++rangeNum) {
