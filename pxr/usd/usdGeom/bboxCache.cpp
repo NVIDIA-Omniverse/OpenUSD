@@ -34,10 +34,7 @@
 
 #include "pxr/usd/usd/modelAPI.h"
 #include "pxr/usd/usd/primRange.h"
-
 #include "pxr/base/trace/trace.h"
-
-#include "pxr/base/work/withScopedParallelism.h"
 
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/stringUtils.h"
@@ -202,7 +199,7 @@ private:
     void _ExecuteTaskForPrototype(const _PrimContext& prototype,
                                _PrototypeTaskMap* prototypeTasks,
                                _ThreadXformCache* xfCaches,
-                               WorkDispatcher* dispatcher)
+                               WorkArenaDispatcher* dispatcher)
     {
         UsdGeomBBoxCache::_BBoxTask(
             prototype, GfMatrix4d(1.0), _owner, xfCaches)();
@@ -1078,39 +1075,36 @@ UsdGeomBBoxCache::_Resolve(
         return (!bboxes->empty());
     }
 
-    WorkWithScopedParallelism([&]() {
-                        
-            // Resolve all prototype prims first to avoid having to synchronize
-            // tasks that depend on the same prototype.
-            if (!prototypePrimContexts.empty()) {
-                _PrototypeBBoxResolver bboxesForPrototypes(this);
-                bboxesForPrototypes.Resolve(prototypePrimContexts);
-            }
-            
-            // XXX: This swapping out is dubious... see XXX below.
-            _ThreadXformCache xfCaches;
-            xfCaches.local().Swap(_ctmCache);
-            
-            // Find the nearest ancestor prim that's a model or a subcomponent.
-            UsdPrim modelPrim = _GetNearestComponent(prim);
-            GfMatrix4d inverseComponentCtm = _ctmCache.GetLocalToWorldTransform(
-                modelPrim).GetInverse();
-            
-            _dispatcher.Run(
-                _BBoxTask(primContext, inverseComponentCtm, this, &xfCaches));
-            _dispatcher.Wait();
+    // Resolve all prototype prims first to avoid having to synchronize
+    // tasks that depend on the same prototype.
+    if (!prototypePrimContexts.empty()) {
+        _PrototypeBBoxResolver bboxesForPrototypes(this);
+        bboxesForPrototypes.Resolve(prototypePrimContexts);
+    }
 
-            // We save the result of one of the caches, but it might be
-            // interesting to merge them all here at some point.  XXX: Is this
-            // valid?  This only makes sense if we're *100% certain* that
-            // rootTask above runs in this thread.  If it's picked up by another
-            // worker it won't populate the local xfCaches we're swapping with.
-            xfCaches.local().Swap(_ctmCache);
-        });
-    
+    // XXX: This swapping out is dubious... see XXX below.
+    _ThreadXformCache xfCaches;
+    xfCaches.local().Swap(_ctmCache);
+
+    // Find the nearest ancestor prim that's a model or a subcomponent.
+    UsdPrim modelPrim = _GetNearestComponent(prim);
+    GfMatrix4d inverseComponentCtm = _ctmCache.GetLocalToWorldTransform(
+        modelPrim).GetInverse();
+
+    _dispatcher.Run(
+        _BBoxTask(primContext, inverseComponentCtm, this, &xfCaches));
+    _dispatcher.Wait();
+
+    // We save the result of one of the caches, but it might be interesting to
+    // merge them all here at some point.
+    // XXX: Is this valid?  This only makes sense if we're *100% certain* that
+    // rootTask above runs in this thread.  If it's picked up by another worker
+    // it won't populate the local xfCaches we're swapping with.
+    xfCaches.local().Swap(_ctmCache);
+
     // Note: the map may contain unresolved entries, but future queries will
     // populate them.
-    
+
     // If the bound is in the cache, return it.
     entry = _FindEntry(primContext);
     *bboxes = entry->bboxes;
@@ -1405,14 +1399,13 @@ UsdGeomBBoxCache::_ResolvePrim(_BBoxTask* task,
         // All the child bboxTasks will be NULL if the prim is an instance.
         //
         if (!primIsInstance) {
-            WorkWithScopedParallelism([&]() {
-                    WorkDispatcher wd;
-                    for(auto &childAndTask : included) {
-                        if (childAndTask.second) {
-                            wd.Run(childAndTask.second);
-                        }
-                    }
-                });
+            WorkArenaDispatcher wd;
+            for(const auto &childAndTask : included) {
+                if (childAndTask.second) {
+                    wd.Run(childAndTask.second);
+                }
+            }
+            wd.Wait();
 
             // We may have switched threads, grab the thread-local xfCache
             // again.
