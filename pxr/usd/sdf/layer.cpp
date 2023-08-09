@@ -67,9 +67,9 @@
 #include "pxr/base/tf/scopeDescription.h"
 #include "pxr/base/tf/staticData.h"
 #include "pxr/base/tf/stackTrace.h"
-#include "pxr/base/work/withScopedParallelism.h"
 
 #include <tbb/queuing_rw_mutex.h>
+#include <tbb/task_arena.h>
 
 #include <atomic>
 #include <fstream>
@@ -844,7 +844,8 @@ SdfLayer::FindOrOpen(const string &identifier,
     }
 
     // Isolate.
-    return WorkWithScopedParallelism([&]() -> SdfLayerRefPtr {
+    tbb::task_arena arena(WorkGetConcurrencyLimit());
+    return arena.execute([&]() -> SdfLayerRefPtr {
         
         // Otherwise we create the layer and insert it into the registry.
         return _OpenLayerAndUnlockRegistry(lock, layerInfo,

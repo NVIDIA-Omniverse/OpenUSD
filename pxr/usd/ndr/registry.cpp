@@ -28,7 +28,6 @@
 #include "pxr/base/tf/type.h"
 #include "pxr/base/trace/trace.h"
 #include "pxr/base/work/loops.h"
-#include "pxr/base/work/withScopedParallelism.h"
 #include "pxr/usd/ar/resolver.h"
 #include "pxr/usd/ndr/debugCodes.h"
 #include "pxr/usd/ndr/discoveryPlugin.h"
@@ -855,7 +854,8 @@ NdrRegistry::GetNodesByFamily(const TfToken& family, NdrVersionFilter filter)
         // and also deadlock.
         TF_PY_ALLOW_THREADS_IN_SCOPE();
 
-        WorkWithScopedParallelism([&]() {
+        tbb::task_arena arena(WorkGetConcurrencyLimit());
+        arena.execute([&] {
             WorkParallelForEach(_discoveryResultsByIdentifier.begin(),
                                 _discoveryResultsByIdentifier.end(),
                 [&](const _DiscoveryResultsByIdentifier::value_type &val) {

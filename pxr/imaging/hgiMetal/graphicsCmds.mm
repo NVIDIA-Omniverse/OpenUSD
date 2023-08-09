@@ -32,9 +32,8 @@
 #include "pxr/imaging/hgiMetal/resourceBindings.h"
 #include "pxr/imaging/hgiMetal/texture.h"
 
-#include "pxr/base/work/dispatcher.h"
 #include "pxr/base/work/loops.h"
-#include "pxr/base/work/withScopedParallelism.h"
+#include "pxr/base/work/arenaDispatcher.h"
 
 #include "pxr/base/arch/defines.h"
 
@@ -591,50 +590,49 @@ HgiMetalGraphicsCmds::DrawIndirect(
 
     _SetNumberParallelEncoders(numEncoders);
 
-    WorkWithScopedParallelism([&]() {
-        WorkDispatcher wd;
-        
-        for (uint32_t i = 0; i < numEncoders; ++i) {
-            const uint32_t encoderOffset = normalCount * i;
-            // If this is the last encoder then ensure that we have all prims.
-            const uint32_t encoderCount = (i == numEncoders - 1)
-                                        ? finalCount : normalCount;
-            wd.Run([&, i, encoderOffset, encoderCount]() {
-                id<MTLRenderCommandEncoder> encoder = GetEncoder(i);
-                
-                if (_primitiveType == HgiPrimitiveTypePatchList) {
-                    const NSUInteger controlPointCount = _primitiveIndexSize;
-                    for (uint32_t offset = encoderOffset;
-                         offset < encoderOffset + encoderCount;
-                         ++offset) {
-                        _stepFunctions.SetVertexBufferOffsets(encoder, offset);
-                        const uint32_t bufferOffset = drawBufferByteOffset
-                                                    + (offset * stride);
-                        [encoder drawPatches:controlPointCount
-                            patchIndexBuffer:NULL
-                      patchIndexBufferOffset:0
-                              indirectBuffer:drawBufferId
-                        indirectBufferOffset:bufferOffset];
-                    }
-                }
-                else {
-                    _VegaIndirectFix();
+    WorkArenaDispatcher wd;
 
-                    for (uint32_t offset = encoderOffset;
-                         offset < encoderOffset + encoderCount;
-                         ++offset) {
-                        _stepFunctions.SetVertexBufferOffsets(encoder, offset);
-                        const uint32_t bufferOffset = drawBufferByteOffset
-                                                    + (offset * stride);
-                        
-                        [encoder drawPrimitives:mtlType
-                                 indirectBuffer:drawBufferId
-                           indirectBufferOffset:bufferOffset];
-                    }
+    for (uint32_t i = 0; i < numEncoders; ++i) {
+        const uint32_t encoderOffset = normalCount * i;
+        // If this is the last encoder then ensure that we have all prims.
+        const uint32_t encoderCount = (i == numEncoders - 1)
+                                    ? finalCount : normalCount;
+        wd.Run([&, i, encoderOffset, encoderCount]() {
+            id<MTLRenderCommandEncoder> encoder = GetEncoder(i);
+
+            if (_primitiveType == HgiPrimitiveTypePatchList) {
+                const NSUInteger controlPointCount = _primitiveIndexSize;
+                for (uint32_t offset = encoderOffset;
+                     offset < encoderOffset + encoderCount;
+                     ++offset) {
+                    _stepFunctions.SetVertexBufferOffsets(encoder, offset);
+                    const uint32_t bufferOffset = drawBufferByteOffset
+                                                + (offset * stride);
+                    [encoder drawPatches:controlPointCount
+                        patchIndexBuffer:NULL
+                  patchIndexBufferOffset:0
+                          indirectBuffer:drawBufferId
+                    indirectBufferOffset:bufferOffset];
                 }
-            });
-        }
-    });
+            }
+            else {
+                _VegaIndirectFix();
+
+                for (uint32_t offset = encoderOffset;
+                     offset < encoderOffset + encoderCount;
+                     ++offset) {
+                    _stepFunctions.SetVertexBufferOffsets(encoder, offset);
+                    const uint32_t bufferOffset = drawBufferByteOffset
+                                                + (offset * stride);
+
+                    [encoder drawPrimitives:mtlType
+                             indirectBuffer:drawBufferId
+                       indirectBufferOffset:bufferOffset];
+                }
+            }
+        });
+    }
+    wd.Wait();
 }
 
 void
@@ -715,68 +713,67 @@ HgiMetalGraphicsCmds::DrawIndexedIndirect(
 
     _SetNumberParallelEncoders(numEncoders);
 
-    WorkWithScopedParallelism([&]() {
-        WorkDispatcher wd;
-        
-        for (uint32_t i = 0; i < numEncoders; ++i) {
-            const uint32_t encoderOffset = normalCount * i;
-            // If this is the last encoder then ensure that we have all prims.
-            const uint32_t encoderCount = (i == numEncoders - 1)
-                                        ? finalCount : normalCount;
-            wd.Run([&, i, encoderOffset, encoderCount]() {
-                id<MTLRenderCommandEncoder> encoder = GetEncoder(i);
-                
-                if (_primitiveType == HgiPrimitiveTypePatchList) {
-                    const NSUInteger controlPointCount = _primitiveIndexSize;
-                    
-                    for (uint32_t offset = encoderOffset;
-                         offset < encoderOffset + encoderCount;
-                         ++offset) {
-                            _stepFunctions.SetVertexBufferOffsets(
-                                encoder, offset);
+    WorkArenaDispatcher wd;
 
-                            const uint32_t baseVertexIndex =
-                                (patchBaseVertexByteOffset +
-                                 offset * stride) / sizeof(uint32_t);
-                            const uint32_t baseVertex =
-                                drawParameterBufferUInt32[baseVertexIndex];
+    for (uint32_t i = 0; i < numEncoders; ++i) {
+        const uint32_t encoderOffset = normalCount * i;
+        // If this is the last encoder then ensure that we have all prims.
+        const uint32_t encoderCount = (i == numEncoders - 1)
+                                    ? finalCount : normalCount;
+        wd.Run([&, i, encoderOffset, encoderCount]() {
+            id<MTLRenderCommandEncoder> encoder = GetEncoder(i);
 
-                            _stepFunctions.SetPatchBaseOffsets(
-                                encoder, baseVertex);
+            if (_primitiveType == HgiPrimitiveTypePatchList) {
+                const NSUInteger controlPointCount = _primitiveIndexSize;
 
-                            const uint32_t bufferOffset = drawBufferByteOffset
-                                                        + (offset * stride);
-                        [encoder drawIndexedPatches:controlPointCount
-                                   patchIndexBuffer:nil
-                             patchIndexBufferOffset:0
-                            controlPointIndexBuffer:indexBufferId
-                      controlPointIndexBufferOffset:0
-                                     indirectBuffer:drawBufferId
-                               indirectBufferOffset:bufferOffset];
-                    }
-                }
-                else {
-                    _VegaIndirectFix();
-                    
-                    for (uint32_t offset = encoderOffset;
-                         offset < encoderOffset + encoderCount;
-                         ++offset) {
-                        _stepFunctions.SetVertexBufferOffsets(encoder, offset);
+                for (uint32_t offset = encoderOffset;
+                     offset < encoderOffset + encoderCount;
+                     ++offset) {
+                        _stepFunctions.SetVertexBufferOffsets(
+                            encoder, offset);
+
+                        const uint32_t baseVertexIndex =
+                            (patchBaseVertexByteOffset +
+                             offset * stride) / sizeof(uint32_t);
+                        const uint32_t baseVertex =
+                            drawParameterBufferUInt32[baseVertexIndex];
+
+                        _stepFunctions.SetPatchBaseOffsets(
+                            encoder, baseVertex);
 
                         const uint32_t bufferOffset = drawBufferByteOffset
                                                     + (offset * stride);
-                        
-                        [encoder drawIndexedPrimitives:mtlType
-                                             indexType:MTLIndexTypeUInt32
-                                           indexBuffer:indexBufferId
-                                     indexBufferOffset:0
-                                        indirectBuffer:drawBufferId
-                                  indirectBufferOffset:bufferOffset];
-                    }
+                    [encoder drawIndexedPatches:controlPointCount
+                               patchIndexBuffer:nil
+                         patchIndexBufferOffset:0
+                        controlPointIndexBuffer:indexBufferId
+                  controlPointIndexBufferOffset:0
+                                 indirectBuffer:drawBufferId
+                           indirectBufferOffset:bufferOffset];
                 }
-            });
-        }
-    });
+            }
+            else {
+                _VegaIndirectFix();
+
+                for (uint32_t offset = encoderOffset;
+                     offset < encoderOffset + encoderCount;
+                     ++offset) {
+                    _stepFunctions.SetVertexBufferOffsets(encoder, offset);
+
+                    const uint32_t bufferOffset = drawBufferByteOffset
+                                                + (offset * stride);
+
+                    [encoder drawIndexedPrimitives:mtlType
+                                         indexType:MTLIndexTypeUInt32
+                                       indexBuffer:indexBufferId
+                                 indexBufferOffset:0
+                                    indirectBuffer:drawBufferId
+                              indirectBufferOffset:bufferOffset];
+                }
+            }
+        });
+    }
+    wd.Wait();
 }
 
 void
