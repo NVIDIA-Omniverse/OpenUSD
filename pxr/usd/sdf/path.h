@@ -45,6 +45,21 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
+/// \name Valid path components, prim and property names, and dictionary keys.
+/// @{
+
+/// Returns whether \p name is a legal identifier for any
+/// path component, prim or property name, or dictionary key.
+SDF_API
+bool SdfIsValidIdentifier(const std::string& name);
+
+/// \name Valid identifiers separated by ':' characters.
+/// @{
+
+/// Returns whether \p name is a legal namespaced identifier.
+SDF_API
+bool SdfIsValidNamespacedIdentifier(const std::string& name);
+
 class Sdf_PathNode;
 class SdfPathAncestorsRange;
 
