@@ -118,7 +118,9 @@ private:
 
 } // anon
 
-static inline bool _IsValidIdentifier(const std::string_view& name);
+constexpr uint32_t SDF_UNDERSCORE_CODE_POINT = 0x005Fu;
+
+static inline bool _IsValidIdentifier(const std::string& name);
 static inline bool _IsValidIdentifier(TfToken const &name);
 
 // XXX: Enable this define to make bad path strings
@@ -1789,58 +1791,7 @@ SdfPath::MakeRelativePath(const SdfPath & anchor) const
     return result;
 }
 
-bool
-SdfIsValidIdentifier(const std::string& name)
-{
-    return _IsValidIdentifier(name);
-}
-
-bool
-SdfIsValidNamespacedIdentifier(const std::string& name)
-{
-    // empty strings are not valid identifiers
-    if (name.empty())
-    {
-        return false;
-    }
-
-    // A valid C/Python identifier except we also allow the namespace delimiter
-    // and if we tokenize on that delimiter then all tokens are valid C/Python
-    // identifiers.
-    std::string_view remainder {name};
-    while (!remainder.empty()) {
-        const auto index = remainder.find(':');
-        
-        // can't start with ':'
-        if (index == 0) {
-            return false;
-        }
-
-        // can't end with ':'
-        if (index == remainder.size() - 1) {
-            return false;
-        }
-
-        // substring must be a valid identifier
-        if (!_IsValidIdentifier(remainder.substr(0, index))) {
-            return false;
-        }
-
-        // if ':' wasn't found, we are done
-        if (index == std::string_view::npos) {
-            break;
-        }
-
-        // otherwise check the next substring
-        remainder = remainder.substr(index + 1);
-    }
-
-    return true;
-}
-
-static
-inline bool 
-_IsValidIdentifier(const std::string_view& name)
+static inline bool _IsValidIdentifier(const std::string& name)
 {
     // empty strings are not valid identifiers
     if (name.empty())
@@ -1868,9 +1819,7 @@ _IsValidIdentifier(const std::string_view& name)
     return true;
 }
 
-static
-inline bool 
-_IsValidIdentifier(TfToken const &name)
+static inline bool _IsValidIdentifier(TfToken const &name)
 {
     return _IsValidIdentifier(name.GetString());
 }
@@ -1878,18 +1827,43 @@ _IsValidIdentifier(TfToken const &name)
 bool
 SdfPath::IsValidIdentifier(const std::string &name)
 {
-    return SdfIsValidIdentifier(name);
+    return _IsValidIdentifier(name);
 }
 
 bool
 SdfPath::IsValidNamespacedIdentifier(const std::string &name)
 {
-    return SdfIsValidNamespacedIdentifier(name);
+    // empty strings are not valid identifiers
+    if (name.empty())
+    {
+        return false;
+    }
+
+    // A valid C/Python identifier except we also allow the namespace delimiter
+    // and if we tokenize on that delimiter then all tokens are valid C/Python
+    // identifiers.
+    std::vector<std::string> tokens = SdfPath::TokenizeIdentifier(name);
+    if (tokens.empty())
+    {
+        return false;
+    }
+
+    for (const std::string& token : tokens)
+    {
+        if (!SdfPath::IsValidIdentifier(token))
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 std::vector<std::string>
 SdfPath::TokenizeIdentifier(const std::string &name)
 {
+    constexpr uint32_t SDF_NAMESPACE_DELIMITER_CODE_POINT = 0x003Au;
+
     std::vector<std::string> result;
 
     // This code currently assumes the namespace delimiter is one character.

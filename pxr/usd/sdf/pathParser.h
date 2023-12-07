@@ -168,7 +168,7 @@ struct RelationalAttributeName : PropertyName {};
 
 struct MapperKW : TAO_PEGTL_KEYWORD("mapper") {};
 
-struct MapperArg : PEGTL_NS::identifier {};
+struct MapperArg : Utf8Identifier {};
 
 struct MapperPathSeq : PEGTL_NS::if_must<
     PEGTL_NS::seq<Dot, MapperKW>, BracketPath<MapperPath>,
