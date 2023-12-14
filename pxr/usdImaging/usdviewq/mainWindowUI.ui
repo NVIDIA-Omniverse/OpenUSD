@@ -680,7 +680,7 @@
             <enum>Qt::ElideMiddle</enum>
            </property>
            <property name="columnCount">
-            <number>3</number>
+            <number>4</number>
            </property>
            <column>
             <property name="text">
@@ -695,6 +695,11 @@
            <column>
             <property name="text">
              <string>Value</string>
+            </property>
+           </column>
+           <column>
+            <property name="text">
+             <string>Normalized Name</string>
             </property>
            </column>
           </widget>

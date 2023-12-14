@@ -22,6 +22,7 @@
 # language governing permissions and limitations under the Apache License.
 #
 
+import unicodedata
 from .qt import QtGui, QtWidgets, QtCore
 from pxr import Sdf
 from .usdviewContextMenuItem import UsdviewContextMenuItem
@@ -97,6 +98,7 @@ class AttributeViewContextMenuItem(UsdviewContextMenuItem):
         self._role = self._item.data(PropertyViewIndex.TYPE, QtCore.Qt.ItemDataRole.WhatsThisRole)
         self._name = self._item.text(PropertyViewIndex.NAME) if self._item else ""
         self._value = self._item.text(PropertyViewIndex.VALUE) if self._item else ""
+        self._normalized_name = unicodedata.normalize('NKFC', self._item.text(PropertyViewIndex.NAME)) if self._item else ""
 
     def IsEnabled(self):
         return True

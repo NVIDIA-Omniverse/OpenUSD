@@ -31,7 +31,7 @@ from __future__ import print_function
 from .qt import QtCore, QtGui, QtWidgets, QtActionWidgets
 
 # Stdlib components
-import re, sys, os, cProfile, pstats, traceback
+import re, sys, os, cProfile, pstats, traceback, unicodedata
 from itertools import groupby
 from time import time, sleep
 from collections import deque, OrderedDict
@@ -158,7 +158,7 @@ class UIStateProxySource(StateSource):
                 default=[True, True, True, True, False], validator=lambda value: 
                 len(value) == 5)
         propertyViewColumnVisibility = self.stateProperty("propertyViewColumnVisibility",
-                default=[True, True, True], validator=lambda value: len(value) == 3)
+                default=[True, True, True, False], validator=lambda value: len(value) == 4)
         attributeInspectorCurrentTab = self.stateProperty("attributeInspectorCurrentTab", default=PropertyIndex.VALUE)
 
         # UI is different when --norender is used so just save the default splitter sizes.
@@ -2203,6 +2203,9 @@ class AppController(QtCore.QObject):
 
     # Prim/Attribute search functionality =====================================
 
+    def _normalize_unicode(self, str: str, form = 'NKFC'):
+        return unicodedata.normalize(form, str) 
+
     def _isMatch(self, pattern, isRegex, prim, useDisplayName):
         """
         Determines if the given prim has a name that matches the
@@ -2229,6 +2232,8 @@ class AppController(QtCore.QObject):
         Returns:
             True if the pattern matches the specified prim content, False otherwise. 
         """
+
+        pattern = self._normalize_unicode(pattern)
         if isRegex:
             matchLambda = re.compile(pattern, re.IGNORECASE).search
         else:
@@ -2243,13 +2248,13 @@ class AppController(QtCore.QObject):
             # so we'd be paying twice the price for each prim
             # search, which on large scenes would be a big performance
             # hit, so we do it this way instead
-            displayName = prim.GetDisplayName()
+            displayName = self._normalize_unicode(prim.GetDisplayName())
             if displayName:
                 return matchLambda(displayName)
             else:
-                return matchLambda(prim.GetName())
+                return matchLambda(self._normalize_unicode(prim.GetName()))
         else:
-            return matchLambda(prim.GetName())
+            return matchLambda(self._normalize_unicode(prim.GetName()))
 
 
     def _findPrims(self, pattern, useRegex=True):
@@ -2404,13 +2409,13 @@ class AppController(QtCore.QObject):
             attrSearchItems = self._ui.propertyView.findItems(
                 self._ui.attrViewLineEdit.text(),
                 QtCore.Qt.MatchRegExp,
-                PropertyViewIndex.NAME)
+                PropertyViewIndex.NORMALIZED_NAME)
 
             # Now just search for the string itself
             otherSearch = self._ui.propertyView.findItems(
                 self._ui.attrViewLineEdit.text(),
                 QtCore.Qt.MatchContains,
-                PropertyViewIndex.NAME)
+                PropertyViewIndex.NORMALIZED_NAME)
 
             # Combine search results and sort by model index so that
             # we iterate over results from top to bottom.
@@ -3994,7 +3999,7 @@ class AppController(QtCore.QObject):
                 continue
 
             valFunc, attrText = GetValueAndDisplayString(primProperty, frame)
-            item = QtWidgets.QTreeWidgetItem(["", str(key), attrText])
+            item = QtWidgets.QTreeWidgetItem(["", str(key), attrText, self._normalize_unicode(str(key))])
             item.rawValue = valFunc()
             treeWidget.addTopLevelItem(item)
 
@@ -4035,7 +4040,7 @@ class AppController(QtCore.QObject):
                     # USD does not provide or infer values for relationship or
                     # connection targets, so we don't display them here.
                     currItem.addChild(
-                            QtWidgets.QTreeWidgetItem(["", str(t), ""]))
+                            QtWidgets.QTreeWidgetItem(["", str(t), "", self._normalize_unicode(str(t))]))
                     currItem.setFont(PropertyViewIndex.VALUE, valTextFont)
                     child = currItem.child(childRow)
 
