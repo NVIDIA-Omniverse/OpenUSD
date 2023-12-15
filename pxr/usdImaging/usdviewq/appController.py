@@ -2203,7 +2203,7 @@ class AppController(QtCore.QObject):
 
     # Prim/Attribute search functionality =====================================
 
-    def _normalize_unicode(self, str: str, form = 'NKFC'):
+    def _normalize_unicode(self, str: str, form = 'NFKC'):
         return unicodedata.normalize(form, str) 
 
     def _isMatch(self, pattern, isRegex, prim, useDisplayName):
@@ -2379,7 +2379,7 @@ class AppController(QtCore.QObject):
                                 self._propertyLegendAnim)
 
     def _attrViewFindNext(self):
-        if (self._attrSearchString == self._ui.attrViewLineEdit.text() and
+        if (self._attrSearchString == self._normalize_unicode(self._ui.attrViewLineEdit.text()) and
             len(self._attrSearchResults) > 0 and
             self._lastPrimSearched == self._dataModel.selection.getFocusPrim()):
 
@@ -2405,15 +2405,15 @@ class AppController(QtCore.QObject):
             self._updateLayerStackView(self._getSelectedObject())
         else:
             # Begin a new search
-            self._attrSearchString = self._ui.attrViewLineEdit.text()
+            self._attrSearchString = self._normalize_unicode(self._ui.attrViewLineEdit.text())
             attrSearchItems = self._ui.propertyView.findItems(
-                self._ui.attrViewLineEdit.text(),
+                self._attrSearchString,
                 QtCore.Qt.MatchRegExp,
                 PropertyViewIndex.NORMALIZED_NAME)
 
             # Now just search for the string itself
             otherSearch = self._ui.propertyView.findItems(
-                self._ui.attrViewLineEdit.text(),
+                self._attrSearchString,
                 QtCore.Qt.MatchContains,
                 PropertyViewIndex.NORMALIZED_NAME)
 
