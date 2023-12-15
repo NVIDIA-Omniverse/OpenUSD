@@ -22,7 +22,6 @@
 # language governing permissions and limitations under the Apache License.
 #
 
-import unicodedata
 from .qt import QtGui, QtWidgets, QtCore
 from pxr import Sdf
 from .usdviewContextMenuItem import UsdviewContextMenuItem
