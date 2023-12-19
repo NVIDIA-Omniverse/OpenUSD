@@ -158,7 +158,7 @@ class UIStateProxySource(StateSource):
                 default=[True, True, True, True, False], validator=lambda value: 
                 len(value) == 5)
         propertyViewColumnVisibility = self.stateProperty("propertyViewColumnVisibility",
-                default=[True, True, True, False], validator=lambda value: len(value) == 4)
+                default=[True, True, True], validator=lambda value: len(value) == 3)
         attributeInspectorCurrentTab = self.stateProperty("attributeInspectorCurrentTab", default=PropertyIndex.VALUE)
 
         # UI is different when --norender is used so just save the default splitter sizes.
@@ -239,6 +239,37 @@ class UIStateProxySource(StateSource):
 
         state["attributeInspectorCurrentTab"] = self._mainWindow._ui.propertyInspector.currentIndex()
 
+
+#class PropertyViewFilterProxyModel(QtGui.QSortFilterProxyModel):
+#    ''' Class to override the following behaviour:
+#            If a parent item doesn't match the filter,
+#            none of its children will be shown.
+#
+#        This Model matches items which are descendants
+#        or ascendants of matching items.
+#    '''
+#
+#    def filterAcceptsRow(self, row_num, source_parent):
+#        ''' Overriding the parent function '''
+#
+#        # Finally, check if any of the children match
+#        return self._isMatch(row_num, source_parent)
+#
+#    def _isMatch(self, sourceRow, sourceParent):
+#        index0 = self.sourceModel().index(sourceRow, 0, sourceParent)
+#        index1 = self.sourceModel().index(sourceRow, 1, sourceParent)
+#        index2 = self.sourceModel().index(sourceRow, 2, sourceParent)
+#        pattern = self._normalize_unicode(pattern)
+#        pattern = pattern.lower()
+#        matchLambda = lambda x: pattern in x.lower()
+#
+#        return matchLambda(self._normalize_unicode(str(index1)))
+#    
+#    def _normalize_unicode(self, str: str, form = 'NFKC'):
+#        return unicodedata.normalize(form, str) 
+#
+#    def setSearchString(self, searchString: str):
+#        self._searchString = searchString
 
 class Blocker:
     """Object which can be used to temporarily block the execution of a body of
@@ -2384,8 +2415,10 @@ class AppController(QtCore.QObject):
             self._lastPrimSearched == self._dataModel.selection.getFocusPrim()):
 
             # Go to the next result of the currently ongoing search
-            nextResult = self._attrSearchResults.popleft()
-            itemName = str(nextResult.text(PropertyViewIndex.NAME))
+            index = self._attrSearchResults.popleft()
+            nextResult = self._ui.propertyView.model().data(index)
+            item = self._ui.propertyView.itemFromIndex(index)
+            itemName = nextResult
 
             selectedProp = self._propertiesDict[itemName]
             if isinstance(selectedProp, CustomAttribute):
@@ -2394,9 +2427,9 @@ class AppController(QtCore.QObject):
             else:
                 self._dataModel.selection.setProp(selectedProp)
                 self._dataModel.selection.clearComputedProps()
-            self._ui.propertyView.scrollToItem(nextResult)
+            self._ui.propertyView.scrollToItem(item)
 
-            self._attrSearchResults.append(nextResult)
+            self._attrSearchResults.append(index)
             self._lastPrimSearched = self._dataModel.selection.getFocusPrim()
 
             self._ui.attributeValueEditor.populate(
@@ -2406,24 +2439,13 @@ class AppController(QtCore.QObject):
         else:
             # Begin a new search
             self._attrSearchString = self._normalize_unicode(self._ui.attrViewLineEdit.text())
-            attrSearchItems = self._ui.propertyView.findItems(
-                self._attrSearchString,
-                QtCore.Qt.MatchRegExp,
-                PropertyViewIndex.NORMALIZED_NAME)
+            
+            search1 = deque(self._ui.propertyView.model().match(self._ui.propertyView.model().index(0, 1), PropertyViewDataRoles.NORMALIZED_NAME, self._attrSearchString, -1, QtCore.Qt.MatchContains))
+            search2 = deque(self._ui.propertyView.model().match(self._ui.propertyView.model().index(0, 1), PropertyViewDataRoles.NORMALIZED_NAME, self._attrSearchString, -1, QtCore.Qt.MatchRegExp))
 
-            # Now just search for the string itself
-            otherSearch = self._ui.propertyView.findItems(
-                self._attrSearchString,
-                QtCore.Qt.MatchContains,
-                PropertyViewIndex.NORMALIZED_NAME)
-
-            # Combine search results and sort by model index so that
-            # we iterate over results from top to bottom.
-            combinedItems = set(attrSearchItems + otherSearch)
+            combinedItems = set(search1 + search2)
             self._attrSearchResults = deque(
-                sorted(combinedItems, 
-                       key=lambda i: self._ui.propertyView.indexFromItem(
-                           i, PropertyViewIndex.NAME)))
+                sorted(combinedItems))
 
             self._lastPrimSearched = self._dataModel.selection.getFocusPrim()
             if (len(self._attrSearchResults) > 0):
@@ -4008,6 +4030,9 @@ class AppController(QtCore.QObject):
             treeWidget.topLevelItem(currRow).setData(PropertyViewIndex.TYPE,
                     QtCore.Qt.ItemDataRole.WhatsThisRole,
                     typeRole)
+            treeWidget.topLevelItem(currRow).setData(PropertyViewIndex.NAME,
+                PropertyViewDataRoles.NORMALIZED_NAME,
+                self._normalize_unicode(str(key)))
 
             currItem = treeWidget.topLevelItem(currRow)
 
@@ -4043,6 +4068,10 @@ class AppController(QtCore.QObject):
                             QtWidgets.QTreeWidgetItem(["", str(t), "", self._normalize_unicode(str(t))]))
                     currItem.setFont(PropertyViewIndex.VALUE, valTextFont)
                     child = currItem.child(childRow)
+
+                    child.setData(PropertyViewIndex.NAME,
+                        PropertyViewDataRoles.NORMALIZED_NAME,
+                        self._normalize_unicode(str(t)))
 
                     if typeRole == PropertyViewDataRoles.RELATIONSHIP_WITH_TARGETS:
                         child.setIcon(PropertyViewIndex.TYPE, 

@@ -112,7 +112,7 @@ class KeyboardShortcuts(ConstantsGroup):
     FramingKey = QtCore.Qt.Key_F
 
 class PropertyViewIndex(ConstantsGroup):
-    TYPE, NAME, VALUE, NORMALIZED_NAME = range(4)
+    TYPE, NAME, VALUE = range(3)
 
 ICON_DIR_ROOT = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'icons')
 
@@ -145,6 +145,7 @@ class PropertyViewDataRoles(ConstantsGroup):
     TARGET = "Tgt"
     CONNECTION = "Conn"
     COMPOSED = "Cmp"
+    NORMALIZED_NAME = QtCore.Qt.UserRole + 1
 
 class RenderModes(ConstantsGroup):
     # Render modes
