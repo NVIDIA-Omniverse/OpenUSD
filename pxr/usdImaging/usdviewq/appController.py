@@ -238,39 +238,6 @@ class UIStateProxySource(StateSource):
             for c in range(self._mainWindow._ui.propertyView.columnCount())]
 
         state["attributeInspectorCurrentTab"] = self._mainWindow._ui.propertyInspector.currentIndex()
-
-
-#class PropertyViewFilterProxyModel(QtGui.QSortFilterProxyModel):
-#    ''' Class to override the following behaviour:
-#            If a parent item doesn't match the filter,
-#            none of its children will be shown.
-#
-#        This Model matches items which are descendants
-#        or ascendants of matching items.
-#    '''
-#
-#    def filterAcceptsRow(self, row_num, source_parent):
-#        ''' Overriding the parent function '''
-#
-#        # Finally, check if any of the children match
-#        return self._isMatch(row_num, source_parent)
-#
-#    def _isMatch(self, sourceRow, sourceParent):
-#        index0 = self.sourceModel().index(sourceRow, 0, sourceParent)
-#        index1 = self.sourceModel().index(sourceRow, 1, sourceParent)
-#        index2 = self.sourceModel().index(sourceRow, 2, sourceParent)
-#        pattern = self._normalize_unicode(pattern)
-#        pattern = pattern.lower()
-#        matchLambda = lambda x: pattern in x.lower()
-#
-#        return matchLambda(self._normalize_unicode(str(index1)))
-#    
-#    def _normalize_unicode(self, str: str, form = 'NFKC'):
-#        return unicodedata.normalize(form, str) 
-#
-#    def setSearchString(self, searchString: str):
-#        self._searchString = searchString
-
 class Blocker:
     """Object which can be used to temporarily block the execution of a body of
     code. This object is a context manager, and enters a 'blocked' state when
@@ -4021,7 +3988,7 @@ class AppController(QtCore.QObject):
                 continue
 
             valFunc, attrText = GetValueAndDisplayString(primProperty, frame)
-            item = QtWidgets.QTreeWidgetItem(["", str(key), attrText, self._normalize_unicode(str(key))])
+            item = QtWidgets.QTreeWidgetItem(["", str(key), attrText])
             item.rawValue = valFunc()
             treeWidget.addTopLevelItem(item)
 
@@ -4065,7 +4032,7 @@ class AppController(QtCore.QObject):
                     # USD does not provide or infer values for relationship or
                     # connection targets, so we don't display them here.
                     currItem.addChild(
-                            QtWidgets.QTreeWidgetItem(["", str(t), "", self._normalize_unicode(str(t))]))
+                            QtWidgets.QTreeWidgetItem(["", str(t), ""]))
                     currItem.setFont(PropertyViewIndex.VALUE, valTextFont)
                     child = currItem.child(childRow)
 
