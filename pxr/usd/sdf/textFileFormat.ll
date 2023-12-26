@@ -164,6 +164,12 @@ UTF8UDB     {UTF8UD}|{BAR}
 "variants"            { (*yylval_param) = std::string(yytext, yyleng); return TOK_VARIANTS; }
 "varying"             { (*yylval_param) = std::string(yytext, yyleng); return TOK_VARYING; }
 
+ /* unquoted C++ namespaced identifier -- see bug 10775 */
+[[:alpha:]_][[:alnum:]_]*(::[[:alpha:]_][[:alnum:]_]*)+ {
+        (*yylval_param) = std::string(yytext, yyleng);
+        return TOK_CXX_NAMESPACED_IDENTIFIER;
+    }
+
  /* In a Unicode enabled scheme, 'identifiers' are generally
   * categorized as something that begins with something in the
   * XID_Start category followed by zero or more things in the
@@ -181,25 +187,15 @@ UTF8UDB     {UTF8UD}|{BAR}
   * below
   */
 {UTF8NODIGU}{UTF8U}* {
-    (*yylval_param) = std::string(yytext, yyleng);
-    return TOK_IDENTIFIER;
-}
+    std::string matched = std::string(yytext, yyleng);
 
- /* unquoted C++ namespaced identifiers are identifiers separated
-  * by the '::' character -- see bug 10775.
-  */
-{UTF8NODIGU}{UTF8U}*(::{UTF8NODIGU}{UTF8U}*)+ {
-    (*yylval_param) = std::string(yytext, yyleng);
-    return TOK_CXX_NAMESPACED_IDENTIFIER;
-}
-
- /* unquoted namespaced identifiers match any number of colon 
-  * delimited identifiers
-  */
-{UTF8NODIGU}{UTF8U}*(:{UTF8NODIGU}{UTF8U}*)+ {
-    *(yylval_param) = std::string(yytext, yyleng);
-    return TOK_NAMESPACED_IDENTIFIER;
-}
+    // we perform an extra validation step here
+    // to make sure what we matched is actually a valid
+    // identifier because we can overmatch UTF-8 characters
+    // based on this definition
+    if (!SdfIsValidIdentifier(matched)) {
+        return TOK_SYNTAX_ERROR;
+    }
 
     (*yylval_param) = matched;
     return TOK_IDENTIFIER;
