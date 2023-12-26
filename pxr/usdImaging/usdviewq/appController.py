@@ -2235,8 +2235,8 @@ class AppController(QtCore.QObject):
         if isRegex:
             matchLambda = re.compile(pattern, re.IGNORECASE).search
         else:
-            pattern = pattern.lower()
-            matchLambda = lambda x: pattern in x.lower()
+            pattern = pattern.casefold()
+            matchLambda = lambda x: pattern in x.casefold()
 
         if useDisplayName:
             # typically we would check prim.HasAuthoredDisplayName()
