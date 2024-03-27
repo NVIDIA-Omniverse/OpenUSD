@@ -927,8 +927,8 @@ struct TextParserAction<PathRef>
                 const SdfPath targetAbsPath =
                     path.MakeAbsolutePath(context.path);
 
-                context.relocatesParsingMap.insert(std::make_pair(srcAbsPath, 
-                                                                    targetAbsPath));
+                context.relocatesParsing.emplace_back(
+                    std::move(srcPath), std::move(targetPath));
                 context.layerHints.mightHaveRelocates = true;
 
                 context.relocatesKey = SdfPath();
@@ -2560,12 +2560,14 @@ struct TextParserAction<RelocatesMapClose>
     template <class Input>
     static void apply(const Input& in, Sdf_TextParserContext& context)
     {
+        const auto& layerRelocates = context.parsingContext.rbegin()[1] ==
+            Sdf_TextParserCurrentParsingContext::LayerSpec;
         context.data->Set(
             context.path,
-            SdfFieldKeys->Relocates,
-            VtValue(context.relocatesParsingMap));
+            layerRelocates ? SdfFieldKeys->LayerRelocates : SdfFieldKeys->Relocates,
+            VtValue(context.relocatesParsing));
 
-        context.relocatesParsingMap.clear();
+        context.relocatesParsing.clear();
 
         // finished with relocates metadata
         _PopContext(context);
