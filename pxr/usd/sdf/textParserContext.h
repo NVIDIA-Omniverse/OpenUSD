@@ -161,7 +161,7 @@ public:
     SdfPayloadVector payloadParsingRefs;
 
     // helper for relocates parsing
-    SdfRelocatesMap relocatesParsingMap;
+    SdfRelocatesMap relocatesParsing;
     SdfPath relocatesKey;
     bool seenFirstRelocatesPath;
 
