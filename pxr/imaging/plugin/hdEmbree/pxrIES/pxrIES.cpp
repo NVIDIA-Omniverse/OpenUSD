@@ -7,6 +7,7 @@
 #include "pxr/imaging/plugin/hdEmbree/pxrIES/pxrIES.h"
 
 #include "pxr/base/gf/math.h"
+#include "pxr/base/tf/getenv.h"
 
 #include <algorithm>
 
@@ -19,6 +20,8 @@
 #endif
 
 namespace {
+
+PXR_NAMESPACE_USING_DIRECTIVE
 
 // -------------------------------------------------------------------------
 // Constants
@@ -46,6 +49,36 @@ _linearstep(float x, float a, float b)
     }
 
     return (x - a) / (b - a);
+}
+
+const bool _useKarmaIesAnglescale =
+    TfGetenvBool("HDEMBREE_USE_KARMA_IES_ANGLESCALE", false);
+
+inline float
+_applyAngleScale(float thetaLight, float angleScale)
+{
+
+    // By default, we use a formula for applying angleScale that matches
+    // Renderman; set HDEMBREE_USE_KARMA_IES_ANGLESCALE=1 env var  to use one
+    // that matches Karma
+    float thetaIES = thetaLight;
+    if(_useKarmaIesAnglescale) {
+        // This formula matches Karma's behavior
+        if (angleScale > 0.0f) {
+            thetaIES = thetaLight / (1.0f - angleScale);
+        } else if (angleScale < 0.0f) {
+            thetaIES = thetaLight * (1.0f + angleScale);
+        }
+    } else {
+        // This formula matches Renderman's behavior
+
+        // Scale with origin at "top" (ie, 180 degress / pi), by a factor
+        // of 1 / (1 + angleScale), offset so that angleScale = 0 yields the
+        // identity function.
+        const float profileScale = 1.0f + angleScale;
+        thetaIES = (thetaLight - _pi<float>) / profileScale + _pi<float>;
+    }
+    return GfClamp(thetaIES, 0.0f, _pi<float>);
 }
 
 }  // anonymous namespace
@@ -127,19 +160,12 @@ PxrIESFile::eval(float theta, float phi, float angleScale) const
         }
     }
 
+    theta = _applyAngleScale(theta, angleScale);
     // This formula matches Renderman's behavior
 
-    // Scale with origin at "top" (ie, 180 degress / pi), by a factor
-    // of 1 / (1 + angleScale), offset so that angleScale = 0 yields the
-    // identity function.
-    const float profileScale = 1.0f + angleScale;
-    theta = (theta - _pi<float>) / profileScale + _pi<float>;
-    theta = GfClamp(theta, 0.0f, _pi<float>);
-
-    if (theta < 0) {
-        // vi = 0;
-        // dv = 0;
-        return 0.0f;
+    if (theta <= 0) {
+        vi = 0;
+        dv = 0;
     } else if (theta >= _pi<float>) {
         vi = v_angles.size() - 2;
         dv = 1;
