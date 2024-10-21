@@ -364,7 +364,9 @@ _SampleCylinder(GfMatrix4f const& xf, GfMatrix3f const& normalXform,
 GfVec3f
 _EvalLightBasic(HdEmbree_LightData const& light)
 {
-    GfVec3f Le = light.color * light.intensity * powf(2.0f, light.exposure);
+    // Our current material model is always 100% diffuse, so diffuse parameter
+    // is a stright multiplier
+    GfVec3f Le = light.color * light.intensity * light.diffuse * powf(2.0f, light.exposure);
     if (light.enableColorTemperature) {
         Le = GfCompMult(Le,
             _BlackbodyTemperatureAsRgb(light.colorTemperature));
@@ -1617,8 +1619,23 @@ HdEmbreeRenderer::_ComputeLighting(
         float vis = _Visibility(position, ls.wI, ls.dist * 0.99f);
 
         // Add exitant luminance
+        float cosOffNormal = GfDot(ls.wI, normal);
+        if (cosOffNormal < 0.0f) {
+            bool doubleSided = false;
+            HdEmbreeMesh *mesh =
+                dynamic_cast<HdEmbreeMesh*>(prototypeContext->rprim);
+            if (mesh) {
+                doubleSided = mesh->EmbreeMeshIsDoubleSided();
+            }
+
+            if (doubleSided) {
+                cosOffNormal *= -1.0f;
+            } else {
+                cosOffNormal = 0.0f;
+            }
+        }
         finalColor += ls.Li
-            * _DotZeroClip(ls.wI, normal)
+            * cosOffNormal
             * brdf
             * vis
             * ls.invPdfW;
