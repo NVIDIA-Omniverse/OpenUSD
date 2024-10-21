@@ -93,9 +93,12 @@
 // 70 -> 71: Add virtual HdRenderDelegate::IsParallelSyncEnabled.
 // 71 -> 72: Add render index API to batch notices sent by the merging scene
 //           index.
-//
+// 72 -> 73: Adds HdExtComputationUtils::SampleComputedPrimvarValues with
+//           startTime and endTime
+// 73 -> 74: Extended HdMeshReprDesc to support optional generation of
+//           surface edge ids.
 
-#define HD_API_VERSION 72
+#define HD_API_VERSION 74
 
 // 1  ->  2: SimpleLighting -> FallbackLighting
 #define HD_SHADER_API 2

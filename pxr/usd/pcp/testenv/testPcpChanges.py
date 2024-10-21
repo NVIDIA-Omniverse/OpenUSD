@@ -9,6 +9,9 @@ from pxr import Sdf, Pcp, Tf
 import unittest
 from contextlib import contextmanager
 
+INCREMENTAL_CHANGES = Tf.GetEnvSetting(
+    'PCP_ENABLE_MINIMAL_CHANGES_FOR_LAYER_OPERATIONS')
+
 class TestPcpChanges(unittest.TestCase):
     def test_EmptySublayerChanges(self):
         subLayer1 = Sdf.Layer.CreateAnonymous()
@@ -96,6 +99,72 @@ class TestPcpChanges(unittest.TestCase):
         self.assertEqual(len(layerStack.localErrors), 0)
         self.assertFalse(pcp.IsInvalidSublayerIdentifier(invalidSublayerId))
         self.assertTrue(pcp.UsesLayerStack(layerStack))
+
+    def test_AddAndRemoveSublayers(self):
+        sub1Layer = Sdf.Layer.CreateAnonymous('sub1')
+        sub1Layer.ImportFromString('''
+        #sdf 1.4.32
+        
+        def "A"
+        {
+        }
+        ''')
+
+        sub2Layer = Sdf.Layer.CreateAnonymous('sub2')
+        sub2Layer.ImportFromString('''
+        #sdf 1.4.32
+        
+        def "B"
+        {
+        }
+        ''')
+
+        defLayer = Sdf.Layer.CreateAnonymous('def')
+        defLayer.ImportFromString('''
+        #sdf 1.4.32
+
+        def "A"
+        {
+        }
+
+        def "B"
+        {
+        }
+        ''')
+
+        rootLayer = Sdf.Layer.CreateAnonymous('root')
+        rootLayer.ImportFromString(f'''\
+        #sdf 1.4.32
+        (
+            subLayers = [
+                @{sub1Layer.identifier}@,
+                @{defLayer.identifier}@
+            ]
+        )
+        ''')
+
+        layerStackId = Pcp.LayerStackIdentifier(rootLayer)
+        pcp = Pcp.Cache(layerStackId)
+
+        (pi, err) = pcp.ComputePrimIndex('/A')
+        (pi, err) = pcp.ComputePrimIndex('/B')
+
+        with Pcp._TestChangeProcessor(pcp) as cp:
+            with Sdf.ChangeBlock():
+                rootLayer.subLayerPaths.insert(0, sub2Layer.identifier)
+                del rootLayer.subLayerPaths[1]
+
+            # With incremental changes these changes should only cause a resync
+            # of /A and /B.
+            if INCREMENTAL_CHANGES:
+                self.assertEqual(cp.GetSignificantChanges(), 
+                                 [Sdf.Path('/A'), Sdf.Path('/B')])
+            else:
+                self.assertEqual(cp.GetSignificantChanges(),
+                                 [Sdf.Path('/')])
+
+            self.assertEqual(cp.GetSpecChanges(), [])
+            self.assertEqual(cp.GetPrimChanges(), [])
 
     def test_UnusedVariantChanges(self):
         layer = Sdf.Layer.CreateAnonymous()

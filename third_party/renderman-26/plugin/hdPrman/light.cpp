@@ -92,13 +92,13 @@ HdPrmanLight::Finalize(HdRenderParam *renderParam)
         instancer->Depopulate(renderParam, GetId());
     }
 #endif
-    if (_instanceId != riley::LightInstanceId::InvalidId()) {
+    if (riley && _instanceId != riley::LightInstanceId::InvalidId()) {
         TRACE_SCOPE("riley::DeleteLightInstance");
         riley->DeleteLightInstance(riley::GeometryPrototypeId::InvalidId(),
             _instanceId);
         _instanceId = riley::LightInstanceId::InvalidId();
     }
-    if (_shaderId != riley::LightShaderId::InvalidId()) {
+    if (riley && _shaderId != riley::LightShaderId::InvalidId()) {
         TRACE_SCOPE("riley::DeleteLightShader");
         riley->DeleteLightShader(_shaderId);
         _shaderId = riley::LightShaderId::InvalidId();
@@ -274,7 +274,7 @@ _PopulateLightFilterNodes(
         if (HdSprim *sprim = sceneDelegate->GetRenderIndex().GetSprim(
             HdPrimTypeTokens->lightFilter, filterPath)) {
             if (auto* lightFilter = dynamic_cast<HdPrmanLightFilter*>(sprim)) {
-                lightFilter->SyncToRiley(sceneDelegate, riley);
+                lightFilter->SyncToRiley(sceneDelegate, param, riley);
                 coordsysIds->push_back(lightFilter->GetCoordSysId());
             }
         } else {
@@ -587,6 +587,7 @@ HdPrmanLight::Sync(HdSceneDelegate *sceneDelegate,
         // DirtyParams will always dirty the instance
         if (*dirtyBits & DirtyParams) {
             dirtyLightInstance = true;
+            dirtyLightShader = true;
         }
     }
 
@@ -798,7 +799,12 @@ HdPrmanLight::Sync(HdSceneDelegate *sceneDelegate,
 
         // Sample transform
         HdTimeSampleArray<GfMatrix4d, HDPRMAN_MAX_TIME_SAMPLES> xf;
-        sceneDelegate->SampleTransform(id, &xf);
+        sceneDelegate->SampleTransform(id,
+#if HD_API_VERSION >= 68
+                                       param->GetShutterInterval()[0],
+                                       param->GetShutterInterval()[1],
+#endif
+                                       &xf);
 
         GfMatrix4d geomMat(1.0);
 

@@ -39,7 +39,7 @@ protected:
     void AddLargeCurve(HdUnitTestDelegate *delegate);
 
 private:
-    HdSt_TestDriver* _driver;
+    HdSt_TestDriverUniquePtr _driver;
 
     TfToken _reprName;
     int _refineLevel;
@@ -51,7 +51,7 @@ private:
 void
 My_TestGLDrawing::InitTest()
 {
-    _driver = new HdSt_TestDriver(_reprName);
+    _driver = std::make_unique<HdSt_TestDriver>(_reprName);
     HdUnitTestDelegate &delegate = _driver->GetDelegate();
     delegate.SetRefineLevel(_refineLevel);
    
@@ -157,7 +157,7 @@ My_TestGLDrawing::AddLargeCurve(HdUnitTestDelegate *delegate)
 
             GfRotation orientation(GfVec3d(1, 0, 0), rotDegrees);
             transform.SetTransform(orientation, translation);
-            tmpPoint = tmpPoint * transform;
+            tmpPoint = GfVec4f(tmpPoint * transform);
             
             points.emplace_back(GfVec3f( tmpPoint[0],
                                          tmpPoint[1],
