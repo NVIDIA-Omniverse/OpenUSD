@@ -1,0 +1,66 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    doc = """Test node graph: ND_mix_color3 blends two colors before
+feeding the result into UsdPreviewSurface.diffuseColor."""
+)
+
+def Xform "World"
+{
+    def Sphere "Sphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 1.0
+        rel material:binding = </World/Materials/MixMat>
+    }
+
+    def Scope "Materials"
+    {
+        def Material "MixMat"
+        {
+            token outputs:surface.connect = </World/Materials/MixMat/Preview.outputs:surface>
+
+            def Shader "ColorA"
+            {
+                uniform token info:id = "ND_constant_color3"
+                color3f inputs:value = (1.0, 0.0, 0.0)
+                color3f outputs:out
+            }
+
+            def Shader "ColorB"
+            {
+                uniform token info:id = "ND_constant_color3"
+                color3f inputs:value = (0.0, 0.0, 1.0)
+                color3f outputs:out
+            }
+
+            def Shader "Mix"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:fg.connect = </World/Materials/MixMat/ColorA.outputs:out>
+                color3f inputs:bg.connect = </World/Materials/MixMat/ColorB.outputs:out>
+                float inputs:mix = 0.5
+                color3f outputs:out
+            }
+
+            def Shader "Preview"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </World/Materials/MixMat/Mix.outputs:out>
+                float inputs:roughness = 0.4
+                float inputs:metallic = 0.0
+                token outputs:surface
+            }
+        }
+    }
+
+    def SphereLight "Light"
+    {
+        float inputs:intensity = 500
+        float inputs:radius = 0.5
+        double3 xformOp:translate = (3, 4, 3)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

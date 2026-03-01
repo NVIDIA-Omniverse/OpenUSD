@@ -211,6 +211,10 @@ public:
         return HdTokens->full;
     }
 
+    TfTokenVector GetMaterialRenderContexts() const override {
+        return {TfToken(), TfToken("mtlx")};
+    }
+
     /// This function returns the default AOV descriptor for a given named AOV.
     /// This mechanism lets the renderer decide things like what format
     /// a given AOV will be written as.

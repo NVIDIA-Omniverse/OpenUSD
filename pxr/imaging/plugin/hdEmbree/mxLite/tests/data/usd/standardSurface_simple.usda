@@ -1,0 +1,46 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    doc = "MaterialX Standard Surface material on a sphere."
+)
+
+def Xform "World"
+{
+    def Sphere "Sphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 1.0
+        rel material:binding = </World/Materials/StdSurfMat>
+    }
+
+    def Scope "Materials"
+    {
+        def Material "StdSurfMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/StdSurfMat/StdSurf.outputs:out>
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.1, 0.4, 0.8)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.25
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                token outputs:out
+            }
+        }
+    }
+
+    def SphereLight "Light"
+    {
+        float inputs:intensity = 500
+        float inputs:radius = 0.5
+        double3 xformOp:translate = (3, 4, 3)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

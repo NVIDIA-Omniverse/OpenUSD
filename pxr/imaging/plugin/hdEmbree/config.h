@@ -21,7 +21,9 @@ constexpr bool HdEmbreeDefaultJitterCamera = true;
 constexpr bool HdEmbreeDefaultUseFaceColors = true;
 constexpr int HdEmbreeDefaultCameraLightIntensity = 300;
 constexpr int HdEmbreeDefaultRandomNumberSeed = -1;
-constexpr bool HdEmbreeDefaultUseLighting = false;
+constexpr bool HdEmbreeDefaultUseLighting = true;
+constexpr int HdEmbreeDefaultMaxBounces = 4;
+constexpr int HdEmbreeDefaultMinBouncesBeforeRR = 2;
 
 /// \class HdEmbreeConfig
 ///

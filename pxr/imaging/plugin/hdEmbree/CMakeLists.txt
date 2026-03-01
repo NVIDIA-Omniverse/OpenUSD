@@ -30,6 +30,7 @@ pxr_plugin(hdEmbree
         instancer
         light
         lightSamplers
+        material
         mesh
         meshSamplers
         pxrIES/ies
@@ -40,11 +41,26 @@ pxr_plugin(hdEmbree
         renderDelegate
         renderPass
         sampler
+        mxLite/graph
+        mxLite/nodeRegistry
+        mxLite/materials/bsdf
+        mxLite/materials/standardSurface
+        mxLite/materials/openPbr
+        mxLite/materials/usdPreviewSurface
+        mxLite/nodes/mathNodes
+        mxLite/nodes/adjustmentNodes
+        mxLite/nodes/channelNodes
+        mxLite/nodes/conditionalNodes
+        mxLite/nodes/geometricNodes
+        mxLite/nodes/textureNodes
+        mxLite/nodes/proceduralNodes
+        mxLite/nodes/colorNodes
 
     PUBLIC_HEADERS
         context.h
         renderParam.h
         pxrPbrt/pbrtUtils.h
+        mxLite/types.h
 
     PRIVATE_CLASSES
         debugCodes
@@ -70,3 +86,32 @@ pxr_build_test(testHdEmbree
         testenv/testHdEmbree.cpp
 )
 endif()
+
+pxr_build_test(testMxLite
+    LIBRARIES
+        tf
+        gf
+        vt
+        sdf
+        hd
+    CPPFILES
+        mxLite/tests/testMxLiteMain.cpp
+        mxLite/tests/testMxLiteBsdf.cpp
+        mxLite/tests/testMxLiteNodes.cpp
+        mxLite/tests/testMxLiteMaterials.cpp
+        mxLite/tests/testMxLiteGraph.cpp
+        mxLite/materials/bsdf.cpp
+        mxLite/materials/standardSurface.cpp
+        mxLite/materials/openPbr.cpp
+        mxLite/materials/usdPreviewSurface.cpp
+        mxLite/nodeRegistry.cpp
+        mxLite/graph.cpp
+        mxLite/nodes/mathNodes.cpp
+        mxLite/nodes/adjustmentNodes.cpp
+        mxLite/nodes/channelNodes.cpp
+        mxLite/nodes/conditionalNodes.cpp
+        mxLite/nodes/geometricNodes.cpp
+        mxLite/nodes/textureNodes.cpp
+        mxLite/nodes/proceduralNodes.cpp
+        mxLite/nodes/colorNodes.cpp
+)

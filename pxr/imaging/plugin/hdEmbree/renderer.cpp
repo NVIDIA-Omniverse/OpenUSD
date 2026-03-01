@@ -9,8 +9,10 @@
 #include "pxr/imaging/plugin/hdEmbree/config.h"
 #include "pxr/imaging/plugin/hdEmbree/light.h"
 #include "pxr/imaging/plugin/hdEmbree/lightSamplers.h"
+#include "pxr/imaging/plugin/hdEmbree/material.h"
 #include "pxr/imaging/plugin/hdEmbree/mesh.h"
 #include "pxr/imaging/plugin/hdEmbree/renderBuffer.h"
+#include "pxr/imaging/plugin/hdEmbree/mxLite/materials/bsdf.h"
 
 #include "pxr/imaging/hd/perfLog.h"
 
@@ -125,6 +127,8 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _enableSceneColors(false)
     , _domeLightCameraVisibility(true)
     , _enableLighting(false)
+    , _maxBounces(HdEmbreeDefaultMaxBounces)
+    , _minBouncesBeforeRR(HdEmbreeDefaultMinBouncesBeforeRR)
     , _completedSamples(0)
 {
 }
@@ -165,6 +169,18 @@ void
 HdEmbreeRenderer::SetEnableLighting(bool enableLighting)
 {
     _enableLighting = enableLighting;
+}
+
+void
+HdEmbreeRenderer::SetMaxBounces(int maxBounces)
+{
+    _maxBounces = maxBounces;
+}
+
+void
+HdEmbreeRenderer::SetMinBouncesBeforeRR(int minBounces)
+{
+    _minBouncesBeforeRR = minBounces;
 }
 
 void
@@ -983,21 +999,128 @@ HdEmbreeRenderer::_ComputePrimvar(RTCRayHit const& rayHit,
 }
 
 float
+HdEmbreeRenderer::_EvalOpacityAtHit(RTCRayHit const& rayHit) const
+{
+    const HdEmbreeInstanceContext *instanceContext =
+        static_cast<HdEmbreeInstanceContext*>(
+            rtcGetGeometryUserData(
+                rtcGetGeometry(_scene, rayHit.hit.instID[0])));
+    const HdEmbreePrototypeContext *prototypeContext =
+        static_cast<HdEmbreePrototypeContext*>(
+            rtcGetGeometryUserData(
+                rtcGetGeometry(instanceContext->rootScene,
+                               rayHit.hit.geomID)));
+
+    HdEmbreeMaterial *material = prototypeContext->material;
+    if (!material) return 1.0f;
+
+    MxLiteEvalGraph *evalGraph = material->GetEvalGraph();
+    if (!evalGraph) return 1.0f;
+
+    GfVec3f hitPos = _CalculateHitPosition(rayHit);
+    GfVec3f normal(rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
+    {
+        auto it = prototypeContext->primvarMap.find(HdTokens->normals);
+        if (it != prototypeContext->primvarMap.end()) {
+            it->second->Sample(
+                rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v, &normal);
+        }
+    }
+    normal = instanceContext->objectToWorldMatrix.TransformDir(normal);
+    normal.Normalize();
+
+    GfVec2f texcoordVal(0.0f);
+    {
+        auto it = prototypeContext->primvarMap.find(TfToken("st"));
+        if (it != prototypeContext->primvarMap.end()) {
+            if (!it->second->Sample(
+                    rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
+                    &texcoordVal)) {
+                GfVec3f tc3;
+                if (it->second->Sample(
+                        rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
+                        &tc3)) {
+                    texcoordVal = GfVec2f(tc3[0], tc3[1]);
+                }
+            }
+        }
+    }
+
+    GfVec3f tangent, bitangent;
+    GfBuildOrthonormalFrame(normal, &tangent, &bitangent);
+
+    GfVec3f displayColor(0.8f);
+    {
+        auto it = prototypeContext->primvarMap.find(HdTokens->displayColor);
+        if (it != prototypeContext->primvarMap.end()) {
+            it->second->Sample(
+                rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
+                &displayColor);
+        }
+    }
+
+    try {
+        MxLiteShadingContext ctx;
+        ctx.position = hitPos;
+        ctx.normal = normal;
+        ctx.tangent = tangent;
+        ctx.bitangent = bitangent;
+        ctx.texcoord = texcoordVal;
+        ctx.displayColor = displayColor;
+        ctx.displayOpacity = 1.0f;
+        ctx.faceId = rayHit.hit.primID;
+        ctx.baryU = rayHit.hit.u;
+        ctx.baryV = rayHit.hit.v;
+
+        MxLiteSurfaceClosure closure = evalGraph->Evaluate(ctx);
+        return closure.opacity;
+    } catch (...) {
+        return 1.0f;
+    }
+}
+
+float
 HdEmbreeRenderer::_Visibility(
     GfVec3f const& position, GfVec3f const& direction, float dist) const
 {
-    RTCRay shadow;
-    shadow.flags = 0;
-    _PopulateRay(&shadow, position, direction, 0.001f, dist,
-                 HdEmbree_RayMask::Shadow);
-    {
-        rtcOccluded1(_scene,&shadow);
-    }
-    // XXX: what do we do about shadow visibility (continuation) here?
-    // probably need to use rtcIntersect instead of rtcOccluded
+    constexpr int kMaxTransparentHits = 16;
+    constexpr float kVisThreshold = 1e-4f;
 
-    // occluded sets tfar < 0 if the ray hit anything
-    return shadow.tfar > 0.0f;
+    float visibility = 1.0f;
+    GfVec3f rayOrigin = position;
+    float remaining = dist;
+
+    for (int i = 0; i < kMaxTransparentHits; ++i) {
+        RTCRayHit rayHit;
+        rayHit.ray.flags = 0;
+        _PopulateRayHit(&rayHit, rayOrigin, direction, 0.001f, remaining,
+                        HdEmbree_RayMask::Camera);
+        rtcIntersect1(_scene, &rayHit);
+
+        if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
+            return visibility;
+        }
+
+        float opacity = _EvalOpacityAtHit(rayHit);
+        visibility *= (1.0f - opacity);
+
+        if (visibility <= kVisThreshold) {
+            return 0.0f;
+        }
+
+        float hitDist = rayHit.ray.tfar;
+        remaining -= hitDist;
+        if (remaining <= 0.001f) {
+            return visibility;
+        }
+
+        rayOrigin = GfVec3f(
+            rayHit.ray.org_x + hitDist * rayHit.ray.dir_x,
+            rayHit.ray.org_y + hitDist * rayHit.ray.dir_y,
+            rayHit.ray.org_z + hitDist * rayHit.ray.dir_z);
+    }
+
+    return visibility;
 }
 
 GfVec4f
@@ -1058,12 +1181,31 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
 
     // If a color primvar is present, use that as diffuse color; otherwise,
     // use flat grey.
-    GfVec3f materialColor = _invalidColor;
+    GfVec3f displayColor = _invalidColor;
+    float displayOpacity = 1.0f;
     if (_enableSceneColors) {
         auto it = prototypeContext->primvarMap.find(HdTokens->displayColor);
         if (it != prototypeContext->primvarMap.end()) {
             it->second->Sample(
-                rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v, &materialColor);
+                rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v, &displayColor);
+        }
+    }
+
+    // Sample texcoord if available (try GfVec2f first, then GfVec3f).
+    GfVec2f texcoordVal(0.0f);
+    {
+        auto it = prototypeContext->primvarMap.find(TfToken("st"));
+        if (it != prototypeContext->primvarMap.end()) {
+            if (!it->second->Sample(
+                    rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
+                    &texcoordVal)) {
+                GfVec3f tc3;
+                if (it->second->Sample(
+                        rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
+                        &tc3)) {
+                    texcoordVal = GfVec2f(tc3[0], tc3[1]);
+                }
+            }
         }
     }
 
@@ -1073,48 +1215,92 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
     // Make sure the normal is unit-length.
     normal.Normalize();
 
+    // Build tangent frame for shading context.
+    GfVec3f tangent, bitangent;
+    {
+        GfVec3f up = (std::fabs(normal[1]) < 0.999f)
+                     ? GfVec3f(0, 1, 0) : GfVec3f(1, 0, 0);
+        tangent = GfCross(up, normal).GetNormalized();
+        bitangent = GfCross(normal, tangent);
+    }
+
+    // Try to evaluate mxLite material if one is bound.
+    HdEmbreeMaterial *material = prototypeContext->material;
+    MxLiteEvalGraph *evalGraph = nullptr;
+    if (material) {
+        evalGraph = material->GetEvalGraph();
+    }
+
+    MxLiteSurfaceClosure closure;
+    bool hasMaterialClosure = false;
+
+    if (evalGraph) {
+        try {
+            MxLiteShadingContext ctx;
+            ctx.position = hitPos;
+            ctx.normal = normal;
+            ctx.tangent = tangent;
+            ctx.bitangent = bitangent;
+            ctx.texcoord = texcoordVal;
+            ctx.displayColor = (displayColor != _invalidColor)
+                               ? displayColor : GfVec3f(0.8f);
+            ctx.displayOpacity = displayOpacity;
+            ctx.faceId = rayHit.hit.primID;
+            ctx.baryU = rayHit.hit.u;
+            ctx.baryV = rayHit.hit.v;
+
+            closure = evalGraph->Evaluate(ctx);
+            hasMaterialClosure = true;
+        } catch (...) {
+            hasMaterialClosure = false;
+        }
+    }
+
+    // Apply material normal map (tangent-space -> world-space).
+    if (hasMaterialClosure &&
+        closure.normal != GfVec3f(0.0f, 0.0f, 1.0f)) {
+        normal = (tangent   * closure.normal[0] +
+                  bitangent * closure.normal[1] +
+                  normal    * closure.normal[2]).GetNormalized();
+    }
+
     GfVec3f lightingColor(0.0f);
 
-    // If direct lighting is turned off, fall back to the camera light + AO path
     if (!_enableLighting)
     {
-        // For ambient occlusion, default material is flat 50% gray
-        if (materialColor == _invalidColor) {
-            materialColor = GfVec3f(.5f);
+        GfVec3f materialColor;
+        if (hasMaterialClosure) {
+            materialColor = closure.baseColor;
+        } else {
+            materialColor = (displayColor != _invalidColor)
+                            ? displayColor : GfVec3f(0.5f);
         }
 
-        // Lighting model: (camera dot normal), i.e. diffuse-only point light
-        // centered on the camera.
         GfVec3f dir = GfVec3f(rayHit.ray.dir_x, rayHit.ray.dir_y,
                               rayHit.ray.dir_z);
         float diffuseLight = fabs(GfDot(-dir, normal)) *
             HdEmbreeConfig::GetInstance().cameraLightIntensity;
 
-        // Lighting gets modulated by an ambient occlusion term.
         float aoLightIntensity =
             _ComputeAmbientOcclusion(hitPos, normal, random);
 
-        // XXX: We should support opacity here...
-        lightingColor = GfVec3f(diffuseLight * aoLightIntensity);
+        lightingColor = materialColor * diffuseLight * aoLightIntensity;
     }
     else
     {
-        // For lighting, default material is 100% white
-        if (materialColor == _invalidColor) {
-            materialColor = GfVec3f(1.0f);
-        }
-
-        lightingColor = _ComputeLighting(
-            hitPos, normal,random, prototypeContext);
+        // Path trace from the camera ray origin.
+        GfVec3f origin(rayHit.ray.org_x, rayHit.ray.org_y,
+                       rayHit.ray.org_z);
+        GfVec3f dir = GfVec3f(rayHit.ray.dir_x, rayHit.ray.dir_y,
+                              rayHit.ray.dir_z).GetNormalized();
+        lightingColor = _TracePath(origin, dir, random);
     }
-    const GfVec3f finalColor = GfCompMult(materialColor, lightingColor);
 
-    // Clamp colors to > 0
     GfVec4f output;
-    output[0] = std::max(0.0f, finalColor[0]);
-    output[1] = std::max(0.0f, finalColor[1]);
-    output[2] = std::max(0.0f, finalColor[2]);
-    output[3] = 1.0f;
+    output[0] = std::max(0.0f, lightingColor[0]);
+    output[1] = std::max(0.0f, lightingColor[1]);
+    output[2] = std::max(0.0f, lightingColor[2]);
+    output[3] = hasMaterialClosure ? closure.opacity : 1.0f;
     return output;
 }
 
@@ -1200,12 +1386,18 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& position,
     return occlusionFactor;
 }
 
+// ---------------------------------------------------------------------------
+// Direct lighting with MIS (light sampling strategy).
+// ---------------------------------------------------------------------------
+
 GfVec3f
-HdEmbreeRenderer::_ComputeLighting(
+HdEmbreeRenderer::_ComputeDirectLightingMIS(
     GfVec3f const& position,
     GfVec3f const& normal,
+    GfVec3f const& wo,
     std::default_random_engine &random,
-    HdEmbreePrototypeContext const* prototypeContext) const
+    bool doubleSided,
+    MxLiteSurfaceClosure const* closure) const
 {
     std::uniform_real_distribution<float> uniform_dist(0.0f, 1.0f);
     auto uniform_float = [&random, &uniform_dist]() {
@@ -1213,21 +1405,14 @@ HdEmbreeRenderer::_ComputeLighting(
     };
 
     GfVec3f finalColor(0.0f);
-    // For now just a 100% reflective diffuse BRDF
-    float brdf = 1.0f / _pi<float>;
 
-    // For now just iterate over all lights
-    /// XXX: simple uniform sampling may be better here
     for (auto const& it : _lightMap)
     {
         auto const& light = it.second->LightData();
-        // Skip light if it's hidden
-        if (!light.visible)
-        {
+        if (!light.visible) {
             continue;
         }
 
-        // Sample the light
         HdEmbreeLightSampler::LightSample ls =
             HdEmbreeLightSampler::GetLightSample(
             light, position, normal, uniform_float(), uniform_float());
@@ -1235,32 +1420,316 @@ HdEmbreeRenderer::_ComputeLighting(
             continue;
         }
 
-        // Trace shadow
         float vis = _Visibility(position, ls.wI, ls.dist * 0.99f);
 
-        // Add exitant luminance
         float cosOffNormal = GfDot(ls.wI, normal);
+        GfVec3f shadingNormal = normal;
         if (cosOffNormal < 0.0f) {
-            bool doubleSided = false;
-            HdEmbreeMesh *mesh =
-                dynamic_cast<HdEmbreeMesh*>(prototypeContext->rprim);
-            if (mesh) {
-                doubleSided = mesh->EmbreeMeshIsDoubleSided();
-            }
-
             if (doubleSided) {
                 cosOffNormal *= -1.0f;
+                shadingNormal = -normal;
             } else {
                 cosOffNormal = 0.0f;
             }
         }
-        finalColor += ls.Li
-            * cosOffNormal
-            * brdf
-            * vis
-            * ls.invPdfW;
+
+        if (cosOffNormal <= 0.0f || vis <= 0.0f) {
+            continue;
+        }
+
+        GfVec3f sampleContrib(0.0f);
+        if (closure) {
+            GfVec3f bsdfValue = MxLiteBsdf::EvalSurface(
+                *closure, shadingNormal, ls.wI, wo);
+
+            for (int i = 0; i < 3; ++i) {
+                if (!std::isfinite(bsdfValue[i])) bsdfValue[i] = 0.0f;
+            }
+
+            // MIS weight for the light sampling strategy.
+            float lightPdf = (ls.invPdfW > 0.0f)
+                ? 1.0f / ls.invPdfW : 0.0f;
+            float bsdfPdf = MxLiteBsdf::PdfSurface(
+                *closure, shadingNormal, ls.wI, wo);
+            float misW = MxLiteBsdf::PowerHeuristic(lightPdf, bsdfPdf);
+
+            sampleContrib = GfCompMult(ls.Li, bsdfValue)
+                * cosOffNormal * vis * ls.invPdfW * misW;
+        } else {
+            float brdf = 1.0f / _pi<float>;
+            sampleContrib = ls.Li * cosOffNormal * brdf * vis * ls.invPdfW;
+        }
+
+        // Firefly clamping.
+        constexpr float kMaxSampleLuminance = 20.0f;
+        float lum = 0.2126f * sampleContrib[0]
+                  + 0.7152f * sampleContrib[1]
+                  + 0.0722f * sampleContrib[2];
+        if (lum > kMaxSampleLuminance) {
+            sampleContrib *= kMaxSampleLuminance / lum;
+        }
+
+        finalColor += sampleContrib;
     }
     return finalColor;
+}
+
+// ---------------------------------------------------------------------------
+// Multi-bounce path tracer with MIS.
+// ---------------------------------------------------------------------------
+
+GfVec3f
+HdEmbreeRenderer::_TracePath(
+    GfVec3f const& origin,
+    GfVec3f const& dir,
+    std::default_random_engine &random) const
+{
+    std::uniform_real_distribution<float> uniform_dist(0.0f, 1.0f);
+    auto uniform_float = [&random, &uniform_dist]() {
+        return uniform_dist(random);
+    };
+
+    GfVec3f radiance(0.0f);
+    GfVec3f throughput(1.0f);
+    GfVec3f rayOrigin = origin;
+    GfVec3f rayDir = dir;
+    float lastBsdfPdf = 0.0f;
+    bool isFirstBounce = true;
+
+    for (int bounce = 0; bounce <= _maxBounces; ++bounce) {
+        RTCRayHit rayHit;
+        rayHit.ray.flags = 0;
+        _PopulateRayHit(&rayHit, rayOrigin, rayDir,
+                        isFirstBounce ? 0.0f : 1e-4f,
+                        std::numeric_limits<float>::max(),
+                        HdEmbree_RayMask::Camera);
+        rtcIntersect1(_scene, &rayHit);
+
+        // --- Miss: dome light contribution ---
+        if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
+            for (auto* dome : _domes) {
+                HdEmbreeLightSampler::LightSample ls =
+                    HdEmbreeLightSampler::GetLightSample(
+                        dome->LightData(), GfVec3f(0.0f), rayDir,
+                        1.0f, 0.0f);
+                GfVec3f domeContrib = ls.Li;
+
+                if (!isFirstBounce && lastBsdfPdf > 0.0f) {
+                    // MIS weight for BSDF sampling strategy hitting dome.
+                    float domePdf = (ls.invPdfW > 0.0f)
+                        ? 1.0f / ls.invPdfW : 0.0f;
+                    float misW = MxLiteBsdf::PowerHeuristic(
+                        lastBsdfPdf, domePdf);
+                    domeContrib *= misW;
+                }
+
+                radiance += GfCompMult(throughput, domeContrib);
+            }
+            break;
+        }
+
+        // --- Process hit ---
+        const HdEmbreeInstanceContext *instanceContext =
+            static_cast<HdEmbreeInstanceContext*>(
+                rtcGetGeometryUserData(
+                    rtcGetGeometry(_scene, rayHit.hit.instID[0])));
+
+        const HdEmbreePrototypeContext *prototypeContext =
+            static_cast<HdEmbreePrototypeContext*>(
+                rtcGetGeometryUserData(
+                    rtcGetGeometry(instanceContext->rootScene,
+                                   rayHit.hit.geomID)));
+
+        GfVec3f hitPos = GfVec3f(
+            rayHit.ray.org_x + rayHit.ray.tfar * rayHit.ray.dir_x,
+            rayHit.ray.org_y + rayHit.ray.tfar * rayHit.ray.dir_y,
+            rayHit.ray.org_z + rayHit.ray.tfar * rayHit.ray.dir_z);
+
+        // Normal
+        GfVec3f normal(rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
+        {
+            auto it = prototypeContext->primvarMap.find(HdTokens->normals);
+            if (it != prototypeContext->primvarMap.end()) {
+                it->second->Sample(
+                    rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v, &normal);
+            }
+        }
+        normal = instanceContext->objectToWorldMatrix.TransformDir(normal);
+        normal.Normalize();
+
+        GfVec3f wo = -rayDir;
+
+        // Double-sided check
+        bool doubleSided = false;
+        HdEmbreeMesh *mesh =
+            dynamic_cast<HdEmbreeMesh*>(prototypeContext->rprim);
+        if (mesh) {
+            doubleSided = mesh->EmbreeMeshIsDoubleSided();
+        }
+
+        // Orient normal toward the ray
+        if (GfDot(normal, wo) < 0.0f && doubleSided) {
+            normal = -normal;
+        }
+
+        // Texcoord
+        GfVec2f texcoordVal(0.0f);
+        {
+            auto it = prototypeContext->primvarMap.find(TfToken("st"));
+            if (it != prototypeContext->primvarMap.end()) {
+                if (!it->second->Sample(rayHit.hit.primID, rayHit.hit.u,
+                                        rayHit.hit.v, &texcoordVal)) {
+                    GfVec3f tc3;
+                    if (it->second->Sample(rayHit.hit.primID, rayHit.hit.u,
+                                           rayHit.hit.v, &tc3)) {
+                        texcoordVal = GfVec2f(tc3[0], tc3[1]);
+                    }
+                }
+            }
+        }
+
+        // Display color
+        GfVec3f displayColor(0.8f);
+        if (_enableSceneColors) {
+            auto it = prototypeContext->primvarMap.find(
+                HdTokens->displayColor);
+            if (it != prototypeContext->primvarMap.end()) {
+                it->second->Sample(
+                    rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
+                    &displayColor);
+            }
+        }
+
+        // --- Evaluate material ---
+        HdEmbreeMaterial *material = prototypeContext->material;
+        MxLiteEvalGraph *evalGraph = material
+            ? material->GetEvalGraph() : nullptr;
+
+        GfVec3f tangent, bitangent;
+        GfBuildOrthonormalFrame(normal, &tangent, &bitangent);
+
+        MxLiteSurfaceClosure closure;
+        bool hasClosure = false;
+
+        if (evalGraph) {
+            try {
+                MxLiteShadingContext ctx;
+                ctx.position = hitPos;
+                ctx.normal = normal;
+                ctx.tangent = tangent;
+                ctx.bitangent = bitangent;
+                ctx.texcoord = texcoordVal;
+                ctx.displayColor = displayColor;
+                ctx.displayOpacity = 1.0f;
+                ctx.faceId = rayHit.hit.primID;
+                ctx.baryU = rayHit.hit.u;
+                ctx.baryV = rayHit.hit.v;
+
+                closure = evalGraph->Evaluate(ctx);
+                hasClosure = true;
+            } catch (...) {
+                hasClosure = false;
+            }
+        }
+
+        // Apply material normal map (tangent-space -> world-space).
+        if (hasClosure &&
+            closure.normal != GfVec3f(0.0f, 0.0f, 1.0f)) {
+            normal = (tangent   * closure.normal[0] +
+                      bitangent * closure.normal[1] +
+                      normal    * closure.normal[2]).GetNormalized();
+            // Re-orient toward the ray for double-sided geometry.
+            if (GfDot(normal, wo) < 0.0f && doubleSided) {
+                normal = -normal;
+            }
+        }
+
+        // --- Stochastic opacity pass-through ---
+        if (hasClosure && closure.opacity < 1.0f) {
+            if (uniform_float() > closure.opacity) {
+                rayOrigin = hitPos + rayDir * 1e-4f;
+                --bounce;
+                isFirstBounce = false;
+                lastBsdfPdf = 0.0f;
+                continue;
+            }
+            // We chose to interact; set opacity to 1 so that
+            // EvalSurface / SampleSurface don't double-count.
+            closure.opacity = 1.0f;
+        }
+
+        // --- Emissive ---
+        if (hasClosure) {
+            radiance += GfCompMult(throughput, closure.emissiveColor);
+        }
+
+        // --- Direct lighting (NEE) with MIS ---
+        GfVec3f direct(0.0f);
+        if (hasClosure) {
+            direct = _ComputeDirectLightingMIS(
+                hitPos, normal, wo, random, doubleSided, &closure);
+        } else {
+            GfVec3f matColor = displayColor;
+            MxLiteSurfaceClosure fallback;
+            fallback.baseColor = matColor;
+            fallback.roughness = 1.0f;
+            fallback.metallic = 0.0f;
+            fallback.specular = 0.0f;
+            fallback.specularColor = GfVec3f(1.0f);
+            fallback.specularIor = 1.5f;
+            fallback.opacity = 1.0f;
+            direct = _ComputeDirectLightingMIS(
+                hitPos, normal, wo, random, doubleSided, &fallback);
+        }
+        radiance += GfCompMult(throughput, direct);
+
+        // --- Stop after last allowed bounce ---
+        if (bounce >= _maxBounces) break;
+
+        // --- BSDF sampling for next direction ---
+        if (!hasClosure) break;
+
+        MxLiteBsdf::BsdfSample bs = MxLiteBsdf::SampleSurface(
+            closure, normal, wo,
+            uniform_float(), uniform_float(), uniform_float());
+        if (bs.pdf <= 0.0f) break;
+
+        GfVec3f bsdfContrib;
+        if (bs.isSpecular) {
+            // Delta distribution (e.g. thin-surface transmission):
+            // f already contains the throughput coefficient; no cosine
+            // or pdf division needed.
+            bsdfContrib = bs.f;
+        } else {
+            float cosTheta = std::abs(GfDot(normal, bs.wi));
+            bsdfContrib = bs.f * cosTheta / bs.pdf;
+        }
+
+        for (int i = 0; i < 3; ++i) {
+            if (!std::isfinite(bsdfContrib[i]) || bsdfContrib[i] < 0.0f)
+                bsdfContrib[i] = 0.0f;
+        }
+
+        throughput = GfCompMult(throughput, bsdfContrib);
+
+        lastBsdfPdf = bs.isSpecular ? 0.0f : bs.pdf;
+        isFirstBounce = false;
+
+        // --- Russian Roulette ---
+        if (bounce >= _minBouncesBeforeRR) {
+            float q = std::max({throughput[0], throughput[1], throughput[2]});
+            q = std::min(q, 0.95f);
+            if (q <= 0.0f || uniform_float() > q) break;
+            throughput /= q;
+        }
+
+        // --- Next ray ---
+        float bias = (GfDot(bs.wi, normal) > 0.0f) ? 1e-4f : -1e-4f;
+        rayOrigin = hitPos + normal * bias;
+        rayDir = bs.wi;
+    }
+
+    return radiance;
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

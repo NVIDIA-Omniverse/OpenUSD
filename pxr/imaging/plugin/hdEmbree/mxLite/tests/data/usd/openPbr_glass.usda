@@ -1,0 +1,55 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    doc = "OpenPBR glass sphere — transmission enabled."
+)
+
+def Xform "World"
+{
+    def Sphere "GlassSphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 1.0
+        rel material:binding = </World/Materials/GlassMat>
+    }
+
+    def Scope "Materials"
+    {
+        def Material "GlassMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/GlassMat/OpenPbr.outputs:out>
+
+            def Shader "OpenPbr"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 0.0
+                color3f inputs:base_color = (1.0, 1.0, 1.0)
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.0
+                float inputs:specular_ior = 1.5
+                float inputs:transmission_weight = 1.0
+                color3f inputs:transmission_color = (0.9, 0.95, 1.0)
+                token outputs:out
+            }
+        }
+    }
+
+    def Cube "Ground" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double size = 10
+        double3 xformOp:translate = (0, -6, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def SphereLight "Light"
+    {
+        float inputs:intensity = 500
+        float inputs:radius = 0.5
+        double3 xformOp:translate = (3, 4, 3)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

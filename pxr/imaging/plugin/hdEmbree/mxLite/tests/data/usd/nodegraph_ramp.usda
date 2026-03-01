@@ -1,0 +1,90 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    doc = """Test node graph: uses texcoord → separate → ramp to procedurally
+vary base_color across the surface via Standard Surface."""
+)
+
+def Xform "World"
+{
+    def Mesh "Plane" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(-2, 0, -2), (2, 0, -2), (2, 0, 2), (-2, 0, 2)]
+        normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        rel material:binding = </World/Materials/RampMat>
+    }
+
+    def Scope "Materials"
+    {
+        def Material "RampMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/RampMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "SeparateU"
+            {
+                uniform token info:id = "ND_extract_vector2"
+                float2 inputs:in.connect = </World/Materials/RampMat/TexCoord.outputs:out>
+                int inputs:index = 0
+                float outputs:out
+            }
+
+            def Shader "ColorLeft"
+            {
+                uniform token info:id = "ND_constant_color3"
+                color3f inputs:value = (1.0, 0.1, 0.1)
+                color3f outputs:out
+            }
+
+            def Shader "ColorRight"
+            {
+                uniform token info:id = "ND_constant_color3"
+                color3f inputs:value = (0.1, 0.1, 1.0)
+                color3f outputs:out
+            }
+
+            def Shader "Lerp"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:fg.connect = </World/Materials/RampMat/ColorRight.outputs:out>
+                color3f inputs:bg.connect = </World/Materials/RampMat/ColorLeft.outputs:out>
+                float inputs:mix.connect = </World/Materials/RampMat/SeparateU.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/RampMat/Lerp.outputs:out>
+                float inputs:specular = 0.5
+                float inputs:specular_roughness = 0.4
+                float inputs:metalness = 0.0
+                token outputs:out
+            }
+        }
+    }
+
+    def SphereLight "Light"
+    {
+        float inputs:intensity = 500
+        float inputs:radius = 1.0
+        double3 xformOp:translate = (0, 5, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

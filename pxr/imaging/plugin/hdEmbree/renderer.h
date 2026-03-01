@@ -11,6 +11,7 @@
 
 #include "pxr/imaging/plugin/hdEmbree/context.h"
 #include "pxr/imaging/plugin/hdEmbree/light.h"
+#include "pxr/imaging/plugin/hdEmbree/mxLite/types.h"
 
 #include "pxr/imaging/hd/aov.h"
 #include "pxr/imaging/hd/renderThread.h"
@@ -121,6 +122,10 @@ public:
     ///   \param enableLighting Whether drawing should evaluate direct lighting.
     void SetEnableLighting(bool enableLighting);
 
+    /// Set path tracing parameters.
+    void SetMaxBounces(int maxBounces);
+    void SetMinBouncesBeforeRR(int minBounces);
+
     /// Rendering entrypoint: add one sample per pixel to the whole sample
     /// buffer, and then loop until the image is converged.  After each pass,
     /// the image will be resolved into a color buffer.
@@ -191,13 +196,22 @@ private:
                                    GfVec3f const& normal,
                                    std::default_random_engine &random);
 
-    ///If the scene has lights, sample them to return the color at a given
-    ///position
-    GfVec3f _ComputeLighting(
+    /// Evaluate direct lighting from all scene lights using MIS.
+    /// If \p closure is non-null, uses the mxLite BSDF evaluation;
+    /// otherwise falls back to a simple Lambertian BRDF.
+    GfVec3f _ComputeDirectLightingMIS(
         GfVec3f const& position,
         GfVec3f const& normal,
+        GfVec3f const& wo,
         std::default_random_engine &random,
-        HdEmbreePrototypeContext const* prototypeContext) const;
+        bool doubleSided,
+        MxLiteSurfaceClosure const* closure) const;
+
+    /// Multi-bounce path tracer with MIS.
+    GfVec3f _TracePath(
+        GfVec3f const& origin,
+        GfVec3f const& dir,
+        std::default_random_engine &random) const;
 
     // Return the visibility from `position` along `direction`
     float _Visibility(GfVec3f const& position,
@@ -206,6 +220,10 @@ private:
 
     // Should the ray continue based on the possibly intersected prim's visibility settings?
     bool _RayShouldContinue(RTCRayHit const& rayHit) const;
+
+    // Evaluate the material opacity at a ray hit.
+    // Returns 1.0 if no material is bound or evaluation fails.
+    float _EvalOpacityAtHit(RTCRayHit const& rayHit) const;
 
     // The bound aovs for this renderer.
     HdRenderPassAovBindingVector _aovBindings;
@@ -249,6 +267,10 @@ private:
     int _randomNumberSeed;
     // Should we enable direct lighting from the scene?
     bool _enableLighting;
+
+    // Path tracing parameters.
+    int _maxBounces;
+    int _minBouncesBeforeRR;
 
     // How many samples have been completed.
     std::atomic<int> _completedSamples;

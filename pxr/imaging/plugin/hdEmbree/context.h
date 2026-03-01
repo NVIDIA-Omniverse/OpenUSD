@@ -19,6 +19,7 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 class HdRprim;
+class HdEmbreeMaterial;
 
 /// \class HdEmbreePrototypeContext
 ///
@@ -34,6 +35,8 @@ struct HdEmbreePrototypeContext
         primvarMap;
     /// A copy of the primitive params for this rprim.
     VtIntArray primitiveParams;
+    /// The bound material, or nullptr if none.
+    HdEmbreeMaterial *material = nullptr;
 };
 
 ///

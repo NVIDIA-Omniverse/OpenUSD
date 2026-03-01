@@ -8,6 +8,7 @@
 
 #include "pxr/imaging/plugin/hdEmbree/context.h"
 #include "pxr/imaging/plugin/hdEmbree/instancer.h"
+#include "pxr/imaging/plugin/hdEmbree/material.h"
 #include "pxr/imaging/plugin/hdEmbree/renderParam.h"
 #include "pxr/imaging/plugin/hdEmbree/renderPass.h"
 #include "pxr/imaging/hd/extComputationUtils.h"
@@ -91,6 +92,7 @@ HdEmbreeMesh::GetInitialDirtyBitsMask() const
         | HdChangeTracker::DirtyPrimvar
         | HdChangeTracker::DirtyNormals
         | HdChangeTracker::DirtyInstancer
+        | HdChangeTracker::DirtyMaterialId
         ;
 
     return (HdDirtyBits)mask;
@@ -711,6 +713,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         _GetPrototypeContext()->rprim = this;
         _GetPrototypeContext()->primitiveParams = (_refined ?
             _trianglePrimitiveParams : VtIntArray());
+        _GetPrototypeContext()->material = nullptr;
 
         // Add _EmbreeCullFaces as a filter function for backface culling.
         rtcSetGeometryIntersectFilterFunction(_geometry,_EmbreeCullFaces);
@@ -918,6 +921,21 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
     // since there are a bunch of commits to instances of geom
     // in the root scene
     //
+
+    // Bind material (done after geometry creation so prototype context exists).
+    if ((*dirtyBits & HdChangeTracker::DirtyMaterialId) || newMesh) {
+        if (_geometry) {
+            HdEmbreeMaterial *mat = nullptr;
+            SdfPath materialId = sceneDelegate->GetMaterialId(id);
+            if (!materialId.IsEmpty()) {
+                HdSprim *sprim =
+                    sceneDelegate->GetRenderIndex().GetSprim(
+                        HdPrimTypeTokens->material, materialId);
+                mat = dynamic_cast<HdEmbreeMaterial*>(sprim);
+            }
+            _GetPrototypeContext()->material = mat;
+        }
+    }
 
     // Clean all dirty bits.
     *dirtyBits &= ~HdChangeTracker::AllSceneDirtyBits;

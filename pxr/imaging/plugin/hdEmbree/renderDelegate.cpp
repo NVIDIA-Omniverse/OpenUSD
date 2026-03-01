@@ -17,6 +17,7 @@
 #include "pxr/imaging/hd/tokens.h"
 
 #include "pxr/imaging/plugin/hdEmbree/mesh.h"
+#include "pxr/imaging/plugin/hdEmbree/material.h"
 //XXX: Add other Rprim types later
 #include "pxr/imaging/hd/camera.h"
 //XXX: Add other Sprim types later
@@ -36,6 +37,7 @@ const TfTokenVector HdEmbreeRenderDelegate::SUPPORTED_SPRIM_TYPES =
 {
     HdPrimTypeTokens->camera,
     HdPrimTypeTokens->extComputation,
+    HdPrimTypeTokens->material,
     HdPrimTypeTokens->cylinderLight,
     HdPrimTypeTokens->diskLight,
     HdPrimTypeTokens->distantLight,
@@ -344,6 +346,8 @@ HdEmbreeRenderDelegate::CreateSprim(TfToken const& typeId,
         return new HdCamera(sprimId);
     } else if (typeId == HdPrimTypeTokens->extComputation) {
         return new HdExtComputation(sprimId);
+    } else if (typeId == HdPrimTypeTokens->material) {
+        return new HdEmbreeMaterial(sprimId);
     } else if (typeId == HdPrimTypeTokens->light ||
                typeId == HdPrimTypeTokens->distantLight ||
                typeId == HdPrimTypeTokens->diskLight ||
@@ -368,6 +372,8 @@ HdEmbreeRenderDelegate::CreateFallbackSprim(TfToken const& typeId)
         return new HdCamera(SdfPath::EmptyPath());
     } else if (typeId == HdPrimTypeTokens->extComputation) {
         return new HdExtComputation(SdfPath::EmptyPath());
+    } else if (typeId == HdPrimTypeTokens->material) {
+        return new HdEmbreeMaterial(SdfPath::EmptyPath());
     } else if (typeId == HdPrimTypeTokens->light ||
                typeId == HdPrimTypeTokens->distantLight ||
                typeId == HdPrimTypeTokens->diskLight ||

@@ -1,0 +1,67 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    doc = """Test node graph: ND_multiply_color3 scales base_color before
+feeding it into a Standard Surface terminal."""
+)
+
+def Xform "World"
+{
+    def Sphere "Sphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 1.0
+        rel material:binding = </World/Materials/NodeGraphMat>
+    }
+
+    def Scope "Materials"
+    {
+        def Material "NodeGraphMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/NodeGraphMat/StdSurf.outputs:out>
+
+            def Shader "BaseColor"
+            {
+                uniform token info:id = "ND_constant_color3"
+                color3f inputs:value = (0.2, 0.4, 0.8)
+                color3f outputs:out
+            }
+
+            def Shader "ScaleFactor"
+            {
+                uniform token info:id = "ND_constant_float"
+                float inputs:value = 0.5
+                float outputs:out
+            }
+
+            def Shader "Multiply"
+            {
+                uniform token info:id = "ND_multiply_color3"
+                color3f inputs:in1.connect = </World/Materials/NodeGraphMat/BaseColor.outputs:out>
+                float inputs:in2.connect = </World/Materials/NodeGraphMat/ScaleFactor.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/NodeGraphMat/Multiply.outputs:out>
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.3
+                float inputs:metalness = 0.0
+                token outputs:out
+            }
+        }
+    }
+
+    def SphereLight "Light"
+    {
+        float inputs:intensity = 500
+        float inputs:radius = 0.5
+        double3 xformOp:translate = (3, 4, 3)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+}
