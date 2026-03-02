@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+install_root="${repo_root}/_usd_install"
+
+# If the first arg looks like an install path (directory), consume it;
+# otherwise use the default and leave all args for the command.
+if [[ $# -gt 0 && -d "$1" ]]; then
+    install_root="$1"
+    shift
+fi
+
+plugin_dir="${repo_root}/extras/usd/examples/usdviewPlugins"
+
+export PATH="${install_root}/bin${PATH:+:${PATH}}"
+export PYTHONPATH="${plugin_dir}:${install_root}/lib/python${PYTHONPATH:+:${PYTHONPATH}}"
+export LD_LIBRARY_PATH="${install_root}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+export PXR_PLUGINPATH_NAME="${plugin_dir}/materialEditor${PXR_PLUGINPATH_NAME:+:${PXR_PLUGINPATH_NAME}}"
+
+if [[ $# -eq 0 ]]; then
+    echo "Usage: $(basename "$0") [install_dir] <usd-command> [args...]" >&2
+    echo "Example: $(basename "$0") usdview -r Embree scene.usda" >&2
+    exit 2
+fi
+
+exec "$@"
