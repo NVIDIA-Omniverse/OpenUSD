@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/imaging/plugin/hdEmbree/material.h"
+#include "pxr/imaging/plugin/hdEmbree/renderParam.h"
 
 #include "pxr/imaging/hd/sceneDelegate.h"
 #include "pxr/base/tf/diagnostic.h"
@@ -34,6 +35,14 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
     if (!(*dirtyBits & HdMaterial::AllDirty)) {
         *dirtyBits = HdMaterial::Clean;
         return;
+    }
+
+    // Stop the render thread before touching _evalGraph so the renderer
+    // does not read a half-destroyed graph.  Bumping the scene version
+    // also tells the render pass to restart accumulation.
+    if (auto *embreeParam =
+            dynamic_cast<HdEmbreeRenderParam *>(renderParam)) {
+        embreeParam->AcquireSceneForEdit();
     }
 
     SdfPath const& id = GetId();
