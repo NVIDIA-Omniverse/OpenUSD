@@ -1,0 +1,767 @@
+"""Material Editor – a usdview plugin for editing shader inputs in real-time."""
+
+from pxr.Usdviewq.qt import QtWidgets, QtCore, QtGui
+from pxr import UsdShade, Sdf, Gf, Sdr
+
+# Render contexts to probe when resolving the surface shader.
+_RENDER_CONTEXTS = ("", "mtlx")
+
+# Slider-friendly ranges for well-known float inputs.
+_FLOAT_RANGES = {
+    "roughness": (0.0, 1.0),
+    "metallic": (0.0, 1.0),
+    "opacity": (0.0, 1.0),
+    "clearcoat": (0.0, 1.0),
+    "clearcoatRoughness": (0.0, 1.0),
+    "opacityThreshold": (0.0, 1.0),
+    "occlusion": (0.0, 1.0),
+    "ior": (1.0, 3.0),
+    "displacement": (-1.0, 1.0),
+    "base": (0.0, 1.0),
+    "specular": (0.0, 1.0),
+    "specular_roughness": (0.0, 1.0),
+    "transmission": (0.0, 1.0),
+    "coat": (0.0, 1.0),
+    "coat_roughness": (0.0, 1.0),
+    "sheen": (0.0, 1.0),
+    "sheen_roughness": (0.0, 1.0),
+    "emission": (0.0, 10.0),
+}
+_DEFAULT_FLOAT_RANGE = (0.0, 1.0)
+
+_SLIDER_STEPS = 1000
+
+_LABEL_STYLE_DEFAULT = "color: #888; font-style: italic;"
+_LABEL_STYLE_AUTHORED = ""
+
+
+# ---------------------------------------------------------------------------
+# Lazy input – wraps an unauthored input that is created on first write
+# ---------------------------------------------------------------------------
+
+class _LazyInput:
+    """Shader input that does not yet exist on the prim.
+
+    Calling Set() will create it via UsdShade.Shader.CreateInput().
+    """
+
+    def __init__(self, shader, name, sdfType):
+        self._shader = shader
+        self._name = name
+        self._sdfType = sdfType
+        self._input = None
+
+    def GetBaseName(self):
+        return self._name
+
+    def Set(self, value):
+        if self._input is None:
+            self._input = self._shader.CreateInput(self._name, self._sdfType)
+        self._input.Set(value)
+
+
+# ---------------------------------------------------------------------------
+# Main window
+# ---------------------------------------------------------------------------
+
+class MaterialEditorWindow(QtWidgets.QWidget):
+    """Floating window that lists stage materials and exposes shader inputs."""
+
+    def __init__(self, usdviewApi, parent=None):
+        super().__init__(parent)
+        self._api = usdviewApi
+        self._currentMaterial = None
+        self._inputWidgets = []
+        self._lastPrimPath = None
+        self._shaderStack = []
+
+        # Debounce: accumulate rapid edits and flush once the user pauses.
+        self._pendingValues = {}
+        self._flushTimer = QtCore.QTimer(self)
+        self._flushTimer.setSingleShot(True)
+        self._flushTimer.setInterval(50)
+        self._flushTimer.timeout.connect(self._flushPendingValues)
+
+        self._buildUI()
+        self._refreshMaterials()
+
+        self._pollTimer = QtCore.QTimer(self)
+        self._pollTimer.timeout.connect(self._pollSelection)
+        self._pollTimer.start(500)
+
+    # ---- layout -----------------------------------------------------------
+
+    def _buildUI(self):
+        self.setWindowTitle("Material Editor")
+        self.setMinimumSize(720, 480)
+        self.resize(1000, 1000)
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+
+        root = QtWidgets.QVBoxLayout(self)
+        root.setContentsMargins(6, 6, 6, 6)
+
+        # toolbar
+        toolbar = QtWidgets.QHBoxLayout()
+        self._followCB = QtWidgets.QCheckBox("Follow Selection")
+        self._followCB.setChecked(True)
+        toolbar.addWidget(self._followCB)
+        toolbar.addStretch()
+        toolbar.addWidget(QtWidgets.QLabel("Edit Target:"))
+        self._targetCombo = QtWidgets.QComboBox()
+        self._targetCombo.addItems(["Session Layer", "Root Layer"])
+        self._targetCombo.currentIndexChanged.connect(self._onEditTargetChanged)
+        toolbar.addWidget(self._targetCombo)
+        refreshBtn = QtWidgets.QPushButton("Refresh")
+        refreshBtn.clicked.connect(self._refreshMaterials)
+        toolbar.addWidget(refreshBtn)
+        root.addLayout(toolbar)
+
+        # splitter: material list | input editor
+        self._splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter = self._splitter
+
+        self._matList = QtWidgets.QListWidget()
+        self._matList.currentItemChanged.connect(self._onMaterialClicked)
+        splitter.addWidget(self._matList)
+
+        right = QtWidgets.QWidget()
+        rightLay = QtWidgets.QVBoxLayout(right)
+        rightLay.setContentsMargins(4, 0, 0, 0)
+
+        # header: back button + shader label (with context menu)
+        headerRow = QtWidgets.QHBoxLayout()
+        self._backBtn = QtWidgets.QPushButton(" Back")
+        self._backBtn.setIcon(
+            self.style().standardIcon(QtWidgets.QStyle.SP_ArrowLeft))
+        self._backBtn.setFixedHeight(24)
+        self._backBtn.clicked.connect(self._navigateBack)
+        self._backBtn.hide()
+        headerRow.addWidget(self._backBtn)
+        self._headerLabel = QtWidgets.QLabel("Select a material")
+        self._headerLabel.setWordWrap(True)
+        self._headerLabel.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self._headerLabel.customContextMenuRequested.connect(
+            self._showHeaderContextMenu)
+        headerRow.addWidget(self._headerLabel, 1)
+        rightLay.addLayout(headerRow)
+
+        sep = QtWidgets.QFrame()
+        sep.setFrameShape(QtWidgets.QFrame.HLine)
+        rightLay.addWidget(sep)
+
+        self._scroll = QtWidgets.QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self._newFormWidget()
+        rightLay.addWidget(self._scroll)
+
+        splitter.addWidget(right)
+        splitter.setSizes([220, 500])
+        splitter.setStretchFactor(1, 1)
+        root.addWidget(splitter)
+
+        self._status = QtWidgets.QLabel("Ready")
+        self._status.setFixedHeight(18)
+        self._status.setStyleSheet(
+            "color: gray; font-size: 11px; padding: 0 2px;")
+        root.addWidget(self._status)
+
+    def _newFormWidget(self):
+        self._formContainer = QtWidgets.QWidget()
+        self._formLayout = QtWidgets.QFormLayout(self._formContainer)
+        self._formLayout.setFieldGrowthPolicy(
+            QtWidgets.QFormLayout.ExpandingFieldsGrow
+        )
+        self._scroll.setWidget(self._formContainer)
+        self._inputWidgets = []
+
+    # ---- material list ----------------------------------------------------
+
+    def _refreshMaterials(self):
+        self._matList.clear()
+        stage = self._api.stage
+        if not stage:
+            return
+        count = 0
+        for prim in stage.Traverse():
+            if UsdShade.Material(prim):
+                item = QtWidgets.QListWidgetItem(str(prim.GetPath()))
+                item.setData(QtCore.Qt.UserRole, str(prim.GetPath()))
+                self._matList.addItem(item)
+                count += 1
+        self._fitMaterialListWidth()
+        self._setStatus(f"{count} material(s) found")
+
+    def _fitMaterialListWidth(self):
+        if self._matList.count() == 0:
+            return
+        hint = (self._matList.sizeHintForColumn(0)
+                + 2 * self._matList.frameWidth() + 24)
+        hint = max(120, min(hint, 360))
+        total = self._splitter.width() or self.width()
+        self._splitter.setSizes([hint, max(200, total - hint)])
+
+    def _onMaterialClicked(self, current, _previous):
+        if not current:
+            return
+        path = current.data(QtCore.Qt.UserRole)
+        prim = self._api.stage.GetPrimAtPath(path)
+        if prim:
+            self._showMaterial(UsdShade.Material(prim))
+
+    def _selectMaterialByPath(self, path):
+        for i in range(self._matList.count()):
+            item = self._matList.item(i)
+            if item.data(QtCore.Qt.UserRole) == path:
+                if self._matList.currentItem() != item:
+                    self._matList.setCurrentItem(item)
+                return True
+        return False
+
+    # ---- follow selection -------------------------------------------------
+
+    def _pollSelection(self):
+        if not self._followCB.isChecked():
+            return
+        prims = self._api.selectedPrims
+        if not prims:
+            return
+        primPath = str(prims[0].GetPath())
+        if primPath == self._lastPrimPath:
+            return
+        self._lastPrimPath = primPath
+        try:
+            bound = UsdShade.MaterialBindingAPI(prims[0]).ComputeBoundMaterial()
+        except Exception:
+            return
+        if bound and bound[0]:
+            self._selectMaterialByPath(str(bound[0].GetPath()))
+
+    # ---- shader navigation ------------------------------------------------
+
+    def _showMaterial(self, material):
+        self._currentMaterial = material
+        self._shaderStack.clear()
+
+        if not material:
+            self._headerLabel.setText("No material")
+            self._backBtn.hide()
+            self._newFormWidget()
+            return
+
+        shader = _findSurfaceShader(material)
+        if not shader:
+            self._headerLabel.setText("No surface shader found")
+            self._backBtn.hide()
+            self._newFormWidget()
+            return
+
+        self._pushShader(shader)
+
+    def _pushShader(self, shader):
+        self._shaderStack.append(shader)
+        self._displayCurrentShader()
+
+    def _navigateBack(self):
+        if len(self._shaderStack) > 1:
+            self._shaderStack.pop()
+            self._displayCurrentShader()
+
+    def _navigateToConnected(self, inp):
+        sources, _ = inp.GetConnectedSources()
+        if not sources:
+            return
+        sourcePrim = sources[0].source.GetPrim()
+        if not sourcePrim.IsValid():
+            return
+        sourceShader = UsdShade.Shader(sourcePrim)
+        if sourceShader.GetPrim().IsValid():
+            self._pushShader(sourceShader)
+            self._setStatus(f"Navigated to {sourcePrim.GetPath()}")
+
+    # ---- display ----------------------------------------------------------
+
+    def _displayCurrentShader(self):
+        shader = self._shaderStack[-1]
+        self._updateHeader()
+        self._newFormWidget()
+
+        authoredMap = {inp.GetBaseName(): inp for inp in shader.GetInputs()}
+        sdrNode = _getSdrNode(shader)
+
+        sdrPropMap = {}
+        if sdrNode:
+            for name in sdrNode.GetShaderInputNames():
+                prop = sdrNode.GetShaderInput(name)
+                if prop:
+                    sdrPropMap[name] = prop
+
+        allNames = sorted(set(authoredMap) | set(sdrPropMap))
+        authoredCount = 0
+
+        for name in allNames:
+            inp = authoredMap.get(name)
+            sdrProp = sdrPropMap.get(name)
+            authored = inp is not None
+
+            if authored and inp.HasConnectedSource():
+                label = self._makeLabel(name, True, shader)
+                widget = self._widgetConnected(inp)
+            elif authored:
+                typeName = str(inp.GetTypeName())
+                value = inp.Get()
+                label = self._makeLabel(name, True, shader)
+                widget = self._widgetForType(inp, typeName, value)
+            elif sdrProp:
+                sdfType = sdrProp.GetTypeAsSdfType().GetSdfType()
+                typeName = str(sdfType)
+                try:
+                    value = sdrProp.GetDefaultValueAsSdfType()
+                except Exception:
+                    value = None
+                label = self._makeLabel(name, False, shader)
+                widget = self._widgetForType(
+                    _LazyInput(shader, name, sdfType), typeName, value)
+            else:
+                continue
+
+            if authored:
+                authoredCount += 1
+            if widget:
+                self._formLayout.addRow(label, widget)
+                self._inputWidgets.append(widget)
+
+        self._setStatus(
+            f"{authoredCount} authored, "
+            f"{len(allNames) - authoredCount} defaults")
+
+    def _updateHeader(self):
+        shader = self._shaderStack[-1]
+        shaderId = _getShaderIdStr(shader)
+
+        if len(self._shaderStack) > 1:
+            self._backBtn.show()
+            crumbs = " &gt; ".join(
+                _getShaderIdStr(s) or s.GetPath().name
+                for s in self._shaderStack)
+            self._headerLabel.setText(
+                f"<span style='color:#888;'>{crumbs}</span><br>"
+                f"Shader: <b>{shaderId}</b>")
+        else:
+            self._backBtn.hide()
+            self._headerLabel.setText(f"Shader: <b>{shaderId}</b>")
+
+    # ---- labels with context menu -----------------------------------------
+
+    def _makeLabel(self, name, authored, shader):
+        label = QtWidgets.QLabel(name)
+        label.setStyleSheet(
+            _LABEL_STYLE_AUTHORED if authored else _LABEL_STYLE_DEFAULT)
+        label.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        label.customContextMenuRequested.connect(
+            lambda pos, n=name, s=shader, lbl=label:
+                self._showInputContextMenu(pos, n, s, lbl))
+        return label
+
+    def _showInputContextMenu(self, pos, name, shader, label):
+        menu = QtWidgets.QMenu(self)
+        resetAction = menu.addAction("Reset to Default")
+        action = menu.exec_(label.mapToGlobal(pos))
+        if action == resetAction:
+            self._resetInput(name, shader)
+
+    def _showHeaderContextMenu(self, pos):
+        if not self._shaderStack:
+            return
+        menu = QtWidgets.QMenu(self)
+        resetAllAction = menu.addAction("Reset All to Default")
+        action = menu.exec_(self._headerLabel.mapToGlobal(pos))
+        if action == resetAllAction:
+            self._resetAllInputs()
+
+    # ---- reset actions ----------------------------------------------------
+
+    def _resetInput(self, name, shader):
+        prim = shader.GetPrim()
+        propName = f"inputs:{name}"
+        if prim.HasProperty(propName):
+            prim.RemoveProperty(propName)
+            self._api.UpdateViewport()
+            self._displayCurrentShader()
+            self._setStatus(f"Reset {name}")
+
+    def _resetAllInputs(self):
+        if not self._shaderStack:
+            return
+        shader = self._shaderStack[-1]
+        prim = shader.GetPrim()
+        removed = 0
+        with Sdf.ChangeBlock():
+            for inp in list(shader.GetInputs()):
+                if not inp.HasConnectedSource():
+                    prim.RemoveProperty(inp.GetFullName())
+                    removed += 1
+        self._api.UpdateViewport()
+        self._displayCurrentShader()
+        self._setStatus(f"Reset {removed} input(s)")
+
+    # ---- shader input editor ----------------------------------------------
+
+    def _buildRow(self, inp):
+        name = inp.GetBaseName()
+        typeName = str(inp.GetTypeName())
+
+        label = QtWidgets.QLabel(name)
+        label.setToolTip(f"{inp.GetFullName()}  ({typeName})")
+
+        if inp.HasConnectedSource():
+            return label, self._widgetConnected(inp)
+
+        value = inp.Get()
+        return label, self._widgetForType(inp, typeName, value)
+
+    # ---- type dispatch ----------------------------------------------------
+
+    def _widgetForType(self, inp, typeName, value):
+        if typeName in ("float", "half", "double"):
+            return self._widgetFloat(inp, value)
+        if typeName in ("color3f", "color3d", "color3h"):
+            return self._widgetColor(inp, value)
+        if typeName == "int":
+            return self._widgetInt(inp, value)
+        if typeName == "bool":
+            return self._widgetBool(inp, value)
+        if typeName in ("float3", "vector3f", "normal3f", "point3f"):
+            return self._widgetVec3(inp, value)
+        if typeName in ("string", "token"):
+            return self._widgetString(inp, value)
+        if typeName == "asset":
+            return self._widgetAsset(inp, value)
+        return QtWidgets.QLabel(f"{value}  ({typeName})")
+
+    # ---- connected input --------------------------------------------------
+
+    def _widgetConnected(self, inp):
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QHBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+
+        sources, _ = inp.GetConnectedSources()
+        canNavigate = False
+        if sources:
+            sourcePrim = sources[0].source.GetPrim()
+            canNavigate = sourcePrim.IsValid() and sourcePrim.IsA(UsdShade.Shader)
+
+        navBtn = QtWidgets.QPushButton()
+        navBtn.setIcon(
+            self.style().standardIcon(QtWidgets.QStyle.SP_ArrowRight))
+        navBtn.setFixedSize(28, 22)
+        navBtn.setToolTip("Show connected node parameters")
+        navBtn.setEnabled(canNavigate)
+        navBtn.clicked.connect(lambda _=False, i=inp: self._navigateToConnected(i))
+        lay.addWidget(navBtn)
+
+        txt = ", ".join(
+            f"{s.source.GetPath().name}.{s.sourceName}" for s in sources
+        ) if sources else "connected"
+        lbl = QtWidgets.QLabel(txt)
+        lbl.setStyleSheet("color: #6a9bd2;")
+        lbl.setToolTip(
+            ", ".join(f"{s.source.GetPath()}.{s.sourceName}" for s in sources)
+            if sources else "")
+        lay.addWidget(lbl, 1)
+
+        disconnBtn = QtWidgets.QPushButton()
+        disconnBtn.setIcon(
+            self.style().standardIcon(QtWidgets.QStyle.SP_TitleBarCloseButton))
+        disconnBtn.setFixedSize(22, 22)
+        disconnBtn.setToolTip("Disconnect")
+        disconnBtn.clicked.connect(lambda _=False, i=inp: self._disconnect(i))
+        lay.addWidget(disconnBtn)
+
+        return w
+
+    # ---- float ------------------------------------------------------------
+
+    def _widgetFloat(self, inp, value):
+        fmin, fmax = _FLOAT_RANGES.get(inp.GetBaseName(), _DEFAULT_FLOAT_RANGE)
+
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QHBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+
+        slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        slider.setRange(0, _SLIDER_STEPS)
+
+        spin = QtWidgets.QDoubleSpinBox()
+        spin.setRange(-1e6, 1e6)
+        spin.setSingleStep(0.01)
+        spin.setDecimals(4)
+        spin.setFixedWidth(80)
+
+        if value is not None:
+            v = float(value)
+            spin.setValue(v)
+            slider.setValue(_floatToSlider(v, fmin, fmax))
+
+        def on_slider(pos):
+            v = _sliderToFloat(pos, fmin, fmax)
+            spin.blockSignals(True)
+            spin.setValue(v)
+            spin.blockSignals(False)
+            self._setValue(inp, v)
+
+        def on_spin(v):
+            slider.blockSignals(True)
+            slider.setValue(_floatToSlider(v, fmin, fmax))
+            slider.blockSignals(False)
+            self._setValue(inp, v)
+
+        slider.valueChanged.connect(on_slider)
+        spin.valueChanged.connect(on_spin)
+
+        lay.addWidget(slider, 1)
+        lay.addWidget(spin)
+        return w
+
+    # ---- color3 -----------------------------------------------------------
+
+    def _widgetColor(self, inp, value):
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QHBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+
+        swatch = QtWidgets.QPushButton()
+        swatch.setFixedSize(36, 22)
+        swatch.setCursor(QtCore.Qt.PointingHandCursor)
+        lbl = QtWidgets.QLabel()
+
+        if value is not None:
+            state = {"r": float(value[0]), "g": float(value[1]), "b": float(value[2])}
+        else:
+            state = {"r": 0.0, "g": 0.0, "b": 0.0}
+
+        def refresh():
+            ri = int(state["r"] * 255)
+            gi = int(state["g"] * 255)
+            bi = int(state["b"] * 255)
+            swatch.setStyleSheet(
+                f"background-color: rgb({ri},{gi},{bi});"
+                " border: 1px solid #888; border-radius: 2px;")
+            lbl.setText(f"({state['r']:.3f}, {state['g']:.3f}, {state['b']:.3f})")
+
+        refresh()
+
+        def pick():
+            initial = QtGui.QColor.fromRgbF(state["r"], state["g"], state["b"])
+            color = QtWidgets.QColorDialog.getColor(
+                initial, self, inp.GetBaseName())
+            if color.isValid():
+                state["r"] = color.redF()
+                state["g"] = color.greenF()
+                state["b"] = color.blueF()
+                refresh()
+                self._setValue(
+                    inp, Gf.Vec3f(state["r"], state["g"], state["b"]))
+
+        swatch.clicked.connect(pick)
+        lay.addWidget(swatch)
+        lay.addWidget(lbl, 1)
+        return w
+
+    # ---- int --------------------------------------------------------------
+
+    def _widgetInt(self, inp, value):
+        spin = QtWidgets.QSpinBox()
+        spin.setRange(-999999, 999999)
+        if value is not None:
+            spin.setValue(int(value))
+        spin.valueChanged.connect(lambda v, i=inp: self._setValue(i, v))
+        return spin
+
+    # ---- bool -------------------------------------------------------------
+
+    def _widgetBool(self, inp, value):
+        cb = QtWidgets.QCheckBox()
+        if value is not None:
+            cb.setChecked(bool(value))
+        cb.toggled.connect(lambda v, i=inp: self._setValue(i, v))
+        return cb
+
+    # ---- vec3 -------------------------------------------------------------
+
+    def _widgetVec3(self, inp, value):
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QHBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+
+        spins = []
+        for axis, axis_label in enumerate(("X", "Y", "Z")):
+            lay.addWidget(QtWidgets.QLabel(axis_label))
+            sb = QtWidgets.QDoubleSpinBox()
+            sb.setRange(-1e6, 1e6)
+            sb.setSingleStep(0.01)
+            sb.setDecimals(3)
+            if value is not None:
+                sb.setValue(float(value[axis]))
+            spins.append(sb)
+            lay.addWidget(sb, 1)
+
+        def changed():
+            self._setValue(
+                inp, Gf.Vec3f(spins[0].value(), spins[1].value(), spins[2].value()))
+
+        for sb in spins:
+            sb.valueChanged.connect(lambda _: changed())
+
+        return w
+
+    # ---- string / token ---------------------------------------------------
+
+    def _widgetString(self, inp, value):
+        le = QtWidgets.QLineEdit(str(value) if value is not None else "")
+        le.editingFinished.connect(lambda i=inp, e=le: self._setValue(i, e.text()))
+        return le
+
+    # ---- asset ------------------------------------------------------------
+
+    def _widgetAsset(self, inp, value):
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QHBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+
+        le = QtWidgets.QLineEdit()
+        if value is not None:
+            le.setText(str(value.path) if hasattr(value, "path") else str(value))
+
+        btn = QtWidgets.QPushButton("\u2026")  # ellipsis
+        btn.setFixedWidth(28)
+
+        def browse():
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select File")
+            if path:
+                le.setText(path)
+                self._setValue(inp, Sdf.AssetPath(path))
+
+        btn.clicked.connect(browse)
+        le.editingFinished.connect(
+            lambda: self._setValue(inp, Sdf.AssetPath(le.text())))
+
+        lay.addWidget(le, 1)
+        lay.addWidget(btn)
+        return w
+
+    # ---- value actions ----------------------------------------------------
+
+    def _setValue(self, inp, value):
+        self._pendingValues[inp.GetBaseName()] = (inp, value)
+        self._setStatus(f"{inp.GetBaseName()} = {value}")
+        self._flushTimer.start()
+
+    def _flushPendingValues(self):
+        if not self._pendingValues:
+            return
+        try:
+            with Sdf.ChangeBlock():
+                for _key, (inp, value) in self._pendingValues.items():
+                    inp.Set(value)
+        except Exception as e:
+            self._setStatus(f"Error: {e}")
+        self._pendingValues.clear()
+        self._api.UpdateViewport()
+
+    def _disconnect(self, inp):
+        try:
+            inp.DisconnectSource()
+            self._api.UpdateViewport()
+            self._displayCurrentShader()
+            self._setStatus(f"Disconnected {inp.GetBaseName()}")
+        except Exception as e:
+            self._setStatus(f"Error: {e}")
+
+    def _onEditTargetChanged(self, index):
+        stage = self._api.stage
+        if not stage:
+            return
+        if index == 0:
+            stage.SetEditTarget(stage.GetSessionLayer())
+            self._setStatus("Edit target \u2192 Session Layer")
+        else:
+            stage.SetEditTarget(stage.GetRootLayer())
+            self._setStatus("Edit target \u2192 Root Layer")
+
+    def _setStatus(self, msg):
+        self._status.setText(msg)
+
+    def closeEvent(self, event):
+        self._pollTimer.stop()
+        self._flushTimer.stop()
+        if self._pendingValues:
+            self._flushPendingValues()
+        super().closeEvent(event)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _findSurfaceShader(material):
+    for ctx in _RENDER_CONTEXTS:
+        shader, _, _ = material.ComputeSurfaceSource(ctx)
+        if shader.GetPrim().IsValid():
+            return shader
+    return None
+
+
+def _getSdrNode(shader):
+    """Look up the Sdr definition for a UsdShade.Shader."""
+    shaderId = shader.GetShaderId()
+    if not shaderId:
+        return None
+    reg = Sdr.Registry()
+    node = reg.GetShaderNodeByIdentifier(shaderId)
+    if not node:
+        node = reg.GetShaderNodeByIdentifier(shaderId, ["mtlx"])
+    if not node:
+        node = reg.GetShaderNodeByIdentifier(shaderId, ["OSL"])
+    return node
+
+
+def _getShaderIdStr(shader):
+    idAttr = shader.GetIdAttr()
+    if idAttr and idAttr.Get():
+        return str(idAttr.Get())
+    return ""
+
+
+def _floatToSlider(val, fmin, fmax):
+    if fmax == fmin:
+        return 0
+    return int(max(0, min(_SLIDER_STEPS, (val - fmin) / (fmax - fmin) * _SLIDER_STEPS)))
+
+
+def _sliderToFloat(pos, fmin, fmax):
+    return fmin + (pos / float(_SLIDER_STEPS)) * (fmax - fmin)
+
+
+# ---------------------------------------------------------------------------
+# Entry point (called from __init__.py)
+# ---------------------------------------------------------------------------
+
+_window = None
+
+
+def OpenMaterialEditor(usdviewApi):
+    global _window
+    if _window is not None:
+        try:
+            if _window.isVisible():
+                _window.raise_()
+                _window.activateWindow()
+                return
+        except RuntimeError:
+            pass
+
+    _window = MaterialEditorWindow(usdviewApi, parent=usdviewApi.qMainWindow)
+    _window.setWindowFlags(QtCore.Qt.Window)
+    _window.show()
