@@ -15,6 +15,7 @@
 #include "pxr/base/tf/token.h"
 #include "pxr/base/vt/value.h"
 
+#include <algorithm>
 #include <map>
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -56,6 +57,18 @@ struct MxLiteSurfaceClosure
     float   sheenRoughness   = 0.3f;
     GfVec3f normal           = GfVec3f(0.0f, 0.0f, 1.0f);
     bool    thinWalled       = false;
+
+    /// Regularize the surface closure by widening narrow specular lobes.
+    /// This reduces fireflies from sharp BSDFs on indirect bounces.
+    /// Based on pbrt-v4's TrowbridgeReitzDistribution::Regularize().
+    void Regularize() {
+        if (roughness < 0.3f) {
+            roughness = std::clamp(2.0f * roughness, 0.1f, 0.3f);
+        }
+        if (coatRoughness < 0.3f) {
+            coatRoughness = std::clamp(2.0f * coatRoughness, 0.1f, 0.3f);
+        }
+    }
 };
 
 /// Named parameter map used for node inputs/outputs.

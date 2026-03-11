@@ -59,6 +59,7 @@ pxr_plugin(hdEmbree
     PUBLIC_HEADERS
         context.h
         renderParam.h
+        sampling.h
         pxrPbrt/pbrtUtils.h
         mxLite/types.h
 

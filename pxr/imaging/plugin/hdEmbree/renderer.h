@@ -12,6 +12,7 @@
 #include "pxr/imaging/plugin/hdEmbree/context.h"
 #include "pxr/imaging/plugin/hdEmbree/light.h"
 #include "pxr/imaging/plugin/hdEmbree/mxLite/types.h"
+#include "pxr/imaging/plugin/hdEmbree/sampling.h"
 
 #include "pxr/imaging/hd/aov.h"
 #include "pxr/imaging/hd/renderThread.h"
@@ -23,7 +24,6 @@
 #include <embree4/rtcore_device.h>
 #include <embree4/rtcore_ray.h>
 
-#include <random>
 #include <atomic>
 #include <map>
 #include <mutex>
@@ -170,11 +170,11 @@ private:
     // aov buffers.
     void _TraceRay(unsigned int x, unsigned int y,
                    GfVec3f const& origin, GfVec3f const& dir,
-                   std::default_random_engine &random);
+                   HdEmbreeSobolSampler &sampler);
 
     // Compute the color at the given ray hit.
     GfVec4f _ComputeColor(RTCRayHit const& rayHit,
-                          std::default_random_engine &random,
+                          HdEmbreeSobolSampler &sampler,
                           GfVec4f const& clearColor);
     // Compute the depth at the given ray hit.
     bool _ComputeDepth(RTCRayHit const& rayHit, float *depth, bool clip);
@@ -194,7 +194,7 @@ private:
     // the light contribution of an infinitely far, pure white dome light.
     float _ComputeAmbientOcclusion(GfVec3f const& position,
                                    GfVec3f const& normal,
-                                   std::default_random_engine &random);
+                                   HdEmbreeSobolSampler &sampler);
 
     /// Evaluate direct lighting from all scene lights using MIS.
     /// If \p closure is non-null, uses the mxLite BSDF evaluation;
@@ -203,7 +203,7 @@ private:
         GfVec3f const& position,
         GfVec3f const& normal,
         GfVec3f const& wo,
-        std::default_random_engine &random,
+        HdEmbreeSobolSampler &sampler,
         bool doubleSided,
         MxLiteSurfaceClosure const* closure) const;
 
@@ -211,7 +211,7 @@ private:
     GfVec3f _TracePath(
         GfVec3f const& origin,
         GfVec3f const& dir,
-        std::default_random_engine &random) const;
+        HdEmbreeSobolSampler &sampler) const;
 
     // Return the visibility from `position` along `direction`
     float _Visibility(GfVec3f const& position,

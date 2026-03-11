@@ -647,23 +647,14 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
     const unsigned int numTilesX =
         (_dataWindow.GetWidth() + tileSize-1) / tileSize;
 
-    // Initialize the RNG for this tile (each tile creates one as
-    // a lazy way to do thread-local RNGs).
-    size_t seed;
+    // Base seed for this render pass.
+    uint32_t baseSeed;
     if (_randomNumberSeed == -1) {
-        seed = std::chrono::system_clock::now().time_since_epoch().count();
+        baseSeed = static_cast<uint32_t>(
+            std::chrono::system_clock::now().time_since_epoch().count());
     } else {
-        seed = static_cast<size_t>(_randomNumberSeed);
+        baseSeed = static_cast<uint32_t>(_randomNumberSeed);
     }
-    seed = TfHash::Combine(seed, tileStart);
-    seed = TfHash::Combine(seed, sampleNum);
-    std::default_random_engine random(seed);
-
-    // Create a uniform distribution for jitter calculations.
-    std::uniform_real_distribution<float> uniform_dist(0.0f, 1.0f);
-    auto uniform_float = [&random, &uniform_dist]() {
-        return uniform_dist(random);
-    };
 
     // _RenderTiles gets a range of tiles; iterate through them.
     for (unsigned int tile = tileStart; tile < tileEnd; ++tile) {
@@ -687,10 +678,15 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
         // Loop over pixels casting rays.
         for (unsigned int y = y0; y < y1; ++y) {
             for (unsigned int x = x0; x < x1; ++x) {
+                // Create a per-pixel Sobol sampler.
+                uint32_t pixelSeed = static_cast<uint32_t>(
+                    TfHash::Combine(baseSeed, x, y));
+                HdEmbreeSobolSampler sampler(pixelSeed, sampleNum);
+
                 // Jitter the camera ray direction.
                 GfVec2f jitter(0.0f, 0.0f);
                 if (HdEmbreeConfig::GetInstance().jitterCamera) {
-                    jitter = GfVec2f(uniform_float(), uniform_float());
+                    jitter = GfVec2f(sampler.Next(), sampler.Next());
                 }
 
                 // Un-transform the pixel's NDC coordinates through the
@@ -727,7 +723,7 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
                     _inverseViewMatrix.TransformDir(dir)).GetNormalized();
 
                 // Trace the ray.
-                _TraceRay(x, y, origin, dir, random);
+                _TraceRay(x, y, origin, dir, sampler);
             }
         }
     }
@@ -792,7 +788,7 @@ _CosineWeightedDirection(GfVec2f const& uniform_float)
 void
 HdEmbreeRenderer::_TraceRay(unsigned int x, unsigned int y,
                             GfVec3f const &origin, GfVec3f const &dir,
-                            std::default_random_engine &random)
+                            HdEmbreeSobolSampler &sampler)
 {
     // Intersect the camera ray.
     RTCRayHit rayHit; // EMBREE_FIXME: use RTCRay for occlusion rays
@@ -815,7 +811,7 @@ HdEmbreeRenderer::_TraceRay(unsigned int x, unsigned int y,
 
         if (_aovNames[i].name == HdAovTokens->color) {
             GfVec4f clearColor = _GetClearColor(_aovBindings[i].clearValue);
-            GfVec4f sample = _ComputeColor(rayHit, random, clearColor);
+            GfVec4f sample = _ComputeColor(rayHit, sampler, clearColor);
             renderBuffer->Write(GfVec3i(x,y,1), 4, sample.data());
         } else if ((_aovNames[i].name == HdAovTokens->cameraDepth ||
                     _aovNames[i].name == HdAovTokens->depth) &&
@@ -1125,7 +1121,7 @@ HdEmbreeRenderer::_Visibility(
 
 GfVec4f
 HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
-                                std::default_random_engine &random,
+                                HdEmbreeSobolSampler &sampler,
                                 GfVec4f const& clearColor)
 {
     if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
@@ -1282,7 +1278,7 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
             HdEmbreeConfig::GetInstance().cameraLightIntensity;
 
         float aoLightIntensity =
-            _ComputeAmbientOcclusion(hitPos, normal, random);
+            _ComputeAmbientOcclusion(hitPos, normal, sampler);
 
         lightingColor = materialColor * diffuseLight * aoLightIntensity;
     }
@@ -1293,7 +1289,7 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
                        rayHit.ray.org_z);
         GfVec3f dir = GfVec3f(rayHit.ray.dir_x, rayHit.ray.dir_y,
                               rayHit.ray.dir_z).GetNormalized();
-        lightingColor = _TracePath(origin, dir, random);
+        lightingColor = _TracePath(origin, dir, sampler);
     }
 
     GfVec4f output;
@@ -1307,13 +1303,8 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
 float
 HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& position,
                                             GfVec3f const& normal,
-                                            std::default_random_engine &random)
+                                            HdEmbreeSobolSampler &sampler)
 {
-    // Create a uniform random distribution for AO calculations.
-    std::uniform_real_distribution<float> uniform_dist(0.0f, 1.0f);
-    auto uniform_float = [&random, &uniform_dist]() {
-        return uniform_dist(random);
-    };
 
     // 0 ambient occlusion samples means disable the ambient occlusion term.
     if (_ambientOcclusionSamples < 1) {
@@ -1346,11 +1337,16 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& position,
     std::vector<GfVec2f> samples;
     samples.resize(_ambientOcclusionSamples);
     for (int i = 0; i < _ambientOcclusionSamples; ++i) {
-        samples[i][0] = (float(i) + uniform_float()) / _ambientOcclusionSamples;
+        samples[i][0] = (float(i) + sampler.Next()) / _ambientOcclusionSamples;
     }
-    std::shuffle(samples.begin(), samples.end(), random);
+    // Fisher-Yates shuffle using the Sobol sampler.
+    for (int i = _ambientOcclusionSamples - 1; i > 0; --i) {
+        int j = static_cast<int>(sampler.Next() * (i + 1));
+        j = std::min(j, i);
+        std::swap(samples[i], samples[j]);
+    }
     for (int i = 0; i < _ambientOcclusionSamples; ++i) {
-        samples[i][1] = (float(i) + uniform_float()) / _ambientOcclusionSamples;
+        samples[i][1] = (float(i) + sampler.Next()) / _ambientOcclusionSamples;
     }
 
     // Trace ambient occlusion rays. The occlusion factor is the fraction of
@@ -1395,14 +1391,10 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
     GfVec3f const& position,
     GfVec3f const& normal,
     GfVec3f const& wo,
-    std::default_random_engine &random,
+    HdEmbreeSobolSampler &sampler,
     bool doubleSided,
     MxLiteSurfaceClosure const* closure) const
 {
-    std::uniform_real_distribution<float> uniform_dist(0.0f, 1.0f);
-    auto uniform_float = [&random, &uniform_dist]() {
-        return uniform_dist(random);
-    };
 
     GfVec3f finalColor(0.0f);
 
@@ -1415,7 +1407,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
 
         HdEmbreeLightSampler::LightSample ls =
             HdEmbreeLightSampler::GetLightSample(
-            light, position, normal, uniform_float(), uniform_float());
+            light, position, normal, sampler.Next(), sampler.Next());
         if (GfIsClose(ls.Li, GfVec3f(0.0f), _minLuminanceCutoff)) {
             continue;
         }
@@ -1482,12 +1474,8 @@ GfVec3f
 HdEmbreeRenderer::_TracePath(
     GfVec3f const& origin,
     GfVec3f const& dir,
-    std::default_random_engine &random) const
+    HdEmbreeSobolSampler &sampler) const
 {
-    std::uniform_real_distribution<float> uniform_dist(0.0f, 1.0f);
-    auto uniform_float = [&random, &uniform_dist]() {
-        return uniform_dist(random);
-    };
 
     GfVec3f radiance(0.0f);
     GfVec3f throughput(1.0f);
@@ -1495,6 +1483,7 @@ HdEmbreeRenderer::_TracePath(
     GfVec3f rayDir = dir;
     float lastBsdfPdf = 0.0f;
     bool isFirstBounce = true;
+    bool anyNonSpecularBounces = false;
 
     for (int bounce = 0; bounce <= _maxBounces; ++bounce) {
         RTCRayHit rayHit;
@@ -1644,9 +1633,16 @@ HdEmbreeRenderer::_TracePath(
             }
         }
 
+        // --- Path regularization ---
+        // After the first non-specular bounce, widen narrow specular lobes
+        // to reduce fireflies from sharp BSDFs on indirect paths.
+        if (hasClosure && anyNonSpecularBounces) {
+            closure.Regularize();
+        }
+
         // --- Stochastic opacity pass-through ---
         if (hasClosure && closure.opacity < 1.0f) {
-            if (uniform_float() > closure.opacity) {
+            if (sampler.Next() > closure.opacity) {
                 rayOrigin = hitPos + rayDir * 1e-4f;
                 --bounce;
                 isFirstBounce = false;
@@ -1667,7 +1663,7 @@ HdEmbreeRenderer::_TracePath(
         GfVec3f direct(0.0f);
         if (hasClosure) {
             direct = _ComputeDirectLightingMIS(
-                hitPos, normal, wo, random, doubleSided, &closure);
+                hitPos, normal, wo, sampler, doubleSided, &closure);
         } else {
             GfVec3f matColor = displayColor;
             MxLiteSurfaceClosure fallback;
@@ -1679,7 +1675,7 @@ HdEmbreeRenderer::_TracePath(
             fallback.specularIor = 1.5f;
             fallback.opacity = 1.0f;
             direct = _ComputeDirectLightingMIS(
-                hitPos, normal, wo, random, doubleSided, &fallback);
+                hitPos, normal, wo, sampler, doubleSided, &fallback);
         }
         radiance += GfCompMult(throughput, direct);
 
@@ -1691,7 +1687,7 @@ HdEmbreeRenderer::_TracePath(
 
         MxLiteBsdf::BsdfSample bs = MxLiteBsdf::SampleSurface(
             closure, normal, wo,
-            uniform_float(), uniform_float(), uniform_float());
+            sampler.Next(), sampler.Next(), sampler.Next());
         if (bs.pdf <= 0.0f) break;
 
         GfVec3f bsdfContrib;
@@ -1713,13 +1709,16 @@ HdEmbreeRenderer::_TracePath(
         throughput = GfCompMult(throughput, bsdfContrib);
 
         lastBsdfPdf = bs.isSpecular ? 0.0f : bs.pdf;
+        if (!bs.isSpecular) {
+            anyNonSpecularBounces = true;
+        }
         isFirstBounce = false;
 
         // --- Russian Roulette ---
         if (bounce >= _minBouncesBeforeRR) {
             float q = std::max({throughput[0], throughput[1], throughput[2]});
             q = std::min(q, 0.95f);
-            if (q <= 0.0f || uniform_float() > q) break;
+            if (q <= 0.0f || sampler.Next() > q) break;
             throughput /= q;
         }
 
