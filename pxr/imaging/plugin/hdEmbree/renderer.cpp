@@ -133,6 +133,8 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _enableAdaptiveSampling(HdEmbreeDefaultEnableAdaptiveSampling)
     , _adaptiveThreshold(HdEmbreeDefaultAdaptiveThreshold)
     , _minSamplesBeforeAdaptive(HdEmbreeDefaultMinSamplesBeforeAdaptive)
+    , _lightSamplesPerHit(HdEmbreeDefaultLightSamplesPerHit)
+    , _stratifyLightSamples(HdEmbreeDefaultStratifyLightSamples)
     , _completedSamples(0)
 {
 }
@@ -209,6 +211,18 @@ void
 HdEmbreeRenderer::SetMinSamplesBeforeAdaptive(int minSamples)
 {
     _minSamplesBeforeAdaptive = minSamples;
+}
+
+void
+HdEmbreeRenderer::SetLightSamplesPerHit(int samples)
+{
+    _lightSamplesPerHit = std::max(1, samples);
+}
+
+void
+HdEmbreeRenderer::SetStratifyLightSamples(bool stratify)
+{
+    _stratifyLightSamples = stratify;
 }
 
 void
@@ -909,9 +923,31 @@ HdEmbreeRenderer::_TraceRay(unsigned int x, unsigned int y,
 
                 if (count >= static_cast<uint32_t>(_minSamplesBeforeAdaptive)) {
                     GfVec3f variance = _pixelM2[idx] / static_cast<float>(count);
-                    float maxVar = std::max({variance[0],
-                                             variance[1],
-                                             variance[2]});
+
+                    // Use relative variance (variance / mean^2) so that
+                    // dark pixels (shadows) are not prematurely converged.
+                    // For near-black pixels where the mean is tiny, fall
+                    // back to absolute variance to avoid division by zero.
+                    const GfVec3f &mean = _pixelMean[idx];
+                    float luminance = 0.2126f * mean[0]
+                                    + 0.7152f * mean[1]
+                                    + 0.0722f * mean[2];
+                    float maxVar;
+                    constexpr float kMinLuminance = 0.001f;
+                    if (luminance > kMinLuminance) {
+                        // Relative variance: scale by 1/mean^2 per channel,
+                        // using luminance as a stable denominator.
+                        float invL2 = 1.0f / (luminance * luminance);
+                        maxVar = std::max({variance[0] * invL2,
+                                           variance[1] * invL2,
+                                           variance[2] * invL2});
+                    } else {
+                        // Near-black: use absolute variance as-is.
+                        maxVar = std::max({variance[0],
+                                           variance[1],
+                                           variance[2]});
+                    }
+
                     if (maxVar <= _adaptiveThreshold) {
                         _pixelConverged[idx] = true;
                     }
@@ -1502,6 +1538,19 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
 
     GfVec3f finalColor(0.0f);
 
+    const int N = _lightSamplesPerHit;
+    const float invN = 1.0f / static_cast<float>(N);
+
+    // For stratification: compute grid dimensions for N samples.
+    // Find the largest sqrtN such that sqrtN*sqrtN <= N, then
+    // use sqrtN x ceilN grid where ceilN = ceil(N / sqrtN).
+    int stratDimU = 1, stratDimV = 1;
+    if (_stratifyLightSamples && N > 1) {
+        stratDimU = static_cast<int>(std::sqrt(static_cast<float>(N)));
+        if (stratDimU < 1) stratDimU = 1;
+        stratDimV = (N + stratDimU - 1) / stratDimU;
+    }
+
     for (auto const& it : _lightMap)
     {
         auto const& light = it.second->LightData();
@@ -1509,63 +1558,85 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
             continue;
         }
 
-        HdEmbreeLightSampler::LightSample ls =
-            HdEmbreeLightSampler::GetLightSample(
-            light, position, normal, sampler.Next(), sampler.Next());
-        if (GfIsClose(ls.Li, GfVec3f(0.0f), _minLuminanceCutoff)) {
-            continue;
-        }
+        GfVec3f lightContrib(0.0f);
 
-        float vis = _Visibility(position, ls.wI, ls.dist * 0.99f);
-
-        float cosOffNormal = GfDot(ls.wI, normal);
-        GfVec3f shadingNormal = normal;
-        if (cosOffNormal < 0.0f) {
-            if (doubleSided) {
-                cosOffNormal *= -1.0f;
-                shadingNormal = -normal;
+        for (int s = 0; s < N; ++s) {
+            // Generate sample coordinates, optionally stratified.
+            float u1, u2;
+            if (_stratifyLightSamples && N > 1) {
+                int su = s % stratDimU;
+                int sv = s / stratDimU;
+                u1 = (su + sampler.Next()) / static_cast<float>(stratDimU);
+                u2 = (sv + sampler.Next()) / static_cast<float>(stratDimV);
             } else {
-                cosOffNormal = 0.0f;
-            }
-        }
-
-        if (cosOffNormal <= 0.0f || vis <= 0.0f) {
-            continue;
-        }
-
-        GfVec3f sampleContrib(0.0f);
-        if (closure) {
-            GfVec3f bsdfValue = MxLiteBsdf::EvalSurface(
-                *closure, shadingNormal, ls.wI, wo);
-
-            for (int i = 0; i < 3; ++i) {
-                if (!std::isfinite(bsdfValue[i])) bsdfValue[i] = 0.0f;
+                u1 = sampler.Next();
+                u2 = sampler.Next();
             }
 
-            // MIS weight for the light sampling strategy.
-            float lightPdf = (ls.invPdfW > 0.0f)
-                ? 1.0f / ls.invPdfW : 0.0f;
-            float bsdfPdf = MxLiteBsdf::PdfSurface(
-                *closure, shadingNormal, ls.wI, wo);
-            float misW = MxLiteBsdf::PowerHeuristic(lightPdf, bsdfPdf);
+            HdEmbreeLightSampler::LightSample ls =
+                HdEmbreeLightSampler::GetLightSample(
+                light, position, normal, u1, u2);
+            if (GfIsClose(ls.Li, GfVec3f(0.0f), _minLuminanceCutoff)) {
+                continue;
+            }
 
-            sampleContrib = GfCompMult(ls.Li, bsdfValue)
-                * cosOffNormal * vis * ls.invPdfW * misW;
-        } else {
-            float brdf = 1.0f / _pi<float>;
-            sampleContrib = ls.Li * cosOffNormal * brdf * vis * ls.invPdfW;
+            float vis = _Visibility(position, ls.wI, ls.dist * 0.99f);
+
+            float cosOffNormal = GfDot(ls.wI, normal);
+            GfVec3f shadingNormal = normal;
+            if (cosOffNormal < 0.0f) {
+                if (doubleSided) {
+                    cosOffNormal *= -1.0f;
+                    shadingNormal = -normal;
+                } else {
+                    cosOffNormal = 0.0f;
+                }
+            }
+
+            if (cosOffNormal <= 0.0f || vis <= 0.0f) {
+                continue;
+            }
+
+            GfVec3f sampleContrib(0.0f);
+            if (closure) {
+                GfVec3f bsdfValue = MxLiteBsdf::EvalSurface(
+                    *closure, shadingNormal, ls.wI, wo);
+
+                for (int i = 0; i < 3; ++i) {
+                    if (!std::isfinite(bsdfValue[i])) bsdfValue[i] = 0.0f;
+                }
+
+                // MIS weight: one-sample MIS with N light samples.
+                // The effective light PDF for this multi-sample estimator
+                // is lightPdf (per-sample PDF stays the same; the 1/N
+                // averaging is handled outside).
+                float lightPdf = (ls.invPdfW > 0.0f)
+                    ? 1.0f / ls.invPdfW : 0.0f;
+                float bsdfPdf = MxLiteBsdf::PdfSurface(
+                    *closure, shadingNormal, ls.wI, wo);
+                float misW = MxLiteBsdf::PowerHeuristic(lightPdf, bsdfPdf);
+
+                sampleContrib = GfCompMult(ls.Li, bsdfValue)
+                    * cosOffNormal * vis * ls.invPdfW * misW;
+            } else {
+                float brdf = 1.0f / _pi<float>;
+                sampleContrib = ls.Li * cosOffNormal * brdf
+                    * vis * ls.invPdfW;
+            }
+
+            // Firefly clamping.
+            constexpr float kMaxSampleLuminance = 20.0f;
+            float lum = 0.2126f * sampleContrib[0]
+                      + 0.7152f * sampleContrib[1]
+                      + 0.0722f * sampleContrib[2];
+            if (lum > kMaxSampleLuminance) {
+                sampleContrib *= kMaxSampleLuminance / lum;
+            }
+
+            lightContrib += sampleContrib;
         }
 
-        // Firefly clamping.
-        constexpr float kMaxSampleLuminance = 20.0f;
-        float lum = 0.2126f * sampleContrib[0]
-                  + 0.7152f * sampleContrib[1]
-                  + 0.0722f * sampleContrib[2];
-        if (lum > kMaxSampleLuminance) {
-            sampleContrib *= kMaxSampleLuminance / lum;
-        }
-
-        finalColor += sampleContrib;
+        finalColor += lightContrib * invN;
     }
     return finalColor;
 }

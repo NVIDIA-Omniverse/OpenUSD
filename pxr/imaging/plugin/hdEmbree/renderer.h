@@ -134,6 +134,10 @@ public:
     void SetAdaptiveThreshold(float threshold);
     void SetMinSamplesBeforeAdaptive(int minSamples);
 
+    /// Set light sampling parameters.
+    void SetLightSamplesPerHit(int samples);
+    void SetStratifyLightSamples(bool stratify);
+
     /// Rendering entrypoint: add one sample per pixel to the whole sample
     /// buffer, and then loop until the image is converged.  After each pass,
     /// the image will be resolved into a color buffer.
@@ -291,6 +295,10 @@ private:
     bool _enableAdaptiveSampling;
     float _adaptiveThreshold;
     int _minSamplesBeforeAdaptive;
+
+    // Light sampling parameters.
+    int _lightSamplesPerHit;
+    bool _stratifyLightSamples;
 
     // Per-pixel adaptive sampling state (Welford online variance).
     std::vector<GfVec3f> _pixelMean;

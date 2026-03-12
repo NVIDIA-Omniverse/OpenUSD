@@ -108,7 +108,7 @@ void
 HdEmbreeRenderDelegate::_Initialize()
 {
     // Initialize the settings and settings descriptors.
-    _settingDescriptors.resize(12);
+    _settingDescriptors.resize(14);
     _settingDescriptors[0] = { "Enable Scene Colors",
         HdEmbreeRenderSettingsTokens->enableSceneColors,
         VtValue(HdEmbreeConfig::GetInstance().useFaceColors) };
@@ -145,6 +145,12 @@ HdEmbreeRenderDelegate::_Initialize()
     _settingDescriptors[11] = { "Min Bounces Before Russian Roulette",
         HdEmbreeRenderSettingsTokens->minBouncesBeforeRR,
         VtValue(int(HdEmbreeDefaultMinBouncesBeforeRR)) };
+    _settingDescriptors[12] = { "Light Samples Per Hit",
+        HdEmbreeRenderSettingsTokens->lightSamplesPerHit,
+        VtValue(int(HdEmbreeConfig::GetInstance().lightSamplesPerHit)) };
+    _settingDescriptors[13] = { "Stratify Light Samples",
+        HdEmbreeRenderSettingsTokens->stratifyLightSamples,
+        VtValue(HdEmbreeConfig::GetInstance().stratifyLightSamples) };
     _PopulateDefaultSettings(_settingDescriptors);
 
     // Initialize the embree library handle (_rtcDevice).

@@ -76,6 +76,16 @@ TF_DEFINE_ENV_SETTING(
     HdEmbreeDefaultEnableAdaptiveSampling,
     "Should HdEmbree use adaptive sampling to skip converged pixels?");
 
+TF_DEFINE_ENV_SETTING(
+    HDEMBREE_LIGHT_SAMPLES_PER_HIT,
+    HdEmbreeDefaultLightSamplesPerHit,
+    "Number of light samples per hit point per light (must be >= 1)");
+
+TF_DEFINE_ENV_SETTING(
+    HDEMBREE_STRATIFY_LIGHT_SAMPLES,
+    HdEmbreeDefaultStratifyLightSamples,
+    "Should light samples be stratified across the light surface?");
+
 TF_DEFINE_ENV_SETTING(HDEMBREE_PRINT_CONFIGURATION,
     false,
     "Should HdEmbree print configuration on startup?");
@@ -97,6 +107,9 @@ HdEmbreeConfig::HdEmbreeConfig()
     useLighting = (TfGetEnvSetting(HDEMBREE_USE_LIGHTING));
     useSobol = (TfGetEnvSetting(HDEMBREE_USE_SOBOL));
     enableAdaptiveSampling = (TfGetEnvSetting(HDEMBREE_ENABLE_ADAPTIVE_SAMPLING));
+    lightSamplesPerHit = std::max(1,
+            TfGetEnvSetting(HDEMBREE_LIGHT_SAMPLES_PER_HIT));
+    stratifyLightSamples = (TfGetEnvSetting(HDEMBREE_STRATIFY_LIGHT_SAMPLES));
 
     if (TfGetEnvSetting(HDEMBREE_PRINT_CONFIGURATION)) {
         std::cout
@@ -121,6 +134,10 @@ HdEmbreeConfig::HdEmbreeConfig()
             <<    useSobol                 << "\n"
             << "  enableAdaptiveSampling    = "
             <<    enableAdaptiveSampling   << "\n"
+            << "  lightSamplesPerHit       = "
+            <<    lightSamplesPerHit       << "\n"
+            << "  stratifyLightSamples     = "
+            <<    stratifyLightSamples     << "\n"
             ;
     }
 }

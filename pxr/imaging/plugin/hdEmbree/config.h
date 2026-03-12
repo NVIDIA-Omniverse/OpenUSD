@@ -28,6 +28,8 @@ constexpr bool HdEmbreeDefaultUseSobol = true;
 constexpr bool HdEmbreeDefaultEnableAdaptiveSampling = true;
 constexpr float HdEmbreeDefaultAdaptiveThreshold = 0.01f;
 constexpr int HdEmbreeDefaultMinSamplesBeforeAdaptive = 16;
+constexpr int HdEmbreeDefaultLightSamplesPerHit = 1;
+constexpr bool HdEmbreeDefaultStratifyLightSamples = true;
 
 /// \class HdEmbreeConfig
 ///
@@ -124,6 +126,16 @@ public:
     ///
     /// Override with *HDEMBREE_MIN_SAMPLES_BEFORE_ADAPTIVE*.
     int minSamplesBeforeAdaptive = HdEmbreeDefaultMinSamplesBeforeAdaptive;
+
+    /// Number of light samples per hit point per light.
+    ///
+    /// Override with *HDEMBREE_LIGHT_SAMPLES_PER_HIT*.
+    int lightSamplesPerHit = HdEmbreeDefaultLightSamplesPerHit;
+
+    /// Should light samples be stratified across the light surface?
+    ///
+    /// Override with *HDEMBREE_STRATIFY_LIGHT_SAMPLES*.
+    bool stratifyLightSamples = HdEmbreeDefaultStratifyLightSamples;
 
 private:
     // The constructor initializes the config variables with their

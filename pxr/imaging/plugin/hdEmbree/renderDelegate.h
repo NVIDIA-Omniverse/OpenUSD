@@ -32,7 +32,9 @@ class HdEmbreeRenderParam;
     (adaptiveThreshold)                 \
     (minSamplesBeforeAdaptive)          \
     (maxBounces)                        \
-    (minBouncesBeforeRR)
+    (minBouncesBeforeRR)                \
+    (lightSamplesPerHit)                \
+    (stratifyLightSamples)
 
 // Also: HdRenderSettingsTokens->convergedSamplesPerPixel
 

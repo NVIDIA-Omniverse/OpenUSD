@@ -205,6 +205,14 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->minBouncesBeforeRR,
                 HdEmbreeDefaultMinBouncesBeforeRR));
+        _renderer->SetLightSamplesPerHit(
+            renderDelegate->GetRenderSetting<int>(
+                HdEmbreeRenderSettingsTokens->lightSamplesPerHit,
+                HdEmbreeConfig::GetInstance().lightSamplesPerHit));
+        _renderer->SetStratifyLightSamples(
+            renderDelegate->GetRenderSetting<bool>(
+                HdEmbreeRenderSettingsTokens->stratifyLightSamples,
+                HdEmbreeConfig::GetInstance().stratifyLightSamples));
 
         needStartRender = true;
     }
