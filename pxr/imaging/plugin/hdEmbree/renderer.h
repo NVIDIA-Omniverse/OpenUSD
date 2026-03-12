@@ -138,6 +138,12 @@ public:
     void SetLightSamplesPerHit(int samples);
     void SetStratifyLightSamples(bool stratify);
 
+    /// Set whether to show the adaptive sampling heatmap.
+    void SetShowAdaptiveHeatmap(bool show);
+
+    /// Set whether to use per-channel relative variance (vs luminance-based).
+    void SetUsePerChannelVariance(bool use);
+
     /// Rendering entrypoint: add one sample per pixel to the whole sample
     /// buffer, and then loop until the image is converged.  After each pass,
     /// the image will be resolved into a color buffer.
@@ -299,6 +305,12 @@ private:
     // Light sampling parameters.
     int _lightSamplesPerHit;
     bool _stratifyLightSamples;
+
+    // Whether to visualize adaptive sampling as a heatmap.
+    bool _showAdaptiveHeatmap;
+
+    // Whether to use per-channel relative variance for convergence.
+    bool _usePerChannelVariance;
 
     // Per-pixel adaptive sampling state (Welford online variance).
     std::vector<GfVec3f> _pixelMean;

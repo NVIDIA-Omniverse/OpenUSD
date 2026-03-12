@@ -213,6 +213,14 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->stratifyLightSamples,
                 HdEmbreeConfig::GetInstance().stratifyLightSamples));
+        _renderer->SetShowAdaptiveHeatmap(
+            renderDelegate->GetRenderSetting<bool>(
+                HdEmbreeRenderSettingsTokens->showAdaptiveHeatmap,
+                HdEmbreeDefaultShowAdaptiveHeatmap));
+        _renderer->SetUsePerChannelVariance(
+            renderDelegate->GetRenderSetting<bool>(
+                HdEmbreeRenderSettingsTokens->usePerChannelVariance,
+                HdEmbreeDefaultUsePerChannelVariance));
 
         needStartRender = true;
     }

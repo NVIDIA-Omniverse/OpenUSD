@@ -34,7 +34,9 @@ class HdEmbreeRenderParam;
     (maxBounces)                        \
     (minBouncesBeforeRR)                \
     (lightSamplesPerHit)                \
-    (stratifyLightSamples)
+    (stratifyLightSamples)              \
+    (showAdaptiveHeatmap)               \
+    (usePerChannelVariance)
 
 // Also: HdRenderSettingsTokens->convergedSamplesPerPixel
 

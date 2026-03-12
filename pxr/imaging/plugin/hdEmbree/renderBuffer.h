@@ -112,8 +112,14 @@ public:
     /// remainder will be taken as 0.
     ///   \param pixel         What index to write
     ///   \param numComponents The arity of the value to write.
-    ///   \param value         A float-valued vector to write. 
+    ///   \param value         A float-valued vector to write.
     void Write(GfVec3i const& pixel, size_t numComponents, float const* value);
+
+    /// Write directly to the resolved output buffer, bypassing multisampled
+    /// accumulation.  Used for overlay visualizations (e.g. heatmaps) that
+    /// must overwrite the display buffer every iteration.
+    void WriteOutput(GfVec3i const& pixel, size_t numComponents,
+                     float const* value);
 
     /// Write an int, vec2i, vec3i, or vec4i to the renderbuffer.
     /// This should only be called on a mapped buffer. Extra components will

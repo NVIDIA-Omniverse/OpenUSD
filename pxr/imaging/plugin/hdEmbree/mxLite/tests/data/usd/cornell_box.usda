@@ -12,8 +12,19 @@ glossy/diffuse interaction."""
 def RenderSettings "RenderSettings"
 {
     # hdEmbree namespaced settings
-    int hdEmbree:convergedSamplesPerPixel = 256
-    int hdEmbree:minSamplesBeforeAdaptive = 64
+    # int hdEmbree:convergedSamplesPerPixel = 256
+    # int hdEmbree:minSamplesBeforeAdaptive = 64
+}
+
+def Camera "Camera"
+{
+    float focalLength = 50
+    float horizontalAperture = 36
+    float verticalAperture = 24
+    float2 clippingRange = (0.1, 1000)
+    double3 xformOp:translate = (0, 6.0, 14.0)
+    float3 xformOp:rotateXYZ = (-15.0, 0, 0)
+    token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
 }
 
 def Xform "World"

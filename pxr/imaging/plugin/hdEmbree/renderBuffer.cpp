@@ -212,6 +212,16 @@ HdEmbreeRenderBuffer::Write(
 }
 
 void
+HdEmbreeRenderBuffer::WriteOutput(
+    GfVec3i const& pixel, size_t numComponents, float const* value)
+{
+    size_t idx = pixel[1]*_width+pixel[0];
+    size_t formatSize = HdDataSizeOfFormat(_format);
+    uint8_t *dst = &_buffer[idx*formatSize];
+    _WriteOutput(_format, dst, numComponents, value);
+}
+
+void
 HdEmbreeRenderBuffer::Clear(size_t numComponents, float const* value)
 {
     size_t formatSize = HdDataSizeOfFormat(_format);

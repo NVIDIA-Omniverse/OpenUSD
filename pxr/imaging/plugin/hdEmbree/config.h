@@ -14,7 +14,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 // NOTE: types here restricted to bool/int/string, as also used for
 // TF_DEFINE_ENV_SETTING
-constexpr int HdEmbreeDefaultSamplesToConvergence = 100;
+constexpr int HdEmbreeDefaultSamplesToConvergence = 256;
 constexpr int HdEmbreeDefaultTileSize = 8;
 constexpr int HdEmbreeDefaultAmbientOcclusionSamples = 0;
 constexpr bool HdEmbreeDefaultJitterCamera = true;
@@ -28,8 +28,10 @@ constexpr bool HdEmbreeDefaultUseSobol = true;
 constexpr bool HdEmbreeDefaultEnableAdaptiveSampling = true;
 constexpr float HdEmbreeDefaultAdaptiveThreshold = 0.01f;
 constexpr int HdEmbreeDefaultMinSamplesBeforeAdaptive = 16;
-constexpr int HdEmbreeDefaultLightSamplesPerHit = 1;
+constexpr int HdEmbreeDefaultLightSamplesPerHit = 8;
 constexpr bool HdEmbreeDefaultStratifyLightSamples = true;
+constexpr bool HdEmbreeDefaultShowAdaptiveHeatmap = false;
+constexpr bool HdEmbreeDefaultUsePerChannelVariance = false;
 
 /// \class HdEmbreeConfig
 ///
