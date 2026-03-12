@@ -1824,7 +1824,8 @@ class StageView(QGLWidget):
             if not UsdImagingGL.Engine.IsColorCorrectionCapable():
                 GL.glDisable(GL_FRAMEBUFFER_SRGB_EXT)
 
-            self.DrawAxis(viewProjectionMatrix)
+            if self._dataModel.viewSettings.displayAxis:
+                self.DrawAxis(viewProjectionMatrix)
 
             # XXX:
             # Draw camera guides-- no support for toggling guide visibility on
@@ -1993,6 +1994,9 @@ class StageView(QGLWidget):
             
             if "numCompletedSamples" in rStats:
                 toPrint["Samples done "] = rStats["numCompletedSamples"]
+            if "renderTimeSeconds" in rStats:
+                t = rStats["renderTimeSeconds"]
+                toPrint["Render time  "] = "%.1f s" % t
 
         # Playback Rate
         if (not (self._renderPauseState or self._renderStopState)) and \

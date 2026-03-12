@@ -307,20 +307,24 @@ static constexpr uint32_t kSobolMatrices[kSobolNumDimensions * kSobolMatrixSize]
 inline float
 HdEmbree_SobolSample(uint32_t sampleIndex, int dimension, uint32_t seed)
 {
-    // Wrap dimension if it exceeds our table size
-    dimension = dimension % kSobolNumDimensions;
+    // Use the original (unwrapped) dimension for the scrambling seed so that
+    // dimensions 0 and 32 (etc.) do not produce identical values.
+    uint32_t dimSeed = HdEmbree_MixBits(
+        seed ^ (static_cast<uint32_t>(dimension) * 0x9e3779b9u));
+
+    // Wrap dimension for the matrix table lookup.
+    int wrappedDim = dimension % kSobolNumDimensions;
 
     // Generate unscrambled Sobol sample via matrix multiplication
     uint32_t v = 0;
     uint32_t idx = sampleIndex;
-    for (int i = dimension * kSobolMatrixSize; idx != 0; idx >>= 1, ++i) {
+    for (int i = wrappedDim * kSobolMatrixSize; idx != 0; idx >>= 1, ++i) {
         if (idx & 1) {
             v ^= kSobolMatrices[i];
         }
     }
 
     // Apply FastOwen scrambling with per-dimension seed
-    uint32_t dimSeed = HdEmbree_MixBits(seed ^ (dimension * 0x9e3779b9u));
     v = HdEmbree_FastOwenScramble(v, dimSeed);
 
     // Convert to [0, 1)
@@ -334,21 +338,51 @@ HdEmbree_SobolSample(uint32_t sampleIndex, int dimension, uint32_t seed)
 /// A per-pixel, per-sample Sobol sampler. Each call to Next() returns the
 /// next dimension of the Sobol sequence, with FastOwen scrambling applied
 /// using a per-pixel seed for decorrelation.
+///
+/// Supports "padding" (per-bounce dimension restarting): calling
+/// ResetForBounce() re-derives the Owen seed from the original pixel seed
+/// and resets the dimension counter to 0. This ensures every bounce of a
+/// path independently uses the lowest (best-quality) Sobol dimensions,
+/// dramatically improving QMC effectiveness for high-dimensional path
+/// tracing integrands.
 struct HdEmbreeSobolSampler
 {
-    uint32_t seed;         ///< Per-pixel scrambling seed
+    uint32_t baseSeed;     ///< Original per-pixel seed (immutable, for resets)
+    uint32_t seed;         ///< Current scrambling seed (may differ after resets)
     uint32_t sampleIndex;  ///< Which sample within this pixel
     int dimension;         ///< Current dimension counter
+    bool useRandom;        ///< If true, use hash-based pseudo-random instead of Sobol
 
-    HdEmbreeSobolSampler(uint32_t pixelSeed, uint32_t sampleIdx)
-        : seed(pixelSeed)
+    HdEmbreeSobolSampler(uint32_t pixelSeed, uint32_t sampleIdx,
+                         bool random = false)
+        : baseSeed(pixelSeed)
+        , seed(pixelSeed)
         , sampleIndex(sampleIdx)
         , dimension(0)
+        , useRandom(random)
     {}
 
-    /// Return the next quasi-random float in [0, 1) and advance dimension.
+    /// Reset the dimension counter and re-derive the scrambling seed for a
+    /// new "padded" sub-sequence (e.g. a new path bounce). Each unique
+    /// bounceKey produces an independent low-discrepancy sequence starting
+    /// from dimension 0.
+    void ResetForBounce(uint32_t bounceKey) {
+        seed = HdEmbree_MixBits(baseSeed ^ bounceKey);
+        dimension = 0;
+    }
+
+    /// Return the next quasi-random (or pseudo-random) float in [0, 1)
+    /// and advance dimension.
     float Next() {
-        float val = HdEmbree_SobolSample(sampleIndex, dimension, seed);
+        float val;
+        if (useRandom) {
+            uint32_t h = HdEmbree_MixBits(
+                seed ^ (sampleIndex * 0x9e3779b9u)
+                     ^ (static_cast<uint32_t>(dimension) * 0x517cc1b7u));
+            val = std::min(h * 0x1p-32f, 1.0f - FLT_EPSILON);
+        } else {
+            val = HdEmbree_SobolSample(sampleIndex, dimension, seed);
+        }
         ++dimension;
         return val;
     }

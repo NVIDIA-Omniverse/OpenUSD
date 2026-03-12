@@ -5,6 +5,10 @@
 // https://openusd.org/license.
 //
 #include "pxr/imaging/hd/renderPassState.h"
+#include "pxr/imaging/hd/renderSettingsSchema.h"
+#include "pxr/imaging/hd/sceneGlobalsSchema.h"
+#include "pxr/imaging/hd/utils.h"
+#include "pxr/imaging/plugin/hdEmbree/config.h"
 #include "pxr/imaging/plugin/hdEmbree/renderDelegate.h"
 #include "pxr/imaging/plugin/hdEmbree/renderPass.h"
 
@@ -85,6 +89,51 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     if (_lastSceneVersion != currentSceneVersion) {
         needStartRender = true;
         _lastSceneVersion = currentSceneVersion;
+
+        // Apply namespacedSettings from the active RenderSettings prim to
+        // the delegate.  This bridges the gap between USD RenderSettings
+        // prims and hdEmbree's render delegate settings map.
+        // Only run when the scene changes (stage load / prim sync) so that
+        // interactive GUI changes are not overwritten every frame.
+        HdRenderIndex *index = GetRenderIndex();
+        HdSceneIndexBaseRefPtr si = index->GetTerminalSceneIndex();
+        SdfPath rsPath;
+        if (HdUtils::HasActiveRenderSettingsPrim(si, &rsPath)) {
+            HdSceneIndexPrim prim = si->GetPrim(rsPath);
+            HdRenderSettingsSchema rsSchema =
+                HdRenderSettingsSchema::GetFromParent(prim.dataSource);
+            if (rsSchema.IsDefined()) {
+                HdSampledDataSourceContainerSchema nsSettings =
+                    rsSchema.GetNamespacedSettings();
+                if (nsSettings.GetContainer()) {
+                    TfTokenVector names =
+                        nsSettings.GetContainer()->GetNames();
+                    HdRenderDelegate *delegate =
+                        index->GetRenderDelegate();
+                    // The "hdEmbree:" namespace prefix to strip from keys.
+                    static const std::string nsPrefix("hdEmbree:");
+                    for (const TfToken &name : names) {
+                        // Only process settings in our namespace.
+                        const std::string &nameStr = name.GetString();
+                        if (nameStr.substr(0, nsPrefix.size()) != nsPrefix){
+                            continue;
+                        }
+                        // Strip the namespace prefix to get the
+                        // render delegate setting token.
+                        TfToken settingName(
+                            nameStr.substr(nsPrefix.size()));
+                        if (auto ds =
+                                nsSettings.GetContainer()->Get(name)) {
+                            if (auto sampled =
+                                    HdSampledDataSource::Cast(ds)) {
+                                delegate->SetRenderSetting(
+                                    settingName, sampled->GetValue(0));
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Likewise the render settings.
@@ -131,6 +180,31 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         _renderer->SetRandomNumberSeed(
             renderDelegate->GetRenderSetting<unsigned int>(
                 HdEmbreeRenderSettingsTokens->randomNumberSeed, (unsigned int)-1));
+
+        _renderer->SetUseSobol(
+            renderDelegate->GetRenderSetting<bool>(
+                HdEmbreeRenderSettingsTokens->useSobol,
+                HdEmbreeConfig::GetInstance().useSobol));
+        _renderer->SetEnableAdaptiveSampling(
+            renderDelegate->GetRenderSetting<bool>(
+                HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
+                HdEmbreeConfig::GetInstance().enableAdaptiveSampling));
+        _renderer->SetAdaptiveThreshold(
+            renderDelegate->GetRenderSetting<float>(
+                HdEmbreeRenderSettingsTokens->adaptiveThreshold,
+                HdEmbreeConfig::GetInstance().adaptiveThreshold));
+        _renderer->SetMinSamplesBeforeAdaptive(
+            renderDelegate->GetRenderSetting<int>(
+                HdEmbreeRenderSettingsTokens->minSamplesBeforeAdaptive,
+                HdEmbreeConfig::GetInstance().minSamplesBeforeAdaptive));
+        _renderer->SetMaxBounces(
+            renderDelegate->GetRenderSetting<int>(
+                HdEmbreeRenderSettingsTokens->maxBounces,
+                HdEmbreeDefaultMaxBounces));
+        _renderer->SetMinBouncesBeforeRR(
+            renderDelegate->GetRenderSetting<int>(
+                HdEmbreeRenderSettingsTokens->minBouncesBeforeRR,
+                HdEmbreeDefaultMinBouncesBeforeRR));
 
         needStartRender = true;
     }

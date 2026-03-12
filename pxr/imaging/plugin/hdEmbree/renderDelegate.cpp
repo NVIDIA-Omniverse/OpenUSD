@@ -108,7 +108,7 @@ void
 HdEmbreeRenderDelegate::_Initialize()
 {
     // Initialize the settings and settings descriptors.
-    _settingDescriptors.resize(6);
+    _settingDescriptors.resize(12);
     _settingDescriptors[0] = { "Enable Scene Colors",
         HdEmbreeRenderSettingsTokens->enableSceneColors,
         VtValue(HdEmbreeConfig::GetInstance().useFaceColors) };
@@ -127,6 +127,24 @@ HdEmbreeRenderDelegate::_Initialize()
     _settingDescriptors[5] = { "Random Number Seed",
         HdEmbreeRenderSettingsTokens->randomNumberSeed,
         VtValue(HdEmbreeConfig::GetInstance().randomNumberSeed) };
+    _settingDescriptors[6] = { "Use Sobol Sampler",
+        HdEmbreeRenderSettingsTokens->useSobol,
+        VtValue(HdEmbreeConfig::GetInstance().useSobol) };
+    _settingDescriptors[7] = { "Enable Adaptive Sampling",
+        HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
+        VtValue(HdEmbreeConfig::GetInstance().enableAdaptiveSampling) };
+    _settingDescriptors[8] = { "Adaptive Threshold",
+        HdEmbreeRenderSettingsTokens->adaptiveThreshold,
+        VtValue(HdEmbreeConfig::GetInstance().adaptiveThreshold) };
+    _settingDescriptors[9] = { "Min Samples Before Adaptive",
+        HdEmbreeRenderSettingsTokens->minSamplesBeforeAdaptive,
+        VtValue(HdEmbreeConfig::GetInstance().minSamplesBeforeAdaptive) };
+    _settingDescriptors[10] = { "Max Bounces",
+        HdEmbreeRenderSettingsTokens->maxBounces,
+        VtValue(int(HdEmbreeDefaultMaxBounces)) };
+    _settingDescriptors[11] = { "Min Bounces Before Russian Roulette",
+        HdEmbreeRenderSettingsTokens->minBouncesBeforeRR,
+        VtValue(int(HdEmbreeDefaultMinBouncesBeforeRR)) };
     _PopulateDefaultSettings(_settingDescriptors);
 
     // Initialize the embree library handle (_rtcDevice).
@@ -273,8 +291,9 @@ VtDictionary
 HdEmbreeRenderDelegate::GetRenderStats() const
 {
     VtDictionary stats;
-    stats[HdPerfTokens->numCompletedSamples.GetString()] = 
+    stats[HdPerfTokens->numCompletedSamples.GetString()] =
         _renderer.GetCompletedSamples();
+    stats["renderTimeSeconds"] = _renderer.GetRenderElapsedSeconds();
     return stats;
 }
 

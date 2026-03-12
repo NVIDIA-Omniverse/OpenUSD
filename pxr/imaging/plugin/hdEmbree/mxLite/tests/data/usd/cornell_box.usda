@@ -2,16 +2,19 @@
 (
     defaultPrim = "World"
     upAxis = "Y"
+    renderSettingsPrimPath = "/RenderSettings"
     doc = """Cornell box with mixed MaterialX materials.
 Demonstrates multi-bounce path tracing: red/green color bleeding
 from walls, specular reflections on metallic sphere, and
 glossy/diffuse interaction."""
-    customLayerData = {
-        dictionary renderSettings = {
-            int convergedSamplesPerPixel = 256 
-        }
-    }
 )
+
+def RenderSettings "RenderSettings"
+{
+    # hdEmbree namespaced settings
+    int hdEmbree:convergedSamplesPerPixel = 256
+    int hdEmbree:minSamplesBeforeAdaptive = 64
+}
 
 def Xform "World"
 {

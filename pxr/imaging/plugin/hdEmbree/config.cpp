@@ -65,6 +65,17 @@ TF_DEFINE_ENV_SETTING(
     HdEmbreeDefaultUseLighting,
     "Should HdEmbree use scene lights while rendering?");
 
+TF_DEFINE_ENV_SETTING(
+    HDEMBREE_USE_SOBOL,
+    HdEmbreeDefaultUseSobol,
+    "Should HdEmbree use the Sobol quasi-random sampler? If false, uses"
+    " a simple hash-based pseudo-random sampler instead.");
+
+TF_DEFINE_ENV_SETTING(
+    HDEMBREE_ENABLE_ADAPTIVE_SAMPLING,
+    HdEmbreeDefaultEnableAdaptiveSampling,
+    "Should HdEmbree use adaptive sampling to skip converged pixels?");
+
 TF_DEFINE_ENV_SETTING(HDEMBREE_PRINT_CONFIGURATION,
     false,
     "Should HdEmbree print configuration on startup?");
@@ -84,6 +95,8 @@ HdEmbreeConfig::HdEmbreeConfig()
             TfGetEnvSetting(HDEMBREE_CAMERA_LIGHT_INTENSITY)) / 100.0f);
     randomNumberSeed = TfGetEnvSetting(HDEMBREE_RANDOM_NUMBER_SEED);
     useLighting = (TfGetEnvSetting(HDEMBREE_USE_LIGHTING));
+    useSobol = (TfGetEnvSetting(HDEMBREE_USE_SOBOL));
+    enableAdaptiveSampling = (TfGetEnvSetting(HDEMBREE_ENABLE_ADAPTIVE_SAMPLING));
 
     if (TfGetEnvSetting(HDEMBREE_PRINT_CONFIGURATION)) {
         std::cout
@@ -104,6 +117,10 @@ HdEmbreeConfig::HdEmbreeConfig()
             <<    randomNumberSeed        << "\n"
             << "  useLighting               = "
             <<    useLighting             << "\n"
+            << "  useSobol                  = "
+            <<    useSobol                 << "\n"
+            << "  enableAdaptiveSampling    = "
+            <<    enableAdaptiveSampling   << "\n"
             ;
     }
 }

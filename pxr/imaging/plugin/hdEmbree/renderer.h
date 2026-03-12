@@ -126,6 +126,14 @@ public:
     void SetMaxBounces(int maxBounces);
     void SetMinBouncesBeforeRR(int minBounces);
 
+    /// Set whether to use the Sobol quasi-random sampler.
+    void SetUseSobol(bool useSobol);
+
+    /// Set adaptive sampling parameters.
+    void SetEnableAdaptiveSampling(bool enable);
+    void SetAdaptiveThreshold(float threshold);
+    void SetMinSamplesBeforeAdaptive(int minSamples);
+
     /// Rendering entrypoint: add one sample per pixel to the whole sample
     /// buffer, and then loop until the image is converged.  After each pass,
     /// the image will be resolved into a color buffer.
@@ -141,6 +149,9 @@ public:
 
     /// Get the number of samples completed so far.
     int GetCompletedSamples() const;
+
+    /// Get elapsed render time in seconds since the last Render() call.
+    float GetRenderElapsedSeconds() const;
 
 private:
     // Perform validation and setup immediately before starting a render
@@ -164,6 +175,7 @@ private:
     // rays, and following them/calculating color with _TraceRay. This function
     // renders all tiles between tileStart and tileEnd.
     void _RenderTiles(HdRenderThread *renderThread, int sampleNum,
+                      uint32_t baseSeed,
                       size_t tileStart, size_t tileEnd);
 
     // Cast a ray into the scene and if it hits an object, write to the bound
@@ -272,8 +284,25 @@ private:
     int _maxBounces;
     int _minBouncesBeforeRR;
 
+    // Whether to use Sobol quasi-random sampler (vs hash-based pseudo-random).
+    bool _useSobol;
+
+    // Adaptive sampling parameters.
+    bool _enableAdaptiveSampling;
+    float _adaptiveThreshold;
+    int _minSamplesBeforeAdaptive;
+
+    // Per-pixel adaptive sampling state (Welford online variance).
+    std::vector<GfVec3f> _pixelMean;
+    std::vector<GfVec3f> _pixelM2;
+    std::vector<uint32_t> _pixelSampleCount;
+    std::vector<bool> _pixelConverged;
+
     // How many samples have been completed.
     std::atomic<int> _completedSamples;
+
+    // Render start time for elapsed time tracking.
+    std::chrono::steady_clock::time_point _renderStartTime;
 
     // Lights
     mutable WriteMutex _lightsWriteMutex; // protects the 2 below

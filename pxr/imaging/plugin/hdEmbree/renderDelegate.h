@@ -26,7 +26,13 @@ class HdEmbreeRenderParam;
     (enableLighting)                    \
     (enableSceneColors)                 \
     (ambientOcclusionSamples)           \
-    (randomNumberSeed)
+    (randomNumberSeed)                  \
+    (useSobol)                          \
+    (enableAdaptiveSampling)            \
+    (adaptiveThreshold)                 \
+    (minSamplesBeforeAdaptive)          \
+    (maxBounces)                        \
+    (minBouncesBeforeRR)
 
 // Also: HdRenderSettingsTokens->convergedSamplesPerPixel
 

@@ -129,6 +129,10 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _enableLighting(false)
     , _maxBounces(HdEmbreeDefaultMaxBounces)
     , _minBouncesBeforeRR(HdEmbreeDefaultMinBouncesBeforeRR)
+    , _useSobol(HdEmbreeDefaultUseSobol)
+    , _enableAdaptiveSampling(HdEmbreeDefaultEnableAdaptiveSampling)
+    , _adaptiveThreshold(HdEmbreeDefaultAdaptiveThreshold)
+    , _minSamplesBeforeAdaptive(HdEmbreeDefaultMinSamplesBeforeAdaptive)
     , _completedSamples(0)
 {
 }
@@ -181,6 +185,30 @@ void
 HdEmbreeRenderer::SetMinBouncesBeforeRR(int minBounces)
 {
     _minBouncesBeforeRR = minBounces;
+}
+
+void
+HdEmbreeRenderer::SetUseSobol(bool useSobol)
+{
+    _useSobol = useSobol;
+}
+
+void
+HdEmbreeRenderer::SetEnableAdaptiveSampling(bool enable)
+{
+    _enableAdaptiveSampling = enable;
+}
+
+void
+HdEmbreeRenderer::SetAdaptiveThreshold(float threshold)
+{
+    _adaptiveThreshold = threshold;
+}
+
+void
+HdEmbreeRenderer::SetMinSamplesBeforeAdaptive(int minSamples)
+{
+    _minSamplesBeforeAdaptive = minSamples;
 }
 
 void
@@ -462,6 +490,12 @@ HdEmbreeRenderer::Clear()
         rb->Unmap();
         rb->SetConverged(false);
     }
+
+    // Reset adaptive sampling state.
+    std::fill(_pixelMean.begin(), _pixelMean.end(), GfVec3f(0.0f));
+    std::fill(_pixelM2.begin(), _pixelM2.end(), GfVec3f(0.0f));
+    std::fill(_pixelSampleCount.begin(), _pixelSampleCount.end(), 0);
+    std::fill(_pixelConverged.begin(), _pixelConverged.end(), false);
 }
 
 void
@@ -478,6 +512,13 @@ int
 HdEmbreeRenderer::GetCompletedSamples() const
 {
     return _completedSamples.load();
+}
+
+float
+HdEmbreeRenderer::GetRenderElapsedSeconds() const
+{
+    auto now = std::chrono::steady_clock::now();
+    return std::chrono::duration<float>(now - _renderStartTime).count();
 }
 
 static
@@ -543,6 +584,15 @@ HdEmbreeRenderer::_PreRenderSetup()
                 "dataWindow is larger than render buffer");
         }
     }
+
+    // Allocate adaptive sampling arrays if enabled.
+    if (_enableAdaptiveSampling && _width > 0 && _height > 0) {
+        const size_t numPixels = _width * _height;
+        _pixelMean.resize(numPixels, GfVec3f(0.0f));
+        _pixelM2.resize(numPixels, GfVec3f(0.0f));
+        _pixelSampleCount.resize(numPixels, 0);
+        _pixelConverged.resize(numPixels, false);
+    }
 }
 
 void
@@ -553,6 +603,22 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
 #endif
 
     _PreRenderSetup();
+
+    _renderStartTime = std::chrono::steady_clock::now();
+
+
+    // Compute baseSeed once per Render() call so that every pixel uses a
+    // consistent Owen scrambling seed across all samples.  Previously this
+    // was computed inside _RenderTiles using system_clock::now(), which meant
+    // each pass (and each thread chunk) got a different seed, destroying the
+    // low-discrepancy property of the Sobol sequence.
+    uint32_t baseSeed;
+    if (_randomNumberSeed == -1) {
+        baseSeed = static_cast<uint32_t>(
+            std::chrono::system_clock::now().time_since_epoch().count());
+    } else {
+        baseSeed = static_cast<uint32_t>(_randomNumberSeed);
+    }
 
     // Render the image. Each pass through the loop adds a sample per pixel
     // (with jittered ray direction); the longer the loop runs, the less noisy
@@ -585,7 +651,8 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         // to be interrupted.
         WorkParallelForN(numTilesX*numTilesY,
             std::bind(&HdEmbreeRenderer::_RenderTiles, this,
-                renderThread, i, std::placeholders::_1, std::placeholders::_2));
+                renderThread, i, baseSeed,
+                std::placeholders::_1, std::placeholders::_2));
 
         // After the first pass, mark the single-sampled attachments as
         // converged and unmap them. If there are no multisampled attachments,
@@ -608,6 +675,20 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         // Track the number of completed samples for external consumption.
         _completedSamples.store(i+1);
 
+        // If adaptive sampling is enabled, check if all pixels converged.
+        if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
+            bool allConverged = true;
+            for (size_t p = 0; p < _pixelConverged.size(); ++p) {
+                if (!_pixelConverged[p]) {
+                    allConverged = false;
+                    break;
+                }
+            }
+            if (allConverged) {
+                break;
+            }
+        }
+
         // Cancellation point.
         if (renderThread->IsStopRequested()) {
             break;
@@ -625,6 +706,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
 
 void
 HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
+                               uint32_t baseSeed,
                                size_t tileStart, size_t tileEnd)
 {
     const unsigned int minX = _dataWindow.GetMinX();
@@ -646,15 +728,6 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
         HdEmbreeConfig::GetInstance().tileSize;
     const unsigned int numTilesX =
         (_dataWindow.GetWidth() + tileSize-1) / tileSize;
-
-    // Base seed for this render pass.
-    uint32_t baseSeed;
-    if (_randomNumberSeed == -1) {
-        baseSeed = static_cast<uint32_t>(
-            std::chrono::system_clock::now().time_since_epoch().count());
-    } else {
-        baseSeed = static_cast<uint32_t>(_randomNumberSeed);
-    }
 
     // _RenderTiles gets a range of tiles; iterate through them.
     for (unsigned int tile = tileStart; tile < tileEnd; ++tile) {
@@ -678,10 +751,20 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
         // Loop over pixels casting rays.
         for (unsigned int y = y0; y < y1; ++y) {
             for (unsigned int x = x0; x < x1; ++x) {
-                // Create a per-pixel Sobol sampler.
+
+                // Skip converged pixels in adaptive sampling mode.
+                const size_t pixelIdx = y * _width + x;
+                if (_enableAdaptiveSampling
+                    && !_pixelConverged.empty()
+                    && _pixelConverged[pixelIdx]) {
+                    continue;
+                }
+
+                // Create a per-pixel sampler (Sobol or pseudo-random).
                 uint32_t pixelSeed = static_cast<uint32_t>(
                     TfHash::Combine(baseSeed, x, y));
-                HdEmbreeSobolSampler sampler(pixelSeed, sampleNum);
+                HdEmbreeSobolSampler sampler(pixelSeed, sampleNum,
+                                             !_useSobol);
 
                 // Jitter the camera ray direction.
                 GfVec2f jitter(0.0f, 0.0f);
@@ -813,6 +896,27 @@ HdEmbreeRenderer::_TraceRay(unsigned int x, unsigned int y,
             GfVec4f clearColor = _GetClearColor(_aovBindings[i].clearValue);
             GfVec4f sample = _ComputeColor(rayHit, sampler, clearColor);
             renderBuffer->Write(GfVec3i(x,y,1), 4, sample.data());
+
+            // Update Welford online variance for adaptive sampling.
+            if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
+                const size_t idx = y * _width + x;
+                GfVec3f rgb(sample[0], sample[1], sample[2]);
+                uint32_t count = ++_pixelSampleCount[idx];
+                GfVec3f delta = rgb - _pixelMean[idx];
+                _pixelMean[idx] += delta / static_cast<float>(count);
+                GfVec3f delta2 = rgb - _pixelMean[idx];
+                _pixelM2[idx] += GfCompMult(delta, delta2);
+
+                if (count >= static_cast<uint32_t>(_minSamplesBeforeAdaptive)) {
+                    GfVec3f variance = _pixelM2[idx] / static_cast<float>(count);
+                    float maxVar = std::max({variance[0],
+                                             variance[1],
+                                             variance[2]});
+                    if (maxVar <= _adaptiveThreshold) {
+                        _pixelConverged[idx] = true;
+                    }
+                }
+            }
         } else if ((_aovNames[i].name == HdAovTokens->cameraDepth ||
                     _aovNames[i].name == HdAovTokens->depth) &&
                    renderBuffer->GetFormat() == HdFormatFloat32) {
@@ -1486,6 +1590,12 @@ HdEmbreeRenderer::_TracePath(
     bool anyNonSpecularBounces = false;
 
     for (int bounce = 0; bounce <= _maxBounces; ++bounce) {
+        // QMC padding: reset the sampler so each bounce independently
+        // uses the best (lowest) Sobol dimensions.  The bounce-specific
+        // key ensures each bounce gets a different Owen scrambling seed.
+        sampler.ResetForBounce(
+            static_cast<uint32_t>(bounce + 1) * 0x9e3779b9u);
+
         RTCRayHit rayHit;
         rayHit.ray.flags = 0;
         _PopulateRayHit(&rayHit, rayOrigin, rayDir,

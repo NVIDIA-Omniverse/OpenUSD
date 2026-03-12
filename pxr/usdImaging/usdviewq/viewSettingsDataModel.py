@@ -181,6 +181,7 @@ class ViewSettingsDataModel(StateSource, QtCore.QObject):
         self._showAbstractPrims = self.stateProperty("showAbstractPrims", default=False)
         self._showPrimDisplayNames = self.stateProperty("showPrimDisplayNames", default=True)
         self._rolloverPrimInfo = self.stateProperty("rolloverPrimInfo", default=False)
+        self._displayAxis = self.stateProperty("displayAxis", default=True)
         self._displayCameraOracles = self.stateProperty("cameraOracles", default=False)
         self._cameraMaskMode = self.stateProperty("cameraMaskMode", default=CameraMaskModes.NONE)
         self._showMask_Outline = self.stateProperty("cameraMaskOutline", default=False)
@@ -248,6 +249,7 @@ class ViewSettingsDataModel(StateSource, QtCore.QObject):
         state["showAbstractPrims"] = self._showAbstractPrims
         state["showPrimDisplayNames"] = self._showPrimDisplayNames
         state["rolloverPrimInfo"] = self._rolloverPrimInfo
+        state["displayAxis"] = self._displayAxis
         state["cameraOracles"] = self._displayCameraOracles
         state["cameraMaskMode"] = self._cameraMaskMode
         state["cameraMaskOutline"] = self._showMask_Outline
@@ -542,6 +544,15 @@ class ViewSettingsDataModel(StateSource, QtCore.QObject):
     @visibleViewSetting
     def displayRender(self, value):
         self._displayRender = value
+
+    @property
+    def displayAxis(self):
+        return self._displayAxis
+
+    @displayAxis.setter
+    @visibleViewSetting
+    def displayAxis(self, value):
+        self._displayAxis = value
 
     @property
     def displayCameraOracles(self):

@@ -494,6 +494,7 @@
             <addaction name="menuComplexity"/>
             <addaction name="menuBBox"/>
             <addaction name="menuDisplay"/>
+            <addaction name="actionDisplay_Axis"/>
             <addaction name="separator"/>
             <addaction name="menuHUD"/>
             <addaction name="menuSelection_Highlighting"/>
@@ -2851,6 +2852,17 @@
    </property>
    <property name="shortcut">
     <string>|</string>
+   </property>
+  </action>
+  <action name="actionDisplay_Axis">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Axis Indicator</string>
    </property>
   </action>
   <action name="actionDisplay_Camera_Oracles">

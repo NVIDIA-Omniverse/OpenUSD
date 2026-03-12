@@ -16,7 +16,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 // TF_DEFINE_ENV_SETTING
 constexpr int HdEmbreeDefaultSamplesToConvergence = 100;
 constexpr int HdEmbreeDefaultTileSize = 8;
-constexpr int HdEmbreeDefaultAmbientOcclusionSamples = 16;
+constexpr int HdEmbreeDefaultAmbientOcclusionSamples = 0;
 constexpr bool HdEmbreeDefaultJitterCamera = true;
 constexpr bool HdEmbreeDefaultUseFaceColors = true;
 constexpr int HdEmbreeDefaultCameraLightIntensity = 300;
@@ -24,6 +24,10 @@ constexpr int HdEmbreeDefaultRandomNumberSeed = -1;
 constexpr bool HdEmbreeDefaultUseLighting = true;
 constexpr int HdEmbreeDefaultMaxBounces = 4;
 constexpr int HdEmbreeDefaultMinBouncesBeforeRR = 2;
+constexpr bool HdEmbreeDefaultUseSobol = true;
+constexpr bool HdEmbreeDefaultEnableAdaptiveSampling = true;
+constexpr float HdEmbreeDefaultAdaptiveThreshold = 0.01f;
+constexpr int HdEmbreeDefaultMinSamplesBeforeAdaptive = 16;
 
 /// \class HdEmbreeConfig
 ///
@@ -99,6 +103,27 @@ public:
     ///
     /// Override with *HDEMBREE_USE_LIGHTING*.
     bool useLighting = HdEmbreeDefaultUseLighting;
+
+    /// Should we use the Sobol quasi-random sampler? When false, a simple
+    /// hash-based pseudo-random sampler is used instead.
+    ///
+    /// Override with *HDEMBREE_USE_SOBOL*.
+    bool useSobol = HdEmbreeDefaultUseSobol;
+
+    /// Should we use adaptive sampling to skip converged pixels?
+    ///
+    /// Override with *HDEMBREE_ENABLE_ADAPTIVE_SAMPLING*.
+    bool enableAdaptiveSampling = HdEmbreeDefaultEnableAdaptiveSampling;
+
+    /// Variance threshold below which a pixel is considered converged.
+    ///
+    /// Override with *HDEMBREE_ADAPTIVE_THRESHOLD*.
+    float adaptiveThreshold = HdEmbreeDefaultAdaptiveThreshold;
+
+    /// Minimum samples per pixel before adaptive convergence checks begin.
+    ///
+    /// Override with *HDEMBREE_MIN_SAMPLES_BEFORE_ADAPTIVE*.
+    int minSamplesBeforeAdaptive = HdEmbreeDefaultMinSamplesBeforeAdaptive;
 
 private:
     // The constructor initializes the config variables with their
