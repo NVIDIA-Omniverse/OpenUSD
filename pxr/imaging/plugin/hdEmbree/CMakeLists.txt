@@ -41,27 +41,27 @@ pxr_plugin(hdEmbree
         renderDelegate
         renderPass
         sampler
-        mxLite/graph
-        mxLite/nodeRegistry
-        mxLite/materials/bsdf
-        mxLite/materials/standardSurface
-        mxLite/materials/openPbr
-        mxLite/materials/usdPreviewSurface
-        mxLite/nodes/mathNodes
-        mxLite/nodes/adjustmentNodes
-        mxLite/nodes/channelNodes
-        mxLite/nodes/conditionalNodes
-        mxLite/nodes/geometricNodes
-        mxLite/nodes/textureNodes
-        mxLite/nodes/proceduralNodes
-        mxLite/nodes/colorNodes
+        MaterialXCpp/graph
+        MaterialXCpp/nodeRegistry
+        MaterialXCpp/materials/bsdf
+        MaterialXCpp/materials/standardSurface
+        MaterialXCpp/materials/openPbr
+        MaterialXCpp/materials/usdPreviewSurface
+        MaterialXCpp/nodes/mathNodes
+        MaterialXCpp/nodes/adjustmentNodes
+        MaterialXCpp/nodes/channelNodes
+        MaterialXCpp/nodes/conditionalNodes
+        MaterialXCpp/nodes/geometricNodes
+        MaterialXCpp/nodes/textureNodes
+        MaterialXCpp/nodes/proceduralNodes
+        MaterialXCpp/nodes/colorNodes
 
     PUBLIC_HEADERS
         context.h
         renderParam.h
         sampling.h
         pxrPbrt/pbrtUtils.h
-        mxLite/types.h
+        MaterialXCpp/types.h
 
     PRIVATE_CLASSES
         debugCodes
@@ -88,7 +88,7 @@ pxr_build_test(testHdEmbree
 )
 endif()
 
-pxr_build_test(testMxLite
+pxr_build_test(testMaterialXCpp
     LIBRARIES
         tf
         gf
@@ -96,23 +96,23 @@ pxr_build_test(testMxLite
         sdf
         hd
     CPPFILES
-        mxLite/tests/testMxLiteMain.cpp
-        mxLite/tests/testMxLiteBsdf.cpp
-        mxLite/tests/testMxLiteNodes.cpp
-        mxLite/tests/testMxLiteMaterials.cpp
-        mxLite/tests/testMxLiteGraph.cpp
-        mxLite/materials/bsdf.cpp
-        mxLite/materials/standardSurface.cpp
-        mxLite/materials/openPbr.cpp
-        mxLite/materials/usdPreviewSurface.cpp
-        mxLite/nodeRegistry.cpp
-        mxLite/graph.cpp
-        mxLite/nodes/mathNodes.cpp
-        mxLite/nodes/adjustmentNodes.cpp
-        mxLite/nodes/channelNodes.cpp
-        mxLite/nodes/conditionalNodes.cpp
-        mxLite/nodes/geometricNodes.cpp
-        mxLite/nodes/textureNodes.cpp
-        mxLite/nodes/proceduralNodes.cpp
-        mxLite/nodes/colorNodes.cpp
+        MaterialXCpp/tests/testMaterialXCppMain.cpp
+        MaterialXCpp/tests/testMaterialXCppBsdf.cpp
+        MaterialXCpp/tests/testMaterialXCppNodes.cpp
+        MaterialXCpp/tests/testMaterialXCppMaterials.cpp
+        MaterialXCpp/tests/testMaterialXCppGraph.cpp
+        MaterialXCpp/materials/bsdf.cpp
+        MaterialXCpp/materials/standardSurface.cpp
+        MaterialXCpp/materials/openPbr.cpp
+        MaterialXCpp/materials/usdPreviewSurface.cpp
+        MaterialXCpp/nodeRegistry.cpp
+        MaterialXCpp/graph.cpp
+        MaterialXCpp/nodes/mathNodes.cpp
+        MaterialXCpp/nodes/adjustmentNodes.cpp
+        MaterialXCpp/nodes/channelNodes.cpp
+        MaterialXCpp/nodes/conditionalNodes.cpp
+        MaterialXCpp/nodes/geometricNodes.cpp
+        MaterialXCpp/nodes/textureNodes.cpp
+        MaterialXCpp/nodes/proceduralNodes.cpp
+        MaterialXCpp/nodes/colorNodes.cpp
 )

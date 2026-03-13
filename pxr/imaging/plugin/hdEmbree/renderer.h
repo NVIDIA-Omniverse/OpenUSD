@@ -11,7 +11,7 @@
 
 #include "pxr/imaging/plugin/hdEmbree/context.h"
 #include "pxr/imaging/plugin/hdEmbree/light.h"
-#include "pxr/imaging/plugin/hdEmbree/mxLite/types.h"
+#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/types.h"
 #include "pxr/imaging/plugin/hdEmbree/sampling.h"
 
 #include "pxr/imaging/hd/aov.h"
@@ -219,7 +219,7 @@ private:
                                    HdEmbreeSobolSampler &sampler);
 
     /// Evaluate direct lighting from all scene lights using MIS.
-    /// If \p closure is non-null, uses the mxLite BSDF evaluation;
+    /// If \p closure is non-null, uses the MaterialXCpp BSDF evaluation;
     /// otherwise falls back to a simple Lambertian BRDF.
     GfVec3f _ComputeDirectLightingMIS(
         GfVec3f const& position,
@@ -227,7 +227,7 @@ private:
         GfVec3f const& wo,
         HdEmbreeSobolSampler &sampler,
         bool doubleSided,
-        MxLiteSurfaceClosure const* closure) const;
+        mxcpp::SurfaceClosure const* closure) const;
 
     /// Multi-bounce path tracer with MIS.
     GfVec3f _TracePath(

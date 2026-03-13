@@ -12,7 +12,7 @@
 #include "pxr/imaging/plugin/hdEmbree/material.h"
 #include "pxr/imaging/plugin/hdEmbree/mesh.h"
 #include "pxr/imaging/plugin/hdEmbree/renderBuffer.h"
-#include "pxr/imaging/plugin/hdEmbree/mxLite/materials/bsdf.h"
+#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/materials/bsdf.h"
 
 #include "pxr/imaging/hd/perfLog.h"
 
@@ -1219,7 +1219,7 @@ HdEmbreeRenderer::_EvalOpacityAtHit(RTCRayHit const& rayHit) const
     HdEmbreeMaterial *material = prototypeContext->material;
     if (!material) return 1.0f;
 
-    MxLiteEvalGraph *evalGraph = material->GetEvalGraph();
+    mxcpp::EvalGraph *evalGraph = material->GetEvalGraph();
     if (!evalGraph) return 1.0f;
 
     GfVec3f hitPos = _CalculateHitPosition(rayHit);
@@ -1265,7 +1265,7 @@ HdEmbreeRenderer::_EvalOpacityAtHit(RTCRayHit const& rayHit) const
     }
 
     try {
-        MxLiteShadingContext ctx;
+        mxcpp::ShadingContext ctx;
         ctx.position = hitPos;
         ctx.normal = normal;
         ctx.tangent = tangent;
@@ -1277,7 +1277,7 @@ HdEmbreeRenderer::_EvalOpacityAtHit(RTCRayHit const& rayHit) const
         ctx.baryU = rayHit.hit.u;
         ctx.baryV = rayHit.hit.v;
 
-        MxLiteSurfaceClosure closure = evalGraph->Evaluate(ctx);
+        mxcpp::SurfaceClosure closure = evalGraph->Evaluate(ctx);
         return closure.opacity;
     } catch (...) {
         return 1.0f;
@@ -1429,19 +1429,19 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
         bitangent = GfCross(normal, tangent);
     }
 
-    // Try to evaluate mxLite material if one is bound.
+    // Try to evaluate MaterialXCpp material if one is bound.
     HdEmbreeMaterial *material = prototypeContext->material;
-    MxLiteEvalGraph *evalGraph = nullptr;
+    mxcpp::EvalGraph *evalGraph = nullptr;
     if (material) {
         evalGraph = material->GetEvalGraph();
     }
 
-    MxLiteSurfaceClosure closure;
+    mxcpp::SurfaceClosure closure;
     bool hasMaterialClosure = false;
 
     if (evalGraph) {
         try {
-            MxLiteShadingContext ctx;
+            mxcpp::ShadingContext ctx;
             ctx.position = hitPos;
             ctx.normal = normal;
             ctx.tangent = tangent;
@@ -1602,7 +1602,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
     GfVec3f const& wo,
     HdEmbreeSobolSampler &sampler,
     bool doubleSided,
-    MxLiteSurfaceClosure const* closure) const
+    mxcpp::SurfaceClosure const* closure) const
 {
 
     GfVec3f finalColor(0.0f);
@@ -1668,7 +1668,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
 
             GfVec3f sampleContrib(0.0f);
             if (closure) {
-                GfVec3f bsdfValue = MxLiteBsdf::EvalSurface(
+                GfVec3f bsdfValue = mxcpp::Bsdf::EvalSurface(
                     *closure, shadingNormal, ls.wI, wo);
 
                 for (int i = 0; i < 3; ++i) {
@@ -1681,9 +1681,9 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 // averaging is handled outside).
                 float lightPdf = (ls.invPdfW > 0.0f)
                     ? 1.0f / ls.invPdfW : 0.0f;
-                float bsdfPdf = MxLiteBsdf::PdfSurface(
+                float bsdfPdf = mxcpp::Bsdf::PdfSurface(
                     *closure, shadingNormal, ls.wI, wo);
-                float misW = MxLiteBsdf::PowerHeuristic(lightPdf, bsdfPdf);
+                float misW = mxcpp::Bsdf::PowerHeuristic(lightPdf, bsdfPdf);
 
                 sampleContrib = GfCompMult(ls.Li, bsdfValue)
                     * cosOffNormal * vis * ls.invPdfW * misW;
@@ -1757,7 +1757,7 @@ HdEmbreeRenderer::_TracePath(
                     // MIS weight for BSDF sampling strategy hitting dome.
                     float domePdf = (ls.invPdfW > 0.0f)
                         ? 1.0f / ls.invPdfW : 0.0f;
-                    float misW = MxLiteBsdf::PowerHeuristic(
+                    float misW = mxcpp::Bsdf::PowerHeuristic(
                         lastBsdfPdf, domePdf);
                     domeContrib *= misW;
                 }
@@ -1841,18 +1841,18 @@ HdEmbreeRenderer::_TracePath(
 
         // --- Evaluate material ---
         HdEmbreeMaterial *material = prototypeContext->material;
-        MxLiteEvalGraph *evalGraph = material
+        mxcpp::EvalGraph *evalGraph = material
             ? material->GetEvalGraph() : nullptr;
 
         GfVec3f tangent, bitangent;
         GfBuildOrthonormalFrame(normal, &tangent, &bitangent);
 
-        MxLiteSurfaceClosure closure;
+        mxcpp::SurfaceClosure closure;
         bool hasClosure = false;
 
         if (evalGraph) {
             try {
-                MxLiteShadingContext ctx;
+                mxcpp::ShadingContext ctx;
                 ctx.position = hitPos;
                 ctx.normal = normal;
                 ctx.tangent = tangent;
@@ -1916,7 +1916,7 @@ HdEmbreeRenderer::_TracePath(
                 hitPos, normal, wo, sampler, doubleSided, &closure);
         } else {
             GfVec3f matColor = displayColor;
-            MxLiteSurfaceClosure fallback;
+            mxcpp::SurfaceClosure fallback;
             fallback.baseColor = matColor;
             fallback.roughness = 1.0f;
             fallback.metallic = 0.0f;
@@ -1935,7 +1935,7 @@ HdEmbreeRenderer::_TracePath(
         // --- BSDF sampling for next direction ---
         if (!hasClosure) break;
 
-        MxLiteBsdf::BsdfSample bs = MxLiteBsdf::SampleSurface(
+        mxcpp::Bsdf::BsdfSample bs = mxcpp::Bsdf::SampleSurface(
             closure, normal, wo,
             sampler.Next(), sampler.Next(), sampler.Next());
         if (bs.pdf <= 0.0f) break;

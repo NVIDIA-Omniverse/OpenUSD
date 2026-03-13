@@ -74,7 +74,7 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
 
     if (haveNetwork) {
         try {
-            _evalGraph = MxLiteEvalGraph::Compile(network);
+            _evalGraph = mxcpp::EvalGraph::Compile(network);
             if (_evalGraph && !_evalGraph->IsValid()) {
                 _evalGraph.reset();
             }

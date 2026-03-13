@@ -1,0 +1,23 @@
+//
+// Copyright 2024 Pixar
+//
+// Licensed under the terms set forth in the LICENSE.txt file available at
+// https://openusd.org/license.
+//
+#ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_MXCPP_MATERIALS_USD_PREVIEW_SURFACE_H
+#define PXR_IMAGING_PLUGIN_HD_EMBREE_MXCPP_MATERIALS_USD_PREVIEW_SURFACE_H
+
+#include "pxr/pxr.h"
+#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/types.h"
+
+PXR_NAMESPACE_OPEN_SCOPE
+namespace mxcpp {
+
+/// Evaluate the UsdPreviewSurface material model.
+/// Maps UsdPreviewSurface parameters to a unified surface closure.
+SurfaceClosure EvalUsdPreviewSurface(const ParamMap& params);
+
+} // namespace mxcpp
+PXR_NAMESPACE_CLOSE_SCOPE
+
+#endif

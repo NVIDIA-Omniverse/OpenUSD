@@ -9,7 +9,7 @@
 
 #include "pxr/pxr.h"
 #include "pxr/imaging/hd/material.h"
-#include "pxr/imaging/plugin/hdEmbree/mxLite/graph.h"
+#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/graph.h"
 
 #include <memory>
 
@@ -18,7 +18,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 /// \class HdEmbreeMaterial
 ///
 /// A material Sprim that compiles an HdMaterialNetwork2 into an
-/// MxLiteEvalGraph for CPU-side shading in the Embree renderer.
+/// mxcpp::EvalGraph for CPU-side shading in the Embree renderer.
 ///
 class HdEmbreeMaterial final : public HdMaterial
 {
@@ -33,10 +33,10 @@ public:
     HdDirtyBits GetInitialDirtyBitsMask() const override;
 
     /// Return the compiled evaluation graph, or nullptr if unavailable.
-    MxLiteEvalGraph* GetEvalGraph() const { return _evalGraph.get(); }
+    mxcpp::EvalGraph* GetEvalGraph() const { return _evalGraph.get(); }
 
 private:
-    std::unique_ptr<MxLiteEvalGraph> _evalGraph;
+    std::unique_ptr<mxcpp::EvalGraph> _evalGraph;
 };
 
 PXR_NAMESPACE_CLOSE_SCOPE
