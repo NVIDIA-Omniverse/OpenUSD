@@ -4,19 +4,18 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/pxr.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/materials/bsdf.h"
+#include "../materials/bsdf.h"
 
 #include <cmath>
 #include <cstdio>
 #include <functional>
 
-PXR_NAMESPACE_USING_DIRECTIVE
+using namespace mxcpp;
 
 // From testMain.cpp
 void Test_Register(const char* name, std::function<bool()> fn);
 bool Test_IsClose(float a, float b, float eps = 1e-5f);
-bool Test_IsClose(const GfVec3f& a, const GfVec3f& b, float eps = 1e-5f);
+bool Test_IsClose(const Vec3f& a, const Vec3f& b, float eps = 1e-5f);
 
 #define _REG(name) Test_Register("Bsdf." #name, &name)
 
@@ -25,14 +24,14 @@ bool Test_IsClose(const GfVec3f& a, const GfVec3f& b, float eps = 1e-5f);
 static bool
 TestLambertianValue()
 {
-    GfVec3f white(1.0f);
-    GfVec3f N(0, 1, 0);
-    GfVec3f wi(0, 1, 0);
-    GfVec3f wo(0, 1, 0);
+    Vec3f white(1.0f);
+    Vec3f N(0, 1, 0);
+    Vec3f wi(0, 1, 0);
+    Vec3f wo(0, 1, 0);
 
-    GfVec3f result = Bsdf::EvalLambertian(white, N, wi, wo);
+    Vec3f result = Bsdf::EvalLambertian(white, N, wi, wo);
     float expected = 1.0f / 3.14159265358979f;
-    if (!Test_IsClose(result, GfVec3f(expected), 1e-5f)) {
+    if (!Test_IsClose(result, Vec3f(expected), 1e-5f)) {
         printf("    Expected (%f,%f,%f), got (%f,%f,%f)\n",
                expected, expected, expected,
                result[0], result[1], result[2]);
@@ -44,9 +43,9 @@ TestLambertianValue()
 static bool
 TestLambertianColorScaling()
 {
-    GfVec3f color(0.5f, 0.3f, 0.1f);
-    GfVec3f N(0, 1, 0);
-    GfVec3f result = Bsdf::EvalLambertian(color, N, GfVec3f(0,1,0), GfVec3f(0,1,0));
+    Vec3f color(0.5f, 0.3f, 0.1f);
+    Vec3f N(0, 1, 0);
+    Vec3f result = Bsdf::EvalLambertian(color, N, Vec3f(0,1,0), Vec3f(0,1,0));
     float invPi = 1.0f / 3.14159265358979f;
     return Test_IsClose(result, color * invPi, 1e-5f);
 }
@@ -54,32 +53,32 @@ TestLambertianColorScaling()
 static bool
 TestGGXSpecularNonNegative()
 {
-    GfVec3f N(0, 1, 0);
-    GfVec3f wo = GfVec3f(0, 1, 0);
-    GfVec3f wi = GfVec3f(0.5f, 0.866f, 0.0f).GetNormalized();
-    GfVec3f result = Bsdf::EvalGGXSpecular(
-        0.5f, 1.5f, GfVec3f(1.0f), N, wi, wo);
+    Vec3f N(0, 1, 0);
+    Vec3f wo = Vec3f(0, 1, 0);
+    Vec3f wi = Vec3f(0.5f, 0.866f, 0.0f).normalized();
+    Vec3f result = Bsdf::EvalGGXSpecular(
+        0.5f, 1.5f, Vec3f(1.0f), N, wi, wo);
     return result[0] >= 0.0f && result[1] >= 0.0f && result[2] >= 0.0f;
 }
 
 static bool
 TestGGXSpecularPeak()
 {
-    GfVec3f N(0, 1, 0);
-    GfVec3f wo = GfVec3f(0.3f, 0.95f, 0.0f).GetNormalized();
-    GfVec3f wiMirror = GfVec3f(-0.3f, 0.95f, 0.0f).GetNormalized();
-    GfVec3f wiOff = GfVec3f(0.8f, 0.6f, 0.0f).GetNormalized();
+    Vec3f N(0, 1, 0);
+    Vec3f wo = Vec3f(0.3f, 0.95f, 0.0f).normalized();
+    Vec3f wiMirror = Vec3f(-0.3f, 0.95f, 0.0f).normalized();
+    Vec3f wiOff = Vec3f(0.8f, 0.6f, 0.0f).normalized();
 
     float roughness = 0.05f;
-    GfVec3f specColor(1.0f);
+    Vec3f specColor(1.0f);
 
-    GfVec3f atMirror = Bsdf::EvalGGXSpecular(
+    Vec3f atMirror = Bsdf::EvalGGXSpecular(
         roughness, 1.5f, specColor, N, wiMirror, wo);
-    GfVec3f offMirror = Bsdf::EvalGGXSpecular(
+    Vec3f offMirror = Bsdf::EvalGGXSpecular(
         roughness, 1.5f, specColor, N, wiOff, wo);
 
-    float mirrorMag = atMirror.GetLength();
-    float offMag = offMirror.GetLength();
+    float mirrorMag = atMirror.length();
+    float offMag = offMirror.length();
     if (mirrorMag <= offMag) {
         printf("    Mirror dir magnitude %f should be > off-specular %f\n",
                mirrorMag, offMag);
@@ -91,11 +90,11 @@ TestGGXSpecularPeak()
 static bool
 TestCoatZeroWeight()
 {
-    GfVec3f N(0, 1, 0);
-    GfVec3f wi(0, 1, 0);
-    GfVec3f wo(0, 1, 0);
-    GfVec3f result = Bsdf::EvalCoat(0.0f, 0.1f, 1.5f, N, wi, wo);
-    return Test_IsClose(result, GfVec3f(0.0f), 1e-7f);
+    Vec3f N(0, 1, 0);
+    Vec3f wi(0, 1, 0);
+    Vec3f wo(0, 1, 0);
+    Vec3f result = Bsdf::EvalCoat(0.0f, 0.1f, 1.5f, N, wi, wo);
+    return Test_IsClose(result, Vec3f(0.0f), 1e-7f);
 }
 
 static bool
@@ -104,49 +103,49 @@ TestEvalSurfaceEmissiveOnly()
     // EvalSurface returns pure BSDF value (no emissive — that's the
     // renderer's job). With NdotL <= 0 the BSDF returns zero.
     SurfaceClosure c;
-    c.emissiveColor = GfVec3f(1.0f, 0.5f, 0.0f);
+    c.emissiveColor = Vec3f(1.0f, 0.5f, 0.0f);
 
-    GfVec3f N(0, 1, 0);
-    GfVec3f wi(0, -1, 0);  // NdotL <= 0
-    GfVec3f wo(0, 1, 0);
+    Vec3f N(0, 1, 0);
+    Vec3f wi(0, -1, 0);  // NdotL <= 0
+    Vec3f wo(0, 1, 0);
 
-    GfVec3f result = Bsdf::EvalSurface(c, N, wi, wo);
-    return Test_IsClose(result, GfVec3f(0.0f), 1e-5f);
+    Vec3f result = Bsdf::EvalSurface(c, N, wi, wo);
+    return Test_IsClose(result, Vec3f(0.0f), 1e-5f);
 }
 
 static bool
 TestSheenGrazingAngle()
 {
-    GfVec3f N(0, 1, 0);
-    GfVec3f sheenColor(1.0f);
+    Vec3f N(0, 1, 0);
+    Vec3f sheenColor(1.0f);
     float roughness = 0.5f;
 
-    GfVec3f woNormal = GfVec3f(0, 1, 0);
-    GfVec3f woGrazing = GfVec3f(0.99f, 0.14f, 0.0f).GetNormalized();
-    GfVec3f wi = GfVec3f(-0.3f, 0.95f, 0.0f).GetNormalized();
+    Vec3f woNormal = Vec3f(0, 1, 0);
+    Vec3f woGrazing = Vec3f(0.99f, 0.14f, 0.0f).normalized();
+    Vec3f wi = Vec3f(-0.3f, 0.95f, 0.0f).normalized();
 
-    GfVec3f atNormal = Bsdf::EvalSheen(sheenColor, roughness, N, wi, woNormal);
-    GfVec3f atGrazing = Bsdf::EvalSheen(sheenColor, roughness, N, wi, woGrazing);
+    Vec3f atNormal = Bsdf::EvalSheen(sheenColor, roughness, N, wi, woNormal);
+    Vec3f atGrazing = Bsdf::EvalSheen(sheenColor, roughness, N, wi, woGrazing);
 
     // Sheen should generally have more contribution at grazing angles.
     // We allow some tolerance here since the exact relationship depends on
     // the half-vector geometry.
-    return atNormal.GetLength() >= 0.0f && atGrazing.GetLength() >= 0.0f;
+    return atNormal.length() >= 0.0f && atGrazing.length() >= 0.0f;
 }
 
 static bool
 TestTransmissionIor1()
 {
-    GfVec3f N(0, 1, 0);
-    GfVec3f wi(0, 1, 0);
-    GfVec3f wo(0, 1, 0);
-    GfVec3f tColor(1.0f);
+    Vec3f N(0, 1, 0);
+    Vec3f wi(0, 1, 0);
+    Vec3f wo(0, 1, 0);
+    Vec3f tColor(1.0f);
 
-    GfVec3f result = Bsdf::EvalGGXTransmission(
+    Vec3f result = Bsdf::EvalGGXTransmission(
         0.5f, 1.0f, tColor, N, wi, wo);
     // With ior=1.0, Fresnel reflection should be zero, so transmission
     // should be non-zero.
-    if (result.GetLength() <= 0.0f) {
+    if (result.length() <= 0.0f) {
         printf("    Expected non-zero transmission at ior=1.0, got zero\n");
         return false;
     }
@@ -157,19 +156,19 @@ static bool
 TestEvalSurfaceNonNegative()
 {
     SurfaceClosure c;
-    c.baseColor = GfVec3f(0.8f, 0.2f, 0.1f);
+    c.baseColor = Vec3f(0.8f, 0.2f, 0.1f);
     c.roughness = 0.4f;
     c.metallic = 0.0f;
     c.specular = 1.0f;
     c.specularIor = 1.5f;
-    c.specularColor = GfVec3f(1.0f);
-    c.emissiveColor = GfVec3f(0.0f);
+    c.specularColor = Vec3f(1.0f);
+    c.emissiveColor = Vec3f(0.0f);
 
-    GfVec3f N(0, 1, 0);
-    GfVec3f wi = GfVec3f(0.3f, 0.95f, 0.0f).GetNormalized();
-    GfVec3f wo = GfVec3f(-0.2f, 0.98f, 0.0f).GetNormalized();
+    Vec3f N(0, 1, 0);
+    Vec3f wi = Vec3f(0.3f, 0.95f, 0.0f).normalized();
+    Vec3f wo = Vec3f(-0.2f, 0.98f, 0.0f).normalized();
 
-    GfVec3f result = Bsdf::EvalSurface(c, N, wi, wo);
+    Vec3f result = Bsdf::EvalSurface(c, N, wi, wo);
     return result[0] >= 0.0f && result[1] >= 0.0f && result[2] >= 0.0f;
 }
 
@@ -180,18 +179,18 @@ TestEvalSurfaceNonNegative()
 static bool
 TestSampleLambertianHemisphere()
 {
-    GfVec3f N(0, 1, 0);
-    GfVec3f wo(0, 1, 0);
-    GfVec3f baseColor(0.8f, 0.2f, 0.1f);
+    Vec3f N(0, 1, 0);
+    Vec3f wo(0, 1, 0);
+    Vec3f baseColor(0.8f, 0.2f, 0.1f);
 
     // All sampled directions should be in the hemisphere around N.
     for (int i = 0; i < 64; ++i) {
         float u1 = (i + 0.5f) / 64.0f;
         float u2 = (i * 7 % 64 + 0.5f) / 64.0f;
         auto s = Bsdf::SampleLambertian(baseColor, N, wo, u1, u2);
-        if (GfDot(s.wi, N) < -1e-5f) {
+        if (Dot(s.wi, N) < -1e-5f) {
             printf("    Lambertian sample below hemisphere: NdotWi=%f\n",
-                   GfDot(s.wi, N));
+                   Dot(s.wi, N));
             return false;
         }
         if (s.pdf <= 0.0f) {
@@ -205,9 +204,9 @@ TestSampleLambertianHemisphere()
 static bool
 TestSampleLambertianPdfConsistency()
 {
-    GfVec3f N(0, 1, 0);
-    GfVec3f wo(0, 1, 0);
-    GfVec3f baseColor(1.0f);
+    Vec3f N(0, 1, 0);
+    Vec3f wo(0, 1, 0);
+    Vec3f baseColor(1.0f);
 
     auto s = Bsdf::SampleLambertian(baseColor, N, wo, 0.3f, 0.7f);
     float pdf2 = Bsdf::PdfLambertian(N, s.wi);
@@ -221,9 +220,9 @@ TestSampleLambertianPdfConsistency()
 static bool
 TestSampleGGXSpecularHemisphere()
 {
-    GfVec3f N(0, 1, 0);
-    GfVec3f wo = GfVec3f(0.3f, 0.95f, 0.0f).GetNormalized();
-    GfVec3f specColor(1.0f);
+    Vec3f N(0, 1, 0);
+    Vec3f wo = Vec3f(0.3f, 0.95f, 0.0f).normalized();
+    Vec3f specColor(1.0f);
 
     int valid = 0;
     for (int i = 0; i < 64; ++i) {
@@ -233,9 +232,9 @@ TestSampleGGXSpecularHemisphere()
             0.3f, 1.5f, specColor, N, wo, u1, u2);
         if (s.pdf > 0.0f) {
             ++valid;
-            if (GfDot(s.wi, N) < -1e-5f) {
+            if (Dot(s.wi, N) < -1e-5f) {
                 printf("    GGX sample below hemisphere: NdotWi=%f\n",
-                       GfDot(s.wi, N));
+                       Dot(s.wi, N));
                 return false;
             }
         }
@@ -250,9 +249,9 @@ TestSampleGGXSpecularHemisphere()
 static bool
 TestSampleGGXSpecularPdfConsistency()
 {
-    GfVec3f N(0, 1, 0);
-    GfVec3f wo = GfVec3f(0.2f, 0.98f, 0.0f).GetNormalized();
-    GfVec3f specColor(1.0f);
+    Vec3f N(0, 1, 0);
+    Vec3f wo = Vec3f(0.2f, 0.98f, 0.0f).normalized();
+    Vec3f specColor(1.0f);
 
     auto s = Bsdf::SampleGGXSpecular(
         0.4f, 1.5f, specColor, N, wo, 0.3f, 0.7f);
@@ -272,15 +271,15 @@ static bool
 TestSampleSurfacePdfConsistency()
 {
     SurfaceClosure c;
-    c.baseColor = GfVec3f(0.8f, 0.2f, 0.1f);
+    c.baseColor = Vec3f(0.8f, 0.2f, 0.1f);
     c.roughness = 0.4f;
     c.metallic = 0.0f;
     c.specular = 1.0f;
     c.specularIor = 1.5f;
-    c.specularColor = GfVec3f(1.0f);
+    c.specularColor = Vec3f(1.0f);
 
-    GfVec3f N(0, 1, 0);
-    GfVec3f wo = GfVec3f(0.2f, 0.98f, 0.0f).GetNormalized();
+    Vec3f N(0, 1, 0);
+    Vec3f wo = Vec3f(0.2f, 0.98f, 0.0f).normalized();
 
     auto s = Bsdf::SampleSurface(c, N, wo, 0.5f, 0.5f, 0.3f);
     if (s.pdf <= 0.0f) return true;

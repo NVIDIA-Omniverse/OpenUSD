@@ -4,27 +4,24 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodes/channelNodes.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodeRegistry.h"
+#include "channelNodes.h"
+#include "../nodeRegistry.h"
 
-#include "pxr/base/tf/staticTokens.h"
+#include <string>
 
-PXR_NAMESPACE_OPEN_SCOPE
 namespace mxcpp {
 
-TF_DEFINE_PRIVATE_TOKENS(_tokens,
-    (in)
-    (in1)
-    (in2)
-    (in3)
-    (in4)
-    (out)
-    (outx)
-    (outy)
-    (outz)
-    (outw)
-    (index)
-);
+static const std::string _kIn = "in";
+static const std::string _kIn1 = "in1";
+static const std::string _kIn2 = "in2";
+static const std::string _kIn3 = "in3";
+static const std::string _kIn4 = "in4";
+static const std::string _kOut = "out";
+static const std::string _kOutx = "outx";
+static const std::string _kOuty = "outy";
+static const std::string _kOutz = "outz";
+static const std::string _kOutw = "outw";
+static const std::string _kIndex = "index";
 
 // ---- Combine -------------------------------------------------------------
 
@@ -32,30 +29,30 @@ static void
 _EvalCombine2(const ParamMap& inputs, const ShadingContext&,
               NodeOutputMap* outputs)
 {
-    float x = Get<float>(inputs, _tokens->in1, 0.0f);
-    float y = Get<float>(inputs, _tokens->in2, 0.0f);
-    (*outputs)[_tokens->out] = VtValue(GfVec2f(x, y));
+    float x = Get<float>(inputs, _kIn1, 0.0f);
+    float y = Get<float>(inputs, _kIn2, 0.0f);
+    (*outputs)[_kOut] = Value(Vec2f(x, y));
 }
 
 static void
 _EvalCombine3_color3(const ParamMap& inputs, const ShadingContext&,
                      NodeOutputMap* outputs)
 {
-    float x = Get<float>(inputs, _tokens->in1, 0.0f);
-    float y = Get<float>(inputs, _tokens->in2, 0.0f);
-    float z = Get<float>(inputs, _tokens->in3, 0.0f);
-    (*outputs)[_tokens->out] = VtValue(GfVec3f(x, y, z));
+    float x = Get<float>(inputs, _kIn1, 0.0f);
+    float y = Get<float>(inputs, _kIn2, 0.0f);
+    float z = Get<float>(inputs, _kIn3, 0.0f);
+    (*outputs)[_kOut] = Value(Vec3f(x, y, z));
 }
 
 static void
 _EvalCombine4(const ParamMap& inputs, const ShadingContext&,
               NodeOutputMap* outputs)
 {
-    float x = Get<float>(inputs, _tokens->in1, 0.0f);
-    float y = Get<float>(inputs, _tokens->in2, 0.0f);
-    float z = Get<float>(inputs, _tokens->in3, 0.0f);
-    float w = Get<float>(inputs, _tokens->in4, 0.0f);
-    (*outputs)[_tokens->out] = VtValue(GfVec4f(x, y, z, w));
+    float x = Get<float>(inputs, _kIn1, 0.0f);
+    float y = Get<float>(inputs, _kIn2, 0.0f);
+    float z = Get<float>(inputs, _kIn3, 0.0f);
+    float w = Get<float>(inputs, _kIn4, 0.0f);
+    (*outputs)[_kOut] = Value(Vec4f(x, y, z, w));
 }
 
 // ---- Separate ------------------------------------------------------------
@@ -64,30 +61,30 @@ static void
 _EvalSeparate2(const ParamMap& inputs, const ShadingContext&,
                NodeOutputMap* outputs)
 {
-    GfVec2f v = Get<GfVec2f>(inputs, _tokens->in, GfVec2f(0.0f));
-    (*outputs)[_tokens->outx] = VtValue(v[0]);
-    (*outputs)[_tokens->outy] = VtValue(v[1]);
+    Vec2f v = Get<Vec2f>(inputs, _kIn, Vec2f(0.0f));
+    (*outputs)[_kOutx] = Value(v[0]);
+    (*outputs)[_kOuty] = Value(v[1]);
 }
 
 static void
 _EvalSeparate3_color3(const ParamMap& inputs, const ShadingContext&,
                       NodeOutputMap* outputs)
 {
-    GfVec3f v = Get<GfVec3f>(inputs, _tokens->in, GfVec3f(0.0f));
-    (*outputs)[_tokens->outx] = VtValue(v[0]);
-    (*outputs)[_tokens->outy] = VtValue(v[1]);
-    (*outputs)[_tokens->outz] = VtValue(v[2]);
+    Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
+    (*outputs)[_kOutx] = Value(v[0]);
+    (*outputs)[_kOuty] = Value(v[1]);
+    (*outputs)[_kOutz] = Value(v[2]);
 }
 
 static void
 _EvalSeparate4(const ParamMap& inputs, const ShadingContext&,
                NodeOutputMap* outputs)
 {
-    GfVec4f v = Get<GfVec4f>(inputs, _tokens->in, GfVec4f(0.0f));
-    (*outputs)[_tokens->outx] = VtValue(v[0]);
-    (*outputs)[_tokens->outy] = VtValue(v[1]);
-    (*outputs)[_tokens->outz] = VtValue(v[2]);
-    (*outputs)[_tokens->outw] = VtValue(v[3]);
+    Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
+    (*outputs)[_kOutx] = Value(v[0]);
+    (*outputs)[_kOuty] = Value(v[1]);
+    (*outputs)[_kOutz] = Value(v[2]);
+    (*outputs)[_kOutw] = Value(v[3]);
 }
 
 // ---- Extract (single channel by index) -----------------------------------
@@ -96,30 +93,30 @@ static void
 _EvalExtract_vec2(const ParamMap& inputs, const ShadingContext&,
                   NodeOutputMap* outputs)
 {
-    GfVec2f v = Get<GfVec2f>(inputs, _tokens->in, GfVec2f(0.0f));
-    int idx   = Get<int>(inputs, _tokens->index, 0);
+    Vec2f v = Get<Vec2f>(inputs, _kIn, Vec2f(0.0f));
+    int idx   = Get<int>(inputs, _kIndex, 0);
     idx = std::clamp(idx, 0, 1);
-    (*outputs)[_tokens->out] = VtValue(v[idx]);
+    (*outputs)[_kOut] = Value(v[idx]);
 }
 
 static void
 _EvalExtract_vec3(const ParamMap& inputs, const ShadingContext&,
                   NodeOutputMap* outputs)
 {
-    GfVec3f v = Get<GfVec3f>(inputs, _tokens->in, GfVec3f(0.0f));
-    int idx   = Get<int>(inputs, _tokens->index, 0);
+    Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
+    int idx   = Get<int>(inputs, _kIndex, 0);
     idx = std::clamp(idx, 0, 2);
-    (*outputs)[_tokens->out] = VtValue(v[idx]);
+    (*outputs)[_kOut] = Value(v[idx]);
 }
 
 static void
 _EvalExtract_vec4(const ParamMap& inputs, const ShadingContext&,
                   NodeOutputMap* outputs)
 {
-    GfVec4f v = Get<GfVec4f>(inputs, _tokens->in, GfVec4f(0.0f));
-    int idx   = Get<int>(inputs, _tokens->index, 0);
+    Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
+    int idx   = Get<int>(inputs, _kIndex, 0);
     idx = std::clamp(idx, 0, 3);
-    (*outputs)[_tokens->out] = VtValue(v[idx]);
+    (*outputs)[_kOut] = Value(v[idx]);
 }
 
 // ---- Convert (type promotion/demotion) -----------------------------------
@@ -129,8 +126,8 @@ _EvalConvert_float_color3(const ParamMap& inputs,
                           const ShadingContext&,
                           NodeOutputMap* outputs)
 {
-    float v = Get<float>(inputs, _tokens->in, 0.0f);
-    (*outputs)[_tokens->out] = VtValue(GfVec3f(v));
+    float v = Get<float>(inputs, _kIn, 0.0f);
+    (*outputs)[_kOut] = Value(Vec3f(v));
 }
 
 static void
@@ -138,8 +135,8 @@ _EvalConvert_color3_float(const ParamMap& inputs,
                           const ShadingContext&,
                           NodeOutputMap* outputs)
 {
-    GfVec3f v = Get<GfVec3f>(inputs, _tokens->in, GfVec3f(0.0f));
-    (*outputs)[_tokens->out] = VtValue((v[0] + v[1] + v[2]) / 3.0f);
+    Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
+    (*outputs)[_kOut] = Value((v[0] + v[1] + v[2]) / 3.0f);
 }
 
 static void
@@ -147,8 +144,8 @@ _EvalConvert_color3_vector3(const ParamMap& inputs,
                             const ShadingContext&,
                             NodeOutputMap* outputs)
 {
-    GfVec3f v = Get<GfVec3f>(inputs, _tokens->in, GfVec3f(0.0f));
-    (*outputs)[_tokens->out] = VtValue(v);
+    Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
+    (*outputs)[_kOut] = Value(v);
 }
 
 static void
@@ -156,8 +153,8 @@ _EvalConvert_color4_vector4(const ParamMap& inputs,
                             const ShadingContext&,
                             NodeOutputMap* outputs)
 {
-    GfVec4f v = Get<GfVec4f>(inputs, _tokens->in, GfVec4f(0.0f));
-    (*outputs)[_tokens->out] = VtValue(v);
+    Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
+    (*outputs)[_kOut] = Value(v);
 }
 
 static void
@@ -165,8 +162,8 @@ _EvalConvert_float_color4(const ParamMap& inputs,
                           const ShadingContext&,
                           NodeOutputMap* outputs)
 {
-    float v = Get<float>(inputs, _tokens->in, 0.0f);
-    (*outputs)[_tokens->out] = VtValue(GfVec4f(v, v, v, 1.0f));
+    float v = Get<float>(inputs, _kIn, 0.0f);
+    (*outputs)[_kOut] = Value(Vec4f(v, v, v, 1.0f));
 }
 
 static void
@@ -174,13 +171,13 @@ _EvalConvert_integer_float(const ParamMap& inputs,
                            const ShadingContext&,
                            NodeOutputMap* outputs)
 {
-    int v = Get<int>(inputs, _tokens->in, 0);
-    (*outputs)[_tokens->out] = VtValue(static_cast<float>(v));
+    int v = Get<int>(inputs, _kIn, 0);
+    (*outputs)[_kOut] = Value(static_cast<float>(v));
 }
 
 // ---- Registration --------------------------------------------------------
 
-#define _REG(name, fn) reg.Register(TfToken(name), fn)
+#define _REG(name, fn) reg.Register(name, fn)
 
 void
 RegisterChannelNodes(NodeRegistry& reg)
@@ -216,4 +213,3 @@ RegisterChannelNodes(NodeRegistry& reg)
 #undef _REG
 
 } // namespace mxcpp
-PXR_NAMESPACE_CLOSE_SCOPE

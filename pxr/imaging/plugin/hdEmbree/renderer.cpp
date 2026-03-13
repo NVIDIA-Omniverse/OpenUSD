@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <chrono>
+
 #include <limits>
 #include <stdint.h>
 #include <thread>
@@ -109,6 +110,20 @@ _DotZeroClip(GfVec3f const& a, GfVec3f const& b)
 }  // anonymous namespace
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+// Conversion helpers between GfVec3f and mxcpp::Vec3f (Imath::V3f).
+// GfVec3f in this build does not have implicit Imath conversion.
+namespace {
+inline GfVec3f _ToGf(const mxcpp::Vec3f& v) {
+    return GfVec3f(v[0], v[1], v[2]);
+}
+inline mxcpp::Vec3f _ToMx(const GfVec3f& v) {
+    return mxcpp::Vec3f(v[0], v[1], v[2]);
+}
+inline mxcpp::Vec2f _ToMx(const GfVec2f& v) {
+    return mxcpp::Vec2f(v[0], v[1]);
+}
+} // anonymous namespace
 
 HdEmbreeRenderer::HdEmbreeRenderer()
     : _aovBindings()
@@ -1266,12 +1281,12 @@ HdEmbreeRenderer::_EvalOpacityAtHit(RTCRayHit const& rayHit) const
 
     try {
         mxcpp::ShadingContext ctx;
-        ctx.position = hitPos;
-        ctx.normal = normal;
-        ctx.tangent = tangent;
-        ctx.bitangent = bitangent;
-        ctx.texcoord = texcoordVal;
-        ctx.displayColor = displayColor;
+        ctx.position = _ToMx(hitPos);
+        ctx.normal = _ToMx(normal);
+        ctx.tangent = _ToMx(tangent);
+        ctx.bitangent = _ToMx(bitangent);
+        ctx.texcoord = _ToMx(texcoordVal);
+        ctx.displayColor = _ToMx(displayColor);
         ctx.displayOpacity = 1.0f;
         ctx.faceId = rayHit.hit.primID;
         ctx.baryU = rayHit.hit.u;
@@ -1442,13 +1457,13 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
     if (evalGraph) {
         try {
             mxcpp::ShadingContext ctx;
-            ctx.position = hitPos;
-            ctx.normal = normal;
-            ctx.tangent = tangent;
-            ctx.bitangent = bitangent;
-            ctx.texcoord = texcoordVal;
+            ctx.position = _ToMx(hitPos);
+            ctx.normal = _ToMx(normal);
+            ctx.tangent = _ToMx(tangent);
+            ctx.bitangent = _ToMx(bitangent);
+            ctx.texcoord = _ToMx(texcoordVal);
             ctx.displayColor = (displayColor != _invalidColor)
-                               ? displayColor : GfVec3f(0.8f);
+                               ? _ToMx(displayColor) : mxcpp::Vec3f(0.8f);
             ctx.displayOpacity = displayOpacity;
             ctx.faceId = rayHit.hit.primID;
             ctx.baryU = rayHit.hit.u;
@@ -1463,7 +1478,7 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
 
     // Apply material normal map (tangent-space -> world-space).
     if (hasMaterialClosure &&
-        closure.normal != GfVec3f(0.0f, 0.0f, 1.0f)) {
+        closure.normal != mxcpp::Vec3f(0.0f, 0.0f, 1.0f)) {
         normal = (tangent   * closure.normal[0] +
                   bitangent * closure.normal[1] +
                   normal    * closure.normal[2]).GetNormalized();
@@ -1475,7 +1490,7 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
     {
         GfVec3f materialColor;
         if (hasMaterialClosure) {
-            materialColor = closure.baseColor;
+            materialColor = _ToGf(closure.baseColor);
         } else {
             materialColor = (displayColor != _invalidColor)
                             ? displayColor : GfVec3f(0.5f);
@@ -1668,8 +1683,8 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
 
             GfVec3f sampleContrib(0.0f);
             if (closure) {
-                GfVec3f bsdfValue = mxcpp::Bsdf::EvalSurface(
-                    *closure, shadingNormal, ls.wI, wo);
+                GfVec3f bsdfValue = _ToGf(mxcpp::Bsdf::EvalSurface(
+                    *closure, _ToMx(shadingNormal), _ToMx(ls.wI), _ToMx(wo)));
 
                 for (int i = 0; i < 3; ++i) {
                     if (!std::isfinite(bsdfValue[i])) bsdfValue[i] = 0.0f;
@@ -1682,7 +1697,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 float lightPdf = (ls.invPdfW > 0.0f)
                     ? 1.0f / ls.invPdfW : 0.0f;
                 float bsdfPdf = mxcpp::Bsdf::PdfSurface(
-                    *closure, shadingNormal, ls.wI, wo);
+                    *closure, _ToMx(shadingNormal), _ToMx(ls.wI), _ToMx(wo));
                 float misW = mxcpp::Bsdf::PowerHeuristic(lightPdf, bsdfPdf);
 
                 sampleContrib = GfCompMult(ls.Li, bsdfValue)
@@ -1853,12 +1868,12 @@ HdEmbreeRenderer::_TracePath(
         if (evalGraph) {
             try {
                 mxcpp::ShadingContext ctx;
-                ctx.position = hitPos;
-                ctx.normal = normal;
-                ctx.tangent = tangent;
-                ctx.bitangent = bitangent;
-                ctx.texcoord = texcoordVal;
-                ctx.displayColor = displayColor;
+                ctx.position = _ToMx(hitPos);
+                ctx.normal = _ToMx(normal);
+                ctx.tangent = _ToMx(tangent);
+                ctx.bitangent = _ToMx(bitangent);
+                ctx.texcoord = _ToMx(texcoordVal);
+                ctx.displayColor = _ToMx(displayColor);
                 ctx.displayOpacity = 1.0f;
                 ctx.faceId = rayHit.hit.primID;
                 ctx.baryU = rayHit.hit.u;
@@ -1873,7 +1888,7 @@ HdEmbreeRenderer::_TracePath(
 
         // Apply material normal map (tangent-space -> world-space).
         if (hasClosure &&
-            closure.normal != GfVec3f(0.0f, 0.0f, 1.0f)) {
+            closure.normal != mxcpp::Vec3f(0.0f, 0.0f, 1.0f)) {
             normal = (tangent   * closure.normal[0] +
                       bitangent * closure.normal[1] +
                       normal    * closure.normal[2]).GetNormalized();
@@ -1906,7 +1921,7 @@ HdEmbreeRenderer::_TracePath(
 
         // --- Emissive ---
         if (hasClosure) {
-            radiance += GfCompMult(throughput, closure.emissiveColor);
+            radiance += GfCompMult(throughput, _ToGf(closure.emissiveColor));
         }
 
         // --- Direct lighting (NEE) with MIS ---
@@ -1917,11 +1932,11 @@ HdEmbreeRenderer::_TracePath(
         } else {
             GfVec3f matColor = displayColor;
             mxcpp::SurfaceClosure fallback;
-            fallback.baseColor = matColor;
+            fallback.baseColor = _ToMx(matColor);
             fallback.roughness = 1.0f;
             fallback.metallic = 0.0f;
             fallback.specular = 0.0f;
-            fallback.specularColor = GfVec3f(1.0f);
+            fallback.specularColor = mxcpp::Vec3f(1.0f);
             fallback.specularIor = 1.5f;
             fallback.opacity = 1.0f;
             direct = _ComputeDirectLightingMIS(
@@ -1936,7 +1951,7 @@ HdEmbreeRenderer::_TracePath(
         if (!hasClosure) break;
 
         mxcpp::Bsdf::BsdfSample bs = mxcpp::Bsdf::SampleSurface(
-            closure, normal, wo,
+            closure, _ToMx(normal), _ToMx(wo),
             sampler.Next(), sampler.Next(), sampler.Next());
         if (bs.pdf <= 0.0f) break;
 
@@ -1945,10 +1960,10 @@ HdEmbreeRenderer::_TracePath(
             // Delta distribution (e.g. thin-surface transmission):
             // f already contains the throughput coefficient; no cosine
             // or pdf division needed.
-            bsdfContrib = bs.f;
+            bsdfContrib = _ToGf(bs.f);
         } else {
-            float cosTheta = std::abs(GfDot(normal, bs.wi));
-            bsdfContrib = bs.f * cosTheta / bs.pdf;
+            float cosTheta = std::abs(GfDot(normal, _ToGf(bs.wi)));
+            bsdfContrib = _ToGf(bs.f) * cosTheta / bs.pdf;
         }
 
         for (int i = 0; i < 3; ++i) {
@@ -1973,9 +1988,9 @@ HdEmbreeRenderer::_TracePath(
         }
 
         // --- Next ray ---
-        float bias = (GfDot(bs.wi, normal) > 0.0f) ? 1e-4f : -1e-4f;
+        float bias = (GfDot(_ToGf(bs.wi), normal) > 0.0f) ? 1e-4f : -1e-4f;
         rayOrigin = hitPos + normal * bias;
-        rayDir = bs.wi;
+        rayDir = _ToGf(bs.wi);
     }
 
     return radiance;

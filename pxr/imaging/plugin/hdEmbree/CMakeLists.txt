@@ -33,6 +33,7 @@ pxr_plugin(hdEmbree
         material
         mesh
         meshSamplers
+        mxcppAdapter
         pxrIES/ies
         pxrIES/pxrIES
         renderBuffer
@@ -62,6 +63,9 @@ pxr_plugin(hdEmbree
         sampling.h
         pxrPbrt/pbrtUtils.h
         MaterialXCpp/types.h
+        MaterialXCpp/mxcpp_math.h
+        MaterialXCpp/mxcpp_value.h
+        MaterialXCpp/mxcpp_graph_types.h
 
     PRIVATE_CLASSES
         debugCodes
@@ -88,13 +92,15 @@ pxr_build_test(testHdEmbree
 )
 endif()
 
+if (Imath_FOUND)
+    set(__MXCPP_TEST_IMATH_LIBS "Imath::Imath")
+else()
+    set(__MXCPP_TEST_IMATH_LIBS ${OPENEXR_Imath_LIBRARY})
+endif()
+
 pxr_build_test(testMaterialXCpp
     LIBRARIES
-        tf
-        gf
-        vt
-        sdf
-        hd
+        ${__MXCPP_TEST_IMATH_LIBS}
     CPPFILES
         MaterialXCpp/tests/testMaterialXCppMain.cpp
         MaterialXCpp/tests/testMaterialXCppBsdf.cpp

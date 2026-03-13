@@ -4,17 +4,14 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodes/geometricNodes.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodeRegistry.h"
+#include "geometricNodes.h"
+#include "../nodeRegistry.h"
 
-#include "pxr/base/tf/staticTokens.h"
+#include <string>
 
-PXR_NAMESPACE_OPEN_SCOPE
 namespace mxcpp {
 
-TF_DEFINE_PRIVATE_TOKENS(_tokens,
-    (out)
-);
+static const std::string _kOut = "out";
 
 // Geometric nodes read from the shading context.
 
@@ -22,47 +19,47 @@ static void
 _EvalPosition(const ParamMap&, const ShadingContext& ctx,
               NodeOutputMap* outputs)
 {
-    (*outputs)[_tokens->out] = VtValue(ctx.position);
+    (*outputs)[_kOut] = Value(ctx.position);
 }
 
 static void
 _EvalNormal(const ParamMap&, const ShadingContext& ctx,
             NodeOutputMap* outputs)
 {
-    (*outputs)[_tokens->out] = VtValue(ctx.normal);
+    (*outputs)[_kOut] = Value(ctx.normal);
 }
 
 static void
 _EvalTangent(const ParamMap&, const ShadingContext& ctx,
              NodeOutputMap* outputs)
 {
-    (*outputs)[_tokens->out] = VtValue(ctx.tangent);
+    (*outputs)[_kOut] = Value(ctx.tangent);
 }
 
 static void
 _EvalBitangent(const ParamMap&, const ShadingContext& ctx,
                NodeOutputMap* outputs)
 {
-    (*outputs)[_tokens->out] = VtValue(ctx.bitangent);
+    (*outputs)[_kOut] = Value(ctx.bitangent);
 }
 
 static void
 _EvalTexcoord(const ParamMap&, const ShadingContext& ctx,
               NodeOutputMap* outputs)
 {
-    (*outputs)[_tokens->out] = VtValue(ctx.texcoord);
+    (*outputs)[_kOut] = Value(ctx.texcoord);
 }
 
 static void
 _EvalGeomcolor(const ParamMap&, const ShadingContext& ctx,
                NodeOutputMap* outputs)
 {
-    (*outputs)[_tokens->out] = VtValue(ctx.displayColor);
+    (*outputs)[_kOut] = Value(ctx.displayColor);
 }
 
 // ---- Registration --------------------------------------------------------
 
-#define _REG(name, fn) reg.Register(TfToken(name), fn)
+#define _REG(name, fn) reg.Register(name, fn)
 
 void
 RegisterGeometricNodes(NodeRegistry& reg)
@@ -78,4 +75,3 @@ RegisterGeometricNodes(NodeRegistry& reg)
 #undef _REG
 
 } // namespace mxcpp
-PXR_NAMESPACE_CLOSE_SCOPE

@@ -1,30 +1,24 @@
 //
-// Copyright 2024 Pixar
+// MaterialXCpp evaluation graph — pxr-independent.
 //
-// Licensed under the terms set forth in the LICENSE.txt file available at
-// https://openusd.org/license.
-//
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/graph.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/materials/standardSurface.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/materials/openPbr.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/materials/usdPreviewSurface.h"
+#include "graph.h"
+#include "materials/standardSurface.h"
+#include "materials/openPbr.h"
+#include "materials/usdPreviewSurface.h"
 
-#include "pxr/base/tf/staticTokens.h"
-#include "pxr/base/tf/diagnostic.h"
-
+#include <cstdio>
 #include <functional>
 #include <set>
 
-PXR_NAMESPACE_OPEN_SCOPE
 namespace mxcpp {
 
-TF_DEFINE_PRIVATE_TOKENS(_tokens,
-    (surface)
-    (out)
-    ((standardSurface, "ND_standard_surface_surfaceshader"))
-    ((openPbr, "ND_open_pbr_surface_surfaceshader"))
-    ((usdPreviewSurface, "UsdPreviewSurface"))
-);
+static const std::string _kSurface = "surface";
+static const std::string _kOut = "out";
+static const std::string _kStandardSurface =
+    "ND_standard_surface_surfaceshader";
+static const std::string _kOpenPbr =
+    "ND_open_pbr_surface_surfaceshader";
+static const std::string _kUsdPreviewSurface = "UsdPreviewSurface";
 
 // ---------------------------------------------------------------------------
 // Compile
@@ -32,51 +26,53 @@ TF_DEFINE_PRIVATE_TOKENS(_tokens,
 
 std::unique_ptr<EvalGraph>
 EvalGraph::Compile(
-    const HdMaterialNetwork2& network,
-    const TfToken& terminalName)
+    const MaterialGraph& network,
+    const std::string& terminalName)
 {
     NodeRegistry::RegisterBuiltinNodes();
 
     auto graph = std::make_unique<EvalGraph>();
 
     // Locate the surface terminal.
-    TfToken terminal = terminalName.IsEmpty() ? _tokens->surface : terminalName;
+    std::string terminal = terminalName.empty()
+        ? _kSurface : terminalName;
     auto termIt = network.terminals.find(terminal);
     if (termIt == network.terminals.end()) {
         if (!network.terminals.empty()) {
             termIt = network.terminals.begin();
         } else {
-            TF_WARN("EvalGraph: no terminal found in material network");
+            fprintf(stderr,
+                "EvalGraph: no terminal found in material network\n");
             return graph;
         }
     }
 
-    const SdfPath& terminalNodePath = termIt->second.upstreamNode;
+    const std::string& terminalNodePath = termIt->second.upstreamNode;
     auto termNodeIt = network.nodes.find(terminalNodePath);
     if (termNodeIt == network.nodes.end()) {
-        TF_WARN("EvalGraph: terminal node %s not found",
-                 terminalNodePath.GetText());
+        fprintf(stderr, "EvalGraph: terminal node %s not found\n",
+                 terminalNodePath.c_str());
         return graph;
     }
 
     graph->_materialModelType = termNodeIt->second.nodeTypeId;
 
     // ---- Gather reachable nodes via DFS topological sort ----
-    // Post-order guarantees dependencies precede dependents.
 
-    std::vector<SdfPath> sorted;
-    std::set<SdfPath> visited;
-    std::set<SdfPath> onStack;
+    std::vector<std::string> sorted;
+    std::set<std::string> visited;
+    std::set<std::string> onStack;
 
-    std::function<void(const SdfPath&)> dfs =
-        [&](const SdfPath& nodePath) {
+    std::function<void(const std::string&)> dfs =
+        [&](const std::string& nodePath) {
             if (visited.count(nodePath)) return;
             if (onStack.count(nodePath)) return; // cycle guard
             onStack.insert(nodePath);
 
             auto nodeIt = network.nodes.find(nodePath);
             if (nodeIt != network.nodes.end()) {
-                for (const auto& entry : nodeIt->second.inputConnections) {
+                for (const auto& entry :
+                     nodeIt->second.inputConnections) {
                     for (const auto& conn : entry.second) {
                         if (conn.upstreamNode != terminalNodePath) {
                             dfs(conn.upstreamNode);
@@ -98,7 +94,7 @@ EvalGraph::Compile(
     }
 
     // Build path → sorted-index map.
-    std::map<SdfPath, int> nodeIndex;
+    std::map<std::string, int> nodeIndex;
     for (size_t i = 0; i < sorted.size(); ++i) {
         nodeIndex[sorted[i]] = static_cast<int>(i);
     }
@@ -114,8 +110,9 @@ EvalGraph::Compile(
 
         compiled.evalFn = registry.Find(node.nodeTypeId);
         if (!compiled.evalFn) {
-            TF_WARN("EvalGraph: no evaluator for node type %s",
-                     node.nodeTypeId.GetText());
+            fprintf(stderr,
+                "EvalGraph: no evaluator for node type %s\n",
+                     node.nodeTypeId.c_str());
         }
 
         // Constant parameters.
@@ -215,14 +212,16 @@ EvalGraph::Evaluate(const ShadingContext& ctx) const
         ParamMap inputs;
         for (const auto& binding : node.inputs) {
             if (binding.isConnected && binding.sourceNodeIndex >= 0) {
-                const auto& srcOutputs = nodeOutputs[binding.sourceNodeIndex];
-                TfToken outName = binding.sourceOutputName.IsEmpty()
-                    ? _tokens->out : binding.sourceOutputName;
+                const auto& srcOutputs =
+                    nodeOutputs[binding.sourceNodeIndex];
+                std::string outName =
+                    binding.sourceOutputName.empty()
+                    ? _kOut : binding.sourceOutputName;
                 auto it = srcOutputs.find(outName);
                 if (it != srcOutputs.end()) {
                     inputs[binding.inputName] = it->second;
                 }
-            } else if (!binding.defaultValue.IsEmpty()) {
+            } else if (binding.defaultValue.has_value()) {
                 inputs[binding.inputName] = binding.defaultValue;
             }
         }
@@ -234,14 +233,16 @@ EvalGraph::Evaluate(const ShadingContext& ctx) const
     ParamMap terminalParams;
     for (const auto& binding : _terminalInputs) {
         if (binding.isConnected && binding.sourceNodeIndex >= 0) {
-            const auto& srcOutputs = nodeOutputs[binding.sourceNodeIndex];
-            TfToken outName = binding.sourceOutputName.IsEmpty()
-                ? _tokens->out : binding.sourceOutputName;
+            const auto& srcOutputs =
+                nodeOutputs[binding.sourceNodeIndex];
+            std::string outName =
+                binding.sourceOutputName.empty()
+                ? _kOut : binding.sourceOutputName;
             auto it = srcOutputs.find(outName);
             if (it != srcOutputs.end()) {
                 terminalParams[binding.inputName] = it->second;
             }
-        } else if (!binding.defaultValue.IsEmpty()) {
+        } else if (binding.defaultValue.has_value()) {
             terminalParams[binding.inputName] = binding.defaultValue;
         }
     }
@@ -256,25 +257,24 @@ EvalGraph::Evaluate(const ShadingContext& ctx) const
 /* static */
 SurfaceClosure
 EvalGraph::_EvalMaterialModel(
-    const TfToken& modelType,
+    const std::string& modelType,
     const ParamMap& params)
 {
-    if (modelType == _tokens->standardSurface) {
+    if (modelType == _kStandardSurface) {
         return EvalStandardSurface(params);
     }
-    if (modelType == _tokens->openPbr) {
+    if (modelType == _kOpenPbr) {
         return EvalOpenPbr(params);
     }
-    if (modelType == _tokens->usdPreviewSurface) {
+    if (modelType == _kUsdPreviewSurface) {
         return EvalUsdPreviewSurface(params);
     }
 
     // Unknown model: construct a basic closure from common parameter names.
     SurfaceClosure closure;
-    closure.baseColor = Get<GfVec3f>(
-        params, TfToken("base_color"), GfVec3f(0.8f));
+    closure.baseColor = Get<Vec3f>(
+        params, "base_color", Vec3f(0.8f));
     return closure;
 }
 
 } // namespace mxcpp
-PXR_NAMESPACE_CLOSE_SCOPE

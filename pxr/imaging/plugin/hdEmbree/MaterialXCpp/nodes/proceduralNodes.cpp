@@ -4,26 +4,22 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodes/proceduralNodes.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodeRegistry.h"
-
-#include "pxr/base/tf/staticTokens.h"
+#include "proceduralNodes.h"
+#include "../nodeRegistry.h"
 
 #include <cmath>
+#include <string>
 
-PXR_NAMESPACE_OPEN_SCOPE
 namespace mxcpp {
 
-TF_DEFINE_PRIVATE_TOKENS(_tokens,
-    (out)
-    (texcoord)
-    (position)
-    (amplitude)
-    (pivot)
-    (octaves)
-    (lacunarity)
-    (diminish)
-);
+static const std::string _kOut = "out";
+static const std::string _kTexcoord = "texcoord";
+static const std::string _kPosition = "position";
+static const std::string _kAmplitude = "amplitude";
+static const std::string _kPivot = "pivot";
+static const std::string _kOctaves = "octaves";
+static const std::string _kLacunarity = "lacunarity";
+static const std::string _kDiminish = "diminish";
 
 // -----------------------------------------------------------------------
 // MaterialX-compatible Perlin gradient noise.
@@ -126,8 +122,8 @@ inline float _GradientFloat(uint32_t hash, float x, float y, float z) {
     return ((h & 1u) ? -u : u) + ((h & 2u) ? -v : v);
 }
 
-inline GfVec3f _GradientVec3(_UVec3 hash, float x, float y, float z) {
-    return GfVec3f(_GradientFloat(hash.x, x, y, z),
+inline Vec3f _GradientVec3(_UVec3 hash, float x, float y, float z) {
+    return Vec3f(_GradientFloat(hash.x, x, y, z),
                    _GradientFloat(hash.y, x, y, z),
                    _GradientFloat(hash.z, x, y, z));
 }
@@ -154,8 +150,8 @@ inline float _Bilerp(float v0, float v1, float v2, float v3,
     float s1 = 1.0f - s;
     return (1.0f - t) * (v0*s1 + v1*s) + t * (v2*s1 + v3*s);
 }
-inline GfVec3f _Trilerp(GfVec3f v0, GfVec3f v1, GfVec3f v2, GfVec3f v3,
-                          GfVec3f v4, GfVec3f v5, GfVec3f v6, GfVec3f v7,
+inline Vec3f _Trilerp(Vec3f v0, Vec3f v1, Vec3f v2, Vec3f v3,
+                          Vec3f v4, Vec3f v5, Vec3f v6, Vec3f v7,
                           float s, float t, float r) {
     float s1 = 1.0f - s, t1 = 1.0f - t, r1 = 1.0f - r;
     return (v0*s1 + v1*s)*(t1*r1) + (v2*s1 + v3*s)*(t*r1) +
@@ -202,7 +198,7 @@ float _PerlinNoise3d(float px, float py, float pz) {
         u, v, w);
 }
 
-GfVec3f _PerlinNoise3d_vec3(float px, float py, float pz) {
+Vec3f _PerlinNoise3d_vec3(float px, float py, float pz) {
     int X, Y, Z;
     float fx = _FloorFrac(px, X);
     float fy = _FloorFrac(py, Y);
@@ -243,11 +239,11 @@ _EvalNoise3d_float(const ParamMap& inputs,
                    const ShadingContext& ctx,
                    NodeOutputMap* outputs)
 {
-    GfVec3f pos = Get<GfVec3f>(inputs, _tokens->position, ctx.position);
-    float amp   = Get<float>(inputs, _tokens->amplitude, 1.0f);
-    float pivot = Get<float>(inputs, _tokens->pivot,     0.0f);
+    Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    float amp   = Get<float>(inputs, _kAmplitude, 1.0f);
+    float pivot = Get<float>(inputs, _kPivot,     0.0f);
     float n = _PerlinNoise3d(pos[0], pos[1], pos[2]);
-    (*outputs)[_tokens->out] = VtValue(pivot + n * amp);
+    (*outputs)[_kOut] = Value(pivot + n * amp);
 }
 
 static void
@@ -255,11 +251,11 @@ _EvalNoise3d_color3(const ParamMap& inputs,
                     const ShadingContext& ctx,
                     NodeOutputMap* outputs)
 {
-    GfVec3f pos = Get<GfVec3f>(inputs, _tokens->position, ctx.position);
-    GfVec3f amp = Get<GfVec3f>(inputs, _tokens->amplitude, GfVec3f(1.0f));
-    GfVec3f pivot = Get<GfVec3f>(inputs, _tokens->pivot, GfVec3f(0.0f));
-    GfVec3f n = _PerlinNoise3d_vec3(pos[0], pos[1], pos[2]);
-    (*outputs)[_tokens->out] = VtValue(pivot + GfCompMult(n, amp));
+    Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    Vec3f amp = Get<Vec3f>(inputs, _kAmplitude, Vec3f(1.0f));
+    Vec3f pivot = Get<Vec3f>(inputs, _kPivot, Vec3f(0.0f));
+    Vec3f n = _PerlinNoise3d_vec3(pos[0], pos[1], pos[2]);
+    (*outputs)[_kOut] = Value(pivot + CompMult(n, amp));
 }
 
 static void
@@ -267,11 +263,11 @@ _EvalNoise2d_float(const ParamMap& inputs,
                    const ShadingContext& ctx,
                    NodeOutputMap* outputs)
 {
-    GfVec2f tc = Get<GfVec2f>(inputs, _tokens->texcoord, ctx.texcoord);
-    float amp  = Get<float>(inputs, _tokens->amplitude, 1.0f);
-    float pivot = Get<float>(inputs, _tokens->pivot, 0.0f);
+    Vec2f tc = Get<Vec2f>(inputs, _kTexcoord, ctx.texcoord);
+    float amp  = Get<float>(inputs, _kAmplitude, 1.0f);
+    float pivot = Get<float>(inputs, _kPivot, 0.0f);
     float n = _PerlinNoise2d(tc[0], tc[1]);
-    (*outputs)[_tokens->out] = VtValue(pivot + n * amp);
+    (*outputs)[_kOut] = Value(pivot + n * amp);
 }
 
 static void
@@ -279,21 +275,21 @@ _EvalFractal3d_float(const ParamMap& inputs,
                      const ShadingContext& ctx,
                      NodeOutputMap* outputs)
 {
-    GfVec3f pos    = Get<GfVec3f>(inputs, _tokens->position, ctx.position);
-    float amp      = Get<float>(inputs, _tokens->amplitude,  1.0f);
-    int   octaves  = Get<int>(inputs, _tokens->octaves, 3);
-    float lacunarity = Get<float>(inputs, _tokens->lacunarity, 2.0f);
-    float diminish   = Get<float>(inputs, _tokens->diminish,   0.5f);
+    Vec3f pos    = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    float amp      = Get<float>(inputs, _kAmplitude,  1.0f);
+    int   octaves  = Get<int>(inputs, _kOctaves, 3);
+    float lacunarity = Get<float>(inputs, _kLacunarity, 2.0f);
+    float diminish   = Get<float>(inputs, _kDiminish,   0.5f);
 
     float result = 0.0f;
     float weight = 1.0f;
-    GfVec3f p = pos;
+    Vec3f p = pos;
     for (int i = 0; i < octaves; ++i) {
         result += weight * _PerlinNoise3d(p[0], p[1], p[2]);
         p *= lacunarity;
         weight *= diminish;
     }
-    (*outputs)[_tokens->out] = VtValue(result * amp);
+    (*outputs)[_kOut] = Value(result * amp);
 }
 
 static void
@@ -301,8 +297,8 @@ _EvalCellnoise3d(const ParamMap& inputs,
                  const ShadingContext& ctx,
                  NodeOutputMap* outputs)
 {
-    GfVec3f pos = Get<GfVec3f>(inputs, _tokens->position, ctx.position);
-    (*outputs)[_tokens->out] = VtValue(
+    Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    (*outputs)[_kOut] = Value(
         _CellNoise3d(pos[0], pos[1], pos[2]));
 }
 
@@ -311,13 +307,13 @@ _EvalCellnoise2d(const ParamMap& inputs,
                  const ShadingContext& ctx,
                  NodeOutputMap* outputs)
 {
-    GfVec2f tc = Get<GfVec2f>(inputs, _tokens->texcoord, ctx.texcoord);
-    (*outputs)[_tokens->out] = VtValue(_CellNoise2d(tc[0], tc[1]));
+    Vec2f tc = Get<Vec2f>(inputs, _kTexcoord, ctx.texcoord);
+    (*outputs)[_kOut] = Value(_CellNoise2d(tc[0], tc[1]));
 }
 
 // ---- Registration --------------------------------------------------------
 
-#define _REG(name, fn) reg.Register(TfToken(name), fn)
+#define _REG(name, fn) reg.Register(name, fn)
 
 void
 RegisterProceduralNodes(NodeRegistry& reg)
@@ -333,4 +329,3 @@ RegisterProceduralNodes(NodeRegistry& reg)
 #undef _REG
 
 } // namespace mxcpp
-PXR_NAMESPACE_CLOSE_SCOPE

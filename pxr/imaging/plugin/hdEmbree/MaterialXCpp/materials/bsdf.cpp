@@ -4,15 +4,11 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/materials/bsdf.h"
-
-#include "pxr/base/gf/math.h"
-#include "pxr/base/gf/vec2f.h"
+#include "bsdf.h"
 
 #include <cmath>
 #include <algorithm>
 
-PXR_NAMESPACE_OPEN_SCOPE
 namespace mxcpp {
 
 namespace {
@@ -42,13 +38,13 @@ _RoughnessToAlpha(float roughness)
 // Fresnel
 // -----------------------------------------------------------------------
 
-inline GfVec3f
-_SchlickFresnel(const GfVec3f& F0, float cosTheta)
+inline Vec3f
+_SchlickFresnel(const Vec3f& F0, float cosTheta)
 {
     float t = 1.0f - cosTheta;
     float t2 = t * t;
     float t5 = t2 * t2 * t;
-    return F0 + (GfVec3f(1.0f) - F0) * t5;
+    return F0 + (Vec3f(1.0f) - F0) * t5;
 }
 
 inline float
@@ -93,14 +89,14 @@ _SmithG1(float alpha, float cosTheta)
         (cosTheta + std::sqrt(a2 + (1.0f - a2) * cos2) + _kEpsilon);
 }
 
-inline GfVec3f
-_ComputeF0(const GfVec3f& baseColor, float metallic,
+inline Vec3f
+_ComputeF0(const Vec3f& baseColor, float metallic,
            float specular, float ior)
 {
     float dielectricF0 = ((ior - 1.0f) / (ior + 1.0f));
     dielectricF0 *= dielectricF0;
     dielectricF0 *= specular;
-    GfVec3f F0 = GfVec3f(dielectricF0);
+    Vec3f F0 = Vec3f(dielectricF0);
     return F0 * (1.0f - metallic) + baseColor * metallic;
 }
 
@@ -128,20 +124,20 @@ _Ashikhmin_V(float NdotV, float NdotL)
 // -----------------------------------------------------------------------
 
 struct _Frame {
-    GfVec3f T, B, N;
+    Vec3f T, B, N;
 
-    GfVec3f ToLocal(const GfVec3f& v) const {
-        return GfVec3f(GfDot(v, T), GfDot(v, B), GfDot(v, N));
+    Vec3f ToLocal(const Vec3f& v) const {
+        return Vec3f(Dot(v, T), Dot(v, B), Dot(v, N));
     }
 
-    GfVec3f ToWorld(const GfVec3f& v) const {
+    Vec3f ToWorld(const Vec3f& v) const {
         return T * v[0] + B * v[1] + N * v[2];
     }
 
-    static _Frame FromNormal(const GfVec3f& n) {
+    static _Frame FromNormal(const Vec3f& n) {
         _Frame f;
         f.N = n;
-        GfBuildOrthonormalFrame(n, &f.T, &f.B);
+        BuildOrthonormalFrame(n, &f.T, &f.B);
         return f;
     }
 };
@@ -151,13 +147,13 @@ struct _Frame {
 // -----------------------------------------------------------------------
 
 // Cosine-weighted hemisphere sample in local frame (N = +Z).
-inline GfVec3f
+inline Vec3f
 _SampleCosineHemisphere(float u1, float u2)
 {
     float cosTheta = std::sqrt(u1);
     float sinTheta = std::sqrt(1.0f - u1);
     float phi = 2.0f * _kPi * u2;
-    return GfVec3f(sinTheta * std::cos(phi),
+    return Vec3f(sinTheta * std::cos(phi),
                    sinTheta * std::sin(phi),
                    cosTheta);
 }
@@ -173,23 +169,23 @@ _CosineHemispherePdf(float cosTheta)
 // -----------------------------------------------------------------------
 
 // Sample a microfacet normal visible from `woLocal` (in local frame).
-GfVec3f
-_SampleGGX_VNDF(const GfVec3f& woLocal, float alpha, float u1, float u2)
+Vec3f
+_SampleGGX_VNDF(const Vec3f& woLocal, float alpha, float u1, float u2)
 {
     // Transform wo to hemispherical configuration
-    GfVec3f wh = GfVec3f(alpha * woLocal[0],
+    Vec3f wh = Vec3f(alpha * woLocal[0],
                           alpha * woLocal[1],
                           woLocal[2]);
-    float whLen = wh.GetLength();
-    if (whLen < _kEpsilon) return GfVec3f(0.0f, 0.0f, 1.0f);
+    float whLen = wh.length();
+    if (whLen < _kEpsilon) return Vec3f(0.0f, 0.0f, 1.0f);
     wh /= whLen;
     if (wh[2] < 0.0f) wh = -wh;
 
     // Build ONB from wh
-    GfVec3f T1 = (wh[2] < 0.99999f)
-        ? GfCross(GfVec3f(0.0f, 0.0f, 1.0f), wh).GetNormalized()
-        : GfVec3f(1.0f, 0.0f, 0.0f);
-    GfVec3f T2 = GfCross(wh, T1);
+    Vec3f T1 = (wh[2] < 0.99999f)
+        ? Cross(Vec3f(0.0f, 0.0f, 1.0f), wh).normalized()
+        : Vec3f(1.0f, 0.0f, 0.0f);
+    Vec3f T2 = Cross(wh, T1);
 
     // Sample uniform disk (polar)
     float r = std::sqrt(u1);
@@ -204,22 +200,22 @@ _SampleGGX_VNDF(const GfVec3f& woLocal, float alpha, float u1, float u2)
 
     // Reproject to hemisphere
     float pz = std::sqrt(std::max(0.0f, 1.0f - t1 * t1 - t2 * t2));
-    GfVec3f nh = T1 * t1 + T2 * t2 + wh * pz;
+    Vec3f nh = T1 * t1 + T2 * t2 + wh * pz;
 
     // Transform back to ellipsoid configuration
-    GfVec3f wm(alpha * nh[0], alpha * nh[1], std::max(1e-6f, nh[2]));
-    return wm.GetNormalized();
+    Vec3f wm(alpha * nh[0], alpha * nh[1], std::max(1e-6f, nh[2]));
+    return wm.normalized();
 }
 
 // PDF for VNDF-sampled microfacet normal wm given view direction wo.
 // Returns the PDF in reflected direction measure (divided by Jacobian).
 float
-_PdfGGX_VNDF(const GfVec3f& woLocal, const GfVec3f& wmLocal, float alpha)
+_PdfGGX_VNDF(const Vec3f& woLocal, const Vec3f& wmLocal, float alpha)
 {
     float cosTheta_o = std::max(woLocal[2], _kEpsilon);
     float G1 = _SmithG1(alpha, cosTheta_o);
     float NdotH = std::max(wmLocal[2], 0.0f);
-    float VdotH = std::max(GfDot(woLocal, wmLocal), _kEpsilon);
+    float VdotH = std::max(Dot(woLocal, wmLocal), _kEpsilon);
 
     float D = _GGX_D(alpha, NdotH);
 
@@ -235,16 +231,16 @@ _PdfGGX_VNDF(const GfVec3f& woLocal, const GfVec3f& wmLocal, float alpha)
 // -----------------------------------------------------------------------
 
 inline float
-_Luminance(const GfVec3f& c)
+_Luminance(const Vec3f& c)
 {
     return 0.2126f * c[0] + 0.7152f * c[1] + 0.0722f * c[2];
 }
 
 // Guard against NaN/Inf/negative.
-inline GfVec3f
-_SafeVec(const GfVec3f& v)
+inline Vec3f
+_SafeVec(const Vec3f& v)
 {
-    GfVec3f r = v;
+    Vec3f r = v;
     for (int i = 0; i < 3; ++i) {
         if (!std::isfinite(r[i]) || r[i] < 0.0f) r[i] = 0.0f;
     }
@@ -257,59 +253,59 @@ _SafeVec(const GfVec3f& v)
 // BSDF Evaluation (Phase 4)
 // ===========================================================================
 
-GfVec3f
+Vec3f
 Bsdf::EvalLambertian(
-    const GfVec3f& baseColor,
-    const GfVec3f& N,
-    const GfVec3f& /*wi*/,
-    const GfVec3f& /*wo*/)
+    const Vec3f& baseColor,
+    const Vec3f& N,
+    const Vec3f& /*wi*/,
+    const Vec3f& /*wo*/)
 {
     return baseColor * _kInvPi;
 }
 
-GfVec3f
+Vec3f
 Bsdf::EvalGGXSpecular(
     float roughness,
     float ior,
-    const GfVec3f& specularColor,
-    const GfVec3f& N,
-    const GfVec3f& wi,
-    const GfVec3f& wo)
+    const Vec3f& specularColor,
+    const Vec3f& N,
+    const Vec3f& wi,
+    const Vec3f& wo)
 {
     float alpha = _RoughnessToAlpha(roughness);
 
-    float NdotL = std::max(GfDot(N, wi), 0.0f);
-    float NdotV = std::max(GfDot(N, wo), _kEpsilon);
-    GfVec3f H = (wi + wo).GetNormalized();
-    float NdotH = std::max(GfDot(N, H), 0.0f);
-    float VdotH = std::max(GfDot(wo, H), 0.0f);
+    float NdotL = std::max(Dot(N, wi), 0.0f);
+    float NdotV = std::max(Dot(N, wo), _kEpsilon);
+    Vec3f H = (wi + wo).normalized();
+    float NdotH = std::max(Dot(N, H), 0.0f);
+    float VdotH = std::max(Dot(wo, H), 0.0f);
 
     float D = _GGX_D(alpha, NdotH);
     float V = _GGX_V(alpha, NdotV, NdotL);
-    GfVec3f F = _SchlickFresnel(specularColor, VdotH);
+    Vec3f F = _SchlickFresnel(specularColor, VdotH);
 
-    return GfCompMult(F, GfVec3f(D * V));
+    return CompMult(F, Vec3f(D * V));
 }
 
-GfVec3f
+Vec3f
 Bsdf::EvalGGXTransmission(
     float roughness,
     float ior,
-    const GfVec3f& transmissionColor,
-    const GfVec3f& N,
-    const GfVec3f& wi,
-    const GfVec3f& wo)
+    const Vec3f& transmissionColor,
+    const Vec3f& N,
+    const Vec3f& wi,
+    const Vec3f& wo)
 {
     float alpha = _RoughnessToAlpha(roughness);
 
-    float NdotL = std::fabs(GfDot(N, wi));
-    float NdotV = std::fabs(GfDot(N, wo));
+    float NdotL = std::fabs(Dot(N, wi));
+    float NdotV = std::fabs(Dot(N, wo));
 
     float fresnel = _SchlickFresnelScalar(ior, NdotV);
     float transmission = (1.0f - fresnel);
 
-    GfVec3f H = (wi + wo).GetNormalized();
-    float NdotH = std::fabs(GfDot(N, H));
+    Vec3f H = (wi + wo).normalized();
+    float NdotH = std::fabs(Dot(N, H));
     float D = _GGX_D(alpha, NdotH);
     float V = _GGX_V(alpha, std::max(NdotV, _kEpsilon),
                       std::max(NdotL, _kEpsilon));
@@ -317,20 +313,20 @@ Bsdf::EvalGGXTransmission(
     return transmissionColor * (transmission * D * V);
 }
 
-GfVec3f
+Vec3f
 Bsdf::EvalSheen(
-    const GfVec3f& sheenColor,
+    const Vec3f& sheenColor,
     float roughness,
-    const GfVec3f& N,
-    const GfVec3f& wi,
-    const GfVec3f& wo)
+    const Vec3f& N,
+    const Vec3f& wi,
+    const Vec3f& wo)
 {
     float alpha = _ClampRoughness(roughness);
 
-    float NdotL = std::max(GfDot(N, wi), 0.0f);
-    float NdotV = std::max(GfDot(N, wo), _kEpsilon);
-    GfVec3f H = (wi + wo).GetNormalized();
-    float NdotH = std::max(GfDot(N, H), 0.0f);
+    float NdotL = std::max(Dot(N, wi), 0.0f);
+    float NdotV = std::max(Dot(N, wo), _kEpsilon);
+    Vec3f H = (wi + wo).normalized();
+    float NdotH = std::max(Dot(N, H), 0.0f);
 
     float D = _Charlie_D(alpha, NdotH);
     float V = _Ashikhmin_V(NdotV, NdotL);
@@ -338,80 +334,80 @@ Bsdf::EvalSheen(
     return sheenColor * (D * V);
 }
 
-GfVec3f
+Vec3f
 Bsdf::EvalCoat(
     float coatWeight,
     float coatRoughness,
     float coatIor,
-    const GfVec3f& N,
-    const GfVec3f& wi,
-    const GfVec3f& wo)
+    const Vec3f& N,
+    const Vec3f& wi,
+    const Vec3f& wo)
 {
-    if (coatWeight <= 0.0f) return GfVec3f(0.0f);
+    if (coatWeight <= 0.0f) return Vec3f(0.0f);
 
     float alpha = _RoughnessToAlpha(coatRoughness);
 
-    float NdotL = std::max(GfDot(N, wi), 0.0f);
-    float NdotV = std::max(GfDot(N, wo), _kEpsilon);
-    GfVec3f H = (wi + wo).GetNormalized();
-    float NdotH = std::max(GfDot(N, H), 0.0f);
-    float VdotH = std::max(GfDot(wo, H), 0.0f);
+    float NdotL = std::max(Dot(N, wi), 0.0f);
+    float NdotV = std::max(Dot(N, wo), _kEpsilon);
+    Vec3f H = (wi + wo).normalized();
+    float NdotH = std::max(Dot(N, H), 0.0f);
+    float VdotH = std::max(Dot(wo, H), 0.0f);
 
     float D = _GGX_D(alpha, NdotH);
     float V = _GGX_V(alpha, NdotV, NdotL);
     float F = _SchlickFresnelScalar(coatIor, VdotH);
 
-    return GfVec3f(coatWeight * D * V * F);
+    return Vec3f(coatWeight * D * V * F);
 }
 
-GfVec3f
+Vec3f
 Bsdf::EvalSurface(
     const SurfaceClosure& c,
-    const GfVec3f& N,
-    const GfVec3f& wi,
-    const GfVec3f& wo)
+    const Vec3f& N,
+    const Vec3f& wi,
+    const Vec3f& wo)
 {
-    float NdotL = GfDot(N, wi);
+    float NdotL = Dot(N, wi);
 
     // Reflection lobes require wi in the same hemisphere as N.
-    GfVec3f reflected(0.0f);
+    Vec3f reflected(0.0f);
     if (NdotL > 0.0f) {
-        GfVec3f F0 = _ComputeF0(
+        Vec3f F0 = _ComputeF0(
             c.baseColor, c.metallic, c.specular, c.specularIor);
         bool hasSpecularLobe = (_Luminance(F0) > _kEpsilon);
 
-        GfVec3f H = (wi + wo).GetNormalized();
-        float VdotH = std::max(GfDot(wo, H), 0.0f);
+        Vec3f H = (wi + wo).normalized();
+        float VdotH = std::max(Dot(wo, H), 0.0f);
 
-        GfVec3f diffuse(0.0f);
-        GfVec3f specular(0.0f);
+        Vec3f diffuse(0.0f);
+        Vec3f specular(0.0f);
 
         if (hasSpecularLobe) {
-            GfVec3f fresnel = _SchlickFresnel(F0, VdotH);
-            GfVec3f kD = GfCompMult(GfVec3f(1.0f) - fresnel,
-                                     GfVec3f(1.0f - c.metallic));
+            Vec3f fresnel = _SchlickFresnel(F0, VdotH);
+            Vec3f kD = CompMult(Vec3f(1.0f) - fresnel,
+                                     Vec3f(1.0f - c.metallic));
             kD = kD * (1.0f - c.transmission);
-            diffuse = GfCompMult(kD,
+            diffuse = CompMult(kD,
                 EvalLambertian(c.baseColor, N, wi, wo));
 
             specular = EvalGGXSpecular(
                 c.roughness, c.specularIor,
-                GfCompMult(c.specularColor, F0),
+                CompMult(c.specularColor, F0),
                 N, wi, wo);
         } else {
-            GfVec3f kD = GfVec3f(1.0f - c.metallic)
+            Vec3f kD = Vec3f(1.0f - c.metallic)
                        * (1.0f - c.transmission);
-            diffuse = GfCompMult(kD,
+            diffuse = CompMult(kD,
                 EvalLambertian(c.baseColor, N, wi, wo));
         }
 
-        GfVec3f sheen(0.0f);
+        Vec3f sheen(0.0f);
         if (c.sheen > 0.0f) {
             sheen = EvalSheen(c.sheenColor, c.sheenRoughness, N, wi, wo)
                     * c.sheen;
         }
 
-        GfVec3f coatContrib(0.0f);
+        Vec3f coatContrib(0.0f);
         float coatAttenuation = 1.0f;
         if (c.coat > 0.0f) {
             coatContrib = EvalCoat(
@@ -427,9 +423,9 @@ Bsdf::EvalSurface(
     // Thin-surface transmission: wi is in the opposite hemisphere.
     // This is a continuous approximation for NEE; the delta path is
     // handled separately by SampleSurface.
-    GfVec3f transmitted(0.0f);
+    Vec3f transmitted(0.0f);
     if (c.transmission > 0.0f && NdotL < 0.0f) {
-        float absNdotV = std::max(std::abs(GfDot(N, wo)), _kEpsilon);
+        float absNdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
         float fresnel = _SchlickFresnelScalar(c.specularIor, absNdotV);
         transmitted = c.transmissionColor
             * ((1.0f - fresnel) * c.transmission * _kInvPi);
@@ -444,14 +440,14 @@ Bsdf::EvalSurface(
 
 Bsdf::BsdfSample
 Bsdf::SampleLambertian(
-    const GfVec3f& baseColor,
-    const GfVec3f& N,
-    const GfVec3f& wo,
+    const Vec3f& baseColor,
+    const Vec3f& N,
+    const Vec3f& wo,
     float u1, float u2)
 {
     _Frame frame = _Frame::FromNormal(N);
-    GfVec3f wiLocal = _SampleCosineHemisphere(u1, u2);
-    GfVec3f wi = frame.ToWorld(wiLocal);
+    Vec3f wiLocal = _SampleCosineHemisphere(u1, u2);
+    Vec3f wi = frame.ToWorld(wiLocal);
 
     float cosTheta = wiLocal[2];
     float pdf = _CosineHemispherePdf(cosTheta);
@@ -460,9 +456,9 @@ Bsdf::SampleLambertian(
 }
 
 float
-Bsdf::PdfLambertian(const GfVec3f& N, const GfVec3f& wi)
+Bsdf::PdfLambertian(const Vec3f& N, const Vec3f& wi)
 {
-    float cosTheta = GfDot(N, wi);
+    float cosTheta = Dot(N, wi);
     return _CosineHemispherePdf(cosTheta);
 }
 
@@ -470,42 +466,42 @@ Bsdf::BsdfSample
 Bsdf::SampleGGXSpecular(
     float roughness,
     float ior,
-    const GfVec3f& specularColor,
-    const GfVec3f& N,
-    const GfVec3f& wo,
+    const Vec3f& specularColor,
+    const Vec3f& N,
+    const Vec3f& wo,
     float u1, float u2)
 {
     float alpha = _RoughnessToAlpha(roughness);
 
     _Frame frame = _Frame::FromNormal(N);
-    GfVec3f woLocal = frame.ToLocal(wo);
+    Vec3f woLocal = frame.ToLocal(wo);
 
     if (woLocal[2] <= 0.0f) {
-        return BsdfSample{GfVec3f(0.0f), GfVec3f(0.0f), 0.0f, false};
+        return BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
 
     // Sample microfacet normal via VNDF
-    GfVec3f wmLocal = _SampleGGX_VNDF(woLocal, alpha, u1, u2);
+    Vec3f wmLocal = _SampleGGX_VNDF(woLocal, alpha, u1, u2);
 
     // Reflect wo about wm
-    GfVec3f wiLocal = 2.0f * GfDot(woLocal, wmLocal) * wmLocal - woLocal;
+    Vec3f wiLocal = 2.0f * Dot(woLocal, wmLocal) * wmLocal - woLocal;
 
     if (wiLocal[2] <= 0.0f) {
-        return BsdfSample{GfVec3f(0.0f), GfVec3f(0.0f), 0.0f, false};
+        return BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
 
-    GfVec3f wi = frame.ToWorld(wiLocal);
+    Vec3f wi = frame.ToWorld(wiLocal);
 
     // Evaluate
     float NdotL = wiLocal[2];
     float NdotV = woLocal[2];
     float NdotH = wmLocal[2];
-    float VdotH = std::max(GfDot(woLocal, wmLocal), 0.0f);
+    float VdotH = std::max(Dot(woLocal, wmLocal), 0.0f);
 
     float D = _GGX_D(alpha, NdotH);
     float V = _GGX_V(alpha, NdotV, NdotL);
-    GfVec3f F = _SchlickFresnel(specularColor, VdotH);
-    GfVec3f f = GfCompMult(F, GfVec3f(D * V));
+    Vec3f F = _SchlickFresnel(specularColor, VdotH);
+    Vec3f f = CompMult(F, Vec3f(D * V));
 
     float pdf = _PdfGGX_VNDF(woLocal, wmLocal, alpha);
 
@@ -515,19 +511,19 @@ Bsdf::SampleGGXSpecular(
 float
 Bsdf::PdfGGXSpecular(
     float roughness,
-    const GfVec3f& N,
-    const GfVec3f& wi,
-    const GfVec3f& wo)
+    const Vec3f& N,
+    const Vec3f& wi,
+    const Vec3f& wo)
 {
     float alpha = _RoughnessToAlpha(roughness);
 
     _Frame frame = _Frame::FromNormal(N);
-    GfVec3f woLocal = frame.ToLocal(wo);
-    GfVec3f wiLocal = frame.ToLocal(wi);
+    Vec3f woLocal = frame.ToLocal(wo);
+    Vec3f wiLocal = frame.ToLocal(wi);
 
     if (woLocal[2] <= 0.0f || wiLocal[2] <= 0.0f) return 0.0f;
 
-    GfVec3f wmLocal = (woLocal + wiLocal).GetNormalized();
+    Vec3f wmLocal = (woLocal + wiLocal).normalized();
     if (wmLocal[2] <= 0.0f) return 0.0f;
 
     return _PdfGGX_VNDF(woLocal, wmLocal, alpha);
@@ -536,11 +532,11 @@ Bsdf::PdfGGXSpecular(
 Bsdf::BsdfSample
 Bsdf::SampleSurface(
     const SurfaceClosure& c,
-    const GfVec3f& N,
-    const GfVec3f& wo,
+    const Vec3f& N,
+    const Vec3f& wo,
     float u1, float u2, float uLobe)
 {
-    GfVec3f F0 = _ComputeF0(
+    Vec3f F0 = _ComputeF0(
         c.baseColor, c.metallic, c.specular, c.specularIor);
     bool hasSpecularLobe = (_Luminance(F0) > _kEpsilon);
 
@@ -555,7 +551,7 @@ Bsdf::SampleSurface(
 
     float total = wDiffuse + wSpecular + wCoat + wTransmission;
     if (total <= 0.0f) {
-        return BsdfSample{GfVec3f(0.0f), GfVec3f(0.0f), 0.0f, false};
+        return BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
 
     float pDiffuse      = wDiffuse / total;
@@ -571,21 +567,21 @@ Bsdf::SampleSurface(
         // Diffuse lobe
         BsdfSample sample = SampleLambertian(c.baseColor, N, wo, u1, u2);
         if (sample.pdf <= 0.0f) {
-            return BsdfSample{GfVec3f(0.0f), GfVec3f(0.0f), 0.0f, false};
+            return BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
-        GfVec3f f = EvalSurface(c, N, sample.wi, wo);
+        Vec3f f = EvalSurface(c, N, sample.wi, wo);
         float pdf = PdfSurface(c, N, sample.wi, wo);
         return BsdfSample{sample.wi, f, pdf, false};
 
     } else if (uLobe < cumSpecular) {
         // Specular lobe
-        GfVec3f specCol = GfCompMult(c.specularColor, F0);
+        Vec3f specCol = CompMult(c.specularColor, F0);
         BsdfSample sample = SampleGGXSpecular(
             c.roughness, c.specularIor, specCol, N, wo, u1, u2);
         if (sample.pdf <= 0.0f) {
-            return BsdfSample{GfVec3f(0.0f), GfVec3f(0.0f), 0.0f, false};
+            return BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
-        GfVec3f f = EvalSurface(c, N, sample.wi, wo);
+        Vec3f f = EvalSurface(c, N, sample.wi, wo);
         float pdf = PdfSurface(c, N, sample.wi, wo);
         return BsdfSample{sample.wi, f, pdf, false};
 
@@ -593,19 +589,19 @@ Bsdf::SampleSurface(
         // Coat lobe
         float coatF0 = _SchlickFresnelScalar(c.coatIor, 1.0f);
         BsdfSample sample = SampleGGXSpecular(
-            c.coatRoughness, c.coatIor, GfVec3f(coatF0), N, wo, u1, u2);
+            c.coatRoughness, c.coatIor, Vec3f(coatF0), N, wo, u1, u2);
         if (sample.pdf <= 0.0f) {
-            return BsdfSample{GfVec3f(0.0f), GfVec3f(0.0f), 0.0f, false};
+            return BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
-        GfVec3f f = EvalSurface(c, N, sample.wi, wo);
+        Vec3f f = EvalSurface(c, N, sample.wi, wo);
         float pdf = PdfSurface(c, N, sample.wi, wo);
         return BsdfSample{sample.wi, f, pdf, false};
 
     } else {
         // Specular refraction via Snell's law.
-        float cosI = GfDot(N, wo);
+        float cosI = Dot(N, wo);
         float eta;
-        GfVec3f n;
+        Vec3f n;
         if (cosI > 0.0f) {
             // Entering: air -> medium
             eta = 1.0f / c.specularIor;
@@ -620,17 +616,17 @@ Bsdf::SampleSurface(
         float sin2T = eta * eta * (1.0f - cosI * cosI);
         if (sin2T >= 1.0f) {
             // Total internal reflection.
-            GfVec3f wi = 2.0f * GfDot(n, wo) * n - wo;
-            wi.Normalize();
-            return BsdfSample{wi, GfVec3f(c.opacity), 1.0f, true};
+            Vec3f wi = 2.0f * Dot(n, wo) * n - wo;
+            wi.normalize();
+            return BsdfSample{wi, Vec3f(c.opacity), 1.0f, true};
         }
 
         float cosT = std::sqrt(1.0f - sin2T);
-        GfVec3f wi = -eta * wo + (eta * cosI - cosT) * n;
-        wi.Normalize();
+        Vec3f wi = -eta * wo + (eta * cosI - cosT) * n;
+        wi.normalize();
 
         float fresnel = _SchlickFresnelScalar(c.specularIor, cosI);
-        GfVec3f T = c.transmissionColor
+        Vec3f T = c.transmissionColor
             * ((1.0f - fresnel) * c.transmission * c.opacity);
         return BsdfSample{wi, T, 1.0f, /*isSpecular=*/true};
     }
@@ -639,11 +635,11 @@ Bsdf::SampleSurface(
 float
 Bsdf::PdfSurface(
     const SurfaceClosure& c,
-    const GfVec3f& N,
-    const GfVec3f& wi,
-    const GfVec3f& wo)
+    const Vec3f& N,
+    const Vec3f& wi,
+    const Vec3f& wo)
 {
-    GfVec3f F0 = _ComputeF0(
+    Vec3f F0 = _ComputeF0(
         c.baseColor, c.metallic, c.specular, c.specularIor);
     bool hasSpecularLobe = (_Luminance(F0) > _kEpsilon);
 
@@ -676,4 +672,3 @@ Bsdf::PdfSurface(
 }
 
 } // namespace mxcpp
-PXR_NAMESPACE_CLOSE_SCOPE

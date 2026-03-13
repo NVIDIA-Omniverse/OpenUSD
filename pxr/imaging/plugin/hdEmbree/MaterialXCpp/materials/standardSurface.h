@@ -4,13 +4,11 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_MXCPP_MATERIALS_STANDARD_SURFACE_H
-#define PXR_IMAGING_PLUGIN_HD_EMBREE_MXCPP_MATERIALS_STANDARD_SURFACE_H
+#ifndef MXCPP_MATERIALS_STANDARD_SURFACE_H
+#define MXCPP_MATERIALS_STANDARD_SURFACE_H
 
-#include "pxr/pxr.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/types.h"
+#include "../types.h"
 
-PXR_NAMESPACE_OPEN_SCOPE
 namespace mxcpp {
 
 /// Evaluate the Autodesk Standard Surface material model.
@@ -18,6 +16,5 @@ namespace mxcpp {
 SurfaceClosure EvalStandardSurface(const ParamMap& params);
 
 } // namespace mxcpp
-PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif

@@ -4,8 +4,7 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/pxr.h"
-#include "pxr/base/gf/vec3f.h"
+#include "../mxcpp_math.h"
 
 #include <cmath>
 #include <cstdio>
@@ -13,7 +12,7 @@
 #include <string>
 #include <vector>
 
-PXR_NAMESPACE_USING_DIRECTIVE
+using namespace mxcpp;
 
 // ---------------------------------------------------------------------------
 // Minimal test framework
@@ -45,7 +44,7 @@ Test_IsClose(float a, float b, float eps)
 }
 
 bool
-Test_IsClose(const GfVec3f& a, const GfVec3f& b, float eps)
+Test_IsClose(const Vec3f& a, const Vec3f& b, float eps)
 {
     return std::fabs(a[0]-b[0]) <= eps &&
            std::fabs(a[1]-b[1]) <= eps &&

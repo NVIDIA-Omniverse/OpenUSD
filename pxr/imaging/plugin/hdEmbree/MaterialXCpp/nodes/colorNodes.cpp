@@ -4,21 +4,17 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodes/colorNodes.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodeRegistry.h"
-
-#include "pxr/base/tf/staticTokens.h"
+#include "colorNodes.h"
+#include "../nodeRegistry.h"
 
 #include <cmath>
 #include <algorithm>
+#include <string>
 
-PXR_NAMESPACE_OPEN_SCOPE
 namespace mxcpp {
 
-TF_DEFINE_PRIVATE_TOKENS(_tokens,
-    (in)
-    (out)
-);
+static const std::string _kIn = "in";
+static const std::string _kOut = "out";
 
 // Rec.709 luminance weights.
 static constexpr float _kLumR = 0.2126f;
@@ -29,16 +25,16 @@ static void
 _EvalLuminance(const ParamMap& inputs, const ShadingContext&,
                NodeOutputMap* outputs)
 {
-    GfVec3f c = Get<GfVec3f>(inputs, _tokens->in, GfVec3f(0.0f));
-    (*outputs)[_tokens->out] = VtValue(
+    Vec3f c = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
+    (*outputs)[_kOut] = Value(
         _kLumR * c[0] + _kLumG * c[1] + _kLumB * c[2]);
 }
 
 // RGB <-> HSV conversion following the standard algorithm.
 namespace {
 
-GfVec3f
-_RgbToHsv(const GfVec3f& rgb)
+Vec3f
+_RgbToHsv(const Vec3f& rgb)
 {
     float r = rgb[0], g = rgb[1], b = rgb[2];
     float cmax = std::max({r, g, b});
@@ -59,11 +55,11 @@ _RgbToHsv(const GfVec3f& rgb)
     }
 
     float s = cmax > 0.0f ? delta / cmax : 0.0f;
-    return GfVec3f(h, s, cmax);
+    return Vec3f(h, s, cmax);
 }
 
-GfVec3f
-_HsvToRgb(const GfVec3f& hsv)
+Vec3f
+_HsvToRgb(const Vec3f& hsv)
 {
     float h = hsv[0], s = hsv[1], v = hsv[2];
     float c = v * s;
@@ -71,15 +67,15 @@ _HsvToRgb(const GfVec3f& hsv)
     float x = c * (1.0f - std::fabs(std::fmod(hh, 2.0f) - 1.0f));
     float m = v - c;
 
-    GfVec3f rgb;
-    if      (hh < 1.0f) rgb = GfVec3f(c, x, 0);
-    else if (hh < 2.0f) rgb = GfVec3f(x, c, 0);
-    else if (hh < 3.0f) rgb = GfVec3f(0, c, x);
-    else if (hh < 4.0f) rgb = GfVec3f(0, x, c);
-    else if (hh < 5.0f) rgb = GfVec3f(x, 0, c);
-    else                 rgb = GfVec3f(c, 0, x);
+    Vec3f rgb;
+    if      (hh < 1.0f) rgb = Vec3f(c, x, 0);
+    else if (hh < 2.0f) rgb = Vec3f(x, c, 0);
+    else if (hh < 3.0f) rgb = Vec3f(0, c, x);
+    else if (hh < 4.0f) rgb = Vec3f(0, x, c);
+    else if (hh < 5.0f) rgb = Vec3f(x, 0, c);
+    else                 rgb = Vec3f(c, 0, x);
 
-    return rgb + GfVec3f(m);
+    return rgb + Vec3f(m);
 }
 
 } // anonymous namespace
@@ -88,21 +84,21 @@ static void
 _EvalRgbToHsv(const ParamMap& inputs, const ShadingContext&,
               NodeOutputMap* outputs)
 {
-    GfVec3f rgb = Get<GfVec3f>(inputs, _tokens->in, GfVec3f(0.0f));
-    (*outputs)[_tokens->out] = VtValue(_RgbToHsv(rgb));
+    Vec3f rgb = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
+    (*outputs)[_kOut] = Value(_RgbToHsv(rgb));
 }
 
 static void
 _EvalHsvToRgb(const ParamMap& inputs, const ShadingContext&,
               NodeOutputMap* outputs)
 {
-    GfVec3f hsv = Get<GfVec3f>(inputs, _tokens->in, GfVec3f(0.0f));
-    (*outputs)[_tokens->out] = VtValue(_HsvToRgb(hsv));
+    Vec3f hsv = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
+    (*outputs)[_kOut] = Value(_HsvToRgb(hsv));
 }
 
 // ---- Registration --------------------------------------------------------
 
-#define _REG(name, fn) reg.Register(TfToken(name), fn)
+#define _REG(name, fn) reg.Register(name, fn)
 
 void
 RegisterColorNodes(NodeRegistry& reg)
@@ -115,4 +111,3 @@ RegisterColorNodes(NodeRegistry& reg)
 #undef _REG
 
 } // namespace mxcpp
-PXR_NAMESPACE_CLOSE_SCOPE

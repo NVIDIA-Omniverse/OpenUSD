@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/imaging/plugin/hdEmbree/material.h"
+#include "pxr/imaging/plugin/hdEmbree/mxcppAdapter.h"
 
 #include "pxr/imaging/hd/sceneDelegate.h"
 #include "pxr/base/tf/diagnostic.h"
@@ -74,7 +75,10 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
 
     if (haveNetwork) {
         try {
-            _evalGraph = mxcpp::EvalGraph::Compile(network);
+            // Convert pxr network to pxr-independent mxcpp graph,
+            // then compile.
+            auto mxcppGraph = ConvertHdNetworkToMxcppGraph(network);
+            _evalGraph = mxcpp::EvalGraph::Compile(mxcppGraph);
             if (_evalGraph && !_evalGraph->IsValid()) {
                 _evalGraph.reset();
             }

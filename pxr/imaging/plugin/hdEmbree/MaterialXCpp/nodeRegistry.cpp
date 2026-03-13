@@ -1,23 +1,19 @@
 //
-// Copyright 2024 Pixar
+// MaterialXCpp node registry — pxr-independent.
 //
-// Licensed under the terms set forth in the LICENSE.txt file available at
-// https://openusd.org/license.
-//
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodeRegistry.h"
+#include "nodeRegistry.h"
 
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodes/mathNodes.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodes/adjustmentNodes.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodes/channelNodes.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodes/conditionalNodes.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodes/geometricNodes.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodes/textureNodes.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodes/proceduralNodes.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodes/colorNodes.h"
+#include "nodes/mathNodes.h"
+#include "nodes/adjustmentNodes.h"
+#include "nodes/channelNodes.h"
+#include "nodes/conditionalNodes.h"
+#include "nodes/geometricNodes.h"
+#include "nodes/textureNodes.h"
+#include "nodes/proceduralNodes.h"
+#include "nodes/colorNodes.h"
 
 #include <mutex>
 
-PXR_NAMESPACE_OPEN_SCOPE
 namespace mxcpp {
 
 NodeRegistry&
@@ -28,13 +24,13 @@ NodeRegistry::GetInstance()
 }
 
 void
-NodeRegistry::Register(const TfToken& nodeTypeId, NodeEvalFn fn)
+NodeRegistry::Register(const std::string& nodeTypeId, NodeEvalFn fn)
 {
     _nodes[nodeTypeId] = fn;
 }
 
 NodeEvalFn
-NodeRegistry::Find(const TfToken& nodeTypeId) const
+NodeRegistry::Find(const std::string& nodeTypeId) const
 {
     auto it = _nodes.find(nodeTypeId);
     if (it != _nodes.end()) {
@@ -62,4 +58,3 @@ NodeRegistry::RegisterBuiltinNodes()
 }
 
 } // namespace mxcpp
-PXR_NAMESPACE_CLOSE_SCOPE

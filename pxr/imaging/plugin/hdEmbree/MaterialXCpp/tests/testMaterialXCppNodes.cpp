@@ -4,19 +4,18 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/pxr.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/nodeRegistry.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/types.h"
+#include "../nodeRegistry.h"
+#include "../types.h"
 
 #include <cmath>
 #include <cstdio>
 #include <functional>
 
-PXR_NAMESPACE_USING_DIRECTIVE
+using namespace mxcpp;
 
 void Test_Register(const char* name, std::function<bool()> fn);
 bool Test_IsClose(float a, float b, float eps = 1e-5f);
-bool Test_IsClose(const GfVec3f& a, const GfVec3f& b, float eps = 1e-5f);
+bool Test_IsClose(const Vec3f& a, const Vec3f& b, float eps = 1e-5f);
 
 #define _REG(name) Test_Register("Nodes." #name, &name)
 
@@ -25,7 +24,7 @@ static NodeOutputMap
 _Eval(const char* nodeTypeId, const ParamMap& inputs)
 {
     NodeRegistry::RegisterBuiltinNodes();
-    auto fn = NodeRegistry::GetInstance().Find(TfToken(nodeTypeId));
+    auto fn = NodeRegistry::GetInstance().Find(std::string(nodeTypeId));
     NodeOutputMap outputs;
     ShadingContext ctx;
     if (fn) {
@@ -35,24 +34,24 @@ _Eval(const char* nodeTypeId, const ParamMap& inputs)
 }
 
 static float _GetFloat(const NodeOutputMap& o, const char* name = "out") {
-    auto it = o.find(TfToken(name));
-    if (it != o.end() && it->second.IsHolding<float>())
-        return it->second.UncheckedGet<float>();
+    auto it = o.find(std::string(name));
+    if (it != o.end() && ValueHolds<float>(it->second))
+        return ValueGet<float>(it->second);
     return -9999.0f;
 }
 
-static GfVec3f _GetVec3(const NodeOutputMap& o, const char* name = "out") {
-    auto it = o.find(TfToken(name));
-    if (it != o.end() && it->second.IsHolding<GfVec3f>())
-        return it->second.UncheckedGet<GfVec3f>();
-    return GfVec3f(-9999.0f);
+static Vec3f _GetVec3(const NodeOutputMap& o, const char* name = "out") {
+    auto it = o.find(std::string(name));
+    if (it != o.end() && ValueHolds<Vec3f>(it->second))
+        return ValueGet<Vec3f>(it->second);
+    return Vec3f(-9999.0f);
 }
 
-static GfVec2f _GetVec2(const NodeOutputMap& o, const char* name = "out") {
-    auto it = o.find(TfToken(name));
-    if (it != o.end() && it->second.IsHolding<GfVec2f>())
-        return it->second.UncheckedGet<GfVec2f>();
-    return GfVec2f(-9999.0f);
+static Vec2f _GetVec2(const NodeOutputMap& o, const char* name = "out") {
+    auto it = o.find(std::string(name));
+    if (it != o.end() && ValueHolds<Vec2f>(it->second))
+        return ValueGet<Vec2f>(it->second);
+    return Vec2f(-9999.0f);
 }
 
 // ---------------------------------------------------------------------------
@@ -61,105 +60,105 @@ static GfVec2f _GetVec2(const NodeOutputMap& o, const char* name = "out") {
 
 static bool TestAddFloat() {
     ParamMap in;
-    in[TfToken("in1")] = VtValue(2.0f);
-    in[TfToken("in2")] = VtValue(3.0f);
+    in["in1"] = Value(2.0f);
+    in["in2"] = Value(3.0f);
     auto out = _Eval("ND_add_float", in);
     return Test_IsClose(_GetFloat(out), 5.0f);
 }
 
 static bool TestAddColor3() {
     ParamMap in;
-    in[TfToken("in1")] = VtValue(GfVec3f(1, 2, 3));
-    in[TfToken("in2")] = VtValue(GfVec3f(4, 5, 6));
+    in["in1"] = Value(Vec3f(1, 2, 3));
+    in["in2"] = Value(Vec3f(4, 5, 6));
     auto out = _Eval("ND_add_color3", in);
-    return Test_IsClose(_GetVec3(out), GfVec3f(5, 7, 9));
+    return Test_IsClose(_GetVec3(out), Vec3f(5, 7, 9));
 }
 
 static bool TestMultiplyFloat() {
     ParamMap in;
-    in[TfToken("in1")] = VtValue(3.0f);
-    in[TfToken("in2")] = VtValue(4.0f);
+    in["in1"] = Value(3.0f);
+    in["in2"] = Value(4.0f);
     auto out = _Eval("ND_multiply_float", in);
     return Test_IsClose(_GetFloat(out), 12.0f);
 }
 
 static bool TestSubtractFloat() {
     ParamMap in;
-    in[TfToken("in1")] = VtValue(10.0f);
-    in[TfToken("in2")] = VtValue(3.0f);
+    in["in1"] = Value(10.0f);
+    in["in2"] = Value(3.0f);
     auto out = _Eval("ND_subtract_float", in);
     return Test_IsClose(_GetFloat(out), 7.0f);
 }
 
 static bool TestDivideFloat() {
     ParamMap in;
-    in[TfToken("in1")] = VtValue(10.0f);
-    in[TfToken("in2")] = VtValue(4.0f);
+    in["in1"] = Value(10.0f);
+    in["in2"] = Value(4.0f);
     auto out = _Eval("ND_divide_float", in);
     if (!Test_IsClose(_GetFloat(out), 2.5f)) return false;
 
     // Division by zero should be safe.
-    in[TfToken("in2")] = VtValue(0.0f);
+    in["in2"] = Value(0.0f);
     out = _Eval("ND_divide_float", in);
     return Test_IsClose(_GetFloat(out), 0.0f);
 }
 
 static bool TestClamp() {
     ParamMap in;
-    in[TfToken("in")] = VtValue(1.5f);
-    in[TfToken("low")] = VtValue(0.0f);
-    in[TfToken("high")] = VtValue(1.0f);
+    in["in"] = Value(1.5f);
+    in["low"] = Value(0.0f);
+    in["high"] = Value(1.0f);
     auto out = _Eval("ND_clamp_float", in);
     if (!Test_IsClose(_GetFloat(out), 1.0f)) return false;
 
-    in[TfToken("in")] = VtValue(-0.5f);
+    in["in"] = Value(-0.5f);
     out = _Eval("ND_clamp_float", in);
     return Test_IsClose(_GetFloat(out), 0.0f);
 }
 
 static bool TestMix() {
     ParamMap in;
-    in[TfToken("fg")] = VtValue(10.0f);
-    in[TfToken("bg")] = VtValue(0.0f);
+    in["fg"] = Value(10.0f);
+    in["bg"] = Value(0.0f);
 
-    in[TfToken("mix")] = VtValue(0.0f);
+    in["mix"] = Value(0.0f);
     auto out = _Eval("ND_mix_float", in);
     if (!Test_IsClose(_GetFloat(out), 0.0f)) return false;
 
-    in[TfToken("mix")] = VtValue(1.0f);
+    in["mix"] = Value(1.0f);
     out = _Eval("ND_mix_float", in);
     if (!Test_IsClose(_GetFloat(out), 10.0f)) return false;
 
-    in[TfToken("mix")] = VtValue(0.5f);
+    in["mix"] = Value(0.5f);
     out = _Eval("ND_mix_float", in);
     return Test_IsClose(_GetFloat(out), 5.0f);
 }
 
 static bool TestSmoothstep() {
     ParamMap in;
-    in[TfToken("low")] = VtValue(0.0f);
-    in[TfToken("high")] = VtValue(1.0f);
+    in["low"] = Value(0.0f);
+    in["high"] = Value(1.0f);
 
-    in[TfToken("in")] = VtValue(0.0f);
+    in["in"] = Value(0.0f);
     auto out = _Eval("ND_smoothstep_float", in);
     if (!Test_IsClose(_GetFloat(out), 0.0f)) return false;
 
-    in[TfToken("in")] = VtValue(1.0f);
+    in["in"] = Value(1.0f);
     out = _Eval("ND_smoothstep_float", in);
     if (!Test_IsClose(_GetFloat(out), 1.0f)) return false;
 
-    in[TfToken("in")] = VtValue(0.5f);
+    in["in"] = Value(0.5f);
     out = _Eval("ND_smoothstep_float", in);
     return Test_IsClose(_GetFloat(out), 0.5f);
 }
 
 static bool TestRemap() {
     ParamMap in;
-    in[TfToken("in")] = VtValue(0.5f);
-    in[TfToken("inlow")] = VtValue(0.0f);
-    in[TfToken("inhigh")] = VtValue(1.0f);
-    in[TfToken("outlow")] = VtValue(10.0f);
-    in[TfToken("outhigh")] = VtValue(20.0f);
+    in["in"] = Value(0.5f);
+    in["inlow"] = Value(0.0f);
+    in["inhigh"] = Value(1.0f);
+    in["outlow"] = Value(10.0f);
+    in["outhigh"] = Value(20.0f);
     auto out = _Eval("ND_remap_float", in);
     return Test_IsClose(_GetFloat(out), 15.0f);
 }
@@ -170,14 +169,14 @@ static bool TestRemap() {
 
 static bool TestCombineSeparateRoundtrip() {
     ParamMap in;
-    in[TfToken("in1")] = VtValue(0.2f);
-    in[TfToken("in2")] = VtValue(0.4f);
-    in[TfToken("in3")] = VtValue(0.6f);
+    in["in1"] = Value(0.2f);
+    in["in2"] = Value(0.4f);
+    in["in3"] = Value(0.6f);
     auto combOut = _Eval("ND_combine3_color3", in);
-    GfVec3f combined = _GetVec3(combOut);
+    Vec3f combined = _GetVec3(combOut);
 
     ParamMap in2;
-    in2[TfToken("in")] = VtValue(combined);
+    in2["in"] = Value(combined);
     auto sepOut = _Eval("ND_separate3_color3", in2);
     float x = _GetFloat(sepOut, "outx");
     float y = _GetFloat(sepOut, "outy");
@@ -193,17 +192,17 @@ static bool TestCombineSeparateRoundtrip() {
 
 static bool TestIfgreater() {
     NodeRegistry::RegisterBuiltinNodes();
-    auto fn = NodeRegistry::GetInstance().Find(TfToken("ND_ifgreater_float"));
+    auto fn = NodeRegistry::GetInstance().Find(std::string("ND_ifgreater_float"));
     if (!fn) {
         printf("    ND_ifgreater_float not registered\n");
         return false;
     }
     // Just verify the node exists and is callable.
     ParamMap in;
-    in[TfToken("value1")] = VtValue(2.0f);
-    in[TfToken("value2")] = VtValue(1.0f);
-    in[TfToken("in1")] = VtValue(10.0f);
-    in[TfToken("in2")] = VtValue(20.0f);
+    in["value1"] = Value(2.0f);
+    in["value2"] = Value(1.0f);
+    in["in1"] = Value(10.0f);
+    in["in2"] = Value(20.0f);
     NodeOutputMap out;
     ShadingContext ctx;
     fn(in, ctx, &out);
@@ -216,28 +215,28 @@ static bool TestIfgreater() {
 
 static bool TestGeometricPosition() {
     NodeRegistry::RegisterBuiltinNodes();
-    auto fn = NodeRegistry::GetInstance().Find(TfToken("ND_position_vector3"));
+    auto fn = NodeRegistry::GetInstance().Find(std::string("ND_position_vector3"));
     if (!fn) return false;
 
     ParamMap in;
     ShadingContext ctx;
-    ctx.position = GfVec3f(1.0f, 2.0f, 3.0f);
+    ctx.position = Vec3f(1.0f, 2.0f, 3.0f);
     NodeOutputMap out;
     fn(in, ctx, &out);
-    return Test_IsClose(_GetVec3(out), GfVec3f(1.0f, 2.0f, 3.0f));
+    return Test_IsClose(_GetVec3(out), Vec3f(1.0f, 2.0f, 3.0f));
 }
 
 static bool TestGeometricNormal() {
     NodeRegistry::RegisterBuiltinNodes();
-    auto fn = NodeRegistry::GetInstance().Find(TfToken("ND_normal_vector3"));
+    auto fn = NodeRegistry::GetInstance().Find(std::string("ND_normal_vector3"));
     if (!fn) return false;
 
     ParamMap in;
     ShadingContext ctx;
-    ctx.normal = GfVec3f(0.0f, 1.0f, 0.0f);
+    ctx.normal = Vec3f(0.0f, 1.0f, 0.0f);
     NodeOutputMap out;
     fn(in, ctx, &out);
-    return Test_IsClose(_GetVec3(out), GfVec3f(0.0f, 1.0f, 0.0f));
+    return Test_IsClose(_GetVec3(out), Vec3f(0.0f, 1.0f, 0.0f));
 }
 
 // ---------------------------------------------------------------------------
@@ -246,13 +245,13 @@ static bool TestGeometricNormal() {
 
 static bool TestLuminance() {
     NodeRegistry::RegisterBuiltinNodes();
-    auto fn = NodeRegistry::GetInstance().Find(TfToken("ND_luminance_color3"));
+    auto fn = NodeRegistry::GetInstance().Find(std::string("ND_luminance_color3"));
     if (!fn) {
         printf("    ND_luminance_color3 not registered\n");
         return false;
     }
     ParamMap in;
-    in[TfToken("in")] = VtValue(GfVec3f(1.0f, 1.0f, 1.0f));
+    in["in"] = Value(Vec3f(1.0f, 1.0f, 1.0f));
     NodeOutputMap out;
     ShadingContext ctx;
     fn(in, ctx, &out);
@@ -264,7 +263,7 @@ static bool TestLuminance() {
     }
 
     // Non-trivial color
-    in[TfToken("in")] = VtValue(GfVec3f(0.5f, 0.0f, 0.0f));
+    in["in"] = Value(Vec3f(0.5f, 0.0f, 0.0f));
     fn(in, ctx, &out);
     result = _GetFloat(out);
     float expected = 0.2126f * 0.5f;
@@ -282,14 +281,14 @@ static bool TestLuminance() {
 
 static bool TestNodeRegistryLookup() {
     NodeRegistry::RegisterBuiltinNodes();
-    auto fn = NodeRegistry::GetInstance().Find(TfToken("ND_add_float"));
+    auto fn = NodeRegistry::GetInstance().Find(std::string("ND_add_float"));
     return fn != nullptr;
 }
 
 static bool TestNodeRegistryMissing() {
     NodeRegistry::RegisterBuiltinNodes();
     auto fn = NodeRegistry::GetInstance().Find(
-        TfToken("ND_nonexistent_node_xyz"));
+        std::string("ND_nonexistent_node_xyz"));
     return fn == nullptr;
 }
 
