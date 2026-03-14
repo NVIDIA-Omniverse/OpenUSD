@@ -243,6 +243,17 @@ private:
     // Should the ray continue based on the possibly intersected prim's visibility settings?
     bool _RayShouldContinue(RTCRayHit const& rayHit) const;
 
+    // Build a ShadingContext from a ray hit, sampling primvars (normal,
+    // texcoord, displayColor) and constructing the tangent frame.
+    // The caller supplies the world-space normal (already transformed and
+    // normalized) so that double-sided flipping can be handled externally.
+    mxcpp::ShadingContext _BuildShadingContext(
+        RTCRayHit const& rayHit,
+        HdEmbreeInstanceContext const* instanceContext,
+        HdEmbreePrototypeContext const* prototypeContext,
+        GfVec3f const& hitPos,
+        GfVec3f const& normal) const;
+
     // Evaluate the material opacity at a ray hit.
     // Returns 1.0 if no material is bound or evaluation fails.
     float _EvalOpacityAtHit(RTCRayHit const& rayHit) const;

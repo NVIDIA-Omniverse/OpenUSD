@@ -402,6 +402,10 @@ _SampleDomeLight(HdEmbree_LightData const& light, GfVec3f const& direction)
         GfVec3f(1.0f)
         : _SampleLightTexture(light.texture, s, t);
 
+    // Apply LightAPI radiometric parameters (intensity, exposure, color,
+    // color temperature) consistently with area lights.
+    Li = GfCompMult(Li, _EvalLightBasic(light));
+
     return HdEmbreeLightSampler::LightSample {
         Li,
         direction,

@@ -70,6 +70,7 @@ HdEmbreePrimvarSampler::_Interpolate(void* out, void** samples, float* weights,
         case HdTypeInt8:
             _InterpolateImpl<char>(out, samples, weights, sampleCount,
                 numComponents);
+            return true;
         case HdTypeInt16:
             _InterpolateImpl<short>(out, samples, weights, sampleCount,
                 numComponents);

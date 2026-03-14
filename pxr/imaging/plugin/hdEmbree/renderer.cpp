@@ -86,7 +86,6 @@ constexpr float _rayHitContinueBias = 0.001f;
 
 constexpr float _minLuminanceCutoff = 1e-9f;
 
-constexpr GfVec3f _invalidColor = GfVec3f(-std::numeric_limits<float>::infinity());
 
 // -------------------------------------------------------------------------
 // General Ray Utilities
@@ -1218,6 +1217,63 @@ HdEmbreeRenderer::_ComputePrimvar(RTCRayHit const& rayHit,
     return false;
 }
 
+mxcpp::ShadingContext
+HdEmbreeRenderer::_BuildShadingContext(
+    RTCRayHit const& rayHit,
+    HdEmbreeInstanceContext const* instanceContext,
+    HdEmbreePrototypeContext const* prototypeContext,
+    GfVec3f const& hitPos,
+    GfVec3f const& normal) const
+{
+    // Texcoord (try GfVec2f first, then GfVec3f)
+    GfVec2f texcoordVal(0.0f);
+    {
+        auto it = prototypeContext->primvarMap.find(TfToken("st"));
+        if (it != prototypeContext->primvarMap.end()) {
+            if (!it->second->Sample(
+                    rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
+                    &texcoordVal)) {
+                GfVec3f tc3;
+                if (it->second->Sample(
+                        rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
+                        &tc3)) {
+                    texcoordVal = GfVec2f(tc3[0], tc3[1]);
+                }
+            }
+        }
+    }
+
+    // Display color — always sample the authored primvar so that material
+    // evaluation (including opacity) sees the correct value regardless of
+    // the _enableSceneColors display-only flag.
+    GfVec3f displayColor(0.8f);
+    {
+        auto it = prototypeContext->primvarMap.find(HdTokens->displayColor);
+        if (it != prototypeContext->primvarMap.end()) {
+            it->second->Sample(
+                rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
+                &displayColor);
+        }
+    }
+
+    // Tangent frame
+    GfVec3f tangent, bitangent;
+    GfBuildOrthonormalFrame(normal, &tangent, &bitangent);
+
+    mxcpp::ShadingContext ctx;
+    ctx.position = _ToMx(hitPos);
+    ctx.normal = _ToMx(normal);
+    ctx.tangent = _ToMx(tangent);
+    ctx.bitangent = _ToMx(bitangent);
+    ctx.texcoord = _ToMx(texcoordVal);
+    ctx.displayColor = _ToMx(displayColor);
+    ctx.displayOpacity = 1.0f;
+    ctx.faceId = rayHit.hit.primID;
+    ctx.baryU = rayHit.hit.u;
+    ctx.baryV = rayHit.hit.v;
+    return ctx;
+}
+
 float
 HdEmbreeRenderer::_EvalOpacityAtHit(RTCRayHit const& rayHit) const
 {
@@ -1249,49 +1305,9 @@ HdEmbreeRenderer::_EvalOpacityAtHit(RTCRayHit const& rayHit) const
     normal = instanceContext->objectToWorldMatrix.TransformDir(normal);
     normal.Normalize();
 
-    GfVec2f texcoordVal(0.0f);
-    {
-        auto it = prototypeContext->primvarMap.find(TfToken("st"));
-        if (it != prototypeContext->primvarMap.end()) {
-            if (!it->second->Sample(
-                    rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
-                    &texcoordVal)) {
-                GfVec3f tc3;
-                if (it->second->Sample(
-                        rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
-                        &tc3)) {
-                    texcoordVal = GfVec2f(tc3[0], tc3[1]);
-                }
-            }
-        }
-    }
-
-    GfVec3f tangent, bitangent;
-    GfBuildOrthonormalFrame(normal, &tangent, &bitangent);
-
-    GfVec3f displayColor(0.8f);
-    {
-        auto it = prototypeContext->primvarMap.find(HdTokens->displayColor);
-        if (it != prototypeContext->primvarMap.end()) {
-            it->second->Sample(
-                rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
-                &displayColor);
-        }
-    }
-
     try {
-        mxcpp::ShadingContext ctx;
-        ctx.position = _ToMx(hitPos);
-        ctx.normal = _ToMx(normal);
-        ctx.tangent = _ToMx(tangent);
-        ctx.bitangent = _ToMx(bitangent);
-        ctx.texcoord = _ToMx(texcoordVal);
-        ctx.displayColor = _ToMx(displayColor);
-        ctx.displayOpacity = 1.0f;
-        ctx.faceId = rayHit.hit.primID;
-        ctx.baryU = rayHit.hit.u;
-        ctx.baryV = rayHit.hit.v;
-
+        mxcpp::ShadingContext ctx = _BuildShadingContext(
+            rayHit, instanceContext, prototypeContext, hitPos, normal);
         mxcpp::SurfaceClosure closure = evalGraph->Evaluate(ctx);
         return closure.opacity;
     } catch (...) {
@@ -1357,6 +1373,9 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
         // directly
         GfVec4f domeColor(0.0f, 0.0f, 0.0f, 1.0f);
         for (auto* dome : _domes) {
+            if (!dome->LightData().visible) {
+                continue;
+            }
             // Direct visibility: sample the dome lights. Since we know
             // we're only sampling domes, we don't care about the position, and
             // the sample direction is the camera ray direction.
@@ -1393,56 +1412,26 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
     // for shading; otherwise use the flat face normal.
     GfVec3f normal = GfVec3f(rayHit.hit.Ng_x, rayHit.hit.Ng_y,
                              rayHit.hit.Ng_z);
-    auto it = prototypeContext->primvarMap.find(HdTokens->normals);
-    if (it != prototypeContext->primvarMap.end()) {
-        it->second->Sample(
-            rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v, &normal);
-    }
-
-    // If a color primvar is present, use that as diffuse color; otherwise,
-    // use flat grey.
-    GfVec3f displayColor = _invalidColor;
-    float displayOpacity = 1.0f;
-    if (_enableSceneColors) {
-        auto it = prototypeContext->primvarMap.find(HdTokens->displayColor);
+    {
+        auto it = prototypeContext->primvarMap.find(HdTokens->normals);
         if (it != prototypeContext->primvarMap.end()) {
             it->second->Sample(
-                rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v, &displayColor);
-        }
-    }
-
-    // Sample texcoord if available (try GfVec2f first, then GfVec3f).
-    GfVec2f texcoordVal(0.0f);
-    {
-        auto it = prototypeContext->primvarMap.find(TfToken("st"));
-        if (it != prototypeContext->primvarMap.end()) {
-            if (!it->second->Sample(
-                    rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
-                    &texcoordVal)) {
-                GfVec3f tc3;
-                if (it->second->Sample(
-                        rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
-                        &tc3)) {
-                    texcoordVal = GfVec2f(tc3[0], tc3[1]);
-                }
-            }
+                rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v, &normal);
         }
     }
 
     // Transform the normal from object space to world space.
     normal = instanceContext->objectToWorldMatrix.TransformDir(normal);
-
-    // Make sure the normal is unit-length.
     normal.Normalize();
 
-    // Build tangent frame for shading context.
-    GfVec3f tangent, bitangent;
-    {
-        GfVec3f up = (std::fabs(normal[1]) < 0.999f)
-                     ? GfVec3f(0, 1, 0) : GfVec3f(1, 0, 0);
-        tangent = GfCross(up, normal).GetNormalized();
-        bitangent = GfCross(normal, tangent);
-    }
+    // Build shading context via shared helper (texcoord, displayColor,
+    // tangent frame all constructed consistently).
+    mxcpp::ShadingContext ctx = _BuildShadingContext(
+        rayHit, instanceContext, prototypeContext, hitPos, normal);
+
+    // Recover tangent frame from context for normal map application.
+    GfVec3f tangent = _ToGf(ctx.tangent);
+    GfVec3f bitangent = _ToGf(ctx.bitangent);
 
     // Try to evaluate MaterialXCpp material if one is bound.
     HdEmbreeMaterial *material = prototypeContext->material;
@@ -1456,19 +1445,6 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
 
     if (evalGraph) {
         try {
-            mxcpp::ShadingContext ctx;
-            ctx.position = _ToMx(hitPos);
-            ctx.normal = _ToMx(normal);
-            ctx.tangent = _ToMx(tangent);
-            ctx.bitangent = _ToMx(bitangent);
-            ctx.texcoord = _ToMx(texcoordVal);
-            ctx.displayColor = (displayColor != _invalidColor)
-                               ? _ToMx(displayColor) : mxcpp::Vec3f(0.8f);
-            ctx.displayOpacity = displayOpacity;
-            ctx.faceId = rayHit.hit.primID;
-            ctx.baryU = rayHit.hit.u;
-            ctx.baryV = rayHit.hit.v;
-
             closure = evalGraph->Evaluate(ctx);
             hasMaterialClosure = true;
         } catch (...) {
@@ -1492,8 +1468,8 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
         if (hasMaterialClosure) {
             materialColor = _ToGf(closure.baseColor);
         } else {
-            materialColor = (displayColor != _invalidColor)
-                            ? displayColor : GfVec3f(0.5f);
+            materialColor = _enableSceneColors
+                ? _ToGf(ctx.displayColor) : GfVec3f(0.5f);
         }
 
         GfVec3f dir = GfVec3f(rayHit.ray.dir_x, rayHit.ray.dir_y,
@@ -1592,13 +1568,14 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& position,
           rtcOccluded1(_scene, &shadow);
         }
 
-        // Record this AO ray's contribution to the occlusion factor: a
-        // boolean [In shadow/Not in shadow].
+        // Record this AO ray's contribution to the occlusion factor.
+        // Since we use cosine-weighted hemisphere sampling (PDF ∝ cos θ),
+        // the Monte Carlo estimator for the Lambertian ambient integral
+        // reduces to a simple visibility average: 1 if visible, 0 if
+        // occluded.
         // shadow is occluded when shadow.ray.tfar < 0.0f
-        // notice this is reversed since "it's a visibility ray, and
-        // the occlusionFactor is really an ambientLightFactor."
         if (shadow.tfar > 0.0f)
-            occlusionFactor += GfDot(shadowDir, normal);
+            occlusionFactor += 1.0f;
     }
     // Compute the average of the occlusion samples.
     occlusionFactor /= _ambientOcclusionSamples;
@@ -1762,6 +1739,9 @@ HdEmbreeRenderer::_TracePath(
         // --- Miss: dome light contribution ---
         if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
             for (auto* dome : _domes) {
+                if (!dome->LightData().visible) {
+                    continue;
+                }
                 HdEmbreeLightSampler::LightSample ls =
                     HdEmbreeLightSampler::GetLightSample(
                         dome->LightData(), GfVec3f(0.0f), rayDir,
@@ -1826,59 +1806,23 @@ HdEmbreeRenderer::_TracePath(
             normal = -normal;
         }
 
-        // Texcoord
-        GfVec2f texcoordVal(0.0f);
-        {
-            auto it = prototypeContext->primvarMap.find(TfToken("st"));
-            if (it != prototypeContext->primvarMap.end()) {
-                if (!it->second->Sample(rayHit.hit.primID, rayHit.hit.u,
-                                        rayHit.hit.v, &texcoordVal)) {
-                    GfVec3f tc3;
-                    if (it->second->Sample(rayHit.hit.primID, rayHit.hit.u,
-                                           rayHit.hit.v, &tc3)) {
-                        texcoordVal = GfVec2f(tc3[0], tc3[1]);
-                    }
-                }
-            }
-        }
+        // Build shading context via shared helper.
+        mxcpp::ShadingContext ctx = _BuildShadingContext(
+            rayHit, instanceContext, prototypeContext, hitPos, normal);
 
-        // Display color
-        GfVec3f displayColor(0.8f);
-        if (_enableSceneColors) {
-            auto it = prototypeContext->primvarMap.find(
-                HdTokens->displayColor);
-            if (it != prototypeContext->primvarMap.end()) {
-                it->second->Sample(
-                    rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
-                    &displayColor);
-            }
-        }
+        GfVec3f tangent = _ToGf(ctx.tangent);
+        GfVec3f bitangent = _ToGf(ctx.bitangent);
 
         // --- Evaluate material ---
         HdEmbreeMaterial *material = prototypeContext->material;
         mxcpp::EvalGraph *evalGraph = material
             ? material->GetEvalGraph() : nullptr;
 
-        GfVec3f tangent, bitangent;
-        GfBuildOrthonormalFrame(normal, &tangent, &bitangent);
-
         mxcpp::SurfaceClosure closure;
         bool hasClosure = false;
 
         if (evalGraph) {
             try {
-                mxcpp::ShadingContext ctx;
-                ctx.position = _ToMx(hitPos);
-                ctx.normal = _ToMx(normal);
-                ctx.tangent = _ToMx(tangent);
-                ctx.bitangent = _ToMx(bitangent);
-                ctx.texcoord = _ToMx(texcoordVal);
-                ctx.displayColor = _ToMx(displayColor);
-                ctx.displayOpacity = 1.0f;
-                ctx.faceId = rayHit.hit.primID;
-                ctx.baryU = rayHit.hit.u;
-                ctx.baryV = rayHit.hit.v;
-
                 closure = evalGraph->Evaluate(ctx);
                 hasClosure = true;
             } catch (...) {
@@ -1930,7 +1874,8 @@ HdEmbreeRenderer::_TracePath(
             direct = _ComputeDirectLightingMIS(
                 hitPos, normal, wo, sampler, doubleSided, &closure);
         } else {
-            GfVec3f matColor = displayColor;
+            GfVec3f matColor = _enableSceneColors
+                ? _ToGf(ctx.displayColor) : GfVec3f(0.5f);
             mxcpp::SurfaceClosure fallback;
             fallback.baseColor = _ToMx(matColor);
             fallback.roughness = 1.0f;
