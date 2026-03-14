@@ -13,6 +13,7 @@ namespace mxcpp {
 using Vec2f = Imath::V2f;
 using Vec3f = Imath::V3f;
 using Vec4f = Imath::V4f;
+using Mat3f = Imath::M33f;
 using Mat4f = Imath::M44f;
 
 inline float Dot(const Vec2f& a, const Vec2f& b) { return a.dot(b); }
