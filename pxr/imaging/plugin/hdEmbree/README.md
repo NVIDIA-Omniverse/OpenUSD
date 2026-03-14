@@ -18,7 +18,6 @@ The following settings can be configured via `renderSettings` (Hydra render dele
 | Min Bounces Before Russian Roulette | `minBouncesBeforeRR` | `int` | `2` | — |
 | Light Samples Per Hit | `lightSamplesPerHit` | `int` | `8` | `HDEMBREE_LIGHT_SAMPLES_PER_HIT` |
 | Stratify Light Samples | `stratifyLightSamples` | `bool` | `true` | `HDEMBREE_STRATIFY_LIGHT_SAMPLES` |
-| Show Adaptive Heatmap | `showAdaptiveHeatmap` | `bool` | `false` | — |
 | Use Per-Channel Variance | `usePerChannelVariance` | `bool` | `false` | — |
 
 In addition, the following Hydra built-in setting is forwarded:
@@ -50,11 +49,17 @@ Number of shadow/light samples taken per hit point per light source. Higher valu
 ### Stratify Light Samples (`stratifyLightSamples`)
 When enabled, light samples are stratified across the light surface, providing more uniform coverage and reducing variance compared to purely random sampling.
 
-### Show Adaptive Heatmap (`showAdaptiveHeatmap`)
-When enabled (together with `enableAdaptiveSampling`), the color AOV is replaced with a heatmap visualizing per-pixel sample counts. The color ramp maps the ratio `sampleCount / convergedSamplesPerPixel`: blue (few samples, early convergence) -> cyan -> green -> yellow -> red (many samples, hard to converge). Useful for diagnosing which regions of the scene are expensive.
-
 ### Use Per-Channel Variance (`usePerChannelVariance`)
 Controls the convergence metric for adaptive sampling. When `false` (default), luminance-based relative variance (`varOfMean / luminance²`) is used — channels are weighted by perceptual brightness, which can cause dark or red-heavy surfaces to require more samples. When `true`, per-channel relative variance (`varOfMean[c] / mean[c]`) is used instead (similar to pbrt-v4), treating R, G, B independently so that surface color does not bias convergence speed.
 
 ### Random Number Seed (`randomNumberSeed`)
 A value of `-1` (default) seeds the RNG non-deterministically. Any other value, combined with `PXR_WORK_THREAD_LIMIT=1`, produces deterministic/repeatable results.
+
+## Custom AOVs
+
+| AOV Name | Token | Format | Description |
+|----------|-------|--------|-------------|
+| Adaptive Heatmap | `adaptiveHeatmap` | `Float32Vec4` | Per-pixel sample count heatmap for adaptive sampling diagnostics |
+
+### Adaptive Heatmap (`adaptiveHeatmap`)
+When this AOV is bound (and `enableAdaptiveSampling` is active), it outputs a heatmap visualizing per-pixel sample counts. The color ramp maps the ratio `sampleCount / convergedSamplesPerPixel`: blue (few samples) -> cyan -> green -> yellow -> red (many samples). In usdview, select "adaptiveHeatmap" from the AOV dropdown to display it. The color AOV continues to render normally — the heatmap is written to its own separate buffer.

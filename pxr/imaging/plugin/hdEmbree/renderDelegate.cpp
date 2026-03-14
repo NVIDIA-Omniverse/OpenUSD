@@ -27,6 +27,7 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 TF_DEFINE_PUBLIC_TOKENS(HdEmbreeRenderSettingsTokens, HDEMBREE_RENDER_SETTINGS_TOKENS);
+TF_DEFINE_PUBLIC_TOKENS(HdEmbreeAovTokens, HDEMBREE_AOV_TOKENS);
 
 const TfTokenVector HdEmbreeRenderDelegate::SUPPORTED_RPRIM_TYPES =
 {
@@ -288,6 +289,9 @@ HdEmbreeRenderDelegate::GetDefaultAovDescriptor(TfToken const& name) const
                name == HdAovTokens->instanceId ||
                name == HdAovTokens->elementId) {
         return HdAovDescriptor(HdFormatInt32, false, VtValue(-1));
+    } else if (name == HdEmbreeAovTokens->adaptiveHeatmap) {
+        return HdAovDescriptor(HdFormatFloat32Vec4, true,
+                               VtValue(GfVec4f(0.0f)));
     } else {
         HdParsedAovToken aovId(name);
         if (aovId.isPrimvar) {
@@ -299,7 +303,7 @@ HdEmbreeRenderDelegate::GetDefaultAovDescriptor(TfToken const& name) const
     return HdAovDescriptor();
 }
 
-VtDictionary 
+VtDictionary
 HdEmbreeRenderDelegate::GetRenderStats() const
 {
     VtDictionary stats;

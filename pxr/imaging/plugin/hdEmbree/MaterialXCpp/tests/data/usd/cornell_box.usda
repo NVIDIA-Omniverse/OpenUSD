@@ -14,6 +14,29 @@ def RenderSettings "RenderSettings"
     # hdEmbree namespaced settings
     # int hdEmbree:convergedSamplesPerPixel = 256
     # int hdEmbree:minSamplesBeforeAdaptive = 64
+    rel products = [</RenderProduct>]
+}
+
+def RenderProduct "RenderProduct"
+{
+    rel orderedVars = [
+        </RenderProduct/Color>,
+        </RenderProduct/AdaptiveHeatmap>
+    ]
+
+    def RenderVar "Color"
+    {
+        token dataType = "color4f"
+        string sourceName = "color"
+        string sourceType = "raw"
+    }
+
+    def RenderVar "AdaptiveHeatmap"
+    {
+        token dataType = "color4f"
+        string sourceName = "adaptiveHeatmap"
+        string sourceType = "raw"
+    }
 }
 
 def Camera "Camera"

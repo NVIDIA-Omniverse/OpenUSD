@@ -7,6 +7,7 @@
 #include "pxr/imaging/plugin/hdEmbree/renderer.h"
 
 #include "pxr/imaging/plugin/hdEmbree/config.h"
+#include "pxr/imaging/plugin/hdEmbree/renderDelegate.h"
 #include "pxr/imaging/plugin/hdEmbree/light.h"
 #include "pxr/imaging/plugin/hdEmbree/lightSamplers.h"
 #include "pxr/imaging/plugin/hdEmbree/material.h"
@@ -348,6 +349,7 @@ HdEmbreeRenderer::_ValidateAovBindings()
             _aovNames[i].name != HdAovTokens->elementId &&
             _aovNames[i].name != HdAovTokens->Neye &&
             _aovNames[i].name != HdAovTokens->normal &&
+            _aovNames[i].name != HdEmbreeAovTokens->adaptiveHeatmap &&
             !_aovNames[i].isPrimvar) {
             TF_WARN("Unsupported attachment with Aov '%s' won't be rendered to",
                     _aovNames[i].name.GetText());
@@ -925,6 +927,80 @@ HdEmbreeRenderer::_TraceRay(unsigned int x, unsigned int y,
       rtcIntersect1(_scene, &rayHit);
     }
 
+    // Compute color once, used for both the color AOV and adaptive sampling
+    // variance tracking.  Computing it eagerly avoids calling _ComputeColor
+    // twice (which would consume different sampler state).
+    const bool needColor = _enableAdaptiveSampling ||
+        std::any_of(_aovNames.begin(), _aovNames.end(),
+            [](const HdParsedAovToken &t) {
+                return t.name == HdAovTokens->color;
+            });
+
+    GfVec4f colorSample(0.0f);
+    if (needColor) {
+        // Use the first color AOV's clear value if available, else black.
+        GfVec4f clearColor(0.0f);
+        for (size_t i = 0; i < _aovNames.size(); ++i) {
+            if (_aovNames[i].name == HdAovTokens->color) {
+                clearColor = _GetClearColor(_aovBindings[i].clearValue);
+                break;
+            }
+        }
+        colorSample = _ComputeColor(rayHit, sampler, clearColor);
+    }
+
+    // Update Welford online variance for adaptive sampling, regardless of
+    // which AOVs are bound.  This ensures that the heatmap AOV can display
+    // meaningful data even when the color AOV is not bound.
+    if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
+        const size_t idx = y * _width + x;
+        GfVec3f rgb(colorSample[0], colorSample[1], colorSample[2]);
+        uint32_t count = ++_pixelSampleCount[idx];
+        GfVec3f delta = rgb - _pixelMean[idx];
+        _pixelMean[idx] += delta / static_cast<float>(count);
+        GfVec3f delta2 = rgb - _pixelMean[idx];
+        _pixelM2[idx] += GfCompMult(delta, delta2);
+
+        if (count >= static_cast<uint32_t>(_minSamplesBeforeAdaptive)) {
+            float fCount = static_cast<float>(count);
+            GfVec3f varOfMean = _pixelM2[idx] / (fCount * fCount);
+
+            const GfVec3f &mean = _pixelMean[idx];
+            float maxVar;
+            constexpr float kMinValue = 0.001f;
+
+            if (_usePerChannelVariance) {
+                float relVar[3];
+                for (int c = 0; c < 3; ++c) {
+                    if (std::abs(mean[c]) > kMinValue) {
+                        relVar[c] = varOfMean[c] / std::abs(mean[c]);
+                    } else {
+                        relVar[c] = varOfMean[c];
+                    }
+                }
+                maxVar = std::max({relVar[0], relVar[1], relVar[2]});
+            } else {
+                float luminance = 0.2126f * mean[0]
+                                + 0.7152f * mean[1]
+                                + 0.0722f * mean[2];
+                if (luminance > kMinValue) {
+                    float invL2 = 1.0f / (luminance * luminance);
+                    maxVar = std::max({varOfMean[0] * invL2,
+                                       varOfMean[1] * invL2,
+                                       varOfMean[2] * invL2});
+                } else {
+                    maxVar = std::max({varOfMean[0],
+                                       varOfMean[1],
+                                       varOfMean[2]});
+                }
+            }
+
+            if (maxVar <= _adaptiveThreshold) {
+                _pixelConverged[idx] = true;
+            }
+        }
+    }
+
     // Write AOVs to attachments that aren't converged.
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
         HdEmbreeRenderBuffer *renderBuffer =
@@ -935,19 +1011,12 @@ HdEmbreeRenderer::_TraceRay(unsigned int x, unsigned int y,
         }
 
         if (_aovNames[i].name == HdAovTokens->color) {
-            // Always compute real color for variance tracking.
-            GfVec4f clearColor = _GetClearColor(_aovBindings[i].clearValue);
-            GfVec4f realSample = _ComputeColor(rayHit, sampler, clearColor);
-
             if (_showAdaptiveHeatmap && _enableAdaptiveSampling
                 && !_pixelSampleCount.empty()) {
                 // Heatmap mode: write directly to the output buffer,
-                // bypassing multisampled accumulation.  By not calling
-                // Write(), the buffer's _sampleCount stays 0 and
-                // Resolve() will skip these pixels, preserving our
-                // heatmap color in _buffer.
+                // bypassing multisampled accumulation.
                 const size_t idx = y * _width + x;
-                float t = static_cast<float>(_pixelSampleCount[idx] + 1)
+                float t = static_cast<float>(_pixelSampleCount[idx])
                         / static_cast<float>(
                               std::max(1, _samplesToConvergence));
                 t = std::min(t, 1.0f);
@@ -969,72 +1038,7 @@ HdEmbreeRenderer::_TraceRay(unsigned int x, unsigned int y,
                 renderBuffer->WriteOutput(
                     GfVec3i(x,y,1), 4, heatColor.data());
             } else {
-                renderBuffer->Write(GfVec3i(x,y,1), 4, realSample.data());
-            }
-
-            // Update Welford online variance for adaptive sampling.
-            // Always use the real rendered color, not heatmap color.
-            if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
-                const size_t idx = y * _width + x;
-                GfVec3f rgb(realSample[0], realSample[1], realSample[2]);
-                uint32_t count = ++_pixelSampleCount[idx];
-                GfVec3f delta = rgb - _pixelMean[idx];
-                _pixelMean[idx] += delta / static_cast<float>(count);
-                GfVec3f delta2 = rgb - _pixelMean[idx];
-                _pixelM2[idx] += GfCompMult(delta, delta2);
-
-                if (count >= static_cast<uint32_t>(_minSamplesBeforeAdaptive)) {
-                    // Compute variance of the mean (= sample_variance / N).
-                    // Sample variance alone doesn't decrease with more
-                    // samples; it converges to the true distribution
-                    // variance.  What matters for image convergence is the
-                    // standard error squared, which shrinks as 1/N.
-                    float fCount = static_cast<float>(count);
-                    GfVec3f varOfMean = _pixelM2[idx] / (fCount * fCount);
-
-                    const GfVec3f &mean = _pixelMean[idx];
-                    float maxVar;
-                    constexpr float kMinValue = 0.001f;
-
-                    if (_usePerChannelVariance) {
-                        // Per-channel relative variance: varOfMean / mean
-                        // for each channel independently (pbrt-v4 style).
-                        // This treats R, G, B equally regardless of
-                        // luminance weighting, so red surfaces are not
-                        // penalized by low perceptual brightness.
-                        float relVar[3];
-                        for (int c = 0; c < 3; ++c) {
-                            if (std::abs(mean[c]) > kMinValue) {
-                                relVar[c] = varOfMean[c] / std::abs(mean[c]);
-                            } else {
-                                relVar[c] = varOfMean[c];
-                            }
-                        }
-                        maxVar = std::max({relVar[0], relVar[1], relVar[2]});
-                    } else {
-                        // Luminance-based relative variance:
-                        // varOfMean / luminance^2.  Weights channels by
-                        // perceptual brightness, which can cause dark or
-                        // red-heavy surfaces to converge more slowly.
-                        float luminance = 0.2126f * mean[0]
-                                        + 0.7152f * mean[1]
-                                        + 0.0722f * mean[2];
-                        if (luminance > kMinValue) {
-                            float invL2 = 1.0f / (luminance * luminance);
-                            maxVar = std::max({varOfMean[0] * invL2,
-                                               varOfMean[1] * invL2,
-                                               varOfMean[2] * invL2});
-                        } else {
-                            maxVar = std::max({varOfMean[0],
-                                               varOfMean[1],
-                                               varOfMean[2]});
-                        }
-                    }
-
-                    if (maxVar <= _adaptiveThreshold) {
-                        _pixelConverged[idx] = true;
-                    }
-                }
+                renderBuffer->Write(GfVec3i(x,y,1), 4, colorSample.data());
             }
         } else if ((_aovNames[i].name == HdAovTokens->cameraDepth ||
                     _aovNames[i].name == HdAovTokens->depth) &&
@@ -1065,6 +1069,30 @@ HdEmbreeRenderer::_TraceRay(unsigned int x, unsigned int y,
             GfVec3f value;
             if (_ComputePrimvar(rayHit, _aovNames[i].name, &value)) {
                 renderBuffer->Write(GfVec3i(x,y,1), 3, value.data());
+            }
+        } else if (_aovNames[i].name == HdEmbreeAovTokens->adaptiveHeatmap) {
+            if (_enableAdaptiveSampling && !_pixelSampleCount.empty()) {
+                const size_t idx = y * _width + x;
+                float t = static_cast<float>(_pixelSampleCount[idx] + 1)
+                        / static_cast<float>(
+                              std::max(1, _samplesToConvergence));
+                t = std::min(t, 1.0f);
+                float r, g, b;
+                if (t < 0.25f) {
+                    float s = t / 0.25f;
+                    r = 0.0f; g = s; b = 1.0f;
+                } else if (t < 0.5f) {
+                    float s = (t - 0.25f) / 0.25f;
+                    r = 0.0f; g = 1.0f; b = 1.0f - s;
+                } else if (t < 0.75f) {
+                    float s = (t - 0.5f) / 0.25f;
+                    r = s; g = 1.0f; b = 0.0f;
+                } else {
+                    float s = (t - 0.75f) / 0.25f;
+                    r = 1.0f; g = 1.0f - s; b = 0.0f;
+                }
+                GfVec4f heatColor(r, g, b, 1.0f);
+                renderBuffer->Write(GfVec3i(x,y,1), 4, heatColor.data());
             }
         }
     }
