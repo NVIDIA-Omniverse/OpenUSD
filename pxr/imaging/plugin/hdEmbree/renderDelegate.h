@@ -28,6 +28,7 @@ class HdEmbreeRenderParam;
     (ambientOcclusionSamples)           \
     (randomNumberSeed)                  \
     (useSobol)                          \
+    (samplerSequence)                   \
     (enableAdaptiveSampling)            \
     (adaptiveThreshold)                 \
     (minSamplesBeforeAdaptive)          \
@@ -36,7 +37,8 @@ class HdEmbreeRenderParam;
     (lightSamplesPerHit)                \
     (stratifyLightSamples)              \
     (showAdaptiveHeatmap)               \
-    (usePerChannelVariance)
+    (usePerChannelVariance)             \
+    (fireflyClampThreshold)
 
 // Also: HdRenderSettingsTokens->convergedSamplesPerPixel
 

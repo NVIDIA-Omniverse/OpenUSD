@@ -1769,6 +1769,24 @@ EMBREE = Dependency("Embree", InstallEmbree,
                     "include/embree4/rtcore.h")
 
 ############################################################
+# OpenQMC
+
+def InstallOpenQMC(context, force, buildArgs):
+    OPENQMC_URL = "https://github.com/AcademySoftwareFoundation/openqmc/archive/refs/tags/v0.7.1.zip"
+
+    with CurrentWorkingDirectory(DownloadURL(OPENQMC_URL, context, force)):
+        extraArgs = [
+            "-DOPENQMC_BUILD_TOOLS=OFF",
+            "-DOPENQMC_BUILD_TESTING=OFF",
+            "-DOPENQMC_FORCE_DOWNLOAD=OFF",
+        ]
+        extraArgs += buildArgs
+
+        RunCMake(context, force, extraArgs)
+
+OPENQMC = Dependency("OpenQMC", InstallOpenQMC, "include/oqmc/oqmc.h")
+
+############################################################
 # USD
 
 def InstallUSD(context, force, buildArgs):
@@ -1890,6 +1908,11 @@ def InstallUSD(context, force, buildArgs):
                 extraArgs.append('-DPXR_BUILD_EMBREE_PLUGIN=ON')
             else:
                 extraArgs.append('-DPXR_BUILD_EMBREE_PLUGIN=OFF')
+
+            if context.buildOpenQMC:
+                extraArgs.append('-DPXR_ENABLE_OPENQMC_SUPPORT=ON')
+            else:
+                extraArgs.append('-DPXR_ENABLE_OPENQMC_SUPPORT=OFF')
 
             if context.buildPrman:
                 if context.prmanLocation:
@@ -2558,6 +2581,7 @@ class InstallContext:
 
         # - Imaging plugins
         self.buildEmbree = self.buildImaging and args.build_embree
+        self.buildOpenQMC = self.buildEmbree
         self.buildPrman = self.buildImaging and args.build_prman
         self.prmanLocation = (os.path.abspath(args.prman_location)
                                if args.prman_location else None)
@@ -2651,7 +2675,7 @@ if context.buildImaging:
         requiredDependencies += [ZLIB, BOOST, JPEG, TIFF, PNG, OPENEXR, OPENIMAGEIO]
 
     if context.buildEmbree:
-        requiredDependencies += [TBB, EMBREE]
+        requiredDependencies += [TBB, EMBREE, OPENQMC]
                              
 if context.buildUsdview:
     requiredDependencies += [PYOPENGL, PYSIDE]
@@ -2893,6 +2917,7 @@ summaryMsg += """\
       OpenImageIO support:      {buildOIIO} 
       OpenColorIO support:      {buildOCIO} 
       Embree support:           {buildEmbree}
+        OpenQMC support:        {buildOpenQMC}
       PRMan support:            {buildPrman}
       Vulkan support:           {enableVulkan}
     UsdImaging                  {buildUsdImaging}
@@ -2973,6 +2998,7 @@ summaryMsg = summaryMsg.format(
     buildOIIO=("On" if context.buildOIIO else "Off"),
     buildOCIO=("On" if context.buildOCIO else "Off"),
     buildEmbree=("On" if context.buildEmbree else "Off"),
+    buildOpenQMC=("On" if context.buildOpenQMC else "Off"),
     buildPrman=("On" if context.buildPrman else "Off"),
     buildUsdImaging=("On" if context.buildUsdImaging else "Off"),
     buildUsdview=("On" if context.buildUsdview else "Off"),

@@ -109,7 +109,7 @@ void
 HdEmbreeRenderDelegate::_Initialize()
 {
     // Initialize the settings and settings descriptors.
-    _settingDescriptors.resize(16);
+    _settingDescriptors.resize(18);
     _settingDescriptors[0] = { "Enable Scene Colors",
         HdEmbreeRenderSettingsTokens->enableSceneColors,
         VtValue(HdEmbreeConfig::GetInstance().useFaceColors) };
@@ -131,33 +131,39 @@ HdEmbreeRenderDelegate::_Initialize()
     _settingDescriptors[6] = { "Use Sobol Sampler",
         HdEmbreeRenderSettingsTokens->useSobol,
         VtValue(HdEmbreeConfig::GetInstance().useSobol) };
-    _settingDescriptors[7] = { "Enable Adaptive Sampling",
+    _settingDescriptors[7] = { "Sampler Sequence",
+        HdEmbreeRenderSettingsTokens->samplerSequence,
+        VtValue(TfToken()) };
+    _settingDescriptors[8] = { "Enable Adaptive Sampling",
         HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
         VtValue(HdEmbreeConfig::GetInstance().enableAdaptiveSampling) };
-    _settingDescriptors[8] = { "Adaptive Threshold",
+    _settingDescriptors[9] = { "Adaptive Threshold",
         HdEmbreeRenderSettingsTokens->adaptiveThreshold,
         VtValue(HdEmbreeConfig::GetInstance().adaptiveThreshold) };
-    _settingDescriptors[9] = { "Min Samples Before Adaptive",
+    _settingDescriptors[10] = { "Min Samples Before Adaptive",
         HdEmbreeRenderSettingsTokens->minSamplesBeforeAdaptive,
         VtValue(HdEmbreeConfig::GetInstance().minSamplesBeforeAdaptive) };
-    _settingDescriptors[10] = { "Max Bounces",
+    _settingDescriptors[11] = { "Max Bounces",
         HdEmbreeRenderSettingsTokens->maxBounces,
         VtValue(int(HdEmbreeDefaultMaxBounces)) };
-    _settingDescriptors[11] = { "Min Bounces Before Russian Roulette",
+    _settingDescriptors[12] = { "Min Bounces Before Russian Roulette",
         HdEmbreeRenderSettingsTokens->minBouncesBeforeRR,
         VtValue(int(HdEmbreeDefaultMinBouncesBeforeRR)) };
-    _settingDescriptors[12] = { "Light Samples Per Hit",
+    _settingDescriptors[13] = { "Light Samples Per Hit",
         HdEmbreeRenderSettingsTokens->lightSamplesPerHit,
         VtValue(int(HdEmbreeConfig::GetInstance().lightSamplesPerHit)) };
-    _settingDescriptors[13] = { "Stratify Light Samples",
+    _settingDescriptors[14] = { "Stratify Light Samples",
         HdEmbreeRenderSettingsTokens->stratifyLightSamples,
         VtValue(HdEmbreeConfig::GetInstance().stratifyLightSamples) };
-    _settingDescriptors[14] = { "Show Adaptive Heatmap",
+    _settingDescriptors[15] = { "Show Adaptive Heatmap",
         HdEmbreeRenderSettingsTokens->showAdaptiveHeatmap,
         VtValue(HdEmbreeDefaultShowAdaptiveHeatmap) };
-    _settingDescriptors[15] = { "Use Per-Channel Variance",
+    _settingDescriptors[16] = { "Use Per-Channel Variance",
         HdEmbreeRenderSettingsTokens->usePerChannelVariance,
         VtValue(HdEmbreeDefaultUsePerChannelVariance) };
+    _settingDescriptors[17] = { "Firefly Clamp Threshold",
+        HdEmbreeRenderSettingsTokens->fireflyClampThreshold,
+        VtValue(HdEmbreeDefaultFireflyClampThreshold) };
     _PopulateDefaultSettings(_settingDescriptors);
 
     // Initialize the embree library handle (_rtcDevice).

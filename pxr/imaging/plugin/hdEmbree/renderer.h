@@ -128,8 +128,11 @@ public:
     void SetMaxBounces(int maxBounces);
     void SetMinBouncesBeforeRR(int minBounces);
 
-    /// Set whether to use the Sobol quasi-random sampler.
+    /// Legacy compatibility shim for selecting sobol vs random.
     void SetUseSobol(bool useSobol);
+
+    /// Set the sampler sequence used for per-pixel sample generation.
+    void SetSamplerSequence(HdEmbreeSamplerSequence sequence);
 
     /// Set adaptive sampling parameters.
     void SetEnableAdaptiveSampling(bool enable);
@@ -145,6 +148,10 @@ public:
 
     /// Set whether to use per-channel relative variance (vs luminance-based).
     void SetUsePerChannelVariance(bool use);
+
+    /// Set the firefly clamping threshold (max sample luminance).
+    /// Values <= 0 disable clamping.
+    void SetFireflyClampThreshold(float threshold);
 
     /// Rendering entrypoint: add one sample per pixel to the whole sample
     /// buffer, and then loop until the image is converged.  After each pass,
@@ -367,8 +374,8 @@ private:
     int _maxBounces;
     int _minBouncesBeforeRR;
 
-    // Whether to use Sobol quasi-random sampler (vs hash-based pseudo-random).
-    bool _useSobol;
+    // Active sampler sequence for per-pixel sample generation.
+    HdEmbreeSamplerSequence _samplerSequence;
 
     // Adaptive sampling parameters.
     bool _enableAdaptiveSampling;
@@ -384,6 +391,9 @@ private:
 
     // Whether to use per-channel relative variance for convergence.
     bool _usePerChannelVariance;
+
+    // Firefly clamping threshold (max sample luminance). <= 0 disables.
+    float _fireflyClampThreshold;
 
     // Per-pixel adaptive sampling state (Welford online variance).
     std::vector<GfVec3f> _pixelMean;

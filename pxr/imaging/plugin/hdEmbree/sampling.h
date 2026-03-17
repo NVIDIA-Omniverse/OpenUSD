@@ -14,10 +14,18 @@
 
 #include "pxr/pxr.h"
 #include "pxr/base/tf/hash.h"
+#include "pxr/base/tf/token.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cfloat>
+#include <type_traits>
+
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+#include <oqmc/oqmc.h>
+#include <variant>
+#endif
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -332,12 +340,107 @@ HdEmbree_SobolSample(uint32_t sampleIndex, int dimension, uint32_t seed)
 }
 
 // ---------------------------------------------------------------------------
-// SobolSampler: stateful sampler that tracks dimension consumption
+// Sampler sequence selection
 // ---------------------------------------------------------------------------
 
-/// A per-pixel, per-sample Sobol sampler. Each call to Next() returns the
-/// next dimension of the Sobol sequence, with FastOwen scrambling applied
-/// using a per-pixel seed for decorrelation.
+enum class HdEmbreeSamplerSequence : uint8_t
+{
+    Random,
+    Sobol,
+    OpenQMCSobol,
+    OpenQMCSobolBN,
+    OpenQMCPMJ,
+    OpenQMCPMJBN,
+    OpenQMCLattice,
+    OpenQMCLatticeBN
+};
+
+inline TfToken
+HdEmbreeGetSamplerSequenceToken(HdEmbreeSamplerSequence sequence)
+{
+    switch (sequence) {
+    case HdEmbreeSamplerSequence::Random:
+        return TfToken("random");
+    case HdEmbreeSamplerSequence::Sobol:
+        return TfToken("sobol");
+    case HdEmbreeSamplerSequence::OpenQMCSobol:
+        return TfToken("openqmc_sobol");
+    case HdEmbreeSamplerSequence::OpenQMCSobolBN:
+        return TfToken("openqmc_sobolbn");
+    case HdEmbreeSamplerSequence::OpenQMCPMJ:
+        return TfToken("openqmc_pmj");
+    case HdEmbreeSamplerSequence::OpenQMCPMJBN:
+        return TfToken("openqmc_pmjbn");
+    case HdEmbreeSamplerSequence::OpenQMCLattice:
+        return TfToken("openqmc_lattice");
+    case HdEmbreeSamplerSequence::OpenQMCLatticeBN:
+        return TfToken("openqmc_latticebn");
+    }
+    return TfToken("sobol");
+}
+
+inline HdEmbreeSamplerSequence
+HdEmbreeGetSamplerSequenceFromToken(TfToken const& token)
+{
+    if (token == TfToken("random")) {
+        return HdEmbreeSamplerSequence::Random;
+    }
+    if (token == TfToken("openqmc_sobol")) {
+        return HdEmbreeSamplerSequence::OpenQMCSobol;
+    }
+    if (token == TfToken("openqmc_sobolbn")) {
+        return HdEmbreeSamplerSequence::OpenQMCSobolBN;
+    }
+    if (token == TfToken("openqmc_pmj")) {
+        return HdEmbreeSamplerSequence::OpenQMCPMJ;
+    }
+    if (token == TfToken("openqmc_pmjbn")) {
+        return HdEmbreeSamplerSequence::OpenQMCPMJBN;
+    }
+    if (token == TfToken("openqmc_lattice")) {
+        return HdEmbreeSamplerSequence::OpenQMCLattice;
+    }
+    if (token == TfToken("openqmc_latticebn")) {
+        return HdEmbreeSamplerSequence::OpenQMCLatticeBN;
+    }
+    return HdEmbreeSamplerSequence::Sobol;
+}
+
+inline bool
+HdEmbreeSamplerSequenceNeedsOpenQMC(HdEmbreeSamplerSequence sequence)
+{
+    switch (sequence) {
+    case HdEmbreeSamplerSequence::Random:
+    case HdEmbreeSamplerSequence::Sobol:
+        return false;
+    case HdEmbreeSamplerSequence::OpenQMCSobol:
+    case HdEmbreeSamplerSequence::OpenQMCSobolBN:
+    case HdEmbreeSamplerSequence::OpenQMCPMJ:
+    case HdEmbreeSamplerSequence::OpenQMCPMJBN:
+    case HdEmbreeSamplerSequence::OpenQMCLattice:
+    case HdEmbreeSamplerSequence::OpenQMCLatticeBN:
+        return true;
+    }
+    return false;
+}
+
+inline bool
+HdEmbreeSamplerSequenceIsSupported(HdEmbreeSamplerSequence sequence)
+{
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+    return true;
+#else
+    return !HdEmbreeSamplerSequenceNeedsOpenQMC(sequence);
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// Stateful sampler that tracks dimension consumption
+// ---------------------------------------------------------------------------
+
+/// A per-pixel, per-sample sampler abstraction. The default implementation
+/// uses hdEmbree's existing Sobol sequence with FastOwen scrambling, but it
+/// can also route to OpenQMC-backed sequences when available.
 ///
 /// Supports "padding" (per-bounce dimension restarting): calling
 /// ResetForBounce() re-derives the Owen seed from the original pixel seed
@@ -345,28 +448,102 @@ HdEmbree_SobolSample(uint32_t sampleIndex, int dimension, uint32_t seed)
 /// path independently uses the lowest (best-quality) Sobol dimensions,
 /// dramatically improving QMC effectiveness for high-dimensional path
 /// tracing integrands.
-struct HdEmbreeSobolSampler
+struct HdEmbreeSampler
 {
     uint32_t baseSeed;     ///< Original per-pixel seed (immutable, for resets)
     uint32_t seed;         ///< Current scrambling seed (may differ after resets)
     uint32_t sampleIndex;  ///< Which sample within this pixel
     int dimension;         ///< Current dimension counter
     bool useRandom;        ///< If true, use hash-based pseudo-random instead of Sobol
+    HdEmbreeSamplerSequence sequence;
 
-    HdEmbreeSobolSampler(uint32_t pixelSeed, uint32_t sampleIdx,
-                         bool random = false)
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+    using _OpenQMCVariant = std::variant<
+        std::monostate,
+        oqmc::SobolSampler,
+        oqmc::SobolBnSampler,
+        oqmc::PmjSampler,
+        oqmc::PmjBnSampler,
+        oqmc::LatticeSampler,
+        oqmc::LatticeBnSampler>;
+
+    _OpenQMCVariant openQmcRoot;
+    _OpenQMCVariant openQmcCurrent;
+#endif
+
+    HdEmbreeSampler(uint32_t pixelSeed,
+                    uint32_t pixelX,
+                    uint32_t pixelY,
+                    uint32_t sampleIdx,
+                    HdEmbreeSamplerSequence samplerSequence)
         : baseSeed(pixelSeed)
         , seed(pixelSeed)
         , sampleIndex(sampleIdx)
         , dimension(0)
-        , useRandom(random)
-    {}
+        , useRandom(samplerSequence == HdEmbreeSamplerSequence::Random)
+        , sequence(samplerSequence)
+    {
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+        switch (sequence) {
+        case HdEmbreeSamplerSequence::OpenQMCSobol:
+            openQmcRoot = oqmc::SobolSampler(
+                pixelX, pixelY, 0u, sampleIdx, _GetOpenQMCCache<oqmc::SobolSampler>());
+            openQmcCurrent = openQmcRoot;
+            break;
+        case HdEmbreeSamplerSequence::OpenQMCSobolBN:
+            openQmcRoot = oqmc::SobolBnSampler(
+                pixelX, pixelY, 0u, sampleIdx, _GetOpenQMCCache<oqmc::SobolBnSampler>());
+            openQmcCurrent = openQmcRoot;
+            break;
+        case HdEmbreeSamplerSequence::OpenQMCPMJ:
+            openQmcRoot = oqmc::PmjSampler(
+                pixelX, pixelY, 0u, sampleIdx, _GetOpenQMCCache<oqmc::PmjSampler>());
+            openQmcCurrent = openQmcRoot;
+            break;
+        case HdEmbreeSamplerSequence::OpenQMCPMJBN:
+            openQmcRoot = oqmc::PmjBnSampler(
+                pixelX, pixelY, 0u, sampleIdx, _GetOpenQMCCache<oqmc::PmjBnSampler>());
+            openQmcCurrent = openQmcRoot;
+            break;
+        case HdEmbreeSamplerSequence::OpenQMCLattice:
+            openQmcRoot = oqmc::LatticeSampler(
+                pixelX, pixelY, 0u, sampleIdx, _GetOpenQMCCache<oqmc::LatticeSampler>());
+            openQmcCurrent = openQmcRoot;
+            break;
+        case HdEmbreeSamplerSequence::OpenQMCLatticeBN:
+            openQmcRoot = oqmc::LatticeBnSampler(
+                pixelX, pixelY, 0u, sampleIdx, _GetOpenQMCCache<oqmc::LatticeBnSampler>());
+            openQmcCurrent = openQmcRoot;
+            break;
+        case HdEmbreeSamplerSequence::Random:
+        case HdEmbreeSamplerSequence::Sobol:
+            break;
+        }
+#else
+        (void)pixelX;
+        (void)pixelY;
+#endif
+    }
 
     /// Reset the dimension counter and re-derive the scrambling seed for a
     /// new "padded" sub-sequence (e.g. a new path bounce). Each unique
     /// bounceKey produces an independent low-discrepancy sequence starting
     /// from dimension 0.
     void ResetForBounce(uint32_t bounceKey) {
+        if (HdEmbreeSamplerSequenceNeedsOpenQMC(sequence)) {
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+            std::visit(
+                [this, bounceKey](auto const& sampler) {
+                    using SamplerT = std::decay_t<decltype(sampler)>;
+                    if constexpr (!std::is_same_v<SamplerT, std::monostate>) {
+                        openQmcCurrent = sampler.newDomain(bounceKey);
+                    }
+                },
+                openQmcRoot);
+#endif
+            return;
+        }
+
         seed = HdEmbree_MixBits(baseSeed ^ bounceKey);
         dimension = 0;
     }
@@ -374,6 +551,40 @@ struct HdEmbreeSobolSampler
     /// Return the next quasi-random (or pseudo-random) float in [0, 1)
     /// and advance dimension.
     float Next() {
+        if (HdEmbreeSamplerSequenceNeedsOpenQMC(sequence)) {
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+            constexpr int kOpenQMCDomainDimensions = 4;
+            const int currentDimension = dimension++;
+            return std::visit(
+                [currentDimension](auto const& sampler) {
+                    using SamplerT = std::decay_t<decltype(sampler)>;
+                    if constexpr (std::is_same_v<SamplerT, std::monostate>) {
+                        return 0.0f;
+                    } else {
+                        float sample[kOpenQMCDomainDimensions];
+                        const int domainIndex =
+                            currentDimension / kOpenQMCDomainDimensions;
+                        const int componentIndex =
+                            currentDimension % kOpenQMCDomainDimensions;
+
+                        if (domainIndex == 0) {
+                            sampler.template drawSample<kOpenQMCDomainDimensions>(
+                                sample);
+                        } else {
+                            auto domainSampler = sampler.newDomain(domainIndex);
+                            domainSampler
+                                .template drawSample<kOpenQMCDomainDimensions>(
+                                    sample);
+                        }
+                        return sample[componentIndex];
+                    }
+                },
+                openQmcCurrent);
+#else
+            return 0.0f;
+#endif
+        }
+
         float val;
         if (useRandom) {
             uint32_t h = HdEmbree_MixBits(
@@ -386,7 +597,26 @@ struct HdEmbreeSobolSampler
         ++dimension;
         return val;
     }
+
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+private:
+    template <typename SamplerT>
+    static char*
+    _GetOpenQMCCache()
+    {
+        struct _Cache {
+            std::array<char, SamplerT::cacheSize> bytes{};
+
+            _Cache() { SamplerT::initialiseCache(bytes.data()); }
+        };
+
+        static _Cache cache;
+        return cache.bytes.data();
+    }
+#endif
 };
+
+using HdEmbreeSobolSampler = HdEmbreeSampler;
 
 PXR_NAMESPACE_CLOSE_SCOPE
 

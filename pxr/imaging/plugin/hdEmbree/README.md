@@ -1,5 +1,9 @@
 # HdEmbree Render Settings
 
+When hdEmbree is built with `PXR_ENABLE_OPENQMC_SUPPORT=ON`, the plugin also
+links against OpenQMC. The `build_usd.py --embree` path installs OpenQMC
+`v0.7.1` automatically and enables this CMake option for the final USD build.
+
 The following settings can be configured via `renderSettings` (Hydra render delegate settings API) and/or environment variables.
 
 | UI Name | Token | Type | Default | Environment Variable |
@@ -11,6 +15,7 @@ The following settings can be configured via `renderSettings` (Hydra render dele
 | Samples To Convergence | `convergedSamplesPerPixel` | `int` | `256` | `HDEMBREE_SAMPLES_TO_CONVERGENCE` |
 | Random Number Seed | `randomNumberSeed` | `int` | `-1` | `HDEMBREE_RANDOM_NUMBER_SEED` |
 | Use Sobol Sampler | `useSobol` | `bool` | `true` | `HDEMBREE_USE_SOBOL` |
+| Sampler Sequence | `samplerSequence` | `token` | effective default: `sobol` | — |
 | Enable Adaptive Sampling | `enableAdaptiveSampling` | `bool` | `true` | `HDEMBREE_ENABLE_ADAPTIVE_SAMPLING` |
 | Adaptive Threshold | `adaptiveThreshold` | `float` | `0.01` | — |
 | Min Samples Before Adaptive | `minSamplesBeforeAdaptive` | `int` | `16` | — |
@@ -36,6 +41,23 @@ When scene lighting is disabled, ambient occlusion can be used instead. The numb
 
 ### Use Sobol Sampler (`useSobol`)
 Controls the sampling strategy. When `true` (default), a Sobol quasi-random sequence with FastOwen scrambling is used, providing better convergence properties. When `false`, a hash-based pseudo-random sampler is used instead.
+
+### Sampler Sequence (`samplerSequence`)
+Selects the per-pixel sampler implementation. Supported values are:
+
+- `sobol`
+- `random`
+- `openqmc_sobol`
+- `openqmc_sobolbn`
+- `openqmc_pmj`
+- `openqmc_pmjbn`
+- `openqmc_lattice`
+- `openqmc_latticebn`
+
+If `samplerSequence` is not authored, hdEmbree falls back to the legacy
+`useSobol` boolean, so the effective default remains `sobol`. If an
+`openqmc_*` sequence is requested without OpenQMC support compiled in,
+hdEmbree falls back to `sobol` and emits a warning.
 
 ### Adaptive Sampling (`enableAdaptiveSampling`, `adaptiveThreshold`, `minSamplesBeforeAdaptive`)
 When enabled, per-pixel variance is tracked using Welford's online algorithm. Pixels whose variance falls below `adaptiveThreshold` after at least `minSamplesBeforeAdaptive` samples are marked as converged and skipped in subsequent passes. This can yield significant speedups (2-4x) for scenes with non-uniform complexity.

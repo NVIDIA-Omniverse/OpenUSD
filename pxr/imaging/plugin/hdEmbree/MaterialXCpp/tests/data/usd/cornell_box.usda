@@ -12,8 +12,13 @@ glossy/diffuse interaction."""
 def RenderSettings "RenderSettings"
 {
     # hdEmbree namespaced settings
-    # int hdEmbree:convergedSamplesPerPixel = 256
+    # int hdEmbree:convergedSamplesPerPixel = 8 
+    # int hdEmbree:randomNumberSeed = 1
+    # int hdEmbree:maxBounces = 0
+    # int hdEmbree:lightSamplesPerHit = 1
+    # bool hdEmbree:stratifyLightSamples = "false"
     # int hdEmbree:minSamplesBeforeAdaptive = 64
+    token hdEmbree:samplerSequence = "sobol"
     rel products = [</RenderProduct>]
 }
 
@@ -31,12 +36,12 @@ def RenderProduct "RenderProduct"
         string sourceType = "raw"
     }
 
-    def RenderVar "AdaptiveHeatmap"
-    {
-        token dataType = "color4f"
-        string sourceName = "adaptiveHeatmap"
-        string sourceType = "raw"
-    }
+    # def RenderVar "AdaptiveHeatmap"
+    # {
+    #     token dataType = "color4f"
+    #     string sourceName = "adaptiveHeatmap"
+    #     string sourceType = "raw"
+    # }
 }
 
 def Camera "Camera"

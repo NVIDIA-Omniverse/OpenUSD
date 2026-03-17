@@ -32,6 +32,7 @@ constexpr int HdEmbreeDefaultLightSamplesPerHit = 8;
 constexpr bool HdEmbreeDefaultStratifyLightSamples = true;
 constexpr bool HdEmbreeDefaultShowAdaptiveHeatmap = false;
 constexpr bool HdEmbreeDefaultUsePerChannelVariance = false;
+constexpr float HdEmbreeDefaultFireflyClampThreshold = 20.0f;
 
 /// \class HdEmbreeConfig
 ///

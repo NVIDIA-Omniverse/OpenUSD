@@ -150,7 +150,7 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _enableLighting(false)
     , _maxBounces(HdEmbreeDefaultMaxBounces)
     , _minBouncesBeforeRR(HdEmbreeDefaultMinBouncesBeforeRR)
-    , _useSobol(HdEmbreeDefaultUseSobol)
+    , _samplerSequence(HdEmbreeSamplerSequence::Sobol)
     , _enableAdaptiveSampling(HdEmbreeDefaultEnableAdaptiveSampling)
     , _adaptiveThreshold(HdEmbreeDefaultAdaptiveThreshold)
     , _minSamplesBeforeAdaptive(HdEmbreeDefaultMinSamplesBeforeAdaptive)
@@ -158,6 +158,7 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _stratifyLightSamples(HdEmbreeDefaultStratifyLightSamples)
     , _showAdaptiveHeatmap(HdEmbreeDefaultShowAdaptiveHeatmap)
     , _usePerChannelVariance(HdEmbreeDefaultUsePerChannelVariance)
+    , _fireflyClampThreshold(HdEmbreeDefaultFireflyClampThreshold)
     , _completedSamples(0)
 {
 }
@@ -215,7 +216,15 @@ HdEmbreeRenderer::SetMinBouncesBeforeRR(int minBounces)
 void
 HdEmbreeRenderer::SetUseSobol(bool useSobol)
 {
-    _useSobol = useSobol;
+    _samplerSequence = useSobol
+        ? HdEmbreeSamplerSequence::Sobol
+        : HdEmbreeSamplerSequence::Random;
+}
+
+void
+HdEmbreeRenderer::SetSamplerSequence(HdEmbreeSamplerSequence sequence)
+{
+    _samplerSequence = sequence;
 }
 
 void
@@ -258,6 +267,12 @@ void
 HdEmbreeRenderer::SetUsePerChannelVariance(bool use)
 {
     _usePerChannelVariance = use;
+}
+
+void
+HdEmbreeRenderer::SetFireflyClampThreshold(float threshold)
+{
+    _fireflyClampThreshold = threshold;
 }
 
 void
@@ -847,7 +862,8 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         }
         std::printf("  Max bounces      : %d\n", _maxBounces);
         std::printf("  Light samples    : %d\n", _lightSamplesPerHit);
-        std::printf("  Sobol sampler    : %s\n", _useSobol ? "on" : "off");
+        std::printf("  Sampler sequence : %s\n",
+                    HdEmbreeGetSamplerSequenceToken(_samplerSequence).GetText());
 
         if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
             size_t convergedCount = 0;
@@ -930,8 +946,12 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
                 // Create a per-pixel sampler (Sobol or pseudo-random).
                 uint32_t pixelSeed = static_cast<uint32_t>(
                     TfHash::Combine(baseSeed, x, y));
-                HdEmbreeSobolSampler sampler(pixelSeed, sampleNum,
-                                             !_useSobol);
+                HdEmbreeSobolSampler sampler(
+                    pixelSeed,
+                    x,
+                    y,
+                    sampleNum,
+                    _samplerSequence);
 
                 // Jitter the camera ray direction.
                 GfVec2f jitter(0.0f, 0.0f);
@@ -1908,12 +1928,13 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
             }
 
             // Firefly clamping.
-            constexpr float kMaxSampleLuminance = 20.0f;
-            float lum = 0.2126f * sampleContrib[0]
-                      + 0.7152f * sampleContrib[1]
-                      + 0.0722f * sampleContrib[2];
-            if (lum > kMaxSampleLuminance) {
-                sampleContrib *= kMaxSampleLuminance / lum;
+            if (_fireflyClampThreshold > 0.0f) {
+                float lum = 0.2126f * sampleContrib[0]
+                          + 0.7152f * sampleContrib[1]
+                          + 0.0722f * sampleContrib[2];
+                if (lum > _fireflyClampThreshold) {
+                    sampleContrib *= _fireflyClampThreshold / lum;
+                }
             }
 
             lightContrib += sampleContrib;

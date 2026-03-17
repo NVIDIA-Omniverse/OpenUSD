@@ -11,6 +11,7 @@
 #include "pxr/imaging/plugin/hdEmbree/config.h"
 #include "pxr/imaging/plugin/hdEmbree/renderDelegate.h"
 #include "pxr/imaging/plugin/hdEmbree/renderPass.h"
+#include "pxr/base/tf/diagnostic.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -181,10 +182,34 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<unsigned int>(
                 HdEmbreeRenderSettingsTokens->randomNumberSeed, (unsigned int)-1));
 
-        _renderer->SetUseSobol(
-            renderDelegate->GetRenderSetting<bool>(
-                HdEmbreeRenderSettingsTokens->useSobol,
-                HdEmbreeConfig::GetInstance().useSobol));
+        TfToken samplerSequenceToken =
+            renderDelegate->GetRenderSetting<TfToken>(
+                HdEmbreeRenderSettingsTokens->samplerSequence,
+                TfToken());
+        HdEmbreeSamplerSequence samplerSequence =
+            samplerSequenceToken.IsEmpty()
+                ? (renderDelegate->GetRenderSetting<bool>(
+                        HdEmbreeRenderSettingsTokens->useSobol,
+                        HdEmbreeConfig::GetInstance().useSobol)
+                    ? HdEmbreeSamplerSequence::Sobol
+                    : HdEmbreeSamplerSequence::Random)
+                : HdEmbreeGetSamplerSequenceFromToken(samplerSequenceToken);
+        if (!samplerSequenceToken.IsEmpty() &&
+            HdEmbreeGetSamplerSequenceToken(samplerSequence) !=
+                samplerSequenceToken) {
+            TF_WARN("hdEmbree sampler sequence '%s' is unknown; "
+                    "falling back to 'sobol'.",
+                    samplerSequenceToken.GetText());
+            samplerSequence = HdEmbreeSamplerSequence::Sobol;
+        }
+        if (!HdEmbreeSamplerSequenceIsSupported(samplerSequence)) {
+            TF_WARN("hdEmbree sampler sequence '%s' requires OpenQMC support; "
+                    "falling back to 'sobol'.",
+                    samplerSequenceToken.GetText());
+            samplerSequence = HdEmbreeSamplerSequence::Sobol;
+        }
+        _renderer->SetSamplerSequence(samplerSequence);
+
         _renderer->SetEnableAdaptiveSampling(
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
@@ -221,6 +246,10 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->usePerChannelVariance,
                 HdEmbreeDefaultUsePerChannelVariance));
+        _renderer->SetFireflyClampThreshold(
+            renderDelegate->GetRenderSetting<float>(
+                HdEmbreeRenderSettingsTokens->fireflyClampThreshold,
+                HdEmbreeDefaultFireflyClampThreshold));
 
         needStartRender = true;
     }

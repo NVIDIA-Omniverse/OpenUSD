@@ -11,16 +11,24 @@ if (NOT ${PXR_BUILD_GPU_SUPPORT})
     return()
 endif()
 
+set(_hdEmbree_libraries
+    tf
+    vt
+    gf
+    work
+    hd
+    hdsi
+    hio
+    ${EMBREE_LIBRARY}
+)
+
+if (PXR_ENABLE_OPENQMC_SUPPORT)
+    list(APPEND _hdEmbree_libraries OpenQMC::OpenQMC)
+endif()
+
 pxr_plugin(hdEmbree
    LIBRARIES
-        tf
-        vt
-        gf
-        work
-        hd
-        hdsi
-        hio
-        ${EMBREE_LIBRARY}
+        ${_hdEmbree_libraries}
 
     INCLUDE_DIRS
         ${EMBREE_INCLUDE_DIR}
@@ -125,3 +133,7 @@ pxr_build_test(testMaterialXCpp
         MaterialXCpp/nodes/proceduralNodes.cpp
         MaterialXCpp/nodes/colorNodes.cpp
 )
+
+if (PXR_ENABLE_OPENQMC_SUPPORT)
+    target_compile_definitions(hdEmbree PRIVATE PXR_HDEMBREE_ENABLE_OPENQMC=1)
+endif()

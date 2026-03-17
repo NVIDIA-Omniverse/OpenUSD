@@ -282,6 +282,9 @@ if (PXR_BUILD_IMAGING)
     # --Embree
     if (PXR_BUILD_EMBREE_PLUGIN)
         find_package(Embree REQUIRED)
+        if (PXR_ENABLE_OPENQMC_SUPPORT)
+            find_package(OpenQMC CONFIG REQUIRED)
+        endif()
     endif()
 endif()
 
