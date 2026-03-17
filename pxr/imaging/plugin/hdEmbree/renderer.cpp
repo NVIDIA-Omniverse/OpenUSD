@@ -18,6 +18,7 @@
 #include "pxr/imaging/hd/perfLog.h"
 
 #include "pxr/base/gf/matrix3f.h"
+#include "pxr/base/tf/hash.h"
 #include "pxr/base/work/loops.h"
 #include "pxr/base/work/threadLimits.h"
 
@@ -32,7 +33,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
-
 #include <limits>
 #include <stdint.h>
 #include <thread>
@@ -68,10 +68,9 @@ public:
     std::optional<tbb::task_scheduler_init> _tbbTaskSchedInit;
 };
 
-} // anonymous namespace
+}  // anonymous namespace
 
 #endif  // TBB_INTERFACE_VERSION_MAJOR < 12
-
 
 namespace {
 
@@ -85,9 +84,7 @@ template <typename T>
 constexpr T _pi = static_cast<T>(M_PI);
 
 constexpr float _rayHitContinueBias = 0.001f;
-
 constexpr float _minLuminanceCutoff = 1e-9f;
-
 
 // -------------------------------------------------------------------------
 // General Ray Utilities
@@ -115,16 +112,24 @@ PXR_NAMESPACE_OPEN_SCOPE
 // Conversion helpers between GfVec3f and mxcpp::Vec3f (Imath::V3f).
 // GfVec3f in this build does not have implicit Imath conversion.
 namespace {
-inline GfVec3f _ToGf(const mxcpp::Vec3f& v) {
+inline GfVec3f
+_ToGf(const mxcpp::Vec3f& v)
+{
     return GfVec3f(v[0], v[1], v[2]);
 }
-inline mxcpp::Vec3f _ToMx(const GfVec3f& v) {
+
+inline mxcpp::Vec3f
+_ToMx(const GfVec3f& v)
+{
     return mxcpp::Vec3f(v[0], v[1], v[2]);
 }
-inline mxcpp::Vec2f _ToMx(const GfVec2f& v) {
+
+inline mxcpp::Vec2f
+_ToMx(const GfVec2f& v)
+{
     return mxcpp::Vec2f(v[0], v[1]);
 }
-} // anonymous namespace
+}  // anonymous namespace
 
 HdEmbreeRenderer::HdEmbreeRenderer()
     : _aovBindings()
@@ -262,7 +267,7 @@ HdEmbreeRenderer::SetRandomNumberSeed(int randomNumberSeed)
 }
 
 void
-HdEmbreeRenderer::SetDataWindow(const GfRect2i &dataWindow)
+HdEmbreeRenderer::SetDataWindow(const GfRect2i& dataWindow)
 {
     _dataWindow = dataWindow;
 
@@ -286,7 +291,7 @@ HdEmbreeRenderer::SetCamera(const GfMatrix4d& viewMatrix,
 
 void
 HdEmbreeRenderer::SetAovBindings(
-    HdRenderPassAovBindingVector const &aovBindings)
+    HdRenderPassAovBindingVector const& aovBindings)
 {
     _aovBindings = aovBindings;
     _aovNames.resize(_aovBindings.size());
@@ -298,10 +303,10 @@ HdEmbreeRenderer::SetAovBindings(
     _aovBindingsNeedValidation = true;
 }
 
-
 void
-HdEmbreeRenderer::AddLight(SdfPath const& lightPath,
-                           HdEmbree_Light* light)
+HdEmbreeRenderer::AddLight(
+    SdfPath const& lightPath,
+    HdEmbree_Light* light)
 {
     ScopedLock lightsWriteLock(_lightsWriteMutex);
     _lightMap[lightPath] = light;
@@ -332,7 +337,6 @@ HdEmbreeRenderer::_ValidateAovBindings()
     _aovBindingsValid = true;
 
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
-
         // By the time the attachment gets here, there should be a bound
         // output buffer.
         if (_aovBindings[i].renderBuffer == nullptr) {
@@ -401,7 +405,7 @@ HdEmbreeRenderer::_ValidateAovBindings()
         // color is only supported for vec3/vec4 attachments of float,
         // unorm, or snorm.
         if (_aovNames[i].name == HdAovTokens->color) {
-            switch(format) {
+            switch (format) {
                 case HdFormatUNorm8Vec4:
                 case HdFormatUNorm8Vec3:
                 case HdFormatSNorm8Vec4:
@@ -514,7 +518,7 @@ HdEmbreeRenderer::Clear()
             continue;
         }
 
-        HdEmbreeRenderBuffer *rb = 
+        HdEmbreeRenderBuffer *rb =
             static_cast<HdEmbreeRenderBuffer*>(_aovBindings[i].renderBuffer);
 
         rb->Map();
@@ -568,7 +572,7 @@ HdEmbreeRenderer::GetRenderElapsedSeconds() const
 
 static
 bool
-_IsContained(const GfRect2i &rect, int width, int height)
+_IsContained(const GfRect2i& rect, int width, int height)
 {
     return
         rect.GetMinX() >= 0 && rect.GetMaxX() < width &&
@@ -615,7 +619,7 @@ HdEmbreeRenderer::_PreRenderSetup()
             _width  = _aovBindings[i].renderBuffer->GetWidth();
             _height = _aovBindings[i].renderBuffer->GetHeight();
         } else {
-            if ( _width  != _aovBindings[i].renderBuffer->GetWidth() ||
+            if (_width  != _aovBindings[i].renderBuffer->GetWidth() ||
                  _height != _aovBindings[i].renderBuffer->GetHeight()) {
                 TF_CODING_ERROR(
                     "Embree render buffers have inconsistent sizes");
@@ -722,7 +726,6 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
 
     _renderStartTime = std::chrono::steady_clock::now();
 
-
     // Compute baseSeed once per Render() call so that every pixel uses a
     // consistent Owen scrambling seed across all samples.  Previously this
     // was computed inside _RenderTiles using system_clock::now(), which meant
@@ -757,15 +760,15 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
 
         const unsigned int tileSize = HdEmbreeConfig::GetInstance().tileSize;
         const unsigned int numTilesX =
-            (_dataWindow.GetWidth() + tileSize-1) / tileSize;
+            (_dataWindow.GetWidth() + tileSize - 1) / tileSize;
         const unsigned int numTilesY =
-            (_dataWindow.GetHeight() + tileSize-1) / tileSize;
+            (_dataWindow.GetHeight() + tileSize - 1) / tileSize;
 
         // Render by scheduling square tiles of the sample buffer in a parallel
         // for loop.
         // Always pass the renderThread to _RenderTiles to allow the first frame
         // to be interrupted.
-        WorkParallelForN(numTilesX*numTilesY,
+        WorkParallelForN(numTilesX * numTilesY,
             std::bind(&HdEmbreeRenderer::_RenderTiles, this,
                 renderThread, i, baseSeed,
                 std::placeholders::_1, std::placeholders::_2));
@@ -783,13 +786,13 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
                 }
             }
             if (!moreWork) {
-                _completedSamples.store(i+1);
+                _completedSamples.store(i + 1);
                 break;
             }
         }
 
         // Track the number of completed samples for external consumption.
-        _completedSamples.store(i+1);
+        _completedSamples.store(i + 1);
 
         // If adaptive sampling is enabled, check if all pixels converged.
         if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
@@ -892,11 +895,10 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
     const unsigned int tileSize =
         HdEmbreeConfig::GetInstance().tileSize;
     const unsigned int numTilesX =
-        (_dataWindow.GetWidth() + tileSize-1) / tileSize;
+        (_dataWindow.GetWidth() + tileSize - 1) / tileSize;
 
     // _RenderTiles gets a range of tiles; iterate through them.
     for (unsigned int tile = tileStart; tile < tileEnd; ++tile) {
-
         // Cancellation point.
         if (renderThread && renderThread->IsStopRequested()) {
             break;
@@ -904,14 +906,14 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
 
         // Compute the pixel location of tile boundaries.
         const unsigned int tileY = tile / numTilesX;
-        const unsigned int tileX = tile - tileY * numTilesX; 
+        const unsigned int tileX = tile - tileY * numTilesX;
         // (Above is equivalent to: tileX = tile % numTilesX)
         const unsigned int x0 = tileX * tileSize + minX;
         const unsigned int y0 = tileY * tileSize + minY;
         // Clamp to data window, in case tileSize doesn't
         // neatly divide its with and height.
-        const unsigned int x1 = std::min(x0+tileSize, maxX);
-        const unsigned int y1 = std::min(y0+tileSize, maxY);
+        const unsigned int x1 = std::min(x0 + tileSize, maxX);
+        const unsigned int y1 = std::min(y0 + tileSize, maxY);
 
         // Loop over pixels casting rays.
         for (unsigned int y = y0; y < y1; ++y) {
@@ -979,10 +981,13 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
 
 /// Fill in an RTCRay structure from the given parameters.
 static void
-_PopulateRay(RTCRay *ray, GfVec3f const& origin, 
-             GfVec3f const& dir, float nearest,
-             float furthest = std::numeric_limits<float>::infinity(),
-             HdEmbree_RayMask mask = HdEmbree_RayMask::All)
+_PopulateRay(
+    RTCRay *ray,
+    GfVec3f const& origin,
+    GfVec3f const& dir,
+    float nearest,
+    float furthest = std::numeric_limits<float>::infinity(),
+    HdEmbree_RayMask mask = HdEmbree_RayMask::All)
 {
     ray->org_x = origin[0];
     ray->org_y = origin[1];
@@ -1001,10 +1006,13 @@ _PopulateRay(RTCRay *ray, GfVec3f const& origin,
 /// Fill in an RTCRayHit structure from the given parameters.
 // note this containts a Ray and a RayHit
 static void
-_PopulateRayHit(RTCRayHit* rayHit, GfVec3f const& origin,
-             GfVec3f const& dir, float nearest,
-             float furthest = std::numeric_limits<float>::infinity(),
-             HdEmbree_RayMask mask = HdEmbree_RayMask::All)
+_PopulateRayHit(
+    RTCRayHit* rayHit,
+    GfVec3f const& origin,
+    GfVec3f const& dir,
+    float nearest,
+    float furthest = std::numeric_limits<float>::infinity(),
+    HdEmbree_RayMask mask = HdEmbree_RayMask::All)
 {
     // Fill in defaults for the ray
     _PopulateRay(&rayHit->ray, origin, dir, nearest, furthest, mask);
@@ -1256,8 +1264,8 @@ HdEmbreeRenderer::_UpdateVarianceLuminance(
 
 void
 HdEmbreeRenderer::_TraceRay(unsigned int x, unsigned int y,
-                            GfVec3f const &origin, GfVec3f const &dir,
-                            HdEmbreeSobolSampler &sampler)
+                            GfVec3f const& origin, GfVec3f const& dir,
+                            HdEmbreeSobolSampler& sampler)
 {
     // Intersect the camera ray.
     RTCRayHit rayHit; // EMBREE_FIXME: use RTCRay for occlusion rays
@@ -1266,7 +1274,7 @@ HdEmbreeRenderer::_TraceRay(unsigned int x, unsigned int y,
                     std::numeric_limits<float>::max(),
                     HdEmbree_RayMask::Camera);
     {
-      rtcIntersect1(_scene, &rayHit);
+        rtcIntersect1(_scene, &rayHit);
     }
 
     GfVec4f colorSample(0.0f);
@@ -1721,7 +1729,6 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& position,
                                             GfVec3f const& normal,
                                             HdEmbreeSobolSampler &sampler)
 {
-
     // 0 ambient occlusion samples means disable the ambient occlusion term.
     if (_ambientOcclusionSamples < 1) {
         return 1.0f;
@@ -1812,7 +1819,6 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
     bool doubleSided,
     mxcpp::SurfaceClosure const* closure) const
 {
-
     GfVec3f finalColor(0.0f);
 
     const int N = _lightSamplesPerHit;
@@ -1928,7 +1934,6 @@ HdEmbreeRenderer::_TracePath(
     GfVec3f const& dir,
     HdEmbreeSobolSampler &sampler) const
 {
-
     GfVec3f radiance(0.0f);
     GfVec3f throughput(1.0f);
     GfVec3f rayOrigin = origin;

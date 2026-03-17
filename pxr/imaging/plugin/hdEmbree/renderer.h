@@ -32,7 +32,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 class HdEmbreeRenderBuffer;
 
-enum HdEmbree_RayMask: uint32_t  {
+enum HdEmbree_RayMask : uint32_t {
     None = 0,
 
     Camera = 1 << 0,
@@ -70,7 +70,7 @@ public:
 
     /// Set the data window to fill (same meaning as in CameraUtilFraming
     /// with coordinate system also being y-Down).
-    void SetDataWindow(const GfRect2i &dataWindow);
+    void SetDataWindow(const GfRect2i& dataWindow);
 
     /// Set the camera to use for rendering.
     ///   \param viewMatrix The camera's world-to-view matrix.
@@ -79,7 +79,7 @@ public:
 
     /// Set the aov bindings to use for rendering.
     ///   \param aovBindings A list of aov bindings.
-    void SetAovBindings(HdRenderPassAovBindingVector const &aovBindings);
+    void SetAovBindings(HdRenderPassAovBindingVector const& aovBindings);
 
     /// Add a light
     void AddLight(SdfPath const& lightPath, HdEmbree_Light* light);
@@ -151,7 +151,7 @@ public:
     /// the image will be resolved into a color buffer.
     ///   \param renderThread A handle to the render thread, used for checking
     ///                       for cancellation and locking the color buffer.
-    void Render(HdRenderThread *renderThread);
+    void Render(HdRenderThread* renderThread);
 
     /// Clear the bound aov buffers (typically before rendering).
     void Clear();
@@ -186,7 +186,7 @@ private:
     // work. For each tile, iterate over pixels in the tile, generating camera
     // rays, and following them/calculating color with _TraceRay. This function
     // renders all tiles between tileStart and tileEnd.
-    void _RenderTiles(HdRenderThread *renderThread, int sampleNum,
+    void _RenderTiles(HdRenderThread* renderThread, int sampleNum,
                       uint32_t baseSeed,
                       size_t tileStart, size_t tileEnd);
 
@@ -194,21 +194,23 @@ private:
     // aov buffers.
     void _TraceRay(unsigned int x, unsigned int y,
                    GfVec3f const& origin, GfVec3f const& dir,
-                   HdEmbreeSobolSampler &sampler);
+                   HdEmbreeSobolSampler& sampler);
 
     // Compute the color at the given ray hit.
     GfVec4f _ComputeColor(RTCRayHit const& rayHit,
-                          HdEmbreeSobolSampler &sampler,
+                          HdEmbreeSobolSampler& sampler,
                           GfVec4f const& clearColor);
     // Compute the depth at the given ray hit.
-    bool _ComputeDepth(RTCRayHit const& rayHit, float *depth, bool clip);
+    bool _ComputeDepth(RTCRayHit const& rayHit, float* depth, bool clip);
     // Compute the given ID at the given ray hit.
-    bool _ComputeId(RTCRayHit const& rayHit, TfToken const& idType, int32_t *id);
+    bool _ComputeId(RTCRayHit const& rayHit,
+                    TfToken const& idType,
+                    int32_t* id);
     // Compute the normal at the given ray hit.
-    bool _ComputeNormal(RTCRayHit const& rayHit, GfVec3f *normal, bool eye);
+    bool _ComputeNormal(RTCRayHit const& rayHit, GfVec3f* normal, bool eye);
     // Compute a primvar at the given ray hit.
     bool _ComputePrimvar(RTCRayHit const& rayHit, TfToken const& primvar,
-        GfVec3f *value);
+                         GfVec3f* value);
 
     // Compute the ambient occlusion term at a given point by firing rays
     // from "position" in the hemisphere centered on "normal"; the occlusion
@@ -218,7 +220,7 @@ private:
     // the light contribution of an infinitely far, pure white dome light.
     float _ComputeAmbientOcclusion(GfVec3f const& position,
                                    GfVec3f const& normal,
-                                   HdEmbreeSobolSampler &sampler);
+                                   HdEmbreeSobolSampler& sampler);
 
     /// Evaluate direct lighting from all scene lights using MIS.
     /// If \p closure is non-null, uses the MaterialXCpp BSDF evaluation;
@@ -227,7 +229,7 @@ private:
         GfVec3f const& position,
         GfVec3f const& normal,
         GfVec3f const& wo,
-        HdEmbreeSobolSampler &sampler,
+        HdEmbreeSobolSampler& sampler,
         bool doubleSided,
         mxcpp::SurfaceClosure const* closure) const;
 
@@ -235,7 +237,7 @@ private:
     GfVec3f _TracePath(
         GfVec3f const& origin,
         GfVec3f const& dir,
-        HdEmbreeSobolSampler &sampler) const;
+        HdEmbreeSobolSampler& sampler) const;
 
     // Return the visibility from `position` along `direction`
     float _Visibility(GfVec3f const& position,
@@ -264,14 +266,14 @@ private:
 
     struct _AovWriter;
 
-    using _AovWriteFn = void(*)(HdEmbreeRenderer*,
-                                _AovWriter const&,
-                                RTCRayHit const&,
-                                GfVec4f const&,
-                                unsigned int, unsigned int);
-    using _VarianceFn = void(*)(HdEmbreeRenderer*,
-                                unsigned int, unsigned int,
-                                GfVec3f const&);
+    using _AovWriteFn = void (*)(HdEmbreeRenderer*,
+                                 _AovWriter const&,
+                                 RTCRayHit const&,
+                                 GfVec4f const&,
+                                 unsigned int, unsigned int);
+    using _VarianceFn = void (*)(HdEmbreeRenderer*,
+                                 unsigned int, unsigned int,
+                                 GfVec3f const&);
 
     struct _AovWriter {
         HdEmbreeRenderBuffer* buffer = nullptr;
@@ -282,30 +284,41 @@ private:
     void _BuildAovDispatchTable();
 
     static void _WriteColor(HdEmbreeRenderer*, _AovWriter const&,
-        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+                            RTCRayHit const&, GfVec4f const&,
+                            unsigned int, unsigned int);
     static void _WriteColorHeatmap(HdEmbreeRenderer*, _AovWriter const&,
-        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+                                   RTCRayHit const&, GfVec4f const&,
+                                   unsigned int, unsigned int);
     static void _WriteDepth(HdEmbreeRenderer*, _AovWriter const&,
-        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+                            RTCRayHit const&, GfVec4f const&,
+                            unsigned int, unsigned int);
     static void _WriteClipDepth(HdEmbreeRenderer*, _AovWriter const&,
-        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+                                RTCRayHit const&, GfVec4f const&,
+                                unsigned int, unsigned int);
     static void _WriteId(HdEmbreeRenderer*, _AovWriter const&,
-        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+                         RTCRayHit const&, GfVec4f const&,
+                         unsigned int, unsigned int);
     static void _WriteNormal(HdEmbreeRenderer*, _AovWriter const&,
-        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+                             RTCRayHit const&, GfVec4f const&,
+                             unsigned int, unsigned int);
     static void _WriteNormalEye(HdEmbreeRenderer*, _AovWriter const&,
-        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+                                RTCRayHit const&, GfVec4f const&,
+                                unsigned int, unsigned int);
     static void _WritePrimvar(HdEmbreeRenderer*, _AovWriter const&,
-        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+                              RTCRayHit const&, GfVec4f const&,
+                              unsigned int, unsigned int);
     static void _WriteAdaptiveHeatmap(HdEmbreeRenderer*, _AovWriter const&,
-        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+                                      RTCRayHit const&, GfVec4f const&,
+                                      unsigned int, unsigned int);
 
     static GfVec4f _HeatmapColor(float t);
 
     static void _UpdateVariancePerChannel(HdEmbreeRenderer*,
-        unsigned int, unsigned int, GfVec3f const&);
+                                          unsigned int, unsigned int,
+                                          GfVec3f const&);
     static void _UpdateVarianceLuminance(HdEmbreeRenderer*,
-        unsigned int, unsigned int, GfVec3f const&);
+                                         unsigned int, unsigned int,
+                                         GfVec3f const&);
 
     // The bound aovs for this renderer.
     HdRenderPassAovBindingVector _aovBindings;
@@ -398,4 +411,4 @@ private:
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
-#endif // PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_H
+#endif  // PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_H
