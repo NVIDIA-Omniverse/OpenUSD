@@ -37,6 +37,6 @@ inline const T& ValueGet(const Value& v) {
     return std::get<T>(v);
 }
 
-} // namespace mxcpp
+}  // namespace mxcpp
 
-#endif // MXCPP_VALUE_H
+#endif  // MXCPP_VALUE_H

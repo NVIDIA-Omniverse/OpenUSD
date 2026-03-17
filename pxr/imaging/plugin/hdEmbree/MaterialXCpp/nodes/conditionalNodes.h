@@ -10,6 +10,6 @@
 namespace mxcpp {
 class NodeRegistry;
 void RegisterConditionalNodes(NodeRegistry& reg);
-} // namespace mxcpp
+}  // namespace mxcpp
 
 #endif

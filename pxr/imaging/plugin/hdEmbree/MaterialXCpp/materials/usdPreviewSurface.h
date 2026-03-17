@@ -15,6 +15,6 @@ namespace mxcpp {
 /// Maps UsdPreviewSurface parameters to a unified surface closure.
 SurfaceClosure EvalUsdPreviewSurface(const ParamMap& params);
 
-} // namespace mxcpp
+}  // namespace mxcpp
 
 #endif

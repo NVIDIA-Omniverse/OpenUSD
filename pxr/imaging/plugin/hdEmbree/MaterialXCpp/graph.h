@@ -61,6 +61,6 @@ private:
         const ParamMap& params);
 };
 
-} // namespace mxcpp
+}  // namespace mxcpp
 
-#endif // MXCPP_GRAPH_H
+#endif  // MXCPP_GRAPH_H

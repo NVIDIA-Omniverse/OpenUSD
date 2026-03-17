@@ -23,7 +23,7 @@ _GetSlotRegistry()
     return registry;
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 SlotId
 InternSlot(const std::string& name)
@@ -63,4 +63,4 @@ SlotName::Get() const
     return slot;
 }
 
-} // namespace mxcpp
+}  // namespace mxcpp

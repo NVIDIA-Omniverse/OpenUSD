@@ -29,6 +29,6 @@ struct MaterialGraph {
     std::map<std::string, GraphConnection> terminals;
 };
 
-} // namespace mxcpp
+}  // namespace mxcpp
 
-#endif // MXCPP_GRAPH_TYPES_H
+#endif  // MXCPP_GRAPH_TYPES_H

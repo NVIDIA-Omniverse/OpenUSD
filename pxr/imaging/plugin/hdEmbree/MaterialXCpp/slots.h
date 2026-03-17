@@ -57,6 +57,6 @@ AsSlotId(const std::string& name)
     return InternSlot(name);
 }
 
-} // namespace mxcpp
+}  // namespace mxcpp
 
-#endif // MXCPP_SLOTS_H
+#endif  // MXCPP_SLOTS_H

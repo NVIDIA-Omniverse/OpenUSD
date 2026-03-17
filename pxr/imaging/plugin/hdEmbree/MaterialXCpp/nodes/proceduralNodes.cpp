@@ -230,7 +230,7 @@ float _CellNoise3d(float x, float y, float z) {
         static_cast<int>(std::floor(z))));
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 // ---- Noise nodes ---------------------------------------------------------
 
@@ -328,4 +328,4 @@ RegisterProceduralNodes(NodeRegistry& reg)
 
 #undef _REG
 
-} // namespace mxcpp
+}  // namespace mxcpp

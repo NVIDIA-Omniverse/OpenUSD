@@ -15,6 +15,6 @@ namespace mxcpp {
 /// Maps OpenPBR parameters to a unified surface closure.
 SurfaceClosure EvalOpenPbr(const ParamMap& params);
 
-} // namespace mxcpp
+}  // namespace mxcpp
 
 #endif

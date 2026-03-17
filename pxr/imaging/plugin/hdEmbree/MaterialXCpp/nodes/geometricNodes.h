@@ -10,6 +10,6 @@
 namespace mxcpp {
 class NodeRegistry;
 void RegisterGeometricNodes(NodeRegistry& reg);
-} // namespace mxcpp
+}  // namespace mxcpp
 
 #endif

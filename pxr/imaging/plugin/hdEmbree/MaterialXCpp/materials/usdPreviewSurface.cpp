@@ -78,4 +78,4 @@ EvalUsdPreviewSurface(const ParamMap& params)
     return c;
 }
 
-} // namespace mxcpp
+}  // namespace mxcpp

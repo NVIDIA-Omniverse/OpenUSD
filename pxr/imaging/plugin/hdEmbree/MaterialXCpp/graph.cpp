@@ -294,4 +294,4 @@ EvalGraph::_EvalMaterialModel(
     return closure;
 }
 
-} // namespace mxcpp
+}  // namespace mxcpp

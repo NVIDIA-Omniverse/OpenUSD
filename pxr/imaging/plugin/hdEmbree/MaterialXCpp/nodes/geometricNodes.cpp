@@ -74,4 +74,4 @@ RegisterGeometricNodes(NodeRegistry& reg)
 
 #undef _REG
 
-} // namespace mxcpp
+}  // namespace mxcpp

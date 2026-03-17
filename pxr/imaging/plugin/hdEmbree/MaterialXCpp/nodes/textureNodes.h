@@ -10,6 +10,6 @@
 namespace mxcpp {
 class NodeRegistry;
 void RegisterTextureNodes(NodeRegistry& reg);
-} // namespace mxcpp
+}  // namespace mxcpp
 
 #endif

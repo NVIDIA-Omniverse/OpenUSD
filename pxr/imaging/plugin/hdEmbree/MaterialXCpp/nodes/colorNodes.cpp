@@ -78,7 +78,7 @@ _HsvToRgb(const Vec3f& hsv)
     return rgb + Vec3f(m);
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 static void
 _EvalRgbToHsv(const ParamMap& inputs, const ShadingContext&,
@@ -110,4 +110,4 @@ RegisterColorNodes(NodeRegistry& reg)
 
 #undef _REG
 
-} // namespace mxcpp
+}  // namespace mxcpp

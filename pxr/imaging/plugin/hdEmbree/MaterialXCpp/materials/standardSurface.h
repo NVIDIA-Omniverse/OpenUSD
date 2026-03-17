@@ -15,6 +15,6 @@ namespace mxcpp {
 /// Maps Standard Surface parameters to a unified surface closure.
 SurfaceClosure EvalStandardSurface(const ParamMap& params);
 
-} // namespace mxcpp
+}  // namespace mxcpp
 
 #endif

@@ -12,7 +12,7 @@
 namespace mxcpp {
 
 /// Evaluation function signature for a single node.
-using NodeEvalFn = void(*)(
+using NodeEvalFn = void (*)(
     const ParamMap& inputs,
     const ShadingContext& ctx,
     NodeOutputMap* outputs);
@@ -39,6 +39,6 @@ private:
     std::unordered_map<std::string, NodeEvalFn> _nodes;
 };
 
-} // namespace mxcpp
+}  // namespace mxcpp
 
-#endif // MXCPP_NODE_REGISTRY_H
+#endif  // MXCPP_NODE_REGISTRY_H

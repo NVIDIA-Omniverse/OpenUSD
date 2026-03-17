@@ -57,4 +57,4 @@ NodeRegistry::RegisterBuiltinNodes()
     });
 }
 
-} // namespace mxcpp
+}  // namespace mxcpp

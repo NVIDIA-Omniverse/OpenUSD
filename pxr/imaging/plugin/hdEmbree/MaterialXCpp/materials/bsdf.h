@@ -138,6 +138,6 @@ namespace Bsdf
     }
 }
 
-} // namespace mxcpp
+}  // namespace mxcpp
 
-#endif // MXCPP_MATERIALS_BSDF_H
+#endif  // MXCPP_MATERIALS_BSDF_H

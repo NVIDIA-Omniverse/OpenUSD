@@ -247,7 +247,7 @@ _SafeVec(const Vec3f& v)
     return r;
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 // ===========================================================================
 // BSDF Evaluation (Phase 4)
@@ -671,4 +671,4 @@ Bsdf::PdfSurface(
     return pdf;
 }
 
-} // namespace mxcpp
+}  // namespace mxcpp

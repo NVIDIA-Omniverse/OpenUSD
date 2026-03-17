@@ -38,6 +38,6 @@ inline void BuildOrthonormalFrame(const Vec3f& n, Vec3f* t, Vec3f* b) {
     *b = n.cross(*t);
 }
 
-} // namespace mxcpp
+}  // namespace mxcpp
 
-#endif // MXCPP_MATH_H
+#endif  // MXCPP_MATH_H
