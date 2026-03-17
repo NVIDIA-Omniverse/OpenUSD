@@ -8,36 +8,36 @@
 
 namespace mxcpp {
 
-static const std::string _kBaseWeight = "base_weight";
-static const std::string _kBaseColor = "base_color";
-static const std::string _kBaseRoughness = "base_roughness";
-static const std::string _kBaseMetalness = "base_metalness";
-static const std::string _kSpecularWeight = "specular_weight";
-static const std::string _kSpecularColor = "specular_color";
-static const std::string _kSpecularRoughness = "specular_roughness";
-static const std::string _kSpecularIor = "specular_ior";
-static const std::string _kSpecularAnisotropy = "specular_anisotropy";
-static const std::string _kTransmissionWeight = "transmission_weight";
-static const std::string _kTransmissionColor = "transmission_color";
-static const std::string _kTransmissionDepth = "transmission_depth";
-static const std::string _kSubsurfaceWeight = "subsurface_weight";
-static const std::string _kSubsurfaceColor = "subsurface_color";
-static const std::string _kSubsurfaceRadius = "subsurface_radius";
-static const std::string _kSubsurfaceRadiusScale = "subsurface_radius_scale";
-static const std::string _kCoatWeight = "coat_weight";
-static const std::string _kCoatColor = "coat_color";
-static const std::string _kCoatRoughness = "coat_roughness";
-static const std::string _kCoatIor = "coat_ior";
-static const std::string _kCoatNormal = "coat_normal";
-static const std::string _kFuzzWeight = "fuzz_weight";
-static const std::string _kFuzzColor = "fuzz_color";
-static const std::string _kFuzzRoughness = "fuzz_roughness";
-static const std::string _kEmissionLuminance = "emission_luminance";
-static const std::string _kEmissionColor = "emission_color";
-static const std::string _kGeometryOpacity = "geometry_opacity";
-static const std::string _kGeometryThinWalled = "geometry_thin_walled";
-static const std::string _kNormal = "normal";
-static const std::string _kTangent = "tangent";
+static const SlotName _kBaseWeight("base_weight");
+static const SlotName _kBaseColor("base_color");
+static const SlotName _kBaseRoughness("base_roughness");
+static const SlotName _kBaseMetalness("base_metalness");
+static const SlotName _kSpecularWeight("specular_weight");
+static const SlotName _kSpecularColor("specular_color");
+static const SlotName _kSpecularRoughness("specular_roughness");
+static const SlotName _kSpecularIor("specular_ior");
+static const SlotName _kSpecularAnisotropy("specular_anisotropy");
+static const SlotName _kTransmissionWeight("transmission_weight");
+static const SlotName _kTransmissionColor("transmission_color");
+static const SlotName _kTransmissionDepth("transmission_depth");
+static const SlotName _kSubsurfaceWeight("subsurface_weight");
+static const SlotName _kSubsurfaceColor("subsurface_color");
+static const SlotName _kSubsurfaceRadius("subsurface_radius");
+static const SlotName _kSubsurfaceRadiusScale("subsurface_radius_scale");
+static const SlotName _kCoatWeight("coat_weight");
+static const SlotName _kCoatColor("coat_color");
+static const SlotName _kCoatRoughness("coat_roughness");
+static const SlotName _kCoatIor("coat_ior");
+static const SlotName _kCoatNormal("coat_normal");
+static const SlotName _kFuzzWeight("fuzz_weight");
+static const SlotName _kFuzzColor("fuzz_color");
+static const SlotName _kFuzzRoughness("fuzz_roughness");
+static const SlotName _kEmissionLuminance("emission_luminance");
+static const SlotName _kEmissionColor("emission_color");
+static const SlotName _kGeometryOpacity("geometry_opacity");
+static const SlotName _kGeometryThinWalled("geometry_thin_walled");
+static const SlotName _kNormal("normal");
+static const SlotName _kTangent("tangent");
 
 SurfaceClosure
 EvalOpenPbr(const ParamMap& params)

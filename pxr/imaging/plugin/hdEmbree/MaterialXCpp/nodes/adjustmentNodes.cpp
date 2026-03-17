@@ -13,21 +13,21 @@
 
 namespace mxcpp {
 
-static const std::string _kIn = "in";
-static const std::string _kIn1 = "in1";
-static const std::string _kIn2 = "in2";
-static const std::string _kFg = "fg";
-static const std::string _kBg = "bg";
-static const std::string _kMix = "mix";
-static const std::string _kLow = "low";
-static const std::string _kHigh = "high";
-static const std::string _kInlow = "inlow";
-static const std::string _kInhigh = "inhigh";
-static const std::string _kOutlow = "outlow";
-static const std::string _kOuthigh = "outhigh";
-static const std::string _kOut = "out";
-static const std::string _kAmount = "amount";
-static const std::string _kCenter = "center";
+static const SlotName _kIn("in");
+static const SlotName _kIn1("in1");
+static const SlotName _kIn2("in2");
+static const SlotName _kFg("fg");
+static const SlotName _kBg("bg");
+static const SlotName _kMix("mix");
+static const SlotName _kLow("low");
+static const SlotName _kHigh("high");
+static const SlotName _kInlow("inlow");
+static const SlotName _kInhigh("inhigh");
+static const SlotName _kOutlow("outlow");
+static const SlotName _kOuthigh("outhigh");
+static const SlotName _kOut("out");
+static const SlotName _kAmount("amount");
+static const SlotName _kCenter("center");
 
 // ---- Clamp / Min / Max ---------------------------------------------------
 
@@ -80,8 +80,8 @@ static void
 _EvalMinFloat(const ParamMap& inputs, const ShadingContext&,
               NodeOutputMap* outputs)
 {
-    float a = Get<float>(inputs, std::string("in1"), 0.0f);
-    float b = Get<float>(inputs, std::string("in2"), 0.0f);
+    float a = Get<float>(inputs, _kIn1, 0.0f);
+    float b = Get<float>(inputs, _kIn2, 0.0f);
     (*outputs)[_kOut] = Value(std::min(a, b));
 }
 
@@ -89,8 +89,8 @@ static void
 _EvalMaxFloat(const ParamMap& inputs, const ShadingContext&,
               NodeOutputMap* outputs)
 {
-    float a = Get<float>(inputs, std::string("in1"), 0.0f);
-    float b = Get<float>(inputs, std::string("in2"), 0.0f);
+    float a = Get<float>(inputs, _kIn1, 0.0f);
+    float b = Get<float>(inputs, _kIn2, 0.0f);
     (*outputs)[_kOut] = Value(std::max(a, b));
 }
 

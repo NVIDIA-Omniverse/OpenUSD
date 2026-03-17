@@ -11,10 +11,10 @@
 
 namespace mxcpp {
 
-static const std::string _kFile = "file";
-static const std::string _kTexcoord = "texcoord";
-static const std::string _kOut = "out";
-static const std::string _kDefaultVal = "default";
+static const SlotName _kFile("file");
+static const SlotName _kTexcoord("texcoord");
+static const SlotName _kOut("out");
+static const SlotName _kDefaultVal("default");
 
 // Placeholder image node: returns the default value.
 // Full CPU texture sampling (via hio) can be added in a follow-up.
@@ -28,7 +28,7 @@ _EvalImage(const ParamMap& inputs, const ShadingContext& ctx,
 {
     // TODO: load and sample actual texture via hio.
     // For now, return the authored default value or a sensible fallback.
-    T defaultVal = Get<T>(inputs, "default", Zero<T>());
+    T defaultVal = Get<T>(inputs, _kDefaultVal, Zero<T>());
     (*outputs)[_kOut] = Value(defaultVal);
 }
 

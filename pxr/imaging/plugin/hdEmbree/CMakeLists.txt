@@ -43,6 +43,7 @@ pxr_plugin(hdEmbree
         renderPass
         sampler
         MaterialXCpp/graph
+        MaterialXCpp/slots
         MaterialXCpp/nodeRegistry
         MaterialXCpp/materials/bsdf
         MaterialXCpp/materials/standardSurface
@@ -66,6 +67,7 @@ pxr_plugin(hdEmbree
         MaterialXCpp/mxcpp_math.h
         MaterialXCpp/mxcpp_value.h
         MaterialXCpp/mxcpp_graph_types.h
+        MaterialXCpp/slots.h
 
     PRIVATE_CLASSES
         debugCodes
@@ -111,6 +113,7 @@ pxr_build_test(testMaterialXCpp
         MaterialXCpp/materials/standardSurface.cpp
         MaterialXCpp/materials/openPbr.cpp
         MaterialXCpp/materials/usdPreviewSurface.cpp
+        MaterialXCpp/slots.cpp
         MaterialXCpp/nodeRegistry.cpp
         MaterialXCpp/graph.cpp
         MaterialXCpp/nodes/mathNodes.cpp

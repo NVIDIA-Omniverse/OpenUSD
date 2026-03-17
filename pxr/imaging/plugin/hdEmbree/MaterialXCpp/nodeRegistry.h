@@ -11,9 +11,6 @@
 
 namespace mxcpp {
 
-/// Output map produced by a node evaluation.
-using NodeOutputMap = std::unordered_map<std::string, Value>;
-
 /// Evaluation function signature for a single node.
 using NodeEvalFn = void(*)(
     const ParamMap& inputs,

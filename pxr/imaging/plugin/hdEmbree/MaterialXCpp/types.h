@@ -5,11 +5,12 @@
 #define MXCPP_TYPES_H
 
 #include "mxcpp_math.h"
+#include "slots.h"
 #include "mxcpp_value.h"
 
 #include <algorithm>
-#include <map>
-#include <string>
+#include <deque>
+#include <vector>
 
 namespace mxcpp {
 
@@ -62,38 +63,138 @@ struct SurfaceClosure
     }
 };
 
+struct ParamEntry
+{
+    SlotId slot = InvalidSlotId;
+    const Value* value = nullptr;
+};
+
 /// Named parameter map used for node inputs/outputs.
-using ParamMap = std::map<std::string, Value>;
+class ParamMap
+{
+public:
+    void Clear() {
+        _entries.clear();
+        _ownedValues.clear();
+    }
+    void Reserve(size_t count) { _entries.reserve(count); }
+
+    void Add(SlotId slot, const Value* value) {
+        _entries.push_back({slot, value});
+    }
+
+    template<typename NameT>
+    Value& operator[](const NameT& name) {
+        const SlotId slot = AsSlotId(name);
+        for (auto& entry : _entries) {
+            if (entry.slot == slot) {
+                return *const_cast<Value*>(entry.value);
+            }
+        }
+
+        _ownedValues.emplace_back();
+        _entries.push_back({slot, &_ownedValues.back()});
+        return _ownedValues.back();
+    }
+
+    template<typename NameT>
+    const Value* Find(const NameT& name) const {
+        const SlotId slot = AsSlotId(name);
+        for (const auto& entry : _entries) {
+            if (entry.slot == slot) {
+                return entry.value;
+            }
+        }
+        return nullptr;
+    }
+
+private:
+    std::vector<ParamEntry> _entries;
+    std::deque<Value> _ownedValues;
+};
+
+struct NodeOutputEntry
+{
+    SlotId slot = InvalidSlotId;
+    Value value;
+};
+
+/// Output map produced by a node evaluation.
+class NodeOutputMap
+{
+public:
+    void Clear() { _entries.clear(); }
+    void Reserve(size_t count) { _entries.reserve(count); }
+
+    template<typename NameT>
+    Value& operator[](const NameT& name) {
+        const SlotId slot = AsSlotId(name);
+        for (auto& entry : _entries) {
+            if (entry.slot == slot) {
+                return entry.value;
+            }
+        }
+
+        _entries.push_back({slot, Value()});
+        return _entries.back().value;
+    }
+
+    template<typename NameT>
+    const Value* Find(const NameT& name) const {
+        const SlotId slot = AsSlotId(name);
+        for (const auto& entry : _entries) {
+            if (entry.slot == slot) {
+                return &entry.value;
+            }
+        }
+        return nullptr;
+    }
+
+private:
+    std::vector<NodeOutputEntry> _entries;
+};
+
+template<typename T>
+struct ValueGetter
+{
+    template<typename NameT>
+    static T Get(const ParamMap& params,
+                 const NameT& name,
+                 const T& defaultVal)
+    {
+        const Value* value = params.Find(name);
+        if (value && ValueHolds<T>(*value)) {
+            return ValueGet<T>(*value);
+        }
+        return defaultVal;
+    }
+};
+
+template<>
+struct ValueGetter<float>
+{
+    template<typename NameT>
+    static float Get(const ParamMap& params,
+                     const NameT& name,
+                     const float& defaultVal)
+    {
+        const Value* value = params.Find(name);
+        if (!value) return defaultVal;
+        if (ValueHolds<float>(*value))
+            return ValueGet<float>(*value);
+        if (ValueHolds<int>(*value))
+            return static_cast<float>(ValueGet<int>(*value));
+        return defaultVal;
+    }
+};
 
 /// Extract a typed value from a parameter map with a default fallback.
-template<typename T>
+template<typename T, typename NameT>
 T Get(const ParamMap& params,
-            const std::string& name,
-            const T& defaultVal)
+      const NameT& name,
+      const T& defaultVal)
 {
-    auto it = params.find(name);
-    if (it != params.end() && ValueHolds<T>(it->second)) {
-        return ValueGet<T>(it->second);
-    }
-    return defaultVal;
-}
-
-/// Specialization for float: also accepts double and int.
-template<>
-inline float
-Get<float>(const ParamMap& params,
-                 const std::string& name,
-                 const float& defaultVal)
-{
-    auto it = params.find(name);
-    if (it == params.end()) return defaultVal;
-    if (ValueHolds<float>(it->second))
-        return ValueGet<float>(it->second);
-    if (ValueHolds<double>(it->second))
-        return static_cast<float>(ValueGet<double>(it->second));
-    if (ValueHolds<int>(it->second))
-        return static_cast<float>(ValueGet<int>(it->second));
-    return defaultVal;
+    return ValueGetter<T>::Get(params, name, defaultVal);
 }
 
 /// Zero value helpers for template-based node implementations.

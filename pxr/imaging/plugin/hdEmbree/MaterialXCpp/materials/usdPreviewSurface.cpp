@@ -11,20 +11,20 @@
 
 namespace mxcpp {
 
-static const std::string _kDiffuseColor = "diffuseColor";
-static const std::string _kEmissiveColor = "emissiveColor";
-static const std::string _kUseSpecularWorkflow = "useSpecularWorkflow";
-static const std::string _kSpecularColor = "specularColor";
-static const std::string _kMetallic = "metallic";
-static const std::string _kRoughness = "roughness";
-static const std::string _kClearcoat = "clearcoat";
-static const std::string _kClearcoatRoughness = "clearcoatRoughness";
-static const std::string _kOpacity = "opacity";
-static const std::string _kOpacityThreshold = "opacityThreshold";
-static const std::string _kIor = "ior";
-static const std::string _kNormal = "normal";
-static const std::string _kDisplacement = "displacement";
-static const std::string _kOcclusion = "occlusion";
+static const SlotName _kDiffuseColor("diffuseColor");
+static const SlotName _kEmissiveColor("emissiveColor");
+static const SlotName _kUseSpecularWorkflow("useSpecularWorkflow");
+static const SlotName _kSpecularColor("specularColor");
+static const SlotName _kMetallic("metallic");
+static const SlotName _kRoughness("roughness");
+static const SlotName _kClearcoat("clearcoat");
+static const SlotName _kClearcoatRoughness("clearcoatRoughness");
+static const SlotName _kOpacity("opacity");
+static const SlotName _kOpacityThreshold("opacityThreshold");
+static const SlotName _kIor("ior");
+static const SlotName _kNormal("normal");
+static const SlotName _kDisplacement("displacement");
+static const SlotName _kOcclusion("occlusion");
 
 SurfaceClosure
 EvalUsdPreviewSurface(const ParamMap& params)

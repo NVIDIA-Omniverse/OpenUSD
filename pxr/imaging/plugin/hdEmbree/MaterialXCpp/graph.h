@@ -33,16 +33,22 @@ public:
 
 private:
     struct InputBinding {
-        std::string inputName;
+        SlotId inputSlot = InvalidSlotId;
         bool isConnected = false;
         int sourceNodeIndex = -1;
-        std::string sourceOutputName;
+        SlotId sourceOutputSlot = InvalidSlotId;
         Value defaultValue;
     };
 
     struct CompiledNode {
         NodeEvalFn evalFn = nullptr;
         std::vector<InputBinding> inputs;
+    };
+
+    struct EvalScratch {
+        std::vector<NodeOutputMap> nodeOutputs;
+        std::vector<ParamMap> nodeInputs;
+        ParamMap terminalParams;
     };
 
     std::vector<CompiledNode> _nodes;

@@ -12,14 +12,14 @@
 
 namespace mxcpp {
 
-static const std::string _kOut = "out";
-static const std::string _kTexcoord = "texcoord";
-static const std::string _kPosition = "position";
-static const std::string _kAmplitude = "amplitude";
-static const std::string _kPivot = "pivot";
-static const std::string _kOctaves = "octaves";
-static const std::string _kLacunarity = "lacunarity";
-static const std::string _kDiminish = "diminish";
+static const SlotName _kOut("out");
+static const SlotName _kTexcoord("texcoord");
+static const SlotName _kPosition("position");
+static const SlotName _kAmplitude("amplitude");
+static const SlotName _kPivot("pivot");
+static const SlotName _kOctaves("octaves");
+static const SlotName _kLacunarity("lacunarity");
+static const SlotName _kDiminish("diminish");
 
 // -----------------------------------------------------------------------
 // MaterialX-compatible Perlin gradient noise.

@@ -34,23 +34,23 @@ _Eval(const char* nodeTypeId, const ParamMap& inputs)
 }
 
 static float _GetFloat(const NodeOutputMap& o, const char* name = "out") {
-    auto it = o.find(std::string(name));
-    if (it != o.end() && ValueHolds<float>(it->second))
-        return ValueGet<float>(it->second);
+    const Value* value = o.Find(name);
+    if (value && ValueHolds<float>(*value))
+        return ValueGet<float>(*value);
     return -9999.0f;
 }
 
 static Vec3f _GetVec3(const NodeOutputMap& o, const char* name = "out") {
-    auto it = o.find(std::string(name));
-    if (it != o.end() && ValueHolds<Vec3f>(it->second))
-        return ValueGet<Vec3f>(it->second);
+    const Value* value = o.Find(name);
+    if (value && ValueHolds<Vec3f>(*value))
+        return ValueGet<Vec3f>(*value);
     return Vec3f(-9999.0f);
 }
 
 static Vec2f _GetVec2(const NodeOutputMap& o, const char* name = "out") {
-    auto it = o.find(std::string(name));
-    if (it != o.end() && ValueHolds<Vec2f>(it->second))
-        return ValueGet<Vec2f>(it->second);
+    const Value* value = o.Find(name);
+    if (value && ValueHolds<Vec2f>(*value))
+        return ValueGet<Vec2f>(*value);
     return Vec2f(-9999.0f);
 }
 

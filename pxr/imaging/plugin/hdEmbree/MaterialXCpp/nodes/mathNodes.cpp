@@ -13,25 +13,25 @@
 
 namespace mxcpp {
 
-static const std::string _kIn = "in";
-static const std::string _kIn1 = "in1";
-static const std::string _kIn2 = "in2";
-static const std::string _kOut = "out";
-static const std::string _kPower = "power";
-static const std::string _kValue = "value";
-static const std::string _kAmount = "amount";
-static const std::string _kNormal = "normal";
-static const std::string _kIor = "ior";
-static const std::string _kIn3 = "in3";
-static const std::string _kIn4 = "in4";
-static const std::string _kMat = "mat";
-static const std::string _kAxis = "axis";
-static const std::string _kTexcoord = "texcoord";
-static const std::string _kPivot = "pivot";
-static const std::string _kScale = "scale";
-static const std::string _kRotate = "rotate";
-static const std::string _kOffset = "offset";
-static const std::string _kOperationOrder = "operationorder";
+static const SlotName _kIn("in");
+static const SlotName _kIn1("in1");
+static const SlotName _kIn2("in2");
+static const SlotName _kOut("out");
+static const SlotName _kPower("power");
+static const SlotName _kValue("value");
+static const SlotName _kAmount("amount");
+static const SlotName _kNormal("normal");
+static const SlotName _kIor("ior");
+static const SlotName _kIn3("in3");
+static const SlotName _kIn4("in4");
+static const SlotName _kMat("mat");
+static const SlotName _kAxis("axis");
+static const SlotName _kTexcoord("texcoord");
+static const SlotName _kPivot("pivot");
+static const SlotName _kScale("scale");
+static const SlotName _kRotate("rotate");
+static const SlotName _kOffset("offset");
+static const SlotName _kOperationOrder("operationorder");
 
 // ---- Arithmetic templates ------------------------------------------------
 
@@ -467,9 +467,9 @@ _EvalTransformMatrixVec2M3(const ParamMap& inputs, const ShadingContext&,
 {
     Vec2f v = Get<Vec2f>(inputs, _kIn, Vec2f(0.0f));
     Mat3f m;
-    auto it = inputs.find(_kMat);
-    if (it != inputs.end() && ValueHolds<Mat3f>(it->second)) {
-        m = ValueGet<Mat3f>(it->second);
+    const Value* value = inputs.Find(_kMat);
+    if (value && ValueHolds<Mat3f>(*value)) {
+        m = ValueGet<Mat3f>(*value);
     }
     // Imath Matrix33::multVecMatrix operates on Vec2 (homogeneous 2D).
     Vec2f r;
@@ -483,9 +483,9 @@ _EvalTransformMatrixVec3M3(const ParamMap& inputs, const ShadingContext&,
 {
     Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
     Mat3f m;
-    auto it = inputs.find(_kMat);
-    if (it != inputs.end() && ValueHolds<Mat3f>(it->second)) {
-        m = ValueGet<Mat3f>(it->second);
+    const Value* value = inputs.Find(_kMat);
+    if (value && ValueHolds<Mat3f>(*value)) {
+        m = ValueGet<Mat3f>(*value);
     }
     // Manual 3x3 matrix * vec3 (Imath Matrix33::multVecMatrix is Vec2 only).
     Vec3f r;
@@ -501,9 +501,9 @@ _EvalTransformMatrixVec3M4(const ParamMap& inputs, const ShadingContext&,
 {
     Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
     Mat4f m;
-    auto it = inputs.find(_kMat);
-    if (it != inputs.end() && ValueHolds<Mat4f>(it->second)) {
-        m = ValueGet<Mat4f>(it->second);
+    const Value* value = inputs.Find(_kMat);
+    if (value && ValueHolds<Mat4f>(*value)) {
+        m = ValueGet<Mat4f>(*value);
     }
     Vec3f r;
     m.multVecMatrix(v, r);
@@ -516,9 +516,9 @@ _EvalTransformMatrixVec4M4(const ParamMap& inputs, const ShadingContext&,
 {
     Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
     Mat4f m;
-    auto it = inputs.find(_kMat);
-    if (it != inputs.end() && ValueHolds<Mat4f>(it->second)) {
-        m = ValueGet<Mat4f>(it->second);
+    const Value* value = inputs.Find(_kMat);
+    if (value && ValueHolds<Mat4f>(*value)) {
+        m = ValueGet<Mat4f>(*value);
     }
     // Manual 4x4 * vec4 multiply
     Vec4f r;
@@ -535,9 +535,9 @@ _EvalTransposeM33(const ParamMap& inputs, const ShadingContext&,
                   NodeOutputMap* outputs)
 {
     Mat3f m;
-    auto it = inputs.find(_kIn);
-    if (it != inputs.end() && ValueHolds<Mat3f>(it->second)) {
-        m = ValueGet<Mat3f>(it->second);
+    const Value* value = inputs.Find(_kIn);
+    if (value && ValueHolds<Mat3f>(*value)) {
+        m = ValueGet<Mat3f>(*value);
     }
     (*outputs)[_kOut] = Value(m.transposed());
 }
@@ -547,9 +547,9 @@ _EvalTransposeM44(const ParamMap& inputs, const ShadingContext&,
                   NodeOutputMap* outputs)
 {
     Mat4f m;
-    auto it = inputs.find(_kIn);
-    if (it != inputs.end() && ValueHolds<Mat4f>(it->second)) {
-        m = ValueGet<Mat4f>(it->second);
+    const Value* value = inputs.Find(_kIn);
+    if (value && ValueHolds<Mat4f>(*value)) {
+        m = ValueGet<Mat4f>(*value);
     }
     (*outputs)[_kOut] = Value(m.transposed());
 }
@@ -561,9 +561,9 @@ _EvalDeterminantM33(const ParamMap& inputs, const ShadingContext&,
                     NodeOutputMap* outputs)
 {
     Mat3f m;
-    auto it = inputs.find(_kIn);
-    if (it != inputs.end() && ValueHolds<Mat3f>(it->second)) {
-        m = ValueGet<Mat3f>(it->second);
+    const Value* value = inputs.Find(_kIn);
+    if (value && ValueHolds<Mat3f>(*value)) {
+        m = ValueGet<Mat3f>(*value);
     }
     // M33f determinant: manually compute
     float det = m[0][0]*(m[1][1]*m[2][2] - m[1][2]*m[2][1])
@@ -577,9 +577,9 @@ _EvalDeterminantM44(const ParamMap& inputs, const ShadingContext&,
                     NodeOutputMap* outputs)
 {
     Mat4f m;
-    auto it = inputs.find(_kIn);
-    if (it != inputs.end() && ValueHolds<Mat4f>(it->second)) {
-        m = ValueGet<Mat4f>(it->second);
+    const Value* value = inputs.Find(_kIn);
+    if (value && ValueHolds<Mat4f>(*value)) {
+        m = ValueGet<Mat4f>(*value);
     }
     // Use Imath cofactor expansion
     float det = m[0][0] * (m[1][1]*(m[2][2]*m[3][3] - m[2][3]*m[3][2])
@@ -604,9 +604,9 @@ _EvalInvertMatrixM33(const ParamMap& inputs, const ShadingContext&,
                      NodeOutputMap* outputs)
 {
     Mat3f m;
-    auto it = inputs.find(_kIn);
-    if (it != inputs.end() && ValueHolds<Mat3f>(it->second)) {
-        m = ValueGet<Mat3f>(it->second);
+    const Value* value = inputs.Find(_kIn);
+    if (value && ValueHolds<Mat3f>(*value)) {
+        m = ValueGet<Mat3f>(*value);
     }
     (*outputs)[_kOut] = Value(m.inverse());
 }
@@ -616,9 +616,9 @@ _EvalInvertMatrixM44(const ParamMap& inputs, const ShadingContext&,
                      NodeOutputMap* outputs)
 {
     Mat4f m;
-    auto it = inputs.find(_kIn);
-    if (it != inputs.end() && ValueHolds<Mat4f>(it->second)) {
-        m = ValueGet<Mat4f>(it->second);
+    const Value* value = inputs.Find(_kIn);
+    if (value && ValueHolds<Mat4f>(*value)) {
+        m = ValueGet<Mat4f>(*value);
     }
     (*outputs)[_kOut] = Value(m.inverse());
 }

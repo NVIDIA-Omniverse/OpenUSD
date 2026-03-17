@@ -7,17 +7,15 @@
 #include "conditionalNodes.h"
 #include "../nodeRegistry.h"
 
-#include <string>
-
 namespace mxcpp {
 
-static const std::string _kValue1 = "value1";
-static const std::string _kValue2 = "value2";
-static const std::string _kIn1 = "in1";
-static const std::string _kIn2 = "in2";
-static const std::string _kOut = "out";
-static const std::string _kWhich = "which";
-static const std::string _kIn = "in";
+static const SlotName _kValue1("value1");
+static const SlotName _kValue2("value2");
+static const SlotName _kIn1("in1");
+static const SlotName _kIn2("in2");
+static const SlotName _kOut("out");
+static const SlotName _kWhich("which");
+static const SlotName _kIn("in");
 
 // ---- Conditional nodes ---------------------------------------------------
 
@@ -65,11 +63,11 @@ _EvalSwitch(const ParamMap& inputs, const ShadingContext&,
 {
     int which = Get<int>(inputs, _kWhich, 0);
     // Try in1..in10
-    static const std::string inNames[] = {
-        "in1", "in2", "in3",
-        "in4", "in5", "in6",
-        "in7", "in8", "in9",
-        "in10"
+    static const SlotName inNames[] = {
+        SlotName("in1"), SlotName("in2"), SlotName("in3"),
+        SlotName("in4"), SlotName("in5"), SlotName("in6"),
+        SlotName("in7"), SlotName("in8"), SlotName("in9"),
+        SlotName("in10")
     };
     int idx = std::clamp(which, 0, 9);
     T result = Get<T>(inputs, inNames[idx], Zero<T>());

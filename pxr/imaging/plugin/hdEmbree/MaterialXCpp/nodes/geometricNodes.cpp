@@ -11,7 +11,7 @@
 
 namespace mxcpp {
 
-static const std::string _kOut = "out";
+static const SlotName _kOut("out");
 
 // Geometric nodes read from the shading context.
 

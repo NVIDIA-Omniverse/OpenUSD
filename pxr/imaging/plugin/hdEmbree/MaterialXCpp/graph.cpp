@@ -13,7 +13,7 @@
 namespace mxcpp {
 
 static const std::string _kSurface = "surface";
-static const std::string _kOut = "out";
+static const SlotName _kOut("out");
 static const std::string _kStandardSurface =
     "ND_standard_surface_surfaceshader";
 static const std::string _kOpenPbr =
@@ -118,7 +118,7 @@ EvalGraph::Compile(
         // Constant parameters.
         for (const auto& param : node.parameters) {
             InputBinding binding;
-            binding.inputName = param.first;
+            binding.inputSlot = InternSlot(param.first);
             binding.defaultValue = param.second;
             compiled.inputs.push_back(std::move(binding));
         }
@@ -133,20 +133,24 @@ EvalGraph::Compile(
 
             bool replaced = false;
             for (auto& binding : compiled.inputs) {
-                if (binding.inputName == connEntry.first) {
+                if (binding.inputSlot == InternSlot(connEntry.first)) {
                     binding.isConnected = true;
                     binding.sourceNodeIndex = idxIt->second;
-                    binding.sourceOutputName = conn.upstreamOutputName;
+                    binding.sourceOutputSlot = conn.upstreamOutputName.empty()
+                        ? _kOut.Get()
+                        : InternSlot(conn.upstreamOutputName);
                     replaced = true;
                     break;
                 }
             }
             if (!replaced) {
                 InputBinding binding;
-                binding.inputName = connEntry.first;
+                binding.inputSlot = InternSlot(connEntry.first);
                 binding.isConnected = true;
                 binding.sourceNodeIndex = idxIt->second;
-                binding.sourceOutputName = conn.upstreamOutputName;
+                binding.sourceOutputSlot = conn.upstreamOutputName.empty()
+                    ? _kOut.Get()
+                    : InternSlot(conn.upstreamOutputName);
                 compiled.inputs.push_back(std::move(binding));
             }
         }
@@ -155,7 +159,7 @@ EvalGraph::Compile(
     // ---- Build terminal input bindings ----
     for (const auto& param : termNodeIt->second.parameters) {
         InputBinding binding;
-        binding.inputName = param.first;
+        binding.inputSlot = InternSlot(param.first);
         binding.defaultValue = param.second;
         graph->_terminalInputs.push_back(std::move(binding));
     }
@@ -169,20 +173,24 @@ EvalGraph::Compile(
 
         bool replaced = false;
         for (auto& binding : graph->_terminalInputs) {
-            if (binding.inputName == connEntry.first) {
+            if (binding.inputSlot == InternSlot(connEntry.first)) {
                 binding.isConnected = true;
                 binding.sourceNodeIndex = idxIt->second;
-                binding.sourceOutputName = conn.upstreamOutputName;
+                binding.sourceOutputSlot = conn.upstreamOutputName.empty()
+                    ? _kOut.Get()
+                    : InternSlot(conn.upstreamOutputName);
                 replaced = true;
                 break;
             }
         }
         if (!replaced) {
             InputBinding binding;
-            binding.inputName = connEntry.first;
+            binding.inputSlot = InternSlot(connEntry.first);
             binding.isConnected = true;
             binding.sourceNodeIndex = idxIt->second;
-            binding.sourceOutputName = conn.upstreamOutputName;
+            binding.sourceOutputSlot = conn.upstreamOutputName.empty()
+                ? _kOut.Get()
+                : InternSlot(conn.upstreamOutputName);
             graph->_terminalInputs.push_back(std::move(binding));
         }
     }
@@ -202,48 +210,56 @@ EvalGraph::Evaluate(const ShadingContext& ctx) const
         return SurfaceClosure();
     }
 
-    // Per-node output buffer.
-    std::vector<NodeOutputMap> nodeOutputs(_nodes.size());
+    thread_local EvalScratch scratch;
+    // Grow-only: avoid shrink/regrow thrashing when graphs of different
+    // sizes share the same thread_local scratch.
+    if (scratch.nodeOutputs.size() < _nodes.size()) {
+        scratch.nodeOutputs.resize(_nodes.size());
+    }
+    if (scratch.nodeInputs.size() < _nodes.size()) {
+        scratch.nodeInputs.resize(_nodes.size());
+    }
 
     for (size_t i = 0; i < _nodes.size(); ++i) {
         const auto& node = _nodes[i];
         if (!node.evalFn) continue;
 
-        ParamMap inputs;
+        auto& inputs = scratch.nodeInputs[i];
+        inputs.Clear();
+        inputs.Reserve(node.inputs.size());
+
+        auto& outputs = scratch.nodeOutputs[i];
+        outputs.Clear();
+
         for (const auto& binding : node.inputs) {
             if (binding.isConnected && binding.sourceNodeIndex >= 0) {
-                const auto& srcOutputs =
-                    nodeOutputs[binding.sourceNodeIndex];
-                std::string outName =
-                    binding.sourceOutputName.empty()
-                    ? _kOut : binding.sourceOutputName;
-                auto it = srcOutputs.find(outName);
-                if (it != srcOutputs.end()) {
-                    inputs[binding.inputName] = it->second;
+                const auto& srcOutputs = scratch.nodeOutputs[binding.sourceNodeIndex];
+                const Value* value = srcOutputs.Find(binding.sourceOutputSlot);
+                if (value) {
+                    inputs.Add(binding.inputSlot, value);
                 }
-            } else if (binding.defaultValue.has_value()) {
-                inputs[binding.inputName] = binding.defaultValue;
+            } else if (!ValueIsEmpty(binding.defaultValue)) {
+                inputs.Add(binding.inputSlot, &binding.defaultValue);
             }
         }
 
-        node.evalFn(inputs, ctx, &nodeOutputs[i]);
+        node.evalFn(inputs, ctx, &outputs);
     }
 
     // Gather terminal parameters.
-    ParamMap terminalParams;
+    auto& terminalParams = scratch.terminalParams;
+    terminalParams.Clear();
+    terminalParams.Reserve(_terminalInputs.size());
+
     for (const auto& binding : _terminalInputs) {
         if (binding.isConnected && binding.sourceNodeIndex >= 0) {
-            const auto& srcOutputs =
-                nodeOutputs[binding.sourceNodeIndex];
-            std::string outName =
-                binding.sourceOutputName.empty()
-                ? _kOut : binding.sourceOutputName;
-            auto it = srcOutputs.find(outName);
-            if (it != srcOutputs.end()) {
-                terminalParams[binding.inputName] = it->second;
+            const auto& srcOutputs = scratch.nodeOutputs[binding.sourceNodeIndex];
+            const Value* value = srcOutputs.Find(binding.sourceOutputSlot);
+            if (value) {
+                terminalParams.Add(binding.inputSlot, value);
             }
-        } else if (binding.defaultValue.has_value()) {
-            terminalParams[binding.inputName] = binding.defaultValue;
+        } else if (!ValueIsEmpty(binding.defaultValue)) {
+            terminalParams.Add(binding.inputSlot, &binding.defaultValue);
         }
     }
 
@@ -271,9 +287,10 @@ EvalGraph::_EvalMaterialModel(
     }
 
     // Unknown model: construct a basic closure from common parameter names.
+    static const SlotName baseColor("base_color");
     SurfaceClosure closure;
     closure.baseColor = Get<Vec3f>(
-        params, "base_color", Vec3f(0.8f));
+        params, baseColor, Vec3f(0.8f));
     return closure;
 }
 

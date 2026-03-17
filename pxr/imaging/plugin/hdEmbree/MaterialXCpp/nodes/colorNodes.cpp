@@ -13,8 +13,8 @@
 
 namespace mxcpp {
 
-static const std::string _kIn = "in";
-static const std::string _kOut = "out";
+static const SlotName _kIn("in");
+static const SlotName _kOut("out");
 
 // Rec.709 luminance weights.
 static constexpr float _kLumR = 0.2126f;

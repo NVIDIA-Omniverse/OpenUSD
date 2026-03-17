@@ -8,37 +8,37 @@
 
 namespace mxcpp {
 
-static const std::string _kBase = "base";
-static const std::string _kBaseColor = "base_color";
-static const std::string _kDiffuseRoughness = "diffuse_roughness";
-static const std::string _kMetalness = "metalness";
-static const std::string _kSpecular = "specular";
-static const std::string _kSpecularColor = "specular_color";
-static const std::string _kSpecularRoughness = "specular_roughness";
-static const std::string _kSpecularIOR = "specular_IOR";
-static const std::string _kSpecularAnisotropy = "specular_anisotropy";
-static const std::string _kSpecularRotation = "specular_rotation";
-static const std::string _kTransmission = "transmission";
-static const std::string _kTransmissionColor = "transmission_color";
-static const std::string _kTransmissionDepth = "transmission_depth";
-static const std::string _kSubsurface = "subsurface";
-static const std::string _kSubsurfaceColor = "subsurface_color";
-static const std::string _kSubsurfaceRadius = "subsurface_radius";
-static const std::string _kSubsurfaceScale = "subsurface_scale";
-static const std::string _kSheen = "sheen";
-static const std::string _kSheenColor = "sheen_color";
-static const std::string _kSheenRoughness = "sheen_roughness";
-static const std::string _kCoat = "coat";
-static const std::string _kCoatColor = "coat_color";
-static const std::string _kCoatRoughness = "coat_roughness";
-static const std::string _kCoatIOR = "coat_IOR";
-static const std::string _kCoatNormal = "coat_normal";
-static const std::string _kEmission = "emission";
-static const std::string _kEmissionColor = "emission_color";
-static const std::string _kOpacity = "opacity";
-static const std::string _kThinWalled = "thin_walled";
-static const std::string _kNormal = "normal";
-static const std::string _kTangent = "tangent";
+static const SlotName _kBase("base");
+static const SlotName _kBaseColor("base_color");
+static const SlotName _kDiffuseRoughness("diffuse_roughness");
+static const SlotName _kMetalness("metalness");
+static const SlotName _kSpecular("specular");
+static const SlotName _kSpecularColor("specular_color");
+static const SlotName _kSpecularRoughness("specular_roughness");
+static const SlotName _kSpecularIOR("specular_IOR");
+static const SlotName _kSpecularAnisotropy("specular_anisotropy");
+static const SlotName _kSpecularRotation("specular_rotation");
+static const SlotName _kTransmission("transmission");
+static const SlotName _kTransmissionColor("transmission_color");
+static const SlotName _kTransmissionDepth("transmission_depth");
+static const SlotName _kSubsurface("subsurface");
+static const SlotName _kSubsurfaceColor("subsurface_color");
+static const SlotName _kSubsurfaceRadius("subsurface_radius");
+static const SlotName _kSubsurfaceScale("subsurface_scale");
+static const SlotName _kSheen("sheen");
+static const SlotName _kSheenColor("sheen_color");
+static const SlotName _kSheenRoughness("sheen_roughness");
+static const SlotName _kCoat("coat");
+static const SlotName _kCoatColor("coat_color");
+static const SlotName _kCoatRoughness("coat_roughness");
+static const SlotName _kCoatIOR("coat_IOR");
+static const SlotName _kCoatNormal("coat_normal");
+static const SlotName _kEmission("emission");
+static const SlotName _kEmissionColor("emission_color");
+static const SlotName _kOpacity("opacity");
+static const SlotName _kThinWalled("thin_walled");
+static const SlotName _kNormal("normal");
+static const SlotName _kTangent("tangent");
 
 SurfaceClosure
 EvalStandardSurface(const ParamMap& params)

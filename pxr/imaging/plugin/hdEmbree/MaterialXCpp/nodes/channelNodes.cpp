@@ -11,17 +11,17 @@
 
 namespace mxcpp {
 
-static const std::string _kIn = "in";
-static const std::string _kIn1 = "in1";
-static const std::string _kIn2 = "in2";
-static const std::string _kIn3 = "in3";
-static const std::string _kIn4 = "in4";
-static const std::string _kOut = "out";
-static const std::string _kOutx = "outx";
-static const std::string _kOuty = "outy";
-static const std::string _kOutz = "outz";
-static const std::string _kOutw = "outw";
-static const std::string _kIndex = "index";
+static const SlotName _kIn("in");
+static const SlotName _kIn1("in1");
+static const SlotName _kIn2("in2");
+static const SlotName _kIn3("in3");
+static const SlotName _kIn4("in4");
+static const SlotName _kOut("out");
+static const SlotName _kOutx("outx");
+static const SlotName _kOuty("outy");
+static const SlotName _kOutz("outz");
+static const SlotName _kOutw("outw");
+static const SlotName _kIndex("index");
 
 // ---- Combine -------------------------------------------------------------
 
