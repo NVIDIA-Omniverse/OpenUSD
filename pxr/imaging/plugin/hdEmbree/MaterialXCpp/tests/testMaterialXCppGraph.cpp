@@ -304,6 +304,80 @@ TestEvalGeometricInput()
 }
 
 static bool
+TestCompileUnknownNodeTypeFails()
+{
+    MaterialGraph network;
+
+    std::string pathUnknown = "/Material/Unknown";
+    GraphNode unknownNode;
+    unknownNode.nodeTypeId = "ND_totally_unknown_float";
+    unknownNode.parameters["value"] = Value(1.0f);
+    network.nodes[pathUnknown] = unknownNode;
+
+    std::string termPath = "/Material/Surface";
+    GraphNode termNode;
+    termNode.nodeTypeId = "UsdPreviewSurface";
+    GraphConnection unknownConn;
+    unknownConn.upstreamNode = pathUnknown;
+    unknownConn.upstreamOutputName = "out";
+    termNode.inputConnections["roughness"].push_back(unknownConn);
+    network.nodes[termPath] = termNode;
+
+    GraphConnection termConn;
+    termConn.upstreamNode = termPath;
+    termConn.upstreamOutputName = "out";
+    network.terminals["surface"] = termConn;
+
+    auto graph = EvalGraph::Compile(network);
+    if (!graph) return false;
+    return !graph->IsValid();
+}
+
+static bool
+TestCompileRejectsCycle()
+{
+    MaterialGraph network;
+
+    std::string pathA = "/Material/A";
+    GraphNode nodeA;
+    nodeA.nodeTypeId = "ND_add_float";
+
+    std::string pathB = "/Material/B";
+    GraphNode nodeB;
+    nodeB.nodeTypeId = "ND_add_float";
+    nodeB.parameters["in2"] = Value(1.0f);
+
+    GraphConnection connA;
+    connA.upstreamNode = pathA;
+    connA.upstreamOutputName = "out";
+    GraphConnection connB;
+    connB.upstreamNode = pathB;
+    connB.upstreamOutputName = "out";
+
+    nodeA.inputConnections["in1"].push_back(connB);
+    nodeA.parameters["in2"] = Value(2.0f);
+    nodeB.inputConnections["in1"].push_back(connA);
+
+    network.nodes[pathA] = nodeA;
+    network.nodes[pathB] = nodeB;
+
+    std::string termPath = "/Material/Surface";
+    GraphNode termNode;
+    termNode.nodeTypeId = "UsdPreviewSurface";
+    termNode.inputConnections["roughness"].push_back(connA);
+    network.nodes[termPath] = termNode;
+
+    GraphConnection termConn;
+    termConn.upstreamNode = termPath;
+    termConn.upstreamOutputName = "out";
+    network.terminals["surface"] = termConn;
+
+    auto graph = EvalGraph::Compile(network);
+    if (!graph) return false;
+    return !graph->IsValid();
+}
+
+static bool
 TestInvalidGraphEvaluate()
 {
     MaterialGraph network;
@@ -328,6 +402,8 @@ Test_RegisterGraphTests()
     _REG(TestEvalWithConstantInputs);
     _REG(TestEvalMultiplyChain);
     _REG(TestEvalGeometricInput);
+    _REG(TestCompileUnknownNodeTypeFails);
+    _REG(TestCompileRejectsCycle);
     _REG(TestInvalidGraphEvaluate);
 }
 

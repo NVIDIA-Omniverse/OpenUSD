@@ -8,7 +8,7 @@
 
 #include <cstdio>
 #include <functional>
-#include <set>
+#include <map>
 
 namespace mxcpp {
 
@@ -29,6 +29,12 @@ EvalGraph::Compile(
     const MaterialGraph& network,
     const std::string& terminalName)
 {
+    enum class _VisitState {
+        Unvisited,
+        Visiting,
+        Visited
+    };
+
     NodeRegistry::RegisterBuiltinNodes();
 
     auto graph = std::make_unique<EvalGraph>();
@@ -60,14 +66,24 @@ EvalGraph::Compile(
     // ---- Gather reachable nodes via DFS topological sort ----
 
     std::vector<std::string> sorted;
-    std::set<std::string> visited;
-    std::set<std::string> onStack;
+    std::map<std::string, _VisitState> visitStates;
+    bool hasErrors = false;
 
-    std::function<void(const std::string&)> dfs =
+    std::function<bool(const std::string&)> dfs =
         [&](const std::string& nodePath) {
-            if (visited.count(nodePath)) return;
-            if (onStack.count(nodePath)) return; // cycle guard
-            onStack.insert(nodePath);
+            _VisitState& state = visitStates[nodePath];
+            if (state == _VisitState::Visited) {
+                return true;
+            }
+            if (state == _VisitState::Visiting) {
+                fprintf(stderr,
+                        "EvalGraph: cycle detected involving node %s\n",
+                        nodePath.c_str());
+                hasErrors = true;
+                return false;
+            }
+
+            state = _VisitState::Visiting;
 
             auto nodeIt = network.nodes.find(nodePath);
             if (nodeIt != network.nodes.end()) {
@@ -75,21 +91,25 @@ EvalGraph::Compile(
                      nodeIt->second.inputConnections) {
                     for (const auto& conn : entry.second) {
                         if (conn.upstreamNode != terminalNodePath) {
-                            dfs(conn.upstreamNode);
+                            if (!dfs(conn.upstreamNode)) {
+                                return false;
+                            }
                         }
                     }
                 }
             }
 
-            onStack.erase(nodePath);
-            visited.insert(nodePath);
+            state = _VisitState::Visited;
             sorted.push_back(nodePath);
+            return true;
         };
 
     // Seed from the terminal node's upstream connections.
     for (const auto& entry : termNodeIt->second.inputConnections) {
         for (const auto& conn : entry.second) {
-            dfs(conn.upstreamNode);
+            if (!dfs(conn.upstreamNode)) {
+                return graph;
+            }
         }
     }
 
@@ -112,7 +132,8 @@ EvalGraph::Compile(
         if (!compiled.evalFn) {
             fprintf(stderr,
                 "EvalGraph: no evaluator for node type %s\n",
-                     node.nodeTypeId.c_str());
+                node.nodeTypeId.c_str());
+            hasErrors = true;
         }
 
         // Constant parameters.
@@ -193,6 +214,10 @@ EvalGraph::Compile(
                 : InternSlot(conn.upstreamOutputName);
             graph->_terminalInputs.push_back(std::move(binding));
         }
+    }
+
+    if (hasErrors) {
+        return graph;
     }
 
     graph->_isValid = true;

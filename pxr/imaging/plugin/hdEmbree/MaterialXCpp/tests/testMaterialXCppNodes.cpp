@@ -276,6 +276,32 @@ static bool TestLuminance() {
 }
 
 // ---------------------------------------------------------------------------
+// Param map tests
+// ---------------------------------------------------------------------------
+
+static bool TestParamMapCopyOnWriteForBorrowedValue() {
+    ParamMap params;
+    Value borrowed(1.0f);
+    params.Add(AsSlotId("in"), &borrowed);
+
+    params["in"] = Value(2.0f);
+
+    if (!ValueHolds<float>(borrowed) ||
+        !Test_IsClose(ValueGet<float>(borrowed), 1.0f)) {
+        printf("    borrowed value was mutated\n");
+        return false;
+    }
+
+    const Value* value = params.Find("in");
+    if (!value || !ValueHolds<float>(*value)) {
+        printf("    params['in'] missing after overwrite\n");
+        return false;
+    }
+
+    return Test_IsClose(ValueGet<float>(*value), 2.0f);
+}
+
+// ---------------------------------------------------------------------------
 // Registry tests
 // ---------------------------------------------------------------------------
 
@@ -311,6 +337,7 @@ Test_RegisterNodeTests()
     _REG(TestGeometricPosition);
     _REG(TestGeometricNormal);
     _REG(TestLuminance);
+    _REG(TestParamMapCopyOnWriteForBorrowedValue);
     _REG(TestNodeRegistryLookup);
     _REG(TestNodeRegistryMissing);
 }

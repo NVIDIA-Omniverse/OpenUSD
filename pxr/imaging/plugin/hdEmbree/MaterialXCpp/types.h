@@ -67,6 +67,7 @@ struct ParamEntry
 {
     SlotId slot = InvalidSlotId;
     const Value* value = nullptr;
+    Value* mutableValue = nullptr;
 };
 
 /// Named parameter map used for node inputs/outputs.
@@ -88,12 +89,21 @@ public:
         const SlotId slot = AsSlotId(name);
         for (auto& entry : _entries) {
             if (entry.slot == slot) {
-                return *const_cast<Value*>(entry.value);
+                if (entry.mutableValue) {
+                    return *entry.mutableValue;
+                }
+
+                _ownedValues.push_back(*entry.value);
+                Value* value = &_ownedValues.back();
+                entry.value = value;
+                entry.mutableValue = value;
+                return *value;
             }
         }
 
         _ownedValues.emplace_back();
-        _entries.push_back({slot, &_ownedValues.back()});
+        Value* value = &_ownedValues.back();
+        _entries.push_back({slot, value, value});
         return _ownedValues.back();
     }
 
