@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 
 #include <limits>
 #include <stdint.h>
@@ -745,6 +746,55 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
             _aovBindings[i].renderBuffer);
         rb->Unmap();
         rb->SetConverged(true);
+    }
+
+    // Print render statistics.
+    {
+        const float elapsedSec = GetRenderElapsedSeconds();
+        const int completedSamples = _completedSamples.load();
+        const int w = _dataWindow.GetWidth();
+        const int h = _dataWindow.GetHeight();
+        const long long totalSamples =
+            static_cast<long long>(w) * h * completedSamples;
+
+        std::printf("\n");
+        std::printf("===== hdEmbree Render Statistics =====\n");
+        std::printf("  Resolution       : %d x %d\n", w, h);
+        std::printf("  Samples/pixel    : %d / %d\n",
+                    completedSamples, _samplesToConvergence);
+        std::printf("  Total samples    : %lld\n", totalSamples);
+        std::printf("  Render time      : %.3f s\n", elapsedSec);
+        if (elapsedSec > 0.0f) {
+            std::printf("  Samples/sec      : %.0f\n",
+                        totalSamples / static_cast<double>(elapsedSec));
+            std::printf("  Pixels/sec       : %.0f\n",
+                        (static_cast<double>(w) * h * completedSamples)
+                            / elapsedSec);
+        }
+        std::printf("  Max bounces      : %d\n", _maxBounces);
+        std::printf("  Light samples    : %d\n", _lightSamplesPerHit);
+        std::printf("  Sobol sampler    : %s\n", _useSobol ? "on" : "off");
+
+        if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
+            size_t convergedCount = 0;
+            double avgSamples = 0.0;
+            for (size_t p = 0; p < _pixelConverged.size(); ++p) {
+                if (_pixelConverged[p]) {
+                    ++convergedCount;
+                }
+                avgSamples += _pixelSampleCount[p];
+            }
+            avgSamples /= _pixelConverged.size();
+            const double convergedPct =
+                100.0 * convergedCount / _pixelConverged.size();
+            std::printf("  Adaptive sampling: on (threshold=%.4f)\n",
+                        _adaptiveThreshold);
+            std::printf("  Converged pixels : %zu / %zu (%.1f%%)\n",
+                        convergedCount, _pixelConverged.size(), convergedPct);
+            std::printf("  Avg samples/pixel: %.1f\n", avgSamples);
+        }
+        std::printf("======================================\n");
+        std::fflush(stdout);
     }
 }
 
