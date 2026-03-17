@@ -30,6 +30,8 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
+class HdEmbreeRenderBuffer;
+
 enum HdEmbree_RayMask: uint32_t  {
     None = 0,
 
@@ -258,6 +260,53 @@ private:
     // Returns 1.0 if no material is bound or evaluation fails.
     float _EvalOpacityAtHit(RTCRayHit const& rayHit) const;
 
+    // ---- AOV dispatch table (built once per frame in _PreRenderSetup) ----
+
+    struct _AovWriter;
+
+    using _AovWriteFn = void(*)(HdEmbreeRenderer*,
+                                _AovWriter const&,
+                                RTCRayHit const&,
+                                GfVec4f const&,
+                                unsigned int, unsigned int);
+    using _VarianceFn = void(*)(HdEmbreeRenderer*,
+                                unsigned int, unsigned int,
+                                GfVec3f const&);
+
+    struct _AovWriter {
+        HdEmbreeRenderBuffer* buffer = nullptr;
+        _AovWriteFn writeFn = nullptr;
+        TfToken token;
+    };
+
+    void _BuildAovDispatchTable();
+
+    static void _WriteColor(HdEmbreeRenderer*, _AovWriter const&,
+        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+    static void _WriteColorHeatmap(HdEmbreeRenderer*, _AovWriter const&,
+        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+    static void _WriteDepth(HdEmbreeRenderer*, _AovWriter const&,
+        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+    static void _WriteClipDepth(HdEmbreeRenderer*, _AovWriter const&,
+        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+    static void _WriteId(HdEmbreeRenderer*, _AovWriter const&,
+        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+    static void _WriteNormal(HdEmbreeRenderer*, _AovWriter const&,
+        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+    static void _WriteNormalEye(HdEmbreeRenderer*, _AovWriter const&,
+        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+    static void _WritePrimvar(HdEmbreeRenderer*, _AovWriter const&,
+        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+    static void _WriteAdaptiveHeatmap(HdEmbreeRenderer*, _AovWriter const&,
+        RTCRayHit const&, GfVec4f const&, unsigned int, unsigned int);
+
+    static GfVec4f _HeatmapColor(float t);
+
+    static void _UpdateVariancePerChannel(HdEmbreeRenderer*,
+        unsigned int, unsigned int, GfVec3f const&);
+    static void _UpdateVarianceLuminance(HdEmbreeRenderer*,
+        unsigned int, unsigned int, GfVec3f const&);
+
     // The bound aovs for this renderer.
     HdRenderPassAovBindingVector _aovBindings;
     // Parsed AOV name tokens.
@@ -339,6 +388,12 @@ private:
     mutable WriteMutex _lightsWriteMutex; // protects the 2 below
     std::map<SdfPath, HdEmbree_Light*> _lightMap;
     std::vector<HdEmbree_Light*> _domes;
+
+    // Pre-resolved per-frame state (built in _PreRenderSetup).
+    bool _needColor = false;
+    GfVec4f _colorClearValue;
+    std::vector<_AovWriter> _aovWriters;
+    _VarianceFn _varianceFn = nullptr;
 };
 
 PXR_NAMESPACE_CLOSE_SCOPE
