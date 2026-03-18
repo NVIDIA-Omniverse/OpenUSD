@@ -54,6 +54,36 @@ static Vec2f _GetVec2(const NodeOutputMap& o, const char* name = "out") {
     return Vec2f(-9999.0f);
 }
 
+static Vec4f _GetVec4(const NodeOutputMap& o, const char* name = "out") {
+    const Value* value = o.Find(name);
+    if (value && ValueHolds<Vec4f>(*value))
+        return ValueGet<Vec4f>(*value);
+    return Vec4f(-9999.0f);
+}
+
+static bool _GetBool(const NodeOutputMap& o, const char* name = "out") {
+    const Value* value = o.Find(name);
+    if (value && ValueHolds<bool>(*value))
+        return ValueGet<bool>(*value);
+    return false;
+}
+
+static int _GetInt(const NodeOutputMap& o, const char* name = "out") {
+    const Value* value = o.Find(name);
+    if (value && ValueHolds<int>(*value))
+        return ValueGet<int>(*value);
+    return -9999;
+}
+
+static bool Test_IsClose(const Vec2f& a, const Vec2f& b, float eps = 1e-5f) {
+    return Test_IsClose(a[0], b[0], eps) && Test_IsClose(a[1], b[1], eps);
+}
+
+static bool Test_IsClose(const Vec4f& a, const Vec4f& b, float eps = 1e-5f) {
+    return Test_IsClose(a[0], b[0], eps) && Test_IsClose(a[1], b[1], eps) &&
+           Test_IsClose(a[2], b[2], eps) && Test_IsClose(a[3], b[3], eps);
+}
+
 // ---------------------------------------------------------------------------
 // Math node tests
 // ---------------------------------------------------------------------------
@@ -209,6 +239,284 @@ static bool TestIfgreater() {
     return Test_IsClose(_GetFloat(out), 10.0f);
 }
 
+static bool TestIfgreaterInteger() {
+    ParamMap in;
+    in["value1"] = Value(2.0f);
+    in["value2"] = Value(1.0f);
+    in["in1"] = Value(10);
+    in["in2"] = Value(20);
+    auto out = _Eval("ND_ifgreater_integer", in);
+    return _GetInt(out) == 10;
+}
+
+static bool TestIfgreaterVector2() {
+    ParamMap in;
+    in["value1"] = Value(0.0f);
+    in["value2"] = Value(1.0f);
+    in["in1"] = Value(Vec2f(1.0f, 2.0f));
+    in["in2"] = Value(Vec2f(3.0f, 4.0f));
+    auto out = _Eval("ND_ifgreater_vector2", in);
+    return Test_IsClose(_GetVec2(out), Vec2f(3.0f, 4.0f));
+}
+
+static bool TestIfgreaterBoolOutput() {
+    ParamMap in;
+    in["value1"] = Value(2.0f);
+    in["value2"] = Value(1.0f);
+    auto out = _Eval("ND_ifgreater_boolean", in);
+    if (!_GetBool(out)) return false;
+
+    in["value1"] = Value(0.0f);
+    out = _Eval("ND_ifgreater_boolean", in);
+    return !_GetBool(out);
+}
+
+static bool TestIfgreaterIntComparison() {
+    ParamMap in;
+    in["value1"] = Value(5);
+    in["value2"] = Value(3);
+    in["in1"] = Value(Vec3f(1.0f));
+    in["in2"] = Value(Vec3f(0.0f));
+    auto out = _Eval("ND_ifgreater_color3I", in);
+    return Test_IsClose(_GetVec3(out), Vec3f(1.0f));
+}
+
+static bool TestIfEqualBoolComparison() {
+    ParamMap in;
+    in["value1"] = Value(true);
+    in["value2"] = Value(true);
+    in["in1"] = Value(10.0f);
+    in["in2"] = Value(20.0f);
+    auto out = _Eval("ND_ifequal_floatB", in);
+    if (!Test_IsClose(_GetFloat(out), 10.0f)) return false;
+
+    in["value2"] = Value(false);
+    out = _Eval("ND_ifequal_floatB", in);
+    return Test_IsClose(_GetFloat(out), 20.0f);
+}
+
+static bool TestSwitchFloat() {
+    ParamMap in;
+    in["in1"] = Value(10.0f);
+    in["in2"] = Value(20.0f);
+    in["in3"] = Value(30.0f);
+    in["which"] = Value(1.0f);
+    auto out = _Eval("ND_switch_float", in);
+    return Test_IsClose(_GetFloat(out), 20.0f);
+}
+
+static bool TestSwitchIntegerWhich() {
+    ParamMap in;
+    in["in1"] = Value(Vec3f(1.0f));
+    in["in2"] = Value(Vec3f(2.0f));
+    in["in3"] = Value(Vec3f(3.0f));
+    in["which"] = Value(2);
+    auto out = _Eval("ND_switch_color3I", in);
+    return Test_IsClose(_GetVec3(out), Vec3f(3.0f));
+}
+
+static bool TestLogicalOps() {
+    {
+        ParamMap in;
+        in["in1"] = Value(true);
+        in["in2"] = Value(false);
+        auto out = _Eval("ND_logical_and", in);
+        if (_GetBool(out)) return false;
+    }
+    {
+        ParamMap in;
+        in["in1"] = Value(true);
+        in["in2"] = Value(false);
+        auto out = _Eval("ND_logical_or", in);
+        if (!_GetBool(out)) return false;
+    }
+    {
+        ParamMap in;
+        in["in1"] = Value(true);
+        in["in2"] = Value(true);
+        auto out = _Eval("ND_logical_xor", in);
+        if (_GetBool(out)) return false;
+    }
+    {
+        ParamMap in;
+        in["in"] = Value(false);
+        auto out = _Eval("ND_logical_not", in);
+        if (!_GetBool(out)) return false;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Compositing node tests
+// ---------------------------------------------------------------------------
+
+static bool TestCompositingPlus() {
+    ParamMap in;
+    in["fg"] = Value(0.3f);
+    in["bg"] = Value(0.4f);
+    in["mix"] = Value(1.0f);
+    auto out = _Eval("ND_plus_float", in);
+    return Test_IsClose(_GetFloat(out), 0.7f);
+}
+
+static bool TestCompositingMinus() {
+    ParamMap in;
+    in["fg"] = Value(0.3f);
+    in["bg"] = Value(0.5f);
+    in["mix"] = Value(1.0f);
+    auto out = _Eval("ND_minus_float", in);
+    return Test_IsClose(_GetFloat(out), 0.2f);
+}
+
+static bool TestCompositingBurn() {
+    ParamMap in;
+    in["fg"] = Value(0.5f);
+    in["bg"] = Value(0.8f);
+    in["mix"] = Value(1.0f);
+    auto out = _Eval("ND_burn_float", in);
+    if (!Test_IsClose(_GetFloat(out), 0.6f)) return false;
+
+    in["fg"] = Value(0.0f);
+    out = _Eval("ND_burn_float", in);
+    return Test_IsClose(_GetFloat(out), 0.0f);
+}
+
+static bool TestCompositingDodge() {
+    ParamMap in;
+    in["fg"] = Value(0.5f);
+    in["bg"] = Value(0.4f);
+    in["mix"] = Value(1.0f);
+    auto out = _Eval("ND_dodge_float", in);
+    if (!Test_IsClose(_GetFloat(out), 0.8f)) return false;
+
+    in["fg"] = Value(1.0f);
+    out = _Eval("ND_dodge_float", in);
+    return Test_IsClose(_GetFloat(out), 1.0f);
+}
+
+static bool TestCompositingScreen() {
+    ParamMap in;
+    in["fg"] = Value(0.5f);
+    in["bg"] = Value(0.3f);
+    in["mix"] = Value(1.0f);
+    auto out = _Eval("ND_screen_float", in);
+    return Test_IsClose(_GetFloat(out), 0.65f);
+}
+
+static bool TestCompositingOverlay() {
+    ParamMap in;
+    in["fg"] = Value(0.6f);
+    in["bg"] = Value(0.3f);
+    in["mix"] = Value(1.0f);
+    auto out = _Eval("ND_overlay_float", in);
+    if (!Test_IsClose(_GetFloat(out), 0.36f)) return false;
+
+    in["bg"] = Value(0.7f);
+    out = _Eval("ND_overlay_float", in);
+    return Test_IsClose(_GetFloat(out), 0.76f);
+}
+
+static bool TestCompositingMixParam() {
+    ParamMap in;
+    in["fg"] = Value(0.8f);
+    in["bg"] = Value(0.2f);
+    in["mix"] = Value(0.0f);
+    auto out = _Eval("ND_plus_float", in);
+    return Test_IsClose(_GetFloat(out), 0.2f);
+}
+
+static bool TestPorterDuffOver() {
+    ParamMap in;
+    in["fg"] = Value(Vec4f(1.0f, 0.0f, 0.0f, 0.5f));
+    in["bg"] = Value(Vec4f(0.0f, 1.0f, 0.0f, 0.8f));
+    in["mix"] = Value(1.0f);
+    auto out = _Eval("ND_over_color4", in);
+    Vec4f result = _GetVec4(out);
+    return Test_IsClose(result, Vec4f(1.0f, 0.5f, 0.0f, 0.9f));
+}
+
+static bool TestPorterDuffIn() {
+    ParamMap in;
+    in["fg"] = Value(Vec4f(1.0f, 0.5f, 0.0f, 0.8f));
+    in["bg"] = Value(Vec4f(0.0f, 1.0f, 0.0f, 0.6f));
+    in["mix"] = Value(1.0f);
+    auto out = _Eval("ND_in_color4", in);
+    Vec4f result = _GetVec4(out);
+    return Test_IsClose(result, Vec4f(0.6f, 0.3f, 0.0f, 0.48f));
+}
+
+static bool TestPorterDuffDisjointover() {
+    ParamMap in;
+    in["fg"] = Value(Vec4f(0.5f, 0.0f, 0.0f, 0.3f));
+    in["bg"] = Value(Vec4f(0.0f, 0.5f, 0.0f, 0.4f));
+    in["mix"] = Value(1.0f);
+    auto out = _Eval("ND_disjointover_color4", in);
+    Vec4f result = _GetVec4(out);
+    if (!Test_IsClose(result, Vec4f(0.5f, 0.5f, 0.0f, 0.7f)))
+        return false;
+
+    in["fg"] = Value(Vec4f(0.8f, 0.0f, 0.0f, 0.7f));
+    in["bg"] = Value(Vec4f(0.0f, 0.6f, 0.0f, 0.5f));
+    out = _Eval("ND_disjointover_color4", in);
+    result = _GetVec4(out);
+    return Test_IsClose(result, Vec4f(0.8f, 0.36f, 0.0f, 1.0f));
+}
+
+static bool TestPorterDuffMatte() {
+    ParamMap in;
+    in["fg"] = Value(Vec4f(1.0f, 0.0f, 0.0f, 0.6f));
+    in["bg"] = Value(Vec4f(0.0f, 1.0f, 0.0f, 0.8f));
+    in["mix"] = Value(1.0f);
+    auto out = _Eval("ND_matte_color4", in);
+    Vec4f result = _GetVec4(out);
+    return Test_IsClose(result, Vec4f(0.6f, 0.4f, 0.0f, 0.92f));
+}
+
+static bool TestPorterDuffOut() {
+    ParamMap in;
+    in["fg"] = Value(Vec4f(1.0f, 0.5f, 0.0f, 0.8f));
+    in["bg"] = Value(Vec4f(0.0f, 1.0f, 0.0f, 0.6f));
+    in["mix"] = Value(1.0f);
+    auto out = _Eval("ND_out_color4", in);
+    Vec4f result = _GetVec4(out);
+    return Test_IsClose(result, Vec4f(0.4f, 0.2f, 0.0f, 0.32f));
+}
+
+static bool TestPremultUnpremult() {
+    ParamMap in;
+    in["in"] = Value(Vec4f(1.0f, 0.5f, 0.0f, 0.5f));
+    auto out = _Eval("ND_premult_color4", in);
+    Vec4f result = _GetVec4(out);
+    if (!Test_IsClose(result, Vec4f(0.5f, 0.25f, 0.0f, 0.5f)))
+        return false;
+
+    in["in"] = Value(Vec4f(0.5f, 0.25f, 0.0f, 0.5f));
+    out = _Eval("ND_unpremult_color4", in);
+    result = _GetVec4(out);
+    return Test_IsClose(result, Vec4f(1.0f, 0.5f, 0.0f, 0.5f));
+}
+
+static bool TestInsideOutside() {
+    ParamMap in;
+    in["in"] = Value(Vec3f(0.5f, 0.8f, 1.0f));
+    in["mask"] = Value(0.5f);
+    auto out = _Eval("ND_inside_color3", in);
+    if (!Test_IsClose(_GetVec3(out), Vec3f(0.25f, 0.4f, 0.5f)))
+        return false;
+
+    out = _Eval("ND_outside_color3", in);
+    return Test_IsClose(_GetVec3(out), Vec3f(0.25f, 0.4f, 0.5f));
+}
+
+static bool TestMixVecVariant() {
+    ParamMap in;
+    in["fg"] = Value(Vec3f(1.0f, 0.0f, 0.0f));
+    in["bg"] = Value(Vec3f(0.0f, 1.0f, 0.0f));
+    in["mix"] = Value(Vec3f(1.0f, 0.0f, 0.5f));
+    auto out = _Eval("ND_mix_color3_color3", in);
+    return Test_IsClose(_GetVec3(out), Vec3f(1.0f, 1.0f, 0.0f));
+}
+
 // ---------------------------------------------------------------------------
 // Geometric node tests
 // ---------------------------------------------------------------------------
@@ -334,6 +642,32 @@ Test_RegisterNodeTests()
     _REG(TestRemap);
     _REG(TestCombineSeparateRoundtrip);
     _REG(TestIfgreater);
+    // Conditional (expanded)
+    _REG(TestIfgreaterInteger);
+    _REG(TestIfgreaterVector2);
+    _REG(TestIfgreaterBoolOutput);
+    _REG(TestIfgreaterIntComparison);
+    _REG(TestIfEqualBoolComparison);
+    _REG(TestSwitchFloat);
+    _REG(TestSwitchIntegerWhich);
+    _REG(TestLogicalOps);
+
+    // Compositing
+    _REG(TestCompositingPlus);
+    _REG(TestCompositingMinus);
+    _REG(TestCompositingBurn);
+    _REG(TestCompositingDodge);
+    _REG(TestCompositingScreen);
+    _REG(TestCompositingOverlay);
+    _REG(TestCompositingMixParam);
+    _REG(TestPorterDuffOver);
+    _REG(TestPorterDuffIn);
+    _REG(TestPorterDuffDisjointover);
+    _REG(TestPorterDuffMatte);
+    _REG(TestPorterDuffOut);
+    _REG(TestPremultUnpremult);
+    _REG(TestInsideOutside);
+    _REG(TestMixVecVariant);
     _REG(TestGeometricPosition);
     _REG(TestGeometricNormal);
     _REG(TestLuminance);

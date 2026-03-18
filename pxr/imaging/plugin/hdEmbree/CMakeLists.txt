@@ -61,6 +61,7 @@ pxr_plugin(hdEmbree
         MaterialXCpp/nodes/adjustmentNodes
         MaterialXCpp/nodes/channelNodes
         MaterialXCpp/nodes/conditionalNodes
+        MaterialXCpp/nodes/compositingNodes
         MaterialXCpp/nodes/geometricNodes
         MaterialXCpp/nodes/textureNodes
         MaterialXCpp/nodes/proceduralNodes
@@ -128,6 +129,7 @@ pxr_build_test(testMaterialXCpp
         MaterialXCpp/nodes/adjustmentNodes.cpp
         MaterialXCpp/nodes/channelNodes.cpp
         MaterialXCpp/nodes/conditionalNodes.cpp
+        MaterialXCpp/nodes/compositingNodes.cpp
         MaterialXCpp/nodes/geometricNodes.cpp
         MaterialXCpp/nodes/textureNodes.cpp
         MaterialXCpp/nodes/proceduralNodes.cpp

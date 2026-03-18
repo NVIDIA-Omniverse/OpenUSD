@@ -17,9 +17,6 @@ namespace mxcpp {
 static const SlotName _kIn("in");
 static const SlotName _kIn1("in1");
 static const SlotName _kIn2("in2");
-static const SlotName _kFg("fg");
-static const SlotName _kBg("bg");
-static const SlotName _kMix("mix");
 static const SlotName _kLow("low");
 static const SlotName _kHigh("high");
 static const SlotName _kInlow("inlow");
@@ -158,19 +155,6 @@ _EvalSmoothstep(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(_Smoothstep(lo, hi, v));
 }
 
-// ---- Mix -----------------------------------------------------------------
-
-template<typename T>
-static void
-_EvalMix(const ParamMap& inputs, const ShadingContext&,
-         NodeOutputMap* outputs)
-{
-    T fg  = Get<T>(inputs, _kFg, Zero<T>());
-    T bg  = Get<T>(inputs, _kBg, Zero<T>());
-    float m = Get<float>(inputs, _kMix, 0.0f);
-    (*outputs)[_kOut] = Value(bg + (fg - bg) * m);
-}
-
 // ---- Contrast ------------------------------------------------------------
 
 template<typename T>
@@ -194,27 +178,6 @@ _EvalContrastFloat(const ParamMap& inputs, const ShadingContext&,
     float amount = Get<float>(inputs, _kAmount, 1.0f);
     float pivot  = Get<float>(inputs, _kCenter, 0.5f);
     (*outputs)[_kOut] = Value(pivot + (v - pivot) * amount);
-}
-
-// ---- Premult / Unpremult -------------------------------------------------
-
-static void
-_EvalPremult(const ParamMap& inputs, const ShadingContext&,
-             NodeOutputMap* outputs)
-{
-    Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
-    (*outputs)[_kOut] = Value(
-        Vec4f(v[0]*v[3], v[1]*v[3], v[2]*v[3], v[3]));
-}
-
-static void
-_EvalUnpremult(const ParamMap& inputs, const ShadingContext&,
-               NodeOutputMap* outputs)
-{
-    Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
-    float a = v[3] > 0.0f ? 1.0f / v[3] : 0.0f;
-    (*outputs)[_kOut] = Value(
-        Vec4f(v[0]*a, v[1]*a, v[2]*a, v[3]));
 }
 
 // ---- Saturate ------------------------------------------------------------
@@ -488,19 +451,9 @@ RegisterAdjustmentNodes(NodeRegistry& reg)
     _REG("ND_remap_float", &_EvalRemapFloat);
     _REG("ND_smoothstep_float", &_EvalSmoothstep);
 
-    _REG("ND_mix_float",   &_EvalMix<float>);
-    _REG("ND_mix_color3",  &_EvalMix<Vec3f>);
-    _REG("ND_mix_color4",  &_EvalMix<Vec4f>);
-    _REG("ND_mix_vector2", &_EvalMix<Vec2f>);
-    _REG("ND_mix_vector3", &_EvalMix<Vec3f>);
-    _REG("ND_mix_vector4", &_EvalMix<Vec4f>);
-
     _REG("ND_contrast_float",  &_EvalContrastFloat);
     _REG("ND_contrast_color3", &_EvalContrast<Vec3f>);
     _REG("ND_contrast_color4", &_EvalContrast<Vec4f>);
-
-    _REG("ND_premult_color4",   &_EvalPremult);
-    _REG("ND_unpremult_color4", &_EvalUnpremult);
 
     // Saturate
     _REG("ND_saturate_color3", &_EvalSaturateColor3);

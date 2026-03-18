@@ -7,6 +7,7 @@
 #include "nodes/adjustmentNodes.h"
 #include "nodes/channelNodes.h"
 #include "nodes/conditionalNodes.h"
+#include "nodes/compositingNodes.h"
 #include "nodes/geometricNodes.h"
 #include "nodes/textureNodes.h"
 #include "nodes/proceduralNodes.h"
@@ -50,6 +51,7 @@ NodeRegistry::RegisterBuiltinNodes()
         RegisterAdjustmentNodes(reg);
         RegisterChannelNodes(reg);
         RegisterConditionalNodes(reg);
+        RegisterCompositingNodes(reg);
         RegisterGeometricNodes(reg);
         RegisterTextureNodes(reg);
         RegisterProceduralNodes(reg);
