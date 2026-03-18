@@ -27,7 +27,6 @@ class HdEmbreeRenderParam;
     (enableSceneColors)                 \
     (ambientOcclusionSamples)           \
     (randomNumberSeed)                  \
-    (useSobol)                          \
     (samplerSequence)                   \
     (enableAdaptiveSampling)            \
     (adaptiveThreshold)                 \

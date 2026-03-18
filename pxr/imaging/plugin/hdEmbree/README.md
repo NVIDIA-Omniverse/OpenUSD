@@ -14,8 +14,7 @@ The following settings can be configured via `renderSettings` (Hydra render dele
 | Ambient Occlusion Samples | `ambientOcclusionSamples` | `int` | `0` | `HDEMBREE_AMBIENT_OCCLUSION_SAMPLES` |
 | Samples To Convergence | `convergedSamplesPerPixel` | `int` | `256` | `HDEMBREE_SAMPLES_TO_CONVERGENCE` |
 | Random Number Seed | `randomNumberSeed` | `int` | `-1` | `HDEMBREE_RANDOM_NUMBER_SEED` |
-| Use Sobol Sampler | `useSobol` | `bool` | `true` | `HDEMBREE_USE_SOBOL` |
-| Sampler Sequence | `samplerSequence` | `token` | effective default: `sobol` | — |
+| Sampler Sequence | `samplerSequence` | `token` | effective default: `sobol` | `HDEMBREE_USE_SOBOL` (default selection only) |
 | Enable Adaptive Sampling | `enableAdaptiveSampling` | `bool` | `true` | `HDEMBREE_ENABLE_ADAPTIVE_SAMPLING` |
 | Adaptive Threshold | `adaptiveThreshold` | `float` | `0.01` | — |
 | Min Samples Before Adaptive | `minSamplesBeforeAdaptive` | `int` | `16` | — |
@@ -39,9 +38,6 @@ When enabled, the renderer evaluates direct lighting from scene lights (UsdLux-c
 ### Enable Ambient Occlusion (`enableAmbientOcclusion` / `ambientOcclusionSamples`)
 When scene lighting is disabled, ambient occlusion can be used instead. The number of AO rays per camera ray is controlled by `ambientOcclusionSamples`. Set to `0` to disable.
 
-### Use Sobol Sampler (`useSobol`)
-Controls the sampling strategy. When `true` (default), a Sobol quasi-random sequence with FastOwen scrambling is used, providing better convergence properties. When `false`, a hash-based pseudo-random sampler is used instead.
-
 ### Sampler Sequence (`samplerSequence`)
 Selects the per-pixel sampler implementation. Supported values are:
 
@@ -54,9 +50,10 @@ Selects the per-pixel sampler implementation. Supported values are:
 - `openqmc_lattice`
 - `openqmc_latticebn`
 
-If `samplerSequence` is not authored, hdEmbree falls back to the legacy
-`useSobol` boolean, so the effective default remains `sobol`. If an
-`openqmc_*` sequence is requested without OpenQMC support compiled in,
+If `samplerSequence` is not authored, hdEmbree chooses the default sequence
+from `HDEMBREE_USE_SOBOL`, so the effective default remains `sobol` unless
+that environment variable is set to disable it. If an `openqmc_*` sequence
+is requested without OpenQMC support compiled in,
 hdEmbree falls back to `sobol` and emits a warning.
 
 ### Adaptive Sampling (`enableAdaptiveSampling`, `adaptiveThreshold`, `minSamplesBeforeAdaptive`)

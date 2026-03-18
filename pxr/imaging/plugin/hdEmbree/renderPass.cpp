@@ -182,21 +182,18 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<unsigned int>(
                 HdEmbreeRenderSettingsTokens->randomNumberSeed, (unsigned int)-1));
 
+        const HdEmbreeSamplerSequence defaultSamplerSequence =
+            HdEmbreeConfig::GetInstance().useSobol
+                ? HdEmbreeSamplerSequence::Sobol
+                : HdEmbreeSamplerSequence::Random;
         TfToken samplerSequenceToken =
             renderDelegate->GetRenderSetting<TfToken>(
                 HdEmbreeRenderSettingsTokens->samplerSequence,
-                TfToken());
+                HdEmbreeGetSamplerSequenceToken(defaultSamplerSequence));
         HdEmbreeSamplerSequence samplerSequence =
-            samplerSequenceToken.IsEmpty()
-                ? (renderDelegate->GetRenderSetting<bool>(
-                        HdEmbreeRenderSettingsTokens->useSobol,
-                        HdEmbreeConfig::GetInstance().useSobol)
-                    ? HdEmbreeSamplerSequence::Sobol
-                    : HdEmbreeSamplerSequence::Random)
-                : HdEmbreeGetSamplerSequenceFromToken(samplerSequenceToken);
-        if (!samplerSequenceToken.IsEmpty() &&
-            HdEmbreeGetSamplerSequenceToken(samplerSequence) !=
-                samplerSequenceToken) {
+            HdEmbreeGetSamplerSequenceFromToken(samplerSequenceToken);
+        if (HdEmbreeGetSamplerSequenceToken(samplerSequence) !=
+            samplerSequenceToken) {
             TF_WARN("hdEmbree sampler sequence '%s' is unknown; "
                     "falling back to 'sobol'.",
                     samplerSequenceToken.GetText());
