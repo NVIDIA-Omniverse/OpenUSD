@@ -1,0 +1,139 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    doc = """Test scene for geompropvalue and geompropvalueuniform nodes.
+Demonstrates:
+  - geompropvalue_color3: reads per-vertex 'Cd' primvar as base color
+  - geompropvalue_float: reads per-vertex 'roughnessMap' primvar as roughness
+  - geompropvalueuniform_string: reads constant 'materialTag' primvar (string)
+  - Fallback to default when primvar is missing"""
+)
+
+def Xform "World"
+{
+    # ------------------------------------------------------------------
+    # Mesh with custom primvars — exercises geompropvalue
+    # ------------------------------------------------------------------
+
+    def Mesh "ColoredPlane" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [3, 3]
+        int[] faceVertexIndices = [0, 1, 2, 0, 2, 3]
+        point3f[] points = [
+            (-2, 0, -2), (2, 0, -2),
+            (2, 0, 2), (-2, 0, 2)
+        ]
+        normal3f[] normals = [
+            (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)
+        ]
+        texCoord2f[] primvars:st = [
+            (0, 0), (1, 0), (1, 1), (0, 1)
+        ] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+        bool doubleSided = true
+        rel material:binding = </World/Materials/GeomPropMat>
+
+        # Per-vertex color primvar — read by geompropvalue_color3
+        color3f[] primvars:Cd = [
+            (1, 0, 0), (0, 1, 0),
+            (0, 0, 1), (1, 1, 0)
+        ] (
+            interpolation = "vertex"
+        )
+
+        # Per-vertex float primvar — read by geompropvalue_float
+        float[] primvars:roughnessMap = [
+            0.1, 0.3, 0.7, 0.9
+        ] (
+            interpolation = "vertex"
+        )
+
+        # Constant string primvar — read by geompropvalueuniform_string
+        string primvars:materialTag = "metal_brushed" (
+            interpolation = "constant"
+        )
+    }
+
+    # ------------------------------------------------------------------
+    # Mesh without custom primvars — exercises default value fallback
+    # ------------------------------------------------------------------
+
+    def Mesh "PlainPlane" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [3, 3]
+        int[] faceVertexIndices = [0, 1, 2, 0, 2, 3]
+        point3f[] points = [
+            (-2, 0, 3), (2, 0, 3),
+            (2, 0, 7), (-2, 0, 7)
+        ]
+        normal3f[] normals = [
+            (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)
+        ]
+        uniform token subdivisionScheme = "none"
+        bool doubleSided = true
+        rel material:binding = </World/Materials/GeomPropMat>
+
+        # No 'Cd' or 'roughnessMap' primvars — geompropvalue falls back
+        # to its default input values.
+    }
+
+    # ==================================================================
+    # Materials
+    # ==================================================================
+
+    def Scope "Materials"
+    {
+        def Material "GeomPropMat"
+        {
+            token outputs:surface.connect = </World/Materials/GeomPropMat/Surface.outputs:surface>
+
+            # Read per-vertex color via geompropvalue
+            def Shader "ReadCd"
+            {
+                uniform token info:id = "ND_geompropvalue_color3"
+                string inputs:geomprop = "Cd"
+                color3f inputs:default = (0.5, 0.5, 0.5)
+                color3f outputs:out
+            }
+
+            # Read per-vertex roughness via geompropvalue
+            def Shader "ReadRoughness"
+            {
+                uniform token info:id = "ND_geompropvalue_float"
+                string inputs:geomprop = "roughnessMap"
+                float inputs:default = 0.5
+                float outputs:out
+            }
+
+            # Standard Surface using geompropvalue outputs
+            def Shader "Surface"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/GeomPropMat/ReadCd.outputs:out>
+                float inputs:specular = 0.5
+                float inputs:specular_roughness.connect = </World/Materials/GeomPropMat/ReadRoughness.outputs:out>
+                token outputs:surface
+            }
+        }
+    }
+
+    # ==================================================================
+    # Lighting
+    # ==================================================================
+
+    def SphereLight "Light"
+    {
+        float inputs:intensity = 500
+        float inputs:radius = 0.5
+        double3 xformOp:translate = (0, 5, 3)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

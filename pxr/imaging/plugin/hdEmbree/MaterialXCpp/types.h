@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <deque>
+#include <unordered_map>
 #include <vector>
 
 namespace mxcpp {
@@ -27,6 +28,17 @@ struct ShadingContext
     int faceId = 0;
     float baryU = 0.0f;
     float baryV = 0.0f;
+
+    // Per-sample varying property lookup (geompropvalue).
+    // Returns the named geometric property at the current shading point.
+    // Returns std::monostate (empty Value) on failure.
+    using GeomPropFn = Value(*)(const void* userData, const std::string& name);
+    GeomPropFn geomPropLookup = nullptr;
+    const void* geomPropUserData = nullptr;
+
+    // Per-mesh uniform property map (geompropvalueuniform).
+    // Points to a pre-built map; lifetime managed by the caller.
+    const std::unordered_map<std::string, Value>* uniformProps = nullptr;
 };
 
 /// Surface closure produced by material model evaluation.

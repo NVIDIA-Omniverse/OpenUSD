@@ -14,6 +14,10 @@
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/vt/array.h"
 
+#include <unordered_map>
+#include <string>
+#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/mxcpp_value.h"
+
 #include <embree4/rtcore.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -37,6 +41,9 @@ struct HdEmbreePrototypeContext
     VtIntArray primitiveParams;
     /// The bound material, or nullptr if none.
     HdEmbreeMaterial *material = nullptr;
+    /// Per-mesh uniform primvar values for geompropvalueuniform nodes.
+    /// Built once during Sync from HdInterpolationConstant primvars.
+    std::unordered_map<std::string, mxcpp::Value> uniformPrimvarMap;
 };
 
 ///

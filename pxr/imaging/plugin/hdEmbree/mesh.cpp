@@ -812,6 +812,31 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         }
     }
 
+    // Build uniform primvar map for geompropvalueuniform nodes.
+    // Extract HdInterpolationConstant string primvars from source data.
+    {
+        auto* protoCtx = _GetPrototypeContext();
+        if (protoCtx) {
+            protoCtx->uniformPrimvarMap.clear();
+            TF_FOR_ALL(it, _primvarSourceMap) {
+                if (it->second.interpolation == HdInterpolationConstant) {
+                    const VtValue& val = it->second.data;
+                    const std::string name = it->first.GetString();
+                    if (val.IsHolding<std::string>()) {
+                        protoCtx->uniformPrimvarMap[name] =
+                            mxcpp::Value(val.UncheckedGet<std::string>());
+                    } else if (val.IsHolding<VtStringArray>()) {
+                        const auto& arr = val.UncheckedGet<VtStringArray>();
+                        if (!arr.empty()) {
+                            protoCtx->uniformPrimvarMap[name] =
+                                mxcpp::Value(std::string(arr[0]));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Populate points in the RTC mesh.
     if (newMesh || 
         HdChangeTracker::IsPrimvarDirty(*dirtyBits, id, HdTokens->points)) {

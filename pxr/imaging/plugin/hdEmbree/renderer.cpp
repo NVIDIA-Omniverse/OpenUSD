@@ -129,6 +129,71 @@ _ToMx(const GfVec2f& v)
 {
     return mxcpp::Vec2f(v[0], v[1]);
 }
+
+// Callback data for geompropvalue node — holds references needed to
+// sample an arbitrary primvar at a ray hit point.
+struct _GeomPropCallbackData {
+    const TfHashMap<TfToken, HdEmbreePrimvarSampler*,
+                    TfToken::HashFunctor>* primvarMap;
+    unsigned int primID;
+    float u, v;
+};
+
+// Callback function for geompropvalue: sample a primvar by name,
+// trying common types in order.  Returns empty Value on failure.
+// Note: HdEmbreePrimvarSampler::Sample() checks HdTupleType internally
+// and returns false on type mismatch, so the widest-first probing is safe.
+static mxcpp::Value
+_SampleGeomProp(const void* userData, const std::string& name)
+{
+    auto* data = static_cast<const _GeomPropCallbackData*>(userData);
+    auto it = data->primvarMap->find(TfToken(name));
+    if (it == data->primvarMap->end()) {
+        return mxcpp::Value();
+    }
+
+    auto* sampler = it->second;
+
+    // Try types from widest to narrowest.
+    {
+        GfVec4f val;
+        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
+            return mxcpp::Value(mxcpp::Vec4f(val[0], val[1], val[2], val[3]));
+        }
+    }
+    {
+        GfVec3f val;
+        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
+            return mxcpp::Value(mxcpp::Vec3f(val[0], val[1], val[2]));
+        }
+    }
+    {
+        GfVec2f val;
+        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
+            return mxcpp::Value(mxcpp::Vec2f(val[0], val[1]));
+        }
+    }
+    {
+        float val;
+        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
+            return mxcpp::Value(val);
+        }
+    }
+    {
+        int val;
+        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
+            return mxcpp::Value(val);
+        }
+    }
+    {
+        bool val;
+        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
+            return mxcpp::Value(val);
+        }
+    }
+
+    return mxcpp::Value();
+}
 }  // anonymous namespace
 
 HdEmbreeRenderer::HdEmbreeRenderer()
@@ -1552,6 +1617,12 @@ HdEmbreeRenderer::_EvalOpacityAtHit(RTCRayHit const& rayHit) const
     try {
         mxcpp::ShadingContext ctx = _BuildShadingContext(
             rayHit, instanceContext, prototypeContext, hitPos, normal);
+        _GeomPropCallbackData cbData{
+            &prototypeContext->primvarMap,
+            rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
+        ctx.geomPropLookup = &_SampleGeomProp;
+        ctx.geomPropUserData = &cbData;
+        ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
         mxcpp::SurfaceClosure closure = evalGraph->Evaluate(ctx);
         return closure.opacity;
     } catch (...) {
@@ -1672,6 +1743,12 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
     // tangent frame all constructed consistently).
     mxcpp::ShadingContext ctx = _BuildShadingContext(
         rayHit, instanceContext, prototypeContext, hitPos, normal);
+    _GeomPropCallbackData cbData{
+        &prototypeContext->primvarMap,
+        rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
+    ctx.geomPropLookup = &_SampleGeomProp;
+    ctx.geomPropUserData = &cbData;
+    ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
 
     // Recover tangent frame from context for normal map application.
     GfVec3f tangent = _ToGf(ctx.tangent);
@@ -2051,6 +2128,12 @@ HdEmbreeRenderer::_TracePath(
         // Build shading context via shared helper.
         mxcpp::ShadingContext ctx = _BuildShadingContext(
             rayHit, instanceContext, prototypeContext, hitPos, normal);
+        _GeomPropCallbackData cbData{
+            &prototypeContext->primvarMap,
+            rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
+        ctx.geomPropLookup = &_SampleGeomProp;
+        ctx.geomPropUserData = &cbData;
+        ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
 
         GfVec3f tangent = _ToGf(ctx.tangent);
         GfVec3f bitangent = _ToGf(ctx.bitangent);
