@@ -82,6 +82,7 @@ namespace Bsdf
         Vec3f f;
         float   pdf;
         bool    isSpecular;
+        float eta = 1.0f;     // IOR ratio (incident/transmitted), for refraction differential propagation
     };
 
     /// Cosine-weighted hemisphere sampling for Lambertian diffuse.

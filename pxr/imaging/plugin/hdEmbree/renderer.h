@@ -41,6 +41,13 @@ enum HdEmbree_RayMask : uint32_t {
     All = UINT_MAX,
 };
 
+/// Ray differential for tracking pixel footprint through bounces.
+struct HdEmbreeRayDifferential {
+    bool hasDifferentials = false;
+    GfVec3f rxOrigin, ryOrigin;       // offset ray origins (x/y pixel shift)
+    GfVec3f rxDirection, ryDirection;  // offset ray directions
+};
+
 /// \class HdEmbreeRenderer
 ///
 /// HdEmbreeRenderer implements a renderer on top of Embree's raycasting
@@ -201,10 +208,12 @@ private:
     // aov buffers.
     void _TraceRay(unsigned int x, unsigned int y,
                    GfVec3f const& origin, GfVec3f const& dir,
-                   HdEmbreeSobolSampler& sampler);
+                   HdEmbreeSobolSampler& sampler,
+                   HdEmbreeRayDifferential const& rayDiff);
 
     // Compute the color at the given ray hit.
     GfVec4f _ComputeColor(RTCRayHit const& rayHit,
+                          HdEmbreeRayDifferential const& rayDiff,
                           HdEmbreeSobolSampler& sampler,
                           GfVec4f const& clearColor);
     // Compute the depth at the given ray hit.
@@ -244,6 +253,7 @@ private:
     GfVec3f _TracePath(
         GfVec3f const& origin,
         GfVec3f const& dir,
+        HdEmbreeRayDifferential const& rayDiff,
         HdEmbreeSobolSampler& sampler) const;
 
     // Return the visibility from `position` along `direction`
@@ -258,12 +268,26 @@ private:
     // texcoord, displayColor) and constructing the tangent frame.
     // The caller supplies the world-space normal (already transformed and
     // normalized) so that double-sided flipping can be handled externally.
+    struct _ShadingContextOptions {
+        explicit _ShadingContextOptions(
+            bool computeScreenSpaceDerivatives = true)
+            : computeScreenSpaceDerivatives(computeScreenSpaceDerivatives)
+        {
+        }
+
+        bool computeScreenSpaceDerivatives;
+    };
+
     mxcpp::ShadingContext _BuildShadingContext(
         RTCRayHit const& rayHit,
+        HdEmbreeRayDifferential const& rayDiff,
         HdEmbreeInstanceContext const* instanceContext,
         HdEmbreePrototypeContext const* prototypeContext,
         GfVec3f const& hitPos,
-        GfVec3f const& normal) const;
+        GfVec3f const& normal,
+        GfVec3f* outDndu = nullptr,
+        GfVec3f* outDndv = nullptr,
+        _ShadingContextOptions options = _ShadingContextOptions()) const;
 
     // Evaluate the material opacity at a ray hit.
     // Returns 1.0 if no material is bound or evaluation fails.

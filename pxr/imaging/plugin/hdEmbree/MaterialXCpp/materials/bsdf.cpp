@@ -618,7 +618,9 @@ Bsdf::SampleSurface(
             // Total internal reflection.
             Vec3f wi = 2.0f * Dot(n, wo) * n - wo;
             wi.normalize();
-            return BsdfSample{wi, Vec3f(c.opacity), 1.0f, true};
+            BsdfSample bs{wi, Vec3f(c.opacity), 1.0f, true};
+            bs.eta = 1.0f;
+            return bs;
         }
 
         float cosT = std::sqrt(1.0f - sin2T);
@@ -628,7 +630,9 @@ Bsdf::SampleSurface(
         float fresnel = _SchlickFresnelScalar(c.specularIor, cosI);
         Vec3f T = c.transmissionColor
             * ((1.0f - fresnel) * c.transmission * c.opacity);
-        return BsdfSample{wi, T, 1.0f, /*isSpecular=*/true};
+        BsdfSample bs{wi, T, 1.0f, /*isSpecular=*/true};
+        bs.eta = eta;
+        return bs;
     }
 }
 

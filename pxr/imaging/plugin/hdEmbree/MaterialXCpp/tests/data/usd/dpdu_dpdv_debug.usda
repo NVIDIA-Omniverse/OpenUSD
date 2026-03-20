@@ -1,0 +1,244 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    doc = """Debug visualization of dPdu/dPdv on 3D objects.
+    Row 1 (near):     Polygon  meshes — Tangent (dPdu) as color
+    Row 2 (far):      Subdiv   meshes — Tangent (dPdu) as color
+    Row 3 (nearer):   Polygon  meshes — Bitangent (dPdv) as color
+    Row 4 (farthest): Subdiv   meshes — Bitangent (dPdv) as color
+    Columns: Sphere, Torus, Cube
+    Color mapping: vec * 0.5 + 0.5  ([-1,1] -> [0,1])
+    Polygon and Subdiv of the same shape should show matching color patterns."""
+)
+
+def Xform "World"
+{
+    def Camera "Camera"
+    {
+        float focalLength = 50
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        float2 clippingRange = (0.1, 1000)
+        double3 xformOp:translate = (0, 4, 10)
+        float3 xformOp:rotateXYZ = (-20, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+    }
+
+    # =================================================================
+    # Row 1 (z=-3): Polygon meshes — Tangent (dPdu) as color
+    # =================================================================
+    def Xform "Poly_Sphere_T" (
+        prepend references = @./meshes/Sphere_Poly.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-3, 0, -1.5)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/TangentVis>
+    }
+
+    def Xform "Poly_Torus_T" (
+        prepend references = @./meshes/Torus_Poly.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (0, 0, -1.5)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/TangentVis>
+    }
+
+    def Xform "Poly_Cube_T" (
+        prepend references = @./meshes/Cube_Poly.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (3, 0, -1.5)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/TangentVis>
+    }
+
+    # =================================================================
+    # Row 2 (z=1.5): Subdivision meshes — Tangent (dPdu) as color
+    # =================================================================
+    def Xform "Subdiv_Sphere_T" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-3, 0, 1.5)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/TangentVis>
+    }
+
+    def Xform "Subdiv_Torus_T" (
+        prepend references = @./meshes/Torus_Subdiv.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (0, 0, 1.5)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/TangentVis>
+    }
+
+    def Xform "Subdiv_Cube_T" (
+        prepend references = @./meshes/Cube_Subdiv.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (3, 0, 1.5)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/TangentVis>
+    }
+
+    # =================================================================
+    # Row 3 (z=-4.5): Polygon meshes — Bitangent (dPdv) as color
+    # =================================================================
+    def Xform "Poly_Sphere_B" (
+        prepend references = @./meshes/Sphere_Poly.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-3, 0, -4.5)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/BitangentVis>
+    }
+
+    def Xform "Poly_Torus_B" (
+        prepend references = @./meshes/Torus_Poly.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (0, 0, -4.5)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/BitangentVis>
+    }
+
+    def Xform "Poly_Cube_B" (
+        prepend references = @./meshes/Cube_Poly.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (3, 0, -4.5)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/BitangentVis>
+    }
+
+    # =================================================================
+    # Row 4 (z=4.5): Subdivision meshes — Bitangent (dPdv) as color
+    # =================================================================
+    def Xform "Subdiv_Sphere_B" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-3, 0, 4.5)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/BitangentVis>
+    }
+
+    def Xform "Subdiv_Torus_B" (
+        prepend references = @./meshes/Torus_Subdiv.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (0, 0, 4.5)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/BitangentVis>
+    }
+
+    def Xform "Subdiv_Cube_B" (
+        prepend references = @./meshes/Cube_Subdiv.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (3, 0, 4.5)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/BitangentVis>
+    }
+
+    # =================================================================
+    # Materials — emissive-only to show pure vector colors
+    # =================================================================
+    def Scope "Materials"
+    {
+        # Tangent (dPdu direction): remap [-1,1] -> [0,1] as RGB
+        def Material "TangentVis"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/TangentVis/StdSurf.outputs:out>
+            def Shader "Tangent" {
+                uniform token info:id = "ND_tangent_vector3"
+                vector3f outputs:out
+            }
+            def Shader "Scale" {
+                uniform token info:id = "ND_multiply_vector3FA"
+                vector3f inputs:in1.connect = </World/Materials/TangentVis/Tangent.outputs:out>
+                float inputs:in2 = 0.5
+                vector3f outputs:out
+            }
+            def Shader "Half" {
+                uniform token info:id = "ND_constant_vector3"
+                vector3f inputs:value = (0.5, 0.5, 0.5)
+                vector3f outputs:out
+            }
+            def Shader "Remap" {
+                uniform token info:id = "ND_add_vector3"
+                vector3f inputs:in1.connect = </World/Materials/TangentVis/Scale.outputs:out>
+                vector3f inputs:in2.connect = </World/Materials/TangentVis/Half.outputs:out>
+                vector3f outputs:out
+            }
+            def Shader "StdSurf" {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                float inputs:specular = 0.0
+                float inputs:emission = 1.0
+                color3f inputs:emission_color.connect = </World/Materials/TangentVis/Remap.outputs:out>
+                token outputs:out
+            }
+        }
+
+        # Bitangent (dPdv direction): remap [-1,1] -> [0,1] as RGB
+        def Material "BitangentVis"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/BitangentVis/StdSurf.outputs:out>
+            def Shader "Bitangent" {
+                uniform token info:id = "ND_bitangent_vector3"
+                vector3f outputs:out
+            }
+            def Shader "Scale" {
+                uniform token info:id = "ND_multiply_vector3FA"
+                vector3f inputs:in1.connect = </World/Materials/BitangentVis/Bitangent.outputs:out>
+                float inputs:in2 = 0.5
+                vector3f outputs:out
+            }
+            def Shader "Half" {
+                uniform token info:id = "ND_constant_vector3"
+                vector3f inputs:value = (0.5, 0.5, 0.5)
+                vector3f outputs:out
+            }
+            def Shader "Remap" {
+                uniform token info:id = "ND_add_vector3"
+                vector3f inputs:in1.connect = </World/Materials/BitangentVis/Scale.outputs:out>
+                vector3f inputs:in2.connect = </World/Materials/BitangentVis/Half.outputs:out>
+                vector3f outputs:out
+            }
+            def Shader "StdSurf" {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                float inputs:specular = 0.0
+                float inputs:emission = 1.0
+                color3f inputs:emission_color.connect = </World/Materials/BitangentVis/Remap.outputs:out>
+                token outputs:out
+            }
+        }
+    }
+
+    # Minimal light (emissive materials don't need it, but avoids warnings)
+    def SphereLight "Light"
+    {
+        float inputs:intensity = 0.01
+        float inputs:radius = 0.1
+        double3 xformOp:translate = (0, 10, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

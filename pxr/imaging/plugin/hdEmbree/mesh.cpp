@@ -19,8 +19,216 @@
 #include "pxr/base/gf/matrix4d.h"
 
 #include <algorithm> // sort
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <unordered_map>
+#include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+namespace {
+
+static const TfToken _tokensTangent("tangent");
+static const TfToken _tokensBitangent("bitangent");
+static const TfToken _tokensComputedTangent("hdEmbreeComputedTangent");
+static const TfToken _tokensComputedBitangent("hdEmbreeComputedBitangent");
+static const TfToken _tokensSt("st");
+
+float
+_DifferenceOfProducts(float a, float b, float c, float d)
+{
+    return a * b - c * d;
+}
+
+template <typename T>
+bool
+_SampleTriangleCorners(HdEmbreePrimvarSampler const* sampler,
+                       unsigned int primID,
+                       T* v0, T* v1, T* v2)
+{
+    if (!sampler) {
+        return false;
+    }
+
+    if (auto* vertexSampler =
+            dynamic_cast<HdEmbreeTriangleVertexSampler const*>(sampler)) {
+        return vertexSampler->SampleVertices(primID, v0, v1, v2);
+    }
+
+    if (auto* faceVaryingSampler =
+            dynamic_cast<HdEmbreeTriangleFaceVaryingSampler const*>(sampler)) {
+        return faceVaryingSampler->SampleVertices(primID, v0, v1, v2);
+    }
+
+    if (!sampler->Sample(primID, 0.0f, 0.0f, v0)) {
+        return false;
+    }
+    *v1 = *v0;
+    *v2 = *v0;
+    return true;
+}
+
+bool
+_SampleTriangleCorners(HdEmbreePrimvarSampler const* sampler,
+                       unsigned int primID,
+                       GfVec2f* v0, GfVec2f* v1, GfVec2f* v2)
+{
+    if (_SampleTriangleCorners<GfVec2f>(sampler, primID, v0, v1, v2)) {
+        return true;
+    }
+
+    GfVec3f triSt[3];
+    if (!_SampleTriangleCorners<GfVec3f>(
+            sampler, primID, &triSt[0], &triSt[1], &triSt[2])) {
+        return false;
+    }
+
+    *v0 = GfVec2f(triSt[0][0], triSt[0][1]);
+    *v1 = GfVec2f(triSt[1][0], triSt[1][1]);
+    *v2 = GfVec2f(triSt[2][0], triSt[2][1]);
+    return true;
+}
+
+GfVec3f
+_BuildGeometricFaceNormal(GfVec3f const& p0,
+                          GfVec3f const& p1,
+                          GfVec3f const& p2)
+{
+    GfVec3f normal = GfCross(p1 - p0, p2 - p0);
+    if (normal.GetLengthSq() > 1e-18f) {
+        normal.Normalize();
+        return normal;
+    }
+
+    GfVec3f fallback0, fallback1;
+    GfBuildOrthonormalFrame(GfVec3f(0.0f, 0.0f, 1.0f), &fallback0, &fallback1);
+    return GfCross(fallback0, fallback1).GetNormalized();
+}
+
+struct _SmoothingKey
+{
+    int vertexIndex = -1;
+    uint32_t normalBits[3] = {0u, 0u, 0u};
+
+    bool operator==(const _SmoothingKey& other) const
+    {
+        return vertexIndex == other.vertexIndex &&
+               normalBits[0] == other.normalBits[0] &&
+               normalBits[1] == other.normalBits[1] &&
+               normalBits[2] == other.normalBits[2];
+    }
+};
+
+struct _SmoothingKeyHash
+{
+    size_t operator()(const _SmoothingKey& key) const
+    {
+        size_t h = std::hash<int>()(key.vertexIndex);
+        auto combine = [&h](uint32_t value) {
+            h ^= std::hash<uint32_t>()(value) + 0x9e3779b9u + (h << 6) + (h >> 2);
+        };
+        combine(key.normalBits[0]);
+        combine(key.normalBits[1]);
+        combine(key.normalBits[2]);
+        return h;
+    }
+};
+
+uint32_t
+_FloatBits(float value)
+{
+    uint32_t bits = 0u;
+    static_assert(sizeof(bits) == sizeof(value), "Unexpected float size");
+    std::memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+_SmoothingKey
+_MakeSmoothingKey(int vertexIndex, GfVec3f const& normal)
+{
+    _SmoothingKey key;
+    key.vertexIndex = vertexIndex;
+    key.normalBits[0] = _FloatBits(normal[0]);
+    key.normalBits[1] = _FloatBits(normal[1]);
+    key.normalBits[2] = _FloatBits(normal[2]);
+    return key;
+}
+
+VtIntArray
+_ComputeTriangulatedCornerIds(HdMeshTopology const& topology)
+{
+    VtIntArray result;
+
+    VtIntArray const& faceVertexCounts = topology.GetFaceVertexCounts();
+    VtIntArray const& holeFaces =
+        (topology.GetRefineLevel() > 0) ? VtIntArray() : topology.GetHoleIndices();
+    const bool flip = (topology.GetOrientation() != HdTokens->rightHanded);
+
+    int numTris = 0;
+    for (int faceIndex = 0, holeIndex = 0;
+         faceIndex < static_cast<int>(faceVertexCounts.size());
+         ++faceIndex) {
+        const int numVerts = faceVertexCounts[faceIndex];
+        if (numVerts < 3) {
+            continue;
+        }
+        if (holeIndex < static_cast<int>(holeFaces.size()) &&
+            holeFaces[holeIndex] == faceIndex) {
+            ++holeIndex;
+            continue;
+        }
+        numTris += (numVerts - 2);
+    }
+
+    result.reserve(numTris * 3);
+    for (int faceIndex = 0, cornerOffset = 0, holeIndex = 0;
+         faceIndex < static_cast<int>(faceVertexCounts.size());
+         ++faceIndex) {
+        const int numVerts = faceVertexCounts[faceIndex];
+        if (numVerts < 3) {
+            cornerOffset += numVerts;
+            continue;
+        }
+        if (holeIndex < static_cast<int>(holeFaces.size()) &&
+            holeFaces[holeIndex] == faceIndex) {
+            ++holeIndex;
+            cornerOffset += numVerts;
+            continue;
+        }
+
+        for (int tri = 0; tri < numVerts - 2; ++tri) {
+            int corners[3];
+            if (flip) {
+                corners[0] = cornerOffset;
+                corners[1] = cornerOffset + tri + 2;
+                corners[2] = cornerOffset + tri + 1;
+                if (numVerts > 3) {
+                    if (tri == 0) {
+                        std::swap(corners[0], corners[1]);
+                        std::swap(corners[1], corners[2]);
+                    } else if (tri == numVerts - 3) {
+                        std::swap(corners[1], corners[2]);
+                        std::swap(corners[0], corners[1]);
+                    }
+                }
+            } else {
+                corners[0] = cornerOffset;
+                corners[1] = cornerOffset + tri + 1;
+                corners[2] = cornerOffset + tri + 2;
+            }
+            result.push_back(corners[0]);
+            result.push_back(corners[1]);
+            result.push_back(corners[2]);
+        }
+
+        cornerOffset += numVerts;
+    }
+
+    return result;
+}
+
+} // namespace
 
 HdEmbreeMesh::HdEmbreeMesh(SdfPath const& id)
     : HdMesh(id)
@@ -28,6 +236,8 @@ HdEmbreeMesh::HdEmbreeMesh(SdfPath const& id)
     , _rtcMeshScene(nullptr)
     , _adjacencyValid(false)
     , _normalsValid(false)
+    , _surfaceDerivativesValid(false)
+    , _tangentFrameValid(false)
     , _refined(false)
     , _smoothNormals(false)
     , _doubleSided(false)
@@ -470,13 +680,259 @@ HdEmbreeMesh::_UpdateComputedPrimvarSources(HdSceneDelegate* sceneDelegate,
         if (compPrimvar.name == HdTokens->points) {
             _points = it->second.Get<VtVec3fArray>();
             _normalsValid = false;
+            _surfaceDerivativesValid = false;
+            _tangentFrameValid = false;
         } else {
             _primvarSourceMap[compPrimvar.name] = {it->second,
                                                 compPrimvar.interpolation};
+            if (compPrimvar.name == HdTokens->normals ||
+                compPrimvar.name == _tokensSt) {
+                _surfaceDerivativesValid = false;
+                _tangentFrameValid = false;
+            }
         }
     }
 
     return compPrimvarNames;
+}
+
+void
+HdEmbreeMesh::_UpdateSurfaceDerivativeCache()
+{
+    _triangleDPdu.clear();
+    _triangleDPdv.clear();
+    _surfaceDerivativesValid = false;
+
+    if (_refined || _triangulatedIndices.empty() || _points.empty()) {
+        return;
+    }
+
+    _triangleDPdu.resize(_triangulatedIndices.size(), GfVec3f(0.0f));
+    _triangleDPdv.resize(_triangulatedIndices.size(), GfVec3f(0.0f));
+
+    HdEmbreePrimvarSampler const* stSampler = nullptr;
+    if (HdEmbreePrototypeContext* ctx = _GetPrototypeContext()) {
+        auto it = ctx->primvarMap.find(_tokensSt);
+        if (it != ctx->primvarMap.end()) {
+            stSampler = it->second;
+        }
+    }
+
+    for (size_t triIndex = 0; triIndex < _triangulatedIndices.size(); ++triIndex) {
+        GfVec3i const& tri = _triangulatedIndices[triIndex];
+        if (tri[0] >= static_cast<int>(_points.size()) ||
+            tri[1] >= static_cast<int>(_points.size()) ||
+            tri[2] >= static_cast<int>(_points.size())) {
+            continue;
+        }
+
+        GfVec3f const& p0 = _points[tri[0]];
+        GfVec3f const& p1 = _points[tri[1]];
+        GfVec3f const& p2 = _points[tri[2]];
+        GfVec3f dP1 = p1 - p0;
+        GfVec3f dP2 = p2 - p0;
+
+        GfVec3f dPdu = dP1;
+        GfVec3f dPdv = dP2;
+
+        GfVec2f st0, st1, st2;
+        if (_SampleTriangleCorners(
+                stSampler, static_cast<unsigned int>(triIndex),
+                &st0, &st1, &st2)) {
+            GfVec2f const dst1 = st1 - st0;
+            GfVec2f const dst2 = st2 - st0;
+            const float det = _DifferenceOfProducts(
+                dst1[0], dst2[1], dst1[1], dst2[0]);
+            if (std::abs(det) > 1e-9f) {
+                const float invDet = 1.0f / det;
+                dPdu = ( dst2[1] * dP1 - dst1[1] * dP2) * invDet;
+                dPdv = (-dst2[0] * dP1 + dst1[0] * dP2) * invDet;
+            }
+        }
+
+        if (GfCross(dPdu, dPdv).GetLengthSq() < 1e-18f) {
+            GfVec3f geometricNormal = _BuildGeometricFaceNormal(p0, p1, p2);
+            GfBuildOrthonormalFrame(geometricNormal, &dPdu, &dPdv);
+        }
+
+        _triangleDPdu[triIndex] = dPdu;
+        _triangleDPdv[triIndex] = dPdv;
+    }
+
+    _surfaceDerivativesValid = true;
+}
+
+void
+HdEmbreeMesh::_UpdateTangentFrameCache()
+{
+    _computedTangents.clear();
+    _computedBitangents.clear();
+    _tangentFrameValid = false;
+
+    HdEmbreePrototypeContext* ctx = _GetPrototypeContext();
+    if (_refined || !ctx || !_surfaceDerivativesValid ||
+        _triangleDPdu.size() != _triangulatedIndices.size()) {
+        return;
+    }
+
+    const VtIntArray& faceVertexIndices = _topology.GetFaceVertexIndices();
+    if (faceVertexIndices.empty()) {
+        return;
+    }
+
+    const VtIntArray triangulatedCornerIds = _ComputeTriangulatedCornerIds(_topology);
+    if (triangulatedCornerIds.size() != _triangulatedIndices.size() * 3) {
+        return;
+    }
+
+    HdEmbreePrimvarSampler const* normalSampler = nullptr;
+    auto normalIt = ctx->primvarMap.find(HdTokens->normals);
+    if (normalIt != ctx->primvarMap.end()) {
+        normalSampler = normalIt->second;
+    }
+
+    struct Accumulator
+    {
+        GfVec3f tangent = GfVec3f(0.0f);
+        GfVec3f bitangent = GfVec3f(0.0f);
+    };
+
+    std::unordered_map<_SmoothingKey, size_t, _SmoothingKeyHash> groupMap;
+    std::vector<Accumulator> accumulators;
+    std::vector<GfVec3f> cornerNormals(faceVertexIndices.size(), GfVec3f(0.0f));
+    std::vector<size_t> cornerGroups(faceVertexIndices.size(), size_t(-1));
+
+    for (size_t triIndex = 0; triIndex < _triangulatedIndices.size(); ++triIndex) {
+        GfVec3i const& tri = _triangulatedIndices[triIndex];
+        if (tri[0] >= static_cast<int>(_points.size()) ||
+            tri[1] >= static_cast<int>(_points.size()) ||
+            tri[2] >= static_cast<int>(_points.size())) {
+            continue;
+        }
+
+        GfVec3f triNormals[3];
+        const GfVec3f geometricNormal = _BuildGeometricFaceNormal(
+            _points[tri[0]], _points[tri[1]], _points[tri[2]]);
+        if (!_SampleTriangleCorners(
+                normalSampler, static_cast<unsigned int>(triIndex),
+                &triNormals[0], &triNormals[1], &triNormals[2])) {
+            triNormals[0] = geometricNormal;
+            triNormals[1] = geometricNormal;
+            triNormals[2] = geometricNormal;
+        }
+
+        for (size_t corner = 0; corner < 3; ++corner) {
+            const int authoredCorner = triangulatedCornerIds[triIndex * 3 + corner];
+            if (authoredCorner < 0 ||
+                authoredCorner >= static_cast<int>(faceVertexIndices.size())) {
+                continue;
+            }
+
+            GfVec3f normal = triNormals[corner];
+            if (normal.GetLengthSq() < 1e-18f) {
+                normal = geometricNormal;
+            } else {
+                normal.Normalize();
+            }
+
+            cornerNormals[authoredCorner] = normal;
+
+            GfVec3f rawTangent =
+                _triangleDPdu[triIndex] - normal * GfDot(normal, _triangleDPdu[triIndex]);
+            if (rawTangent.GetLengthSq() < 1e-18f) {
+                rawTangent = GfCross(_triangleDPdv[triIndex], normal);
+            }
+
+            if (rawTangent.GetLengthSq() < 1e-18f) {
+                GfVec3f fallbackBitangent;
+                GfBuildOrthonormalFrame(normal, &rawTangent, &fallbackBitangent);
+            } else {
+                rawTangent.Normalize();
+            }
+
+            GfVec3f rawBitangent = GfCross(normal, rawTangent);
+            if (rawBitangent.GetLengthSq() < 1e-18f) {
+                GfVec3f fallbackTangent;
+                GfBuildOrthonormalFrame(normal, &fallbackTangent, &rawBitangent);
+                rawTangent = fallbackTangent;
+            } else {
+                rawBitangent.Normalize();
+                if (GfDot(rawBitangent, _triangleDPdv[triIndex]) < 0.0f) {
+                    rawBitangent *= -1.0f;
+                }
+            }
+
+            const _SmoothingKey key = _MakeSmoothingKey(
+                faceVertexIndices[authoredCorner], normal);
+            auto [it, inserted] = groupMap.emplace(key, accumulators.size());
+            if (inserted) {
+                accumulators.emplace_back();
+            }
+
+            const size_t groupIndex = it->second;
+            cornerGroups[authoredCorner] = groupIndex;
+            Accumulator& accum = accumulators[groupIndex];
+            if (accum.tangent.GetLengthSq() > 1e-18f &&
+                GfDot(rawTangent, accum.tangent) < 0.0f) {
+                rawTangent *= -1.0f;
+                rawBitangent *= -1.0f;
+            }
+            accum.tangent += rawTangent;
+            accum.bitangent += rawBitangent;
+        }
+    }
+
+    _computedTangents.resize(faceVertexIndices.size(), GfVec3f(1.0f, 0.0f, 0.0f));
+    _computedBitangents.resize(faceVertexIndices.size(), GfVec3f(0.0f, 1.0f, 0.0f));
+
+    for (size_t authoredCorner = 0; authoredCorner < faceVertexIndices.size(); ++authoredCorner) {
+        if (cornerGroups[authoredCorner] == size_t(-1)) {
+            continue;
+        }
+
+        const Accumulator& accum = accumulators[cornerGroups[authoredCorner]];
+        GfVec3f normal = cornerNormals[authoredCorner];
+        if (normal.GetLengthSq() < 1e-18f) {
+            normal = GfVec3f(0.0f, 1.0f, 0.0f);
+        } else {
+            normal.Normalize();
+        }
+
+        GfVec3f tangent = accum.tangent - normal * GfDot(normal, accum.tangent);
+        if (tangent.GetLengthSq() < 1e-18f) {
+            tangent = GfCross(accum.bitangent, normal);
+        }
+        if (tangent.GetLengthSq() < 1e-18f) {
+            GfVec3f fallbackBitangent;
+            GfBuildOrthonormalFrame(normal, &tangent, &fallbackBitangent);
+            _computedTangents[authoredCorner] = tangent;
+            _computedBitangents[authoredCorner] = fallbackBitangent;
+            continue;
+        }
+
+        tangent.Normalize();
+
+        GfVec3f bitangent =
+            accum.bitangent - normal * GfDot(normal, accum.bitangent);
+        bitangent -= tangent * GfDot(tangent, bitangent);
+        if (bitangent.GetLengthSq() < 1e-18f) {
+            bitangent = GfCross(normal, tangent);
+        }
+        if (bitangent.GetLengthSq() < 1e-18f) {
+            GfVec3f fallbackTangent, fallbackBitangent;
+            GfBuildOrthonormalFrame(normal, &fallbackTangent, &fallbackBitangent);
+            _computedTangents[authoredCorner] = fallbackTangent;
+            _computedBitangents[authoredCorner] = fallbackBitangent;
+            continue;
+        }
+
+        bitangent.Normalize();
+
+        _computedTangents[authoredCorner] = tangent;
+        _computedBitangents[authoredCorner] = bitangent;
+    }
+
+    _tangentFrameValid = true;
 }
 
 void
@@ -575,6 +1031,8 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         VtValue value = sceneDelegate->Get(id, HdTokens->points);
         _points = value.Get<VtVec3fArray>();
         _normalsValid = false;
+        _surfaceDerivativesValid = false;
+        _tangentFrameValid = false;
     }
 
     if (HdChangeTracker::IsTopologyDirty(*dirtyBits, id)) {
@@ -586,6 +1044,8 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         _topology = HdMeshTopology(GetMeshTopology(sceneDelegate), refineLevel);
         _topology.SetSubdivTags(subdivTags);
         _adjacencyValid = false;
+        _surfaceDerivativesValid = false;
+        _tangentFrameValid = false;
     }
     if (HdChangeTracker::IsSubdivTagsDirty(*dirtyBits, id) &&
         _topology.GetRefineLevel() > 0) {
@@ -615,6 +1075,11 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         HdChangeTracker::IsPrimvarDirty(*dirtyBits, id, HdTokens->widths) ||
         HdChangeTracker::IsPrimvarDirty(*dirtyBits, id, HdTokens->primvar)) {
         _UpdatePrimvarSources(sceneDelegate, *dirtyBits);
+        if (HdChangeTracker::IsPrimvarDirty(*dirtyBits, id, HdTokens->normals) ||
+            HdChangeTracker::IsPrimvarDirty(*dirtyBits, id, _tokensSt)) {
+            _surfaceDerivativesValid = false;
+            _tangentFrameValid = false;
+        }
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -722,6 +1187,8 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         // Force the smooth normals code to rebuild the "normals" primvar the
         // next time smooth normals is enabled.
         _normalsValid = false;
+        _surfaceDerivativesValid = false;
+        _tangentFrameValid = false;
     }
 
     // If the refine level changed or the mesh was recreated, we need to pass
@@ -775,6 +1242,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         _adjacencyValid = true;
         // If we rebuilt the adjacency table, force a rebuild of normals.
         _normalsValid = false;
+        _tangentFrameValid = false;
     }
     if (_smoothNormals && !_normalsValid) {
         _computedNormals = Hd_SmoothNormals::ComputeSmoothNormals(
@@ -786,6 +1254,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         // be overwritten by the primvar population below.
         _CreatePrimvarSampler(HdTokens->normals, VtValue(_computedNormals),
             HdInterpolationVertex, _refined);
+        _tangentFrameValid = false;
     }
 
     // If smooth normals are off and there are no authored normals, make sure
@@ -801,6 +1270,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         // Force the smooth normals code to rebuild the "normals" primvar the
         // next time smooth normals is enabled.
         _normalsValid = false;
+        _tangentFrameValid = false;
     }
 
     // Populate primvars if they've changed or we recreated the mesh.
@@ -809,6 +1279,33 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
             HdChangeTracker::IsPrimvarDirty(*dirtyBits, id, it->first)) {
             _CreatePrimvarSampler(it->first, it->second.data,
                     it->second.interpolation, _refined);
+        }
+    }
+
+    if (!_refined && (!_surfaceDerivativesValid || newMesh)) {
+        _UpdateSurfaceDerivativeCache();
+    }
+
+    if (!_refined && (!_tangentFrameValid || newMesh)) {
+        _UpdateTangentFrameCache();
+    }
+
+    if (!_refined && _tangentFrameValid) {
+        _CreatePrimvarSampler(_tokensComputedTangent, VtValue(_computedTangents),
+                              HdInterpolationFaceVarying, false);
+        _CreatePrimvarSampler(_tokensComputedBitangent, VtValue(_computedBitangents),
+                              HdInterpolationFaceVarying, false);
+    } else {
+        HdEmbreePrototypeContext* ctx = _GetPrototypeContext();
+        if (ctx) {
+            for (TfToken const& name :
+                     {_tokensComputedTangent, _tokensComputedBitangent}) {
+                auto it = ctx->primvarMap.find(name);
+                if (it != ctx->primvarMap.end()) {
+                    delete it->second;
+                    ctx->primvarMap.erase(it);
+                }
+            }
         }
     }
 

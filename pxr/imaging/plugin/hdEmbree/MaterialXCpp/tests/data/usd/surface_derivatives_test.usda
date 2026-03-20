@@ -1,0 +1,361 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    doc = """Visual test for dPdu/dPdv surface derivatives and tangent frame.
+    Contains:
+    - Triangle mesh with st: tangent frame should align with UV layout
+    - Triangle mesh without st: falls back to barycentric derivatives
+    - Subdivision surface with st: rtcInterpolate1 derivatives
+    - Procedural normal map: validates tangent-space -> world-space transform
+    - Glass sphere: tests ray differential propagation through refraction
+    - Mirror sphere: tests ray differential propagation through reflection
+    """
+)
+
+def Xform "World"
+{
+    def Camera "Camera"
+    {
+        float focalLength = 35
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        float2 clippingRange = (0.1, 1000)
+        double3 xformOp:translate = (0, 4, 16)
+        float3 xformOp:rotateXYZ = (-12, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+    }
+
+    # =====================================================================
+    # 1. Triangle mesh with st — procedural normal map via tangent/bitangent
+    #    dPdu/dPdv should align with the UV directions.
+    #    The normal map perturbs the surface; correct tangent frame means
+    #    the bumps follow the UV layout, not an arbitrary direction.
+    # =====================================================================
+    def Mesh "TriMeshWithST" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [3, 3]
+        int[] faceVertexIndices = [0, 1, 2, 0, 2, 3]
+        point3f[] points = [
+            (-6, 0, -3), (-2, 0, -3),
+            (-2, 0, 3), (-6, 0, 3)
+        ]
+        normal3f[] normals = [
+            (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)
+        ] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [
+            (0, 0), (1, 0), (1, 1), (0, 1)
+        ] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+        bool doubleSided = true
+        rel material:binding = </World/Materials/NormalMapMat>
+    }
+
+    # =====================================================================
+    # 2. Triangle mesh WITHOUT st — barycentric fallback
+    #    Should render without errors. Tangent frame comes from edge vectors.
+    # =====================================================================
+    def Mesh "TriMeshNoST" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [3, 3]
+        int[] faceVertexIndices = [0, 1, 2, 0, 2, 3]
+        point3f[] points = [
+            (-1, 0, -3), (3, 0, -3),
+            (3, 0, 3), (-1, 0, 3)
+        ]
+        normal3f[] normals = [
+            (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)
+        ] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+        bool doubleSided = true
+        rel material:binding = </World/Materials/NormalMapMat>
+    }
+
+    # =====================================================================
+    # 3. Subdivision surface with st — rtcInterpolate1 derivatives
+    #    Same normal map material; tangent frame from subdivision derivatives.
+    # =====================================================================
+    def Mesh "SubdivMeshWithST" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [
+            (4, 0, -3), (8, 0, -3),
+            (8, 0, 3), (4, 0, 3)
+        ]
+        normal3f[] normals = [
+            (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)
+        ] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [
+            (0, 0), (1, 0), (1, 1), (0, 1)
+        ] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "catmullClark"
+        bool doubleSided = true
+        rel material:binding = </World/Materials/NormalMapMat>
+    }
+
+    # =====================================================================
+    # 4. Mirror sphere — tests specular reflection differential propagation
+    # =====================================================================
+    def Sphere "MirrorSphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 1.5
+        double3 xformOp:translate = (-4, 1.5, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/MirrorMat>
+    }
+
+    # =====================================================================
+    # 5. Glass sphere — tests refraction differential propagation
+    # =====================================================================
+    def Sphere "GlassSphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 1.5
+        double3 xformOp:translate = (1, 1.5, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/GlassMat>
+    }
+
+    # =====================================================================
+    # 6. UV-ramp plane behind spheres — shows tangent frame alignment
+    #    Left-to-right red→blue gradient driven by texcoord U.
+    #    If tangent frame is correct, the gradient follows UV exactly.
+    # =====================================================================
+    def Mesh "BackdropPlane" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [3, 3]
+        int[] faceVertexIndices = [0, 1, 2, 0, 2, 3]
+        point3f[] points = [
+            (-8, 0, -4), (10, 0, -4),
+            (10, 8, -4), (-8, 8, -4)
+        ]
+        normal3f[] normals = [
+            (0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)
+        ] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [
+            (0, 0), (1, 0), (1, 1), (0, 1)
+        ] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+        bool doubleSided = true
+        rel material:binding = </World/Materials/RampMat>
+    }
+
+    # =====================================================================
+    # Materials
+    # =====================================================================
+    def Scope "Materials"
+    {
+        # --- Procedural normal map material ---
+        # Uses texcoord-based sine waves to generate tangent-space normal
+        # perturbation. If dPdu/dPdv tangent frame is correct, the bumps
+        # should align with the UV directions on all three planes.
+        def Material "NormalMapMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/NormalMapMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            # Extract U component for sine wave
+            def Shader "ExtractU"
+            {
+                uniform token info:id = "ND_extract_vector2"
+                float2 inputs:in.connect = </World/Materials/NormalMapMat/TexCoord.outputs:out>
+                int inputs:index = 0
+                float outputs:out
+            }
+
+            # Scale U by 6*pi for ~3 full sine cycles across the surface
+            def Shader "ScaleU"
+            {
+                uniform token info:id = "ND_multiply_float"
+                float inputs:in1.connect = </World/Materials/NormalMapMat/ExtractU.outputs:out>
+                float inputs:in2 = 18.85
+                float outputs:out
+            }
+
+            # sin(U * 6pi) for bump perturbation
+            def Shader "SinU"
+            {
+                uniform token info:id = "ND_sin_float"
+                float inputs:in.connect = </World/Materials/NormalMapMat/ScaleU.outputs:out>
+                float outputs:out
+            }
+
+            # Scale sine to small normal perturbation (±0.3 in tangent X)
+            def Shader "BumpScale"
+            {
+                uniform token info:id = "ND_multiply_float"
+                float inputs:in1.connect = </World/Materials/NormalMapMat/SinU.outputs:out>
+                float inputs:in2 = 0.3
+                float outputs:out
+            }
+
+            # Construct tangent-space normal: (bump, 0, 1) approximately
+            # We use the sine result as the X component of the normal
+            def Shader "NormalX"
+            {
+                uniform token info:id = "ND_combine3_vector3"
+                float inputs:in1.connect = </World/Materials/NormalMapMat/BumpScale.outputs:out>
+                float inputs:in2 = 0.0
+                float inputs:in3 = 1.0
+                vector3f outputs:out
+            }
+
+            def Shader "NormalNormalize"
+            {
+                uniform token info:id = "ND_normalize_vector3"
+                vector3f inputs:in.connect = </World/Materials/NormalMapMat/NormalX.outputs:out>
+                vector3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.2, 0.2, 0.2)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.3
+                float inputs:metalness = 0.0
+                vector3f inputs:normal.connect = </World/Materials/NormalMapMat/NormalNormalize.outputs:out>
+                token outputs:out
+            }
+        }
+
+        # --- Mirror material ---
+        def Material "MirrorMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/MirrorMat/StdSurf.outputs:out>
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.95, 0.95, 0.95)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.0
+                float inputs:metalness = 1.0
+                token outputs:out
+            }
+        }
+
+        # --- Glass material ---
+        def Material "GlassMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/GlassMat/OpenPbr.outputs:out>
+
+            def Shader "OpenPbr"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_ior = 1.5
+                float inputs:transmission_weight = 1.0
+                color3f inputs:transmission_color = (0.95, 0.97, 1.0)
+                token outputs:out
+            }
+        }
+
+        # --- UV ramp material (red → blue along U) ---
+        def Material "RampMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/RampMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "ExtractU"
+            {
+                uniform token info:id = "ND_extract_vector2"
+                float2 inputs:in.connect = </World/Materials/RampMat/TexCoord.outputs:out>
+                int inputs:index = 0
+                float outputs:out
+            }
+
+            def Shader "ColorLeft"
+            {
+                uniform token info:id = "ND_constant_color3"
+                color3f inputs:value = (1.0, 0.1, 0.1)
+                color3f outputs:out
+            }
+
+            def Shader "ColorRight"
+            {
+                uniform token info:id = "ND_constant_color3"
+                color3f inputs:value = (0.1, 0.1, 1.0)
+                color3f outputs:out
+            }
+
+            def Shader "Lerp"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:fg.connect = </World/Materials/RampMat/ColorRight.outputs:out>
+                color3f inputs:bg.connect = </World/Materials/RampMat/ColorLeft.outputs:out>
+                float inputs:mix.connect = </World/Materials/RampMat/ExtractU.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/RampMat/Lerp.outputs:out>
+                float inputs:specular = 0.3
+                float inputs:specular_roughness = 0.5
+                float inputs:metalness = 0.0
+                token outputs:out
+            }
+        }
+    }
+
+    # =====================================================================
+    # Lighting
+    # =====================================================================
+    def SphereLight "KeyLight"
+    {
+        float inputs:intensity = 10
+        float inputs:radius = 2.0
+        double3 xformOp:translate = (3, 8, 6)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def SphereLight "FillLight"
+    {
+        float inputs:intensity = 3
+        float inputs:radius = 3.0
+        double3 xformOp:translate = (-5, 5, 4)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

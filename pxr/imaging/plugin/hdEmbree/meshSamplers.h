@@ -179,6 +179,20 @@ public:
     virtual bool Sample(unsigned int element, float u, float v, void* value,
                         HdTupleType dataType) const;
 
+    /// Retrieve the three raw (un-interpolated) vertex values for a triangle.
+    bool SampleVertices(unsigned int element,
+                        void* v0, void* v1, void* v2,
+                        HdTupleType dataType) const;
+
+    /// Templated convenience overload (auto-deduces HdTupleType).
+    template<typename T>
+    bool SampleVertices(unsigned int element, T* v0, T* v1, T* v2) const {
+        return SampleVertices(element,
+            static_cast<void*>(v0), static_cast<void*>(v1),
+            static_cast<void*>(v2),
+            HdEmbreeTypeHelper::GetTupleType<T>());
+    }
+
 private:
     HdVtBufferSource const _buffer;
     HdEmbreeBufferSampler const _sampler;
@@ -229,7 +243,21 @@ public:
     /// \return True if the value was successfully sampled.
     virtual bool Sample(unsigned int element, float u, float v, void* value,
                         HdTupleType dataType) const;
-    
+
+    /// Retrieve the three raw (un-interpolated) vertex values for a triangle.
+    bool SampleVertices(unsigned int element,
+                        void* v0, void* v1, void* v2,
+                        HdTupleType dataType) const;
+
+    /// Templated convenience overload.
+    template<typename T>
+    bool SampleVertices(unsigned int element, T* v0, T* v1, T* v2) const {
+        return SampleVertices(element,
+            static_cast<void*>(v0), static_cast<void*>(v1),
+            static_cast<void*>(v2),
+            HdEmbreeTypeHelper::GetTupleType<T>());
+    }
+
 private:
     HdVtBufferSource const _buffer;
     HdEmbreeBufferSampler const _sampler;
@@ -283,6 +311,22 @@ public:
     /// \return True if the value was successfully sampled.
     virtual bool Sample(unsigned int element, float u, float v, void* value,
                         HdTupleType dataType) const;
+
+    /// Sample the primvar at (element, u, v), also computing derivatives
+    /// dPdu and dPdv with respect to the patch parametric coordinates.
+    bool SampleWithDerivatives(unsigned int element, float u, float v,
+                               void* value, void* dPdu, void* dPdv,
+                               HdTupleType dataType) const;
+
+    /// Templated convenience overload (auto-deduces HdTupleType).
+    template<typename T>
+    bool SampleWithDerivatives(unsigned int element, float u, float v,
+                               T* value, T* dPdu, T* dPdv) const {
+        return SampleWithDerivatives(element, u, v,
+            static_cast<void*>(value), static_cast<void*>(dPdu),
+            static_cast<void*>(dPdv),
+            HdEmbreeTypeHelper::GetTupleType<T>());
+    }
 
 private:
     int _embreeBufferId;

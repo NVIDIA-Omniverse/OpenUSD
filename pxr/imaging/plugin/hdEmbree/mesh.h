@@ -104,6 +104,23 @@ public:
         return _doubleSided;
     }
 
+    bool EmbreeMeshIsRefined() const
+    {
+        return _refined;
+    }
+
+    /// Access cached vertex positions for surface derivative computation.
+    VtVec3fArray const& GetPoints() const { return _points; }
+
+    /// Access triangulated indices for surface derivative computation.
+    VtVec3iArray const& GetTriangulatedIndices() const {
+        return _triangulatedIndices;
+    }
+
+    /// Access cached per-triangle geometric surface derivatives.
+    VtVec3fArray const& GetTriangleDPdu() const { return _triangleDPdu; }
+    VtVec3fArray const& GetTriangleDPdv() const { return _triangleDPdv; }
+
 protected:
     // Initialize the given representation of this Rprim.
     // This is called prior to syncing the prim, the first time the repr
@@ -158,6 +175,16 @@ private:
     TfTokenVector _UpdateComputedPrimvarSources(HdSceneDelegate* sceneDelegate,
                                                 HdDirtyBits dirtyBits);
 
+    // Compute cached per-triangle surface derivatives for coarse triangle
+    // meshes. The cached values remain in object space and are looked up
+    // directly during shading instead of being recomputed per hit.
+    void _UpdateSurfaceDerivativeCache();
+
+    // Compute a smooth tangent frame as face-varying data for coarse triangle
+    // meshes. Tangent and bitangent are orthonormalized against the effective
+    // shading normal and uploaded as face-varying primvars.
+    void _UpdateTangentFrameCache();
+
     // Populate a single primvar, with given name and data, in the prototype
     // context. Overwrites the current mapping for the name, if necessary.
     // This function's main purpose is to resolve the (interpolation, refined)
@@ -198,18 +225,29 @@ private:
     //   the triangulated topology) to authored face index.
     // - _computedNormals holds per-vertex normals computed as an average of
     //   adjacent face normals.
+    // - _triangleDPdu/_triangleDPdv hold geometric surface derivatives for
+    //   the triangulated coarse mesh.
+    // - _computedTangents/_computedBitangents hold smooth face-varying
+    //   tangent frame vectors in the authored topology domain.
     VtVec3iArray _triangulatedIndices;
     VtIntArray _trianglePrimitiveParams;
     VtVec3fArray _computedNormals;
+    VtVec3fArray _triangleDPdu;
+    VtVec3fArray _triangleDPdv;
+    VtVec3fArray _computedTangents;
+    VtVec3fArray _computedBitangents;
 
     // Derived scene data. Hd_VertexAdjacency is an acceleration datastructure
     // for computing per-vertex smooth normals. _adjacencyValid indicates
     // whether the datastructure has been rebuilt with the latest topology,
     // and _normalsValid indicates whether _computedNormals has been
-    // recomputed with the latest points data.
+    // recomputed with the latest points data. The derivative and tangent
+    // caches are only valid for coarse triangle meshes.
     Hd_VertexAdjacency _adjacency;
     bool _adjacencyValid;
     bool _normalsValid;
+    bool _surfaceDerivativesValid;
+    bool _tangentFrameValid;
 
     // Draw styles.
     bool _refined;

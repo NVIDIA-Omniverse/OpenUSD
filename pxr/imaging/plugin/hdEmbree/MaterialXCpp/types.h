@@ -29,6 +29,21 @@ struct ShadingContext
     float baryU = 0.0f;
     float baryV = 0.0f;
 
+    // Surface derivatives in the active parameterization basis.
+    // With "st", these are dP/ds and dP/dt; otherwise they fall back to the
+    // coarse triangle's local barycentric-edge basis.
+    Vec3f dPdu = Vec3f(0.0f);
+    Vec3f dPdv = Vec3f(0.0f);
+
+    // Screen-space position derivatives (from ray differentials)
+    Vec3f dpdx = Vec3f(0.0f);
+    Vec3f dpdy = Vec3f(0.0f);
+
+    // Screen-space coefficients for the active derivative basis above.
+    // These are true texture derivatives only when dPdu/dPdv represent st.
+    float dudx = 0.0f, dvdx = 0.0f;
+    float dudy = 0.0f, dvdy = 0.0f;
+
     // Per-sample varying property lookup (geompropvalue).
     // Returns the named geometric property at the current shading point.
     // Returns std::monostate (empty Value) on failure.

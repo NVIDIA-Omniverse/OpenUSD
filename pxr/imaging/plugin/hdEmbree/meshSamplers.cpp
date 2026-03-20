@@ -99,6 +99,18 @@ HdEmbreeTriangleVertexSampler::Sample(unsigned int element, float u, float v,
     return _Interpolate(value, samples, weights, 3, dataType);
 }
 
+bool
+HdEmbreeTriangleVertexSampler::SampleVertices(unsigned int element,
+    void* v0, void* v1, void* v2, HdTupleType dataType) const
+{
+    if (element >= _indices.size()) {
+        return false;
+    }
+    return _sampler.Sample(_indices[element][0], v0, dataType) &&
+           _sampler.Sample(_indices[element][1], v1, dataType) &&
+           _sampler.Sample(_indices[element][2], v2, dataType);
+}
+
 // HdEmbreeTriangleFaceVaryingSampler
 
 bool
@@ -118,6 +130,15 @@ HdEmbreeTriangleFaceVaryingSampler::Sample(unsigned int element, float u,
     // t_uv = (1-u-v)*t0 + u*t1 + v*t2
     float weights[3] = { 1.0f - u - v, u, v };
     return _Interpolate(value, samples, weights, 3, dataType);
+}
+
+bool
+HdEmbreeTriangleFaceVaryingSampler::SampleVertices(unsigned int element,
+    void* v0, void* v1, void* v2, HdTupleType dataType) const
+{
+    return _sampler.Sample(element * 3 + 0, v0, dataType) &&
+           _sampler.Sample(element * 3 + 1, v1, dataType) &&
+           _sampler.Sample(element * 3 + 2, v2, dataType);
 }
 
 /* static */ VtValue
@@ -247,6 +268,33 @@ HdEmbreeSubdivVertexSampler::Sample(unsigned int element, float u, float v,
         nullptr, /* float* dPdu */
         nullptr, /* float* dPdv */
         numFloats /* unsigned int valueCount */);
+
+    return true;
+}
+
+bool
+HdEmbreeSubdivVertexSampler::SampleWithDerivatives(
+    unsigned int element, float u, float v,
+    void* value, void* dPdu, void* dPdv,
+    HdTupleType dataType) const
+{
+    // Make sure the buffer type and sample type have the same arity.
+    if (_embreeBufferId == -1 || dataType != _buffer.GetTupleType()) {
+        return false;
+    }
+
+    // Combine number of components in the underlying type and tuple arity.
+    size_t numFloats = HdGetComponentCount(dataType.type) * dataType.count;
+
+    rtcInterpolate1(
+        rtcGetGeometry(_meshScene, _meshId),
+        element, u, v,
+        RTC_BUFFER_TYPE_VERTEX_ATTRIBUTE,
+        static_cast<size_t>(_embreeBufferId),
+        static_cast<float*>(value),
+        static_cast<float*>(dPdu),
+        static_cast<float*>(dPdv),
+        numFloats);
 
     return true;
 }
