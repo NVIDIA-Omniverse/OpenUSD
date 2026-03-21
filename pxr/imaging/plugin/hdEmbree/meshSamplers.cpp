@@ -299,6 +299,124 @@ HdEmbreeSubdivVertexSampler::SampleWithDerivatives(
     return true;
 }
 
+// HdEmbreeSubdivVaryingSampler
+
+HdEmbreeSubdivVaryingSampler::HdEmbreeSubdivVaryingSampler(
+    TfToken const& name,
+    VtValue const& value, RTCScene meshScene, unsigned meshId,
+    HdEmbreeRTCBufferAllocator *allocator)
+    : _embreeBufferId(-1)
+    , _buffer(name, value)
+    , _meshScene(meshScene)
+    , _meshId(meshId)
+    , _allocator(allocator)
+{
+    if (_buffer.GetTupleType().count != 1) {
+        TF_WARN("Unsupported array size for varying primvar");
+        return;
+    }
+
+    RTCFormat format = RTC_FORMAT_FLOAT;
+    switch (HdGetComponentType(_buffer.GetTupleType().type)) {
+        case HdTypeFloat:
+            format = RTC_FORMAT_FLOAT;
+            break;
+        case HdTypeFloatVec2:
+            format = RTC_FORMAT_FLOAT2;
+            break;
+        case HdTypeFloatVec3:
+            format = RTC_FORMAT_FLOAT3;
+            break;
+        case HdTypeFloatVec4:
+            format = RTC_FORMAT_FLOAT4;
+            break;
+        default:
+            TF_WARN("Embree subdivision meshes only support float-based"
+                " primvars for varying interpolation mode");
+            return;
+    };
+
+    _embreeBufferId = _allocator->Allocate();
+    if (_embreeBufferId == -1) {
+        TF_WARN("Embree subdivision meshes only support %d primvars"
+            " in varying interpolation mode, exceeded for rprim ",
+            HdEmbreeRTCBufferAllocator::PXR_MAX_USER_VERTEX_BUFFERS);
+        return;
+    }
+
+    RTCGeometry geom = rtcGetGeometry(_meshScene, _meshId);
+    rtcSetGeometryVertexAttributeCount(geom, _allocator->NumBuffers());
+    rtcSetSharedGeometryBuffer(
+        geom,
+        RTC_BUFFER_TYPE_VERTEX_ATTRIBUTE,
+        static_cast<size_t>(_embreeBufferId),
+        format,
+        _buffer.GetData(),
+        0,
+        HdDataSizeOfTupleType(_buffer.GetTupleType()),
+        _buffer.GetNumElements());
+
+    rtcSetGeometryVertexAttributeTopology(
+        geom,
+        static_cast<unsigned int>(_embreeBufferId),
+        2);
+}
+
+HdEmbreeSubdivVaryingSampler::~HdEmbreeSubdivVaryingSampler()
+{
+    if (_embreeBufferId != -1) {
+        _allocator->Free(_embreeBufferId);
+    }
+}
+
+bool
+HdEmbreeSubdivVaryingSampler::Sample(unsigned int element, float u,
+    float v, void* value, HdTupleType dataType) const
+{
+    if (_embreeBufferId == -1 || dataType != _buffer.GetTupleType()) {
+        return false;
+    }
+
+    size_t numFloats = HdGetComponentCount(dataType.type) * dataType.count;
+
+    rtcInterpolate1(
+        rtcGetGeometry(_meshScene, _meshId),
+        element, u, v,
+        RTC_BUFFER_TYPE_VERTEX_ATTRIBUTE,
+        static_cast<size_t>(_embreeBufferId),
+        static_cast<float*>(value),
+        nullptr,
+        nullptr,
+        numFloats);
+
+    return true;
+}
+
+bool
+HdEmbreeSubdivVaryingSampler::SampleWithDerivatives(
+    unsigned int element, float u, float v,
+    void* value, void* dPdu, void* dPdv,
+    HdTupleType dataType) const
+{
+    if (_embreeBufferId == -1 || dataType != _buffer.GetTupleType()) {
+        return false;
+    }
+
+    size_t numFloats = HdGetComponentCount(dataType.type) * dataType.count;
+
+    rtcInterpolate1(
+        rtcGetGeometry(_meshScene, _meshId),
+        element, u, v,
+        RTC_BUFFER_TYPE_VERTEX_ATTRIBUTE,
+        static_cast<size_t>(_embreeBufferId),
+        static_cast<float*>(value),
+        static_cast<float*>(dPdu),
+        static_cast<float*>(dPdv),
+        numFloats);
+
+    return true;
+}
+
 // HdEmbreeSubdivFaceVaryingSampler
 
 HdEmbreeSubdivFaceVaryingSampler::HdEmbreeSubdivFaceVaryingSampler(

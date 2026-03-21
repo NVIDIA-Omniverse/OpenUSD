@@ -336,6 +336,53 @@ private:
     HdEmbreeRTCBufferAllocator *_allocator;
 };
 
+/// \class HdEmbreeSubdivVaryingSampler
+///
+/// This class implements the HdEmbreePrimvarSampler interface for primvars on
+/// subdiv meshes with "varying" interpolation mode. In Hydra/OpenSubdiv,
+/// varying values on subdivision surfaces use linear patch interpolation
+/// rather than the smooth subdivision basis. We approximate that behavior by
+/// binding the attribute to a duplicate topology configured with
+/// RTC_SUBDIVISION_MODE_PIN_ALL.
+class HdEmbreeSubdivVaryingSampler : public HdEmbreePrimvarSampler {
+public:
+    /// Constructor. Allocates an embree user vertex buffer, uploads the
+    /// primvar data, and binds it to the varying topology (topology 2).
+    HdEmbreeSubdivVaryingSampler(TfToken const& name,
+                                 VtValue const& value,
+                                 RTCScene meshScene,
+                                 unsigned meshId,
+                                 HdEmbreeRTCBufferAllocator *allocator);
+
+    /// Destructor. Frees the embree user vertex buffer.
+    virtual ~HdEmbreeSubdivVaryingSampler();
+
+    /// Sample the primvar at an (element, u, v) location.
+    virtual bool Sample(unsigned int element, float u, float v, void* value,
+                        HdTupleType dataType) const;
+
+    /// Sample the primvar at (element, u, v), also computing derivatives.
+    bool SampleWithDerivatives(unsigned int element, float u, float v,
+                               void* value, void* dPdu, void* dPdv,
+                               HdTupleType dataType) const;
+
+    template<typename T>
+    bool SampleWithDerivatives(unsigned int element, float u, float v,
+                               T* value, T* dPdu, T* dPdv) const {
+        return SampleWithDerivatives(element, u, v,
+            static_cast<void*>(value), static_cast<void*>(dPdu),
+            static_cast<void*>(dPdv),
+            HdEmbreeTypeHelper::GetTupleType<T>());
+    }
+
+private:
+    int _embreeBufferId;
+    HdVtBufferSource const _buffer;
+    RTCScene _meshScene;
+    unsigned _meshId;
+    HdEmbreeRTCBufferAllocator *_allocator;
+};
+
 /// \class HdEmbreeSubdivFaceVaryingSampler
 ///
 /// This class implements the HdEmbreePrimvarSampler interface for primvars on

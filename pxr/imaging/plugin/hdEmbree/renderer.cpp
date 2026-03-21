@@ -471,6 +471,13 @@ _ComputeSubdivSurfaceDerivatives(
                 dynamic_cast<HdEmbreeSubdivVertexSampler*>(it->second);
             haveSt = tryStDerivatives(vertexSampler, &dStdu, &dStdv);
 
+            // Try varying-interpolated st sampler
+            if (!haveSt) {
+                auto* varyingSampler =
+                    dynamic_cast<HdEmbreeSubdivVaryingSampler*>(it->second);
+                haveSt = tryStDerivatives(varyingSampler, &dStdu, &dStdv);
+            }
+
             // Try face-varying st sampler
             if (!haveSt) {
                 auto* fvarSampler =
@@ -511,11 +518,17 @@ _ComputeSubdivSurfaceDerivatives(
         if (it != prototypeContext->primvarMap.end()) {
             auto* vertexSampler =
                 dynamic_cast<HdEmbreeSubdivVertexSampler*>(it->second);
+            auto* varyingSampler =
+                dynamic_cast<HdEmbreeSubdivVaryingSampler*>(it->second);
             auto* fvarSampler =
                 dynamic_cast<HdEmbreeSubdivFaceVaryingSampler*>(it->second);
             if (vertexSampler) {
                 GfVec3f nVal;
                 vertexSampler->SampleWithDerivatives(
+                    primID, u, v, &nVal, outDndu, outDndv);
+            } else if (varyingSampler) {
+                GfVec3f nVal;
+                varyingSampler->SampleWithDerivatives(
                     primID, u, v, &nVal, outDndu, outDndv);
             } else if (fvarSampler) {
                 GfVec3f nVal;
