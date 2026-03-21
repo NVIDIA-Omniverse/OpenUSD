@@ -299,4 +299,132 @@ HdEmbreeSubdivVertexSampler::SampleWithDerivatives(
     return true;
 }
 
+// HdEmbreeSubdivFaceVaryingSampler
+
+HdEmbreeSubdivFaceVaryingSampler::HdEmbreeSubdivFaceVaryingSampler(
+    TfToken const& name,
+    VtValue const& value, RTCScene meshScene, unsigned meshId,
+    HdEmbreeRTCBufferAllocator *allocator)
+    : _embreeBufferId(-1)
+    , _buffer(name, value)
+    , _meshScene(meshScene)
+    , _meshId(meshId)
+    , _allocator(allocator)
+{
+    // Arrays are not supported
+    if (_buffer.GetTupleType().count != 1) {
+        TF_WARN("Unsupported array size for face-varying primvar");
+        return;
+    }
+
+    // The embree API only supports float-component primvars.
+    RTCFormat format = RTC_FORMAT_FLOAT;
+    switch (HdGetComponentType(_buffer.GetTupleType().type)) {
+        case HdTypeFloat:
+            format = RTC_FORMAT_FLOAT;
+            break;
+        case HdTypeFloatVec2:
+            format = RTC_FORMAT_FLOAT2;
+            break;
+        case HdTypeFloatVec3:
+            format = RTC_FORMAT_FLOAT3;
+            break;
+        case HdTypeFloatVec4:
+            format = RTC_FORMAT_FLOAT4;
+            break;
+        default:
+            TF_WARN("Embree subdivision meshes only support float-based"
+                " primvars for face-varying interpolation mode");
+            return;
+    };
+
+    _embreeBufferId = _allocator->Allocate();
+    if (_embreeBufferId == -1) {
+        TF_WARN("Embree subdivision meshes only support %d primvars"
+            " in vertex/face-varying interpolation mode, exceeded for rprim ",
+            HdEmbreeRTCBufferAllocator::PXR_MAX_USER_VERTEX_BUFFERS);
+        return;
+    }
+
+    RTCGeometry geom = rtcGetGeometry(_meshScene, _meshId);
+
+    // Update the vertex attribute count (shared slot space with vertex attrs).
+    rtcSetGeometryVertexAttributeCount(geom, _allocator->NumBuffers());
+
+    // Upload face-varying data as a vertex attribute buffer.
+    // itemCount = number of face-vertices (one value per face-vertex).
+    rtcSetSharedGeometryBuffer(
+        geom,
+        RTC_BUFFER_TYPE_VERTEX_ATTRIBUTE,
+        static_cast<size_t>(_embreeBufferId),
+        format,
+        _buffer.GetData(),
+        0,
+        HdDataSizeOfTupleType(_buffer.GetTupleType()),
+        _buffer.GetNumElements());
+
+    // Bind this attribute to the face-varying topology (topology 1).
+    // This tells Embree to use the face-varying index buffer when
+    // interpolating this attribute, enabling discontinuities at UV seams.
+    rtcSetGeometryVertexAttributeTopology(
+        geom,
+        static_cast<unsigned int>(_embreeBufferId),
+        1);
+}
+
+HdEmbreeSubdivFaceVaryingSampler::~HdEmbreeSubdivFaceVaryingSampler()
+{
+    if (_embreeBufferId != -1) {
+        _allocator->Free(_embreeBufferId);
+    }
+}
+
+bool
+HdEmbreeSubdivFaceVaryingSampler::Sample(unsigned int element, float u,
+    float v, void* value, HdTupleType dataType) const
+{
+    if (_embreeBufferId == -1 || dataType != _buffer.GetTupleType()) {
+        return false;
+    }
+
+    size_t numFloats = HdGetComponentCount(dataType.type) * dataType.count;
+
+    rtcInterpolate1(
+        rtcGetGeometry(_meshScene, _meshId),
+        element, u, v,
+        RTC_BUFFER_TYPE_VERTEX_ATTRIBUTE,
+        static_cast<size_t>(_embreeBufferId),
+        static_cast<float*>(value),
+        nullptr,
+        nullptr,
+        numFloats);
+
+    return true;
+}
+
+bool
+HdEmbreeSubdivFaceVaryingSampler::SampleWithDerivatives(
+    unsigned int element, float u, float v,
+    void* value, void* dPdu, void* dPdv,
+    HdTupleType dataType) const
+{
+    if (_embreeBufferId == -1 || dataType != _buffer.GetTupleType()) {
+        return false;
+    }
+
+    size_t numFloats = HdGetComponentCount(dataType.type) * dataType.count;
+
+    rtcInterpolate1(
+        rtcGetGeometry(_meshScene, _meshId),
+        element, u, v,
+        RTC_BUFFER_TYPE_VERTEX_ATTRIBUTE,
+        static_cast<size_t>(_embreeBufferId),
+        static_cast<float*>(value),
+        static_cast<float*>(dPdu),
+        static_cast<float*>(dPdv),
+        numFloats);
+
+    return true;
+}
+
 PXR_NAMESPACE_CLOSE_SCOPE

@@ -222,6 +222,72 @@ _IsSubdivMesh(HdEmbreePrototypeContext const* prototypeContext)
     return false;
 }
 
+/// Try to compute a smooth limit-surface normal for a subdivision hit.
+static bool
+_TryComputeSubdivLimitNormal(
+    RTCScene rootScene,
+    unsigned int geomID,
+    unsigned int primID,
+    float u,
+    float v,
+    GfVec3f* outNormal)
+{
+    GfVec3f posValue;
+    GfVec3f dPdu(0.0f);
+    GfVec3f dPdv(0.0f);
+    rtcInterpolate1(
+        rtcGetGeometry(rootScene, geomID),
+        primID, u, v,
+        RTC_BUFFER_TYPE_VERTEX, 0,
+        reinterpret_cast<float*>(&posValue),
+        reinterpret_cast<float*>(&dPdu),
+        reinterpret_cast<float*>(&dPdv),
+        3);
+    (void)posValue;
+
+    GfVec3f limitNormal = GfCross(dPdu, dPdv);
+    if (limitNormal.GetLengthSq() <= 1e-18f) {
+        return false;
+    }
+
+    limitNormal.Normalize();
+    *outNormal = limitNormal;
+    return true;
+}
+
+/// Resolve the object-space shading normal for a hit.
+static GfVec3f
+_ResolveObjectSpaceNormal(
+    HdEmbreePrototypeContext const* prototypeContext,
+    RTCScene rootScene,
+    unsigned int geomID,
+    RTCRayHit const& rayHit)
+{
+    GfVec3f normal(rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
+
+    auto it = prototypeContext->primvarMap.find(HdTokens->normals);
+    if (it != prototypeContext->primvarMap.end() &&
+        it->second->Sample(rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
+                           &normal)) {
+        return normal;
+    }
+
+    if (_IsSubdivMesh(prototypeContext)) {
+        GfVec3f limitNormal;
+        if (_TryComputeSubdivLimitNormal(
+                rootScene,
+                geomID,
+                rayHit.hit.primID,
+                rayHit.hit.u,
+                rayHit.hit.v,
+                &limitNormal)) {
+            return limitNormal;
+        }
+    }
+
+    return normal;
+}
+
 /// Compute dPdu/dPdv for a triangle mesh hit.
 /// If st primvar is available, computes dP/ds, dP/dt via Jacobian inverse.
 /// If not, uses barycentric edge vectors (P1-P0, P2-P0).
@@ -364,47 +430,68 @@ _ComputeSubdivSurfaceDerivatives(
     }
 
     // 2. If st available, transform from parametric to st space.
-    //    Handle both GfVec2f and GfVec3f st buffers (existing code handles both).
+    //    Handle both GfVec2f and GfVec3f st buffers.
+    //    Support both vertex and face-varying interpolation modes.
     {
         auto it = prototypeContext->primvarMap.find(_tokensSt);
         if (it != prototypeContext->primvarMap.end()) {
-            auto* subdivSampler =
-                dynamic_cast<HdEmbreeSubdivVertexSampler*>(it->second);
-            if (subdivSampler) {
-                GfVec2f dStdu(0.0f), dStdv(0.0f);
-                bool haveSt = false;
+            // Helper: try SampleWithDerivatives on a sampler, handling
+            // both GfVec2f and GfVec3f st buffers.
+            const auto tryStDerivatives =
+                [&](auto* sampler, GfVec2f* dStdu, GfVec2f* dStdv) -> bool {
+                if (!sampler) return false;
                 // Try GfVec2f first
                 {
                     GfVec2f stVal, dStdu2, dStdv2;
-                    if (subdivSampler->SampleWithDerivatives(
+                    if (sampler->SampleWithDerivatives(
                             primID, u, v, &stVal, &dStdu2, &dStdv2)) {
-                        dStdu = dStdu2;
-                        dStdv = dStdv2;
-                        haveSt = true;
+                        *dStdu = dStdu2;
+                        *dStdv = dStdv2;
+                        return true;
                     }
                 }
                 // Fallback to GfVec3f (ignore z component)
-                if (!haveSt) {
+                {
                     GfVec3f stVal3, dStdu3, dStdv3;
-                    if (subdivSampler->SampleWithDerivatives(
+                    if (sampler->SampleWithDerivatives(
                             primID, u, v, &stVal3, &dStdu3, &dStdv3)) {
-                        dStdu = GfVec2f(dStdu3[0], dStdu3[1]);
-                        dStdv = GfVec2f(dStdv3[0], dStdv3[1]);
-                        haveSt = true;
+                        *dStdu = GfVec2f(dStdu3[0], dStdu3[1]);
+                        *dStdv = GfVec2f(dStdv3[0], dStdv3[1]);
+                        return true;
                     }
                 }
-                if (haveSt) {
-                    float det = _DifferenceOfProducts(
-                        dStdu[0], dStdv[1], dStdu[1], dStdv[0]);
-                    if (std::abs(det) > 1e-9f) {
-                        float invDet = 1.0f / det;
-                        GfVec3f dPdu_param = *outDPdu;
-                        GfVec3f dPdv_param = *outDPdv;
-                        // Chain rule: dP/ds = dP/du * du/ds + dP/dv * dv/ds
-                        // Inverse Jacobian: [du/ds, dv/ds] = inv([ds/du, dt/du; ds/dv, dt/dv])
-                        *outDPdu = ( dStdv[1] * dPdu_param - dStdu[1] * dPdv_param) * invDet;
-                        *outDPdv = (-dStdv[0] * dPdu_param + dStdu[0] * dPdv_param) * invDet;
-                    }
+                return false;
+            };
+
+            GfVec2f dStdu(0.0f), dStdv(0.0f);
+            bool haveSt = false;
+
+            // Try vertex-interpolated st sampler
+            auto* vertexSampler =
+                dynamic_cast<HdEmbreeSubdivVertexSampler*>(it->second);
+            haveSt = tryStDerivatives(vertexSampler, &dStdu, &dStdv);
+
+            // Try face-varying st sampler
+            if (!haveSt) {
+                auto* fvarSampler =
+                    dynamic_cast<HdEmbreeSubdivFaceVaryingSampler*>(
+                        it->second);
+                haveSt = tryStDerivatives(fvarSampler, &dStdu, &dStdv);
+            }
+
+            if (haveSt) {
+                float det = _DifferenceOfProducts(
+                    dStdu[0], dStdv[1], dStdu[1], dStdv[0]);
+                if (std::abs(det) > 1e-9f) {
+                    float invDet = 1.0f / det;
+                    GfVec3f dPdu_param = *outDPdu;
+                    GfVec3f dPdv_param = *outDPdv;
+                    // Chain rule: dP/ds = dP/du * du/ds + dP/dv * dv/ds
+                    // Inverse Jacobian: [du/ds, dv/ds] = inv([ds/du, dt/du; ds/dv, dt/dv])
+                    *outDPdu = ( dStdv[1] * dPdu_param
+                               - dStdu[1] * dPdv_param) * invDet;
+                    *outDPdv = (-dStdv[0] * dPdu_param
+                               + dStdu[0] * dPdv_param) * invDet;
                 }
             }
         }
@@ -416,16 +503,23 @@ _ComputeSubdivSurfaceDerivatives(
     }
 
     // 3. Normal derivatives
+    //    Support both vertex and face-varying interpolation modes.
     *outDndu = GfVec3f(0.0f);
     *outDndv = GfVec3f(0.0f);
     {
         auto it = prototypeContext->primvarMap.find(HdTokens->normals);
         if (it != prototypeContext->primvarMap.end()) {
-            auto* subdivSampler =
+            auto* vertexSampler =
                 dynamic_cast<HdEmbreeSubdivVertexSampler*>(it->second);
-            if (subdivSampler) {
+            auto* fvarSampler =
+                dynamic_cast<HdEmbreeSubdivFaceVaryingSampler*>(it->second);
+            if (vertexSampler) {
                 GfVec3f nVal;
-                subdivSampler->SampleWithDerivatives(
+                vertexSampler->SampleWithDerivatives(
+                    primID, u, v, &nVal, outDndu, outDndv);
+            } else if (fvarSampler) {
+                GfVec3f nVal;
+                fvarSampler->SampleWithDerivatives(
                     primID, u, v, &nVal, outDndu, outDndv);
             }
         }
@@ -1855,11 +1949,9 @@ HdEmbreeRenderer::_ComputeNormal(RTCRayHit const& rayHit,
                     rtcGetGeometry(instanceContext->rootScene,
                                    rayHit.hit.geomID)));
 
-    GfVec3f n = GfVec3f(rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
-    auto it = prototypeContext->primvarMap.find(HdTokens->normals);
-    if (it != prototypeContext->primvarMap.end()) {
-        it->second->Sample(rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v, &n);
-    }
+    GfVec3f n = _ResolveObjectSpaceNormal(
+        prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
+        rayHit);
 
     n = instanceContext->objectToWorldMatrix.TransformDir(n);
     if (eye) {
@@ -2033,8 +2125,13 @@ HdEmbreeRenderer::_BuildShadingContext(
     }
 
     if (!haveTangentFrame) {
-        bitangent = GfCross(normal, dPdu).GetNormalized();
-        tangent = GfCross(bitangent, normal).GetNormalized();
+        bitangent = GfCross(normal, dPdu);
+        if (bitangent.GetLengthSq() < 1e-18f) {
+            GfBuildOrthonormalFrame(normal, &tangent, &bitangent);
+        } else {
+            bitangent.Normalize();
+            tangent = GfCross(bitangent, normal).GetNormalized();
+        }
     }
 
     mxcpp::ShadingContext ctx;
@@ -2084,14 +2181,9 @@ HdEmbreeRenderer::_EvalOpacityAtHit(RTCRayHit const& rayHit) const
     if (!evalGraph) return 1.0f;
 
     GfVec3f hitPos = _CalculateHitPosition(rayHit);
-    GfVec3f normal(rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
-    {
-        auto it = prototypeContext->primvarMap.find(HdTokens->normals);
-        if (it != prototypeContext->primvarMap.end()) {
-            it->second->Sample(
-                rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v, &normal);
-        }
-    }
+    GfVec3f normal = _ResolveObjectSpaceNormal(
+        prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
+        rayHit);
     normal = instanceContext->objectToWorldMatrix.TransformDir(normal);
     normal.Normalize();
 
@@ -2209,17 +2301,11 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
     // Compute the worldspace location of the rayHit hit.
     GfVec3f hitPos = _CalculateHitPosition(rayHit);
 
-    // If a normal primvar is present (e.g. from smooth shading), use that
-    // for shading; otherwise use the flat face normal.
-    GfVec3f normal = GfVec3f(rayHit.hit.Ng_x, rayHit.hit.Ng_y,
-                             rayHit.hit.Ng_z);
-    {
-        auto it = prototypeContext->primvarMap.find(HdTokens->normals);
-        if (it != prototypeContext->primvarMap.end()) {
-            it->second->Sample(
-                rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v, &normal);
-        }
-    }
+    // Prefer an authored/smoothed normal primvar; for subdivision hits without
+    // one, fall back to a smooth limit-surface normal derived from dP/du,dP/dv.
+    GfVec3f normal = _ResolveObjectSpaceNormal(
+        prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
+        rayHit);
 
     // Transform the normal from object space to world space.
     normal = instanceContext->objectToWorldMatrix.TransformDir(normal);
@@ -2593,14 +2679,9 @@ HdEmbreeRenderer::_TracePath(
             rayHit.ray.org_z + rayHit.ray.tfar * rayHit.ray.dir_z);
 
         // Normal
-        GfVec3f normal(rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
-        {
-            auto it = prototypeContext->primvarMap.find(HdTokens->normals);
-            if (it != prototypeContext->primvarMap.end()) {
-                it->second->Sample(
-                    rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v, &normal);
-            }
-        }
+        GfVec3f normal = _ResolveObjectSpaceNormal(
+            prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
+            rayHit);
         normal = instanceContext->objectToWorldMatrix.TransformDir(normal);
         normal.Normalize();
 

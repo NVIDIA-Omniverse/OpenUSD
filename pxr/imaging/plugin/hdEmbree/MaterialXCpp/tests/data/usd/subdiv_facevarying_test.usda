@@ -1,0 +1,238 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    doc = """Test scene for subdivision mesh face-varying primvar support (#301).
+    Layout (3 columns x 2 rows):
+      Row 0 (top):    Cube_Subdiv  x3 — tangent / bitangent / OpenPBR
+      Row 1 (bottom): Sphere_Subdiv x3 — tangent / bitangent / OpenPBR
+    """
+)
+
+def RenderSettings "RenderSettings"
+{
+    token hdEmbree:samplerSequence = "sobol"
+    rel products = [</RenderProduct>]
+}
+
+def RenderProduct "RenderProduct"
+{
+    rel orderedVars = [</RenderProduct/Color>]
+
+    def RenderVar "Color"
+    {
+        token dataType = "color4f"
+        string sourceName = "color"
+        string sourceType = "raw"
+    }
+}
+
+def Camera "Camera"
+{
+    float focalLength = 35
+    float horizontalAperture = 36
+    float verticalAperture = 24
+    float2 clippingRange = (0.1, 1000)
+    double3 xformOp:translate = (0, 0, 6.0)
+    float3 xformOp:rotateXYZ = (0, 0, 0)
+    token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+}
+
+def Xform "World"
+{
+    # ==================================================================
+    # Row 0: Cube_Subdiv (top row)
+    # ==================================================================
+
+    def "CubeTangent" (
+        prepend references = @./meshes/Cube_Subdiv.usda@</Root/Cube_Subdiv>
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-2.0, 1.0, 0)
+        float3 xformOp:scale = (0.01, 0.01, 0.01)
+        float3 xformOp:rotateXYZ = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+        rel material:binding = </World/Materials/TangentVis>
+    }
+
+    def "CubeBitangent" (
+        prepend references = @./meshes/Cube_Subdiv.usda@</Root/Cube_Subdiv>
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (0, 1.0, 0)
+        float3 xformOp:scale = (0.01, 0.01, 0.01)
+        float3 xformOp:rotateXYZ = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+        rel material:binding = </World/Materials/BitangentVis>
+    }
+
+    def "CubeOpenPBR" (
+        prepend references = @./meshes/Cube_Subdiv.usda@</Root/Cube_Subdiv>
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (2.0, 1.0, 0)
+        float3 xformOp:scale = (0.01, 0.01, 0.01)
+        float3 xformOp:rotateXYZ = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+        rel material:binding = </World/Materials/OpenPbrMat>
+    }
+
+    # ==================================================================
+    # Row 1: Sphere_Subdiv (bottom row)
+    # ==================================================================
+
+    def "SphereTangent" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@</Root/Sphere_Subdiv>
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-2.0, -1.0, 0)
+        float3 xformOp:scale = (0.01, 0.01, 0.01)
+        float3 xformOp:rotateXYZ = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+        rel material:binding = </World/Materials/TangentVis>
+    }
+
+    def "SphereBitangent" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@</Root/Sphere_Subdiv>
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (0, -1.0, 0)
+        float3 xformOp:scale = (0.01, 0.01, 0.01)
+        float3 xformOp:rotateXYZ = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+        rel material:binding = </World/Materials/BitangentVis>
+    }
+
+    def "SphereOpenPBR" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@</Root/Sphere_Subdiv>
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (2.0, -1.0, 0)
+        float3 xformOp:scale = (0.01, 0.01, 0.01)
+        float3 xformOp:rotateXYZ = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+        rel material:binding = </World/Materials/OpenPbrMat>
+    }
+
+    # ==================================================================
+    # Materials
+    # ==================================================================
+    def Scope "Materials"
+    {
+        # Tangent visualization: remap [-1,1] -> [0,1] as emissive RGB
+        def Material "TangentVis"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/TangentVis/StdSurf.outputs:out>
+
+            def Shader "Tangent" {
+                uniform token info:id = "ND_tangent_vector3"
+                vector3f outputs:out
+            }
+            def Shader "Scale" {
+                uniform token info:id = "ND_multiply_vector3FA"
+                vector3f inputs:in1.connect = </World/Materials/TangentVis/Tangent.outputs:out>
+                float inputs:in2 = 0.5
+                vector3f outputs:out
+            }
+            def Shader "Half" {
+                uniform token info:id = "ND_constant_vector3"
+                vector3f inputs:value = (0.5, 0.5, 0.5)
+                vector3f outputs:out
+            }
+            def Shader "Remap" {
+                uniform token info:id = "ND_add_vector3"
+                vector3f inputs:in1.connect = </World/Materials/TangentVis/Scale.outputs:out>
+                vector3f inputs:in2.connect = </World/Materials/TangentVis/Half.outputs:out>
+                vector3f outputs:out
+            }
+            def Shader "StdSurf" {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                float inputs:specular = 0.0
+                float inputs:emission = 1.0
+                color3f inputs:emission_color.connect = </World/Materials/TangentVis/Remap.outputs:out>
+                token outputs:out
+            }
+        }
+
+        # Bitangent visualization: remap [-1,1] -> [0,1] as emissive RGB
+        def Material "BitangentVis"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/BitangentVis/StdSurf.outputs:out>
+
+            def Shader "Bitangent" {
+                uniform token info:id = "ND_bitangent_vector3"
+                vector3f outputs:out
+            }
+            def Shader "Scale" {
+                uniform token info:id = "ND_multiply_vector3FA"
+                vector3f inputs:in1.connect = </World/Materials/BitangentVis/Bitangent.outputs:out>
+                float inputs:in2 = 0.5
+                vector3f outputs:out
+            }
+            def Shader "Half" {
+                uniform token info:id = "ND_constant_vector3"
+                vector3f inputs:value = (0.5, 0.5, 0.5)
+                vector3f outputs:out
+            }
+            def Shader "Remap" {
+                uniform token info:id = "ND_add_vector3"
+                vector3f inputs:in1.connect = </World/Materials/BitangentVis/Scale.outputs:out>
+                vector3f inputs:in2.connect = </World/Materials/BitangentVis/Half.outputs:out>
+                vector3f outputs:out
+            }
+            def Shader "StdSurf" {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                float inputs:specular = 0.0
+                float inputs:emission = 1.0
+                color3f inputs:emission_color.connect = </World/Materials/BitangentVis/Remap.outputs:out>
+                token outputs:out
+            }
+        }
+
+        # Simple OpenPBR material
+        def Material "OpenPbrMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/OpenPbrMat/OpenPbr.outputs:out>
+
+            def Shader "OpenPbr"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.2, 0.7, 0.3)
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.3
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+                float inputs:base_metalness = 0.0
+                token outputs:out
+            }
+        }
+    }
+
+    # ==================================================================
+    # Lights
+    # ==================================================================
+    def SphereLight "KeyLight"
+    {
+        float inputs:intensity = 200
+        float inputs:radius = 0.5
+        double3 xformOp:translate = (3, 4, 5)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def SphereLight "FillLight"
+    {
+        float inputs:intensity = 50
+        float inputs:radius = 1.0
+        double3 xformOp:translate = (-4, 2, 3)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

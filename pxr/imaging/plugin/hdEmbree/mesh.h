@@ -269,6 +269,11 @@ private:
     // primvars.
     HdEmbreeRTCBufferAllocator _embreeBufferAllocator;
 
+    // Face-varying index buffer for Embree subdivision topology 1.
+    // Identity mapping [0, 1, ..., N-1] where N = totalFaceVertices.
+    // Must outlive the geometry (rtcSetSharedGeometryBuffer uses pointer).
+    std::vector<unsigned int> _fvarIndices;
+
     // Embree recommends after creating one should hold onto the geometry
     //
     //      "However, it is generally recommended to store the geometry handle

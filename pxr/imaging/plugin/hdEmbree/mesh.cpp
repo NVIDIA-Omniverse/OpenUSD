@@ -22,6 +22,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <numeric>       // std::iota
 #include <unordered_map>
 #include <vector>
 
@@ -568,6 +569,37 @@ HdEmbreeMesh::_CreateEmbreeSubdivMesh(RTCScene scene, RTCDevice device)
             numVertexCreases);
     }
 
+    // Set up face-varying topology (topology 1) for face-varying primvars.
+    // Embree 4 has no RTC_BUFFER_TYPE_FACE_VARYING_ATTRIBUTE; instead,
+    // we create a second topology and bind vertex attributes to it via
+    // rtcSetGeometryVertexAttributeTopology().
+    {
+        const VtIntArray& faceVertexIndices = _topology.GetFaceVertexIndices();
+        size_t totalFaceVertices = faceVertexIndices.size();
+
+        rtcSetGeometryTopologyCount(geom, 2);
+
+        // PIN_CORNERS: discontinuous interpolation at UV island boundaries.
+        // Default NO_BOUNDARY would incorrectly smooth across UV seams.
+        rtcSetGeometrySubdivisionMode(
+            geom, 1, RTC_SUBDIVISION_MODE_PIN_CORNERS);
+
+        // Identity index buffer: face-varying data in Hydra is already
+        // laid out per face-vertex in face order.
+        _fvarIndices.resize(totalFaceVertices);
+        std::iota(_fvarIndices.begin(), _fvarIndices.end(), 0u);
+
+        rtcSetSharedGeometryBuffer(
+            geom,
+            RTC_BUFFER_TYPE_INDEX,
+            1, /* topology slot 1 = face-varying */
+            RTC_FORMAT_UINT,
+            _fvarIndices.data(),
+            0,
+            sizeof(unsigned int),
+            totalFaceVertices);
+    }
+
     return geom;
 }
 
@@ -985,10 +1017,8 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
             break;
         case HdInterpolationFaceVarying:
             if (refined) {
-                // XXX: Fixme! HdEmbree doesn't currently support face-varying
-                // primvars on subdivision meshes.
-                TF_WARN("HdEmbreeMesh doesn't support face-varying primvars"
-                        " on refined meshes.");
+                sampler = new HdEmbreeSubdivFaceVaryingSampler(name, data,
+                    _rtcMeshScene, _rtcMeshId, &_embreeBufferAllocator);
             } else {
                 HdMeshUtil meshUtil(&_topology, GetId());
                 sampler = new HdEmbreeTriangleFaceVaryingSampler(name, data,
@@ -1277,6 +1307,16 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
     TF_FOR_ALL(it, _primvarSourceMap) {
         if (newMesh ||
             HdChangeTracker::IsPrimvarDirty(*dirtyBits, id, it->first)) {
+            // For subdivision meshes, skip face-varying authored normals.
+            // The limit surface normal from Embree (via geometric normal or
+            // rtcInterpolate1) is smooth and correct; authored face-varying
+            // normals from the control mesh would create discontinuities
+            // at face boundaries due to the PIN_CORNERS subdivision mode.
+            if (_refined &&
+                it->first == HdTokens->normals &&
+                it->second.interpolation == HdInterpolationFaceVarying) {
+                continue;
+            }
             _CreatePrimvarSampler(it->first, it->second.data,
                     it->second.interpolation, _refined);
         }

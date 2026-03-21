@@ -336,6 +336,62 @@ private:
     HdEmbreeRTCBufferAllocator *_allocator;
 };
 
+/// \class HdEmbreeSubdivFaceVaryingSampler
+///
+/// This class implements the HdEmbreePrimvarSampler interface for primvars on
+/// subdiv meshes with "faceVarying" interpolation mode. Face-varying data
+/// has one item per face-vertex, allowing discontinuities at shared vertices
+/// (e.g., UV seams). It uses Embree's multi-topology mechanism: the primvar
+/// data is stored as a vertex attribute bound to a face-varying topology
+/// (topology 1) via rtcSetGeometryVertexAttributeTopology().
+class HdEmbreeSubdivFaceVaryingSampler : public HdEmbreePrimvarSampler {
+public:
+    /// Constructor. Allocates an embree user vertex buffer, uploads
+    /// the face-varying primvar data, and binds it to the face-varying
+    /// topology (topology 1). Only float-based types are allowed.
+    ///
+    /// \param name The name of the primvar.
+    /// \param value The buffer data for the primvar (one item per face-vertex).
+    /// \param meshScene The owning mesh's embree prototype scene.
+    /// \param meshId The owning mesh's geometry id in the prototype scene.
+    /// \param allocator A mesh-global object that tracks buffer usage.
+    HdEmbreeSubdivFaceVaryingSampler(TfToken const& name,
+                                      VtValue const& value,
+                                      RTCScene meshScene,
+                                      unsigned meshId,
+                                      HdEmbreeRTCBufferAllocator *allocator);
+
+    /// Destructor. Frees the embree user vertex buffer.
+    virtual ~HdEmbreeSubdivFaceVaryingSampler();
+
+    /// Sample the primvar at an (element, u, v) location.
+    /// Delegates to rtcInterpolate1() with the face-varying topology binding.
+    virtual bool Sample(unsigned int element, float u, float v, void* value,
+                        HdTupleType dataType) const;
+
+    /// Sample the primvar at (element, u, v), also computing derivatives.
+    bool SampleWithDerivatives(unsigned int element, float u, float v,
+                               void* value, void* dPdu, void* dPdv,
+                               HdTupleType dataType) const;
+
+    /// Templated convenience overload (auto-deduces HdTupleType).
+    template<typename T>
+    bool SampleWithDerivatives(unsigned int element, float u, float v,
+                               T* value, T* dPdu, T* dPdv) const {
+        return SampleWithDerivatives(element, u, v,
+            static_cast<void*>(value), static_cast<void*>(dPdu),
+            static_cast<void*>(dPdv),
+            HdEmbreeTypeHelper::GetTupleType<T>());
+    }
+
+private:
+    int _embreeBufferId;
+    HdVtBufferSource const _buffer;
+    RTCScene _meshScene;
+    unsigned _meshId;
+    HdEmbreeRTCBufferAllocator *_allocator;
+};
+
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif // PXR_IMAGING_PLUGIN_HD_EMBREE_MESH_SAMPLERS_H
