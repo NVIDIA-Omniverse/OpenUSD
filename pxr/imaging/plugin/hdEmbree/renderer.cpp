@@ -542,7 +542,7 @@ _ComputeSubdivSurfaceDerivatives(
 /// Compute screen-space derivatives from ray differentials and surface
 /// derivatives.  When ray differentials are unavailable (non-specular
 /// bounces), uses a camera-projection-based fallback approximation.
-/// Populates dpdx, dpdy, dudx, dvdx, dudy, dvdy on the ShadingContext.
+/// Populates dPdx, dPdy, dudx, dvdx, dudy, dvdy on the ShadingContext.
 ///
 /// Note: viewMatrix, inverseProjMatrix, imageWidth, imageHeight, and
 /// samplesPerPixel are only used for the fallback path. They come from
@@ -561,8 +561,8 @@ _ComputeScreenSpaceDerivatives(
     int samplesPerPixel,
     mxcpp::ShadingContext& ctx)
 {
-    GfVec3f dpdx(0.0f);
-    GfVec3f dpdy(0.0f);
+    GfVec3f dPdx(0.0f);
+    GfVec3f dPdy(0.0f);
 
     if (rayDiff.hasDifferentials) {
         // Intersect differential rays with the tangent plane at hitPos.
@@ -571,16 +571,16 @@ _ComputeScreenSpaceDerivatives(
         if (std::abs(rxDotN) > 1e-10f) {
             float tx = -(GfDot(normal, rayDiff.rxOrigin) + d) / rxDotN;
             GfVec3f px = rayDiff.rxOrigin + tx * rayDiff.rxDirection;
-            dpdx = px - hitPos;
+            dPdx = px - hitPos;
         }
         float ryDotN = GfDot(normal, rayDiff.ryDirection);
         if (std::abs(ryDotN) > 1e-10f) {
             float ty = -(GfDot(normal, rayDiff.ryOrigin) + d) / ryDotN;
             GfVec3f py = rayDiff.ryOrigin + ty * rayDiff.ryDirection;
-            dpdy = py - hitPos;
+            dPdy = py - hitPos;
         }
     } else {
-        // Fallback: approximate dpdx/dpdy from camera projection.
+        // Fallback: approximate dPdx/dPdy from camera projection.
         GfVec3f hitCamera = GfVec3f(viewMatrix.Transform(hitPos));
         float dist = hitCamera.GetLength();
         if (dist > 1e-6f) {
@@ -601,13 +601,13 @@ _ComputeScreenSpaceDerivatives(
 
             GfVec3f t, b;
             GfBuildOrthonormalFrame(normal, &t, &b);
-            dpdx = t * pixelScaleX;
-            dpdy = b * pixelScaleY;
+            dPdx = t * pixelScaleX;
+            dPdy = b * pixelScaleY;
         }
     }
 
-    ctx.dpdx = _ToMx(dpdx);
-    ctx.dpdy = _ToMx(dpdy);
+    ctx.dPdx = _ToMx(dPdx);
+    ctx.dPdy = _ToMx(dPdy);
 
     // Solve for UV derivatives: A^T A x = A^T b (least squares)
     float ata00 = GfDot(dPdu, dPdu);
@@ -617,10 +617,10 @@ _ComputeScreenSpaceDerivatives(
 
     if (std::abs(detATA) > 1e-18f) {
         float invDet = 1.0f / detATA;
-        float atb0x = GfDot(dPdu, dpdx);
-        float atb1x = GfDot(dPdv, dpdx);
-        float atb0y = GfDot(dPdu, dpdy);
-        float atb1y = GfDot(dPdv, dpdy);
+        float atb0x = GfDot(dPdu, dPdx);
+        float atb1x = GfDot(dPdv, dPdx);
+        float atb0y = GfDot(dPdu, dPdy);
+        float atb1y = GfDot(dPdv, dPdy);
 
         ctx.dudx = std::clamp(
             _DifferenceOfProducts(ata11, atb0x, ata01, atb1x) * invDet,
@@ -2730,8 +2730,8 @@ HdEmbreeRenderer::_TracePath(
         // _BuildShadingContext) for bounce propagation.
         lastDPdu = _ToGf(ctx.dPdu);
         lastDPdv = _ToGf(ctx.dPdv);
-        lastDpdx = _ToGf(ctx.dpdx);
-        lastDpdy = _ToGf(ctx.dpdy);
+        lastDpdx = _ToGf(ctx.dPdx);
+        lastDpdy = _ToGf(ctx.dPdy);
         lastDudx = ctx.dudx;
         lastDvdx = ctx.dvdx;
         lastDudy = ctx.dudy;

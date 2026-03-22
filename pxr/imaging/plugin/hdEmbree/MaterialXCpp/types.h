@@ -36,8 +36,8 @@ struct ShadingContext
     Vec3f dPdv = Vec3f(0.0f);
 
     // Screen-space position derivatives (from ray differentials)
-    Vec3f dpdx = Vec3f(0.0f);
-    Vec3f dpdy = Vec3f(0.0f);
+    Vec3f dPdx = Vec3f(0.0f);
+    Vec3f dPdy = Vec3f(0.0f);
 
     // Screen-space coefficients for the active derivative basis above.
     // These are true texture derivatives only when dPdu/dPdv represent st.
