@@ -228,6 +228,111 @@ EvalGraph::Compile(
 // Evaluate
 // ---------------------------------------------------------------------------
 
+void
+EvalGraph::_BuildParamMap(
+    const std::vector<InputBinding>& bindings,
+    const std::vector<NodeOutputMap>& nodeOutputs,
+    ParamMap* params) const
+{
+    params->Clear();
+    params->Reserve(bindings.size());
+
+    for (const auto& binding : bindings) {
+        if (binding.isConnected && binding.sourceNodeIndex >= 0) {
+            const Value* value = nullptr;
+            if (static_cast<size_t>(binding.sourceNodeIndex) < nodeOutputs.size()) {
+                value = nodeOutputs[binding.sourceNodeIndex].Find(
+                    binding.sourceOutputSlot);
+            }
+
+            params->Add(
+                binding.inputSlot,
+                value,
+                &_ReevaluateInput,
+                this,
+                binding.sourceNodeIndex,
+                binding.sourceOutputSlot);
+            continue;
+        }
+
+        if (!ValueIsEmpty(binding.defaultValue)) {
+            params->Add(binding.inputSlot, &binding.defaultValue);
+        }
+    }
+}
+
+void
+EvalGraph::_EvaluateNodes(
+    const ShadingContext& ctx,
+    size_t nodeCount,
+    EvalScratch* scratch) const
+{
+    if (scratch->nodeOutputs.size() < nodeCount) {
+        scratch->nodeOutputs.resize(nodeCount);
+    }
+    if (scratch->nodeInputs.size() < nodeCount) {
+        scratch->nodeInputs.resize(nodeCount);
+    }
+
+    for (size_t i = 0; i < nodeCount; ++i) {
+        const auto& node = _nodes[i];
+        if (!node.evalFn) {
+            continue;
+        }
+
+        auto& inputs = scratch->nodeInputs[i];
+        _BuildParamMap(node.inputs, scratch->nodeOutputs, &inputs);
+
+        auto& outputs = scratch->nodeOutputs[i];
+        outputs.Clear();
+        node.evalFn(inputs, ctx, &outputs);
+    }
+}
+
+bool
+EvalGraph::_EvaluateNodeOutput(
+    int nodeIndex,
+    SlotId outputSlot,
+    const ShadingContext& ctx,
+    Value* out) const
+{
+    if (nodeIndex < 0 || static_cast<size_t>(nodeIndex) >= _nodes.size()) {
+        return false;
+    }
+
+    EvalScratch scratch;
+    const size_t nodeCount = static_cast<size_t>(nodeIndex) + 1;
+    _EvaluateNodes(ctx, nodeCount, &scratch);
+
+    const Value* value = scratch.nodeOutputs[nodeIndex].Find(outputSlot);
+    if (!value) {
+        return false;
+    }
+
+    if (out) {
+        *out = *value;
+    }
+    return true;
+}
+
+/* static */
+bool
+EvalGraph::_ReevaluateInput(
+    const void* userData,
+    int sourceNodeIndex,
+    SlotId sourceOutputSlot,
+    const ShadingContext& ctx,
+    Value* out)
+{
+    if (!userData) {
+        return false;
+    }
+
+    const auto* graph = static_cast<const EvalGraph*>(userData);
+    return graph->_EvaluateNodeOutput(
+        sourceNodeIndex, sourceOutputSlot, ctx, out);
+}
+
 SurfaceClosure
 EvalGraph::Evaluate(const ShadingContext& ctx) const
 {
@@ -244,49 +349,11 @@ EvalGraph::Evaluate(const ShadingContext& ctx) const
     if (scratch.nodeInputs.size() < _nodes.size()) {
         scratch.nodeInputs.resize(_nodes.size());
     }
-
-    for (size_t i = 0; i < _nodes.size(); ++i) {
-        const auto& node = _nodes[i];
-        if (!node.evalFn) continue;
-
-        auto& inputs = scratch.nodeInputs[i];
-        inputs.Clear();
-        inputs.Reserve(node.inputs.size());
-
-        auto& outputs = scratch.nodeOutputs[i];
-        outputs.Clear();
-
-        for (const auto& binding : node.inputs) {
-            if (binding.isConnected && binding.sourceNodeIndex >= 0) {
-                const auto& srcOutputs = scratch.nodeOutputs[binding.sourceNodeIndex];
-                const Value* value = srcOutputs.Find(binding.sourceOutputSlot);
-                if (value) {
-                    inputs.Add(binding.inputSlot, value);
-                }
-            } else if (!ValueIsEmpty(binding.defaultValue)) {
-                inputs.Add(binding.inputSlot, &binding.defaultValue);
-            }
-        }
-
-        node.evalFn(inputs, ctx, &outputs);
-    }
+    _EvaluateNodes(ctx, _nodes.size(), &scratch);
 
     // Gather terminal parameters.
     auto& terminalParams = scratch.terminalParams;
-    terminalParams.Clear();
-    terminalParams.Reserve(_terminalInputs.size());
-
-    for (const auto& binding : _terminalInputs) {
-        if (binding.isConnected && binding.sourceNodeIndex >= 0) {
-            const auto& srcOutputs = scratch.nodeOutputs[binding.sourceNodeIndex];
-            const Value* value = srcOutputs.Find(binding.sourceOutputSlot);
-            if (value) {
-                terminalParams.Add(binding.inputSlot, value);
-            }
-        } else if (!ValueIsEmpty(binding.defaultValue)) {
-            terminalParams.Add(binding.inputSlot, &binding.defaultValue);
-        }
-    }
+    _BuildParamMap(_terminalInputs, scratch.nodeOutputs, &terminalParams);
 
     return _EvalMaterialModel(_materialModelType, terminalParams);
 }

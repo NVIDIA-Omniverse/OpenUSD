@@ -1,0 +1,153 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Y"
+    doc = """OpenPBR bump test scene.
+Contains:
+- One polygon plane with st
+- One polygon sphere mesh with face-varying st
+- A shared OpenPBR material using fractal3d as bump height"""
+)
+
+def Xform "World"
+{
+    def Camera "Camera"
+    {
+        float focalLength = 50
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        float2 clippingRange = (0.1, 1000)
+        double3 xformOp:translate = (0, 2.8, 10.5)
+        float3 xformOp:rotateXYZ = (-12, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+    }
+
+    def Mesh "GroundPlane" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [
+            (-4.5, 0.0, -4.5), (4.5, 0.0, -4.5),
+            (4.5, 0.0, 4.5), (-4.5, 0.0, 4.5)
+        ]
+        normal3f[] normals = [
+            (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)
+        ] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [
+            (0, 0), (1, 0), (1, 1), (0, 1)
+        ] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+        bool doubleSided = true
+        rel material:binding = </World/Materials/FractalBumpOpenPbr>
+    }
+
+    def Xform "BumpSphere" (
+        prepend references = @./meshes/Sphere_Poly.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (0, 1.25, 0.0)
+        double3 xformOp:scale = (1.25, 1.25, 1.25)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/FractalBumpOpenPbr>
+    }
+
+    def SphereLight "KeyLight"
+    {
+        float inputs:intensity = 120
+        float inputs:radius = 0.75
+        double3 xformOp:translate = (3.5, 5.5, 2.5)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def SphereLight "FillLight"
+    {
+        float inputs:intensity = 25
+        float inputs:radius = 0.5
+        double3 xformOp:translate = (-4.0, 3.0, 5.0)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Scope "Materials"
+    {
+        def Material "FractalBumpOpenPbr"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/FractalBumpOpenPbr/OpenPbr.outputs:out>
+
+            def Shader "Position"
+            {
+                uniform token info:id = "ND_position_vector3"
+                float3 outputs:out
+            }
+
+            def Shader "ScalePosition"
+            {
+                uniform token info:id = "ND_multiply_vector3FA"
+                float3 inputs:in1.connect = </World/Materials/FractalBumpOpenPbr/Position.outputs:out>
+                float inputs:in2 = 6.0
+                float3 outputs:out
+            }
+
+            def Shader "FractalHeight"
+            {
+                uniform token info:id = "ND_fractal3d_float"
+                float3 inputs:position.connect = </World/Materials/FractalBumpOpenPbr/ScalePosition.outputs:out>
+                float inputs:amplitude = 1.0
+                int inputs:octaves = 5
+                float inputs:lacunarity = 2.0
+                float inputs:diminish = 0.5
+                float outputs:out
+            }
+
+            def Shader "Bump"
+            {
+                uniform token info:id = "ND_bump_vector3"
+                float inputs:height.connect = </World/Materials/FractalBumpOpenPbr/FractalHeight.outputs:out>
+                float inputs:scale = 0.05
+                vector3f outputs:out
+            }
+
+            def Shader "HeightRemap"
+            {
+                uniform token info:id = "ND_remap_float"
+                float inputs:in.connect = </World/Materials/FractalBumpOpenPbr/FractalHeight.outputs:out>
+                float inputs:inlow = -0.5
+                float inputs:inhigh = 0.5
+                float inputs:outlow = 0.0
+                float inputs:outhigh = 1.0
+                float outputs:out
+            }
+
+            def Shader "BaseColorMix"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.18, 0.22, 0.30)
+                color3f inputs:fg = (0.78, 0.80, 0.84)
+                float inputs:mix.connect = </World/Materials/FractalBumpOpenPbr/HeightRemap.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "OpenPbr"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                # color3f inputs:base_color.connect = </World/Materials/FractalBumpOpenPbr/BaseColorMix.outputs:out>
+                color3f inputs:base_color = (0.2, 0.2, 0.2)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.1
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+                vector3f inputs:normal.connect = </World/Materials/FractalBumpOpenPbr/Bump.outputs:out>
+                token outputs:out
+            }
+        }
+    }
+}

@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "../graph.h"
+#include "../nodeRegistry.h"
 
 #include <cstdio>
 #include <functional>
@@ -18,6 +19,27 @@ bool Test_IsClose(const Vec3f& a, const Vec3f& b, float eps = 1e-5f);
 #define _REG(name) Test_Register("Graph." #name, &name)
 
 // ---------------------------------------------------------------------------
+
+static const SlotName _kIn("in");
+static const SlotName _kOut("out");
+
+static void
+_EvalOffsetReevaluate(const ParamMap& inputs,
+                      const ShadingContext& ctx,
+                      NodeOutputMap* outputs)
+{
+    Value value;
+    ShadingContext shiftedCtx = ctx;
+    shiftedCtx.texcoord[0] += 0.5f;
+
+    if (inputs.Evaluate(_kIn, shiftedCtx, &value) &&
+        ValueHolds<float>(value)) {
+        (*outputs)[_kOut] = value;
+        return;
+    }
+
+    (*outputs)[_kOut] = Value(-1.0f);
+}
 
 static bool
 TestCompileEmptyNetwork()
@@ -390,6 +412,69 @@ TestInvalidGraphEvaluate()
     return Test_IsClose(closure.baseColor, Vec3f(0.8f), 1e-4f);
 }
 
+static bool
+TestInputReevaluationUsesModifiedContext()
+{
+    NodeRegistry::RegisterBuiltinNodes();
+    NodeRegistry::GetInstance().Register(
+        "ND_test_offset_reevaluate_float", &_EvalOffsetReevaluate);
+
+    MaterialGraph network;
+
+    std::string texcoordPath = "/Material/Texcoord";
+    GraphNode texcoordNode;
+    texcoordNode.nodeTypeId = "ND_texcoord_vector2";
+    network.nodes[texcoordPath] = texcoordNode;
+
+    std::string extractPath = "/Material/ExtractU";
+    GraphNode extractNode;
+    extractNode.nodeTypeId = "ND_extract_vector2";
+    extractNode.parameters["index"] = Value(0);
+    GraphConnection texcoordConn;
+    texcoordConn.upstreamNode = texcoordPath;
+    texcoordConn.upstreamOutputName = "out";
+    extractNode.inputConnections["in"].push_back(texcoordConn);
+    network.nodes[extractPath] = extractNode;
+
+    std::string reevalPath = "/Material/Reevaluate";
+    GraphNode reevalNode;
+    reevalNode.nodeTypeId = "ND_test_offset_reevaluate_float";
+    GraphConnection extractConn;
+    extractConn.upstreamNode = extractPath;
+    extractConn.upstreamOutputName = "out";
+    reevalNode.inputConnections["in"].push_back(extractConn);
+    network.nodes[reevalPath] = reevalNode;
+
+    std::string termPath = "/Material/Surface";
+    GraphNode termNode;
+    termNode.nodeTypeId = "UsdPreviewSurface";
+    GraphConnection reevalConn;
+    reevalConn.upstreamNode = reevalPath;
+    reevalConn.upstreamOutputName = "out";
+    termNode.inputConnections["roughness"].push_back(reevalConn);
+    network.nodes[termPath] = termNode;
+
+    GraphConnection termConn;
+    termConn.upstreamNode = termPath;
+    termConn.upstreamOutputName = "out";
+    network.terminals["surface"] = termConn;
+
+    auto graph = EvalGraph::Compile(network);
+    if (!graph || !graph->IsValid()) {
+        printf("    Graph compilation failed\n");
+        return false;
+    }
+
+    ShadingContext ctx;
+    ctx.texcoord = Vec2f(0.25f, 0.75f);
+    SurfaceClosure closure = graph->Evaluate(ctx);
+    if (!Test_IsClose(closure.roughness, 0.75f)) {
+        printf("    roughness: %f (expected 0.75)\n", closure.roughness);
+        return false;
+    }
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 
 void
@@ -405,6 +490,7 @@ Test_RegisterGraphTests()
     _REG(TestCompileUnknownNodeTypeFails);
     _REG(TestCompileRejectsCycle);
     _REG(TestInvalidGraphEvaluate);
+    _REG(TestInputReevaluationUsesModifiedContext);
 }
 
 #undef _REG

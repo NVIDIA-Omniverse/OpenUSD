@@ -258,8 +258,9 @@ private:
 
     // Return the visibility from `position` along `direction`
     float _Visibility(GfVec3f const& position,
+                      GfVec3f const& normal,
                       GfVec3f const& direction,
-                      float offset = 1.0e-3f) const;
+                      float dist) const;
 
     // Should the ray continue based on the possibly intersected prim's visibility settings?
     bool _RayShouldContinue(RTCRayHit const& rayHit) const;

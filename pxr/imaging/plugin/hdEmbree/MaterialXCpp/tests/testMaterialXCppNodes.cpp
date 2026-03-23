@@ -85,6 +85,19 @@ static bool Test_IsClose(const Vec4f& a, const Vec4f& b, float eps = 1e-5f) {
            Test_IsClose(a[2], b[2], eps) && Test_IsClose(a[3], b[3], eps);
 }
 
+static bool
+_EvalHeightFromTexcoordX(const void*,
+                         int,
+                         SlotId,
+                         const ShadingContext& ctx,
+                         Value* out)
+{
+    if (out) {
+        *out = Value(ctx.texcoord[0]);
+    }
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Math node tests
 // ---------------------------------------------------------------------------
@@ -743,6 +756,65 @@ static bool TestGeometricNormal() {
     return Test_IsClose(_GetVec3(out), Vec3f(0.0f, 1.0f, 0.0f));
 }
 
+static bool TestHeightToNormalDefaultTexcoord() {
+    NodeRegistry::RegisterBuiltinNodes();
+    auto fn = NodeRegistry::GetInstance().Find(
+        std::string("ND_heighttonormal_vector3"));
+    if (!fn) return false;
+
+    ParamMap in;
+    in.Add(
+        AsSlotId("in"),
+        nullptr,
+        &_EvalHeightFromTexcoordX,
+        nullptr,
+        -1,
+        InvalidSlotId);
+
+    ShadingContext ctx;
+    ctx.texcoord = Vec2f(0.25f, 0.5f);
+    ctx.dudx = 1.0f;
+    ctx.dvdy = 1.0f;
+
+    NodeOutputMap out;
+    fn(in, ctx, &out);
+
+    Vec3f expected = Vec3f(-1.0f / 16.0f, 0.0f, 1.0f).normalized();
+    expected = expected * 0.5f + Vec3f(0.5f, 0.5f, 0.5f);
+    return Test_IsClose(_GetVec3(out), expected, 1e-5f);
+}
+
+static bool TestBumpDefaultBasis() {
+    NodeRegistry::RegisterBuiltinNodes();
+    auto fn = NodeRegistry::GetInstance().Find(std::string("ND_bump_vector3"));
+    if (!fn) return false;
+
+    ParamMap in;
+    in.Add(
+        AsSlotId("height"),
+        nullptr,
+        &_EvalHeightFromTexcoordX,
+        nullptr,
+        -1,
+        InvalidSlotId);
+
+    ShadingContext ctx;
+    ctx.normal = Vec3f(0.0f, 0.0f, 1.0f);
+    ctx.tangent = Vec3f(1.0f, 0.0f, 0.0f);
+    ctx.bitangent = Vec3f(0.0f, 1.0f, 0.0f);
+    ctx.dPdu = Vec3f(1.0f, 0.0f, 0.0f);
+    ctx.dPdv = Vec3f(0.0f, 1.0f, 0.0f);
+    ctx.texcoord = Vec2f(0.25f, 0.5f);
+    ctx.dudx = 1.0f;
+    ctx.dvdy = 1.0f;
+
+    NodeOutputMap out;
+    fn(in, ctx, &out);
+
+    Vec3f expected = Vec3f(-1.0f, 0.0f, 1.0f).normalized();
+    return Test_IsClose(_GetVec3(out), expected, 1e-5f);
+}
+
 // ---------------------------------------------------------------------------
 // Color node tests
 // ---------------------------------------------------------------------------
@@ -866,6 +938,8 @@ Test_RegisterNodeTests()
     _REG(TestMixVecVariant);
     _REG(TestGeometricPosition);
     _REG(TestGeometricNormal);
+    _REG(TestHeightToNormalDefaultTexcoord);
+    _REG(TestBumpDefaultBasis);
     _REG(TestLuminance);
     _REG(TestParamMapCopyOnWriteForBorrowedValue);
     _REG(TestNodeRegistryLookup);

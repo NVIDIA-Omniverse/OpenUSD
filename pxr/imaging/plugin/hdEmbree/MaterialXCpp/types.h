@@ -92,9 +92,20 @@ struct SurfaceClosure
 
 struct ParamEntry
 {
+    using ReevaluateFn = bool (*)(
+        const void* userData,
+        int sourceNodeIndex,
+        SlotId sourceOutputSlot,
+        const ShadingContext& ctx,
+        Value* out);
+
     SlotId slot = InvalidSlotId;
     const Value* value = nullptr;
     Value* mutableValue = nullptr;
+    ReevaluateFn reevaluate = nullptr;
+    const void* reevaluateUserData = nullptr;
+    int reevaluateNodeIndex = -1;
+    SlotId reevaluateOutputSlot = InvalidSlotId;
 };
 
 /// Named parameter map used for node inputs/outputs.
@@ -108,7 +119,23 @@ public:
     void Reserve(size_t count) { _entries.reserve(count); }
 
     void Add(SlotId slot, const Value* value) {
-        _entries.push_back({slot, value});
+        Add(slot, value, nullptr, nullptr, -1, InvalidSlotId);
+    }
+
+    void Add(SlotId slot,
+             const Value* value,
+             ParamEntry::ReevaluateFn reevaluate,
+             const void* reevaluateUserData,
+             int reevaluateNodeIndex,
+             SlotId reevaluateOutputSlot) {
+        ParamEntry entry;
+        entry.slot = slot;
+        entry.value = value;
+        entry.reevaluate = reevaluate;
+        entry.reevaluateUserData = reevaluateUserData;
+        entry.reevaluateNodeIndex = reevaluateNodeIndex;
+        entry.reevaluateOutputSlot = reevaluateOutputSlot;
+        _entries.push_back(entry);
     }
 
     template<typename NameT>
@@ -120,7 +147,7 @@ public:
                     return *entry.mutableValue;
                 }
 
-                _ownedValues.push_back(*entry.value);
+                _ownedValues.push_back(entry.value ? *entry.value : Value());
                 Value* value = &_ownedValues.back();
                 entry.value = value;
                 entry.mutableValue = value;
@@ -143,6 +170,39 @@ public:
             }
         }
         return nullptr;
+    }
+
+    template<typename NameT>
+    bool Evaluate(const NameT& name,
+                  const ShadingContext& ctx,
+                  Value* out) const
+    {
+        const SlotId slot = AsSlotId(name);
+        for (const auto& entry : _entries) {
+            if (entry.slot != slot) {
+                continue;
+            }
+
+            if (entry.reevaluate &&
+                entry.reevaluate(
+                    entry.reevaluateUserData,
+                    entry.reevaluateNodeIndex,
+                    entry.reevaluateOutputSlot,
+                    ctx,
+                    out)) {
+                return true;
+            }
+
+            if (!entry.value) {
+                return false;
+            }
+
+            if (out) {
+                *out = *entry.value;
+            }
+            return true;
+        }
+        return false;
     }
 
 private:

@@ -1586,6 +1586,24 @@ _PopulateRay(
     ray->mask = static_cast<uint32_t>(mask);
 }
 
+static GfVec3f
+_OffsetRayOrigin(
+    GfVec3f const& position,
+    GfVec3f const& normal,
+    GfVec3f const& direction,
+    float bias = 1.0e-4f)
+{
+    if (normal.GetLengthSq() < 1e-18f) {
+        return position + direction * bias;
+    }
+
+    GfVec3f offsetNormal = normal.GetNormalized();
+    if (GfDot(offsetNormal, direction) < 0.0f) {
+        offsetNormal = -offsetNormal;
+    }
+    return position + offsetNormal * bias;
+}
+
 /// Fill in an RTCRayHit structure from the given parameters.
 // note this containts a Ray and a RayHit
 static void
@@ -2222,19 +2240,23 @@ HdEmbreeRenderer::_EvalOpacityAtHit(RTCRayHit const& rayHit) const
 
 float
 HdEmbreeRenderer::_Visibility(
-    GfVec3f const& position, GfVec3f const& direction, float dist) const
+    GfVec3f const& position,
+    GfVec3f const& normal,
+    GfVec3f const& direction,
+    float dist) const
 {
     constexpr int kMaxTransparentHits = 16;
     constexpr float kVisThreshold = 1e-4f;
+    constexpr float kRayBias = 1e-4f;
 
     float visibility = 1.0f;
-    GfVec3f rayOrigin = position;
+    GfVec3f rayOrigin = _OffsetRayOrigin(position, normal, direction, kRayBias);
     float remaining = dist;
 
     for (int i = 0; i < kMaxTransparentHits; ++i) {
         RTCRayHit rayHit;
         rayHit.ray.flags = 0;
-        _PopulateRayHit(&rayHit, rayOrigin, direction, 0.001f, remaining,
+        _PopulateRayHit(&rayHit, rayOrigin, direction, kRayBias, remaining,
                         HdEmbree_RayMask::Camera);
         rtcIntersect1(_scene, &rayHit);
 
@@ -2255,10 +2277,11 @@ HdEmbreeRenderer::_Visibility(
             return visibility;
         }
 
-        rayOrigin = GfVec3f(
+        GfVec3f hitPos = GfVec3f(
             rayHit.ray.org_x + hitDist * rayHit.ray.dir_x,
             rayHit.ray.org_y + hitDist * rayHit.ray.dir_y,
             rayHit.ray.org_z + hitDist * rayHit.ray.dir_z);
+        rayOrigin = _OffsetRayOrigin(hitPos, normal, direction, kRayBias);
     }
 
     return visibility;
@@ -2457,6 +2480,8 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& position,
     // Trace ambient occlusion rays. The occlusion factor is the fraction of
     // the hemisphere that's occluded when rays are traced to infinity,
     // computed by random sampling over the hemisphere.
+    const GfVec3f rayOrigin =
+        _OffsetRayOrigin(position, normal, normal, 1e-4f);
     for (int i = 0; i < _ambientOcclusionSamples; i++)
     {
         // Sample in the hemisphere centered on the face normal. Use
@@ -2468,7 +2493,7 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& position,
         // we only care about intersection status, not intersection id.
         RTCRay shadow;
         shadow.flags = 0;
-        _PopulateRay(&shadow, position, shadowDir, 0.001f);
+        _PopulateRay(&shadow, rayOrigin, shadowDir, 1e-4f);
         {
           rtcOccluded1(_scene, &shadow);
         }
@@ -2545,8 +2570,6 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 continue;
             }
 
-            float vis = _Visibility(position, ls.wI, ls.dist * 0.99f);
-
             float cosOffNormal = GfDot(ls.wI, normal);
             GfVec3f shadingNormal = normal;
             if (cosOffNormal < 0.0f) {
@@ -2558,7 +2581,13 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 }
             }
 
-            if (cosOffNormal <= 0.0f || vis <= 0.0f) {
+            if (cosOffNormal <= 0.0f) {
+                continue;
+            }
+
+            float vis = _Visibility(
+                position, shadingNormal, ls.wI, ls.dist * 0.99f);
+            if (vis <= 0.0f) {
                 continue;
             }
 

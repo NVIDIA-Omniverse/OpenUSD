@@ -59,6 +59,29 @@ private:
     static SurfaceClosure _EvalMaterialModel(
         const std::string& modelType,
         const ParamMap& params);
+
+    void _BuildParamMap(
+        const std::vector<InputBinding>& bindings,
+        const std::vector<NodeOutputMap>& nodeOutputs,
+        ParamMap* params) const;
+
+    void _EvaluateNodes(
+        const ShadingContext& ctx,
+        size_t nodeCount,
+        EvalScratch* scratch) const;
+
+    bool _EvaluateNodeOutput(
+        int nodeIndex,
+        SlotId outputSlot,
+        const ShadingContext& ctx,
+        Value* out) const;
+
+    static bool _ReevaluateInput(
+        const void* userData,
+        int sourceNodeIndex,
+        SlotId sourceOutputSlot,
+        const ShadingContext& ctx,
+        Value* out);
 };
 
 }  // namespace mxcpp
