@@ -84,6 +84,9 @@ public:
     ///   \param projMatrix The camera's view-to-NDC projection matrix.
     void SetCamera(const GfMatrix4d& viewMatrix, const GfMatrix4d& projMatrix);
 
+    /// Set the application frame/time values exposed to MaterialX shading.
+    void SetSceneFrameAndTime(float frame, float time);
+
     /// Set the aov bindings to use for rendering.
     ///   \param aovBindings A list of aov bindings.
     void SetAovBindings(HdRenderPassAovBindingVector const& aovBindings);
@@ -419,6 +422,10 @@ private:
 
     // Firefly clamping threshold (max sample luminance). <= 0 disables.
     float _fireflyClampThreshold;
+
+    // Application frame/time values propagated into MaterialX shading.
+    float _sceneFrame;
+    float _sceneTime;
 
     // Per-pixel adaptive sampling state (Welford online variance).
     std::vector<GfVec3f> _pixelMean;

@@ -679,6 +679,8 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _showAdaptiveHeatmap(HdEmbreeDefaultShowAdaptiveHeatmap)
     , _usePerChannelVariance(HdEmbreeDefaultUsePerChannelVariance)
     , _fireflyClampThreshold(HdEmbreeDefaultFireflyClampThreshold)
+    , _sceneFrame(0.0f)
+    , _sceneTime(0.0f)
     , _completedSamples(0)
 {
 }
@@ -822,6 +824,13 @@ HdEmbreeRenderer::SetCamera(const GfMatrix4d& viewMatrix,
     _projMatrix = projMatrix;
     _inverseViewMatrix = viewMatrix.GetInverse();
     _inverseProjMatrix = projMatrix.GetInverse();
+}
+
+void
+HdEmbreeRenderer::SetSceneFrameAndTime(float frame, float time)
+{
+    _sceneFrame = frame;
+    _sceneTime = time;
 }
 
 void
@@ -2191,6 +2200,8 @@ HdEmbreeRenderer::_BuildShadingContext(
     ctx.texcoord = _ToMx(texcoordVal);
     ctx.displayColor = _ToMx(displayColor);
     ctx.displayOpacity = 1.0f;
+    ctx.frame = _sceneFrame;
+    ctx.time = _sceneTime;
     ctx.faceId = rayHit.hit.primID;
     ctx.baryU = rayHit.hit.u;
     ctx.baryV = rayHit.hit.v;

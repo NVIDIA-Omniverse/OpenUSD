@@ -1095,6 +1095,32 @@ static bool TestGeometricNormal() {
     return Test_IsClose(_GetVec3(out), Vec3f(0.0f, 1.0f, 0.0f));
 }
 
+static bool TestApplicationFrame() {
+    NodeRegistry::RegisterBuiltinNodes();
+    auto fn = NodeRegistry::GetInstance().Find(std::string("ND_frame_float"));
+    if (!fn) return false;
+
+    ParamMap in;
+    ShadingContext ctx;
+    ctx.frame = 42.5f;
+    NodeOutputMap out;
+    fn(in, ctx, &out);
+    return Test_IsClose(_GetFloat(out), 42.5f);
+}
+
+static bool TestApplicationTime() {
+    NodeRegistry::RegisterBuiltinNodes();
+    auto fn = NodeRegistry::GetInstance().Find(std::string("ND_time_float"));
+    if (!fn) return false;
+
+    ParamMap in;
+    ShadingContext ctx;
+    ctx.time = 1.75f;
+    NodeOutputMap out;
+    fn(in, ctx, &out);
+    return Test_IsClose(_GetFloat(out), 1.75f);
+}
+
 static bool TestTransformPointObjectToWorld() {
     ParamMap in;
     in["in"] = Value(Vec3f(1.0f, 2.0f, 3.0f));
@@ -1304,6 +1330,8 @@ Test_RegisterNodeTests()
     _REG(TestGeometricPosition);
     _REG(TestGeometricPositionWorldSpace);
     _REG(TestGeometricNormal);
+    _REG(TestApplicationFrame);
+    _REG(TestApplicationTime);
     _REG(TestTransformPointObjectToWorld);
     _REG(TestHeightToNormalDefaultTexcoord);
     _REG(TestBumpDefaultBasis);

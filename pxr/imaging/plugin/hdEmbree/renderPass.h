@@ -85,6 +85,10 @@ private:
     // The last settings version we rendered with.
     int _lastSettingsVersion;
 
+    // The last application frame/time forwarded to MaterialX shading.
+    double _lastFrame;
+    double _lastTime;
+
     // The pixels written to. Like viewport in OpenGL,
     // but coordinates are y-Down.
     GfRect2i _dataWindow;

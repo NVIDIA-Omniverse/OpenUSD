@@ -63,6 +63,7 @@ pxr_plugin(hdEmbree
         MaterialXCpp/nodes/conditionalNodes
         MaterialXCpp/nodes/compositingNodes
         MaterialXCpp/nodes/geometricNodes
+        MaterialXCpp/nodes/applicationNodes
         MaterialXCpp/nodes/textureNodes
         MaterialXCpp/nodes/proceduralNodes
         MaterialXCpp/nodes/colorNodes
@@ -131,6 +132,7 @@ pxr_build_test(testMaterialXCpp
         MaterialXCpp/nodes/conditionalNodes.cpp
         MaterialXCpp/nodes/compositingNodes.cpp
         MaterialXCpp/nodes/geometricNodes.cpp
+        MaterialXCpp/nodes/applicationNodes.cpp
         MaterialXCpp/nodes/textureNodes.cpp
         MaterialXCpp/nodes/proceduralNodes.cpp
         MaterialXCpp/nodes/colorNodes.cpp

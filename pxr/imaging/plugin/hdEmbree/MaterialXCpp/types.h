@@ -43,6 +43,8 @@ struct ShadingContext
     Vec2f texcoord = Vec2f(0.0f);
     Vec3f displayColor = Vec3f(0.8f);
     float displayOpacity = 1.0f;
+    float frame = 0.0f;
+    float time = 0.0f;
     int faceId = 0;
     float baryU = 0.0f;
     float baryV = 0.0f;

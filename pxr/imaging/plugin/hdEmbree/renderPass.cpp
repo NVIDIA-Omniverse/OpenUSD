@@ -13,6 +13,8 @@
 #include "pxr/imaging/plugin/hdEmbree/renderPass.h"
 #include "pxr/base/tf/diagnostic.h"
 
+#include <cmath>
+
 PXR_NAMESPACE_OPEN_SCOPE
 
 HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
@@ -26,6 +28,8 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _sceneVersion(sceneVersion)
     , _lastSceneVersion(0)
     , _lastSettingsVersion(0)
+    , _lastFrame(0.0)
+    , _lastTime(0.0)
     , _viewMatrix(1.0f) // == identity
     , _projMatrix(1.0f) // == identity
     , _aovBindings()
@@ -75,6 +79,44 @@ _GetDataWindow(HdRenderPassStateSharedPtr const& renderPassState)
         const GfVec4f vp = renderPassState->GetViewport();
         return GfRect2i(GfVec2i(0), int(vp[2]), int(vp[3]));        
     }
+}
+
+static void
+_GetSceneFrameAndTime(const HdSceneIndexBaseRefPtr &si,
+                      double *frame,
+                      double *time)
+{
+    *frame = 0.0;
+    *time = 0.0;
+
+    if (!si) {
+        return;
+    }
+
+    const HdSceneGlobalsSchema sgSchema =
+        HdSceneGlobalsSchema::GetFromSceneIndex(si);
+    if (!sgSchema) {
+        return;
+    }
+
+    double currentFrame = 0.0;
+    if (auto frameHandle = sgSchema.GetCurrentFrame()) {
+        const double value = frameHandle->GetTypedValue(0);
+        if (std::isfinite(value)) {
+            currentFrame = value;
+        }
+    }
+
+    double timeCodesPerSecond = 1.0;
+    if (auto tcpsHandle = sgSchema.GetTimeCodesPerSecond()) {
+        const double value = tcpsHandle->GetTypedValue(0);
+        if (std::isfinite(value) && value > 0.0) {
+            timeCodesPerSecond = value;
+        }
+    }
+
+    *frame = currentFrame;
+    *time = currentFrame / timeCodesPerSecond;
 }
 
 void
@@ -134,6 +176,23 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                     }
                 }
             }
+        }
+    }
+
+    {
+        HdRenderIndex *index = GetRenderIndex();
+        const HdSceneIndexBaseRefPtr si = index->GetTerminalSceneIndex();
+        double currentFrame = 0.0;
+        double currentTime = 0.0;
+        _GetSceneFrameAndTime(si, &currentFrame, &currentTime);
+        if (_lastFrame != currentFrame || _lastTime != currentTime) {
+            _renderThread->StopRender();
+            _renderer->SetSceneFrameAndTime(
+                static_cast<float>(currentFrame),
+                static_cast<float>(currentTime));
+            _lastFrame = currentFrame;
+            _lastTime = currentTime;
+            needStartRender = true;
         }
     }
 

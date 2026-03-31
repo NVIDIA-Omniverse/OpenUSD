@@ -9,6 +9,7 @@
 #include "nodes/conditionalNodes.h"
 #include "nodes/compositingNodes.h"
 #include "nodes/geometricNodes.h"
+#include "nodes/applicationNodes.h"
 #include "nodes/textureNodes.h"
 #include "nodes/proceduralNodes.h"
 #include "nodes/colorNodes.h"
@@ -53,6 +54,7 @@ NodeRegistry::RegisterBuiltinNodes()
         RegisterConditionalNodes(reg);
         RegisterCompositingNodes(reg);
         RegisterGeometricNodes(reg);
+        RegisterApplicationNodes(reg);
         RegisterTextureNodes(reg);
         RegisterProceduralNodes(reg);
         RegisterColorNodes(reg);
