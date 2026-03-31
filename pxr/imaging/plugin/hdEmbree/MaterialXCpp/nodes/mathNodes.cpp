@@ -32,6 +32,8 @@ static const SlotName _kScale("scale");
 static const SlotName _kRotate("rotate");
 static const SlotName _kOffset("offset");
 static const SlotName _kOperationOrder("operationorder");
+static const SlotName _kFromspace("fromspace");
+static const SlotName _kTospace("tospace");
 
 // ---- Arithmetic templates ------------------------------------------------
 
@@ -449,14 +451,21 @@ _EvalCreateMatrixVec4M44(const ParamMap& inputs, const ShadingContext&,
 }
 
 // ---- transformpoint / transformvector / transformnormal -------------------
-// Named space transforms — passthrough in hdEmbree (all shading in world space).
 
+template<ShadingContext::TransformSpaceType Type>
 static void
-_EvalTransformPassthrough(const ParamMap& inputs, const ShadingContext&,
-                          NodeOutputMap* outputs)
+_EvalTransformNamedSpace(const ParamMap& inputs, const ShadingContext& ctx,
+                         NodeOutputMap* outputs)
 {
-    Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
-    (*outputs)[_kOut] = Value(v);
+    const Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
+    const std::string fromSpace =
+        Get<std::string>(inputs, _kFromspace, std::string());
+    const std::string toSpace =
+        Get<std::string>(inputs, _kTospace, std::string());
+
+    Vec3f result = v;
+    TransformNamedVec3(ctx, fromSpace, toSpace, Type, v, &result);
+    (*outputs)[_kOut] = Value(result);
 }
 
 // ---- transformmatrix -----------------------------------------------------
@@ -857,10 +866,13 @@ RegisterMathNodes(NodeRegistry& reg)
     _REG("ND_creatematrix_vector3_matrix44", &_EvalCreateMatrixVec3M44);
     _REG("ND_creatematrix_vector4_matrix44", &_EvalCreateMatrixVec4M44);
 
-    // transform (named space — passthrough in hdEmbree)
-    _REG("ND_transformpoint_vector3",  &_EvalTransformPassthrough);
-    _REG("ND_transformvector_vector3", &_EvalTransformPassthrough);
-    _REG("ND_transformnormal_vector3", &_EvalTransformPassthrough);
+    // transform (named space)
+    _REG("ND_transformpoint_vector3",
+         &_EvalTransformNamedSpace<ShadingContext::TransformSpaceType::Point>);
+    _REG("ND_transformvector_vector3",
+         &_EvalTransformNamedSpace<ShadingContext::TransformSpaceType::Vector>);
+    _REG("ND_transformnormal_vector3",
+         &_EvalTransformNamedSpace<ShadingContext::TransformSpaceType::Normal>);
 
     // transformmatrix
     _REG("ND_transformmatrix_vector2M3",  &_EvalTransformMatrixVec2M3);

@@ -99,6 +99,24 @@ static bool Test_IsClose(const Vec4f& a, const Vec4f& b, float eps = 1e-5f) {
            Test_IsClose(a[2], b[2], eps) && Test_IsClose(a[3], b[3], eps);
 }
 
+static Mat4f _MakeTranslationMatrix(const Vec3f& t) {
+    Mat4f m(1.0f);
+    m[3][0] = t[0];
+    m[3][1] = t[1];
+    m[3][2] = t[2];
+    return m;
+}
+
+static void _SetObjectWorldTransform(ShadingContext* ctx, const Mat4f& objectToWorld) {
+    if (!ctx) {
+        return;
+    }
+    ctx->objectToWorldMatrix = objectToWorld;
+    ctx->worldToObjectMatrix = objectToWorld.inverse();
+    ctx->hasObjectToWorldTransform = true;
+    ctx->hasWorldToObjectTransform = true;
+}
+
 static bool
 _EvalHeightFromTexcoordX(const void*,
                          int,
@@ -578,6 +596,29 @@ static bool TestProceduralWorleyNoise2d() {
                         1e-5f);
 }
 
+static bool TestProceduralWorleyNoise3d() {
+    ParamMap in;
+    in["position"] = Value(Vec3f(0.25f, 0.75f, 0.5f));
+    in["jitter"] = Value(0.0f);
+
+    auto outFloat = _Eval("ND_worleynoise3d_float", in);
+    if (!Test_IsClose(_GetFloat(outFloat), 0.35355339f, 1e-5f)) {
+        return false;
+    }
+
+    auto outVec2 = _Eval("ND_worleynoise3d_vector2", in);
+    if (!Test_IsClose(_GetVec2(outVec2),
+                      Vec2f(0.35355339f, 0.79056942f),
+                      1e-5f)) {
+        return false;
+    }
+
+    auto outVec3 = _Eval("ND_worleynoise3d_vector3", in);
+    return Test_IsClose(_GetVec3(outVec3),
+                        Vec3f(0.35355339f, 0.79056942f, 0.79056942f),
+                        1e-5f);
+}
+
 static bool TestProceduralFractal2dSingleOctave() {
     ParamMap in;
     in["texcoord"] = Value(Vec2f(0.37f, 0.81f));
@@ -612,6 +653,26 @@ static bool TestProceduralUnifiedNoise2dCellRemap() {
     ParamMap cellIn;
     cellIn["texcoord"] = Value(Vec2f(1.2f, 2.7f));
     auto cell = _Eval("ND_cellnoise2d_float", cellIn);
+    const float expected = 2.0f + _GetFloat(cell) * 2.0f;
+    return Test_IsClose(_GetFloat(unified), expected, 1e-5f);
+}
+
+static bool TestProceduralUnifiedNoise3dCellRemap() {
+    ParamMap in;
+    in["position"] = Value(Vec3f(1.2f, 2.7f, 0.4f));
+    in["freq"] = Value(Vec3f(1.0f, 1.0f, 1.0f));
+    in["offset"] = Value(Vec3f(0.0f, 0.0f, 0.0f));
+    in["jitter"] = Value(1.0f);
+    in["type"] = Value(1);
+    in["outmin"] = Value(2.0f);
+    in["outmax"] = Value(4.0f);
+    in["clampoutput"] = Value(true);
+
+    auto unified = _Eval("ND_unifiednoise3d_float", in);
+
+    ParamMap cellIn;
+    cellIn["position"] = Value(Vec3f(1.2f, 2.7f, 0.4f));
+    auto cell = _Eval("ND_cellnoise3d_float", cellIn);
     const float expected = 2.0f + _GetFloat(cell) * 2.0f;
     return Test_IsClose(_GetFloat(unified), expected, 1e-5f);
 }
@@ -772,6 +833,21 @@ static bool TestProceduralFlake2dCoverageZero() {
     in["bitangent"] = Value(Vec3f(0.0f, 1.0f, 0.0f));
 
     auto out = _Eval("ND_flake2d", in);
+    return _GetInt(out, "id") == 0 &&
+           Test_IsClose(_GetFloat(out, "rand"), 0.0f, 1e-6f) &&
+           Test_IsClose(_GetFloat(out, "presence"), 0.0f, 1e-6f) &&
+           Test_IsClose(_GetVec3(out, "flakenormal"), Vec3f(0.0f, 0.0f, 1.0f));
+}
+
+static bool TestProceduralFlake3dCoverageZero() {
+    ParamMap in;
+    in["coverage"] = Value(0.0f);
+    in["position"] = Value(Vec3f(0.3f, 0.7f, 0.2f));
+    in["normal"] = Value(Vec3f(0.0f, 0.0f, 1.0f));
+    in["tangent"] = Value(Vec3f(1.0f, 0.0f, 0.0f));
+    in["bitangent"] = Value(Vec3f(0.0f, 1.0f, 0.0f));
+
+    auto out = _Eval("ND_flake3d", in);
     return _GetInt(out, "id") == 0 &&
            Test_IsClose(_GetFloat(out, "rand"), 0.0f, 1e-6f) &&
            Test_IsClose(_GetFloat(out, "presence"), 0.0f, 1e-6f) &&
@@ -990,6 +1066,21 @@ static bool TestGeometricPosition() {
     return Test_IsClose(_GetVec3(out), Vec3f(1.0f, 2.0f, 3.0f));
 }
 
+static bool TestGeometricPositionWorldSpace() {
+    NodeRegistry::RegisterBuiltinNodes();
+    auto fn = NodeRegistry::GetInstance().Find(std::string("ND_position_vector3"));
+    if (!fn) return false;
+
+    ParamMap in;
+    in["space"] = Value(std::string("world"));
+    ShadingContext ctx;
+    ctx.position = Vec3f(1.0f, 2.0f, 3.0f);
+    _SetObjectWorldTransform(&ctx, _MakeTranslationMatrix(Vec3f(5.0f, 0.0f, -2.0f)));
+    NodeOutputMap out;
+    fn(in, ctx, &out);
+    return Test_IsClose(_GetVec3(out), Vec3f(6.0f, 2.0f, 1.0f));
+}
+
 static bool TestGeometricNormal() {
     NodeRegistry::RegisterBuiltinNodes();
     auto fn = NodeRegistry::GetInstance().Find(std::string("ND_normal_vector3"));
@@ -998,9 +1089,23 @@ static bool TestGeometricNormal() {
     ParamMap in;
     ShadingContext ctx;
     ctx.normal = Vec3f(0.0f, 1.0f, 0.0f);
+    _SetObjectWorldTransform(&ctx, Mat4f(1.0f));
     NodeOutputMap out;
     fn(in, ctx, &out);
     return Test_IsClose(_GetVec3(out), Vec3f(0.0f, 1.0f, 0.0f));
+}
+
+static bool TestTransformPointObjectToWorld() {
+    ParamMap in;
+    in["in"] = Value(Vec3f(1.0f, 2.0f, 3.0f));
+    in["fromspace"] = Value(std::string("object"));
+    in["tospace"] = Value(std::string("world"));
+
+    ShadingContext ctx;
+    _SetObjectWorldTransform(&ctx, _MakeTranslationMatrix(Vec3f(3.0f, -1.0f, 2.0f)));
+
+    auto out = _EvalWithCtx("ND_transformpoint_vector3", in, ctx);
+    return Test_IsClose(_GetVec3(out), Vec3f(4.0f, 1.0f, 5.0f));
 }
 
 static bool TestHeightToNormalDefaultTexcoord() {
@@ -1185,16 +1290,21 @@ Test_RegisterNodeTests()
     _REG(TestInsideOutside);
     _REG(TestMixVecVariant);
     _REG(TestProceduralWorleyNoise2d);
+    _REG(TestProceduralWorleyNoise3d);
     _REG(TestProceduralFractal2dSingleOctave);
     _REG(TestProceduralUnifiedNoise2dCellRemap);
+    _REG(TestProceduralUnifiedNoise3dCellRemap);
     _REG(TestProceduralRampLrAndSplitLr);
     _REG(TestProceduralRamp4AndRamp);
     _REG(TestProceduralPatterns);
     _REG(TestProceduralGridAndCrosshatch);
     _REG(TestProceduralRandomNodes);
     _REG(TestProceduralFlake2dCoverageZero);
+    _REG(TestProceduralFlake3dCoverageZero);
     _REG(TestGeometricPosition);
+    _REG(TestGeometricPositionWorldSpace);
     _REG(TestGeometricNormal);
+    _REG(TestTransformPointObjectToWorld);
     _REG(TestHeightToNormalDefaultTexcoord);
     _REG(TestBumpDefaultBasis);
     _REG(TestLuminance);

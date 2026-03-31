@@ -147,6 +147,18 @@ _ToMx(const GfVec2f& v)
     return mxcpp::Vec2f(v[0], v[1]);
 }
 
+inline mxcpp::Mat4f
+_ToMx(const GfMatrix4f& m)
+{
+    mxcpp::Mat4f result;
+    for (int row = 0; row < 4; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            result[row][col] = m[row][col];
+        }
+    }
+    return result;
+}
+
 // Callback data for geompropvalue node — holds references needed to
 // sample an arbitrary primvar at a ray hit point.
 struct _GeomPropCallbackData {
@@ -2085,6 +2097,7 @@ HdEmbreeRenderer::_BuildShadingContext(
     }
 
     // Surface derivatives (dPdu, dPdv) and normal derivatives (dndu, dndv)
+    // start in object space and are transformed to world space below.
     GfVec3f dPdu, dPdv, dndu, dndv;
     if (_IsSubdivMesh(prototypeContext)) {
         _ComputeSubdivSurfaceDerivatives(
@@ -2098,6 +2111,11 @@ HdEmbreeRenderer::_BuildShadingContext(
             rayHit.hit.primID, normal,
             &dPdu, &dPdv, &dndu, &dndv);
     }
+
+    const GfVec3f objectHitPos =
+        instanceContext->worldToObjectMatrix.Transform(hitPos);
+    const GfVec3f objectDPdu = dPdu;
+    const GfVec3f objectDPdv = dPdv;
 
     // Object space -> world space
     dPdu = instanceContext->objectToWorldMatrix.TransformDir(dPdu);
@@ -2166,7 +2184,7 @@ HdEmbreeRenderer::_BuildShadingContext(
     }
 
     mxcpp::ShadingContext ctx;
-    ctx.position = _ToMx(hitPos);
+    ctx.position = _ToMx(objectHitPos);
     ctx.normal = _ToMx(normal);
     ctx.tangent = _ToMx(tangent);
     ctx.bitangent = _ToMx(bitangent);
@@ -2178,6 +2196,12 @@ HdEmbreeRenderer::_BuildShadingContext(
     ctx.baryV = rayHit.hit.v;
     ctx.dPdu = _ToMx(dPdu);
     ctx.dPdv = _ToMx(dPdv);
+    ctx.dPositiondu = _ToMx(objectDPdu);
+    ctx.dPositiondv = _ToMx(objectDPdv);
+    ctx.objectToWorldMatrix = _ToMx(instanceContext->objectToWorldMatrix);
+    ctx.worldToObjectMatrix = _ToMx(instanceContext->worldToObjectMatrix);
+    ctx.hasObjectToWorldTransform = true;
+    ctx.hasWorldToObjectTransform = true;
 
     if (options.computeScreenSpaceDerivatives) {
         _ComputeScreenSpaceDerivatives(
@@ -2188,6 +2212,11 @@ HdEmbreeRenderer::_BuildShadingContext(
             _samplesToConvergence,
             ctx);
     }
+
+    ctx.dPositiondx = _ToMx(
+        instanceContext->worldToObjectMatrix.TransformDir(_ToGf(ctx.dPdx)));
+    ctx.dPositiondy = _ToMx(
+        instanceContext->worldToObjectMatrix.TransformDir(_ToGf(ctx.dPdy)));
 
     return ctx;
 }

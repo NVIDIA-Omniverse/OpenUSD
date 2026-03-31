@@ -1,0 +1,655 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Y"
+    doc = """MaterialX procedural3d gallery for hdEmbree.
+Contains one plane and one sphere for each implemented procedural3d node:
+noise3d, cellnoise3d, worleynoise3d, fractal3d, unifiednoise3d, flake3d, randomcolor."""
+)
+
+def Xform "World"
+{
+    def Camera "Camera"
+    {
+        float focalLength = 38
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        float2 clippingRange = (0.1, 1000)
+        double3 xformOp:translate = (0, 8.5, 24.5)
+        float3 xformOp:rotateXYZ = (-18, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+    }
+
+    def SphereLight "KeyLight"
+    {
+        float inputs:intensity = 240
+        float inputs:radius = 1.2
+        double3 xformOp:translate = (12, 16, 10)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def SphereLight "FillLight"
+    {
+        float inputs:intensity = 85
+        float inputs:radius = 0.8
+        double3 xformOp:translate = (-14, 10, 16)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Scope "Materials"
+    {
+        def Material "Noise3dMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/Noise3dMat/StdSurf.outputs:out>
+
+            def Shader "Position"
+            {
+                uniform token info:id = "ND_position_vector3"
+                float3 outputs:out
+            }
+
+            def Shader "ScalePosition"
+            {
+                uniform token info:id = "ND_multiply_vector3FA"
+                float3 inputs:in1.connect = </World/Materials/Noise3dMat/Position.outputs:out>
+                float inputs:in2 = 4.5
+                float3 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_noise3d_float"
+                float3 inputs:position.connect = </World/Materials/Noise3dMat/ScalePosition.outputs:out>
+                float inputs:amplitude = 0.5
+                float inputs:pivot = 0.5
+                float outputs:out
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.06, 0.08, 0.12)
+                color3f inputs:fg = (0.96, 0.74, 0.25)
+                float inputs:mix.connect = </World/Materials/Noise3dMat/Pattern.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/Noise3dMat/Colorize.outputs:out>
+                float inputs:specular = 0.35
+                float inputs:specular_roughness = 0.42
+                token outputs:out
+            }
+        }
+
+        def Material "Cellnoise3dMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/Cellnoise3dMat/StdSurf.outputs:out>
+
+            def Shader "Position"
+            {
+                uniform token info:id = "ND_position_vector3"
+                float3 outputs:out
+            }
+
+            def Shader "ScalePosition"
+            {
+                uniform token info:id = "ND_multiply_vector3FA"
+                float3 inputs:in1.connect = </World/Materials/Cellnoise3dMat/Position.outputs:out>
+                float inputs:in2 = 4.2
+                float3 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_cellnoise3d_float"
+                float3 inputs:position.connect = </World/Materials/Cellnoise3dMat/ScalePosition.outputs:out>
+                float outputs:out
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.06, 0.07, 0.10)
+                color3f inputs:fg = (0.24, 0.82, 0.92)
+                float inputs:mix.connect = </World/Materials/Cellnoise3dMat/Pattern.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/Cellnoise3dMat/Colorize.outputs:out>
+                float inputs:specular = 0.28
+                float inputs:specular_roughness = 0.45
+                token outputs:out
+            }
+        }
+
+        def Material "Worleynoise3dMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/Worleynoise3dMat/StdSurf.outputs:out>
+
+            def Shader "Position"
+            {
+                uniform token info:id = "ND_position_vector3"
+                float3 outputs:out
+            }
+
+            def Shader "ScalePosition"
+            {
+                uniform token info:id = "ND_multiply_vector3FA"
+                float3 inputs:in1.connect = </World/Materials/Worleynoise3dMat/Position.outputs:out>
+                float inputs:in2 = 3.8
+                float3 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_worleynoise3d_float"
+                float3 inputs:position.connect = </World/Materials/Worleynoise3dMat/ScalePosition.outputs:out>
+                float inputs:jitter = 0.9
+                int inputs:style = 0
+                float outputs:out
+            }
+
+            def Shader "ClampPattern"
+            {
+                uniform token info:id = "ND_clamp_float"
+                float inputs:in.connect = </World/Materials/Worleynoise3dMat/Pattern.outputs:out>
+                float inputs:low = 0.0
+                float inputs:high = 1.0
+                float outputs:out
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.05, 0.08, 0.12)
+                color3f inputs:fg = (0.84, 0.92, 1.0)
+                float inputs:mix.connect = </World/Materials/Worleynoise3dMat/ClampPattern.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/Worleynoise3dMat/Colorize.outputs:out>
+                float inputs:specular = 0.3
+                float inputs:specular_roughness = 0.4
+                token outputs:out
+            }
+        }
+
+        def Material "Fractal3dMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/Fractal3dMat/StdSurf.outputs:out>
+
+            def Shader "Position"
+            {
+                uniform token info:id = "ND_position_vector3"
+                float3 outputs:out
+            }
+
+            def Shader "ScalePosition"
+            {
+                uniform token info:id = "ND_multiply_vector3FA"
+                float3 inputs:in1.connect = </World/Materials/Fractal3dMat/Position.outputs:out>
+                float inputs:in2 = 4.8
+                float3 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_fractal3d_float"
+                float3 inputs:position.connect = </World/Materials/Fractal3dMat/ScalePosition.outputs:out>
+                float inputs:amplitude = 1.0
+                int inputs:octaves = 5
+                float inputs:lacunarity = 2.0
+                float inputs:diminish = 0.5
+                float outputs:out
+            }
+
+            def Shader "Normalize"
+            {
+                uniform token info:id = "ND_remap_float"
+                float inputs:in.connect = </World/Materials/Fractal3dMat/Pattern.outputs:out>
+                float inputs:inlow = -1.0
+                float inputs:inhigh = 1.0
+                float inputs:outlow = 0.0
+                float inputs:outhigh = 1.0
+                float outputs:out
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.07, 0.05, 0.10)
+                color3f inputs:fg = (0.95, 0.53, 0.26)
+                float inputs:mix.connect = </World/Materials/Fractal3dMat/Normalize.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/Fractal3dMat/Colorize.outputs:out>
+                float inputs:specular = 0.3
+                float inputs:specular_roughness = 0.44
+                token outputs:out
+            }
+        }
+
+        def Material "Unifiednoise3dMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/Unifiednoise3dMat/StdSurf.outputs:out>
+
+            def Shader "Position"
+            {
+                uniform token info:id = "ND_position_vector3"
+                float3 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_unifiednoise3d_float"
+                float3 inputs:position.connect = </World/Materials/Unifiednoise3dMat/Position.outputs:out>
+                float3 inputs:freq = (4.0, 5.5, 4.0)
+                float3 inputs:offset = (0.15, 0.0, 0.35)
+                float inputs:jitter = 0.78
+                float inputs:outmin = 0.0
+                float inputs:outmax = 1.0
+                bool inputs:clampoutput = true
+                int inputs:octaves = 4
+                float inputs:lacunarity = 2.0
+                float inputs:diminish = 0.5
+                int inputs:type = 2
+                int inputs:style = 1
+                float outputs:out
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.10, 0.09, 0.14)
+                color3f inputs:fg = (0.74, 0.93, 0.38)
+                float inputs:mix.connect = </World/Materials/Unifiednoise3dMat/Pattern.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/Unifiednoise3dMat/Colorize.outputs:out>
+                float inputs:specular = 0.25
+                float inputs:specular_roughness = 0.48
+                token outputs:out
+            }
+        }
+
+        def Material "Flake3dMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/Flake3dMat/StdSurf.outputs:out>
+
+            def Shader "Position"
+            {
+                uniform token info:id = "ND_position_vector3"
+                float3 outputs:out
+            }
+
+            def Shader "Flake"
+            {
+                uniform token info:id = "ND_flake3d"
+                float inputs:size = 1.0 
+                float inputs:roughness = 0.18
+                float inputs:coverage = 0.72
+                float3 inputs:position.connect = </World/Materials/Flake3dMat/Position.outputs:out>
+                int outputs:id
+                float outputs:rand
+                float outputs:presence
+                float3 outputs:flakenormal
+            }
+
+            def Shader "FlakeColor"
+            {
+                uniform token info:id = "ND_randomcolor_integer"
+                int inputs:in.connect = </World/Materials/Flake3dMat/Flake.outputs:id>
+                float inputs:huelow = 0.0
+                float inputs:huehigh = 0.18
+                float inputs:saturationlow = 0.55
+                float inputs:saturationhigh = 0.95
+                float inputs:brightnesslow = 0.75
+                float inputs:brightnesshigh = 1.0
+                int inputs:seed = 9
+                color3f outputs:out
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.10, 0.12, 0.18)
+                color3f inputs:fg.connect = </World/Materials/Flake3dMat/FlakeColor.outputs:out>
+                float inputs:mix.connect = </World/Materials/Flake3dMat/Flake.outputs:presence>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/Flake3dMat/Colorize.outputs:out>
+                float inputs:specular = 0.78
+                float inputs:specular_roughness = 0.12
+                float inputs:metalness = 1.0
+                float3 inputs:normal.connect = </World/Materials/Flake3dMat/Flake.outputs:flakenormal>
+                token outputs:out
+            }
+        }
+
+        def Material "RandomcolorMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/RandomcolorMat/StdSurf.outputs:out>
+
+            def Shader "Position"
+            {
+                uniform token info:id = "ND_position_vector3"
+                float3 outputs:out
+            }
+
+            def Shader "ScalePosition"
+            {
+                uniform token info:id = "ND_multiply_vector3FA"
+                float3 inputs:in1.connect = </World/Materials/RandomcolorMat/Position.outputs:out>
+                float inputs:in2 = 4.0
+                float3 outputs:out
+            }
+
+            def Shader "SeedField"
+            {
+                uniform token info:id = "ND_cellnoise3d_float"
+                float3 inputs:position.connect = </World/Materials/RandomcolorMat/ScalePosition.outputs:out>
+                float outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_randomcolor_float"
+                float inputs:in.connect = </World/Materials/RandomcolorMat/SeedField.outputs:out>
+                float inputs:huelow = 0.0
+                float inputs:huehigh = 1.0
+                float inputs:saturationlow = 0.55
+                float inputs:saturationhigh = 0.95
+                float inputs:brightnesslow = 0.72
+                float inputs:brightnesshigh = 1.0
+                int inputs:seed = 11
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/RandomcolorMat/Pattern.outputs:out>
+                float inputs:specular = 0.22
+                float inputs:specular_roughness = 0.38
+                token outputs:out
+            }
+        }
+    }
+
+    def Xform "Gallery"
+    {
+        def Xform "Noise3d"
+        {
+            double3 xformOp:translate = (-12, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/Noise3dMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/Noise3dMat>
+            }
+        }
+
+        def Xform "Cellnoise3d"
+        {
+            double3 xformOp:translate = (-4, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/Cellnoise3dMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/Cellnoise3dMat>
+            }
+        }
+
+        def Xform "Worleynoise3d"
+        {
+            double3 xformOp:translate = (4, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/Worleynoise3dMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/Worleynoise3dMat>
+            }
+        }
+
+        def Xform "Fractal3d"
+        {
+            double3 xformOp:translate = (12, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/Fractal3dMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/Fractal3dMat>
+            }
+        }
+
+        def Xform "Unifiednoise3d"
+        {
+            double3 xformOp:translate = (-8, 0, -5.2)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/Unifiednoise3dMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/Unifiednoise3dMat>
+            }
+        }
+
+        def Xform "Flake3d"
+        {
+            double3 xformOp:translate = (0, 0, -5.2)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/Flake3dMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/Flake3dMat>
+            }
+        }
+
+        def Xform "Randomcolor"
+        {
+            double3 xformOp:translate = (8, 0, -5.2)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/RandomcolorMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/RandomcolorMat>
+            }
+        }
+    }
+}

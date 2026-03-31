@@ -9,7 +9,9 @@
 #include "mxcpp_value.h"
 
 #include <algorithm>
+#include <cctype>
 #include <deque>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -18,7 +20,23 @@ namespace mxcpp {
 /// Geometric context provided to node evaluation at each shading point.
 struct ShadingContext
 {
+    enum class TransformSpaceType {
+        Point,
+        Vector,
+        Normal
+    };
+
+    using TransformSpaceFn = bool(*)(
+        const void* userData,
+        const std::string& fromSpace,
+        const std::string& toSpace,
+        TransformSpaceType type,
+        const Vec3f& in,
+        Vec3f* out);
+
+    // Object-space position, matching MaterialX's default Pobject behavior.
     Vec3f position = Vec3f(0.0f);
+    // World-space shading frame, matching MaterialX defaults such as Nworld.
     Vec3f normal = Vec3f(0.0f, 0.0f, 1.0f);
     Vec3f tangent = Vec3f(1.0f, 0.0f, 0.0f);
     Vec3f bitangent = Vec3f(0.0f, 1.0f, 0.0f);
@@ -29,20 +47,39 @@ struct ShadingContext
     float baryU = 0.0f;
     float baryV = 0.0f;
 
-    // Surface derivatives in the active parameterization basis.
+    // World-space surface derivatives in the active parameterization basis.
     // With "st", these are dP/ds and dP/dt; otherwise they fall back to the
     // coarse triangle's local barycentric-edge basis.
     Vec3f dPdu = Vec3f(0.0f);
     Vec3f dPdv = Vec3f(0.0f);
 
-    // Screen-space position derivatives (from ray differentials)
+    // World-space screen-space position derivatives (from ray differentials).
     Vec3f dPdx = Vec3f(0.0f);
     Vec3f dPdy = Vec3f(0.0f);
+
+    // Object-space position derivatives used when reevaluating upstream nodes
+    // that depend on MaterialX's default Pobject position.
+    Vec3f dPositiondu = Vec3f(0.0f);
+    Vec3f dPositiondv = Vec3f(0.0f);
+    Vec3f dPositiondx = Vec3f(0.0f);
+    Vec3f dPositiondy = Vec3f(0.0f);
 
     // Screen-space coefficients for the active derivative basis above.
     // These are true texture derivatives only when dPdu/dPdv represent st.
     float dudx = 0.0f, dvdx = 0.0f;
     float dudy = 0.0f, dvdy = 0.0f;
+
+    // Named-space transform support for geometric and transform* nodes.
+    // The callback can handle arbitrary renderer-defined spaces; when it is
+    // absent or declines a transform, mxcpp falls back to built-in object/world
+    // transforms using the matrices below.
+    TransformSpaceFn transformSpace = nullptr;
+    const void* transformUserData = nullptr;
+    std::string workingSpace = "world";
+    Mat4f objectToWorldMatrix;
+    Mat4f worldToObjectMatrix;
+    bool hasObjectToWorldTransform = false;
+    bool hasWorldToObjectTransform = false;
 
     // Per-sample varying property lookup (geompropvalue).
     // Returns the named geometric property at the current shading point.
@@ -294,11 +331,107 @@ T Get(const ParamMap& params,
     return ValueGetter<T>::Get(params, name, defaultVal);
 }
 
+inline std::string
+NormalizeSpaceName(const std::string& space,
+                   const std::string& workingSpace)
+{
+    std::string normalized = space.empty() ? workingSpace : space;
+    std::transform(
+        normalized.begin(), normalized.end(), normalized.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    if (normalized == "model") {
+        return "object";
+    }
+    if (normalized == "pobject" ||
+        normalized == "nobject" ||
+        normalized == "tobject" ||
+        normalized == "bobject") {
+        return "object";
+    }
+    if (normalized == "pworld" ||
+        normalized == "nworld" ||
+        normalized == "tworld" ||
+        normalized == "bworld") {
+        return "world";
+    }
+    return normalized;
+}
+
+inline bool
+TransformNamedVec3(const ShadingContext& ctx,
+                   const std::string& fromSpace,
+                   const std::string& toSpace,
+                   ShadingContext::TransformSpaceType type,
+                   const Vec3f& in,
+                   Vec3f* out)
+{
+    const std::string from = NormalizeSpaceName(fromSpace, ctx.workingSpace);
+    const std::string to = NormalizeSpaceName(toSpace, ctx.workingSpace);
+
+    if (from == to) {
+        if (out) {
+            *out = in;
+        }
+        return true;
+    }
+
+    if (ctx.transformSpace &&
+        ctx.transformSpace(ctx.transformUserData, from, to, type, in, out)) {
+        return true;
+    }
+
+    const bool fromObject = from == "object";
+    const bool fromWorld = from == "world";
+    const bool toObject = to == "object";
+    const bool toWorld = to == "world";
+    if ((!fromObject && !fromWorld) || (!toObject && !toWorld)) {
+        return false;
+    }
+
+    Vec3f result(0.0f);
+    if (type == ShadingContext::TransformSpaceType::Point) {
+        if (fromObject && toWorld && ctx.hasObjectToWorldTransform) {
+            ctx.objectToWorldMatrix.multVecMatrix(in, result);
+        } else if (fromWorld && toObject && ctx.hasWorldToObjectTransform) {
+            ctx.worldToObjectMatrix.multVecMatrix(in, result);
+        } else {
+            return false;
+        }
+    } else if (type == ShadingContext::TransformSpaceType::Vector) {
+        if (fromObject && toWorld && ctx.hasObjectToWorldTransform) {
+            ctx.objectToWorldMatrix.multDirMatrix(in, result);
+        } else if (fromWorld && toObject && ctx.hasWorldToObjectTransform) {
+            ctx.worldToObjectMatrix.multDirMatrix(in, result);
+        } else {
+            return false;
+        }
+    } else {
+        if (fromObject && toWorld && ctx.hasWorldToObjectTransform) {
+            ctx.worldToObjectMatrix.transposed().multDirMatrix(in, result);
+        } else if (fromWorld && toObject && ctx.hasObjectToWorldTransform) {
+            ctx.objectToWorldMatrix.transposed().multDirMatrix(in, result);
+        } else {
+            return false;
+        }
+
+        if (Dot(result, result) > 0.0f) {
+            result.normalize();
+        }
+    }
+
+    if (out) {
+        *out = result;
+    }
+    return true;
+}
+
 /// Zero value helpers for template-based node implementations.
 template<typename T> inline T Zero();
 template<> inline float Zero<float>() { return 0.0f; }
 template<> inline int Zero<int>() { return 0; }
 template<> inline bool Zero<bool>() { return false; }
+template<> inline std::string Zero<std::string>() { return std::string(); }
 template<> inline Vec2f Zero<Vec2f>() { return Vec2f(0.0f); }
 template<> inline Vec3f Zero<Vec3f>() { return Vec3f(0.0f); }
 template<> inline Vec4f Zero<Vec4f>() { return Vec4f(0.0f); }

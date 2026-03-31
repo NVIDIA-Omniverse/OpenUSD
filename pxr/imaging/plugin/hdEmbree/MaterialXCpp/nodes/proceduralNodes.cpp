@@ -181,6 +181,24 @@ _Rotate2d(const Vec2f& v, float amountDegrees)
                  v[0] * s + v[1] * c);
 }
 
+inline Vec3f
+_Rotate3d(const Vec3f& v, float amountDegrees, const Vec3f& axis)
+{
+    Vec3f normalizedAxis = axis;
+    const float len = normalizedAxis.length();
+    if (len < 1.0e-8f) {
+        return v;
+    }
+
+    normalizedAxis /= len;
+    const float rad = amountDegrees * (_kPi / 180.0f);
+    const float c = std::cos(rad);
+    const float s = std::sin(rad);
+    return v * c +
+           Cross(normalizedAxis, v) * s +
+           normalizedAxis * Dot(normalizedAxis, v) * (1.0f - c);
+}
+
 // -----------------------------------------------------------------------
 // MaterialX-compatible Perlin / cell / Worley / flake helpers.
 // Ported from MaterialX's mx_noise.glsl and mx_flake.glsl.
@@ -478,6 +496,17 @@ _CellNoise2dVec3(float x, float y)
                  _BitsTo01(_HashInt(ix, iy, 2)));
 }
 
+Vec3f
+_CellNoise3dVec3(float x, float y, float z)
+{
+    const int ix = static_cast<int>(std::floor(x));
+    const int iy = static_cast<int>(std::floor(y));
+    const int iz = static_cast<int>(std::floor(z));
+    return Vec3f(_BitsTo01(_HashInt(ix, iy, iz, 0)),
+                 _BitsTo01(_HashInt(ix, iy, iz, 1)),
+                 _BitsTo01(_HashInt(ix, iy, iz, 2)));
+}
+
 float
 _FractalNoise2dFloat(Vec2f p, int octaves, float lacunarity, float diminish)
 {
@@ -635,6 +664,147 @@ _WorleyNoise2dVec3(const Vec2f& p, float jitter, int style)
     if (style == 1) {
         const Vec2f tmpP = minPos + p;
         return _CellNoise2dVec3(tmpP[0], tmpP[1]);
+    }
+    return Vec3f(std::sqrt(sqdist[0]),
+                 std::sqrt(sqdist[1]),
+                 std::sqrt(sqdist[2]));
+}
+
+Vec3f
+_WorleyCellPosition3d(int x, int y, int z,
+                      int xoff, int yoff, int zoff,
+                      float jitter)
+{
+    Vec3f off = _CellNoise3dVec3(float(x + xoff),
+                                 float(y + yoff),
+                                 float(z + zoff));
+    off -= Vec3f(0.5f);
+    off *= jitter;
+    off += Vec3f(0.5f);
+    return Vec3f(float(x), float(y), float(z)) + off;
+}
+
+float
+_WorleyDistance3d(const Vec3f& p,
+                  int x, int y, int z,
+                  int xoff, int yoff, int zoff,
+                  float jitter)
+{
+    const Vec3f cellPos =
+        _WorleyCellPosition3d(x, y, z, xoff, yoff, zoff, jitter);
+    const Vec3f diff = cellPos - p;
+    return Dot(diff, diff);
+}
+
+float
+_WorleyNoise3dFloat(const Vec3f& p, float jitter, int style)
+{
+    int X = 0;
+    int Y = 0;
+    int Z = 0;
+    const Vec3f localPos(_FloorFrac(p[0], X),
+                         _FloorFrac(p[1], Y),
+                         _FloorFrac(p[2], Z));
+    float minDist = 1.0e6f;
+    Vec3f minPos(0.0f);
+
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            for (int z = -1; z <= 1; ++z) {
+                const float dist =
+                    _WorleyDistance3d(localPos, x, y, z, X, Y, Z, jitter);
+                const Vec3f cellPos =
+                    _WorleyCellPosition3d(x, y, z, X, Y, Z, jitter) - localPos;
+                if (dist < minDist) {
+                    minDist = dist;
+                    minPos = cellPos;
+                }
+            }
+        }
+    }
+
+    if (style == 1) {
+        const Vec3f tmpP = minPos + p;
+        return _CellNoise3d(tmpP[0], tmpP[1], tmpP[2]);
+    }
+    return std::sqrt(minDist);
+}
+
+Vec2f
+_WorleyNoise3dVec2(const Vec3f& p, float jitter, int style)
+{
+    int X = 0;
+    int Y = 0;
+    int Z = 0;
+    const Vec3f localPos(_FloorFrac(p[0], X),
+                         _FloorFrac(p[1], Y),
+                         _FloorFrac(p[2], Z));
+    Vec2f sqdist(1.0e6f, 1.0e6f);
+    Vec3f minPos(0.0f);
+
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            for (int z = -1; z <= 1; ++z) {
+                const float dist =
+                    _WorleyDistance3d(localPos, x, y, z, X, Y, Z, jitter);
+                const Vec3f cellPos =
+                    _WorleyCellPosition3d(x, y, z, X, Y, Z, jitter) - localPos;
+                if (dist < sqdist[0]) {
+                    sqdist[1] = sqdist[0];
+                    sqdist[0] = dist;
+                    minPos = cellPos;
+                } else if (dist < sqdist[1]) {
+                    sqdist[1] = dist;
+                }
+            }
+        }
+    }
+
+    if (style == 1) {
+        const Vec3f tmpP = minPos + p;
+        const Vec3f tmp = _CellNoise3dVec3(tmpP[0], tmpP[1], tmpP[2]);
+        return Vec2f(tmp[0], tmp[1]);
+    }
+    return Vec2f(std::sqrt(sqdist[0]), std::sqrt(sqdist[1]));
+}
+
+Vec3f
+_WorleyNoise3dVec3(const Vec3f& p, float jitter, int style)
+{
+    int X = 0;
+    int Y = 0;
+    int Z = 0;
+    const Vec3f localPos(_FloorFrac(p[0], X),
+                         _FloorFrac(p[1], Y),
+                         _FloorFrac(p[2], Z));
+    Vec3f sqdist(1.0e6f, 1.0e6f, 1.0e6f);
+    Vec3f minPos(0.0f);
+
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            for (int z = -1; z <= 1; ++z) {
+                const float dist =
+                    _WorleyDistance3d(localPos, x, y, z, X, Y, Z, jitter);
+                const Vec3f cellPos =
+                    _WorleyCellPosition3d(x, y, z, X, Y, Z, jitter) - localPos;
+                if (dist < sqdist[0]) {
+                    sqdist[2] = sqdist[1];
+                    sqdist[1] = sqdist[0];
+                    sqdist[0] = dist;
+                    minPos = cellPos;
+                } else if (dist < sqdist[1]) {
+                    sqdist[2] = sqdist[1];
+                    sqdist[1] = dist;
+                } else if (dist < sqdist[2]) {
+                    sqdist[2] = dist;
+                }
+            }
+        }
+    }
+
+    if (style == 1) {
+        const Vec3f tmpP = minPos + p;
+        return _CellNoise3dVec3(tmpP[0], tmpP[1], tmpP[2]);
     }
     return Vec3f(std::sqrt(sqdist[0]),
                  std::sqrt(sqdist[1]),
@@ -1183,6 +1353,42 @@ _EvalCellnoise3d(const ParamMap& inputs,
 }
 
 static void
+_EvalWorleyNoise3dFloat(const ParamMap& inputs,
+                        const ShadingContext& ctx,
+                        NodeOutputMap* outputs)
+{
+    const Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    const float jitter = Get<float>(inputs, _kJitter, 1.0f);
+    const int style = Get<int>(inputs, _kStyle, 0);
+    _StoreTypedOutput(outputs, _kOut,
+                      _WorleyNoise3dFloat(pos, jitter, style));
+}
+
+static void
+_EvalWorleyNoise3dVec2(const ParamMap& inputs,
+                       const ShadingContext& ctx,
+                       NodeOutputMap* outputs)
+{
+    const Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    const float jitter = Get<float>(inputs, _kJitter, 1.0f);
+    const int style = Get<int>(inputs, _kStyle, 0);
+    _StoreTypedOutput(outputs, _kOut,
+                      _WorleyNoise3dVec2(pos, jitter, style));
+}
+
+static void
+_EvalWorleyNoise3dVec3(const ParamMap& inputs,
+                       const ShadingContext& ctx,
+                       NodeOutputMap* outputs)
+{
+    const Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    const float jitter = Get<float>(inputs, _kJitter, 1.0f);
+    const int style = Get<int>(inputs, _kStyle, 0);
+    _StoreTypedOutput(outputs, _kOut,
+                      _WorleyNoise3dVec3(pos, jitter, style));
+}
+
+static void
 _EvalCellnoise2d(const ParamMap& inputs,
                  const ShadingContext& ctx,
                  NodeOutputMap* outputs)
@@ -1275,6 +1481,69 @@ _EvalUnifiedNoise2dFloat(const ParamMap& inputs,
     default:
         value = _PerlinNoise2d(applyCellJitter[0], applyCellJitter[1]) * 0.5f +
                 0.5f;
+        break;
+    }
+
+    value = _Remap(value, 0.0f, 1.0f, outMin, outMax);
+    if (clampOutput) {
+        const float lo = std::min(outMin, outMax);
+        const float hi = std::max(outMin, outMax);
+        value = _ClampFloat(value, lo, hi);
+    }
+    _StoreTypedOutput(outputs, _kOut, value);
+}
+
+static void
+_EvalUnifiedNoise3dFloat(const ParamMap& inputs,
+                         const ShadingContext& ctx,
+                         NodeOutputMap* outputs)
+{
+    const Vec3f position = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    const Vec3f freq = Get<Vec3f>(inputs, _kFreq, Vec3f(1.0f));
+    const Vec3f offset = Get<Vec3f>(inputs, _kOffset, Vec3f(0.0f));
+    const float jitter = Get<float>(inputs, _kJitter, 1.0f);
+    const float outMin = Get<float>(inputs, _kOutmin, 0.0f);
+    const float outMax = Get<float>(inputs, _kOutmax, 1.0f);
+    const bool clampOutput = Get<bool>(inputs, _kClampoutput, true);
+    const int octaves = Get<int>(inputs, _kOctaves, 3);
+    const float lacunarity = Get<float>(inputs, _kLacunarity, 2.0f);
+    const float diminish = Get<float>(inputs, _kDiminish, 0.5f);
+    const int type = Get<int>(inputs, _kType, 0);
+    const int style = Get<int>(inputs, _kStyle, 0);
+
+    const Vec3f applyFreq = CompMult(position, freq);
+    const Vec3f applyOffset = applyFreq + offset;
+    const float cellJitterMult = (jitter - 1.0f) * 90000.0f;
+    const Vec3f applyCellJitter =
+        _Rotate3d(applyOffset, cellJitterMult, Vec3f(0.1f, 1.0f, 0.0f));
+
+    float value = 0.0f;
+    switch (type) {
+    case 1:
+        value = _CellNoise3d(applyCellJitter[0],
+                             applyCellJitter[1],
+                             applyCellJitter[2]);
+        break;
+    case 2:
+        value = _WorleyNoise3dFloat(applyOffset, jitter, style);
+        break;
+    case 3:
+        value = 0.0f;
+        {
+            Vec3f p = applyCellJitter;
+            float weight = 1.0f;
+            for (int i = 0; i < octaves; ++i) {
+                value += weight * _PerlinNoise3d(p[0], p[1], p[2]);
+                p *= lacunarity;
+                weight *= diminish;
+            }
+        }
+        break;
+    case 0:
+    default:
+        value = _PerlinNoise3d(applyCellJitter[0],
+                               applyCellJitter[1],
+                               applyCellJitter[2]) * 0.5f + 0.5f;
         break;
     }
 
@@ -1636,6 +1905,41 @@ _EvalFlake2d(const ParamMap& inputs,
     _StoreTypedOutput(outputs, _kFlakenormal, flakeNormal);
 }
 
+static void
+_EvalFlake3d(const ParamMap& inputs,
+             const ShadingContext& ctx,
+             NodeOutputMap* outputs)
+{
+    const float size = Get<float>(inputs, _kSize, 0.01f);
+    const float roughness = Get<float>(inputs, _kRoughness, 0.1f);
+    const float coverage = Get<float>(inputs, _kCoverage, 0.5f);
+    const Vec3f position = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    const Vec3f normal = Get<Vec3f>(inputs, _kNormal, ctx.normal);
+    const Vec3f tangent = Get<Vec3f>(inputs, _kTangent, ctx.tangent);
+    const Vec3f bitangent = Get<Vec3f>(inputs, _kBitangent, ctx.bitangent);
+
+    int id = 0;
+    float rand = 0.0f;
+    float presence = 0.0f;
+    Vec3f flakeNormal = normal;
+    _EvalFlake(position,
+               size,
+               roughness,
+               coverage,
+               normal,
+               tangent,
+               bitangent,
+               &id,
+               &rand,
+               &presence,
+               &flakeNormal);
+
+    _StoreTypedOutput(outputs, _kId, id);
+    _StoreTypedOutput(outputs, _kRand, rand);
+    _StoreTypedOutput(outputs, _kPresence, presence);
+    _StoreTypedOutput(outputs, _kFlakenormal, flakeNormal);
+}
+
 } // namespace
 
 // ---- Registration --------------------------------------------------------
@@ -1676,9 +1980,14 @@ RegisterProceduralNodes(NodeRegistry& reg)
     _REG("ND_cellnoise3d_float", &_EvalCellnoise3d);
     _REG("ND_cellnoise2d_float", &_EvalCellnoise2d);
 
+    _REG("ND_worleynoise3d_float", &_EvalWorleyNoise3dFloat);
+    _REG("ND_worleynoise3d_vector2", &_EvalWorleyNoise3dVec2);
+    _REG("ND_worleynoise3d_vector3", &_EvalWorleyNoise3dVec3);
     _REG("ND_worleynoise2d_float", &_EvalWorleyNoise2dFloat);
     _REG("ND_worleynoise2d_vector2", &_EvalWorleyNoise2dVec2);
     _REG("ND_worleynoise2d_vector3", &_EvalWorleyNoise2dVec3);
+
+    _REG("ND_unifiednoise3d_float", &_EvalUnifiedNoise3dFloat);
     _REG("ND_unifiednoise2d_float", &_EvalUnifiedNoise2dFloat);
 
     _REG("ND_ramplr_float", &_EvalRampLrTyped<float>);
@@ -1733,6 +2042,7 @@ RegisterProceduralNodes(NodeRegistry& reg)
     _REG("ND_randomcolor_integer", &_EvalRandomColorInteger);
 
     _REG("ND_flake2d", &_EvalFlake2d);
+    _REG("ND_flake3d", &_EvalFlake3d);
 }
 
 #undef _REG

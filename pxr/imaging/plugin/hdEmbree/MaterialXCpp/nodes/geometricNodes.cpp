@@ -25,6 +25,7 @@ static const SlotName _kBitangent("bitangent");
 static const SlotName _kOut("out");
 static const SlotName _kGeomprop("geomprop");
 static const SlotName _kDefault("default");
+static const SlotName _kSpace("space");
 
 static float
 _EvaluateFloatInput(const ParamMap& inputs,
@@ -58,7 +59,7 @@ static ShadingContext
 _OffsetContextDx(const ShadingContext& ctx)
 {
     ShadingContext shifted = ctx;
-    shifted.position += ctx.dPdx;
+    shifted.position += ctx.dPositiondx;
     shifted.texcoord += Vec2f(ctx.dudx, ctx.dvdx);
     return shifted;
 }
@@ -67,7 +68,7 @@ static ShadingContext
 _OffsetContextDy(const ShadingContext& ctx)
 {
     ShadingContext shifted = ctx;
-    shifted.position += ctx.dPdy;
+    shifted.position += ctx.dPositiondy;
     shifted.texcoord += Vec2f(ctx.dudy, ctx.dvdy);
     return shifted;
 }
@@ -76,7 +77,7 @@ static ShadingContext
 _OffsetContextDu(const ShadingContext& ctx, float du)
 {
     ShadingContext shifted = ctx;
-    shifted.position += ctx.dPdu * du;
+    shifted.position += ctx.dPositiondu * du;
     shifted.texcoord += Vec2f(du, 0.0f);
     return shifted;
 }
@@ -85,9 +86,17 @@ static ShadingContext
 _OffsetContextDv(const ShadingContext& ctx, float dv)
 {
     ShadingContext shifted = ctx;
-    shifted.position += ctx.dPdv * dv;
+    shifted.position += ctx.dPositiondv * dv;
     shifted.texcoord += Vec2f(0.0f, dv);
     return shifted;
+}
+
+static std::string
+_GetSpace(const ParamMap& inputs)
+{
+    return NormalizeSpaceName(
+        Get<std::string>(inputs, _kSpace, std::string("object")),
+        std::string("object"));
 }
 
 static float
@@ -188,31 +197,55 @@ _ComputeHeightToNormalEncoded(const ParamMap& inputs,
 // Geometric nodes read from the shading context.
 
 static void
-_EvalPosition(const ParamMap&, const ShadingContext& ctx,
+_EvalPosition(const ParamMap& inputs, const ShadingContext& ctx,
               NodeOutputMap* outputs)
 {
-    (*outputs)[_kOut] = Value(ctx.position);
+    const std::string space = _GetSpace(inputs);
+    Vec3f result = ctx.position;
+    TransformNamedVec3(
+        ctx, "object", space,
+        ShadingContext::TransformSpaceType::Point,
+        ctx.position, &result);
+    (*outputs)[_kOut] = Value(result);
 }
 
 static void
-_EvalNormal(const ParamMap&, const ShadingContext& ctx,
+_EvalNormal(const ParamMap& inputs, const ShadingContext& ctx,
             NodeOutputMap* outputs)
 {
-    (*outputs)[_kOut] = Value(ctx.normal);
+    const std::string space = _GetSpace(inputs);
+    Vec3f result = ctx.normal;
+    TransformNamedVec3(
+        ctx, "world", space,
+        ShadingContext::TransformSpaceType::Normal,
+        ctx.normal, &result);
+    (*outputs)[_kOut] = Value(result);
 }
 
 static void
-_EvalTangent(const ParamMap&, const ShadingContext& ctx,
+_EvalTangent(const ParamMap& inputs, const ShadingContext& ctx,
              NodeOutputMap* outputs)
 {
-    (*outputs)[_kOut] = Value(ctx.tangent);
+    const std::string space = _GetSpace(inputs);
+    Vec3f result = ctx.tangent;
+    TransformNamedVec3(
+        ctx, "world", space,
+        ShadingContext::TransformSpaceType::Vector,
+        ctx.tangent, &result);
+    (*outputs)[_kOut] = Value(result);
 }
 
 static void
-_EvalBitangent(const ParamMap&, const ShadingContext& ctx,
+_EvalBitangent(const ParamMap& inputs, const ShadingContext& ctx,
                NodeOutputMap* outputs)
 {
-    (*outputs)[_kOut] = Value(ctx.bitangent);
+    const std::string space = _GetSpace(inputs);
+    Vec3f result = ctx.bitangent;
+    TransformNamedVec3(
+        ctx, "world", space,
+        ShadingContext::TransformSpaceType::Vector,
+        ctx.bitangent, &result);
+    (*outputs)[_kOut] = Value(result);
 }
 
 static void

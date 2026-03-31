@@ -56,6 +56,8 @@ struct HdEmbreeInstanceContext
 {
     /// The object-to-world transform, for transforming normals to worldspace.
     GfMatrix4f objectToWorldMatrix;
+    /// The inverse world-to-object transform.
+    GfMatrix4f worldToObjectMatrix;
     /// The scene the prototype geometry lives in, for passing to
     /// rtcInterpolate.
     RTCScene rootScene;
