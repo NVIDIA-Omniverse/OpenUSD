@@ -158,6 +158,24 @@ _EvalConvert_color4_vector4(const ParamMap& inputs,
 }
 
 static void
+_EvalConvert_color4_vector2(const ParamMap& inputs,
+                            const ShadingContext&,
+                            NodeOutputMap* outputs)
+{
+    Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
+    (*outputs)[_kOut] = Value(Vec2f(v[0], v[1]));
+}
+
+static void
+_EvalConvert_color4_color3(const ParamMap& inputs,
+                           const ShadingContext&,
+                           NodeOutputMap* outputs)
+{
+    Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
+    (*outputs)[_kOut] = Value(Vec3f(v[0], v[1], v[2]));
+}
+
+static void
 _EvalConvert_float_color4(const ParamMap& inputs,
                           const ShadingContext&,
                           NodeOutputMap* outputs)
@@ -204,6 +222,12 @@ RegisterChannelNodes(NodeRegistry& reg)
     _REG("ND_convert_color3_float",     &_EvalConvert_color3_float);
     _REG("ND_convert_color3_vector3",   &_EvalConvert_color3_vector3);
     _REG("ND_convert_vector3_color3",   &_EvalConvert_color3_vector3);
+    _REG("ND_convert_color4_color3",    &_EvalConvert_color4_color3);
+    _REG("ND_convert_vector4_color3",   &_EvalConvert_color4_color3);
+    _REG("ND_convert_color4_vector2",   &_EvalConvert_color4_vector2);
+    _REG("ND_convert_vector4_vector2",  &_EvalConvert_color4_vector2);
+    _REG("ND_convert_color4_vector3",   &_EvalConvert_color4_color3);
+    _REG("ND_convert_vector4_vector3",  &_EvalConvert_color4_color3);
     _REG("ND_convert_color4_vector4",   &_EvalConvert_color4_vector4);
     _REG("ND_convert_vector4_color4",   &_EvalConvert_color4_vector4);
     _REG("ND_convert_float_color4",     &_EvalConvert_float_color4);

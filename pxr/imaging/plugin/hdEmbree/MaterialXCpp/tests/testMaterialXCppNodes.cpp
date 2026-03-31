@@ -34,6 +34,20 @@ _Eval(const char* nodeTypeId, const ParamMap& inputs)
     return outputs;
 }
 
+static NodeOutputMap
+_EvalWithCtx(const char* nodeTypeId,
+             const ParamMap& inputs,
+             const ShadingContext& ctx)
+{
+    NodeRegistry::RegisterBuiltinNodes();
+    auto fn = NodeRegistry::GetInstance().Find(std::string(nodeTypeId));
+    NodeOutputMap outputs;
+    if (fn) {
+        fn(inputs, ctx, &outputs);
+    }
+    return outputs;
+}
+
 static float _GetFloat(const NodeOutputMap& o, const char* name = "out") {
     const Value* value = o.Find(name);
     if (value && ValueHolds<float>(*value))
@@ -228,6 +242,19 @@ static bool TestCombineSeparateRoundtrip() {
     return Test_IsClose(x, 0.2f) &&
            Test_IsClose(y, 0.4f) &&
            Test_IsClose(z, 0.6f);
+}
+
+static bool TestConvertColor4ToColor3() {
+    ParamMap in;
+    in["in"] = Value(Vec4f(0.2f, 0.4f, 0.6f, 0.8f));
+
+    auto colorOut = _Eval("ND_convert_color4_color3", in);
+    if (!Test_IsClose(_GetVec3(colorOut), Vec3f(0.2f, 0.4f, 0.6f), 1e-6f)) {
+        return false;
+    }
+
+    auto vec2Out = _Eval("ND_convert_vector4_vector2", in);
+    return Test_IsClose(_GetVec2(vec2Out), Vec2f(0.2f, 0.4f), 1e-6f);
 }
 
 // ---------------------------------------------------------------------------
@@ -529,6 +556,226 @@ static bool TestMixVecVariant() {
     in["mix"] = Value(Vec3f(1.0f, 0.0f, 0.5f));
     auto out = _Eval("ND_mix_color3_color3", in);
     return Test_IsClose(_GetVec3(out), Vec3f(1.0f, 1.0f, 0.0f));
+}
+
+// ---------------------------------------------------------------------------
+// Procedural node tests
+// ---------------------------------------------------------------------------
+
+static bool TestProceduralWorleyNoise2d() {
+    ParamMap in;
+    in["texcoord"] = Value(Vec2f(0.25f, 0.75f));
+    in["jitter"] = Value(0.0f);
+
+    auto outFloat = _Eval("ND_worleynoise2d_float", in);
+    if (!Test_IsClose(_GetFloat(outFloat), 0.35355339f, 1e-5f)) {
+        return false;
+    }
+
+    auto outVec2 = _Eval("ND_worleynoise2d_vector2", in);
+    return Test_IsClose(_GetVec2(outVec2),
+                        Vec2f(0.35355339f, 0.79056942f),
+                        1e-5f);
+}
+
+static bool TestProceduralFractal2dSingleOctave() {
+    ParamMap in;
+    in["texcoord"] = Value(Vec2f(0.37f, 0.81f));
+    in["amplitude"] = Value(1.0f);
+    in["octaves"] = Value(1);
+    in["lacunarity"] = Value(2.0f);
+    in["diminish"] = Value(0.5f);
+
+    auto fractal = _Eval("ND_fractal2d_float", in);
+
+    ParamMap noiseIn;
+    noiseIn["texcoord"] = Value(Vec2f(0.37f, 0.81f));
+    noiseIn["amplitude"] = Value(1.0f);
+    noiseIn["pivot"] = Value(0.0f);
+    auto noise = _Eval("ND_noise2d_float", noiseIn);
+    return Test_IsClose(_GetFloat(fractal), _GetFloat(noise), 1e-5f);
+}
+
+static bool TestProceduralUnifiedNoise2dCellRemap() {
+    ParamMap in;
+    in["texcoord"] = Value(Vec2f(1.2f, 2.7f));
+    in["freq"] = Value(Vec2f(1.0f, 1.0f));
+    in["offset"] = Value(Vec2f(0.0f, 0.0f));
+    in["jitter"] = Value(1.0f);
+    in["type"] = Value(1);
+    in["outmin"] = Value(2.0f);
+    in["outmax"] = Value(4.0f);
+    in["clampoutput"] = Value(true);
+
+    auto unified = _Eval("ND_unifiednoise2d_float", in);
+
+    ParamMap cellIn;
+    cellIn["texcoord"] = Value(Vec2f(1.2f, 2.7f));
+    auto cell = _Eval("ND_cellnoise2d_float", cellIn);
+    const float expected = 2.0f + _GetFloat(cell) * 2.0f;
+    return Test_IsClose(_GetFloat(unified), expected, 1e-5f);
+}
+
+static bool TestProceduralRampLrAndSplitLr() {
+    {
+        ParamMap in;
+        in["valuel"] = Value(1.0f);
+        in["valuer"] = Value(5.0f);
+        in["texcoord"] = Value(Vec2f(0.25f, 0.0f));
+        auto out = _Eval("ND_ramplr_float", in);
+        if (!Test_IsClose(_GetFloat(out), 2.0f, 1e-5f)) {
+            return false;
+        }
+    }
+
+    {
+        ParamMap in;
+        in["valuel"] = Value(0.0f);
+        in["valuer"] = Value(1.0f);
+        in["center"] = Value(0.5f);
+        in["texcoord"] = Value(Vec2f(0.5f, 0.0f));
+        ShadingContext ctx;
+        ctx.texcoord = Vec2f(0.5f, 0.0f);
+        ctx.dudx = 1.0f;
+        auto out = _EvalWithCtx("ND_splitlr_float", in, ctx);
+        if (!Test_IsClose(_GetFloat(out), 0.5f, 1e-5f)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool TestProceduralRamp4AndRamp() {
+    {
+        ParamMap in;
+        in["valuetl"] = Value(0.0f);
+        in["valuetr"] = Value(1.0f);
+        in["valuebl"] = Value(2.0f);
+        in["valuebr"] = Value(3.0f);
+        in["texcoord"] = Value(Vec2f(0.25f, 0.25f));
+        auto out = _Eval("ND_ramp4_float", in);
+        if (!Test_IsClose(_GetFloat(out), 0.75f, 1e-5f)) {
+            return false;
+        }
+    }
+
+    {
+        ParamMap in;
+        in["texcoord"] = Value(Vec2f(0.25f, 0.0f));
+        in["type"] = Value(0);
+        in["interpolation"] = Value(0);
+        in["num_intervals"] = Value(2);
+        in["interval1"] = Value(0.0f);
+        in["interval2"] = Value(1.0f);
+        in["color1"] = Value(Vec4f(0.0f, 0.0f, 0.0f, 1.0f));
+        in["color2"] = Value(Vec4f(1.0f, 1.0f, 1.0f, 1.0f));
+        auto out = _Eval("ND_ramp", in);
+        return Test_IsClose(_GetVec4(out), Vec4f(0.25f, 0.25f, 0.25f, 1.0f));
+    }
+}
+
+static bool TestProceduralPatterns() {
+    {
+        ParamMap in;
+        in["texcoord"] = Value(Vec2f(0.2f, 0.1f));
+        auto out = _Eval("ND_checkerboard_color3", in);
+        if (!Test_IsClose(_GetVec3(out), Vec3f(1.0f), 1e-5f)) {
+            return false;
+        }
+    }
+    {
+        ParamMap in;
+        in["texcoord"] = Value(Vec2f(0.5f, 0.05f));
+        in["center"] = Value(Vec2f(0.0f));
+        in["radius"] = Value(0.1f);
+        in["point1"] = Value(Vec2f(0.0f, 0.0f));
+        in["point2"] = Value(Vec2f(1.0f, 0.0f));
+        auto out = _Eval("ND_line_float", in);
+        if (!Test_IsClose(_GetFloat(out), 1.0f, 1e-5f)) {
+            return false;
+        }
+    }
+    {
+        ParamMap in;
+        in["texcoord"] = Value(Vec2f(0.2f, 0.2f));
+        in["center"] = Value(Vec2f(0.0f));
+        in["radius"] = Value(0.5f);
+        auto out = _Eval("ND_circle_float", in);
+        if (!Test_IsClose(_GetFloat(out), 1.0f, 1e-5f)) {
+            return false;
+        }
+    }
+    {
+        ParamMap in;
+        in["texcoord"] = Value(Vec2f(0.0f, 0.0f));
+        in["center"] = Value(Vec2f(0.0f));
+        in["radius"] = Value(0.5f);
+        auto out = _Eval("ND_hexagon_float", in);
+        if (!Test_IsClose(_GetFloat(out), 1.0f, 1e-5f)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool TestProceduralGridAndCrosshatch() {
+    {
+        ParamMap in;
+        in["texcoord"] = Value(Vec2f(0.0f, 0.0f));
+        auto out = _Eval("ND_grid_color3", in);
+        if (!Test_IsClose(_GetVec3(out), Vec3f(1.0f), 1e-5f)) {
+            return false;
+        }
+    }
+    {
+        ParamMap in;
+        in["texcoord"] = Value(Vec2f(0.5f, 0.5f));
+        auto out = _Eval("ND_crosshatch_color3", in);
+        if (!Test_IsClose(_GetVec3(out), Vec3f(1.0f), 1e-5f)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool TestProceduralRandomNodes() {
+    ParamMap rf;
+    rf["in"] = Value(0.25f);
+    rf["min"] = Value(2.0f);
+    rf["max"] = Value(4.0f);
+    rf["seed"] = Value(7);
+    auto out1 = _Eval("ND_randomfloat_float", rf);
+    auto out2 = _Eval("ND_randomfloat_float", rf);
+    const float randomFloat = _GetFloat(out1);
+    if (randomFloat < 2.0f || randomFloat > 4.0f) {
+        return false;
+    }
+    if (!Test_IsClose(randomFloat, _GetFloat(out2), 1e-6f)) {
+        return false;
+    }
+
+    ParamMap rc;
+    rc["in"] = Value(0.25f);
+    rc["seed"] = Value(11);
+    auto color1 = _Eval("ND_randomcolor_float", rc);
+    auto color2 = _Eval("ND_randomcolor_float", rc);
+    return Test_IsClose(_GetVec3(color1), _GetVec3(color2), 1e-6f);
+}
+
+static bool TestProceduralFlake2dCoverageZero() {
+    ParamMap in;
+    in["coverage"] = Value(0.0f);
+    in["texcoord"] = Value(Vec2f(0.3f, 0.7f));
+    in["normal"] = Value(Vec3f(0.0f, 0.0f, 1.0f));
+    in["tangent"] = Value(Vec3f(1.0f, 0.0f, 0.0f));
+    in["bitangent"] = Value(Vec3f(0.0f, 1.0f, 0.0f));
+
+    auto out = _Eval("ND_flake2d", in);
+    return _GetInt(out, "id") == 0 &&
+           Test_IsClose(_GetFloat(out, "rand"), 0.0f, 1e-6f) &&
+           Test_IsClose(_GetFloat(out, "presence"), 0.0f, 1e-6f) &&
+           Test_IsClose(_GetVec3(out, "flakenormal"), Vec3f(0.0f, 0.0f, 1.0f));
 }
 
 // ---------------------------------------------------------------------------
@@ -909,6 +1156,7 @@ Test_RegisterNodeTests()
     _REG(TestSmoothstep);
     _REG(TestRemap);
     _REG(TestCombineSeparateRoundtrip);
+    _REG(TestConvertColor4ToColor3);
     _REG(TestIfgreater);
     // Conditional (expanded)
     _REG(TestIfgreaterInteger);
@@ -936,6 +1184,15 @@ Test_RegisterNodeTests()
     _REG(TestPremultUnpremult);
     _REG(TestInsideOutside);
     _REG(TestMixVecVariant);
+    _REG(TestProceduralWorleyNoise2d);
+    _REG(TestProceduralFractal2dSingleOctave);
+    _REG(TestProceduralUnifiedNoise2dCellRemap);
+    _REG(TestProceduralRampLrAndSplitLr);
+    _REG(TestProceduralRamp4AndRamp);
+    _REG(TestProceduralPatterns);
+    _REG(TestProceduralGridAndCrosshatch);
+    _REG(TestProceduralRandomNodes);
+    _REG(TestProceduralFlake2dCoverageZero);
     _REG(TestGeometricPosition);
     _REG(TestGeometricNormal);
     _REG(TestHeightToNormalDefaultTexcoord);

@@ -1,0 +1,1551 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Y"
+    doc = """MaterialX procedural2d gallery for hdEmbree.
+Contains one plane and one sphere for each implemented procedural2d node:
+noise2d, cellnoise2d, worleynoise2d, fractal2d, unifiednoise2d,
+ramp, ramp_gradient, ramplr, ramptb, ramp4, splitlr, splittb,
+checkerboard, grid, circle, hexagon, cloverleaf, crosshatch, line, flake2d."""
+)
+
+def Xform "World"
+{
+    def Camera "Camera"
+    {
+        float focalLength = 38
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        float2 clippingRange = (0.1, 1000)
+        double3 xformOp:translate = (0, 9.5, 26)
+        float3 xformOp:rotateXYZ = (-20, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+    }
+
+    def SphereLight "KeyLight"
+    {
+        float inputs:intensity = 260
+        float inputs:radius = 1.2
+        double3 xformOp:translate = (14, 18, 12)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def SphereLight "FillLight"
+    {
+        float inputs:intensity = 90
+        float inputs:radius = 0.8
+        double3 xformOp:translate = (-16, 11, 18)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Scope "Materials"
+    {
+        def Material "Noise2dMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/Noise2dMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "ScaleUV"
+            {
+                uniform token info:id = "ND_multiply_vector2FA"
+                float2 inputs:in1.connect = </World/Materials/Noise2dMat/TexCoord.outputs:out>
+                float inputs:in2 = 6.0
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_noise2d_float"
+                float inputs:amplitude = 0.5
+                float inputs:pivot = 0.5
+                float2 inputs:texcoord.connect = </World/Materials/Noise2dMat/ScaleUV.outputs:out>
+                float outputs:out
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.06, 0.08, 0.12)
+                color3f inputs:fg = (0.96, 0.74, 0.25)
+                float inputs:mix.connect = </World/Materials/Noise2dMat/Pattern.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/Noise2dMat/Colorize.outputs:out>
+                float inputs:specular = 0.35
+                float inputs:specular_roughness = 0.42
+                token outputs:out
+            }
+        }
+
+        def Material "Cellnoise2dMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/Cellnoise2dMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "ScaleUV"
+            {
+                uniform token info:id = "ND_multiply_vector2FA"
+                float2 inputs:in1.connect = </World/Materials/Cellnoise2dMat/TexCoord.outputs:out>
+                float inputs:in2 = 7.0
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_cellnoise2d_float"
+                float2 inputs:texcoord.connect = </World/Materials/Cellnoise2dMat/ScaleUV.outputs:out>
+                float outputs:out
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.06, 0.07, 0.10)
+                color3f inputs:fg = (0.24, 0.82, 0.92)
+                float inputs:mix.connect = </World/Materials/Cellnoise2dMat/Pattern.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/Cellnoise2dMat/Colorize.outputs:out>
+                float inputs:specular = 0.28
+                float inputs:specular_roughness = 0.45
+                token outputs:out
+            }
+        }
+
+        def Material "Worleynoise2dMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/Worleynoise2dMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "ScaleUV"
+            {
+                uniform token info:id = "ND_multiply_vector2FA"
+                float2 inputs:in1.connect = </World/Materials/Worleynoise2dMat/TexCoord.outputs:out>
+                float inputs:in2 = 5.5
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_worleynoise2d_float"
+                float2 inputs:texcoord.connect = </World/Materials/Worleynoise2dMat/ScaleUV.outputs:out>
+                float inputs:jitter = 0.9
+                int inputs:style = 0
+                float outputs:out
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.05, 0.08, 0.12)
+                color3f inputs:fg = (0.84, 0.92, 1.0)
+                float inputs:mix.connect = </World/Materials/Worleynoise2dMat/Pattern.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/Worleynoise2dMat/Colorize.outputs:out>
+                float inputs:specular = 0.3
+                float inputs:specular_roughness = 0.4
+                token outputs:out
+            }
+        }
+
+        def Material "Fractal2dMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/Fractal2dMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "ScaleUV"
+            {
+                uniform token info:id = "ND_multiply_vector2FA"
+                float2 inputs:in1.connect = </World/Materials/Fractal2dMat/TexCoord.outputs:out>
+                float inputs:in2 = 6.5
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_fractal2d_float"
+                float inputs:amplitude = 1.0
+                int inputs:octaves = 5
+                float inputs:lacunarity = 2.0
+                float inputs:diminish = 0.5
+                float2 inputs:texcoord.connect = </World/Materials/Fractal2dMat/ScaleUV.outputs:out>
+                float outputs:out
+            }
+
+            def Shader "Normalize"
+            {
+                uniform token info:id = "ND_remap_float"
+                float inputs:in.connect = </World/Materials/Fractal2dMat/Pattern.outputs:out>
+                float inputs:inlow = -1.0
+                float inputs:inhigh = 1.0
+                float inputs:outlow = 0.0
+                float inputs:outhigh = 1.0
+                float outputs:out
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.07, 0.05, 0.10)
+                color3f inputs:fg = (0.95, 0.53, 0.26)
+                float inputs:mix.connect = </World/Materials/Fractal2dMat/Normalize.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/Fractal2dMat/Colorize.outputs:out>
+                float inputs:specular = 0.3
+                float inputs:specular_roughness = 0.44
+                token outputs:out
+            }
+        }
+
+        def Material "Unifiednoise2dMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/Unifiednoise2dMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_unifiednoise2d_float"
+                float2 inputs:texcoord.connect = </World/Materials/Unifiednoise2dMat/TexCoord.outputs:out>
+                float2 inputs:freq = (7.0, 4.0)
+                float2 inputs:offset = (0.15, 0.35)
+                float inputs:jitter = 0.75
+                float inputs:outmin = 0.0
+                float inputs:outmax = 1.0
+                bool inputs:clampoutput = true
+                int inputs:octaves = 4
+                float inputs:lacunarity = 2.0
+                float inputs:diminish = 0.5
+                int inputs:type = 2
+                int inputs:style = 1
+                float outputs:out
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.10, 0.09, 0.14)
+                color3f inputs:fg = (0.74, 0.93, 0.38)
+                float inputs:mix.connect = </World/Materials/Unifiednoise2dMat/Pattern.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/Unifiednoise2dMat/Colorize.outputs:out>
+                float inputs:specular = 0.25
+                float inputs:specular_roughness = 0.48
+                token outputs:out
+            }
+        }
+
+        def Material "RampMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/RampMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_ramp"
+                float2 inputs:texcoord.connect = </World/Materials/RampMat/TexCoord.outputs:out>
+                int inputs:type = 3
+                int inputs:interpolation = 1
+                int inputs:num_intervals = 4
+                float inputs:interval1 = 0.0
+                color4f inputs:color1 = (0.07, 0.09, 0.18, 1.0)
+                float inputs:interval2 = 0.35
+                color4f inputs:color2 = (0.95, 0.48, 0.22, 1.0)
+                float inputs:interval3 = 0.68
+                color4f inputs:color3 = (0.98, 0.85, 0.32, 1.0)
+                float inputs:interval4 = 1.0
+                color4f inputs:color4 = (0.92, 0.95, 1.0, 1.0)
+                color4f outputs:out
+            }
+
+            def Shader "ToColor3"
+            {
+                uniform token info:id = "ND_convert_color4_color3"
+                color4f inputs:in.connect = </World/Materials/RampMat/Pattern.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/RampMat/ToColor3.outputs:out>
+                float inputs:specular = 0.28
+                float inputs:specular_roughness = 0.32
+                token outputs:out
+            }
+        }
+
+        def Material "RampGradientMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/RampGradientMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "ExtractU"
+            {
+                uniform token info:id = "ND_extract_vector2"
+                float2 inputs:in.connect = </World/Materials/RampGradientMat/TexCoord.outputs:out>
+                int inputs:index = 0
+                float outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_ramp_gradient"
+                float inputs:x.connect = </World/Materials/RampGradientMat/ExtractU.outputs:out>
+                float inputs:interval1 = 0.1
+                float inputs:interval2 = 0.9
+                color4f inputs:color1 = (0.08, 0.07, 0.13, 1.0)
+                color4f inputs:color2 = (0.95, 0.82, 0.22, 1.0)
+                int inputs:interpolation = 1
+                color4f inputs:prev_color = (0.08, 0.07, 0.13, 1.0)
+                int inputs:interval_num = 1
+                int inputs:num_intervals = 2
+                color4f outputs:out
+            }
+
+            def Shader "ToColor3"
+            {
+                uniform token info:id = "ND_convert_color4_color3"
+                color4f inputs:in.connect = </World/Materials/RampGradientMat/Pattern.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/RampGradientMat/ToColor3.outputs:out>
+                float inputs:specular = 0.3
+                float inputs:specular_roughness = 0.34
+                token outputs:out
+            }
+        }
+
+        def Material "RampLrMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/RampLrMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_ramplr_color3"
+                color3f inputs:valuel = (0.07, 0.12, 0.22)
+                color3f inputs:valuer = (0.98, 0.58, 0.18)
+                float2 inputs:texcoord.connect = </World/Materials/RampLrMat/TexCoord.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/RampLrMat/Pattern.outputs:out>
+                float inputs:specular = 0.28
+                float inputs:specular_roughness = 0.34
+                token outputs:out
+            }
+        }
+
+        def Material "RampTbMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/RampTbMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_ramptb_color3"
+                color3f inputs:valuet = (0.08, 0.13, 0.28)
+                color3f inputs:valueb = (0.95, 0.86, 0.28)
+                float2 inputs:texcoord.connect = </World/Materials/RampTbMat/TexCoord.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/RampTbMat/Pattern.outputs:out>
+                float inputs:specular = 0.28
+                float inputs:specular_roughness = 0.34
+                token outputs:out
+            }
+        }
+
+        def Material "Ramp4Mat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/Ramp4Mat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_ramp4_color3"
+                color3f inputs:valuetl = (0.06, 0.09, 0.17)
+                color3f inputs:valuetr = (0.24, 0.81, 0.90)
+                color3f inputs:valuebl = (0.95, 0.52, 0.16)
+                color3f inputs:valuebr = (0.98, 0.92, 0.76)
+                float2 inputs:texcoord.connect = </World/Materials/Ramp4Mat/TexCoord.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/Ramp4Mat/Pattern.outputs:out>
+                float inputs:specular = 0.28
+                float inputs:specular_roughness = 0.34
+                token outputs:out
+            }
+        }
+
+        def Material "SplitLrMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/SplitLrMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_splitlr_color3"
+                color3f inputs:valuel = (0.08, 0.16, 0.36)
+                color3f inputs:valuer = (0.95, 0.48, 0.18)
+                float inputs:center = 0.35
+                float2 inputs:texcoord.connect = </World/Materials/SplitLrMat/TexCoord.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/SplitLrMat/Pattern.outputs:out>
+                float inputs:specular = 0.28
+                float inputs:specular_roughness = 0.34
+                token outputs:out
+            }
+        }
+
+        def Material "SplitTbMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/SplitTbMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_splittb_color3"
+                color3f inputs:valuet = (0.12, 0.13, 0.32)
+                color3f inputs:valueb = (0.95, 0.85, 0.24)
+                float inputs:center = 0.58
+                float2 inputs:texcoord.connect = </World/Materials/SplitTbMat/TexCoord.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/SplitTbMat/Pattern.outputs:out>
+                float inputs:specular = 0.28
+                float inputs:specular_roughness = 0.34
+                token outputs:out
+            }
+        }
+
+        def Material "CheckerboardMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/CheckerboardMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_checkerboard_color3"
+                color3f inputs:color1 = (0.09, 0.14, 0.28)
+                color3f inputs:color2 = (0.95, 0.87, 0.27)
+                float2 inputs:uvtiling = (6.0, 6.0)
+                float2 inputs:uvoffset = (0.0, 0.0)
+                float2 inputs:texcoord.connect = </World/Materials/CheckerboardMat/TexCoord.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/CheckerboardMat/Pattern.outputs:out>
+                float inputs:specular = 0.26
+                float inputs:specular_roughness = 0.38
+                token outputs:out
+            }
+        }
+
+        def Material "GridMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/GridMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_grid_color3"
+                float2 inputs:uvtiling = (7.0, 5.0)
+                float2 inputs:uvoffset = (0.0, 0.0)
+                float inputs:thickness = 0.12
+                bool inputs:staggered = true
+                float2 inputs:texcoord.connect = </World/Materials/GridMat/TexCoord.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/GridMat/Pattern.outputs:out>
+                float inputs:specular = 0.25
+                float inputs:specular_roughness = 0.46
+                token outputs:out
+            }
+        }
+
+        def Material "CircleMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/CircleMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_circle_float"
+                float2 inputs:texcoord.connect = </World/Materials/CircleMat/TexCoord.outputs:out>
+                float2 inputs:center = (0.5, 0.5)
+                float inputs:radius = 0.32
+                float outputs:out
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.06, 0.07, 0.10)
+                color3f inputs:fg = (0.86, 0.32, 0.30)
+                float inputs:mix.connect = </World/Materials/CircleMat/Pattern.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/CircleMat/Colorize.outputs:out>
+                float inputs:specular = 0.26
+                float inputs:specular_roughness = 0.36
+                token outputs:out
+            }
+        }
+
+        def Material "HexagonMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/HexagonMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_hexagon_float"
+                float2 inputs:texcoord.connect = </World/Materials/HexagonMat/TexCoord.outputs:out>
+                float2 inputs:center = (0.5, 0.5)
+                float inputs:radius = 0.34
+                float outputs:out
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.05, 0.08, 0.12)
+                color3f inputs:fg = (0.23, 0.76, 0.92)
+                float inputs:mix.connect = </World/Materials/HexagonMat/Pattern.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/HexagonMat/Colorize.outputs:out>
+                float inputs:specular = 0.26
+                float inputs:specular_roughness = 0.36
+                token outputs:out
+            }
+        }
+
+        def Material "CloverleafMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/CloverleafMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_cloverleaf_float"
+                float2 inputs:texcoord.connect = </World/Materials/CloverleafMat/TexCoord.outputs:out>
+                float2 inputs:center = (1.0, 1.0)
+                float inputs:radius = 0.5
+                float outputs:out
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.07, 0.06, 0.11)
+                color3f inputs:fg = (0.95, 0.78, 0.31)
+                float inputs:mix.connect = </World/Materials/CloverleafMat/Pattern.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/CloverleafMat/Colorize.outputs:out>
+                float inputs:specular = 0.26
+                float inputs:specular_roughness = 0.36
+                token outputs:out
+            }
+        }
+
+        def Material "CrosshatchMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/CrosshatchMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_crosshatch_color3"
+                float2 inputs:uvtiling = (7.0, 7.0)
+                float2 inputs:uvoffset = (0.0, 0.0)
+                float inputs:thickness = 0.12
+                bool inputs:staggered = true
+                float2 inputs:texcoord.connect = </World/Materials/CrosshatchMat/TexCoord.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/CrosshatchMat/Pattern.outputs:out>
+                float inputs:specular = 0.24
+                float inputs:specular_roughness = 0.46
+                token outputs:out
+            }
+        }
+
+        def Material "LineMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/LineMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Pattern"
+            {
+                uniform token info:id = "ND_line_float"
+                float2 inputs:texcoord.connect = </World/Materials/LineMat/TexCoord.outputs:out>
+                float2 inputs:center = (0.0, 0.0)
+                float inputs:radius = 0.05
+                float2 inputs:point1 = (0.18, 0.78)
+                float2 inputs:point2 = (0.82, 0.22)
+                float outputs:out
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.06, 0.08, 0.12)
+                color3f inputs:fg = (0.98, 0.88, 0.28)
+                float inputs:mix.connect = </World/Materials/LineMat/Pattern.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/LineMat/Colorize.outputs:out>
+                float inputs:specular = 0.26
+                float inputs:specular_roughness = 0.36
+                token outputs:out
+            }
+        }
+
+        def Material "Flake2dMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/Flake2dMat/StdSurf.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "ScaleUV"
+            {
+                uniform token info:id = "ND_multiply_vector2FA"
+                float2 inputs:in1.connect = </World/Materials/Flake2dMat/TexCoord.outputs:out>
+                float inputs:in2 = 8.0
+                float2 outputs:out
+            }
+
+            def Shader "Flake"
+            {
+                uniform token info:id = "ND_flake2d"
+                float inputs:size = 0.18
+                float inputs:roughness = 0.22
+                float inputs:coverage = 0.72
+                float2 inputs:texcoord.connect = </World/Materials/Flake2dMat/ScaleUV.outputs:out>
+                int outputs:id
+                float outputs:rand
+                float outputs:presence
+                float3 outputs:flakenormal
+            }
+
+            def Shader "Colorize"
+            {
+                uniform token info:id = "ND_mix_color3"
+                color3f inputs:bg = (0.10, 0.12, 0.18)
+                color3f inputs:fg = (0.88, 0.92, 1.0)
+                float inputs:mix.connect = </World/Materials/Flake2dMat/Flake.outputs:presence>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color.connect = </World/Materials/Flake2dMat/Colorize.outputs:out>
+                float inputs:specular = 0.75
+                float inputs:specular_roughness = 0.12
+                float3 inputs:normal.connect = </World/Materials/Flake2dMat/Flake.outputs:flakenormal>
+                token outputs:out
+            }
+        }
+    }
+
+    def Xform "Gallery"
+    {
+        def Xform "Noise2d"
+        {
+            double3 xformOp:translate = (-10.5, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/Noise2dMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/Noise2dMat>
+            }
+        }
+
+        def Xform "Cellnoise2d"
+        {
+            double3 xformOp:translate = (-5.25, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/Cellnoise2dMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/Cellnoise2dMat>
+            }
+        }
+
+        def Xform "Worleynoise2d"
+        {
+            double3 xformOp:translate = (0, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/Worleynoise2dMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/Worleynoise2dMat>
+            }
+        }
+
+        def Xform "Fractal2d"
+        {
+            double3 xformOp:translate = (5.25, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/Fractal2dMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/Fractal2dMat>
+            }
+        }
+
+        def Xform "Unifiednoise2d"
+        {
+            double3 xformOp:translate = (10.5, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/Unifiednoise2dMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/Unifiednoise2dMat>
+            }
+        }
+
+        def Xform "Ramp"
+        {
+            double3 xformOp:translate = (-10.5, 0, -4.6)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/RampMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/RampMat>
+            }
+        }
+
+        def Xform "RampGradient"
+        {
+            double3 xformOp:translate = (-5.25, 0, -4.6)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/RampGradientMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/RampGradientMat>
+            }
+        }
+
+        def Xform "RampLr"
+        {
+            double3 xformOp:translate = (0, 0, -4.6)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/RampLrMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/RampLrMat>
+            }
+        }
+
+        def Xform "RampTb"
+        {
+            double3 xformOp:translate = (5.25, 0, -4.6)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/RampTbMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/RampTbMat>
+            }
+        }
+
+        def Xform "Ramp4"
+        {
+            double3 xformOp:translate = (10.5, 0, -4.6)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/Ramp4Mat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/Ramp4Mat>
+            }
+        }
+
+        def Xform "SplitLr"
+        {
+            double3 xformOp:translate = (-10.5, 0, -9.2)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/SplitLrMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/SplitLrMat>
+            }
+        }
+
+        def Xform "SplitTb"
+        {
+            double3 xformOp:translate = (-5.25, 0, -9.2)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/SplitTbMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/SplitTbMat>
+            }
+        }
+
+        def Xform "Checkerboard"
+        {
+            double3 xformOp:translate = (0, 0, -9.2)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/CheckerboardMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/CheckerboardMat>
+            }
+        }
+
+        def Xform "Grid"
+        {
+            double3 xformOp:translate = (5.25, 0, -9.2)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/GridMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/GridMat>
+            }
+        }
+
+        def Xform "Circle"
+        {
+            double3 xformOp:translate = (10.5, 0, -9.2)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/CircleMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/CircleMat>
+            }
+        }
+
+        def Xform "Hexagon"
+        {
+            double3 xformOp:translate = (-10.5, 0, -13.8)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/HexagonMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/HexagonMat>
+            }
+        }
+
+        def Xform "Cloverleaf"
+        {
+            double3 xformOp:translate = (-5.25, 0, -13.8)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/CloverleafMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/CloverleafMat>
+            }
+        }
+
+        def Xform "Crosshatch"
+        {
+            double3 xformOp:translate = (0, 0, -13.8)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/CrosshatchMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/CrosshatchMat>
+            }
+        }
+
+        def Xform "Line"
+        {
+            double3 xformOp:translate = (5.25, 0, -13.8)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/LineMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/LineMat>
+            }
+        }
+
+        def Xform "Flake2d"
+        {
+            double3 xformOp:translate = (10.5, 0, -13.8)
+            token[] xformOpOrder = ["xformOp:translate"]
+
+            def Mesh "Plane" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-2.05, 0.0, -0.85), (-0.35, 0.0, -0.85), (-0.35, 0.0, 0.85), (-2.05, 0.0, 0.85)]
+                normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+                    interpolation = "vertex"
+                )
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                bool doubleSided = true
+                rel material:binding = </World/Materials/Flake2dMat>
+            }
+
+            def Xform "Sphere" (
+                prepend references = @./meshes/Sphere_Poly.usda@
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                double3 xformOp:translate = (1.0, 0.45, 0.0)
+                double3 xformOp:scale = (0.9, 0.9, 0.9)
+                token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Materials/Flake2dMat>
+            }
+        }
+    }
+}
