@@ -100,10 +100,14 @@ static bool Test_IsClose(const Vec4f& a, const Vec4f& b, float eps = 1e-5f) {
 }
 
 static Mat4f _MakeTranslationMatrix(const Vec3f& t) {
-    Mat4f m(1.0f);
-    m[3][0] = t[0];
-    m[3][1] = t[1];
-    m[3][2] = t[2];
+    Mat4f m;
+    m.setTranslation(t);
+    return m;
+}
+
+static Mat4f _MakeIdentityMatrix() {
+    Mat4f m;
+    m.makeIdentity();
     return m;
 }
 
@@ -116,6 +120,18 @@ static void _SetObjectWorldTransform(ShadingContext* ctx, const Mat4f& objectToW
     ctx->hasObjectToWorldTransform = true;
     ctx->hasWorldToObjectTransform = true;
 }
+
+struct _TestTextureSystem final : public TextureSystem {
+    mutable bool called = false;
+    mutable Texture2DRequest lastRequest;
+    Texture2DResult nextResult;
+
+    Texture2DResult Sample2D(const Texture2DRequest& request) const override {
+        called = true;
+        lastRequest = request;
+        return nextResult;
+    }
+};
 
 static bool
 _EvalHeightFromTexcoordX(const void*,
@@ -1089,7 +1105,7 @@ static bool TestGeometricNormal() {
     ParamMap in;
     ShadingContext ctx;
     ctx.normal = Vec3f(0.0f, 1.0f, 0.0f);
-    _SetObjectWorldTransform(&ctx, Mat4f(1.0f));
+    _SetObjectWorldTransform(&ctx, _MakeIdentityMatrix());
     NodeOutputMap out;
     fn(in, ctx, &out);
     return Test_IsClose(_GetVec3(out), Vec3f(0.0f, 1.0f, 0.0f));
@@ -1132,6 +1148,122 @@ static bool TestTransformPointObjectToWorld() {
 
     auto out = _EvalWithCtx("ND_transformpoint_vector3", in, ctx);
     return Test_IsClose(_GetVec3(out), Vec3f(4.0f, 1.0f, 5.0f));
+}
+
+static bool TestImageNodeUsesTextureSystem() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/test_albedo.tx"));
+    in["colorSpace:file"] = Value(std::string("srgb_texture"));
+    in["layer"] = Value(std::string("albedo"));
+    in["default"] = Value(Vec4f(0.1f, 0.2f, 0.3f, 0.4f));
+    in["uaddressmode"] = Value(std::string("mirror"));
+    in["vaddressmode"] = Value(std::string("clamp"));
+    in["filtertype"] = Value(std::string("cubic"));
+    in["framerange"] = Value(std::string("1001-1010"));
+    in["frameoffset"] = Value(3);
+    in["frameendaction"] = Value(std::string("periodic"));
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult.value = Vec4f(0.7f, 0.6f, 0.5f, 0.4f);
+    textureSystem.nextResult.status = TextureSampleStatus::Ok;
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    ctx.texcoord = Vec2f(0.25f, 0.75f);
+    ctx.dudx = 0.125f;
+    ctx.dvdx = -0.25f;
+    ctx.dudy = 0.5f;
+    ctx.dvdy = 0.25f;
+    ctx.frame = 12.0f;
+
+    const NodeOutputMap out = _EvalWithCtx("ND_image_color4", in, ctx);
+    if (!textureSystem.called) {
+        printf("    texture system was not called\n");
+        return false;
+    }
+
+    if (!Test_IsClose(_GetVec4(out), textureSystem.nextResult.value)) {
+        printf("    unexpected sampled output\n");
+        return false;
+    }
+
+    const Texture2DRequest& request = textureSystem.lastRequest;
+    return request.filePath == "/tmp/test_albedo.tx" &&
+           request.layerName == "albedo" &&
+           Test_IsClose(request.st, Vec2f(0.25f, 0.75f)) &&
+           Test_IsClose(request.dstdx, Vec2f(0.125f, -0.25f)) &&
+           Test_IsClose(request.dstdy, Vec2f(0.5f, 0.25f)) &&
+           request.uAddressMode == TextureAddressMode::Mirror &&
+           request.vAddressMode == TextureAddressMode::Clamp &&
+           request.filterType == TextureFilterType::Cubic &&
+           request.frameRange == "1001-1010" &&
+           request.frameOffset == 3 &&
+           request.frameEndAction == TextureAddressMode::Periodic &&
+           Test_IsClose(request.frame, 12.0f) &&
+           request.dataRole == TextureDataRole::Color &&
+           request.sourceColorSpace == "srgb_texture" &&
+           request.channelCount == 4 &&
+           Test_IsClose(request.channelFillValue, 1.0f) &&
+           Test_IsClose(request.defaultValue, Vec4f(0.1f, 0.2f, 0.3f, 0.4f));
+}
+
+static bool TestImageNodeConstantWrapReturnsDefault() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/test_mask.tx"));
+    in["default"] = Value(0.25f);
+    in["uaddressmode"] = Value(std::string("constant"));
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult.value = Vec4f(1.0f);
+    textureSystem.nextResult.status = TextureSampleStatus::Ok;
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    ctx.texcoord = Vec2f(1.2f, 0.5f);
+
+    const NodeOutputMap out = _EvalWithCtx("ND_image_float", in, ctx);
+    if (textureSystem.called) {
+        printf("    constant-wrap out-of-range lookup should not sample\n");
+        return false;
+    }
+
+    return Test_IsClose(_GetFloat(out), 0.25f);
+}
+
+static bool TestTiledImageTransformsTexcoords() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/test_normal.tx"));
+    in["default"] = Value(Vec3f(0.0f));
+    in["uvtiling"] = Value(Vec2f(4.0f, 2.0f));
+    in["uvoffset"] = Value(Vec2f(1.0f, 0.5f));
+    in["realworldimagesize"] = Value(Vec2f(2.0f, 4.0f));
+    in["realworldtilesize"] = Value(Vec2f(10.0f, 8.0f));
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult.value = Vec4f(0.2f, 0.4f, 0.6f, 0.0f);
+    textureSystem.nextResult.status = TextureSampleStatus::Ok;
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    ctx.texcoord = Vec2f(0.25f, 0.5f);
+    ctx.dudx = 0.10f;
+    ctx.dvdx = 0.20f;
+    ctx.dudy = -0.05f;
+    ctx.dvdy = 0.10f;
+
+    const NodeOutputMap out = _EvalWithCtx("ND_tiledimage_vector3", in, ctx);
+    if (!textureSystem.called) {
+        printf("    tiledimage did not invoke texture system\n");
+        return false;
+    }
+
+    const Texture2DRequest& request = textureSystem.lastRequest;
+    return Test_IsClose(_GetVec3(out), Vec3f(0.2f, 0.4f, 0.6f)) &&
+           Test_IsClose(request.st, Vec2f(0.0f, 1.0f)) &&
+           Test_IsClose(request.dstdx, Vec2f(2.0f, 0.8f)) &&
+           Test_IsClose(request.dstdy, Vec2f(-1.0f, 0.4f)) &&
+           request.dataRole == TextureDataRole::NonColor &&
+           request.channelCount == 3;
 }
 
 static bool TestHeightToNormalDefaultTexcoord() {
@@ -1333,6 +1465,9 @@ Test_RegisterNodeTests()
     _REG(TestApplicationFrame);
     _REG(TestApplicationTime);
     _REG(TestTransformPointObjectToWorld);
+    _REG(TestImageNodeUsesTextureSystem);
+    _REG(TestImageNodeConstantWrapReturnsDefault);
+    _REG(TestTiledImageTransformsTexcoords);
     _REG(TestHeightToNormalDefaultTexcoord);
     _REG(TestBumpDefaultBasis);
     _REG(TestLuminance);

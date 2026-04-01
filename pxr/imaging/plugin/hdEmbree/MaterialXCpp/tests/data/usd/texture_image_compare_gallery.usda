@@ -1,0 +1,286 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    doc = """MaterialX image/tiledimage gallery for comparing HdEmbree and Storm.
+Top row: macbeth, marcie, MaterialX logo via image nodes.
+Bottom row: checkermap via image and tiledimage."""
+)
+
+def Camera "Camera"
+{
+    float focalLength = 45
+    float horizontalAperture = 36
+    float verticalAperture = 24
+    float2 clippingRange = (0.1, 1000)
+    double3 xformOp:translate = (0.0, 0.0, 8.5)
+    token[] xformOpOrder = ["xformOp:translate"]
+}
+
+def Xform "World"
+{
+    def Mesh "MacbethCard" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(-4.5, 0.6625, 0), (-1.7, 0.6625, 0), (-1.7, 2.2375, 0), (-4.5, 2.2375, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/MacbethImage>
+    }
+
+    def Mesh "MarcieCard" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(-1.4, 0.6625, 0), (1.4, 0.6625, 0), (1.4, 2.2375, 0), (-1.4, 2.2375, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/MarcieImage>
+    }
+
+    def Mesh "MaterialXLogoCard" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(2.0, 0.6008, 0), (4.2, 0.6008, 0), (4.2, 2.2992, 0), (2.0, 2.2992, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/MaterialXLogoImage>
+    }
+
+    def Mesh "CheckerImageCard" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(-2.25, -2.25, 0), (-0.35, -2.25, 0), (-0.35, -0.35, 0), (-2.25, -0.35, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/CheckerImage>
+    }
+
+    def Mesh "CheckerTiledCard" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(0.35, -2.25, 0), (2.25, -2.25, 0), (2.25, -0.35, 0), (0.35, -0.35, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/CheckerTiled>
+    }
+}
+
+def Scope "Materials"
+{
+    def Material "MacbethImage" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/MacbethImage/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_image_color3"
+            asset inputs:file = @../images/macbeth_2k_srgb.png@ (
+                colorSpace = "srgb_texture"
+            )
+            float2 inputs:texcoord.connect = </Materials/MacbethImage/TexCoord.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/MacbethImage/Image.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "MarcieImage" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/MarcieImage/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_image_color3"
+            asset inputs:file = @../images/marcie_2k_srgb.png@ (
+                colorSpace = "srgb_texture"
+            )
+            float2 inputs:texcoord.connect = </Materials/MarcieImage/TexCoord.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/MarcieImage/Image.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "MaterialXLogoImage" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/MaterialXLogoImage/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_image_color3"
+            asset inputs:file = @../images/materialxlogo_720.png@ (
+                colorSpace = "srgb_texture"
+            )
+            float2 inputs:texcoord.connect = </Materials/MaterialXLogoImage/TexCoord.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/MaterialXLogoImage/Image.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "CheckerImage" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/CheckerImage/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_image_color3"
+            asset inputs:file = @../images/checkermap.png@ (
+                colorSpace = "srgb_texture"
+            )
+            float2 inputs:texcoord.connect = </Materials/CheckerImage/TexCoord.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/CheckerImage/Image.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "CheckerTiled" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/CheckerTiled/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_tiledimage_color3"
+            asset inputs:file = @../images/checkermap.png@ (
+                colorSpace = "srgb_texture"
+            )
+            float2 inputs:texcoord.connect = </Materials/CheckerTiled/TexCoord.outputs:out>
+            float2 inputs:uvtiling = (8.0, 8.0)
+            float2 inputs:uvoffset = (0.125, 0.125)
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/CheckerTiled/Image.outputs:out>
+            token outputs:out
+        }
+    }
+}

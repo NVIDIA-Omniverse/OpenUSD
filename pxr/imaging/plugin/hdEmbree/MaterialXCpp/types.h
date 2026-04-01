@@ -5,6 +5,7 @@
 #define MXCPP_TYPES_H
 
 #include "mxcpp_math.h"
+#include "textureSystem.h"
 #include "slots.h"
 #include "mxcpp_value.h"
 
@@ -93,6 +94,11 @@ struct ShadingContext
     // Per-mesh uniform property map (geompropvalueuniform).
     // Points to a pre-built map; lifetime managed by the caller.
     const std::unordered_map<std::string, Value>* uniformProps = nullptr;
+
+    // Texture lookup backend owned by the embedding renderer. The pointer is
+    // non-owning and may be null, in which case texture nodes fall back to
+    // their authored default values.
+    const TextureSystem* textureSystem = nullptr;
 };
 
 /// Surface closure produced by material model evaluation.

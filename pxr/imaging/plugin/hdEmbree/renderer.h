@@ -26,6 +26,7 @@
 
 #include <atomic>
 #include <map>
+#include <memory>
 #include <mutex>
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -422,6 +423,9 @@ private:
 
     // Firefly clamping threshold (max sample luminance). <= 0 disables.
     float _fireflyClampThreshold;
+
+    // Shared MaterialX texture backend for the whole renderer.
+    std::unique_ptr<mxcpp::TextureSystem> _textureSystem;
 
     // Application frame/time values propagated into MaterialX shading.
     float _sceneFrame;

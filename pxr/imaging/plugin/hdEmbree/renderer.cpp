@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/imaging/plugin/hdEmbree/renderer.h"
+#include "pxr/imaging/plugin/hdEmbree/oiioTextureSystem.h"
 
 #include "pxr/imaging/plugin/hdEmbree/config.h"
 #include "pxr/imaging/plugin/hdEmbree/renderDelegate.h"
@@ -679,6 +680,7 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _showAdaptiveHeatmap(HdEmbreeDefaultShowAdaptiveHeatmap)
     , _usePerChannelVariance(HdEmbreeDefaultUsePerChannelVariance)
     , _fireflyClampThreshold(HdEmbreeDefaultFireflyClampThreshold)
+    , _textureSystem(std::make_unique<HdEmbreeOiioTextureSystem>())
     , _sceneFrame(0.0f)
     , _sceneTime(0.0f)
     , _completedSamples(0)
@@ -2200,6 +2202,7 @@ HdEmbreeRenderer::_BuildShadingContext(
     ctx.texcoord = _ToMx(texcoordVal);
     ctx.displayColor = _ToMx(displayColor);
     ctx.displayOpacity = 1.0f;
+    ctx.textureSystem = _textureSystem.get();
     ctx.frame = _sceneFrame;
     ctx.time = _sceneTime;
     ctx.faceId = rayHit.hit.primID;

@@ -22,6 +22,29 @@ set(_hdEmbree_libraries
     ${EMBREE_LIBRARY}
 )
 
+set(_hdEmbree_include_dirs
+    ${EMBREE_INCLUDE_DIR}
+)
+
+if (PXR_BUILD_OPENIMAGEIO_PLUGIN)
+    if (Imath_FOUND)
+        set(__HDEMBREE_OIIO_IMATH_LIBS "Imath::Imath")
+        set(__HDEMBREE_OIIO_IMATH_INCLUDE "")
+    else()
+        set(__HDEMBREE_OIIO_IMATH_INCLUDE ${OPENEXR_INCLUDE_DIRS})
+        set(__HDEMBREE_OIIO_IMATH_LIBS ${OPENEXR_LIBRARIES})
+    endif()
+
+    list(APPEND _hdEmbree_libraries
+        ${OIIO_LIBRARIES}
+        ${__HDEMBREE_OIIO_IMATH_LIBS}
+    )
+    list(APPEND _hdEmbree_include_dirs
+        ${OIIO_INCLUDE_DIRS}
+        ${__HDEMBREE_OIIO_IMATH_INCLUDE}
+    )
+endif()
+
 if (PXR_ENABLE_OPENQMC_SUPPORT)
     list(APPEND _hdEmbree_libraries OpenQMC::OpenQMC)
 endif()
@@ -31,7 +54,7 @@ pxr_plugin(hdEmbree
         ${_hdEmbree_libraries}
 
     INCLUDE_DIRS
-        ${EMBREE_INCLUDE_DIR}
+        ${_hdEmbree_include_dirs}
 
     PUBLIC_CLASSES
         config
@@ -75,6 +98,7 @@ pxr_plugin(hdEmbree
         pxrPbrt/pbrtUtils.h
         MaterialXCpp/types.h
         MaterialXCpp/mxcpp_math.h
+        MaterialXCpp/textureSystem.h
         MaterialXCpp/mxcpp_value.h
         MaterialXCpp/mxcpp_graph_types.h
         MaterialXCpp/slots.h
@@ -82,6 +106,7 @@ pxr_plugin(hdEmbree
     PRIVATE_CLASSES
         debugCodes
         implicitSurfaceSceneIndexPlugin
+        oiioTextureSystem
 
     RESOURCE_FILES
         plugInfo.json
