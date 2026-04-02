@@ -41,6 +41,7 @@ struct ShadingContext
     Vec3f normal = Vec3f(0.0f, 0.0f, 1.0f);
     Vec3f tangent = Vec3f(1.0f, 0.0f, 0.0f);
     Vec3f bitangent = Vec3f(0.0f, 1.0f, 0.0f);
+    Vec3f viewPosition = Vec3f(0.0f);
     Vec2f texcoord = Vec2f(0.0f);
     Vec3f displayColor = Vec3f(0.8f);
     float displayOpacity = 1.0f;

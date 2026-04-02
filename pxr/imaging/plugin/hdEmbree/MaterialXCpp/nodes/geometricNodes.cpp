@@ -99,6 +99,14 @@ _GetSpace(const ParamMap& inputs)
         std::string("object"));
 }
 
+static std::string
+_GetViewSpace(const ParamMap& inputs)
+{
+    return NormalizeSpaceName(
+        Get<std::string>(inputs, _kSpace, std::string("world")),
+        std::string("world"));
+}
+
 static float
 _SelectFiniteDifferenceStep(float dx, float dy)
 {
@@ -219,6 +227,29 @@ _EvalNormal(const ParamMap& inputs, const ShadingContext& ctx,
         ctx, "world", space,
         ShadingContext::TransformSpaceType::Normal,
         ctx.normal, &result);
+    (*outputs)[_kOut] = Value(result);
+}
+
+static void
+_EvalViewDirection(const ParamMap& inputs, const ShadingContext& ctx,
+                   NodeOutputMap* outputs)
+{
+    const std::string space = _GetViewSpace(inputs);
+    Vec3f worldPosition = ctx.position;
+    TransformNamedVec3(
+        ctx, "object", "world",
+        ShadingContext::TransformSpaceType::Point,
+        ctx.position, &worldPosition);
+
+    Vec3f result = worldPosition - ctx.viewPosition;
+    TransformNamedVec3(
+        ctx, "world", space,
+        ShadingContext::TransformSpaceType::Vector,
+        result, &result);
+
+    if (result.length2() > _kFloatEps * _kFloatEps) {
+        result.normalize();
+    }
     (*outputs)[_kOut] = Value(result);
 }
 
@@ -379,6 +410,7 @@ RegisterGeometricNodes(NodeRegistry& reg)
 {
     _REG("ND_position_vector3",  &_EvalPosition);
     _REG("ND_normal_vector3",    &_EvalNormal);
+    _REG("ND_viewdirection_vector3", &_EvalViewDirection);
     _REG("ND_tangent_vector3",   &_EvalTangent);
     _REG("ND_bitangent_vector3", &_EvalBitangent);
     _REG("ND_texcoord_vector2",  &_EvalTexcoord);

@@ -2199,6 +2199,7 @@ HdEmbreeRenderer::_BuildShadingContext(
     ctx.normal = _ToMx(normal);
     ctx.tangent = _ToMx(tangent);
     ctx.bitangent = _ToMx(bitangent);
+    ctx.viewPosition = _ToMx(GfVec3f(_inverseViewMatrix.Transform(GfVec3f(0.0f))));
     ctx.texcoord = _ToMx(texcoordVal);
     ctx.displayColor = _ToMx(displayColor);
     ctx.displayOpacity = 1.0f;

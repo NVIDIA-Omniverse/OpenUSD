@@ -7,10 +7,14 @@
 #include "../nodeRegistry.h"
 #include "../types.h"
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <iostream>
+#include <sstream>
 #include <unordered_map>
+#include <vector>
 
 using namespace mxcpp;
 
@@ -124,11 +128,18 @@ static void _SetObjectWorldTransform(ShadingContext* ctx, const Mat4f& objectToW
 struct _TestTextureSystem final : public TextureSystem {
     mutable bool called = false;
     mutable Texture2DRequest lastRequest;
+    mutable std::vector<Texture2DRequest> requests;
     Texture2DResult nextResult;
+    std::vector<Texture2DResult> nextResults;
 
     Texture2DResult Sample2D(const Texture2DRequest& request) const override {
         called = true;
         lastRequest = request;
+        requests.push_back(request);
+        const size_t index = requests.size() - 1;
+        if (index < nextResults.size()) {
+            return nextResults[index];
+        }
         return nextResult;
     }
 };
@@ -142,6 +153,51 @@ _EvalHeightFromTexcoordX(const void*,
 {
     if (out) {
         *out = Value(ctx.texcoord[0]);
+    }
+    return true;
+}
+
+static bool
+_EvalViewdirFromTexcoord(const void*,
+                         int,
+                         SlotId,
+                         const ShadingContext& ctx,
+                         Value* out)
+{
+    if (out) {
+        *out = Value(Vec3f(ctx.texcoord[0], ctx.texcoord[1], 1.0f));
+    }
+    return true;
+}
+
+static bool
+_EvalPositionFromTexcoordAndZ(const void*,
+                              int,
+                              SlotId,
+                              const ShadingContext& ctx,
+                              Value* out)
+{
+    if (out) {
+        *out = Value(Vec3f(ctx.texcoord[0], ctx.texcoord[1], ctx.position[2]));
+    }
+    return true;
+}
+
+static bool
+_TransformWorldNormalToObjectX(const void*,
+                               const std::string& fromSpace,
+                               const std::string& toSpace,
+                               ShadingContext::TransformSpaceType type,
+                               const Vec3f& in,
+                               Vec3f* out)
+{
+    if (type != ShadingContext::TransformSpaceType::Normal ||
+        fromSpace != "world" || toSpace != "object") {
+        return false;
+    }
+
+    if (out) {
+        *out = Vec3f(in[2], in[1], -in[0]);
     }
     return true;
 }
@@ -1111,6 +1167,28 @@ static bool TestGeometricNormal() {
     return Test_IsClose(_GetVec3(out), Vec3f(0.0f, 1.0f, 0.0f));
 }
 
+static bool TestGeometricViewDirectionWorldSpace() {
+    NodeRegistry::RegisterBuiltinNodes();
+    auto fn = NodeRegistry::GetInstance().Find(
+        std::string("ND_viewdirection_vector3"));
+    if (!fn) return false;
+
+    ParamMap in;
+    in["space"] = Value(std::string("world"));
+
+    ShadingContext ctx;
+    ctx.position = Vec3f(0.0f, 1.0f, 0.0f);
+    ctx.viewPosition = Vec3f(1.0f, 2.0f, 8.0f);
+    _SetObjectWorldTransform(&ctx, _MakeTranslationMatrix(Vec3f(1.0f, 2.0f, 3.0f)));
+
+    NodeOutputMap out;
+    fn(in, ctx, &out);
+
+    return Test_IsClose(
+        _GetVec3(out),
+        Vec3f(0.0f, 1.0f, -5.0f).normalized());
+}
+
 static bool TestApplicationFrame() {
     NodeRegistry::RegisterBuiltinNodes();
     auto fn = NodeRegistry::GetInstance().Find(std::string("ND_frame_float"));
@@ -1266,6 +1344,345 @@ static bool TestTiledImageTransformsTexcoords() {
            request.channelCount == 3;
 }
 
+static bool TestLatLongImageMapsViewdirToLatLongUv() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/test_env.tx"));
+    in["colorSpace:file"] = Value(std::string("ACEScg"));
+    in["default"] = Value(Vec3f(0.1f, 0.2f, 0.3f));
+    in["viewdir"] = Value(Vec3f(1.0f, 0.0f, 0.0f));
+    in["rotation"] = Value(90.0f);
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult.value = Vec4f(0.9f, 0.8f, 0.7f, 1.0f);
+    textureSystem.nextResult.status = TextureSampleStatus::Ok;
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    ctx.frame = 7.0f;
+
+    const NodeOutputMap out = _EvalWithCtx("ND_latlongimage", in, ctx);
+    if (!textureSystem.called) {
+        printf("    latlongimage did not invoke texture system\n");
+        return false;
+    }
+
+    const Texture2DRequest& request = textureSystem.lastRequest;
+    return Test_IsClose(_GetVec3(out), Vec3f(0.9f, 0.8f, 0.7f)) &&
+           request.filePath == "/tmp/test_env.tx" &&
+           Test_IsClose(request.st, Vec2f(0.5f, 0.5f)) &&
+           Test_IsClose(request.dstdx, Vec2f(0.0f, 0.0f)) &&
+           Test_IsClose(request.dstdy, Vec2f(0.0f, 0.0f)) &&
+           request.uAddressMode == TextureAddressMode::Periodic &&
+           request.vAddressMode == TextureAddressMode::Mirror &&
+           request.filterType == TextureFilterType::Linear &&
+           Test_IsClose(request.frame, 7.0f) &&
+           request.dataRole == TextureDataRole::Color &&
+           request.sourceColorSpace == "acescg" &&
+           request.channelCount == 3 &&
+           Test_IsClose(request.channelFillValue, 0.0f) &&
+           Test_IsClose(request.defaultValue, Vec4f(0.1f, 0.2f, 0.3f, 0.0f));
+}
+
+static bool TestLatLongImageReevaluatesConnectedViewdir() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/test_env.tx"));
+    in["default"] = Value(Vec3f(0.0f));
+    in.Add(
+        AsSlotId("viewdir"),
+        nullptr,
+        &_EvalViewdirFromTexcoord,
+        nullptr,
+        -1,
+        InvalidSlotId);
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult.value = Vec4f(0.3f, 0.4f, 0.5f, 1.0f);
+    textureSystem.nextResult.status = TextureSampleStatus::Ok;
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    ctx.texcoord = Vec2f(0.0f, 0.0f);
+    ctx.dudx = 1.0f;
+    ctx.dvdx = 0.0f;
+    ctx.dudy = 0.0f;
+    ctx.dvdy = 1.0f;
+
+    const NodeOutputMap out = _EvalWithCtx("ND_latlongimage", in, ctx);
+    if (!textureSystem.called) {
+        printf("    latlongimage reevaluation did not invoke texture system\n");
+        return false;
+    }
+
+    const Texture2DRequest& request = textureSystem.lastRequest;
+    return Test_IsClose(_GetVec3(out), Vec3f(0.3f, 0.4f, 0.5f)) &&
+           Test_IsClose(request.st, Vec2f(0.5f, 0.5f)) &&
+           Test_IsClose(request.dstdx, Vec2f(-0.125f, 0.0f)) &&
+           Test_IsClose(request.dstdy, Vec2f(0.0f, 0.5f));
+}
+
+static bool TestHexTiledImageBlendsThreeColorSamples() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/test_hex.tx"));
+    in["colorSpace:file"] = Value(std::string("srgb_texture"));
+    in["tiling"] = Value(Vec2f(2.0f, 3.0f));
+    in["rotation"] = Value(0.0f);
+    in["scale"] = Value(0.0f);
+    in["offset"] = Value(0.0f);
+    in["falloff"] = Value(0.5f);
+    in["falloffcontrast"] = Value(0.0f);
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResults = {
+        {Vec4f(1.0f, 0.0f, 0.0f, 1.0f), TextureSampleStatus::Ok},
+        {Vec4f(0.0f, 1.0f, 0.0f, 1.0f), TextureSampleStatus::Ok},
+        {Vec4f(0.0f, 0.0f, 1.0f, 1.0f), TextureSampleStatus::Ok},
+    };
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    ctx.texcoord = Vec2f(0.07216878f, 0.02777778f);
+    ctx.dudx = 0.125f;
+    ctx.dvdx = -0.25f;
+    ctx.dudy = 0.5f;
+    ctx.dvdy = 0.25f;
+    ctx.frame = 3.0f;
+
+    const NodeOutputMap out = _EvalWithCtx("ND_hextiledimage_color3", in, ctx);
+    if (textureSystem.requests.size() != 3) {
+        printf("    hextiledimage color3 should sample three tiles\n");
+        return false;
+    }
+
+    const Vec2f expectedSt(0.14433757f, 0.08333333f);
+    const Vec2f expectedDstdx(0.25f, -0.75f);
+    const Vec2f expectedDstdy(1.0f, 0.75f);
+    for (const Texture2DRequest& request : textureSystem.requests) {
+        if (request.filePath != "/tmp/test_hex.tx" ||
+            !Test_IsClose(request.st, expectedSt) ||
+            !Test_IsClose(request.dstdx, expectedDstdx) ||
+            !Test_IsClose(request.dstdy, expectedDstdy) ||
+            request.uAddressMode != TextureAddressMode::Periodic ||
+            request.vAddressMode != TextureAddressMode::Periodic ||
+            request.filterType != TextureFilterType::Linear ||
+            request.dataRole != TextureDataRole::Color ||
+            request.sourceColorSpace != "srgb_texture" ||
+            request.channelCount != 3) {
+            printf("    hextiledimage color3 request mismatch\n");
+            return false;
+        }
+    }
+
+    return Test_IsClose(_GetVec3(out), Vec3f(1.0f / 3.0f), 1e-5f);
+}
+
+static bool TestHexTiledImageColor4BlendsAlphaSeparately() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/test_hex_rgba.tx"));
+    in["rotation"] = Value(0.0f);
+    in["scale"] = Value(0.0f);
+    in["offset"] = Value(0.0f);
+    in["falloff"] = Value(0.5f);
+    in["falloffcontrast"] = Value(1.0f);
+    in["lumacoeffs"] = Value(Vec3f(0.2f, 0.3f, 0.5f));
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResults = {
+        {Vec4f(1.0f, 0.0f, 0.0f, 0.2f), TextureSampleStatus::Ok},
+        {Vec4f(0.0f, 1.0f, 0.0f, 0.4f), TextureSampleStatus::Ok},
+        {Vec4f(0.0f, 0.0f, 1.0f, 0.8f), TextureSampleStatus::Ok},
+    };
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    ctx.texcoord = Vec2f(0.14433757f, 0.08333333f);
+
+    const NodeOutputMap out = _EvalWithCtx("ND_hextiledimage_color4", in, ctx);
+    if (textureSystem.requests.size() != 3) {
+        printf("    hextiledimage color4 should sample three tiles\n");
+        return false;
+    }
+
+    const Vec4f expected(0.2f, 0.3f, 0.5f, (0.2f + 0.4f + 0.8f) / 3.0f);
+    return Test_IsClose(_GetVec4(out), expected, 1e-5f);
+}
+
+static bool TestTriplanarProjectionColor3SamplesAxesAndBlends() {
+    ParamMap in;
+    in["filex"] = Value(std::string("/tmp/triplanar_x.tx"));
+    in["filey"] = Value(std::string("/tmp/triplanar_y.tx"));
+    in["filez"] = Value(std::string("/tmp/triplanar_z.tx"));
+    in["colorSpace:filex"] = Value(std::string("ACEScg"));
+    in["colorSpace:filey"] = Value(std::string("srgb_texture"));
+    in["colorSpace:filez"] = Value(std::string("raw"));
+    in["layerx"] = Value(std::string("layerX"));
+    in["layery"] = Value(std::string("layerY"));
+    in["layerz"] = Value(std::string("layerZ"));
+    in["default"] = Value(Vec3f(0.1f, 0.2f, 0.3f));
+    in["position"] = Value(Vec3f(1.0f, 2.0f, 3.0f));
+    in["normal"] = Value(Vec3f(1.0f, 2.0f, 1.0f));
+    in["blend"] = Value(1.0f);
+    in["filtertype"] = Value(std::string("cubic"));
+    in["framerange"] = Value(std::string("1001-1010"));
+    in["frameoffset"] = Value(4);
+    in["frameendaction"] = Value(std::string("mirror"));
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResults = {
+        {Vec4f(1.0f, 0.0f, 0.0f, 1.0f), TextureSampleStatus::Ok},
+        {Vec4f(0.0f, 1.0f, 0.0f, 1.0f), TextureSampleStatus::Ok},
+        {Vec4f(0.0f, 0.0f, 1.0f, 1.0f), TextureSampleStatus::Ok},
+    };
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    ctx.frame = 12.0f;
+    ctx.dPositiondx = Vec3f(0.1f, 0.2f, 0.3f);
+    ctx.dPositiondy = Vec3f(-0.5f, 0.25f, 1.0f);
+
+    const NodeOutputMap out = _EvalWithCtx("ND_triplanarprojection_color3", in, ctx);
+    if (textureSystem.requests.size() != 3) {
+        printf("    triplanarprojection color3 should sample three projections\n");
+        return false;
+    }
+
+    const std::array<std::string, 3> expectedFiles = {
+        "/tmp/triplanar_x.tx",
+        "/tmp/triplanar_y.tx",
+        "/tmp/triplanar_z.tx"};
+    const std::array<std::string, 3> expectedLayers = {
+        "layerX", "layerY", "layerZ"};
+    const std::array<std::string, 3> expectedColorSpaces = {
+        "acescg", "srgb_texture", "raw"};
+    const std::array<Vec2f, 3> expectedSt = {
+        Vec2f(2.0f, 3.0f),
+        Vec2f(1.0f, 3.0f),
+        Vec2f(1.0f, 2.0f)};
+    const std::array<Vec2f, 3> expectedDstdx = {
+        Vec2f(0.2f, 0.3f),
+        Vec2f(0.1f, 0.3f),
+        Vec2f(0.1f, 0.2f)};
+    const std::array<Vec2f, 3> expectedDstdy = {
+        Vec2f(0.25f, 1.0f),
+        Vec2f(-0.5f, 1.0f),
+        Vec2f(-0.5f, 0.25f)};
+
+    for (size_t i = 0; i < textureSystem.requests.size(); ++i) {
+        const Texture2DRequest& request = textureSystem.requests[i];
+        if (request.filePath != expectedFiles[i] ||
+            request.layerName != expectedLayers[i] ||
+            request.sourceColorSpace != expectedColorSpaces[i] ||
+            !Test_IsClose(request.st, expectedSt[i]) ||
+            !Test_IsClose(request.dstdx, expectedDstdx[i]) ||
+            !Test_IsClose(request.dstdy, expectedDstdy[i]) ||
+            request.uAddressMode != TextureAddressMode::Periodic ||
+            request.vAddressMode != TextureAddressMode::Periodic ||
+            request.filterType != TextureFilterType::Cubic ||
+            request.frameRange != "1001-1010" ||
+            request.frameOffset != 4 ||
+            request.frameEndAction != TextureAddressMode::Mirror ||
+            !Test_IsClose(request.frame, 12.0f) ||
+            request.dataRole != TextureDataRole::Color ||
+            request.channelCount != 3 ||
+            !Test_IsClose(request.channelFillValue, 0.0f) ||
+            !Test_IsClose(request.defaultValue, Vec4f(0.1f, 0.2f, 0.3f, 0.0f))) {
+            printf("    triplanarprojection color3 request mismatch at sample %zu\n", i);
+            return false;
+        }
+    }
+
+    return Test_IsClose(_GetVec3(out), Vec3f(0.25f, 0.5f, 0.25f), 1e-5f);
+}
+
+static bool TestTriplanarProjectionReevaluatesConnectedPosition() {
+    ParamMap in;
+    in["filex"] = Value(std::string("/tmp/triplanar_x.tx"));
+    in["filey"] = Value(std::string("/tmp/triplanar_y.tx"));
+    in["filez"] = Value(std::string("/tmp/triplanar_z.tx"));
+    in["default"] = Value(0.0f);
+    in["normal"] = Value(Vec3f(0.0f, 0.0f, 1.0f));
+    in["upaxis"] = Value(0);
+    in.Add(
+        AsSlotId("position"),
+        nullptr,
+        &_EvalPositionFromTexcoordAndZ,
+        nullptr,
+        -1,
+        InvalidSlotId);
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResults = {
+        {Vec4f(0.1f, 0.0f, 0.0f, 0.0f), TextureSampleStatus::Ok},
+        {Vec4f(0.2f, 0.0f, 0.0f, 0.0f), TextureSampleStatus::Ok},
+        {Vec4f(0.75f, 0.0f, 0.0f, 0.0f), TextureSampleStatus::Ok},
+    };
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    ctx.position = Vec3f(9.0f, 9.0f, 0.5f);
+    ctx.texcoord = Vec2f(0.2f, 0.4f);
+    ctx.dudx = 0.1f;
+    ctx.dvdx = -0.2f;
+    ctx.dudy = 0.3f;
+    ctx.dvdy = 0.4f;
+    ctx.dPositiondx = Vec3f(0.0f, 0.0f, 0.05f);
+    ctx.dPositiondy = Vec3f(0.0f, 0.0f, -0.1f);
+
+    const NodeOutputMap out = _EvalWithCtx("ND_triplanarprojection_float", in, ctx);
+    if (textureSystem.requests.size() != 3) {
+        printf("    triplanarprojection float should sample three projections\n");
+        return false;
+    }
+
+    const std::array<Vec2f, 3> expectedSt = {
+        Vec2f(0.5f, 0.4f),
+        Vec2f(0.5f, 0.2f),
+        Vec2f(-0.4f, 0.2f)};
+    const std::array<Vec2f, 3> expectedDstdx = {
+        Vec2f(0.05f, -0.2f),
+        Vec2f(0.05f, 0.1f),
+        Vec2f(0.2f, 0.1f)};
+    const std::array<Vec2f, 3> expectedDstdy = {
+        Vec2f(-0.1f, 0.4f),
+        Vec2f(-0.1f, 0.3f),
+        Vec2f(-0.4f, 0.3f)};
+
+    for (size_t i = 0; i < textureSystem.requests.size(); ++i) {
+        const Texture2DRequest& request = textureSystem.requests[i];
+        if (!Test_IsClose(request.st, expectedSt[i]) ||
+            !Test_IsClose(request.dstdx, expectedDstdx[i]) ||
+            !Test_IsClose(request.dstdy, expectedDstdy[i])) {
+            printf("    triplanarprojection connected position mismatch at sample %zu\n", i);
+            return false;
+        }
+    }
+
+    return Test_IsClose(_GetFloat(out), 0.75f, 1e-5f);
+}
+
+static bool TestTriplanarProjectionDefaultsNormalToObjectSpace() {
+    ParamMap in;
+    in["filex"] = Value(std::string("/tmp/triplanar_x.tx"));
+    in["filey"] = Value(std::string("/tmp/triplanar_y.tx"));
+    in["filez"] = Value(std::string("/tmp/triplanar_z.tx"));
+    in["default"] = Value(0.0f);
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResults = {
+        {Vec4f(0.8f, 0.0f, 0.0f, 0.0f), TextureSampleStatus::Ok},
+        {Vec4f(0.5f, 0.0f, 0.0f, 0.0f), TextureSampleStatus::Ok},
+        {Vec4f(0.2f, 0.0f, 0.0f, 0.0f), TextureSampleStatus::Ok},
+    };
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    ctx.position = Vec3f(1.0f, 2.0f, 3.0f);
+    ctx.normal = Vec3f(0.0f, 0.0f, 1.0f);
+    ctx.transformSpace = &_TransformWorldNormalToObjectX;
+
+    const NodeOutputMap out = _EvalWithCtx("ND_triplanarprojection_float", in, ctx);
+    return Test_IsClose(_GetFloat(out), 0.8f, 1e-5f);
+}
+
 static bool TestHeightToNormalDefaultTexcoord() {
     NodeRegistry::RegisterBuiltinNodes();
     auto fn = NodeRegistry::GetInstance().Find(
@@ -1292,6 +1709,40 @@ static bool TestHeightToNormalDefaultTexcoord() {
     Vec3f expected = Vec3f(-1.0f / 16.0f, 0.0f, 1.0f).normalized();
     expected = expected * 0.5f + Vec3f(0.5f, 0.5f, 0.5f);
     return Test_IsClose(_GetVec3(out), expected, 1e-5f);
+}
+
+static bool TestBlurPassThroughWarnsOnce() {
+    std::ostringstream captured;
+    std::streambuf* const oldBuf = std::cout.rdbuf(captured.rdbuf());
+
+    ParamMap floatInputs;
+    floatInputs["in"] = Value(0.375f);
+    const NodeOutputMap floatOut = _Eval("ND_blur_float", floatInputs);
+
+    ParamMap colorInputs;
+    colorInputs["in"] = Value(Vec3f(0.1f, 0.2f, 0.3f));
+    const NodeOutputMap colorOut = _Eval("ND_blur_color3", colorInputs);
+
+    std::cout.rdbuf(oldBuf);
+
+    const std::string output = captured.str();
+    const std::string warning =
+        "hdEmbree MaterialX warning: 'blur' is unsupported for ray tracing "
+        "and will pass through 'in' unchanged.\n";
+
+    if (!Test_IsClose(_GetFloat(floatOut), 0.375f)) {
+        printf("    blur float output did not pass through input\n");
+        return false;
+    }
+    if (!Test_IsClose(_GetVec3(colorOut), Vec3f(0.1f, 0.2f, 0.3f))) {
+        printf("    blur color3 output did not pass through input\n");
+        return false;
+    }
+    if (output != warning) {
+        printf("    blur warning output mismatch: '%s'\n", output.c_str());
+        return false;
+    }
+    return true;
 }
 
 static bool TestBumpDefaultBasis() {
@@ -1462,12 +1913,21 @@ Test_RegisterNodeTests()
     _REG(TestGeometricPosition);
     _REG(TestGeometricPositionWorldSpace);
     _REG(TestGeometricNormal);
+    _REG(TestGeometricViewDirectionWorldSpace);
     _REG(TestApplicationFrame);
     _REG(TestApplicationTime);
     _REG(TestTransformPointObjectToWorld);
     _REG(TestImageNodeUsesTextureSystem);
     _REG(TestImageNodeConstantWrapReturnsDefault);
     _REG(TestTiledImageTransformsTexcoords);
+    _REG(TestLatLongImageMapsViewdirToLatLongUv);
+    _REG(TestLatLongImageReevaluatesConnectedViewdir);
+    _REG(TestHexTiledImageBlendsThreeColorSamples);
+    _REG(TestHexTiledImageColor4BlendsAlphaSeparately);
+    _REG(TestTriplanarProjectionColor3SamplesAxesAndBlends);
+    _REG(TestTriplanarProjectionReevaluatesConnectedPosition);
+    _REG(TestTriplanarProjectionDefaultsNormalToObjectSpace);
+    _REG(TestBlurPassThroughWarnsOnce);
     _REG(TestHeightToNormalDefaultTexcoord);
     _REG(TestBumpDefaultBasis);
     _REG(TestLuminance);

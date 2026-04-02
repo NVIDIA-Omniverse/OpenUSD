@@ -2,9 +2,10 @@
 (
     defaultPrim = "World"
     upAxis = "Y"
-    doc = """MaterialX image/tiledimage gallery for comparing HdEmbree and Storm.
+    doc = """MaterialX image/tiledimage/hextiledimage gallery for comparing HdEmbree and Storm.
 Top row: macbeth, marcie, MaterialX logo via image nodes.
-Bottom row: checkermap via image and tiledimage."""
+Bottom row: checkermap via image, tiledimage, and hextiledimage, plus latlongimage on Cube_Poly.
+Lowest row: triplanarprojection on Sphere_Poly using checkermap, marcie, and MaterialX logo."""
 )
 
 def Camera "Camera"
@@ -107,6 +108,54 @@ def Xform "World"
         bool doubleSided = true
         uniform token subdivisionScheme = "none"
         rel material:binding = </Materials/CheckerTiled>
+    }
+
+    def Mesh "CheckerHexTiledPlane" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(-4.85, -2.25, 0), (-2.95, -2.25, 0), (-2.95, -0.35, 0), (-4.85, -0.35, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/CheckerHexTiled>
+    }
+
+    def Xform "LatLongCube" (
+        prepend references = @./meshes/Cube_Poly.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (3.3, -1.3, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </Materials/LatLongImage>
+    }
+
+    def Xform "LatLongSphere" (
+        prepend references = @./meshes/Sphere_Poly.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (5.1, -1.3, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </Materials/LatLongImage>
+    }
+
+    def Xform "TriplanarSphere" (
+        prepend references = @./meshes/Sphere_Poly.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (6.7, -1.3, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </Materials/TriplanarProjection>
     }
 }
 
@@ -280,6 +329,130 @@ def Scope "Materials"
             float inputs:specular = 0.0
             float inputs:emission = 1.0
             color3f inputs:emission_color.connect = </Materials/CheckerTiled/Image.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "LatLongImage" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/LatLongImage/Surface.outputs:out>
+
+        def Shader "Normal"
+        {
+            uniform token info:id = "ND_normal_vector3"
+            float3 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_latlongimage"
+            asset inputs:file = @../images/StinsonBeach.hdr@
+            float3 inputs:viewdir.connect = </Materials/LatLongImage/Normal.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/LatLongImage/Image.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "CheckerHexTiled" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/CheckerHexTiled/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_hextiledimage_color3"
+            asset inputs:file = @../images/checkermap.png@ (
+                colorSpace = "srgb_texture"
+            )
+            float2 inputs:texcoord.connect = </Materials/CheckerHexTiled/TexCoord.outputs:out>
+            float2 inputs:tiling = (6.0, 6.0)
+            float inputs:rotation = 1.0
+            float2 inputs:rotationrange = (0.0, 360.0)
+            float inputs:scale = 1.0
+            float2 inputs:scalerange = (0.7, 1.35)
+            float inputs:offset = 1.0
+            float2 inputs:offsetrange = (-0.12, 0.12)
+            float inputs:falloff = 0.45
+            float inputs:falloffcontrast = 0.75
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/CheckerHexTiled/Image.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "TriplanarProjection" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/TriplanarProjection/Surface.outputs:out>
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_triplanarprojection_color3"
+            asset inputs:filex = @../images/checkermap.png@ (
+                colorSpace = "srgb_texture"
+            )
+            asset inputs:filey = @../images/marcie_2k_srgb.png@ (
+                colorSpace = "srgb_texture"
+            )
+            asset inputs:filez = @../images/materialxlogo_720.png@ (
+                colorSpace = "srgb_texture"
+            )
+            float inputs:blend = 0.025
+            vector3f inputs:position.connect = </Materials/TriplanarProjection/ScalePosition.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Position"
+        {
+            uniform token info:id = "ND_position_vector3"
+            vector3f outputs:out
+        }
+
+        def Shader "ScalePosition"
+        {
+            uniform token info:id = "ND_multiply_vector3FA"
+            vector3f inputs:in1.connect = </Materials/TriplanarProjection/Position.outputs:out>
+            float inputs:in2 = 0.06
+            vector3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/TriplanarProjection/Image.outputs:out>
             token outputs:out
         }
     }

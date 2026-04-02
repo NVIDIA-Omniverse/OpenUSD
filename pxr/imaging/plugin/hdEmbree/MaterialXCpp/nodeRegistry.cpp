@@ -4,6 +4,7 @@
 #include "nodeRegistry.h"
 
 #include "nodes/mathNodes.h"
+#include "nodes/convolutionNodes.h"
 #include "nodes/adjustmentNodes.h"
 #include "nodes/channelNodes.h"
 #include "nodes/conditionalNodes.h"
@@ -49,6 +50,7 @@ NodeRegistry::RegisterBuiltinNodes()
     std::call_once(flag, []() {
         auto& reg = GetInstance();
         RegisterMathNodes(reg);
+        RegisterConvolutionNodes(reg);
         RegisterAdjustmentNodes(reg);
         RegisterChannelNodes(reg);
         RegisterConditionalNodes(reg);

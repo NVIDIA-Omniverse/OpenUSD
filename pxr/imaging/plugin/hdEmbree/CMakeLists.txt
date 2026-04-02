@@ -81,6 +81,7 @@ pxr_plugin(hdEmbree
         MaterialXCpp/materials/openPbr
         MaterialXCpp/materials/usdPreviewSurface
         MaterialXCpp/nodes/mathNodes
+        MaterialXCpp/nodes/convolutionNodes
         MaterialXCpp/nodes/adjustmentNodes
         MaterialXCpp/nodes/channelNodes
         MaterialXCpp/nodes/conditionalNodes
@@ -152,6 +153,7 @@ pxr_build_test(testMaterialXCpp
         MaterialXCpp/nodeRegistry.cpp
         MaterialXCpp/graph.cpp
         MaterialXCpp/nodes/mathNodes.cpp
+        MaterialXCpp/nodes/convolutionNodes.cpp
         MaterialXCpp/nodes/adjustmentNodes.cpp
         MaterialXCpp/nodes/channelNodes.cpp
         MaterialXCpp/nodes/conditionalNodes.cpp
