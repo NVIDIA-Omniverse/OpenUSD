@@ -1,0 +1,175 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Y"
+    doc = """MaterialX npr node gallery for hdEmbree.
+Three sphere-based samples:
+  - left: viewdirection visualized as remapped RGB
+  - center: facingratio visualized as grayscale
+  - right: gooch_shade visualized directly as emissive color"""
+)
+
+def Camera "Camera"
+{
+    float focalLength = 42
+    float horizontalAperture = 36
+    float verticalAperture = 24
+    float2 clippingRange = (0.1, 1000)
+    double3 xformOp:translate = (0, 0.35, 10.5)
+    token[] xformOpOrder = ["xformOp:translate"]
+}
+
+def Xform "World"
+{
+    def Sphere "ViewdirectionSphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 1.2
+        double3 xformOp:translate = (-3.1, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/ViewdirectionMat>
+    }
+
+    def Sphere "FacingratioSphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 1.2
+        double3 xformOp:translate = (0, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/FacingratioMat>
+    }
+
+    def Sphere "GoochSphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 1.2
+        double3 xformOp:translate = (3.1, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/GoochShadeMat>
+    }
+
+    def Scope "Materials"
+    {
+        def Material "ViewdirectionMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/ViewdirectionMat/StdSurf.outputs:out>
+
+            def Shader "ViewDirection"
+            {
+                uniform token info:id = "ND_viewdirection_vector3"
+                string inputs:space = "world"
+                vector3f outputs:out
+            }
+
+            def Shader "Scale"
+            {
+                uniform token info:id = "ND_multiply_vector3FA"
+                vector3f inputs:in1.connect = </World/Materials/ViewdirectionMat/ViewDirection.outputs:out>
+                float inputs:in2 = 0.5
+                vector3f outputs:out
+            }
+
+            def Shader "Half"
+            {
+                uniform token info:id = "ND_constant_vector3"
+                vector3f inputs:value = (0.5, 0.5, 0.5)
+                vector3f outputs:out
+            }
+
+            def Shader "Remap"
+            {
+                uniform token info:id = "ND_add_vector3"
+                vector3f inputs:in1.connect = </World/Materials/ViewdirectionMat/Scale.outputs:out>
+                vector3f inputs:in2.connect = </World/Materials/ViewdirectionMat/Half.outputs:out>
+                vector3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                float inputs:specular = 0.0
+                float inputs:emission = 1.0
+                color3f inputs:emission_color.connect = </World/Materials/ViewdirectionMat/Remap.outputs:out>
+                token outputs:out
+            }
+        }
+
+        def Material "FacingratioMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/FacingratioMat/StdSurf.outputs:out>
+
+            def Shader "FacingRatio"
+            {
+                uniform token info:id = "ND_facingratio_float"
+                bool inputs:faceforward = true
+                bool inputs:invert = false
+                float outputs:out
+            }
+
+            def Shader "ToColor"
+            {
+                uniform token info:id = "ND_convert_float_color3"
+                float inputs:in.connect = </World/Materials/FacingratioMat/FacingRatio.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                float inputs:specular = 0.0
+                float inputs:emission = 1.0
+                color3f inputs:emission_color.connect = </World/Materials/FacingratioMat/ToColor.outputs:out>
+                token outputs:out
+            }
+        }
+
+        def Material "GoochShadeMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/GoochShadeMat/StdSurf.outputs:out>
+
+            def Shader "Gooch"
+            {
+                uniform token info:id = "ND_gooch_shade"
+                color3f inputs:warm_color = (0.93, 0.73, 0.24)
+                color3f inputs:cool_color = (0.18, 0.35, 0.88)
+                float inputs:specular_intensity = 0.45
+                float inputs:shininess = 24.0
+                vector3f inputs:light_direction = (1.0, -0.4, -0.7)
+                color3f outputs:out
+            }
+
+            def Shader "StdSurf"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                float inputs:specular = 0.0
+                float inputs:emission = 1.0
+                color3f inputs:emission_color.connect = </World/Materials/GoochShadeMat/Gooch.outputs:out>
+                token outputs:out
+            }
+        }
+    }
+
+    def SphereLight "Light"
+    {
+        float inputs:intensity = 0.01
+        float inputs:radius = 0.1
+        double3 xformOp:translate = (0, 4, 6)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

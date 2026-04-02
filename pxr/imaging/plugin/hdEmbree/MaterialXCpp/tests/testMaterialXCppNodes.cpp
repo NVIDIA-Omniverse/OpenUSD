@@ -1189,6 +1189,65 @@ static bool TestGeometricViewDirectionWorldSpace() {
         Vec3f(0.0f, 1.0f, -5.0f).normalized());
 }
 
+static bool TestFacingRatioDefaultsToViewDirectionAndNormal() {
+    NodeRegistry::RegisterBuiltinNodes();
+    auto fn = NodeRegistry::GetInstance().Find(
+        std::string("ND_facingratio_float"));
+    if (!fn) return false;
+
+    ParamMap in;
+
+    ShadingContext ctx;
+    ctx.position = Vec3f(0.0f, 0.0f, 0.0f);
+    ctx.viewPosition = Vec3f(0.0f, 0.0f, 5.0f);
+    ctx.normal = Vec3f(0.0f, 0.0f, 1.0f);
+
+    NodeOutputMap out;
+    fn(in, ctx, &out);
+    return Test_IsClose(_GetFloat(out), 1.0f);
+}
+
+static bool TestFacingRatioSupportsFlagsAndAuthoredInputs() {
+    NodeRegistry::RegisterBuiltinNodes();
+    auto fn = NodeRegistry::GetInstance().Find(
+        std::string("ND_facingratio_float"));
+    if (!fn) return false;
+
+    ParamMap in;
+    in["viewdirection"] = Value(Vec3f(0.0f, 0.0f, 1.0f));
+    in["normal"] = Value(Vec3f(0.0f, 0.0f, 1.0f));
+    in["faceforward"] = Value(false);
+    in["invert"] = Value(true);
+
+    ShadingContext ctx;
+    NodeOutputMap out;
+    fn(in, ctx, &out);
+    return Test_IsClose(_GetFloat(out), 2.0f);
+}
+
+static bool TestGoochShadeAddsSpecularHighlight() {
+    NodeRegistry::RegisterBuiltinNodes();
+    auto fn = NodeRegistry::GetInstance().Find(
+        std::string("ND_gooch_shade"));
+    if (!fn) return false;
+
+    ParamMap in;
+    in["warm_color"] = Value(Vec3f(0.8f, 0.7f, 0.6f));
+    in["cool_color"] = Value(Vec3f(0.1f, 0.2f, 0.3f));
+    in["specular_intensity"] = Value(0.25f);
+    in["shininess"] = Value(4.0f);
+    in["light_direction"] = Value(Vec3f(0.0f, 0.0f, -2.0f));
+
+    ShadingContext ctx;
+    ctx.position = Vec3f(0.0f, 0.0f, 0.0f);
+    ctx.viewPosition = Vec3f(0.0f, 0.0f, 5.0f);
+    ctx.normal = Vec3f(0.0f, 0.0f, 1.0f);
+
+    NodeOutputMap out;
+    fn(in, ctx, &out);
+    return Test_IsClose(_GetVec3(out), Vec3f(1.05f, 0.95f, 0.85f));
+}
+
 static bool TestApplicationFrame() {
     NodeRegistry::RegisterBuiltinNodes();
     auto fn = NodeRegistry::GetInstance().Find(std::string("ND_frame_float"));
@@ -1914,6 +1973,9 @@ Test_RegisterNodeTests()
     _REG(TestGeometricPositionWorldSpace);
     _REG(TestGeometricNormal);
     _REG(TestGeometricViewDirectionWorldSpace);
+    _REG(TestFacingRatioDefaultsToViewDirectionAndNormal);
+    _REG(TestFacingRatioSupportsFlagsAndAuthoredInputs);
+    _REG(TestGoochShadeAddsSpecularHighlight);
     _REG(TestApplicationFrame);
     _REG(TestApplicationTime);
     _REG(TestTransformPointObjectToWorld);
