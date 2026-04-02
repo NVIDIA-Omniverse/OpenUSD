@@ -1,0 +1,598 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Y"
+    doc = """MaterialX colortransform gallery for hdEmbree.
+Ten planes arranged in a 5x2 grid.
+Each plane samples marcie_2k_srgb.png through ND_image_color3 without image-node
+source color conversion, then applies one MaterialX colortransform node.
+This is intentionally not colorimetrically correct for all transforms; the goal
+is simply to verify that each node evaluates and displays."""
+)
+
+def Camera "Camera"
+{
+    float focalLength = 38
+    float horizontalAperture = 36
+    float verticalAperture = 24
+    float2 clippingRange = (0.1, 1000)
+    double3 xformOp:translate = (0, 0.0, 12.5)
+    token[] xformOpOrder = ["xformOp:translate"]
+}
+
+def Xform "World"
+{
+    def Mesh "G18Rec709Card" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(-5.4, 0.6, 0), (-3.4, 0.6, 0), (-3.4, 2.0, 0), (-5.4, 2.0, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/G18Rec709Mat>
+    }
+
+    def Mesh "G22Rec709Card" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(-2.7, 0.6, 0), (-0.7, 0.6, 0), (-0.7, 2.0, 0), (-2.7, 2.0, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/G22Rec709Mat>
+    }
+
+    def Mesh "Rec709DisplayCard" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(0.0, 0.6, 0), (2.0, 0.6, 0), (2.0, 2.0, 0), (0.0, 2.0, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/Rec709DisplayMat>
+    }
+
+    def Mesh "AcescgCard" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(2.7, 0.6, 0), (4.7, 0.6, 0), (4.7, 2.0, 0), (2.7, 2.0, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/AcescgMat>
+    }
+
+    def Mesh "G22Ap1Card" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(5.4, 0.6, 0), (7.4, 0.6, 0), (7.4, 2.0, 0), (5.4, 2.0, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/G22Ap1Mat>
+    }
+
+    def Mesh "SrgbTextureCard" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(-5.4, -2.0, 0), (-3.4, -2.0, 0), (-3.4, -0.6, 0), (-5.4, -0.6, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/SrgbTextureMat>
+    }
+
+    def Mesh "LinAdobeRgbCard" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(-2.7, -2.0, 0), (-0.7, -2.0, 0), (-0.7, -0.6, 0), (-2.7, -0.6, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/LinAdobeRgbMat>
+    }
+
+    def Mesh "AdobeRgbCard" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(0.0, -2.0, 0), (2.0, -2.0, 0), (2.0, -0.6, 0), (0.0, -0.6, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/AdobeRgbMat>
+    }
+
+    def Mesh "SrgbDisplayP3Card" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(2.7, -2.0, 0), (4.7, -2.0, 0), (4.7, -0.6, 0), (2.7, -0.6, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/SrgbDisplayP3Mat>
+    }
+
+    def Mesh "LinDisplayP3Card" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(5.4, -2.0, 0), (7.4, -2.0, 0), (7.4, -0.6, 0), (5.4, -0.6, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </Materials/LinDisplayP3Mat>
+    }
+}
+
+def Scope "Materials"
+{
+    def Material "G18Rec709Mat" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/G18Rec709Mat/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_image_color3"
+            asset inputs:file = @../images/marcie_2k_srgb.png@
+            float2 inputs:texcoord.connect = </Materials/G18Rec709Mat/TexCoord.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Transform"
+        {
+            uniform token info:id = "ND_g18_rec709_to_lin_rec709_color3"
+            color3f inputs:in.connect = </Materials/G18Rec709Mat/Image.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/G18Rec709Mat/Transform.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "G22Rec709Mat" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/G22Rec709Mat/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_image_color3"
+            asset inputs:file = @../images/marcie_2k_srgb.png@
+            float2 inputs:texcoord.connect = </Materials/G22Rec709Mat/TexCoord.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Transform"
+        {
+            uniform token info:id = "ND_g22_rec709_to_lin_rec709_color3"
+            color3f inputs:in.connect = </Materials/G22Rec709Mat/Image.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/G22Rec709Mat/Transform.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "Rec709DisplayMat" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/Rec709DisplayMat/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_image_color3"
+            asset inputs:file = @../images/marcie_2k_srgb.png@
+            float2 inputs:texcoord.connect = </Materials/Rec709DisplayMat/TexCoord.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Transform"
+        {
+            uniform token info:id = "ND_rec709_display_to_lin_rec709_color3"
+            color3f inputs:in.connect = </Materials/Rec709DisplayMat/Image.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/Rec709DisplayMat/Transform.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "AcescgMat" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/AcescgMat/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_image_color3"
+            asset inputs:file = @../images/marcie_2k_srgb.png@
+            float2 inputs:texcoord.connect = </Materials/AcescgMat/TexCoord.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Transform"
+        {
+            uniform token info:id = "ND_acescg_to_lin_rec709_color3"
+            color3f inputs:in.connect = </Materials/AcescgMat/Image.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/AcescgMat/Transform.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "G22Ap1Mat" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/G22Ap1Mat/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_image_color3"
+            asset inputs:file = @../images/marcie_2k_srgb.png@
+            float2 inputs:texcoord.connect = </Materials/G22Ap1Mat/TexCoord.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Transform"
+        {
+            uniform token info:id = "ND_g22_ap1_to_lin_rec709_color3"
+            color3f inputs:in.connect = </Materials/G22Ap1Mat/Image.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/G22Ap1Mat/Transform.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "SrgbTextureMat" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/SrgbTextureMat/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_image_color3"
+            asset inputs:file = @../images/marcie_2k_srgb.png@
+            float2 inputs:texcoord.connect = </Materials/SrgbTextureMat/TexCoord.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Transform"
+        {
+            uniform token info:id = "ND_srgb_texture_to_lin_rec709_color3"
+            color3f inputs:in.connect = </Materials/SrgbTextureMat/Image.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/SrgbTextureMat/Transform.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "LinAdobeRgbMat" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/LinAdobeRgbMat/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_image_color3"
+            asset inputs:file = @../images/marcie_2k_srgb.png@
+            float2 inputs:texcoord.connect = </Materials/LinAdobeRgbMat/TexCoord.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Transform"
+        {
+            uniform token info:id = "ND_lin_adobergb_to_lin_rec709_color3"
+            color3f inputs:in.connect = </Materials/LinAdobeRgbMat/Image.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/LinAdobeRgbMat/Transform.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "AdobeRgbMat" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/AdobeRgbMat/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_image_color3"
+            asset inputs:file = @../images/marcie_2k_srgb.png@
+            float2 inputs:texcoord.connect = </Materials/AdobeRgbMat/TexCoord.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Transform"
+        {
+            uniform token info:id = "ND_adobergb_to_lin_rec709_color3"
+            color3f inputs:in.connect = </Materials/AdobeRgbMat/Image.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/AdobeRgbMat/Transform.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "SrgbDisplayP3Mat" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/SrgbDisplayP3Mat/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_image_color3"
+            asset inputs:file = @../images/marcie_2k_srgb.png@
+            float2 inputs:texcoord.connect = </Materials/SrgbDisplayP3Mat/TexCoord.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Transform"
+        {
+            uniform token info:id = "ND_srgb_displayp3_to_lin_rec709_color3"
+            color3f inputs:in.connect = </Materials/SrgbDisplayP3Mat/Image.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/SrgbDisplayP3Mat/Transform.outputs:out>
+            token outputs:out
+        }
+    }
+
+    def Material "LinDisplayP3Mat" (
+        prepend apiSchemas = ["MaterialXConfigAPI"]
+    )
+    {
+        string config:mtlx:version = "1.38"
+        token outputs:mtlx:surface.connect = </Materials/LinDisplayP3Mat/Surface.outputs:out>
+
+        def Shader "TexCoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            float2 outputs:out
+        }
+
+        def Shader "Image"
+        {
+            uniform token info:id = "ND_image_color3"
+            asset inputs:file = @../images/marcie_2k_srgb.png@
+            float2 inputs:texcoord.connect = </Materials/LinDisplayP3Mat/TexCoord.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Transform"
+        {
+            uniform token info:id = "ND_lin_displayp3_to_lin_rec709_color3"
+            color3f inputs:in.connect = </Materials/LinDisplayP3Mat/Image.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "ND_standard_surface_surfaceshader"
+            float inputs:base = 0.0
+            float inputs:specular = 0.0
+            float inputs:emission = 1.0
+            color3f inputs:emission_color.connect = </Materials/LinDisplayP3Mat/Transform.outputs:out>
+            token outputs:out
+        }
+    }
+}

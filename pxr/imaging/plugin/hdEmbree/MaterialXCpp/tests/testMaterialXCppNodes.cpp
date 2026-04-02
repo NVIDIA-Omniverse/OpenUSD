@@ -7,6 +7,7 @@
 #include "../nodeRegistry.h"
 #include "../types.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -200,6 +201,51 @@ _TransformWorldNormalToObjectX(const void*,
         *out = Vec3f(in[2], in[1], -in[0]);
     }
     return true;
+}
+
+struct _TestColorTransformState {
+    bool handled = true;
+    int callCount = 0;
+    std::string lastSourceColorSpace;
+    std::string lastTargetColorSpace;
+    Vec3f lastInput = Vec3f(0.0f);
+    Vec3f outputValue = Vec3f(0.0f);
+};
+
+static bool
+_TestColorTransformCallback(const void* userData,
+                            const std::string& sourceColorSpace,
+                            const std::string& targetColorSpace,
+                            const Vec3f& in,
+                            Vec3f* out)
+{
+    auto* const state = const_cast<_TestColorTransformState*>(
+        static_cast<const _TestColorTransformState*>(userData));
+    if (!state) {
+        return false;
+    }
+
+    state->callCount += 1;
+    state->lastSourceColorSpace = sourceColorSpace;
+    state->lastTargetColorSpace = targetColorSpace;
+    state->lastInput = in;
+    if (!state->handled) {
+        return false;
+    }
+
+    if (out) {
+        *out = state->outputValue;
+    }
+    return true;
+}
+
+static float
+_ApplySrgbTextureToLinearRec709Test(const float in)
+{
+    if (in > 0.04045f) {
+        return std::pow(std::max(in + 0.055f, 0.0f) / 1.055f, 2.4f);
+    }
+    return in / 12.92f;
 }
 
 // ---------------------------------------------------------------------------
@@ -1871,6 +1917,115 @@ static bool TestLuminance() {
     return true;
 }
 
+static bool TestColorTransformG22Rec709FallbackClamp() {
+    ParamMap in;
+    in["in"] = Value(Vec3f(-1.0f, 0.5f, 2.0f));
+    const NodeOutputMap out = _Eval("ND_g22_rec709_to_lin_rec709_color3", in);
+    const Vec3f expected(
+        0.0f,
+        std::pow(0.5f, 2.2f),
+        std::pow(2.0f, 2.2f));
+    return Test_IsClose(_GetVec3(out), expected, 1e-5f);
+}
+
+static bool TestColorTransformSrgbTextureFallbackPiecewise() {
+    ParamMap in;
+    in["in"] = Value(Vec3f(0.04045f, 0.5f, -0.1f));
+    const NodeOutputMap out =
+        _Eval("ND_srgb_texture_to_lin_rec709_color3", in);
+    const Vec3f expected(
+        _ApplySrgbTextureToLinearRec709Test(0.04045f),
+        _ApplySrgbTextureToLinearRec709Test(0.5f),
+        _ApplySrgbTextureToLinearRec709Test(-0.1f));
+    return Test_IsClose(_GetVec3(out), expected, 1e-5f);
+}
+
+static bool TestColorTransformAcescgMatrix() {
+    ParamMap in;
+    in["in"] = Value(Vec3f(1.0f, 0.0f, 0.0f));
+    const NodeOutputMap out = _Eval("ND_acescg_to_lin_rec709_color3", in);
+    const Vec3f expected(
+        1.705050992658f,
+        -0.130256417507f,
+        -0.024003356805f);
+    return Test_IsClose(_GetVec3(out), expected, 1e-5f);
+}
+
+static bool TestColorTransformColor4PreservesAlpha() {
+    ParamMap in;
+    in["in"] = Value(Vec4f(1.0f, 0.0f, 0.0f, 0.25f));
+    const NodeOutputMap out = _Eval("ND_acescg_to_lin_rec709_color4", in);
+    const Vec4f expected(
+        1.705050992658f,
+        -0.130256417507f,
+        -0.024003356805f,
+        0.25f);
+    return Test_IsClose(_GetVec4(out), expected, 1e-5f);
+}
+
+static bool TestColorTransformCallbackOverridesFallback() {
+    ParamMap in;
+    in["in"] = Value(Vec3f(0.1f, 0.2f, 0.3f));
+
+    _TestColorTransformState state;
+    state.outputValue = Vec3f(9.0f, 8.0f, 7.0f);
+
+    ShadingContext ctx;
+    ctx.colorTransform = &_TestColorTransformCallback;
+    ctx.colorTransformUserData = &state;
+
+    const NodeOutputMap out =
+        _EvalWithCtx("ND_lin_displayp3_to_lin_rec709_color3", in, ctx);
+    return Test_IsClose(_GetVec3(out), state.outputValue) &&
+           state.callCount == 1 &&
+           state.lastSourceColorSpace == "lin_displayp3" &&
+           state.lastTargetColorSpace == "lin_rec709" &&
+           Test_IsClose(state.lastInput, Vec3f(0.1f, 0.2f, 0.3f));
+}
+
+static bool TestColorTransformCallbackFallbackWhenUnhandled() {
+    ParamMap in;
+    in["in"] = Value(Vec3f(0.0f, 1.0f, 0.0f));
+
+    _TestColorTransformState state;
+    state.handled = false;
+
+    ShadingContext ctx;
+    ctx.colorTransform = &_TestColorTransformCallback;
+    ctx.colorTransformUserData = &state;
+
+    const NodeOutputMap out =
+        _EvalWithCtx("ND_lin_displayp3_to_lin_rec709_color3", in, ctx);
+    const Vec3f expected(
+        -0.22492968f,
+        1.04205894f,
+        -0.07864794f);
+    return state.callCount == 1 &&
+           state.lastSourceColorSpace == "lin_displayp3" &&
+           state.lastTargetColorSpace == "lin_rec709" &&
+           Test_IsClose(_GetVec3(out), expected, 1e-5f);
+}
+
+static bool TestColorTransformCallbackReceivesClampedInput() {
+    ParamMap in;
+    in["in"] = Value(Vec3f(-0.5f, 0.25f, 1.0f));
+
+    _TestColorTransformState state;
+    state.outputValue = Vec3f(0.0f);
+
+    ShadingContext ctx;
+    ctx.colorTransform = &_TestColorTransformCallback;
+    ctx.colorTransformUserData = &state;
+
+    const NodeOutputMap out =
+        _EvalWithCtx("ND_g22_ap1_to_lin_rec709_color3", in, ctx);
+    return state.callCount == 1 &&
+           state.lastSourceColorSpace == "g22_ap1" &&
+           state.lastTargetColorSpace == "lin_rec709" &&
+           Test_IsClose(state.lastInput, Vec3f(0.0f, 0.25f, 1.0f)) &&
+           Test_IsClose(_GetVec3(out), Vec3f(0.0f));
+}
+
 // ---------------------------------------------------------------------------
 // Param map tests
 // ---------------------------------------------------------------------------
@@ -1993,6 +2148,13 @@ Test_RegisterNodeTests()
     _REG(TestHeightToNormalDefaultTexcoord);
     _REG(TestBumpDefaultBasis);
     _REG(TestLuminance);
+    _REG(TestColorTransformG22Rec709FallbackClamp);
+    _REG(TestColorTransformSrgbTextureFallbackPiecewise);
+    _REG(TestColorTransformAcescgMatrix);
+    _REG(TestColorTransformColor4PreservesAlpha);
+    _REG(TestColorTransformCallbackOverridesFallback);
+    _REG(TestColorTransformCallbackFallbackWhenUnhandled);
+    _REG(TestColorTransformCallbackReceivesClampedInput);
     _REG(TestParamMapCopyOnWriteForBorrowedValue);
     _REG(TestNodeRegistryLookup);
     _REG(TestNodeRegistryMissing);

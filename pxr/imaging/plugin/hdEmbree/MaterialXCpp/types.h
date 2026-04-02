@@ -96,6 +96,18 @@ struct ShadingContext
     // Points to a pre-built map; lifetime managed by the caller.
     const std::unordered_map<std::string, Value>* uniformProps = nullptr;
 
+    // Optional color transform callback for MaterialX colortransform nodes.
+    // The callback receives canonical lower-case color-space names and RGB
+    // triplets only. color4 alpha passthrough is handled in mxcpp.
+    using ColorTransformFn = bool(*)(
+        const void* userData,
+        const std::string& sourceColorSpace,
+        const std::string& targetColorSpace,
+        const Vec3f& in,
+        Vec3f* out);
+    ColorTransformFn colorTransform = nullptr;
+    const void* colorTransformUserData = nullptr;
+
     // Texture lookup backend owned by the embedding renderer. The pointer is
     // non-owning and may be null, in which case texture nodes fall back to
     // their authored default values.
