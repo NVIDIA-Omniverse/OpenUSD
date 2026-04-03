@@ -1,0 +1,389 @@
+#usda 1.0
+(
+    defaultPrim = "Scene"
+    upAxis = "Y"
+    doc = """Gallery scene for the native Usd* nodes implemented in hdEmbree.
+
+This scene exercises:
+  - UsdUVTexture sourceColorSpace = raw / sRGB comparison
+  - UsdPrimvarReader_float2 + UsdTransform2d + UsdUVTexture
+  - UsdPrimvarReader_float3 and UsdPrimvarReader_float
+  - UsdPrimvarReader_matrix (constant interpolation)
+  - UsdPreviewSurface opacityMode = transparent / presence
+
+Not every UsdPrimvarReader type is used here; the goal is to provide a compact
+manual test scene for the newly added native-node support."""
+)
+
+def Camera "Camera"
+{
+    float focalLength = 38
+    float horizontalAperture = 36
+    float verticalAperture = 24
+    float2 clippingRange = (0.1, 1000)
+    double3 xformOp:translate = (0, 0, 13.5)
+    token[] xformOpOrder = ["xformOp:translate"]
+}
+
+class Mesh "Card" (
+    prepend apiSchemas = ["MaterialBindingAPI"]
+)
+{
+    int[] faceVertexCounts = [4]
+    int[] faceVertexIndices = [0, 1, 2, 3]
+    point3f[] points = [
+        (-1.1, -1.1, 0), (1.1, -1.1, 0),
+        (1.1, 1.1, 0), (-1.1, 1.1, 0)
+    ]
+    normal3f[] normals = [
+        (0, 0, 1), (0, 0, 1),
+        (0, 0, 1), (0, 0, 1)
+    ] (
+        interpolation = "vertex"
+    )
+    texCoord2f[] primvars:st = [
+        (0, 0), (1, 0), (1, 1), (0, 1)
+    ] (
+        interpolation = "vertex"
+    )
+    bool doubleSided = true
+    uniform token subdivisionScheme = "none"
+}
+
+def Xform "Scene" (
+    kind = "component"
+)
+{
+    def Scope "Looks"
+    {
+        def Material "TexturedMat"
+        {
+            token outputs:surface.connect = </Scene/Looks/TexturedMat/Preview.outputs:surface>
+
+            def Shader "ReadSt"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "Transform2d"
+            {
+                uniform token info:id = "UsdTransform2d"
+                float2 inputs:in.connect = </Scene/Looks/TexturedMat/ReadSt.outputs:result>
+                float2 inputs:scale = (1.8, 0.9)
+                float inputs:rotation = 32.0
+                float2 inputs:translation = (0.2, -0.1)
+                float2 outputs:result
+            }
+
+            def Shader "Texture"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @../images/checkermap.png@
+                float2 inputs:st.connect = </Scene/Looks/TexturedMat/Transform2d.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "mirror"
+                token inputs:sourceColorSpace = "sRGB"
+                float4 inputs:scale = (1.0, 0.85, 0.85, 1.0)
+                float4 inputs:bias = (0.0, 0.05, 0.05, 0.0)
+                float outputs:r
+                float3 outputs:rgb
+            }
+
+            def Shader "Preview"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </Scene/Looks/TexturedMat/Texture.outputs:rgb>
+                float inputs:roughness.connect = </Scene/Looks/TexturedMat/Texture.outputs:r>
+                float inputs:metallic = 0.0
+                float inputs:ior = 1.5
+                token outputs:surface
+            }
+        }
+
+        def Material "RawTexturedMat"
+        {
+            token outputs:surface.connect = </Scene/Looks/RawTexturedMat/Preview.outputs:surface>
+
+            def Shader "ReadSt"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "Transform2d"
+            {
+                uniform token info:id = "UsdTransform2d"
+                float2 inputs:in.connect = </Scene/Looks/RawTexturedMat/ReadSt.outputs:result>
+                float2 inputs:scale = (1.8, 0.9)
+                float inputs:rotation = 32.0
+                float2 inputs:translation = (0.2, -0.1)
+                float2 outputs:result
+            }
+
+            def Shader "Texture"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @../images/checkermap.png@
+                float2 inputs:st.connect = </Scene/Looks/RawTexturedMat/Transform2d.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "mirror"
+                token inputs:sourceColorSpace = "raw"
+                float4 inputs:scale = (1.0, 0.85, 0.85, 1.0)
+                float4 inputs:bias = (0.0, 0.05, 0.05, 0.0)
+                float outputs:r
+                float3 outputs:rgb
+            }
+
+            def Shader "Preview"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </Scene/Looks/RawTexturedMat/Texture.outputs:rgb>
+                float inputs:roughness.connect = </Scene/Looks/RawTexturedMat/Texture.outputs:r>
+                float inputs:metallic = 0.0
+                float inputs:ior = 1.5
+                token outputs:surface
+            }
+        }
+
+        def Material "PrimvarMat"
+        {
+            token outputs:surface.connect = </Scene/Looks/PrimvarMat/Preview.outputs:surface>
+
+            def Shader "ReadBaseColor"
+            {
+                uniform token info:id = "UsdPrimvarReader_float3"
+                string inputs:varname = "baseColor"
+                float3 inputs:fallback = (0.3, 0.3, 0.3)
+                float3 outputs:result
+            }
+
+            def Shader "ReadRoughness"
+            {
+                uniform token info:id = "UsdPrimvarReader_float"
+                string inputs:varname = "surfaceRoughness"
+                float inputs:fallback = 0.4
+                float outputs:result
+            }
+
+            def Shader "Preview"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </Scene/Looks/PrimvarMat/ReadBaseColor.outputs:result>
+                float inputs:roughness.connect = </Scene/Looks/PrimvarMat/ReadRoughness.outputs:result>
+                float inputs:metallic = 0.0
+                token outputs:surface
+            }
+        }
+
+        def Material "MatrixMat"
+        {
+            token outputs:surface.connect = </Scene/Looks/MatrixMat/Preview.outputs:surface>
+
+            def Shader "ReadTintMatrix"
+            {
+                uniform token info:id = "UsdPrimvarReader_matrix"
+                string inputs:varname = "tintMatrix"
+                matrix4d outputs:result
+            }
+
+            def Shader "BaseTint"
+            {
+                uniform token info:id = "ND_constant_vector3"
+                vector3f inputs:value = (0.8, 0.45, 0.25)
+                vector3f outputs:out
+            }
+
+            def Shader "ApplyMatrix"
+            {
+                uniform token info:id = "ND_transformmatrix_vector3M4"
+                vector3f inputs:in.connect = </Scene/Looks/MatrixMat/BaseTint.outputs:out>
+                matrix4d inputs:mat.connect = </Scene/Looks/MatrixMat/ReadTintMatrix.outputs:result>
+                vector3f outputs:out
+            }
+
+            def Shader "ToColor"
+            {
+                uniform token info:id = "ND_convert_vector3_color3"
+                vector3f inputs:in.connect = </Scene/Looks/MatrixMat/ApplyMatrix.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "Preview"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </Scene/Looks/MatrixMat/ToColor.outputs:out>
+                float inputs:roughness = 0.2
+                float inputs:metallic = 0.0
+                token outputs:surface
+            }
+        }
+
+        def Material "BackdropMat"
+        {
+            token outputs:surface.connect = </Scene/Looks/BackdropMat/Preview.outputs:surface>
+
+            def Shader "Preview"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.95, 0.8, 0.2)
+                float inputs:roughness = 0.9
+                float inputs:metallic = 0.0
+                token outputs:surface
+            }
+        }
+
+        def Material "TransparentMat"
+        {
+            token outputs:surface.connect = </Scene/Looks/TransparentMat/Preview.outputs:surface>
+
+            def Shader "Preview"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.15, 0.45, 1.0)
+                float inputs:roughness = 0.15
+                float inputs:opacity = 0.25
+                token inputs:opacityMode = "transparent"
+                token outputs:surface
+            }
+        }
+
+        def Material "PresenceMat"
+        {
+            token outputs:surface.connect = </Scene/Looks/PresenceMat/Preview.outputs:surface>
+
+            def Shader "Preview"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.15, 0.45, 1.0)
+                float inputs:roughness = 0.15
+                float inputs:opacity = 0.25
+                token inputs:opacityMode = "presence"
+                token outputs:surface
+            }
+        }
+    }
+
+    def Xform "Geom"
+    {
+        def "RawTexturedCard" (
+            references = </Card>
+        )
+        {
+            double3 xformOp:translate = (-4.8, 2.0, 0)
+            token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </Scene/Looks/RawTexturedMat>
+        }
+
+        def "TexturedCard" (
+            references = </Card>
+        )
+        {
+            double3 xformOp:translate = (-1.6, 2.0, 0)
+            token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </Scene/Looks/TexturedMat>
+        }
+
+        def "PrimvarCard" (
+            references = </Card>
+        )
+        {
+            float3[] primvars:baseColor = [
+                (1.0, 0.2, 0.2), (0.2, 1.0, 0.2),
+                (0.2, 0.4, 1.0), (1.0, 0.9, 0.2)
+            ] (
+                interpolation = "vertex"
+            )
+            float[] primvars:surfaceRoughness = [
+                0.05, 0.2, 0.65, 0.85
+            ] (
+                interpolation = "vertex"
+            )
+            double3 xformOp:translate = (1.6, 2.0, 0)
+            token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </Scene/Looks/PrimvarMat>
+        }
+
+        def "MatrixCard" (
+            references = </Card>
+        )
+        {
+            matrix4d primvars:tintMatrix = (
+                (0.75, 0.05, 0.00, 0.00),
+                (0.10, 1.20, 0.00, 0.00),
+                (0.00, 0.00, 0.55, 0.00),
+                (0.00, 0.00, 0.00, 1.00)
+            ) (
+                interpolation = "constant"
+            )
+            double3 xformOp:translate = (4.8, 2.0, 0)
+            token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </Scene/Looks/MatrixMat>
+        }
+
+        def "TransparentBackdrop" (
+            references = </Card>
+        )
+        {
+            double3 xformOp:scale = (1.1, 1.1, 1.0)
+            double3 xformOp:translate = (-2.0, -2.0, -1.4)
+            token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </Scene/Looks/BackdropMat>
+        }
+
+        def "PresenceBackdrop" (
+            references = </Card>
+        )
+        {
+            double3 xformOp:scale = (1.1, 1.1, 1.0)
+            double3 xformOp:translate = (2.0, -2.0, -1.4)
+            token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </Scene/Looks/BackdropMat>
+        }
+
+        def Sphere "TransparentSphere" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double radius = 0.85
+            double3 xformOp:translate = (-2.0, -2.0, 0.1)
+            token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </Scene/Looks/TransparentMat>
+        }
+
+        def Sphere "PresenceSphere" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double radius = 0.85
+            double3 xformOp:translate = (2.0, -2.0, 0.1)
+            token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </Scene/Looks/PresenceMat>
+        }
+    }
+
+    def Xform "Lights"
+    {
+        uniform token purpose = "render"
+
+        def SphereLight "KeyLight"
+        {
+            float inputs:intensity = 900
+            float inputs:radius = 0.35
+            color3f inputs:color = (1.0, 0.98, 0.95)
+            double3 xformOp:translate = (4.5, 5.0, 7.5)
+            token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def SphereLight "FillLight"
+        {
+            float inputs:intensity = 220
+            float inputs:radius = 0.5
+            color3f inputs:color = (0.75, 0.82, 1.0)
+            double3 xformOp:translate = (-6.0, 1.5, 8.0)
+            token[] xformOpOrder = ["xformOp:translate"]
+        }
+    }
+}

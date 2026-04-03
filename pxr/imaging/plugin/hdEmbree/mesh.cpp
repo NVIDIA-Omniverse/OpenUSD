@@ -22,8 +22,10 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <mutex>
 #include <numeric>       // std::iota
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -35,6 +37,57 @@ static const TfToken _tokensBitangent("bitangent");
 static const TfToken _tokensComputedTangent("hdEmbreeComputedTangent");
 static const TfToken _tokensComputedBitangent("hdEmbreeComputedBitangent");
 static const TfToken _tokensSt("st");
+
+bool
+_IsMatrixPrimvarType(HdTupleType tupleType)
+{
+    return tupleType == HdEmbreeTypeHelper::GetTupleType<GfMatrix4f>() ||
+           tupleType == HdEmbreeTypeHelper::GetTupleType<GfMatrix4d>();
+}
+
+const char*
+_InterpolationName(HdInterpolation interpolation)
+{
+    switch (interpolation) {
+    case HdInterpolationConstant:
+        return "constant";
+    case HdInterpolationUniform:
+        return "uniform";
+    case HdInterpolationVertex:
+        return "vertex";
+    case HdInterpolationVarying:
+        return "varying";
+    case HdInterpolationFaceVarying:
+        return "faceVarying";
+    case HdInterpolationInstance:
+        return "instance";
+    default:
+        return "unknown";
+    }
+}
+
+void
+_WarnUnsupportedMatrixPrimvarOnce(
+    TfToken const& name,
+    HdInterpolation interpolation)
+{
+    static std::mutex mutex;
+    static std::unordered_set<std::string> warnedKeys;
+
+    const std::string key =
+        name.GetString() + ":" + _InterpolationName(interpolation);
+
+    std::lock_guard<std::mutex> lock(mutex);
+    if (!warnedKeys.insert(key).second) {
+        return;
+    }
+
+    TF_WARN(
+        "hdEmbree does not support matrix primvar '%s' with %s "
+        "interpolation; only constant and uniform are supported",
+        name.GetText(),
+        _InterpolationName(interpolation));
+}
 
 float
 _DifferenceOfProducts(float a, float b, float c, float d)
@@ -995,6 +1048,15 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
         delete ctx->primvarMap[name];
     }
     ctx->primvarMap.erase(name);
+
+    HdVtBufferSource buffer(name, data);
+    const HdTupleType tupleType = buffer.GetTupleType();
+    if (_IsMatrixPrimvarType(tupleType) &&
+        interpolation != HdInterpolationConstant &&
+        interpolation != HdInterpolationUniform) {
+        _WarnUnsupportedMatrixPrimvarOnce(name, interpolation);
+        return;
+    }
 
     // Construct the correct type of sampler from the interpolation mode and
     // geometry mode.

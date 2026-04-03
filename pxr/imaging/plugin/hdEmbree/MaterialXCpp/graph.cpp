@@ -19,6 +19,8 @@ static const std::string _kStandardSurface =
 static const std::string _kOpenPbr =
     "ND_open_pbr_surface_surfaceshader";
 static const std::string _kUsdPreviewSurface = "UsdPreviewSurface";
+static const std::string _kMaterialXUsdPreviewSurface =
+    "ND_UsdPreviewSurface_surfaceshader";
 
 // ---------------------------------------------------------------------------
 // Compile
@@ -375,6 +377,9 @@ EvalGraph::_EvalMaterialModel(
         return EvalOpenPbr(params);
     }
     if (modelType == _kUsdPreviewSurface) {
+        return EvalUsdPreviewSurface(params);
+    }
+    if (modelType == _kMaterialXUsdPreviewSurface) {
         return EvalUsdPreviewSurface(params);
     }
 

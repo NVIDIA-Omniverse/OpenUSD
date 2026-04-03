@@ -128,6 +128,7 @@ struct SurfaceClosure
     float transmission = 0.0f;
     Vec3f transmissionColor = Vec3f(1.0f);
     float opacity = 1.0f;
+    float presence = 1.0f;
     float coat = 0.0f;
     float coatRoughness = 0.1f;
     float coatIor = 1.5f;

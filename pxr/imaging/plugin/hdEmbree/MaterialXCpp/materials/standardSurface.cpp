@@ -86,6 +86,7 @@ EvalStandardSurface(const ParamMap& params)
     if (c.opacity == 1.0f) {
         c.opacity = Get<float>(params, _kOpacity, 1.0f);
     }
+    c.presence = c.opacity;
 
     c.normal = Get<Vec3f>(params, _kNormal,
                                    Vec3f(0.0f, 0.0f, 1.0f));

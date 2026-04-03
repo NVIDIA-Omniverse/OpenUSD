@@ -143,12 +143,19 @@ endif()
 pxr_build_test(testMaterialXCpp
     LIBRARIES
         ${__MXCPP_TEST_IMATH_LIBS}
+        gf
+        hd
+        sdf
+        tf
+        vt
     CPPFILES
         MaterialXCpp/tests/testMaterialXCppMain.cpp
         MaterialXCpp/tests/testMaterialXCppBsdf.cpp
         MaterialXCpp/tests/testMaterialXCppNodes.cpp
         MaterialXCpp/tests/testMaterialXCppMaterials.cpp
         MaterialXCpp/tests/testMaterialXCppGraph.cpp
+        MaterialXCpp/tests/testMaterialXCppAdapter.cpp
+        mxcppAdapter.cpp
         MaterialXCpp/materials/bsdf.cpp
         MaterialXCpp/materials/standardSurface.cpp
         MaterialXCpp/materials/openPbr.cpp

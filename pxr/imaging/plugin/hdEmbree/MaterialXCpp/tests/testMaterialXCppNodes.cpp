@@ -1413,6 +1413,99 @@ static bool TestImageNodeConstantWrapReturnsDefault() {
     return Test_IsClose(_GetFloat(out), 0.25f);
 }
 
+static bool TestUsdUvTextureUsesNativeWrapAndColorSpaceSemantics() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/test_usd_uv.tx"));
+    in["fallback"] = Value(Vec4f(0.1f, 0.2f, 0.3f, 0.4f));
+    in["scale"] = Value(Vec4f(2.0f, 3.0f, 4.0f, 5.0f));
+    in["bias"] = Value(Vec4f(0.01f, 0.02f, 0.03f, 0.04f));
+    in["wrapS"] = Value(std::string("useMetadata"));
+    in["wrapT"] = Value(std::string("repeat"));
+    in["sourceColorSpace"] = Value(std::string("sRGB"));
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult.value = Vec4f(0.2f, 0.3f, 0.4f, 0.5f);
+    textureSystem.nextResult.status = TextureSampleStatus::Ok;
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    ctx.texcoord = Vec2f(0.25f, 0.75f);
+    ctx.dudx = 0.125f;
+    ctx.dvdx = -0.25f;
+    ctx.dudy = 0.5f;
+    ctx.dvdy = 0.25f;
+    ctx.frame = 18.0f;
+
+    const NodeOutputMap out = _EvalWithCtx("UsdUVTexture", in, ctx);
+    if (!textureSystem.called) {
+        printf("    UsdUVTexture did not invoke texture system\n");
+        return false;
+    }
+
+    const Texture2DRequest& request = textureSystem.lastRequest;
+    return Test_IsClose(_GetFloat(out, "r"), 0.41f) &&
+           Test_IsClose(_GetFloat(out, "g"), 0.92f) &&
+           Test_IsClose(_GetFloat(out, "b"), 1.63f) &&
+           Test_IsClose(_GetFloat(out, "a"), 2.54f) &&
+           Test_IsClose(_GetVec3(out, "rgb"), Vec3f(0.41f, 0.92f, 1.63f)) &&
+           request.filePath == "/tmp/test_usd_uv.tx" &&
+           Test_IsClose(request.st, Vec2f(0.25f, 0.75f)) &&
+           Test_IsClose(request.dstdx, Vec2f(0.125f, -0.25f)) &&
+           Test_IsClose(request.dstdy, Vec2f(0.5f, 0.25f)) &&
+           request.uAddressMode == TextureAddressMode::UseMetadata &&
+           request.vAddressMode == TextureAddressMode::Periodic &&
+           request.filterType == TextureFilterType::Linear &&
+           Test_IsClose(request.frame, 18.0f) &&
+           request.dataRole == TextureDataRole::Color &&
+           request.sourceColorSpace == "srgb" &&
+           request.channelCount == 4 &&
+           Test_IsClose(request.channelFillValue, 1.0f) &&
+           Test_IsClose(request.defaultValue, Vec4f(0.1f, 0.2f, 0.3f, 0.4f));
+}
+
+static bool TestUsdUvTextureFallsBackToFileColorSpaceMetadata() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/test_usd_uv_metadata.tx"));
+    in["colorSpace:file"] = Value(std::string("sRGB"));
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult.value = Vec4f(0.2f, 0.3f, 0.4f, 0.5f);
+    textureSystem.nextResult.status = TextureSampleStatus::Ok;
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    ctx.texcoord = Vec2f(0.1f, 0.2f);
+
+    const NodeOutputMap out = _EvalWithCtx("UsdUVTexture", in, ctx);
+    if (!textureSystem.called) {
+        printf("    UsdUVTexture did not invoke texture system\n");
+        return false;
+    }
+
+    return Test_IsClose(_GetVec3(out, "rgb"), Vec3f(0.2f, 0.3f, 0.4f)) &&
+           textureSystem.lastRequest.sourceColorSpace == "srgb";
+}
+
+static bool TestMaterialXUsdUvTextureOutputsRgbaAndScaledFallback() {
+    ParamMap in;
+    in["fallback"] = Value(Vec4f(0.1f, 0.2f, 0.3f, 0.4f));
+    in["scale"] = Value(Vec4f(2.0f, 3.0f, 4.0f, 5.0f));
+    in["bias"] = Value(Vec4f(0.01f, 0.02f, 0.03f, 0.04f));
+    in["wrapS"] = Value(std::string("periodic"));
+    in["wrapT"] = Value(std::string("mirror"));
+
+    ShadingContext ctx;
+    ctx.texcoord = Vec2f(0.33f, 0.66f);
+
+    const NodeOutputMap out = _EvalWithCtx("ND_UsdUVTexture", in, ctx);
+    return Test_IsClose(_GetFloat(out, "r"), 0.21f) &&
+           Test_IsClose(_GetFloat(out, "g"), 0.62f) &&
+           Test_IsClose(_GetFloat(out, "b"), 1.23f) &&
+           Test_IsClose(_GetFloat(out, "a"), 2.04f) &&
+           Test_IsClose(_GetVec3(out, "rgb"), Vec3f(0.21f, 0.62f, 1.23f)) &&
+           Test_IsClose(_GetVec4(out, "rgba"), Vec4f(0.21f, 0.62f, 1.23f, 2.04f));
+}
+
 static bool TestTiledImageTransformsTexcoords() {
     ParamMap in;
     in["file"] = Value(std::string("/tmp/test_normal.tx"));
@@ -2162,6 +2255,9 @@ Test_RegisterNodeTests()
     _REG(TestTransformPointObjectToWorld);
     _REG(TestImageNodeUsesTextureSystem);
     _REG(TestImageNodeConstantWrapReturnsDefault);
+    _REG(TestUsdUvTextureUsesNativeWrapAndColorSpaceSemantics);
+    _REG(TestUsdUvTextureFallsBackToFileColorSpaceMetadata);
+    _REG(TestMaterialXUsdUvTextureOutputsRgbaAndScaledFallback);
     _REG(TestTiledImageTransformsTexcoords);
     _REG(TestLatLongImageMapsViewdirToLatLongUv);
     _REG(TestLatLongImageReevaluatesConnectedViewdir);

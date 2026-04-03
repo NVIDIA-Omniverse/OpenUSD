@@ -280,6 +280,7 @@ RegisterGeometricNodes(NodeRegistry& reg)
     _REG("ND_geompropvalue_vector2", &_EvalGeomPropValue<Vec2f>);
     _REG("ND_geompropvalue_vector3", &_EvalGeomPropValue<Vec3f>);
     _REG("ND_geompropvalue_vector4", &_EvalGeomPropValue<Vec4f>);
+    _REG("ND_geompropvalue_matrix44", &_EvalGeomPropValue<Mat4f>);
 
     // geompropvalueuniform (per-mesh uniform)
     _REG("ND_geompropvalueuniform_string",   &_EvalGeomPropValueUniformString);

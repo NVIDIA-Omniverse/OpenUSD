@@ -14,7 +14,8 @@ enum class TextureAddressMode {
     Constant,
     Clamp,
     Periodic,
-    Mirror
+    Mirror,
+    UseMetadata
 };
 
 enum class TextureFilterType {

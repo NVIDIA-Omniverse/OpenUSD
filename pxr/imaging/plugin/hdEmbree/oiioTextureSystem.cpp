@@ -203,6 +203,8 @@ _ToOiioWrap(const mxcpp::TextureAddressMode mode)
         return OIIO::TextureOpt::WrapPeriodic;
     case mxcpp::TextureAddressMode::Mirror:
         return OIIO::TextureOpt::WrapMirror;
+    case mxcpp::TextureAddressMode::UseMetadata:
+        return OIIO::TextureOpt::WrapDefault;
     }
 
     return OIIO::TextureOpt::WrapDefault;

@@ -29,11 +29,15 @@ static const SlotName _kFile("file");
 static const SlotName _kFileColorSpace("colorSpace:file");
 static const SlotName _kLayer("layer");
 static const SlotName _kTexcoord("texcoord");
+static const SlotName _kSt("st");
 static const SlotName _kViewdir("viewdir");
 static const SlotName _kOut("out");
 static const SlotName _kDefaultVal("default");
+static const SlotName _kFallback("fallback");
 static const SlotName _kUAddressMode("uaddressmode");
 static const SlotName _kVAddressMode("vaddressmode");
+static const SlotName _kWrapS("wrapS");
+static const SlotName _kWrapT("wrapT");
 static const SlotName _kFilterType("filtertype");
 static const SlotName _kRotation("rotation");
 static const SlotName _kFrameRange("framerange");
@@ -46,12 +50,20 @@ static const SlotName _kRealWorldTileSize("realworldtilesize");
 static const SlotName _kTiling("tiling");
 static const SlotName _kRotationRange("rotationrange");
 static const SlotName _kScale("scale");
+static const SlotName _kBias("bias");
 static const SlotName _kScaleRange("scalerange");
 static const SlotName _kOffset("offset");
 static const SlotName _kOffsetRange("offsetrange");
 static const SlotName _kFalloff("falloff");
 static const SlotName _kFalloffContrast("falloffcontrast");
 static const SlotName _kLumaCoeffs("lumacoeffs");
+static const SlotName _kSourceColorSpace("sourceColorSpace");
+static const SlotName _kR("r");
+static const SlotName _kG("g");
+static const SlotName _kB("b");
+static const SlotName _kA("a");
+static const SlotName _kRgb("rgb");
+static const SlotName _kRgba("rgba");
 
 struct _HexTileFootprint
 {
@@ -270,24 +282,27 @@ _ComputeSampleCoord(const ParamMap& inputs, const Vec2f& texcoord)
 
 template<bool IsTiled>
 static void
-_ComputeTextureFootprint(const ParamMap& inputs,
-                         const ShadingContext& ctx,
-                         Vec2f* outSt,
-                         Vec2f* outDstdx,
-                         Vec2f* outDstdy)
+_ComputeTextureFootprintForSlot(const ParamMap& inputs,
+                                const SlotName& texcoordSlot,
+                                const ShadingContext& ctx,
+                                Vec2f* outSt,
+                                Vec2f* outDstdx,
+                                Vec2f* outDstdy)
 {
     const Vec2f baseTexcoord =
-        EvaluateInput<Vec2f>(inputs, _kTexcoord, ctx, ctx.texcoord);
+        EvaluateInput<Vec2f>(inputs, texcoordSlot, ctx, ctx.texcoord);
     const Vec2f st = _ComputeSampleCoord<IsTiled>(inputs, baseTexcoord);
 
     const ShadingContext shiftedDx = OffsetContextDx(ctx);
     const Vec2f texcoordDx =
-        EvaluateInput<Vec2f>(inputs, _kTexcoord, shiftedDx, shiftedDx.texcoord);
+        EvaluateInput<Vec2f>(
+            inputs, texcoordSlot, shiftedDx, shiftedDx.texcoord);
     const Vec2f stDx = _ComputeSampleCoord<IsTiled>(inputs, texcoordDx);
 
     const ShadingContext shiftedDy = OffsetContextDy(ctx);
     const Vec2f texcoordDy =
-        EvaluateInput<Vec2f>(inputs, _kTexcoord, shiftedDy, shiftedDy.texcoord);
+        EvaluateInput<Vec2f>(
+            inputs, texcoordSlot, shiftedDy, shiftedDy.texcoord);
     const Vec2f stDy = _ComputeSampleCoord<IsTiled>(inputs, texcoordDy);
 
     if (outSt) {
@@ -299,6 +314,18 @@ _ComputeTextureFootprint(const ParamMap& inputs,
     if (outDstdy) {
         *outDstdy = stDy - st;
     }
+}
+
+template<bool IsTiled>
+static void
+_ComputeTextureFootprint(const ParamMap& inputs,
+                         const ShadingContext& ctx,
+                         Vec2f* outSt,
+                         Vec2f* outDstdx,
+                         Vec2f* outDstdy)
+{
+    _ComputeTextureFootprintForSlot<IsTiled>(
+        inputs, _kTexcoord, ctx, outSt, outDstdx, outDstdy);
 }
 
 static void
@@ -525,6 +552,85 @@ _EvalLatLongImageNode(const ParamMap& inputs,
     (*outputs)[_kOut] = Value(TextureValueTraits<Vec3f>::FromVec4(sampled.value));
 }
 
+static Vec4f
+_ApplyScaleBias(const Vec4f& value,
+                const Vec4f& scale,
+                const Vec4f& bias)
+{
+    return CompMult(value, scale) + bias;
+}
+
+static void
+_SetUsdUvTextureOutputs(const Vec4f& value, NodeOutputMap* outputs)
+{
+    if (!outputs) {
+        return;
+    }
+
+    (*outputs)[_kR] = Value(value[0]);
+    (*outputs)[_kG] = Value(value[1]);
+    (*outputs)[_kB] = Value(value[2]);
+    (*outputs)[_kA] = Value(value[3]);
+    (*outputs)[_kRgb] = Value(Vec3f(value[0], value[1], value[2]));
+    (*outputs)[_kRgba] = Value(value);
+}
+
+static std::string
+_GetUsdSourceColorSpace(const ParamMap& inputs)
+{
+    const std::string explicitColorSpace =
+        Get<std::string>(inputs, _kSourceColorSpace, std::string());
+    if (!explicitColorSpace.empty()) {
+        return NormalizeColorSpace(explicitColorSpace);
+    }
+
+    return NormalizeColorSpace(
+        Get<std::string>(inputs, _kFileColorSpace, std::string()));
+}
+
+static void
+_EvalUsdUvTextureNode(const ParamMap& inputs,
+                      const ShadingContext& ctx,
+                      NodeOutputMap* outputs)
+{
+    const Vec4f fallback =
+        Get<Vec4f>(inputs, _kFallback, Vec4f(0.0f, 0.0f, 0.0f, 1.0f));
+    const Vec4f scale = Get<Vec4f>(inputs, _kScale, Vec4f(1.0f));
+    const Vec4f bias = Get<Vec4f>(inputs, _kBias, Vec4f(0.0f));
+    const std::string filePath = Get<std::string>(inputs, _kFile, std::string());
+
+    Vec4f sampledValue = fallback;
+
+    if (ctx.textureSystem && !filePath.empty()) {
+        Vec2f st(0.0f);
+        Vec2f dstdx(0.0f);
+        Vec2f dstdy(0.0f);
+        _ComputeTextureFootprintForSlot<false>(
+            inputs, _kSt, ctx, &st, &dstdx, &dstdy);
+
+        Texture2DRequest request;
+        request.filePath = filePath;
+        request.st = st;
+        request.dstdx = dstdx;
+        request.dstdy = dstdy;
+        request.uAddressMode = GetUsdAddressMode(inputs, _kWrapS, "useMetadata");
+        request.vAddressMode = GetUsdAddressMode(inputs, _kWrapT, "useMetadata");
+        request.filterType = TextureFilterType::Linear;
+        request.frame = ctx.frame;
+        request.dataRole = TextureDataRole::Color;
+        request.sourceColorSpace = _GetUsdSourceColorSpace(inputs);
+        request.channelCount = 4;
+        request.channelFillValue = 1.0f;
+        request.defaultValue = fallback;
+
+        const Texture2DResult sampled = ctx.textureSystem->Sample2D(request);
+        sampledValue = sampled.value;
+    }
+
+    _SetUsdUvTextureOutputs(
+        _ApplyScaleBias(sampledValue, scale, bias), outputs);
+}
+
 }  // namespace
 
 // ---- Registration --------------------------------------------------------
@@ -563,6 +669,9 @@ RegisterTextureNodes(NodeRegistry& reg)
     _REG("ND_latlongimage", &_EvalLatLongImageNode);
     _REG("ND_hextiledimage_color3", &_EvalHexTiledImageNode<Vec3f>);
     _REG("ND_hextiledimage_color4", &_EvalHexTiledImageNode<Vec4f>);
+    _REG("UsdUVTexture", &_EvalUsdUvTextureNode);
+    _REG("ND_UsdUVTexture", &_EvalUsdUvTextureNode);
+    _REG("ND_UsdUVTexture_23", &_EvalUsdUvTextureNode);
 }
 
 #undef _REG

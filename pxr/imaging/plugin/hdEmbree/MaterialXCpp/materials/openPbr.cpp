@@ -83,6 +83,7 @@ EvalOpenPbr(const ParamMap& params)
     if (c.opacity == 1.0f) {
         c.opacity = Get<float>(params, _kGeometryOpacity, 1.0f);
     }
+    c.presence = c.opacity;
 
     c.thinWalled = Get<bool>(
         params, _kGeometryThinWalled, false);

@@ -139,6 +139,29 @@ GetAddressMode(const ParamMap& inputs,
     return TextureAddressMode::Periodic;
 }
 
+inline TextureAddressMode
+GetUsdAddressMode(const ParamMap& inputs,
+                  const SlotName& slot,
+                  const char* fallback)
+{
+    const std::string mode =
+        NormalizeToken(Get<std::string>(inputs, slot, std::string(fallback)),
+                       fallback);
+    if (mode == "black" || mode == "constant") {
+        return TextureAddressMode::Constant;
+    }
+    if (mode == "clamp") {
+        return TextureAddressMode::Clamp;
+    }
+    if (mode == "mirror") {
+        return TextureAddressMode::Mirror;
+    }
+    if (mode == "usemetadata") {
+        return TextureAddressMode::UseMetadata;
+    }
+    return TextureAddressMode::Periodic;
+}
+
 inline TextureFilterType
 GetFilterType(const ParamMap& inputs, const SlotName& slot)
 {

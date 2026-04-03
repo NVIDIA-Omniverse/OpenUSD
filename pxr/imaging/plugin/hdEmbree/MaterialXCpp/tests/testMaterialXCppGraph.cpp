@@ -87,6 +87,38 @@ TestCompileSingleTerminal()
 }
 
 static bool
+TestCompileMaterialXUsdPreviewSurfaceTerminal()
+{
+    MaterialGraph network;
+
+    const std::string termPath = "/Material/UsdPreviewSurfaceMtlx";
+    GraphNode termNode;
+    termNode.nodeTypeId = "ND_UsdPreviewSurface_surfaceshader";
+    termNode.parameters["diffuseColor"] = Value(Vec3f(0.25f, 0.5f, 0.75f));
+    termNode.parameters["opacity"] = Value(0.0f);
+    termNode.parameters["opacityMode"] = Value(1);
+    network.nodes[termPath] = termNode;
+
+    GraphConnection termConn;
+    termConn.upstreamNode = termPath;
+    termConn.upstreamOutputName = "out";
+    network.terminals["surface"] = termConn;
+
+    auto graph = EvalGraph::Compile(network);
+    if (!graph || !graph->IsValid()) {
+        printf("    MaterialX UsdPreviewSurface compilation failed\n");
+        return false;
+    }
+
+    const ShadingContext ctx;
+    const SurfaceClosure closure = graph->Evaluate(ctx);
+    return Test_IsClose(closure.baseColor, Vec3f(0.25f, 0.5f, 0.75f), 1e-4f) &&
+           Test_IsClose(closure.opacity, 0.0f) &&
+           Test_IsClose(closure.presence, 0.0f) &&
+           Test_IsClose(closure.transmission, 0.0f);
+}
+
+static bool
 TestCompileLinearChain()
 {
     // constant(2.0) → multiply(*, 3.0) → terminal(roughness)
@@ -482,6 +514,7 @@ Test_RegisterGraphTests()
 {
     _REG(TestCompileEmptyNetwork);
     _REG(TestCompileSingleTerminal);
+    _REG(TestCompileMaterialXUsdPreviewSurfaceTerminal);
     _REG(TestCompileLinearChain);
     _REG(TestCompileDiamondDAG);
     _REG(TestEvalWithConstantInputs);

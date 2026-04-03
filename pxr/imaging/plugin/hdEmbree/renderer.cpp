@@ -160,6 +160,18 @@ _ToMx(const GfMatrix4f& m)
     return result;
 }
 
+inline mxcpp::Mat4f
+_ToMx(const GfMatrix4d& m)
+{
+    mxcpp::Mat4f result;
+    for (int row = 0; row < 4; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            result[row][col] = static_cast<float>(m[row][col]);
+        }
+    }
+    return result;
+}
+
 // Callback data for geompropvalue node — holds references needed to
 // sample an arbitrary primvar at a ray hit point.
 struct _GeomPropCallbackData {
@@ -185,6 +197,18 @@ _SampleGeomProp(const void* userData, const std::string& name)
     auto* sampler = it->second;
 
     // Try types from widest to narrowest.
+    {
+        GfMatrix4f val;
+        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
+            return mxcpp::Value(_ToMx(val));
+        }
+    }
+    {
+        GfMatrix4d val;
+        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
+            return mxcpp::Value(_ToMx(val));
+        }
+    }
     {
         GfVec4f val;
         if (sampler->Sample(data->primID, data->u, data->v, &val)) {
@@ -2850,8 +2874,8 @@ HdEmbreeRenderer::_TracePath(
         }
 
         // --- Stochastic opacity pass-through ---
-        if (hasClosure && closure.opacity < 1.0f) {
-            if (sampler.Next() > closure.opacity) {
+        if (hasClosure && closure.presence < 1.0f) {
+            if (sampler.Next() > closure.presence) {
                 float advance = rayHit.ray.tfar + 1e-4f;
                 rayOrigin = hitPos + rayDir * 1e-4f;
                 if (currentRayDiff.hasDifferentials) {
@@ -2863,9 +2887,9 @@ HdEmbreeRenderer::_TracePath(
                 lastBsdfPdf = 0.0f;
                 continue;
             }
-            // We chose to interact; set opacity to 1 so that
-            // EvalSurface / SampleSurface don't double-count.
-            closure.opacity = 1.0f;
+            // We chose to interact; clear the stochastic presence term so
+            // EvalSurface / SampleSurface don't attenuate a second time.
+            closure.presence = 1.0f;
         }
 
         // --- Emissive ---

@@ -431,7 +431,7 @@ Bsdf::EvalSurface(
             * ((1.0f - fresnel) * c.transmission * kInvPi);
     }
 
-    return _SafeVec((reflected + transmitted) * c.opacity);
+    return _SafeVec((reflected + transmitted) * c.presence);
 }
 
 // ===========================================================================
@@ -618,7 +618,7 @@ Bsdf::SampleSurface(
             // Total internal reflection.
             Vec3f wi = 2.0f * Dot(n, wo) * n - wo;
             wi.normalize();
-            BsdfSample bs{wi, Vec3f(c.opacity), 1.0f, true};
+            BsdfSample bs{wi, Vec3f(c.presence), 1.0f, true};
             bs.eta = 1.0f;
             return bs;
         }
@@ -629,7 +629,7 @@ Bsdf::SampleSurface(
 
         float fresnel = _SchlickFresnelScalar(c.specularIor, cosI);
         Vec3f T = c.transmissionColor
-            * ((1.0f - fresnel) * c.transmission * c.opacity);
+            * ((1.0f - fresnel) * c.transmission * c.presence);
         BsdfSample bs{wi, T, 1.0f, /*isSpecular=*/true};
         bs.eta = eta;
         return bs;

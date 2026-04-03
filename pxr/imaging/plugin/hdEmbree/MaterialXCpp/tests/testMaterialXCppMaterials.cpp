@@ -172,7 +172,48 @@ TestUsdPreviewSurfaceOpacityThreshold()
 
     SurfaceClosure c = EvalUsdPreviewSurface(params);
     // opacity(0.3) < threshold(0.5) → opacity should be cutout to 0.
-    return Test_IsClose(c.opacity, 0.0f);
+    return Test_IsClose(c.opacity, 0.0f) &&
+           Test_IsClose(c.presence, 0.0f) &&
+           Test_IsClose(c.transmission, 0.0f);
+}
+
+static bool
+TestUsdPreviewSurfaceTransparentModeKeepsLightingResponse()
+{
+    ParamMap params;
+    params["opacity"] = Value(0.0f);
+    params["opacityMode"] = Value(std::string("transparent"));
+
+    const SurfaceClosure c = EvalUsdPreviewSurface(params);
+    return Test_IsClose(c.opacity, 0.0f) &&
+           Test_IsClose(c.presence, 1.0f) &&
+           Test_IsClose(c.transmission, 1.0f);
+}
+
+static bool
+TestUsdPreviewSurfacePresenceModeCutsLightingResponse()
+{
+    ParamMap params;
+    params["opacity"] = Value(0.25f);
+    params["opacityMode"] = Value(std::string("presence"));
+
+    const SurfaceClosure c = EvalUsdPreviewSurface(params);
+    return Test_IsClose(c.opacity, 0.25f) &&
+           Test_IsClose(c.presence, 0.25f) &&
+           Test_IsClose(c.transmission, 0.0f);
+}
+
+static bool
+TestUsdPreviewSurfaceMaterialXOpacityModeInteger()
+{
+    ParamMap params;
+    params["opacity"] = Value(0.0f);
+    params["opacityMode"] = Value(1);
+
+    const SurfaceClosure c = EvalUsdPreviewSurface(params);
+    return Test_IsClose(c.opacity, 0.0f) &&
+           Test_IsClose(c.presence, 0.0f) &&
+           Test_IsClose(c.transmission, 0.0f);
 }
 
 // ---------------------------------------------------------------------------
@@ -189,6 +230,9 @@ Test_RegisterMaterialTests()
     _REG(TestUsdPreviewSurfaceMetallicWorkflow);
     _REG(TestUsdPreviewSurfaceSpecularWorkflow);
     _REG(TestUsdPreviewSurfaceOpacityThreshold);
+    _REG(TestUsdPreviewSurfaceTransparentModeKeepsLightingResponse);
+    _REG(TestUsdPreviewSurfacePresenceModeCutsLightingResponse);
+    _REG(TestUsdPreviewSurfaceMaterialXOpacityModeInteger);
 }
 
 #undef _REG
