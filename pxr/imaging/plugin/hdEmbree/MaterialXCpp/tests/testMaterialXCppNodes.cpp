@@ -2069,6 +2069,32 @@ static bool TestNodeRegistryMissing() {
     return fn == nullptr;
 }
 
+static bool TestNodeRegistryRepresentativeNodegroups() {
+    NodeRegistry::RegisterBuiltinNodes();
+
+    static const std::array<const char*, 10> nodeTypeIds = {{
+        "ND_clamp_float",
+        "ND_luminance_color3",
+        "ND_g22_rec709_to_lin_rec709_color3",
+        "ND_heighttonormal_vector3",
+        "ND_gooch_shade",
+        "ND_latlongimage",
+        "ND_triplanarprojection_color3",
+        "ND_constant_float",
+        "ND_noise2d_float",
+        "ND_noise3d_float",
+    }};
+
+    for (const char* nodeTypeId : nodeTypeIds) {
+        auto fn = NodeRegistry::GetInstance().Find(std::string(nodeTypeId));
+        if (!fn) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 
 void
@@ -2158,6 +2184,7 @@ Test_RegisterNodeTests()
     _REG(TestParamMapCopyOnWriteForBorrowedValue);
     _REG(TestNodeRegistryLookup);
     _REG(TestNodeRegistryMissing);
+    _REG(TestNodeRegistryRepresentativeNodegroups);
 
     // Geompropvalue
     _REG(TestGeomPropValueFloat);

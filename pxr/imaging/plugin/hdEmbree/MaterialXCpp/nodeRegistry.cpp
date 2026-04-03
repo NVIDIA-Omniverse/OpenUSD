@@ -5,6 +5,7 @@
 
 #include "nodes/mathNodes.h"
 #include "nodes/convolutionNodes.h"
+#include "nodes/nprNodes.h"
 #include "nodes/adjustmentNodes.h"
 #include "nodes/channelNodes.h"
 #include "nodes/conditionalNodes.h"
@@ -12,8 +13,11 @@
 #include "nodes/geometricNodes.h"
 #include "nodes/applicationNodes.h"
 #include "nodes/textureNodes.h"
+#include "nodes/texture3dNodes.h"
 #include "nodes/proceduralNodes.h"
-#include "nodes/colorNodes.h"
+#include "nodes/procedural2dNodes.h"
+#include "nodes/procedural3dNodes.h"
+#include "nodes/colorTransformNodes.h"
 
 #include <mutex>
 
@@ -51,6 +55,7 @@ NodeRegistry::RegisterBuiltinNodes()
         auto& reg = GetInstance();
         RegisterMathNodes(reg);
         RegisterConvolutionNodes(reg);
+        RegisterNprNodes(reg);
         RegisterAdjustmentNodes(reg);
         RegisterChannelNodes(reg);
         RegisterConditionalNodes(reg);
@@ -58,8 +63,11 @@ NodeRegistry::RegisterBuiltinNodes()
         RegisterGeometricNodes(reg);
         RegisterApplicationNodes(reg);
         RegisterTextureNodes(reg);
+        RegisterTexture3dNodes(reg);
         RegisterProceduralNodes(reg);
-        RegisterColorNodes(reg);
+        RegisterProcedural2dNodes(reg);
+        RegisterProcedural3dNodes(reg);
+        RegisterColorTransformNodes(reg);
     });
 }
 

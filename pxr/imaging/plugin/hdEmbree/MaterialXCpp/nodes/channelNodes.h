@@ -8,8 +8,10 @@
 #define MXCPP_NODES_CHANNEL_NODES_H
 
 namespace mxcpp {
+
 class NodeRegistry;
 void RegisterChannelNodes(NodeRegistry& reg);
+
 }  // namespace mxcpp
 
 #endif

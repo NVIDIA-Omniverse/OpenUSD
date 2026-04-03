@@ -8,8 +8,10 @@
 #define MXCPP_NODES_PROCEDURAL_NODES_H
 
 namespace mxcpp {
+
 class NodeRegistry;
 void RegisterProceduralNodes(NodeRegistry& reg);
+
 }  // namespace mxcpp
 
 #endif

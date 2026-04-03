@@ -5,7 +5,8 @@
 // https://openusd.org/license.
 //
 #include "adjustmentNodes.h"
-#include "colorNodes.h"
+#include "helpers/colorHelpers.h"
+#include "helpers/mathHelpers.h"
 #include "../nodeRegistry.h"
 
 #include <cmath>
@@ -15,8 +16,6 @@
 namespace mxcpp {
 
 static const SlotName _kIn("in");
-static const SlotName _kIn1("in1");
-static const SlotName _kIn2("in2");
 static const SlotName _kLow("low");
 static const SlotName _kHigh("high");
 static const SlotName _kInlow("inlow");
@@ -26,85 +25,18 @@ static const SlotName _kOuthigh("outhigh");
 static const SlotName _kOut("out");
 static const SlotName _kAmount("amount");
 static const SlotName _kCenter("center");
-
-// ---- Clamp / Min / Max ---------------------------------------------------
-
-template<typename T>
-static T _Clamp(const T& v, const T& lo, const T& hi);
-
-template<>
-float _Clamp<float>(const float& v, const float& lo, const float& hi) {
-    return std::clamp(v, lo, hi);
-}
-template<>
-Vec2f _Clamp<Vec2f>(const Vec2f& v, const Vec2f& lo, const Vec2f& hi) {
-    return Vec2f(std::clamp(v[0], lo[0], hi[0]),
-                   std::clamp(v[1], lo[1], hi[1]));
-}
-template<>
-Vec3f _Clamp<Vec3f>(const Vec3f& v, const Vec3f& lo, const Vec3f& hi) {
-    return Vec3f(std::clamp(v[0], lo[0], hi[0]),
-                   std::clamp(v[1], lo[1], hi[1]),
-                   std::clamp(v[2], lo[2], hi[2]));
-}
-template<>
-Vec4f _Clamp<Vec4f>(const Vec4f& v, const Vec4f& lo, const Vec4f& hi) {
-    return Vec4f(std::clamp(v[0], lo[0], hi[0]),
-                   std::clamp(v[1], lo[1], hi[1]),
-                   std::clamp(v[2], lo[2], hi[2]),
-                   std::clamp(v[3], lo[3], hi[3]));
-}
-
-template<typename T>
-static void
-_EvalClamp(const ParamMap& inputs, const ShadingContext&,
-           NodeOutputMap* outputs)
-{
-    T v  = Get<T>(inputs, _kIn,   Zero<T>());
-    T lo = Get<T>(inputs, _kLow,  Zero<T>());
-    T hi = Get<T>(inputs, _kHigh, One<T>());
-    (*outputs)[_kOut] = Value(_Clamp(v, lo, hi));
-}
-
-template<typename T>
-static void
-_EvalMin(const ParamMap& inputs, const ShadingContext&,
-         NodeOutputMap* outputs)
-{
-    T a = Get<T>(inputs, _kIn1, Zero<T>());
-    T b = Get<T>(inputs, _kIn2, Zero<T>());
-    // Component-wise min for vectors is not needed for most use cases;
-    // scalar min is the primary use.
-    (*outputs)[_kOut] = Value(a < b ? a : b);
-}
-
-// Scalar-only min/max are sufficient for most MaterialX usage.
-static void
-_EvalMinFloat(const ParamMap& inputs, const ShadingContext&,
-              NodeOutputMap* outputs)
-{
-    float a = Get<float>(inputs, _kIn1, 0.0f);
-    float b = Get<float>(inputs, _kIn2, 0.0f);
-    (*outputs)[_kOut] = Value(std::min(a, b));
-}
-
-static void
-_EvalMaxFloat(const ParamMap& inputs, const ShadingContext&,
-              NodeOutputMap* outputs)
-{
-    float a = Get<float>(inputs, _kIn1, 0.0f);
-    float b = Get<float>(inputs, _kIn2, 0.0f);
-    (*outputs)[_kOut] = Value(std::max(a, b));
-}
+static const SlotName _kHue("hue");
+static const SlotName _kSaturation("saturation");
+static const SlotName _kGamma("gamma");
+static const SlotName _kLift("lift");
+static const SlotName _kGain("gain");
+static const SlotName _kContrast("contrast");
+static const SlotName _kContrastpivot("contrastpivot");
+static const SlotName _kExposure("exposure");
+static const SlotName _kLumacoeffs("lumacoeffs");
+static const SlotName _kDoclamp("doclamp");
 
 // ---- Remap / Smoothstep --------------------------------------------------
-
-static float
-_Remap(float v, float inLo, float inHi, float outLo, float outHi) {
-    if (inHi == inLo) return outLo;
-    float t = (v - inLo) / (inHi - inLo);
-    return outLo + t * (outHi - outLo);
-}
 
 template<typename T>
 static void
@@ -118,11 +50,11 @@ _EvalRemap(const ParamMap& inputs, const ShadingContext&,
     T oh = Get<T>(inputs, _kOuthigh, One<T>());
     // Scalar remap for float type.
     (*outputs)[_kOut] = Value(
-        _Remap(Get<float>(inputs, _kIn, 0.0f),
-               Get<float>(inputs, _kInlow, 0.0f),
-               Get<float>(inputs, _kInhigh, 1.0f),
-               Get<float>(inputs, _kOutlow, 0.0f),
-               Get<float>(inputs, _kOuthigh, 1.0f)));
+        Remap(Get<float>(inputs, _kIn, 0.0f),
+              Get<float>(inputs, _kInlow, 0.0f),
+              Get<float>(inputs, _kInhigh, 1.0f),
+              Get<float>(inputs, _kOutlow, 0.0f),
+              Get<float>(inputs, _kOuthigh, 1.0f)));
 }
 
 // Specialization for float remap
@@ -135,14 +67,7 @@ _EvalRemapFloat(const ParamMap& inputs, const ShadingContext&,
     float ih = Get<float>(inputs, _kInhigh, 1.0f);
     float ol = Get<float>(inputs, _kOutlow, 0.0f);
     float oh = Get<float>(inputs, _kOuthigh, 1.0f);
-    (*outputs)[_kOut] = Value(_Remap(v, il, ih, ol, oh));
-}
-
-static float
-_Smoothstep(float lo, float hi, float v) {
-    if (hi <= lo) return 0.0f;
-    float t = std::clamp((v - lo) / (hi - lo), 0.0f, 1.0f);
-    return t * t * (3.0f - 2.0f * t);
+    (*outputs)[_kOut] = Value(Remap(v, il, ih, ol, oh));
 }
 
 static void
@@ -152,7 +77,7 @@ _EvalSmoothstep(const ParamMap& inputs, const ShadingContext&,
     float v  = Get<float>(inputs, _kIn,   0.0f);
     float lo = Get<float>(inputs, _kLow,  0.0f);
     float hi = Get<float>(inputs, _kHigh, 1.0f);
-    (*outputs)[_kOut] = Value(_Smoothstep(lo, hi, v));
+    (*outputs)[_kOut] = Value(Smoothstep(lo, hi, v));
 }
 
 // ---- Contrast ------------------------------------------------------------
@@ -182,21 +107,13 @@ _EvalContrastFloat(const ParamMap& inputs, const ShadingContext&,
 
 // ---- Saturate ------------------------------------------------------------
 
-// ACEScg luminance coefficients (MaterialX default for saturate).
-static constexpr float _kSatLumR = 0.2722287f;
-static constexpr float _kSatLumG = 0.6740818f;
-static constexpr float _kSatLumB = 0.0536895f;
-
-static const SlotName _kLumacoeffs("lumacoeffs");
-
 static void
 _EvalSaturateColor3(const ParamMap& inputs, const ShadingContext&,
                     NodeOutputMap* outputs)
 {
     Vec3f c = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
     float amount = Get<float>(inputs, _kAmount, 1.0f);
-    Vec3f luma = Get<Vec3f>(inputs, _kLumacoeffs,
-                            Vec3f(_kSatLumR, _kSatLumG, _kSatLumB));
+    Vec3f luma = Get<Vec3f>(inputs, _kLumacoeffs, AcesCgLumaCoeffs());
     float gray = luma[0] * c[0] + luma[1] * c[1] + luma[2] * c[2];
     Vec3f g(gray);
     (*outputs)[_kOut] = Value(g + (c - g) * amount);
@@ -208,13 +125,37 @@ _EvalSaturateColor4(const ParamMap& inputs, const ShadingContext&,
 {
     Vec4f c = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
     float amount = Get<float>(inputs, _kAmount, 1.0f);
-    Vec3f luma = Get<Vec3f>(inputs, _kLumacoeffs,
-                            Vec3f(_kSatLumR, _kSatLumG, _kSatLumB));
+    Vec3f luma = Get<Vec3f>(inputs, _kLumacoeffs, AcesCgLumaCoeffs());
     float gray = luma[0] * c[0] + luma[1] * c[1] + luma[2] * c[2];
     float r = gray + (c[0] - gray) * amount;
     float g = gray + (c[1] - gray) * amount;
     float b = gray + (c[2] - gray) * amount;
     (*outputs)[_kOut] = Value(Vec4f(r, g, b, c[3]));
+}
+
+static void
+_EvalLuminance(const ParamMap& inputs, const ShadingContext&,
+               NodeOutputMap* outputs)
+{
+    const Vec3f c = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
+    (*outputs)[_kOut] = Value(
+        kRec709LumaR * c[0] + kRec709LumaG * c[1] + kRec709LumaB * c[2]);
+}
+
+static void
+_EvalRgbToHsv(const ParamMap& inputs, const ShadingContext&,
+              NodeOutputMap* outputs)
+{
+    const Vec3f rgb = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
+    (*outputs)[_kOut] = Value(RgbToHsv(rgb));
+}
+
+static void
+_EvalHsvToRgb(const ParamMap& inputs, const ShadingContext&,
+              NodeOutputMap* outputs)
+{
+    const Vec3f hsv = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
+    (*outputs)[_kOut] = Value(HsvToRgb(hsv));
 }
 
 // ---- HSV Adjust ----------------------------------------------------------
@@ -250,15 +191,6 @@ _EvalHsvadjustColor4(const ParamMap& inputs, const ShadingContext&,
 }
 
 // ---- Color Correct -------------------------------------------------------
-
-static const SlotName _kHue("hue");
-static const SlotName _kSaturation("saturation");
-static const SlotName _kGamma("gamma");
-static const SlotName _kLift("lift");
-static const SlotName _kGain("gain");
-static const SlotName _kContrast("contrast");
-static const SlotName _kContrastpivot("contrastpivot");
-static const SlotName _kExposure("exposure");
 
 static Vec3f
 _ColorCorrectRgb(Vec3f c, float hue, float saturation, float gamma,
@@ -335,8 +267,6 @@ _EvalColorcorrectColor4(const ParamMap& inputs, const ShadingContext&,
 
 // ---- Range ---------------------------------------------------------------
 
-static const SlotName _kDoclamp("doclamp");
-
 // Component-wise safe power: pow(max(v, 0), exponent).
 static float _SafePow(float v, float e) {
     return (v > 0.0f && e != 0.0f) ? std::pow(v, e) : 0.0f;
@@ -406,7 +336,7 @@ _EvalRange(const ParamMap& inputs, const ShadingContext&,
 
     T result = _RangeImpl<T>(v, inLo, inHi, gamma, outLo, outHi);
     if (doClamp) {
-        result = _Clamp(result, outLo, outHi);
+        result = ClampValue(result, outLo, outHi);
     }
     (*outputs)[_kOut] = Value(result);
 }
@@ -428,7 +358,7 @@ _EvalRangeFA(const ParamMap& inputs, const ShadingContext&,
     T result = _RangeImpl<T>(v, T(inLo), T(inHi), T(gamma),
                              T(outLo), T(outHi));
     if (doClamp) {
-        result = _Clamp(result, T(outLo), T(outHi));
+        result = ClampValue(result, T(outLo), T(outHi));
     }
     (*outputs)[_kOut] = Value(result);
 }
@@ -440,14 +370,6 @@ _EvalRangeFA(const ParamMap& inputs, const ShadingContext&,
 void
 RegisterAdjustmentNodes(NodeRegistry& reg)
 {
-    _REG("ND_clamp_float",   &_EvalClamp<float>);
-    _REG("ND_clamp_color3",  &_EvalClamp<Vec3f>);
-    _REG("ND_clamp_color4",  &_EvalClamp<Vec4f>);
-    _REG("ND_clamp_vector3", &_EvalClamp<Vec3f>);
-
-    _REG("ND_min_float", &_EvalMinFloat);
-    _REG("ND_max_float", &_EvalMaxFloat);
-
     _REG("ND_remap_float", &_EvalRemapFloat);
     _REG("ND_smoothstep_float", &_EvalSmoothstep);
 
@@ -456,6 +378,9 @@ RegisterAdjustmentNodes(NodeRegistry& reg)
     _REG("ND_contrast_color4", &_EvalContrast<Vec4f>);
 
     // Saturate
+    _REG("ND_luminance_color3", &_EvalLuminance);
+    _REG("ND_rgbtohsv_color3", &_EvalRgbToHsv);
+    _REG("ND_hsvtorgb_color3", &_EvalHsvToRgb);
     _REG("ND_saturate_color3", &_EvalSaturateColor3);
     _REG("ND_saturate_color4", &_EvalSaturateColor4);
 

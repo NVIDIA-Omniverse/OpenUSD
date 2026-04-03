@@ -8,8 +8,10 @@
 #define MXCPP_NODES_ADJUSTMENT_NODES_H
 
 namespace mxcpp {
+
 class NodeRegistry;
 void RegisterAdjustmentNodes(NodeRegistry& reg);
+
 }  // namespace mxcpp
 
 #endif

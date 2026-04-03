@@ -5,6 +5,8 @@
 // https://openusd.org/license.
 //
 #include "bsdf.h"
+#include "../nodes/helpers/colorHelpers.h"
+#include "../nodes/helpers/mathHelpers.h"
 
 #include <cmath>
 #include <algorithm>
@@ -13,8 +15,6 @@ namespace mxcpp {
 
 namespace {
 
-constexpr float _kPi      = 3.14159265358979323846f;
-constexpr float _kInvPi   = 0.31830988618379067154f;
 constexpr float _kEpsilon = 1e-7f;
 
 // -----------------------------------------------------------------------
@@ -67,7 +67,7 @@ _GGX_D(float alpha, float NdotH)
 {
     float a2 = alpha * alpha;
     float denom = NdotH * NdotH * (a2 - 1.0f) + 1.0f;
-    return a2 / (_kPi * denom * denom + _kEpsilon);
+    return a2 / (kPi * denom * denom + _kEpsilon);
 }
 
 inline float
@@ -110,7 +110,7 @@ _Charlie_D(float alpha, float NdotH)
     float sinTheta2 = 1.0f - NdotH * NdotH;
     float sinTheta = std::sqrt(std::max(0.0f, sinTheta2));
     float invAlpha = 1.0f / std::max(alpha, _kEpsilon);
-    return (2.0f + invAlpha) * std::pow(sinTheta, invAlpha) * _kInvPi * 0.5f;
+    return (2.0f + invAlpha) * std::pow(sinTheta, invAlpha) * kInvPi * 0.5f;
 }
 
 inline float
@@ -152,7 +152,7 @@ _SampleCosineHemisphere(float u1, float u2)
 {
     float cosTheta = std::sqrt(u1);
     float sinTheta = std::sqrt(1.0f - u1);
-    float phi = 2.0f * _kPi * u2;
+    float phi = 2.0f * kPi * u2;
     return Vec3f(sinTheta * std::cos(phi),
                    sinTheta * std::sin(phi),
                    cosTheta);
@@ -161,7 +161,7 @@ _SampleCosineHemisphere(float u1, float u2)
 inline float
 _CosineHemispherePdf(float cosTheta)
 {
-    return std::max(cosTheta, 0.0f) * _kInvPi;
+    return std::max(cosTheta, 0.0f) * kInvPi;
 }
 
 // -----------------------------------------------------------------------
@@ -189,7 +189,7 @@ _SampleGGX_VNDF(const Vec3f& woLocal, float alpha, float u1, float u2)
 
     // Sample uniform disk (polar)
     float r = std::sqrt(u1);
-    float phi = 2.0f * _kPi * u2;
+    float phi = 2.0f * kPi * u2;
     float t1 = r * std::cos(phi);
     float t2 = r * std::sin(phi);
 
@@ -233,7 +233,7 @@ _PdfGGX_VNDF(const Vec3f& woLocal, const Vec3f& wmLocal, float alpha)
 inline float
 _Luminance(const Vec3f& c)
 {
-    return 0.2126f * c[0] + 0.7152f * c[1] + 0.0722f * c[2];
+    return kRec709LumaR * c[0] + kRec709LumaG * c[1] + kRec709LumaB * c[2];
 }
 
 // Guard against NaN/Inf/negative.
@@ -260,7 +260,7 @@ Bsdf::EvalLambertian(
     const Vec3f& /*wi*/,
     const Vec3f& /*wo*/)
 {
-    return baseColor * _kInvPi;
+    return baseColor * kInvPi;
 }
 
 Vec3f
@@ -428,7 +428,7 @@ Bsdf::EvalSurface(
         float absNdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
         float fresnel = _SchlickFresnelScalar(c.specularIor, absNdotV);
         transmitted = c.transmissionColor
-            * ((1.0f - fresnel) * c.transmission * _kInvPi);
+            * ((1.0f - fresnel) * c.transmission * kInvPi);
     }
 
     return _SafeVec((reflected + transmitted) * c.opacity);
@@ -452,7 +452,7 @@ Bsdf::SampleLambertian(
     float cosTheta = wiLocal[2];
     float pdf = _CosineHemispherePdf(cosTheta);
 
-    return BsdfSample{wi, baseColor * _kInvPi, pdf, false};
+    return BsdfSample{wi, baseColor * kInvPi, pdf, false};
 }
 
 float

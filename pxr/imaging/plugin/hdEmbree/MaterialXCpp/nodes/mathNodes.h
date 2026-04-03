@@ -8,8 +8,10 @@
 #define MXCPP_NODES_MATH_NODES_H
 
 namespace mxcpp {
+
 class NodeRegistry;
 void RegisterMathNodes(NodeRegistry& reg);
+
 }  // namespace mxcpp
 
 #endif

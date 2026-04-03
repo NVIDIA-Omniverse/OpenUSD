@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "mathNodes.h"
+#include "helpers/mathHelpers.h"
 #include "../nodeRegistry.h"
 
 #include <cmath>
@@ -16,9 +17,10 @@ namespace mxcpp {
 static const SlotName _kIn("in");
 static const SlotName _kIn1("in1");
 static const SlotName _kIn2("in2");
+static const SlotName _kLow("low");
+static const SlotName _kHigh("high");
 static const SlotName _kOut("out");
 static const SlotName _kPower("power");
-static const SlotName _kValue("value");
 static const SlotName _kAmount("amount");
 static const SlotName _kNormal("normal");
 static const SlotName _kIor("ior");
@@ -105,6 +107,35 @@ _EvalModulo(const ParamMap& inputs, const ShadingContext&,
     float a = Get<float>(inputs, _kIn1, 0.0f);
     float b = Get<float>(inputs, _kIn2, 1.0f);
     (*outputs)[_kOut] = Value(b != 0.0f ? std::fmod(a, b) : 0.0f);
+}
+
+template<typename T>
+static void
+_EvalClamp(const ParamMap& inputs, const ShadingContext&,
+           NodeOutputMap* outputs)
+{
+    const T v = Get<T>(inputs, _kIn, Zero<T>());
+    const T lo = Get<T>(inputs, _kLow, Zero<T>());
+    const T hi = Get<T>(inputs, _kHigh, One<T>());
+    (*outputs)[_kOut] = Value(ClampValue(v, lo, hi));
+}
+
+static void
+_EvalMinFloat(const ParamMap& inputs, const ShadingContext&,
+              NodeOutputMap* outputs)
+{
+    const float a = Get<float>(inputs, _kIn1, 0.0f);
+    const float b = Get<float>(inputs, _kIn2, 0.0f);
+    (*outputs)[_kOut] = Value(std::min(a, b));
+}
+
+static void
+_EvalMaxFloat(const ParamMap& inputs, const ShadingContext&,
+              NodeOutputMap* outputs)
+{
+    const float a = Get<float>(inputs, _kIn1, 0.0f);
+    const float b = Get<float>(inputs, _kIn2, 0.0f);
+    (*outputs)[_kOut] = Value(std::max(a, b));
 }
 
 // ---- Unary math ----------------------------------------------------------
@@ -728,17 +759,6 @@ _EvalTriangleWave(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(2.0f * std::fabs(v - std::floor(v + 0.5f)));
 }
 
-// ---- Constant node -------------------------------------------------------
-
-template<typename T>
-static void
-_EvalConstant(const ParamMap& inputs, const ShadingContext&,
-              NodeOutputMap* outputs)
-{
-    T v = Get<T>(inputs, _kValue, Zero<T>());
-    (*outputs)[_kOut] = Value(v);
-}
-
 // ---- Registration --------------------------------------------------------
 
 #define _REG(name, fn) reg.Register(name, fn)
@@ -792,6 +812,12 @@ RegisterMathNodes(NodeRegistry& reg)
 
     // modulo
     _REG("ND_modulo_float", &_EvalModulo);
+    _REG("ND_clamp_float", &_EvalClamp<float>);
+    _REG("ND_clamp_color3", &_EvalClamp<Vec3f>);
+    _REG("ND_clamp_color4", &_EvalClamp<Vec4f>);
+    _REG("ND_clamp_vector3", &_EvalClamp<Vec3f>);
+    _REG("ND_min_float", &_EvalMinFloat);
+    _REG("ND_max_float", &_EvalMaxFloat);
 
     // unary
     _REG("ND_absval_float",   &_EvalAbsvalFloat);
@@ -902,15 +928,6 @@ RegisterMathNodes(NodeRegistry& reg)
     // trianglewave
     _REG("ND_trianglewave_float", &_EvalTriangleWave);
 
-    // constant
-    _REG("ND_constant_float",   &_EvalConstant<float>);
-    _REG("ND_constant_integer", &_EvalConstant<int>);
-    _REG("ND_constant_boolean", &_EvalConstant<bool>);
-    _REG("ND_constant_color3",  &_EvalConstant<Vec3f>);
-    _REG("ND_constant_color4",  &_EvalConstant<Vec4f>);
-    _REG("ND_constant_vector2", &_EvalConstant<Vec2f>);
-    _REG("ND_constant_vector3", &_EvalConstant<Vec3f>);
-    _REG("ND_constant_vector4", &_EvalConstant<Vec4f>);
 }
 
 #undef _REG

@@ -8,8 +8,10 @@
 #define MXCPP_NODES_TEXTURE_NODES_H
 
 namespace mxcpp {
+
 class NodeRegistry;
 void RegisterTextureNodes(NodeRegistry& reg);
+
 }  // namespace mxcpp
 
 #endif

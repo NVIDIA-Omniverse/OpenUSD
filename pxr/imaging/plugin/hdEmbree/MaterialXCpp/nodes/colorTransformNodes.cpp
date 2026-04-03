@@ -4,11 +4,11 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "colorNodes.h"
+#include "colorTransformNodes.h"
 #include "../nodeRegistry.h"
 
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 namespace mxcpp {
@@ -16,10 +16,6 @@ namespace mxcpp {
 static const SlotName _kIn("in");
 static const SlotName _kOut("out");
 
-// Rec.709 luminance weights.
-static constexpr float _kLumR = 0.2126f;
-static constexpr float _kLumG = 0.7152f;
-static constexpr float _kLumB = 0.0722f;
 static constexpr float _kAdobeRgbGamma = 563.0f / 256.0f;
 
 static const Mat3f _kAcescgToLinRec709Matrix(
@@ -242,101 +238,51 @@ _EvalColorTransformColor4(const ParamMap& inputs, const ShadingContext& ctx,
         Vec4f(transformed[0], transformed[1], transformed[2], in[3]));
 }
 
-static void
-_EvalLuminance(const ParamMap& inputs, const ShadingContext&,
-               NodeOutputMap* outputs)
-{
-    Vec3f c = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
-    (*outputs)[_kOut] = Value(
-        _kLumR * c[0] + _kLumG * c[1] + _kLumB * c[2]);
-}
-
-static void
-_EvalRgbToHsv(const ParamMap& inputs, const ShadingContext&,
-              NodeOutputMap* outputs)
-{
-    Vec3f rgb = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
-    (*outputs)[_kOut] = Value(RgbToHsv(rgb));
-}
-
-static void
-_EvalHsvToRgb(const ParamMap& inputs, const ShadingContext&,
-              NodeOutputMap* outputs)
-{
-    Vec3f hsv = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
-    (*outputs)[_kOut] = Value(HsvToRgb(hsv));
-}
-
-// ---- Registration --------------------------------------------------------
-
 #define _REG(name, fn) reg.Register(name, fn)
 
 void
-RegisterColorNodes(NodeRegistry& reg)
+RegisterColorTransformNodes(NodeRegistry& reg)
 {
-    _REG("ND_luminance_color3", &_EvalLuminance);
-    _REG("ND_rgbtohsv_color3",  &_EvalRgbToHsv);
-    _REG("ND_hsvtorgb_color3",  &_EvalHsvToRgb);
-    _REG(
-        "ND_g18_rec709_to_lin_rec709_color3",
-        &_EvalColorTransformColor3<_TransformG18Rec709ToLinRec709>);
-    _REG(
-        "ND_g18_rec709_to_lin_rec709_color4",
-        &_EvalColorTransformColor4<_TransformG18Rec709ToLinRec709>);
-    _REG(
-        "ND_g22_rec709_to_lin_rec709_color3",
-        &_EvalColorTransformColor3<_TransformG22Rec709ToLinRec709>);
-    _REG(
-        "ND_g22_rec709_to_lin_rec709_color4",
-        &_EvalColorTransformColor4<_TransformG22Rec709ToLinRec709>);
-    _REG(
-        "ND_rec709_display_to_lin_rec709_color3",
-        &_EvalColorTransformColor3<_TransformRec709DisplayToLinRec709>);
-    _REG(
-        "ND_rec709_display_to_lin_rec709_color4",
-        &_EvalColorTransformColor4<_TransformRec709DisplayToLinRec709>);
-    _REG(
-        "ND_acescg_to_lin_rec709_color3",
-        &_EvalColorTransformColor3<_TransformAcescgToLinRec709>);
-    _REG(
-        "ND_acescg_to_lin_rec709_color4",
-        &_EvalColorTransformColor4<_TransformAcescgToLinRec709>);
-    _REG(
-        "ND_g22_ap1_to_lin_rec709_color3",
-        &_EvalColorTransformColor3<_TransformG22Ap1ToLinRec709>);
-    _REG(
-        "ND_g22_ap1_to_lin_rec709_color4",
-        &_EvalColorTransformColor4<_TransformG22Ap1ToLinRec709>);
-    _REG(
-        "ND_srgb_texture_to_lin_rec709_color3",
-        &_EvalColorTransformColor3<_TransformSrgbTextureToLinRec709>);
-    _REG(
-        "ND_srgb_texture_to_lin_rec709_color4",
-        &_EvalColorTransformColor4<_TransformSrgbTextureToLinRec709>);
-    _REG(
-        "ND_lin_adobergb_to_lin_rec709_color3",
-        &_EvalColorTransformColor3<_TransformLinAdobeRgbToLinRec709>);
-    _REG(
-        "ND_lin_adobergb_to_lin_rec709_color4",
-        &_EvalColorTransformColor4<_TransformLinAdobeRgbToLinRec709>);
-    _REG(
-        "ND_adobergb_to_lin_rec709_color3",
-        &_EvalColorTransformColor3<_TransformAdobeRgbToLinRec709>);
-    _REG(
-        "ND_adobergb_to_lin_rec709_color4",
-        &_EvalColorTransformColor4<_TransformAdobeRgbToLinRec709>);
-    _REG(
-        "ND_srgb_displayp3_to_lin_rec709_color3",
-        &_EvalColorTransformColor3<_TransformSrgbDisplayP3ToLinRec709>);
-    _REG(
-        "ND_srgb_displayp3_to_lin_rec709_color4",
-        &_EvalColorTransformColor4<_TransformSrgbDisplayP3ToLinRec709>);
-    _REG(
-        "ND_lin_displayp3_to_lin_rec709_color3",
-        &_EvalColorTransformColor3<_TransformLinDisplayP3ToLinRec709>);
-    _REG(
-        "ND_lin_displayp3_to_lin_rec709_color4",
-        &_EvalColorTransformColor4<_TransformLinDisplayP3ToLinRec709>);
+    _REG("ND_g18_rec709_to_lin_rec709_color3",
+         &_EvalColorTransformColor3<_TransformG18Rec709ToLinRec709>);
+    _REG("ND_g18_rec709_to_lin_rec709_color4",
+         &_EvalColorTransformColor4<_TransformG18Rec709ToLinRec709>);
+    _REG("ND_g22_rec709_to_lin_rec709_color3",
+         &_EvalColorTransformColor3<_TransformG22Rec709ToLinRec709>);
+    _REG("ND_g22_rec709_to_lin_rec709_color4",
+         &_EvalColorTransformColor4<_TransformG22Rec709ToLinRec709>);
+    _REG("ND_rec709_display_to_lin_rec709_color3",
+         &_EvalColorTransformColor3<_TransformRec709DisplayToLinRec709>);
+    _REG("ND_rec709_display_to_lin_rec709_color4",
+         &_EvalColorTransformColor4<_TransformRec709DisplayToLinRec709>);
+    _REG("ND_acescg_to_lin_rec709_color3",
+         &_EvalColorTransformColor3<_TransformAcescgToLinRec709>);
+    _REG("ND_acescg_to_lin_rec709_color4",
+         &_EvalColorTransformColor4<_TransformAcescgToLinRec709>);
+    _REG("ND_g22_ap1_to_lin_rec709_color3",
+         &_EvalColorTransformColor3<_TransformG22Ap1ToLinRec709>);
+    _REG("ND_g22_ap1_to_lin_rec709_color4",
+         &_EvalColorTransformColor4<_TransformG22Ap1ToLinRec709>);
+    _REG("ND_srgb_texture_to_lin_rec709_color3",
+         &_EvalColorTransformColor3<_TransformSrgbTextureToLinRec709>);
+    _REG("ND_srgb_texture_to_lin_rec709_color4",
+         &_EvalColorTransformColor4<_TransformSrgbTextureToLinRec709>);
+    _REG("ND_lin_adobergb_to_lin_rec709_color3",
+         &_EvalColorTransformColor3<_TransformLinAdobeRgbToLinRec709>);
+    _REG("ND_lin_adobergb_to_lin_rec709_color4",
+         &_EvalColorTransformColor4<_TransformLinAdobeRgbToLinRec709>);
+    _REG("ND_adobergb_to_lin_rec709_color3",
+         &_EvalColorTransformColor3<_TransformAdobeRgbToLinRec709>);
+    _REG("ND_adobergb_to_lin_rec709_color4",
+         &_EvalColorTransformColor4<_TransformAdobeRgbToLinRec709>);
+    _REG("ND_srgb_displayp3_to_lin_rec709_color3",
+         &_EvalColorTransformColor3<_TransformSrgbDisplayP3ToLinRec709>);
+    _REG("ND_srgb_displayp3_to_lin_rec709_color4",
+         &_EvalColorTransformColor4<_TransformSrgbDisplayP3ToLinRec709>);
+    _REG("ND_lin_displayp3_to_lin_rec709_color3",
+         &_EvalColorTransformColor3<_TransformLinDisplayP3ToLinRec709>);
+    _REG("ND_lin_displayp3_to_lin_rec709_color4",
+         &_EvalColorTransformColor4<_TransformLinDisplayP3ToLinRec709>);
 }
 
 #undef _REG

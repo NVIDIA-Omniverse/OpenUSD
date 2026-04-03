@@ -8,8 +8,10 @@
 #define MXCPP_NODES_GEOMETRIC_NODES_H
 
 namespace mxcpp {
+
 class NodeRegistry;
 void RegisterGeometricNodes(NodeRegistry& reg);
+
 }  // namespace mxcpp
 
 #endif

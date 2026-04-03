@@ -5,6 +5,8 @@
 // https://openusd.org/license.
 //
 #include "geometricNodes.h"
+#include "helpers/inputEvaluationHelpers.h"
+#include "helpers/shadingContextHelpers.h"
 #include "../nodeRegistry.h"
 
 #include <algorithm>
@@ -14,7 +16,6 @@
 namespace mxcpp {
 
 static constexpr float _kFloatEps = 1e-6f;
-static constexpr float _kSobelScaleFactor = 1.0f / 16.0f;
 
 static const SlotName _kIn("in");
 static const SlotName _kHeight("height");
@@ -28,112 +29,12 @@ static const SlotName _kGeomprop("geomprop");
 static const SlotName _kDefault("default");
 static const SlotName _kSpace("space");
 
-static float
-_EvaluateFloatInput(const ParamMap& inputs,
-                    const SlotName& slot,
-                    const ShadingContext& ctx,
-                    float defaultValue)
-{
-    Value value;
-    if (inputs.Evaluate(slot, ctx, &value) &&
-        ValueHolds<float>(value)) {
-        return ValueGet<float>(value);
-    }
-    return Get<float>(inputs, slot, defaultValue);
-}
-
-static Vec2f
-_EvaluateVec2Input(const ParamMap& inputs,
-                   const SlotName& slot,
-                   const ShadingContext& ctx,
-                   const Vec2f& defaultValue)
-{
-    Value value;
-    if (inputs.Evaluate(slot, ctx, &value) &&
-        ValueHolds<Vec2f>(value)) {
-        return ValueGet<Vec2f>(value);
-    }
-    return Get<Vec2f>(inputs, slot, defaultValue);
-}
-
-static ShadingContext
-_OffsetContextDx(const ShadingContext& ctx)
-{
-    ShadingContext shifted = ctx;
-    shifted.position += ctx.dPositiondx;
-    shifted.texcoord += Vec2f(ctx.dudx, ctx.dvdx);
-    return shifted;
-}
-
-static ShadingContext
-_OffsetContextDy(const ShadingContext& ctx)
-{
-    ShadingContext shifted = ctx;
-    shifted.position += ctx.dPositiondy;
-    shifted.texcoord += Vec2f(ctx.dudy, ctx.dvdy);
-    return shifted;
-}
-
-static ShadingContext
-_OffsetContextDu(const ShadingContext& ctx, float du)
-{
-    ShadingContext shifted = ctx;
-    shifted.position += ctx.dPositiondu * du;
-    shifted.texcoord += Vec2f(du, 0.0f);
-    return shifted;
-}
-
-static ShadingContext
-_OffsetContextDv(const ShadingContext& ctx, float dv)
-{
-    ShadingContext shifted = ctx;
-    shifted.position += ctx.dPositiondv * dv;
-    shifted.texcoord += Vec2f(0.0f, dv);
-    return shifted;
-}
-
 static std::string
 _GetSpace(const ParamMap& inputs)
 {
     return NormalizeSpaceName(
         Get<std::string>(inputs, _kSpace, std::string("object")),
         std::string("object"));
-}
-
-static std::string
-_GetViewSpace(const ParamMap& inputs)
-{
-    return NormalizeSpaceName(
-        Get<std::string>(inputs, _kSpace, std::string("world")),
-        std::string("world"));
-}
-
-static Vec3f
-_ComputeWorldViewDirection(const ShadingContext& ctx)
-{
-    Vec3f worldPosition = ctx.position;
-    TransformNamedVec3(
-        ctx, "object", "world",
-        ShadingContext::TransformSpaceType::Point,
-        ctx.position, &worldPosition);
-
-    Vec3f result = worldPosition - ctx.viewPosition;
-    if (result.length2() > _kFloatEps * _kFloatEps) {
-        result.normalize();
-    }
-    return result;
-}
-
-static Vec3f
-_NormalizeOrZero(const Vec3f& v)
-{
-    if (v.length2() <= _kFloatEps * _kFloatEps) {
-        return Vec3f(0.0f);
-    }
-
-    Vec3f result = v;
-    result.normalize();
-    return result;
 }
 
 static float
@@ -187,50 +88,6 @@ _BuildOrthonormalBasis(const Vec3f& normal,
     }
 }
 
-static Vec3f
-_ComputeHeightToNormalEncoded(const ParamMap& inputs,
-                              const SlotName& heightSlot,
-                              const ShadingContext& ctx)
-{
-    const float scale = Get<float>(inputs, _kScale, 1.0f);
-    const Vec2f texcoord = _EvaluateVec2Input(
-        inputs, _kTexcoord, ctx, ctx.texcoord);
-
-    const ShadingContext shiftedDx = _OffsetContextDx(ctx);
-    const ShadingContext shiftedDy = _OffsetContextDy(ctx);
-
-    const float height = _EvaluateFloatInput(inputs, heightSlot, ctx, 0.0f);
-    const float heightDx =
-        _EvaluateFloatInput(inputs, heightSlot, shiftedDx, 0.0f) - height;
-    const float heightDy =
-        _EvaluateFloatInput(inputs, heightSlot, shiftedDy, 0.0f) - height;
-
-    const Vec2f texcoordDx = _EvaluateVec2Input(
-        inputs, _kTexcoord, shiftedDx, shiftedDx.texcoord) - texcoord;
-    const Vec2f texcoordDy = _EvaluateVec2Input(
-        inputs, _kTexcoord, shiftedDy, shiftedDy.texcoord) - texcoord;
-
-    const Vec2f dHdS =
-        Vec2f(heightDx, heightDy) * scale * _kSobelScaleFactor;
-    const Vec2f dUdS(texcoordDx[0], texcoordDy[0]);
-    const Vec2f dVdS(texcoordDx[1], texcoordDy[1]);
-
-    const Vec3f tangent(dUdS[0], dVdS[0], dHdS[0]);
-    const Vec3f bitangent(dUdS[1], dVdS[1], dHdS[1]);
-    Vec3f n = Cross(tangent, bitangent);
-
-    if (Dot(n, n) < _kFloatEps * _kFloatEps) {
-        n = Vec3f(0.0f, 0.0f, 1.0f);
-    } else {
-        if (n[2] < 0.0f) {
-            n = -n;
-        }
-        n.normalize();
-    }
-
-    return n * 0.5f + Vec3f(0.5f, 0.5f, 0.5f);
-}
-
 // Geometric nodes read from the shading context.
 
 static void
@@ -257,62 +114,6 @@ _EvalNormal(const ParamMap& inputs, const ShadingContext& ctx,
         ShadingContext::TransformSpaceType::Normal,
         ctx.normal, &result);
     (*outputs)[_kOut] = Value(result);
-}
-
-static void
-_EvalViewDirection(const ParamMap& inputs, const ShadingContext& ctx,
-                   NodeOutputMap* outputs)
-{
-    const std::string space = _GetViewSpace(inputs);
-    Vec3f result = _ComputeWorldViewDirection(ctx);
-    TransformNamedVec3(
-        ctx, "world", space,
-        ShadingContext::TransformSpaceType::Vector,
-        result, &result);
-    (*outputs)[_kOut] = Value(result);
-}
-
-static void
-_EvalFacingRatio(const ParamMap& inputs, const ShadingContext& ctx,
-                 NodeOutputMap* outputs)
-{
-    const Vec3f viewDirection = Get<Vec3f>(
-        inputs, "viewdirection", _ComputeWorldViewDirection(ctx));
-    const Vec3f normal = Get<Vec3f>(inputs, _kNormal, ctx.normal);
-    const bool faceForward = Get<bool>(inputs, "faceforward", true);
-    const bool invert = Get<bool>(inputs, "invert", false);
-
-    const float dot = Dot(viewDirection, normal);
-    const float facing = faceForward ? std::fabs(dot) : -dot;
-    (*outputs)[_kOut] = Value(invert ? (1.0f - facing) : facing);
-}
-
-static void
-_EvalGoochShade(const ParamMap& inputs, const ShadingContext& ctx,
-                NodeOutputMap* outputs)
-{
-    const Vec3f warmColor = Get<Vec3f>(inputs, "warm_color", Vec3f(0.8f, 0.8f, 0.7f));
-    const Vec3f coolColor = Get<Vec3f>(inputs, "cool_color", Vec3f(0.3f, 0.3f, 0.8f));
-    const float specularIntensity = Get<float>(inputs, "specular_intensity", 1.0f);
-    const float shininess = Get<float>(inputs, "shininess", 64.0f);
-    const Vec3f lightDirection = Get<Vec3f>(
-        inputs, "light_direction", Vec3f(1.0f, -0.5f, -0.5f));
-
-    const Vec3f unitNormal = _NormalizeOrZero(ctx.normal);
-    const Vec3f unitViewDirection = _NormalizeOrZero(_ComputeWorldViewDirection(ctx));
-    const Vec3f unitLightDirection = _NormalizeOrZero(lightDirection);
-
-    const float nDotL = Dot(unitNormal, unitLightDirection);
-    const float coolIntensity = 0.5f * (1.0f + nDotL);
-    const Vec3f diffuse = warmColor + (coolColor - warmColor) * coolIntensity;
-
-    const Vec3f viewReflect =
-        unitViewDirection - 2.0f * Dot(unitViewDirection, unitNormal) * unitNormal;
-    const float vDotR = Dot(-unitLightDirection, viewReflect);
-    const float specularHighlight = std::pow(std::max(vDotR, 0.0f), shininess);
-    const float specular = specularHighlight * specularIntensity;
-
-    (*outputs)[_kOut] = Value(diffuse + Vec3f(specular));
 }
 
 static void
@@ -356,26 +157,18 @@ _EvalGeomcolor(const ParamMap&, const ShadingContext& ctx,
 }
 
 static void
-_EvalHeightToNormal(const ParamMap& inputs, const ShadingContext& ctx,
-                    NodeOutputMap* outputs)
-{
-    (*outputs)[_kOut] = Value(
-        _ComputeHeightToNormalEncoded(inputs, _kIn, ctx));
-}
-
-static void
 _EvalBump(const ParamMap& inputs, const ShadingContext& ctx,
           NodeOutputMap* outputs)
 {
     const float scale = Get<float>(inputs, _kScale, 1.0f);
-    const float height = _EvaluateFloatInput(inputs, _kHeight, ctx, 0.0f);
+    const float height = EvaluateInput<float>(inputs, _kHeight, ctx, 0.0f);
     const float du = _SelectFiniteDifferenceStep(ctx.dudx, ctx.dudy);
     const float dv = _SelectFiniteDifferenceStep(ctx.dvdx, ctx.dvdy);
 
-    const float heightDu = _EvaluateFloatInput(
-        inputs, _kHeight, _OffsetContextDu(ctx, du), 0.0f);
-    const float heightDv = _EvaluateFloatInput(
-        inputs, _kHeight, _OffsetContextDv(ctx, dv), 0.0f);
+    const float heightDu = EvaluateInput<float>(
+        inputs, _kHeight, OffsetContextDu(ctx, du), 0.0f);
+    const float heightDv = EvaluateInput<float>(
+        inputs, _kHeight, OffsetContextDv(ctx, dv), 0.0f);
 
     const Vec3f inputNormal = Get<Vec3f>(inputs, _kNormal, ctx.normal);
     const Vec3f inputTangent = Get<Vec3f>(inputs, _kTangent, ctx.tangent);
@@ -472,14 +265,10 @@ RegisterGeometricNodes(NodeRegistry& reg)
 {
     _REG("ND_position_vector3",  &_EvalPosition);
     _REG("ND_normal_vector3",    &_EvalNormal);
-    _REG("ND_viewdirection_vector3", &_EvalViewDirection);
-    _REG("ND_facingratio_float", &_EvalFacingRatio);
-    _REG("ND_gooch_shade", &_EvalGoochShade);
     _REG("ND_tangent_vector3",   &_EvalTangent);
     _REG("ND_bitangent_vector3", &_EvalBitangent);
     _REG("ND_texcoord_vector2",  &_EvalTexcoord);
     _REG("ND_geomcolor_color3",  &_EvalGeomcolor);
-    _REG("ND_heighttonormal_vector3", &_EvalHeightToNormal);
     _REG("ND_bump_vector3", &_EvalBump);
 
     // geompropvalue (per-sample varying)

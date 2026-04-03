@@ -82,6 +82,7 @@ pxr_plugin(hdEmbree
         MaterialXCpp/materials/usdPreviewSurface
         MaterialXCpp/nodes/mathNodes
         MaterialXCpp/nodes/convolutionNodes
+        MaterialXCpp/nodes/nprNodes
         MaterialXCpp/nodes/adjustmentNodes
         MaterialXCpp/nodes/channelNodes
         MaterialXCpp/nodes/conditionalNodes
@@ -89,8 +90,11 @@ pxr_plugin(hdEmbree
         MaterialXCpp/nodes/geometricNodes
         MaterialXCpp/nodes/applicationNodes
         MaterialXCpp/nodes/textureNodes
+        MaterialXCpp/nodes/texture3dNodes
         MaterialXCpp/nodes/proceduralNodes
-        MaterialXCpp/nodes/colorNodes
+        MaterialXCpp/nodes/procedural2dNodes
+        MaterialXCpp/nodes/procedural3dNodes
+        MaterialXCpp/nodes/colorTransformNodes
 
     PUBLIC_HEADERS
         context.h
@@ -154,6 +158,7 @@ pxr_build_test(testMaterialXCpp
         MaterialXCpp/graph.cpp
         MaterialXCpp/nodes/mathNodes.cpp
         MaterialXCpp/nodes/convolutionNodes.cpp
+        MaterialXCpp/nodes/nprNodes.cpp
         MaterialXCpp/nodes/adjustmentNodes.cpp
         MaterialXCpp/nodes/channelNodes.cpp
         MaterialXCpp/nodes/conditionalNodes.cpp
@@ -161,8 +166,11 @@ pxr_build_test(testMaterialXCpp
         MaterialXCpp/nodes/geometricNodes.cpp
         MaterialXCpp/nodes/applicationNodes.cpp
         MaterialXCpp/nodes/textureNodes.cpp
+        MaterialXCpp/nodes/texture3dNodes.cpp
         MaterialXCpp/nodes/proceduralNodes.cpp
-        MaterialXCpp/nodes/colorNodes.cpp
+        MaterialXCpp/nodes/procedural2dNodes.cpp
+        MaterialXCpp/nodes/procedural3dNodes.cpp
+        MaterialXCpp/nodes/colorTransformNodes.cpp
 )
 
 if (PXR_ENABLE_OPENQMC_SUPPORT)

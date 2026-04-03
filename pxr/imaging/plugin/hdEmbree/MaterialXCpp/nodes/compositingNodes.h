@@ -8,8 +8,10 @@
 #define MXCPP_NODES_COMPOSITING_NODES_H
 
 namespace mxcpp {
+
 class NodeRegistry;
 void RegisterCompositingNodes(NodeRegistry& reg);
+
 }  // namespace mxcpp
 
 #endif

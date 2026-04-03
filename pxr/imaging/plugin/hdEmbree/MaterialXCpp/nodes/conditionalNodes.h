@@ -8,8 +8,10 @@
 #define MXCPP_NODES_CONDITIONAL_NODES_H
 
 namespace mxcpp {
+
 class NodeRegistry;
 void RegisterConditionalNodes(NodeRegistry& reg);
+
 }  // namespace mxcpp
 
 #endif
