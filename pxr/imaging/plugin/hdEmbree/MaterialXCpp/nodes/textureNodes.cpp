@@ -142,17 +142,17 @@ _ComputeHexTileFootprint(const ParamMap& inputs, const ShadingContext& ctx)
 
     const Vec2f baseTexcoord =
         EvaluateInput<Vec2f>(inputs, _kTexcoord, ctx, ctx.texcoord);
-    const Vec2f coord = CompMult(baseTexcoord, tiling);
+    const Vec2f coord = CompMul(baseTexcoord, tiling);
 
     const ShadingContext shiftedDx = OffsetContextDx(ctx);
     const Vec2f texcoordDx =
         EvaluateInput<Vec2f>(inputs, _kTexcoord, shiftedDx, shiftedDx.texcoord);
-    const Vec2f coordDx = CompMult(texcoordDx, tiling);
+    const Vec2f coordDx = CompMul(texcoordDx, tiling);
 
     const ShadingContext shiftedDy = OffsetContextDy(ctx);
     const Vec2f texcoordDy =
         EvaluateInput<Vec2f>(inputs, _kTexcoord, shiftedDy, shiftedDy.texcoord);
-    const Vec2f coordDy = CompMult(texcoordDy, tiling);
+    const Vec2f coordDy = CompMul(texcoordDy, tiling);
 
     const Vec2f baseDstdx = coordDx - coord;
     const Vec2f baseDstdy = coordDy - coord;
@@ -259,7 +259,7 @@ _ApplyTiledTransform(const ParamMap& inputs, const Vec2f& texcoord)
     const Vec2f tileSize =
         Get<Vec2f>(inputs, _kRealWorldTileSize, Vec2f(1.0f));
 
-    const Vec2f tiled = CompMult(texcoord, uvtiling) - uvoffset;
+    const Vec2f tiled = CompMul(texcoord, uvtiling) - uvoffset;
     const Vec2f safeImageSize(
         (std::abs(imageSize[0]) > _kFloatEps) ? imageSize[0] : 1.0f,
         (std::abs(imageSize[1]) > _kFloatEps) ? imageSize[1] : 1.0f);
@@ -557,7 +557,7 @@ _ApplyScaleBias(const Vec4f& value,
                 const Vec4f& scale,
                 const Vec4f& bias)
 {
-    return CompMult(value, scale) + bias;
+    return CompMul(value, scale) + bias;
 }
 
 static void

@@ -2,7 +2,7 @@
 // Adapter: converts pxr types into pxr-independent mxcpp types.
 //
 #include "pxr/imaging/plugin/hdEmbree/mxcppAdapter.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/mxcpp_math.h"
+#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/mathTypes.h"
 
 #include "pxr/base/vt/value.h"
 #include "pxr/base/gf/matrix4d.h"

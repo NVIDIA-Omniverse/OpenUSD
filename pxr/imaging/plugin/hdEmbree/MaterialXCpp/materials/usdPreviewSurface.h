@@ -7,7 +7,8 @@
 #ifndef MXCPP_MATERIALS_USD_PREVIEW_SURFACE_H
 #define MXCPP_MATERIALS_USD_PREVIEW_SURFACE_H
 
-#include "../types.h"
+#include "../paramMap.h"
+#include "../surfaceClosure.h"
 
 namespace mxcpp {
 

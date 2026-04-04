@@ -4,8 +4,10 @@
 #ifndef MXCPP_NODE_REGISTRY_H
 #define MXCPP_NODE_REGISTRY_H
 
-#include "types.h"
+#include "paramMap.h"
+#include "nodes/helpers/valueHelper.h"
 
+#include <algorithm>
 #include <string>
 #include <unordered_map>
 

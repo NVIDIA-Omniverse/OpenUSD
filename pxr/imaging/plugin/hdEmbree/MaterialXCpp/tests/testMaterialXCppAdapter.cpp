@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "../../mxcppAdapter.h"
+#include "pxr/base/gf/vec2f.h"
 
 #include <cstdio>
 #include <functional>

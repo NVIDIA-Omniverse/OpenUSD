@@ -15,6 +15,7 @@
 #include "pxr/imaging/plugin/hdEmbree/mesh.h"
 #include "pxr/imaging/plugin/hdEmbree/renderBuffer.h"
 #include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/materials/bsdf.h"
+#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/shadingContext.h"
 
 #include "pxr/imaging/hd/perfLog.h"
 

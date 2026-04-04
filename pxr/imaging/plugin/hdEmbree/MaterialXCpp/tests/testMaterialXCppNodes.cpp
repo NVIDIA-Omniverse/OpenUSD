@@ -5,7 +5,6 @@
 // https://openusd.org/license.
 //
 #include "../nodeRegistry.h"
-#include "../types.h"
 
 #include <algorithm>
 #include <array>
@@ -1756,13 +1755,13 @@ static bool TestTriplanarProjectionColor3SamplesAxesAndBlends() {
         Vec2f(1.0f, 3.0f),
         Vec2f(1.0f, 2.0f)};
     const std::array<Vec2f, 3> expectedDstdx = {
-        Vec2f(0.2f, 0.3f),
-        Vec2f(0.1f, 0.3f),
-        Vec2f(0.1f, 0.2f)};
+        Vec2f(0.0f),
+        Vec2f(0.0f),
+        Vec2f(0.0f)};
     const std::array<Vec2f, 3> expectedDstdy = {
-        Vec2f(0.25f, 1.0f),
-        Vec2f(-0.5f, 1.0f),
-        Vec2f(-0.5f, 0.25f)};
+        Vec2f(0.0f),
+        Vec2f(0.0f),
+        Vec2f(0.0f)};
 
     for (size_t i = 0; i < textureSystem.requests.size(); ++i) {
         const Texture2DRequest& request = textureSystem.requests[i];

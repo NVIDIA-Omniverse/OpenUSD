@@ -6,6 +6,7 @@
 //
 #include "geometricNodes.h"
 #include "helpers/inputEvaluationHelpers.h"
+#include "helpers/spaceHelpers.h"
 #include "helpers/shadingContextHelpers.h"
 #include "../nodeRegistry.h"
 

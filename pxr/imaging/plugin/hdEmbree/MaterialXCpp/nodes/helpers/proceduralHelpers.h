@@ -10,7 +10,8 @@
 #include "colorHelpers.h"
 #include "hashHelper.h"
 #include "mathHelpers.h"
-#include "../../types.h"
+#include "../../paramMap.h"
+#include "valueHelper.h"
 
 #include <algorithm>
 #include <array>

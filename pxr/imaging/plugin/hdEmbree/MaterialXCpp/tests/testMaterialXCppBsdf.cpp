@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "../materials/bsdf.h"
+#include "../nodes/helpers/mathHelpers.h"
 
 #include <cmath>
 #include <cstdio>

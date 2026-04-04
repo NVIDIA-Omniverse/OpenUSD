@@ -4,7 +4,7 @@
 #ifndef MXCPP_VALUE_H
 #define MXCPP_VALUE_H
 
-#include "mxcpp_math.h"
+#include "mathTypes.h"
 
 #include <string>
 #include <variant>

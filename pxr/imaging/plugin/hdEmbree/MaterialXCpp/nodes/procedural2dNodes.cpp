@@ -180,7 +180,7 @@ _Noise2dValue<Vec2f>(const ParamMap& inputs, const ShadingContext& ctx)
     const Vec2f amplitude = ReadAmplitude<Vec2f>(inputs, _kAmplitude);
     const float pivot = Get<float>(inputs, _kPivot, 0.0f);
     const Vec3f value = PerlinNoise2dVec3(tc[0], tc[1]);
-    return CompMult(Vec2f(value[0], value[1]), amplitude) + Vec2f(pivot);
+    return CompMul(Vec2f(value[0], value[1]), amplitude) + Vec2f(pivot);
 }
 
 template<>
@@ -190,7 +190,7 @@ _Noise2dValue<Vec3f>(const ParamMap& inputs, const ShadingContext& ctx)
     const Vec2f tc = Get<Vec2f>(inputs, _kTexcoord, ctx.texcoord);
     const Vec3f amplitude = ReadAmplitude<Vec3f>(inputs, _kAmplitude);
     const float pivot = Get<float>(inputs, _kPivot, 0.0f);
-    return CompMult(PerlinNoise2dVec3(tc[0], tc[1]), amplitude) + Vec3f(pivot);
+    return CompMul(PerlinNoise2dVec3(tc[0], tc[1]), amplitude) + Vec3f(pivot);
 }
 
 template<>
@@ -202,7 +202,7 @@ _Noise2dValue<Vec4f>(const ParamMap& inputs, const ShadingContext& ctx)
     const float pivot = Get<float>(inputs, _kPivot, 0.0f);
     const Vec3f xyz = PerlinNoise2dVec3(tc[0], tc[1]);
     const float w = PerlinNoise2d(tc[0] + 19.0f, tc[1] + 73.0f);
-    return CompMult(Vec4f(xyz[0], xyz[1], xyz[2], w), amplitude) +
+    return CompMul(Vec4f(xyz[0], xyz[1], xyz[2], w), amplitude) +
            Vec4f(pivot);
 }
 
@@ -231,7 +231,7 @@ _Fractal2dValue<Vec2f>(const ParamMap& inputs, const ShadingContext& ctx)
     const int octaves = Get<int>(inputs, _kOctaves, 3);
     const float lacunarity = Get<float>(inputs, _kLacunarity, 2.0f);
     const float diminish = Get<float>(inputs, _kDiminish, 0.5f);
-    return CompMult(FractalNoise2dVec2(tc, octaves, lacunarity, diminish),
+    return CompMul(FractalNoise2dVec2(tc, octaves, lacunarity, diminish),
                     amplitude);
 }
 
@@ -244,7 +244,7 @@ _Fractal2dValue<Vec3f>(const ParamMap& inputs, const ShadingContext& ctx)
     const int octaves = Get<int>(inputs, _kOctaves, 3);
     const float lacunarity = Get<float>(inputs, _kLacunarity, 2.0f);
     const float diminish = Get<float>(inputs, _kDiminish, 0.5f);
-    return CompMult(FractalNoise2dVec3(tc, octaves, lacunarity, diminish),
+    return CompMul(FractalNoise2dVec3(tc, octaves, lacunarity, diminish),
                     amplitude);
 }
 
@@ -257,7 +257,7 @@ _Fractal2dValue<Vec4f>(const ParamMap& inputs, const ShadingContext& ctx)
     const int octaves = Get<int>(inputs, _kOctaves, 3);
     const float lacunarity = Get<float>(inputs, _kLacunarity, 2.0f);
     const float diminish = Get<float>(inputs, _kDiminish, 0.5f);
-    return CompMult(FractalNoise2dVec4(tc, octaves, lacunarity, diminish),
+    return CompMul(FractalNoise2dVec4(tc, octaves, lacunarity, diminish),
                     amplitude);
 }
 
@@ -397,7 +397,7 @@ _EvalUnifiedNoise2dFloat(const ParamMap& inputs,
     const int type = Get<int>(inputs, _kType, 0);
     const int style = Get<int>(inputs, _kStyle, 0);
 
-    const Vec2f applyFreq = CompMult(texcoord, freq);
+    const Vec2f applyFreq = CompMul(texcoord, freq);
     const Vec2f applyOffset = applyFreq + offset;
     const float cellJitterMult = (jitter - 1.0f) * 90000.0f;
     const Vec2f applyCellJitter = Rotate2d(applyOffset, cellJitterMult);
@@ -510,7 +510,7 @@ _EvalCheckerboardColor3(const ParamMap& inputs,
     const Vec2f uvtiling = Get<Vec2f>(inputs, _kUvtiling, Vec2f(8.0f));
     const Vec2f uvoffset = Get<Vec2f>(inputs, _kUvoffset, Vec2f(0.0f));
     const Vec2f texcoord = Get<Vec2f>(inputs, _kTexcoord, ctx.texcoord);
-    const Vec2f tiled = CompMult(texcoord, uvtiling) - uvoffset;
+    const Vec2f tiled = CompMul(texcoord, uvtiling) - uvoffset;
     const Vec2f floored(std::floor(tiled[0]), std::floor(tiled[1]));
     const float selector = PositiveMod(floored[0] + floored[1], 2.0f);
     StoreTypedOutput(outputs, _kOut, Mix(color2, color1, selector));
@@ -620,7 +620,7 @@ _EvalGridColor3(const ParamMap& inputs,
     const float thickness = Get<float>(inputs, _kThickness, 0.05f);
     const bool staggered = Get<bool>(inputs, _kStaggered, false);
 
-    const Vec2f texcoordBias = CompMult(texcoord, uvtiling) - uvoffset;
+    const Vec2f texcoordBias = CompMul(texcoord, uvtiling) - uvoffset;
     const float thickToSize = 1.0f - thickness;
     const float modY = PositiveMod(texcoordBias[1]);
     const float modYRow = PositiveMod(texcoordBias[1], 2.0f);
@@ -646,7 +646,7 @@ _EvalCrosshatchColor3(const ParamMap& inputs,
     const float thickness = Get<float>(inputs, _kThickness, 0.05f);
     const bool staggered = Get<bool>(inputs, _kStaggered, false);
 
-    const Vec2f texcoordBias = CompMult(texcoord, uvtiling) - uvoffset;
+    const Vec2f texcoordBias = CompMul(texcoord, uvtiling) - uvoffset;
     const float modY = PositiveMod(texcoordBias[1]);
     const float modYRow = PositiveMod(texcoordBias[1], 2.0f);
     const float altRowsShift = modYRow > 1.0f ? 0.5f : 0.0f;

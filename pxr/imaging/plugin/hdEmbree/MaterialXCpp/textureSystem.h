@@ -4,7 +4,7 @@
 #ifndef MXCPP_TEXTURE_SYSTEM_H
 #define MXCPP_TEXTURE_SYSTEM_H
 
-#include "mxcpp_math.h"
+#include "mathTypes.h"
 
 #include <string>
 

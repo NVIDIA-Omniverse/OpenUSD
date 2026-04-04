@@ -6,6 +6,8 @@
 //
 #include "usdPreviewSurface.h"
 
+#include "../paramMap.h"
+
 #include <algorithm>
 #include <cmath>
 

@@ -6,6 +6,7 @@
 //
 #include "mathNodes.h"
 #include "helpers/mathHelpers.h"
+#include "helpers/spaceHelpers.h"
 #include "../nodeRegistry.h"
 
 #include <cmath>
@@ -670,13 +671,9 @@ static void
 _EvalRotate2d(const ParamMap& inputs, const ShadingContext&,
               NodeOutputMap* outputs)
 {
-    Vec2f v = Get<Vec2f>(inputs, _kIn, Vec2f(0.0f));
-    float amount = Get<float>(inputs, _kAmount, 0.0f);
-    float rad = amount * (static_cast<float>(M_PI) / 180.0f);
-    float c = std::cos(rad);
-    float s = std::sin(rad);
-    (*outputs)[_kOut] = Value(Vec2f(v[0]*c - v[1]*s,
-                                    v[0]*s + v[1]*c));
+    const Vec2f v = Get<Vec2f>(inputs, _kIn, Vec2f(0.0f));
+    const float amount = Get<float>(inputs, _kAmount, 0.0f);
+    (*outputs)[_kOut] = Value(Rotate2d(v, amount));
 }
 
 // ---- rotate3d ------------------------------------------------------------
@@ -686,21 +683,10 @@ static void
 _EvalRotate3d(const ParamMap& inputs, const ShadingContext&,
               NodeOutputMap* outputs)
 {
-    Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
-    float amount = Get<float>(inputs, _kAmount, 0.0f);
-    Vec3f axis = Get<Vec3f>(inputs, _kAxis, Vec3f(0.0f, 1.0f, 0.0f));
-    float len = axis.length();
-    if (len < 1e-8f) {
-        (*outputs)[_kOut] = Value(v);
-        return;
-    }
-    axis /= len;
-    float rad = amount * (static_cast<float>(M_PI) / 180.0f);
-    float c = std::cos(rad);
-    float s = std::sin(rad);
-    // Rodrigues' rotation formula
-    Vec3f result = v * c + Cross(axis, v) * s + axis * Dot(axis, v) * (1.0f - c);
-    (*outputs)[_kOut] = Value(result);
+    const Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
+    const float amount = Get<float>(inputs, _kAmount, 0.0f);
+    const Vec3f axis = Get<Vec3f>(inputs, _kAxis, Vec3f(0.0f, 1.0f, 0.0f));
+    (*outputs)[_kOut] = Value(Rotate3d(v, amount, axis));
 }
 
 // ---- place2d -------------------------------------------------------------

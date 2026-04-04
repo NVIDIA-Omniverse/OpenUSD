@@ -6,6 +6,8 @@
 //
 #include "openPbr.h"
 
+#include "../paramMap.h"
+
 namespace mxcpp {
 
 static const SlotName _kBaseWeight("base_weight");

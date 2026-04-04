@@ -2,6 +2,7 @@
 // MaterialXCpp evaluation graph — pxr-independent.
 //
 #include "graph.h"
+#include "paramMap.h"
 #include "materials/standardSurface.h"
 #include "materials/openPbr.h"
 #include "materials/usdPreviewSurface.h"

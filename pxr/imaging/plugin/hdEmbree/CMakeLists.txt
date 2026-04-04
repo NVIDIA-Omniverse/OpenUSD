@@ -101,11 +101,14 @@ pxr_plugin(hdEmbree
         renderParam.h
         sampling.h
         pxrPbrt/pbrtUtils.h
-        MaterialXCpp/types.h
-        MaterialXCpp/mxcpp_math.h
+        MaterialXCpp/mathTypes.h
+        MaterialXCpp/shadingContext.h
+        MaterialXCpp/surfaceClosure.h
+        MaterialXCpp/paramMap.h
         MaterialXCpp/textureSystem.h
-        MaterialXCpp/mxcpp_value.h
-        MaterialXCpp/mxcpp_graph_types.h
+        MaterialXCpp/value.h
+        MaterialXCpp/nodes/helpers/valueHelper.h
+        MaterialXCpp/graphTypes.h
         MaterialXCpp/slots.h
 
     PRIVATE_CLASSES

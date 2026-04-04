@@ -7,7 +7,7 @@
 #ifndef MXCPP_NODES_MATH_HELPERS_H
 #define MXCPP_NODES_MATH_HELPERS_H
 
-#include "../../mxcpp_math.h"
+#include "../../mathTypes.h"
 
 #include <algorithm>
 #include <cmath>
@@ -19,6 +19,11 @@ constexpr float kPi = 3.14159265358979323846f;
 constexpr float kInvPi = 1.0f / kPi;
 constexpr float kTwoPi = 2.0f * kPi;
 constexpr float kDegreesToRadians = kPi / 180.0f;
+
+inline float Dot(const Vec2f& a, const Vec2f& b) { return a.dot(b); }
+inline float Dot(const Vec3f& a, const Vec3f& b) { return a.dot(b); }
+
+inline Vec3f Cross(const Vec3f& a, const Vec3f& b) { return a.cross(b); }
 
 template<typename T, std::enable_if_t<std::is_arithmetic_v<T>, int> = 0>
 inline T

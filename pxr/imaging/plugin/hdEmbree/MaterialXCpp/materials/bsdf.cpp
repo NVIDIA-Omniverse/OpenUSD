@@ -123,6 +123,15 @@ _Ashikhmin_V(float NdotV, float NdotL)
 // Tangent frame (world <-> shading-local)
 // -----------------------------------------------------------------------
 
+inline void
+_BuildOrthonormalFrame(const Vec3f& n, Vec3f* t, Vec3f* b)
+{
+    const Vec3f helper =
+        (std::abs(n[0]) < 0.9f) ? Vec3f(1, 0, 0) : Vec3f(0, 1, 0);
+    *t = n.cross(helper).normalized();
+    *b = n.cross(*t);
+}
+
 struct _Frame {
     Vec3f T, B, N;
 
@@ -137,7 +146,7 @@ struct _Frame {
     static _Frame FromNormal(const Vec3f& n) {
         _Frame f;
         f.N = n;
-        BuildOrthonormalFrame(n, &f.T, &f.B);
+        _BuildOrthonormalFrame(n, &f.T, &f.B);
         return f;
     }
 };
@@ -284,7 +293,7 @@ Bsdf::EvalGGXSpecular(
     float V = _GGX_V(alpha, NdotV, NdotL);
     Vec3f F = _SchlickFresnel(specularColor, VdotH);
 
-    return CompMult(F, Vec3f(D * V));
+    return CompMul(F, Vec3f(D * V));
 }
 
 Vec3f
@@ -384,20 +393,20 @@ Bsdf::EvalSurface(
 
         if (hasSpecularLobe) {
             Vec3f fresnel = _SchlickFresnel(F0, VdotH);
-            Vec3f kD = CompMult(Vec3f(1.0f) - fresnel,
+            Vec3f kD = CompMul(Vec3f(1.0f) - fresnel,
                                      Vec3f(1.0f - c.metallic));
             kD = kD * (1.0f - c.transmission);
-            diffuse = CompMult(kD,
+            diffuse = CompMul(kD,
                 EvalLambertian(c.baseColor, N, wi, wo));
 
             specular = EvalGGXSpecular(
                 c.roughness, c.specularIor,
-                CompMult(c.specularColor, F0),
+                CompMul(c.specularColor, F0),
                 N, wi, wo);
         } else {
             Vec3f kD = Vec3f(1.0f - c.metallic)
                        * (1.0f - c.transmission);
-            diffuse = CompMult(kD,
+            diffuse = CompMul(kD,
                 EvalLambertian(c.baseColor, N, wi, wo));
         }
 
@@ -501,7 +510,7 @@ Bsdf::SampleGGXSpecular(
     float D = _GGX_D(alpha, NdotH);
     float V = _GGX_V(alpha, NdotV, NdotL);
     Vec3f F = _SchlickFresnel(specularColor, VdotH);
-    Vec3f f = CompMult(F, Vec3f(D * V));
+    Vec3f f = CompMul(F, Vec3f(D * V));
 
     float pdf = _PdfGGX_VNDF(woLocal, wmLocal, alpha);
 
@@ -575,7 +584,7 @@ Bsdf::SampleSurface(
 
     } else if (uLobe < cumSpecular) {
         // Specular lobe
-        Vec3f specCol = CompMult(c.specularColor, F0);
+        Vec3f specCol = CompMul(c.specularColor, F0);
         BsdfSample sample = SampleGGXSpecular(
             c.roughness, c.specularIor, specCol, N, wo, u1, u2);
         if (sample.pdf <= 0.0f) {

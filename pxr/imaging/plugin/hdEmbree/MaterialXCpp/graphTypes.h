@@ -5,7 +5,7 @@
 #ifndef MXCPP_GRAPH_TYPES_H
 #define MXCPP_GRAPH_TYPES_H
 
-#include "mxcpp_value.h"
+#include "value.h"
 
 #include <map>
 #include <string>

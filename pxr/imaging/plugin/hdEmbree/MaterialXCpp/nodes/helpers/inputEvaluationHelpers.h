@@ -7,7 +7,7 @@
 #ifndef MXCPP_NODES_INPUT_EVALUATION_HELPERS_H
 #define MXCPP_NODES_INPUT_EVALUATION_HELPERS_H
 
-#include "../../types.h"
+#include "../../paramMap.h"
 
 namespace mxcpp {
 

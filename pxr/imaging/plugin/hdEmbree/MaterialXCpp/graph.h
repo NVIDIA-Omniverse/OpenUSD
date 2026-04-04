@@ -4,9 +4,10 @@
 #ifndef MXCPP_GRAPH_H
 #define MXCPP_GRAPH_H
 
-#include "types.h"
+#include "paramMap.h"
+#include "surfaceClosure.h"
 #include "nodeRegistry.h"
-#include "mxcpp_graph_types.h"
+#include "graphTypes.h"
 
 #include <memory>
 #include <vector>

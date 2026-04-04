@@ -16,7 +16,7 @@
 
 #include <unordered_map>
 #include <string>
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/mxcpp_value.h"
+#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/value.h"
 
 #include <embree4/rtcore.h>
 

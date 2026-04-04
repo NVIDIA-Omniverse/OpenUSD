@@ -66,7 +66,7 @@ _EvalNoise3dColor3(const ParamMap& inputs,
     const float pivot = Get<float>(inputs, _kPivot, 0.0f);
     const Vec3f value = PerlinNoise3dVec3(pos[0], pos[1], pos[2]);
     StoreTypedOutput(outputs, _kOut,
-                     CompMult(value, amplitude) + Vec3f(pivot));
+                     CompMul(value, amplitude) + Vec3f(pivot));
 }
 
 static void
@@ -154,7 +154,7 @@ _EvalUnifiedNoise3dFloat(const ParamMap& inputs,
     const int type = Get<int>(inputs, _kType, 0);
     const int style = Get<int>(inputs, _kStyle, 0);
 
-    const Vec3f applyFreq = CompMult(position, freq);
+    const Vec3f applyFreq = CompMul(position, freq);
     const Vec3f applyOffset = applyFreq + offset;
     const float cellJitterMult = (jitter - 1.0f) * 90000.0f;
     const Vec3f applyCellJitter =

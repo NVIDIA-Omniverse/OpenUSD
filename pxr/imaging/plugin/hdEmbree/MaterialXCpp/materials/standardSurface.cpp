@@ -6,6 +6,8 @@
 //
 #include "standardSurface.h"
 
+#include "../paramMap.h"
+
 namespace mxcpp {
 
 static const SlotName _kBase("base");

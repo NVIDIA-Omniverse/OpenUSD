@@ -7,7 +7,7 @@
 
 #include "pxr/pxr.h"
 #include "pxr/imaging/hd/material.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/mxcpp_graph_types.h"
+#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/graphTypes.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 

@@ -6,6 +6,7 @@
 //
 #include "convolutionNodes.h"
 #include "helpers/inputEvaluationHelpers.h"
+#include "helpers/mathHelpers.h"
 #include "helpers/shadingContextHelpers.h"
 #include "../nodeRegistry.h"
 

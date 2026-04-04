@@ -11,7 +11,6 @@
 
 #include "pxr/imaging/plugin/hdEmbree/context.h"
 #include "pxr/imaging/plugin/hdEmbree/light.h"
-#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/types.h"
 #include "pxr/imaging/plugin/hdEmbree/sampling.h"
 
 #include "pxr/imaging/hd/aov.h"
@@ -28,6 +27,12 @@
 #include <map>
 #include <memory>
 #include <mutex>
+
+namespace mxcpp {
+struct ShadingContext;
+struct SurfaceClosure;
+class TextureSystem;
+}  // namespace mxcpp
 
 PXR_NAMESPACE_OPEN_SCOPE
 

@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "nprNodes.h"
+#include "helpers/spaceHelpers.h"
 #include "helpers/shadingContextHelpers.h"
 #include "../nodeRegistry.h"
 

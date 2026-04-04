@@ -10,8 +10,9 @@
 #include "inputEvaluationHelpers.h"
 #include "colorHelpers.h"
 #include "mathHelpers.h"
+#include "spaceHelpers.h"
 #include "shadingContextHelpers.h"
-#include "../../types.h"
+#include "../../paramMap.h"
 
 #include <algorithm>
 #include <cctype>
