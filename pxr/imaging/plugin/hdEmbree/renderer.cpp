@@ -2666,7 +2666,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
     GfVec3f const& normal,
     GfVec3f const& wo,
     HdEmbreeSobolSampler &sampler,
-    bool doubleSided,
+    bool /*doubleSided*/,
     mxcpp::SurfaceClosure const* closure) const
 {
     GfVec3f finalColor(0.0f);
@@ -2713,23 +2713,16 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 continue;
             }
 
-            float cosOffNormal = GfDot(ls.wI, normal);
-            GfVec3f shadingNormal = normal;
-            if (cosOffNormal < 0.0f) {
-                if (doubleSided) {
-                    cosOffNormal *= -1.0f;
-                    shadingNormal = -normal;
-                } else {
-                    cosOffNormal = 0.0f;
-                }
-            }
-
-            if (cosOffNormal <= 0.0f) {
+            // Keep the BSDF normal fixed relative to wo. Reflection lobes
+            // reject backside wi internally, while transmission lobes need
+            // those samples to survive direct-light evaluation.
+            const float absDotNL = std::abs(GfDot(ls.wI, normal));
+            if (absDotNL <= 0.0f) {
                 continue;
             }
 
             float vis = _Visibility(
-                position, shadingNormal, ls.wI, ls.dist * 0.99f);
+                position, normal, ls.wI, ls.dist * 0.99f);
             if (vis <= 0.0f) {
                 continue;
             }
@@ -2737,7 +2730,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
             GfVec3f sampleContrib(0.0f);
             if (closure) {
                 GfVec3f bsdfValue = _ToGf(mxcpp::Bsdf::EvalSurface(
-                    *closure, _ToMx(shadingNormal), _ToMx(ls.wI), _ToMx(wo)));
+                    *closure, _ToMx(normal), _ToMx(ls.wI), _ToMx(wo)));
 
                 for (int i = 0; i < 3; ++i) {
                     if (!std::isfinite(bsdfValue[i])) bsdfValue[i] = 0.0f;
@@ -2750,14 +2743,14 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 float lightPdf = (ls.invPdfW > 0.0f)
                     ? 1.0f / ls.invPdfW : 0.0f;
                 float bsdfPdf = mxcpp::Bsdf::PdfSurface(
-                    *closure, _ToMx(shadingNormal), _ToMx(ls.wI), _ToMx(wo));
+                    *closure, _ToMx(normal), _ToMx(ls.wI), _ToMx(wo));
                 float misW = mxcpp::Bsdf::PowerHeuristic(lightPdf, bsdfPdf);
 
                 sampleContrib = GfCompMult(ls.Li, bsdfValue)
-                    * cosOffNormal * vis * ls.invPdfW * misW;
+                    * absDotNL * vis * ls.invPdfW * misW;
             } else {
                 float brdf = 1.0f / _pi<float>;
-                sampleContrib = ls.Li * cosOffNormal * brdf
+                sampleContrib = ls.Li * absDotNL * brdf
                     * vis * ls.invPdfW;
             }
 

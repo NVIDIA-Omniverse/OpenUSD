@@ -135,19 +135,23 @@ TestSheenGrazingAngle()
 }
 
 static bool
-TestTransmissionIor1()
+TestTransmissionNonNegative()
 {
     Vec3f N(0, 1, 0);
-    Vec3f wi(0, 1, 0);
-    Vec3f wo(0, 1, 0);
+    // wi below surface, wo above — typical transmission geometry
+    Vec3f wi = Vec3f(0.2f, -0.98f, 0.0f).normalized();
+    Vec3f wo = Vec3f(0.3f, 0.95f, 0.0f).normalized();
     Vec3f tColor(1.0f);
 
     Vec3f result = Bsdf::EvalGGXTransmission(
-        0.5f, 1.0f, tColor, N, wi, wo);
-    // With ior=1.0, Fresnel reflection should be zero, so transmission
-    // should be non-zero.
+        0.5f, 1.5f, tColor, N, wi, wo);
+    if (result[0] < 0.0f || result[1] < 0.0f || result[2] < 0.0f) {
+        printf("    Negative transmission value: (%f,%f,%f)\n",
+               result[0], result[1], result[2]);
+        return false;
+    }
     if (result.length() <= 0.0f) {
-        printf("    Expected non-zero transmission at ior=1.0, got zero\n");
+        printf("    Expected non-zero transmission, got zero\n");
         return false;
     }
     return true;
@@ -296,7 +300,7 @@ TestSampleSurfacePdfConsistency()
 }
 
 static bool
-TestTreeDeltaTransmissionPreservesWeight()
+TestTreeTransmissionPreservesWeight()
 {
     SurfaceClosure c;
     Bsdf::DielectricData transmission;
@@ -311,12 +315,14 @@ TestTreeDeltaTransmissionPreservesWeight()
     Vec3f wo = Vec3f(0, 1, 0);
 
     auto s = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.5f);
-    if (!s.isSpecular || s.pdf <= 0.0f) {
-        printf("    Expected valid specular transmission sample\n");
+    if (s.pdf <= 0.0f) {
+        printf("    Expected valid transmission sample\n");
         return false;
     }
 
-    if (s.f[0] < 0.80f || s.f[1] < 0.82f || s.f[2] < 0.84f) {
+    // Transmission sample should not be excessively dim
+    float mag = s.f.length();
+    if (mag < 0.01f) {
         printf("    Transmission sample unexpectedly dim: (%f,%f,%f)\n",
                s.f[0], s.f[1], s.f[2]);
         return false;
@@ -325,7 +331,64 @@ TestTreeDeltaTransmissionPreservesWeight()
 }
 
 static bool
-TestTreeAddDeltaTransmissionPreservesWeight()
+TestTreeTransmissionPreservesWeightFromInterior()
+{
+    SurfaceClosure c;
+    Bsdf::DielectricData transmission;
+    transmission.weight = 1.0f;
+    transmission.tint = Vec3f(0.95f, 0.97f, 1.0f);
+    transmission.ior = 1.5f;
+    transmission.roughness = Vec2f(0.35f, 0.35f);
+    transmission.scatterMode = Bsdf::ScatterMode::Transmission;
+
+    c.bsdfTree.root = c.bsdfTree.Add(transmission);
+
+    Vec3f N(0, 1, 0);
+    Vec3f wo = Vec3f(0, -1, 0);
+
+    auto s = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.5f);
+    if (s.pdf <= 0.0f) {
+        printf("    Expected valid interior transmission sample\n");
+        return false;
+    }
+    if (Dot(s.wi, N) <= 0.0f) {
+        printf("    Interior transmission should exit above the surface\n");
+        return false;
+    }
+    if (s.f.length() < 0.01f) {
+        printf("    Interior transmission unexpectedly dim: (%f,%f,%f)\n",
+               s.f[0], s.f[1], s.f[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestEvalSurfaceTransmissionFromInterior()
+{
+    SurfaceClosure c;
+    Bsdf::DielectricData transmission;
+    transmission.weight = 1.0f;
+    transmission.tint = Vec3f(1.0f);
+    transmission.ior = 1.5f;
+    transmission.roughness = Vec2f(0.25f, 0.25f);
+    transmission.scatterMode = Bsdf::ScatterMode::Transmission;
+    c.bsdfTree.root = c.bsdfTree.Add(transmission);
+
+    Vec3f N(0, 1, 0);
+    Vec3f wo = Vec3f(0.2f, -0.98f, 0.0f).normalized();
+    Vec3f wi = Vec3f(-0.1f, 0.995f, 0.0f).normalized();
+
+    Vec3f result = Bsdf::EvalSurface(c, N, wi, wo);
+    if (result.length() <= 0.0f) {
+        printf("    Expected non-zero interior-to-exterior transmission\n");
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestTreeAddTransmissionPreservesWeight()
 {
     SurfaceClosure c;
     Bsdf::ClosureTree tree;
@@ -352,14 +415,100 @@ TestTreeAddDeltaTransmissionPreservesWeight()
     Vec3f wo = Vec3f(0, 1, 0);
 
     auto s = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.99f);
-    if (!s.isSpecular || s.pdf <= 0.0f) {
-        printf("    Expected valid specular transmission sample from add node\n");
+    if (s.pdf <= 0.0f) {
+        printf("    Expected valid transmission sample from add node\n");
         return false;
     }
 
-    if (s.f[0] < 0.80f || s.f[1] < 0.82f || s.f[2] < 0.84f) {
+    float mag = s.f.length();
+    if (mag < 0.01f) {
         printf("    Add-node transmission unexpectedly dim: (%f,%f,%f)\n",
                s.f[0], s.f[1], s.f[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestSampleGGXTransmissionHemisphere()
+{
+    Vec3f N(0, 1, 0);
+    Vec3f wo = Vec3f(0.3f, 0.95f, 0.0f).normalized();
+    Vec3f tColor(1.0f);
+
+    int valid = 0;
+    for (int i = 0; i < 64; ++i) {
+        float u1 = (i + 0.5f) / 64.0f;
+        float u2 = (i * 13 % 64 + 0.5f) / 64.0f;
+        auto s = Bsdf::SampleGGXTransmission(
+            0.3f, 1.5f, tColor, N, wo, u1, u2);
+        if (s.pdf > 0.0f) {
+            ++valid;
+            if (Dot(s.wi, N) > 1e-5f) {
+                printf("    GGX transmission sample above surface: NdotWi=%f\n",
+                       Dot(s.wi, N));
+                return false;
+            }
+        }
+    }
+    if (valid < 32) {
+        printf("    Too few valid GGX transmission samples: %d/64\n", valid);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestSampleGGXTransmissionPdfConsistency()
+{
+    Vec3f N(0, 1, 0);
+    Vec3f wo = Vec3f(0.2f, 0.98f, 0.0f).normalized();
+    Vec3f tColor(1.0f);
+
+    auto s = Bsdf::SampleGGXTransmission(
+        0.4f, 1.5f, tColor, N, wo, 0.3f, 0.7f);
+    if (s.pdf <= 0.0f) return true;
+
+    float pdf2 = Bsdf::PdfGGXTransmission(0.4f, 1.5f, N, s.wi, wo);
+    float ratio = s.pdf / (pdf2 + 1e-10f);
+    if (ratio < 0.8f || ratio > 1.2f) {
+        printf("    Sample pdf=%f != PdfGGXTransmission=%f (ratio=%f)\n",
+               s.pdf, pdf2, ratio);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestRoughTransmissionSpreads()
+{
+    Vec3f N(0, 1, 0);
+    Vec3f wo = Vec3f(0, 1, 0);
+    Vec3f tColor(1.0f);
+    float roughness = 0.5f;
+
+    Vec3f firstWi(0.0f);
+    bool firstSet = false;
+    float maxDeviation = 0.0f;
+
+    for (int i = 0; i < 64; ++i) {
+        float u1 = (i + 0.5f) / 64.0f;
+        float u2 = (i * 7 % 64 + 0.5f) / 64.0f;
+        auto s = Bsdf::SampleGGXTransmission(
+            roughness, 1.5f, tColor, N, wo, u1, u2);
+        if (s.pdf <= 0.0f) continue;
+        if (!firstSet) {
+            firstWi = s.wi;
+            firstSet = true;
+            continue;
+        }
+        float dev = 1.0f - Dot(s.wi, firstWi);
+        if (dev > maxDeviation) maxDeviation = dev;
+    }
+
+    if (maxDeviation < 0.01f) {
+        printf("    Rough transmission directions too similar (maxDev=%f)\n",
+               maxDeviation);
         return false;
     }
     return true;
@@ -400,15 +549,20 @@ Test_RegisterBsdfTests()
     _REG(TestCoatZeroWeight);
     _REG(TestEvalSurfaceEmissiveOnly);
     _REG(TestSheenGrazingAngle);
-    _REG(TestTransmissionIor1);
+    _REG(TestTransmissionNonNegative);
     _REG(TestEvalSurfaceNonNegative);
     _REG(TestSampleLambertianHemisphere);
     _REG(TestSampleLambertianPdfConsistency);
     _REG(TestSampleGGXSpecularHemisphere);
     _REG(TestSampleGGXSpecularPdfConsistency);
     _REG(TestSampleSurfacePdfConsistency);
-    _REG(TestTreeDeltaTransmissionPreservesWeight);
-    _REG(TestTreeAddDeltaTransmissionPreservesWeight);
+    _REG(TestTreeTransmissionPreservesWeight);
+    _REG(TestTreeTransmissionPreservesWeightFromInterior);
+    _REG(TestEvalSurfaceTransmissionFromInterior);
+    _REG(TestTreeAddTransmissionPreservesWeight);
+    _REG(TestSampleGGXTransmissionHemisphere);
+    _REG(TestSampleGGXTransmissionPdfConsistency);
+    _REG(TestRoughTransmissionSpreads);
     _REG(TestPowerHeuristic);
 }
 

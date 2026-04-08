@@ -112,6 +112,22 @@ namespace Bsdf
         const Vec3f& wi,
         const Vec3f& wo);
 
+    /// GGX VNDF-based transmission sampling.
+    BsdfSample SampleGGXTransmission(
+        float roughness,
+        float ior,
+        const Vec3f& transmissionColor,
+        const Vec3f& N,
+        const Vec3f& wo,
+        float u1, float u2);
+
+    float PdfGGXTransmission(
+        float roughness,
+        float ior,
+        const Vec3f& N,
+        const Vec3f& wi,
+        const Vec3f& wo);
+
     /// Unified surface sampler: selects a lobe proportional to its
     /// approximate energy contribution, then importance-samples that lobe.
     /// The PDF accounts for all lobes (mixed PDF).
