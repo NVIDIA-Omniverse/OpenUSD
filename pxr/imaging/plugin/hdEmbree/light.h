@@ -10,6 +10,7 @@
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/gf/matrix3f.h"
 #include "pxr/base/gf/matrix4f.h"
+#include "pxr/base/tf/token.h"
 #include "pxr/imaging/hd/light.h"
 #include "pxr/imaging/plugin/hdEmbree/pxrIES/pxrIES.h"
 
@@ -18,6 +19,7 @@
 
 #include <limits>
 #include <variant>
+#include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -150,7 +152,18 @@ struct HdEmbree_LightTexture
     std::vector<GfVec3f> pixels;
     int width = 0;
     int height = 0;
+    TfToken colorSpaceName;
+    std::vector<float> texelWeights;
+    std::vector<float> conditionalCdf;
+    std::vector<float> marginalCdf;
+    float weightSum = 0.0f;
 };
+
+/// Builds the sampling distribution for a lat-long dome texture.
+///
+/// Texels are weighted by luminance times their lat-long solid-angle measure.
+void HdEmbreeBuildDomeLightSamplingDistribution(
+    HdEmbree_LightTexture* texture);
 
 struct HdEmbree_IES
 {

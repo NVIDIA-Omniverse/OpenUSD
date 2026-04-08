@@ -138,6 +138,15 @@ pxr_build_test(testHdEmbree
     CPPFILES
         testenv/testHdEmbree.cpp
 )
+
+pxr_build_test(testHdEmbreeLightSamplers
+    LIBRARIES
+        gf
+        hdEmbree
+        tf
+    CPPFILES
+        testenv/testHdEmbreeLightSamplers.cpp
+)
 endif()
 
 if (Imath_FOUND)

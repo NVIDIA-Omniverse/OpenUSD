@@ -2375,15 +2375,14 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
                 continue;
             }
             // Direct visibility: sample the dome lights. Since we know
-            // we're only sampling domes, we don't care about the position, and
-            // the sample direction is the camera ray direction.
-            // Passing in (1.0, 0.0) ensures we don't jitter off the normal
-            // while sampling.
+            // we're only evaluating domes along the camera ray direction.
             HdEmbreeLightSampler::LightSample ls =
-                HdEmbreeLightSampler::GetLightSample(
-                    dome->LightData(), GfVec3f(0),
-                    GfVec3f(rayHit.ray.dir_x, rayHit.ray.dir_y, rayHit.ray.dir_z),
-                    1.0f, 0.0f);
+                HdEmbreeLightSampler::EvaluateDomeLightDirection(
+                    dome->LightData(),
+                    GfVec3f(
+                        rayHit.ray.dir_x,
+                        rayHit.ray.dir_y,
+                        rayHit.ray.dir_z));
             domeColor += GfVec4f(ls.Li[0], ls.Li[1], ls.Li[2], 0);
         }
         return domeColor;
@@ -2753,9 +2752,8 @@ HdEmbreeRenderer::_TracePath(
                     continue;
                 }
                 HdEmbreeLightSampler::LightSample ls =
-                    HdEmbreeLightSampler::GetLightSample(
-                        dome->LightData(), GfVec3f(0.0f), rayDir,
-                        1.0f, 0.0f);
+                    HdEmbreeLightSampler::EvaluateDomeLightDirection(
+                        dome->LightData(), rayDir);
                 GfVec3f domeContrib = ls.Li;
 
                 if (!isFirstBounce && lastBsdfPdf > 0.0f) {

@@ -32,6 +32,12 @@ public:
             float u1,
             float u2);
 
+    /// Evaluates a dome light along a fixed direction and returns the
+    /// corresponding radiance and directional PDF.
+    static LightSample EvaluateDomeLightDirection(
+            HdEmbree_LightData const& lightData,
+            GfVec3f const& direction);
+
     // callables to be used with std::visit
     LightSample operator()(HdEmbree_UnknownLight const& rect);
     LightSample operator()(HdEmbree_Rect const& rect);

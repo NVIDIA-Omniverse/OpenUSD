@@ -11,12 +11,16 @@
 #include "pxr/imaging/plugin/hdEmbree/renderParam.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer.h"
 
+#include "pxr/base/gf/color.h"
+#include "pxr/base/gf/colorSpace.h"
 #include "pxr/imaging/hd/sceneDelegate.h"
 #include "pxr/imaging/hio/image.h"
 
 #include <embree4/rtcore_buffer.h>
 #include <embree4/rtcore_scene.h>
 
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -24,6 +28,148 @@
 namespace {
 
 PXR_NAMESPACE_USING_DIRECTIVE
+
+constexpr float _pi = static_cast<float>(M_PI);
+
+const GfColorSpace _xyzColorSpace(GfColorSpaceNames->LinearCIEXYZD65);
+const TfToken _colorSpaceMetadataKey("oiio:ColorSpace");
+const TfToken _alternateColorSpaceMetadataKey("ColorSpace");
+
+std::string
+_NormalizeColorSpaceName(const std::string& name)
+{
+    std::string normalized;
+    normalized.reserve(name.size());
+    for (const char c : name) {
+        if (c == '-' || c == ' ' || c == ':') {
+            normalized.push_back('_');
+        } else {
+            normalized.push_back(
+                static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        }
+    }
+    return normalized;
+}
+
+bool
+_ResolveColorSpaceName(const std::string& sourceColorSpace, TfToken* outColorSpaceName)
+{
+    if (!outColorSpaceName) {
+        return false;
+    }
+
+    const std::string normalized = _NormalizeColorSpaceName(sourceColorSpace);
+    if (normalized.empty() || normalized == "raw" || normalized == "identity" ||
+        normalized == "data" || normalized == "unknown") {
+        return false;
+    }
+    if (normalized == "srgb" || normalized == "srgb_texture") {
+        *outColorSpaceName = GfColorSpaceNames->SRGBRec709;
+        return true;
+    }
+    if (normalized == "lin_rec709") {
+        *outColorSpaceName = GfColorSpaceNames->LinearRec709;
+        return true;
+    }
+    if (normalized == "gamma22" || normalized == "g22_rec709") {
+        *outColorSpaceName = GfColorSpaceNames->G22Rec709;
+        return true;
+    }
+    if (normalized == "gamma18" || normalized == "g18_rec709") {
+        *outColorSpaceName = GfColorSpaceNames->G18Rec709;
+        return true;
+    }
+    if (normalized == "acescg") {
+        *outColorSpaceName = GfColorSpaceNames->LinearAP1;
+        return true;
+    }
+    if (normalized == "g22_ap1") {
+        *outColorSpaceName = GfColorSpaceNames->G22AP1;
+        return true;
+    }
+    if (normalized == "adobergb") {
+        *outColorSpaceName = GfColorSpaceNames->G22AdobeRGB;
+        return true;
+    }
+    if (normalized == "lin_adobergb") {
+        *outColorSpaceName = GfColorSpaceNames->LinearAdobeRGB;
+        return true;
+    }
+    if (normalized == "srgb_displayp3") {
+        *outColorSpaceName = GfColorSpaceNames->SRGBP3D65;
+        return true;
+    }
+    if (normalized == "lin_displayp3") {
+        *outColorSpaceName = GfColorSpaceNames->LinearP3D65;
+        return true;
+    }
+
+    const TfToken directToken(normalized);
+    if (GfColorSpace::IsValid(directToken)) {
+        *outColorSpaceName = directToken;
+        return true;
+    }
+
+    return false;
+}
+
+TfToken
+_GetImageColorSpaceName(const HioImageSharedPtr& image)
+{
+    if (!image) {
+        return GfColorSpaceNames->LinearRec709;
+    }
+
+    std::string metadataColorSpace;
+    if ((image->GetMetadata(_colorSpaceMetadataKey, &metadataColorSpace) ||
+         image->GetMetadata(_alternateColorSpaceMetadataKey, &metadataColorSpace)) &&
+        !metadataColorSpace.empty()) {
+        TfToken resolvedColorSpaceName;
+        if (_ResolveColorSpaceName(metadataColorSpace, &resolvedColorSpaceName)) {
+            return resolvedColorSpaceName;
+        }
+    }
+
+    if (image->IsColorSpaceSRGB()) {
+        return GfColorSpaceNames->SRGBRec709;
+    }
+
+    return GfColorSpaceNames->LinearRec709;
+}
+
+float
+_GetLuminance(const GfVec3f& rgb, const TfToken& colorSpaceName)
+{
+    if (colorSpaceName.IsEmpty() ||
+        colorSpaceName == GfColorSpaceNames->LinearRec709) {
+        return 0.2126f * rgb[0] + 0.7152f * rgb[1] + 0.0722f * rgb[2];
+    }
+
+    const GfColorSpace sourceColorSpace(colorSpaceName);
+    const GfColor xyz = _xyzColorSpace.Convert(sourceColorSpace, rgb);
+    return xyz.GetRGB()[1];
+}
+
+float
+_SanitizeWeight(float value)
+{
+    if (!std::isfinite(value) || value < 0.0f) {
+        return 0.0f;
+    }
+    return value;
+}
+
+void
+_ClearSamplingDistribution(HdEmbree_LightTexture* texture)
+{
+    if (!texture) {
+        return;
+    }
+    texture->texelWeights.clear();
+    texture->conditionalCdf.clear();
+    texture->marginalCdf.clear();
+    texture->weightSum = 0.0f;
+}
 
 HdEmbree_LightTexture
 _LoadLightTexture(std::string const& path)
@@ -40,7 +186,7 @@ _LoadLightTexture(std::string const& path)
     int width = img->GetWidth();
     int height = img->GetHeight();
 
-    std::vector<GfVec3f> pixels(width * height * 3);
+    std::vector<GfVec3f> pixels(width * height);
 
     HioImage::StorageSpec storage;
     storage.width = width;
@@ -50,7 +196,13 @@ _LoadLightTexture(std::string const& path)
     storage.data = &pixels.front();
 
     if (img->Read(storage)) {
-        return {std::move(pixels), width, height};
+        HdEmbree_LightTexture texture;
+        texture.pixels = std::move(pixels);
+        texture.width = width;
+        texture.height = height;
+        texture.colorSpaceName = _GetImageColorSpaceName(img);
+        HdEmbreeBuildDomeLightSamplingDistribution(&texture);
+        return texture;
     }
     TF_WARN("Could not read image %s", path.c_str());
     return { std::vector<GfVec3f>(), 0, 0 };
@@ -77,6 +229,96 @@ _SyncLightTexture(const SdfPath& id, HdEmbree_LightData& light,
 } // anonymous namespace
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+void
+HdEmbreeBuildDomeLightSamplingDistribution(HdEmbree_LightTexture* texture)
+{
+    if (!texture) {
+        return;
+    }
+
+    _ClearSamplingDistribution(texture);
+
+    const int width = texture->width;
+    const int height = texture->height;
+    const size_t expectedTexelCount =
+        static_cast<size_t>(width) * static_cast<size_t>(height);
+    const TfToken colorSpaceName =
+        texture->colorSpaceName.IsEmpty()
+            ? GfColorSpaceNames->LinearRec709
+            : texture->colorSpaceName;
+    if (width <= 0 || height <= 0 ||
+        texture->pixels.size() < expectedTexelCount) {
+        return;
+    }
+
+    texture->texelWeights.resize(expectedTexelCount, 0.0f);
+    texture->conditionalCdf.resize(
+        static_cast<size_t>(height) * static_cast<size_t>(width + 1), 0.0f);
+    texture->marginalCdf.resize(static_cast<size_t>(height + 1), 0.0f);
+
+    float totalWeight = 0.0f;
+    texture->marginalCdf[0] = 0.0f;
+
+    for (int y = 0; y < height; ++y) {
+        const float theta0 =
+            _pi * (static_cast<float>(y) / static_cast<float>(height));
+        const float theta1 =
+            _pi * ((static_cast<float>(y) + 1.0f) / static_cast<float>(height));
+        const float rowMeasure = std::max(
+            0.0f, std::cos(theta0) - std::cos(theta1));
+
+        float rowWeight = 0.0f;
+        float* const rowCdf = texture->conditionalCdf.data() +
+            static_cast<size_t>(y) * static_cast<size_t>(width + 1);
+        rowCdf[0] = 0.0f;
+
+        for (int x = 0; x < width; ++x) {
+            const size_t idx =
+                static_cast<size_t>(y) * static_cast<size_t>(width) + x;
+            const float luminance =
+                _SanitizeWeight(_GetLuminance(texture->pixels[idx], colorSpaceName));
+            const float weight = luminance * rowMeasure;
+            texture->texelWeights[idx] = weight;
+            rowWeight += weight;
+            rowCdf[x + 1] = rowWeight;
+        }
+
+        if (rowWeight <= 0.0f) {
+            rowWeight = 0.0f;
+            for (int x = 0; x < width; ++x) {
+                const size_t idx =
+                    static_cast<size_t>(y) * static_cast<size_t>(width) + x;
+                texture->texelWeights[idx] = rowMeasure;
+                rowWeight += rowMeasure;
+                rowCdf[x + 1] = rowWeight;
+            }
+        }
+
+        if (rowWeight > 0.0f) {
+            const float invRowWeight = 1.0f / rowWeight;
+            for (int x = 1; x <= width; ++x) {
+                rowCdf[x] *= invRowWeight;
+            }
+            rowCdf[width] = 1.0f;
+        }
+
+        totalWeight += rowWeight;
+        texture->marginalCdf[y + 1] = totalWeight;
+    }
+
+    if (totalWeight <= 0.0f) {
+        _ClearSamplingDistribution(texture);
+        return;
+    }
+
+    const float invTotalWeight = 1.0f / totalWeight;
+    for (size_t i = 1; i < texture->marginalCdf.size(); ++i) {
+        texture->marginalCdf[i] *= invTotalWeight;
+    }
+    texture->marginalCdf.back() = 1.0f;
+    texture->weightSum = totalWeight;
+}
 
 HdEmbree_Light::HdEmbree_Light(SdfPath const& id, TfToken const& lightType)
     : HdLight(id) {
