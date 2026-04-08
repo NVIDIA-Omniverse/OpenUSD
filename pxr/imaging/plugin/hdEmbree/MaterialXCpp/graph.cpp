@@ -3,6 +3,8 @@
 //
 #include "graph.h"
 #include "paramMap.h"
+#include "materials/disneyPrincipled.h"
+#include "materials/gltfPbr.h"
 #include "materials/standardSurface.h"
 #include "materials/openPbr.h"
 #include "materials/usdPreviewSurface.h"
@@ -19,6 +21,10 @@ static const std::string _kStandardSurface =
     "ND_standard_surface_surfaceshader";
 static const std::string _kOpenPbr =
     "ND_open_pbr_surface_surfaceshader";
+static const std::string _kDisneyPrincipled =
+    "ND_disney_principled";
+static const std::string _kGltfPbr =
+    "ND_gltf_pbr_surfaceshader";
 static const std::string _kUsdPreviewSurface = "UsdPreviewSurface";
 static const std::string _kMaterialXUsdPreviewSurface =
     "ND_UsdPreviewSurface_surfaceshader";
@@ -376,6 +382,12 @@ EvalGraph::_EvalMaterialModel(
     }
     if (modelType == _kOpenPbr) {
         return EvalOpenPbr(params);
+    }
+    if (modelType == _kDisneyPrincipled) {
+        return EvalDisneyPrincipled(params);
+    }
+    if (modelType == _kGltfPbr) {
+        return EvalGltfPbr(params);
     }
     if (modelType == _kUsdPreviewSurface) {
         return EvalUsdPreviewSurface(params);

@@ -10,6 +10,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
+#include <utility>
 
 namespace mxcpp {
 
@@ -35,6 +37,71 @@ enum class _OpacityMode {
     Transparent,
     Presence
 };
+
+float
+_Clamp01(float x)
+{
+    return std::clamp(x, 0.0f, 1.0f);
+}
+
+float
+_ClampRoughness(float roughness)
+{
+    return std::clamp(roughness, 0.001f, 1.0f);
+}
+
+Vec3f
+_Saturate(const Vec3f& value)
+{
+    return Vec3f(
+        _Clamp01(value[0]),
+        _Clamp01(value[1]),
+        _Clamp01(value[2]));
+}
+
+Vec3f
+_ExtinctionFromF0(const Vec3f& f0)
+{
+    Vec3f extinction(0.0f);
+    for (int i = 0; i < 3; ++i) {
+        const float clamped = std::clamp(f0[i], 0.0f, 0.999f);
+        extinction[i] = 2.0f *
+            std::sqrt(clamped / std::max(1.0e-4f, 1.0f - clamped));
+    }
+    return extinction;
+}
+
+Bsdf::NodeId
+_AppendAdd(Bsdf::ClosureTree* tree, Bsdf::NodeId lhs, Bsdf::NodeId rhs)
+{
+    if (!tree->IsValid(lhs)) {
+        return rhs;
+    }
+    if (!tree->IsValid(rhs)) {
+        return lhs;
+    }
+
+    Bsdf::AddData add;
+    add.in1 = lhs;
+    add.in2 = rhs;
+    return tree->Add(add);
+}
+
+Bsdf::NodeId
+_AppendLayer(Bsdf::ClosureTree* tree, Bsdf::NodeId top, Bsdf::NodeId base)
+{
+    if (!tree->IsValid(top)) {
+        return base;
+    }
+    if (!tree->IsValid(base)) {
+        return top;
+    }
+
+    Bsdf::LayerData layer;
+    layer.top = top;
+    layer.base = base;
+    return tree->Add(layer);
+}
 
 _OpacityMode
 _GetOpacityMode(const ParamMap& params)
@@ -66,15 +133,12 @@ EvalUsdPreviewSurface(const ParamMap& params)
 {
     SurfaceClosure c;
 
-    c.baseColor = Get<Vec3f>(params, _kDiffuseColor,
-                                      Vec3f(0.18f));
-    c.emissiveColor = Get<Vec3f>(params, _kEmissiveColor,
-                                          Vec3f(0.0f));
+    c.baseColor = Get<Vec3f>(params, _kDiffuseColor, Vec3f(0.18f));
+    c.emissiveColor = Get<Vec3f>(params, _kEmissiveColor, Vec3f(0.0f));
 
-    int useSpecWf = Get<int>(params, _kUseSpecularWorkflow, 0);
+    const int useSpecWf = Get<int>(params, _kUseSpecularWorkflow, 0);
     if (useSpecWf) {
-        c.specularColor = Get<Vec3f>(
-            params, _kSpecularColor, Vec3f(0.0f));
+        c.specularColor = Get<Vec3f>(params, _kSpecularColor, Vec3f(0.0f));
         c.metallic = 0.0f;
         c.specular = 1.0f;
     } else {
@@ -84,16 +148,13 @@ EvalUsdPreviewSurface(const ParamMap& params)
     }
 
     c.roughness = Get<float>(params, _kRoughness, 0.5f);
-
     c.coat = Get<float>(params, _kClearcoat, 0.0f);
-    c.coatRoughness = Get<float>(
-        params, _kClearcoatRoughness, 0.01f);
+    c.coatRoughness = Get<float>(params, _kClearcoatRoughness, 0.01f);
     c.coatIor = 1.5f;
 
-    const float authoredOpacity = std::clamp(
-        Get<float>(params, _kOpacity, 1.0f), 0.0f, 1.0f);
-    const float opacityThreshold = Get<float>(
-        params, _kOpacityThreshold, 0.0f);
+    const float authoredOpacity =
+        std::clamp(Get<float>(params, _kOpacity, 1.0f), 0.0f, 1.0f);
+    const float opacityThreshold = Get<float>(params, _kOpacityThreshold, 0.0f);
     const bool hasCutoutThreshold = opacityThreshold > 0.0f;
     const float cutoutOpacity =
         authoredOpacity >= opacityThreshold ? 1.0f : 0.0f;
@@ -114,16 +175,94 @@ EvalUsdPreviewSurface(const ParamMap& params)
     }
 
     c.specularIor = Get<float>(params, _kIor, 1.5f);
+    c.normal = Get<Vec3f>(params, _kNormal, Vec3f(0.0f, 0.0f, 1.0f));
 
-    c.normal = Get<Vec3f>(params, _kNormal,
-                                   Vec3f(0.0f, 0.0f, 1.0f));
-
-    float occlusion = Get<float>(params, _kOcclusion, 1.0f);
+    const float occlusion = Get<float>(params, _kOcclusion, 1.0f);
     c.baseColor = c.baseColor * occlusion;
 
     c.transmissionColor = Vec3f(1.0f);
     c.sheen = 0.0f;
     c.thinWalled = false;
+
+    Bsdf::ClosureTree tree;
+    Bsdf::NodeId root = Bsdf::InvalidNodeId;
+
+    const float diffuseWeight =
+        _Clamp01((1.0f - c.metallic) * (1.0f - c.transmission));
+    if (diffuseWeight > 0.0f) {
+        Bsdf::BurleyDiffuseData diffuse;
+        diffuse.weight = diffuseWeight;
+        diffuse.color = c.baseColor;
+        diffuse.roughness = c.roughness;
+        root = _AppendAdd(&tree, root, tree.Add(diffuse));
+    }
+
+    const Vec2f specularRoughness(
+        _ClampRoughness(c.roughness),
+        _ClampRoughness(c.roughness));
+    if (useSpecWf) {
+        Bsdf::GeneralizedSchlickData specular;
+        specular.weight = 1.0f;
+        specular.color0 = _Saturate(c.specularColor);
+        specular.color82 = specular.color0;
+        specular.color90 = Vec3f(1.0f);
+        specular.exponent = 5.0f;
+        specular.roughness = specularRoughness;
+        specular.scatterMode = Bsdf::ScatterMode::Reflection;
+        root = _AppendAdd(&tree, root, tree.Add(specular));
+    } else {
+        Bsdf::DielectricData dielectric;
+        dielectric.weight = 1.0f;
+        dielectric.tint = Vec3f(1.0f);
+        dielectric.ior = std::max(c.specularIor, 1.0f);
+        dielectric.roughness = specularRoughness;
+        dielectric.scatterMode = Bsdf::ScatterMode::Reflection;
+
+        Bsdf::ConductorData conductor;
+        conductor.weight = 1.0f;
+        conductor.ior = Vec3f(1.0f);
+        conductor.extinction = _ExtinctionFromF0(_Saturate(c.baseColor));
+        conductor.roughness = specularRoughness;
+
+        const Bsdf::NodeId dielectricId = tree.Add(dielectric);
+        const Bsdf::NodeId conductorId = tree.Add(conductor);
+        if (c.metallic <= 0.0f) {
+            root = _AppendAdd(&tree, root, dielectricId);
+        } else if (c.metallic >= 1.0f) {
+            root = _AppendAdd(&tree, root, conductorId);
+        } else {
+            Bsdf::MixData specMix;
+            specMix.bg = dielectricId;
+            specMix.fg = conductorId;
+            specMix.mix = _Clamp01(c.metallic);
+            root = _AppendAdd(&tree, root, tree.Add(specMix));
+        }
+    }
+
+    if (c.transmission > 0.0f) {
+        Bsdf::DielectricData transmission;
+        transmission.weight = _Clamp01(c.transmission);
+        transmission.tint = c.transmissionColor;
+        transmission.ior = std::max(c.specularIor, 1.0f);
+        transmission.roughness = specularRoughness;
+        transmission.scatterMode = Bsdf::ScatterMode::Transmission;
+        root = _AppendAdd(&tree, root, tree.Add(transmission));
+    }
+
+    if (c.coat > 0.0f) {
+        Bsdf::DielectricData coat;
+        coat.weight = _Clamp01(c.coat);
+        coat.tint = Vec3f(1.0f);
+        coat.ior = c.coatIor;
+        coat.roughness = Vec2f(
+            _ClampRoughness(c.coatRoughness),
+            _ClampRoughness(c.coatRoughness));
+        coat.scatterMode = Bsdf::ScatterMode::Reflection;
+        root = _AppendLayer(&tree, tree.Add(coat), root);
+    }
+
+    tree.root = root;
+    c.bsdfTree = std::move(tree);
 
     return c;
 }

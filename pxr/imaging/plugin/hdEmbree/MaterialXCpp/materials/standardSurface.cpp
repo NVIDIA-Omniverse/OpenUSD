@@ -8,6 +8,10 @@
 
 #include "../paramMap.h"
 
+#include <algorithm>
+#include <cmath>
+#include <utility>
+
 namespace mxcpp {
 
 static const SlotName _kBase("base");
@@ -42,56 +46,242 @@ static const SlotName _kThinWalled("thin_walled");
 static const SlotName _kNormal("normal");
 static const SlotName _kTangent("tangent");
 
+namespace {
+
+float
+_Clamp01(float x)
+{
+    return std::clamp(x, 0.0f, 1.0f);
+}
+
+float
+_ClampRoughness(float roughness)
+{
+    return std::clamp(roughness, 0.001f, 1.0f);
+}
+
+Vec3f
+_Saturate(const Vec3f& value)
+{
+    return Vec3f(
+        _Clamp01(value[0]),
+        _Clamp01(value[1]),
+        _Clamp01(value[2]));
+}
+
+Vec2f
+_ComputeAnisotropicRoughness(float roughness, float anisotropy)
+{
+    const float clampedRoughness = _ClampRoughness(roughness);
+    const float clampedAnisotropy = std::clamp(anisotropy, -0.95f, 0.95f);
+    const float aspect =
+        std::sqrt(std::max(0.01f, 1.0f - 0.9f * clampedAnisotropy));
+    return Vec2f(
+        _ClampRoughness(clampedRoughness / aspect),
+        _ClampRoughness(clampedRoughness * aspect));
+}
+
+Vec3f
+_ExtinctionFromF0(const Vec3f& f0)
+{
+    Vec3f extinction(0.0f);
+    for (int i = 0; i < 3; ++i) {
+        const float clamped = std::clamp(f0[i], 0.0f, 0.999f);
+        extinction[i] = 2.0f *
+            std::sqrt(clamped / std::max(1.0e-4f, 1.0f - clamped));
+    }
+    return extinction;
+}
+
+Bsdf::ConductorData
+_MakeApproxConductor(
+    float weight,
+    const Vec3f& f0,
+    const Vec2f& roughness,
+    const Vec3f& tangent)
+{
+    Bsdf::ConductorData data;
+    data.weight = _Clamp01(weight);
+    data.ior = Vec3f(1.0f);
+    data.extinction = _ExtinctionFromF0(_Saturate(f0));
+    data.roughness = roughness;
+    data.tangent = tangent;
+    return data;
+}
+
+Bsdf::NodeId
+_AppendAdd(Bsdf::ClosureTree* tree, Bsdf::NodeId lhs, Bsdf::NodeId rhs)
+{
+    if (!tree->IsValid(lhs)) {
+        return rhs;
+    }
+    if (!tree->IsValid(rhs)) {
+        return lhs;
+    }
+
+    Bsdf::AddData add;
+    add.in1 = lhs;
+    add.in2 = rhs;
+    return tree->Add(add);
+}
+
+Bsdf::NodeId
+_AppendLayer(Bsdf::ClosureTree* tree, Bsdf::NodeId top, Bsdf::NodeId base)
+{
+    if (!tree->IsValid(top)) {
+        return base;
+    }
+    if (!tree->IsValid(base)) {
+        return top;
+    }
+
+    Bsdf::LayerData layer;
+    layer.top = top;
+    layer.base = base;
+    return tree->Add(layer);
+}
+
+}  // namespace
+
 SurfaceClosure
 EvalStandardSurface(const ParamMap& params)
 {
     SurfaceClosure c;
 
-    float base     = Get<float>(params, _kBase, 1.0f);
-    Vec3f baseCol = Get<Vec3f>(params, _kBaseColor,
-                                          Vec3f(0.8f));
+    const float base = Get<float>(params, _kBase, 1.0f);
+    const Vec3f baseCol = Get<Vec3f>(params, _kBaseColor, Vec3f(0.8f));
+    const float diffuseRoughness = Get<float>(params, _kDiffuseRoughness, 0.0f);
+
     c.baseColor = baseCol * base;
-
     c.roughness = Get<float>(params, _kSpecularRoughness, 0.2f);
-    c.metallic  = Get<float>(params, _kMetalness, 0.0f);
+    c.metallic = Get<float>(params, _kMetalness, 0.0f);
 
-    float spec  = Get<float>(params, _kSpecular, 1.0f);
-    c.specular  = spec;
-    c.specularColor = Get<Vec3f>(params, _kSpecularColor,
-                                          Vec3f(1.0f));
-    c.specularIor   = Get<float>(params, _kSpecularIOR, 1.5f);
+    const float spec = Get<float>(params, _kSpecular, 1.0f);
+    c.specular = spec;
+    c.specularColor = Get<Vec3f>(params, _kSpecularColor, Vec3f(1.0f));
+    c.specularIor = Get<float>(params, _kSpecularIOR, 1.5f);
 
-    c.transmission  = Get<float>(params, _kTransmission, 0.0f);
-    c.transmissionColor = Get<Vec3f>(params, _kTransmissionColor,
-                                              Vec3f(1.0f));
+    const float specularAnisotropy =
+        Get<float>(params, _kSpecularAnisotropy, 0.0f);
+    const Vec2f specularRoughness =
+        _ComputeAnisotropicRoughness(c.roughness, specularAnisotropy);
 
-    c.coat          = Get<float>(params, _kCoat, 0.0f);
+    c.transmission = Get<float>(params, _kTransmission, 0.0f);
+    c.transmissionColor =
+        Get<Vec3f>(params, _kTransmissionColor, Vec3f(1.0f));
+
+    c.coat = Get<float>(params, _kCoat, 0.0f);
+    const Vec3f coatColor = Get<Vec3f>(params, _kCoatColor, Vec3f(1.0f));
     c.coatRoughness = Get<float>(params, _kCoatRoughness, 0.1f);
-    c.coatIor       = Get<float>(params, _kCoatIOR, 1.5f);
+    c.coatIor = Get<float>(params, _kCoatIOR, 1.5f);
 
-    c.sheen          = Get<float>(params, _kSheen, 0.0f);
-    c.sheenColor     = Get<Vec3f>(params, _kSheenColor,
-                                           Vec3f(1.0f));
+    c.sheen = Get<float>(params, _kSheen, 0.0f);
+    c.sheenColor = Get<Vec3f>(params, _kSheenColor, Vec3f(1.0f));
     c.sheenRoughness = Get<float>(params, _kSheenRoughness, 0.3f);
 
-    float emissionWeight = Get<float>(params, _kEmission, 0.0f);
-    Vec3f emissionCol = Get<Vec3f>(params, _kEmissionColor,
-                                              Vec3f(1.0f));
+    const float emissionWeight = Get<float>(params, _kEmission, 0.0f);
+    const Vec3f emissionCol = Get<Vec3f>(params, _kEmissionColor, Vec3f(1.0f));
     c.emissiveColor = emissionCol * emissionWeight;
 
-    Vec3f opacityVec = Get<Vec3f>(params, _kOpacity,
-                                             Vec3f(1.0f));
+    const Vec3f opacityVec = Get<Vec3f>(params, _kOpacity, Vec3f(1.0f));
     c.opacity = (opacityVec[0] + opacityVec[1] + opacityVec[2]) / 3.0f;
 
     c.thinWalled = Get<bool>(params, _kThinWalled, false);
-    // If opacity was authored as a float, pick it up.
     if (c.opacity == 1.0f) {
         c.opacity = Get<float>(params, _kOpacity, 1.0f);
     }
     c.presence = c.opacity;
 
-    c.normal = Get<Vec3f>(params, _kNormal,
-                                   Vec3f(0.0f, 0.0f, 1.0f));
+    c.normal = Get<Vec3f>(params, _kNormal, Vec3f(0.0f, 0.0f, 1.0f));
+    const Vec3f tangent =
+        Get<Vec3f>(params, _kTangent, Vec3f(1.0f, 0.0f, 0.0f));
+
+    Bsdf::ClosureTree tree;
+    Bsdf::NodeId root = Bsdf::InvalidNodeId;
+
+    const float diffuseWeight =
+        _Clamp01(base * (1.0f - c.metallic) * (1.0f - c.transmission));
+    if (diffuseWeight > 0.0f) {
+        Bsdf::OrenNayarDiffuseData diffuse;
+        diffuse.weight = diffuseWeight;
+        diffuse.color = baseCol;
+        diffuse.roughness = diffuseRoughness;
+        diffuse.energyCompensation = true;
+        root = _AppendAdd(&tree, root, tree.Add(diffuse));
+    }
+
+    const float clampedSpec = _Clamp01(spec);
+    const float metalMix = _Clamp01(c.metallic);
+    if (clampedSpec > 0.0f) {
+        Bsdf::DielectricData dielectric;
+        dielectric.weight = clampedSpec;
+        dielectric.tint = _Saturate(c.specularColor);
+        dielectric.ior = std::max(c.specularIor, 1.0f);
+        dielectric.roughness = specularRoughness;
+        dielectric.tangent = tangent;
+        dielectric.scatterMode = Bsdf::ScatterMode::Reflection;
+
+        const Vec3f metalF0 = _Saturate(CompMul(baseCol, c.specularColor));
+        const Bsdf::NodeId dielectricId = tree.Add(dielectric);
+        const Bsdf::NodeId conductorId = tree.Add(
+            _MakeApproxConductor(clampedSpec, metalF0, specularRoughness, tangent));
+
+        if (metalMix <= 0.0f) {
+            root = _AppendAdd(&tree, root, dielectricId);
+        } else if (metalMix >= 1.0f) {
+            root = _AppendAdd(&tree, root, conductorId);
+        } else {
+            Bsdf::MixData specMix;
+            specMix.bg = dielectricId;
+            specMix.fg = conductorId;
+            specMix.mix = metalMix;
+            root = _AppendAdd(&tree, root, tree.Add(specMix));
+        }
+    }
+
+    const float transmissionWeight =
+        _Clamp01(c.transmission * (1.0f - c.metallic));
+    if (transmissionWeight > 0.0f) {
+        if (c.thinWalled) {
+            Bsdf::TranslucentData translucent;
+            translucent.weight = transmissionWeight;
+            translucent.color = _Saturate(c.transmissionColor);
+            root = _AppendAdd(&tree, root, tree.Add(translucent));
+        } else {
+            Bsdf::DielectricData transmission;
+            transmission.weight = transmissionWeight;
+            transmission.tint = _Saturate(c.transmissionColor);
+            transmission.ior = std::max(c.specularIor, 1.0f);
+            transmission.roughness = specularRoughness;
+            transmission.tangent = tangent;
+            transmission.scatterMode = Bsdf::ScatterMode::Transmission;
+            root = _AppendAdd(&tree, root, tree.Add(transmission));
+        }
+    }
+
+    if (_Clamp01(c.sheen) > 0.0f) {
+        Bsdf::SheenData sheen;
+        sheen.weight = _Clamp01(c.sheen);
+        sheen.color = _Saturate(c.sheenColor);
+        sheen.roughness = _ClampRoughness(c.sheenRoughness);
+        root = _AppendAdd(&tree, root, tree.Add(sheen));
+    }
+
+    if (_Clamp01(c.coat) > 0.0f) {
+        Bsdf::DielectricData coat;
+        coat.weight = _Clamp01(c.coat);
+        coat.tint = _Saturate(coatColor);
+        coat.ior = std::max(c.coatIor, 1.0f);
+        coat.roughness = Vec2f(
+            _ClampRoughness(c.coatRoughness),
+            _ClampRoughness(c.coatRoughness));
+        coat.tangent = tangent;
+        coat.scatterMode = Bsdf::ScatterMode::Reflection;
+        root = _AppendLayer(&tree, tree.Add(coat), root);
+    }
+
+    tree.root = root;
+    c.bsdfTree = std::move(tree);
 
     return c;
 }

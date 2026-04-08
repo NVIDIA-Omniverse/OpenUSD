@@ -6,6 +6,8 @@
 //
 #include "../materials/standardSurface.h"
 #include "../materials/openPbr.h"
+#include "../materials/disneyPrincipled.h"
+#include "../materials/gltfPbr.h"
 #include "../materials/usdPreviewSurface.h"
 
 #include <cmath>
@@ -44,6 +46,7 @@ TestStandardSurfaceDefaults()
     if (!Test_IsClose(c.coat, 0.0f)) return false;
     if (!Test_IsClose(c.sheen, 0.0f)) return false;
     if (!Test_IsClose(c.transmission, 0.0f)) return false;
+    if (!c.HasBsdfTree()) return false;
 
     return true;
 }
@@ -96,6 +99,7 @@ TestOpenPbrDefaults()
     if (!Test_IsClose(c.transmission, 0.0f)) return false;
     if (!Test_IsClose(c.coat, 0.0f)) return false;
     if (!Test_IsClose(c.sheen, 0.0f)) return false;
+    if (!c.HasBsdfTree()) return false;
 
     return true;
 }
@@ -112,6 +116,55 @@ TestOpenPbrTransmission()
     if (!Test_IsClose(c.transmissionColor, Vec3f(0.8f, 0.9f, 1.0f), 1e-4f))
         return false;
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// Disney Principled
+// ---------------------------------------------------------------------------
+
+static bool
+TestDisneyPrincipledDefaults()
+{
+    ParamMap params;
+    const SurfaceClosure c = EvalDisneyPrincipled(params);
+
+    if (!Test_IsClose(c.baseColor, Vec3f(0.16f), 1e-4f)) return false;
+    if (!Test_IsClose(c.roughness, 0.5f)) return false;
+    if (!Test_IsClose(c.metallic, 0.0f)) return false;
+    if (!Test_IsClose(c.transmission, 0.0f)) return false;
+    if (!c.HasBsdfTree()) return false;
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// glTF PBR
+// ---------------------------------------------------------------------------
+
+static bool
+TestGltfPbrDefaults()
+{
+    ParamMap params;
+    const SurfaceClosure c = EvalGltfPbr(params);
+
+    if (!Test_IsClose(c.baseColor, Vec3f(1.0f), 1e-4f)) return false;
+    if (!Test_IsClose(c.roughness, 1.0f)) return false;
+    if (!Test_IsClose(c.metallic, 1.0f)) return false;
+    if (!Test_IsClose(c.opacity, 1.0f)) return false;
+    if (!c.HasBsdfTree()) return false;
+    return true;
+}
+
+static bool
+TestGltfPbrAlphaMask()
+{
+    ParamMap params;
+    params["alpha"] = Value(0.25f);
+    params["alpha_mode"] = Value(1);
+    params["alpha_cutoff"] = Value(0.5f);
+
+    const SurfaceClosure c = EvalGltfPbr(params);
+    return Test_IsClose(c.opacity, 0.0f) &&
+           Test_IsClose(c.presence, 0.0f);
 }
 
 // ---------------------------------------------------------------------------
@@ -133,6 +186,7 @@ TestUsdPreviewSurfaceDefaults()
     if (!Test_IsClose(c.opacity, 1.0f)) return false;
     if (!Test_IsClose(c.coat, 0.0f)) return false;
     if (!Test_IsClose(c.transmission, 0.0f)) return false;
+    if (!c.HasBsdfTree()) return false;
     return true;
 }
 
@@ -226,6 +280,9 @@ Test_RegisterMaterialTests()
     _REG(TestStandardSurfaceCustomParams);
     _REG(TestOpenPbrDefaults);
     _REG(TestOpenPbrTransmission);
+    _REG(TestDisneyPrincipledDefaults);
+    _REG(TestGltfPbrDefaults);
+    _REG(TestGltfPbrAlphaMask);
     _REG(TestUsdPreviewSurfaceDefaults);
     _REG(TestUsdPreviewSurfaceMetallicWorkflow);
     _REG(TestUsdPreviewSurfaceSpecularWorkflow);

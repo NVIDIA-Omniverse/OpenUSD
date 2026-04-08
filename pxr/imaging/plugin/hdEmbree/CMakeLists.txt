@@ -77,6 +77,8 @@ pxr_plugin(hdEmbree
         MaterialXCpp/slots
         MaterialXCpp/nodeRegistry
         MaterialXCpp/materials/bsdf
+        MaterialXCpp/materials/disneyPrincipled
+        MaterialXCpp/materials/gltfPbr
         MaterialXCpp/materials/standardSurface
         MaterialXCpp/materials/openPbr
         MaterialXCpp/materials/usdPreviewSurface
@@ -104,6 +106,7 @@ pxr_plugin(hdEmbree
         MaterialXCpp/mathTypes.h
         MaterialXCpp/shadingContext.h
         MaterialXCpp/surfaceClosure.h
+        MaterialXCpp/materials/closureTree.h
         MaterialXCpp/paramMap.h
         MaterialXCpp/textureSystem.h
         MaterialXCpp/value.h
@@ -160,6 +163,8 @@ pxr_build_test(testMaterialXCpp
         MaterialXCpp/tests/testMaterialXCppAdapter.cpp
         mxcppAdapter.cpp
         MaterialXCpp/materials/bsdf.cpp
+        MaterialXCpp/materials/disneyPrincipled.cpp
+        MaterialXCpp/materials/gltfPbr.cpp
         MaterialXCpp/materials/standardSurface.cpp
         MaterialXCpp/materials/openPbr.cpp
         MaterialXCpp/materials/usdPreviewSurface.cpp

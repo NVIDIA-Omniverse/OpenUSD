@@ -5,8 +5,11 @@
 #define MXCPP_SURFACE_CLOSURE_H
 
 #include "mathTypes.h"
+#include "materials/closureTree.h"
 
 #include <algorithm>
+#include <type_traits>
+#include <variant>
 
 namespace mxcpp {
 
@@ -14,6 +17,8 @@ namespace mxcpp {
 /// Contains all parameters needed for BSDF evaluation.
 struct SurfaceClosure
 {
+    // Legacy summary fields kept during the transition to tree-based BSDFs.
+    // New rendering code should treat `bsdfTree` as the source of truth.
     Vec3f baseColor = Vec3f(0.8f);
     float roughness = 0.5f;
     float metallic = 0.0f;
@@ -33,6 +38,11 @@ struct SurfaceClosure
     float sheenRoughness = 0.3f;
     Vec3f normal = Vec3f(0.0f, 0.0f, 1.0f);
     bool thinWalled = false;
+    Bsdf::ClosureTree bsdfTree;
+
+    bool HasBsdfTree() const {
+        return !bsdfTree.Empty();
+    }
 
     /// Regularize the surface closure by widening narrow specular lobes.
     void Regularize() {
@@ -41,6 +51,26 @@ struct SurfaceClosure
         }
         if (coatRoughness < 0.3f) {
             coatRoughness = std::clamp(2.0f * coatRoughness, 0.1f, 0.3f);
+        }
+        for (auto& node : bsdfTree.nodes) {
+            std::visit([](auto& data) {
+                using T = std::decay_t<decltype(data)>;
+                if constexpr (std::is_same_v<T, Bsdf::DielectricData> ||
+                              std::is_same_v<T, Bsdf::ConductorData> ||
+                              std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
+                    for (int i = 0; i < 2; ++i) {
+                        if (data.roughness[i] < 0.3f) {
+                            data.roughness[i] = std::clamp(
+                                2.0f * data.roughness[i], 0.1f, 0.3f);
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
+                    if (data.roughness < 0.3f) {
+                        data.roughness = std::clamp(
+                            2.0f * data.roughness, 0.1f, 0.3f);
+                    }
+                }
+            }, node.data);
         }
     }
 };

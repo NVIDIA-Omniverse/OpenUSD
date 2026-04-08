@@ -83,7 +83,8 @@ TestCompileSingleTerminal()
                closure.baseColor[0], closure.baseColor[1], closure.baseColor[2]);
         return false;
     }
-    return Test_IsClose(closure.roughness, 0.3f);
+    return Test_IsClose(closure.roughness, 0.3f) &&
+           closure.HasBsdfTree();
 }
 
 static bool
@@ -113,9 +114,67 @@ TestCompileMaterialXUsdPreviewSurfaceTerminal()
     const ShadingContext ctx;
     const SurfaceClosure closure = graph->Evaluate(ctx);
     return Test_IsClose(closure.baseColor, Vec3f(0.25f, 0.5f, 0.75f), 1e-4f) &&
+           closure.HasBsdfTree() &&
            Test_IsClose(closure.opacity, 0.0f) &&
            Test_IsClose(closure.presence, 0.0f) &&
            Test_IsClose(closure.transmission, 0.0f);
+}
+
+static bool
+TestCompileDisneyPrincipledTerminal()
+{
+    MaterialGraph network;
+
+    const std::string termPath = "/Material/Disney";
+    GraphNode termNode;
+    termNode.nodeTypeId = "ND_disney_principled";
+    termNode.parameters["baseColor"] = Value(Vec3f(0.2f, 0.4f, 0.6f));
+    termNode.parameters["metallic"] = Value(0.25f);
+    network.nodes[termPath] = termNode;
+
+    GraphConnection termConn;
+    termConn.upstreamNode = termPath;
+    termConn.upstreamOutputName = "out";
+    network.terminals["surface"] = termConn;
+
+    auto graph = EvalGraph::Compile(network);
+    if (!graph || !graph->IsValid()) {
+        return false;
+    }
+
+    const SurfaceClosure closure = graph->Evaluate(ShadingContext{});
+    return Test_IsClose(closure.baseColor, Vec3f(0.2f, 0.4f, 0.6f), 1e-4f) &&
+           Test_IsClose(closure.metallic, 0.25f) &&
+           closure.HasBsdfTree();
+}
+
+static bool
+TestCompileGltfPbrTerminal()
+{
+    MaterialGraph network;
+
+    const std::string termPath = "/Material/Gltf";
+    GraphNode termNode;
+    termNode.nodeTypeId = "ND_gltf_pbr_surfaceshader";
+    termNode.parameters["base_color"] = Value(Vec3f(0.7f, 0.6f, 0.5f));
+    termNode.parameters["alpha"] = Value(0.0f);
+    termNode.parameters["alpha_mode"] = Value(1);
+    network.nodes[termPath] = termNode;
+
+    GraphConnection termConn;
+    termConn.upstreamNode = termPath;
+    termConn.upstreamOutputName = "out";
+    network.terminals["surface"] = termConn;
+
+    auto graph = EvalGraph::Compile(network);
+    if (!graph || !graph->IsValid()) {
+        return false;
+    }
+
+    const SurfaceClosure closure = graph->Evaluate(ShadingContext{});
+    return Test_IsClose(closure.baseColor, Vec3f(0.7f, 0.6f, 0.5f), 1e-4f) &&
+           Test_IsClose(closure.opacity, 0.0f) &&
+           closure.HasBsdfTree();
 }
 
 static bool
@@ -515,6 +574,8 @@ Test_RegisterGraphTests()
     _REG(TestCompileEmptyNetwork);
     _REG(TestCompileSingleTerminal);
     _REG(TestCompileMaterialXUsdPreviewSurfaceTerminal);
+    _REG(TestCompileDisneyPrincipledTerminal);
+    _REG(TestCompileGltfPbrTerminal);
     _REG(TestCompileLinearChain);
     _REG(TestCompileDiamondDAG);
     _REG(TestEvalWithConstantInputs);

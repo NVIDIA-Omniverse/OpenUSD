@@ -1,0 +1,296 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    metersPerUnit = 1.0
+    doc = """White-furnace style MaterialX test scene.
+Top row: five specular-only spheres using the currently supported
+surface models: UsdPreviewSurface, standard_surface,
+open_pbr_surface, disney_principled, and gltf_pbr.
+
+Bottom row: diffuse-only comparison spheres for Oren-Nayar,
+Burley diffuse, and Lambert diffuse (Lambert is authored as the
+roughness=0 limit of Oren-Nayar).
+
+This scene intentionally avoids transmission and subsurface so the
+current hdEmbree BSDF implementation can be evaluated in a reflective-only setup."""
+)
+
+def Xform "World"
+{
+    def Camera "MainCamera"
+    {
+        float focalLength = 50
+        float horizontalAperture = 20.955
+        float verticalAperture = 15.2908
+        double3 xformOp:translate = (0, 0.0, 14)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "SpherePreview" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.9
+        double3 xformOp:translate = (-5.0, 1.6, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/PreviewMat>
+    }
+
+    def Sphere "SphereStandardSurface" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.9
+        double3 xformOp:translate = (-2.5, 1.6, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/StandardSurfaceMat>
+    }
+
+    def Sphere "SphereOpenPbr" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.9
+        double3 xformOp:translate = (0, 1.6, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/OpenPbrMat>
+    }
+
+    def Sphere "SphereDisneyPrincipled" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.9
+        double3 xformOp:translate = (2.5, 1.6, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/DisneyPrincipledMat>
+    }
+
+    def Sphere "SphereGltfPbr" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.9
+        double3 xformOp:translate = (5.0, 1.6, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/GltfPbrMat>
+    }
+
+    def Sphere "SphereOrenNayarDiffuse" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.9
+        double3 xformOp:translate = (-2.5, -1.6, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/OrenNayarDiffuseMat>
+    }
+
+    def Sphere "SphereBurleyDiffuse" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.9
+        double3 xformOp:translate = (0, -1.6, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/BurleyDiffuseMat>
+    }
+
+    def Sphere "SphereLambertDiffuse" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.9
+        double3 xformOp:translate = (2.5, -1.6, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/LambertDiffuseMat>
+    }
+
+    def Scope "Materials"
+    {
+        def Material "PreviewMat"
+        {
+            token outputs:surface.connect = </World/Materials/PreviewMat/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.0, 0.0, 0.0)
+                float inputs:roughness = 0.35
+                float inputs:metallic = 0.0
+                float inputs:ior = 1.5
+                float inputs:opacity = 1.0
+                token outputs:surface
+            }
+        }
+
+        def Material "StandardSurfaceMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/StandardSurfaceMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.0, 0.0, 0.0)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.35
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                float inputs:transmission = 0.0
+                float inputs:subsurface = 0.0
+                token outputs:out
+            }
+        }
+
+        def Material "OpenPbrMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/OpenPbrMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.0, 0.0, 0.0)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.35
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+                float inputs:transmission_weight = 0.0
+                float inputs:subsurface_weight = 0.0
+                token outputs:out
+            }
+        }
+
+        def Material "DisneyPrincipledMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/DisneyPrincipledMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_disney_principled"
+                color3f inputs:baseColor = (0.0, 0.0, 0.0)
+                float inputs:metallic = 0.0
+                float inputs:roughness = 0.35
+                float inputs:anisotropic = 0.0
+                float inputs:specular = 0.5
+                float inputs:specularTint = 0.0
+                float inputs:sheen = 0.0
+                float inputs:sheenTint = 0.0
+                float inputs:clearcoat = 0.0
+                float inputs:clearcoatGloss = 1.0
+                float inputs:specTrans = 0.0
+                float inputs:ior = 1.5
+                float inputs:subsurface = 0.0
+                color3f inputs:subsurfaceDistance = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+
+        def Material "GltfPbrMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/GltfPbrMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_gltf_pbr_surfaceshader"
+                color3f inputs:base_color = (0.0, 0.0, 0.0)
+                float inputs:metallic = 0.0
+                float inputs:roughness = 0.35
+                float inputs:specular = 1.0
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:ior = 1.5
+                float inputs:transmission = 0.0
+                float inputs:iridescence = 0.0
+                color3f inputs:sheen_color = (0.0, 0.0, 0.0)
+                float inputs:sheen_roughness = 0.0
+                float inputs:clearcoat = 0.0
+                float inputs:clearcoat_roughness = 0.0
+                float inputs:thickness = 0.0
+                float inputs:anisotropy_strength = 0.0
+                float inputs:alpha = 1.0
+                int inputs:alpha_mode = 0
+                float inputs:alpha_cutoff = 0.5
+                color3f inputs:emissive = (0.0, 0.0, 0.0)
+                float inputs:emissive_strength = 1.0
+                token outputs:out
+            }
+        }
+
+        def Material "OrenNayarDiffuseMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/OrenNayarDiffuseMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (1.0, 1.0, 1.0)
+                float inputs:diffuse_roughness = 0.5
+                float inputs:specular = 0.0
+                float inputs:specular_roughness = 0.35
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                float inputs:transmission = 0.0
+                float inputs:subsurface = 0.0
+                token outputs:out
+            }
+        }
+
+        def Material "BurleyDiffuseMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/BurleyDiffuseMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_disney_principled"
+                color3f inputs:baseColor = (1.0, 1.0, 1.0)
+                float inputs:metallic = 0.0
+                float inputs:roughness = 0.35
+                float inputs:anisotropic = 0.0
+                float inputs:specular = 0.0
+                float inputs:specularTint = 0.0
+                float inputs:sheen = 0.0
+                float inputs:sheenTint = 0.0
+                float inputs:clearcoat = 0.0
+                float inputs:clearcoatGloss = 1.0
+                float inputs:specTrans = 0.0
+                float inputs:ior = 1.5
+                float inputs:subsurface = 0.0
+                color3f inputs:subsurfaceDistance = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+
+        def Material "LambertDiffuseMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/LambertDiffuseMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (1.0, 1.0, 1.0)
+                float inputs:diffuse_roughness = 0.0
+                float inputs:specular = 0.0
+                float inputs:specular_roughness = 0.35
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                float inputs:transmission = 0.0
+                float inputs:subsurface = 0.0
+                token outputs:out
+            }
+        }
+    }
+
+    def DomeLight "FurnaceDome"
+    {
+        color3f inputs:color = (1.0, 1.0, 1.0)
+        float inputs:intensity = 1.0
+    }
+}

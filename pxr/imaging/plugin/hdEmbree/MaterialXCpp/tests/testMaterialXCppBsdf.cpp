@@ -296,6 +296,76 @@ TestSampleSurfacePdfConsistency()
 }
 
 static bool
+TestTreeDeltaTransmissionPreservesWeight()
+{
+    SurfaceClosure c;
+    Bsdf::DielectricData transmission;
+    transmission.weight = 1.0f;
+    transmission.tint = Vec3f(0.95f, 0.97f, 1.0f);
+    transmission.ior = 1.5f;
+    transmission.scatterMode = Bsdf::ScatterMode::Transmission;
+
+    c.bsdfTree.root = c.bsdfTree.Add(transmission);
+
+    Vec3f N(0, 1, 0);
+    Vec3f wo = Vec3f(0, 1, 0);
+
+    auto s = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.5f);
+    if (!s.isSpecular || s.pdf <= 0.0f) {
+        printf("    Expected valid specular transmission sample\n");
+        return false;
+    }
+
+    if (s.f[0] < 0.80f || s.f[1] < 0.82f || s.f[2] < 0.84f) {
+        printf("    Transmission sample unexpectedly dim: (%f,%f,%f)\n",
+               s.f[0], s.f[1], s.f[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestTreeAddDeltaTransmissionPreservesWeight()
+{
+    SurfaceClosure c;
+    Bsdf::ClosureTree tree;
+
+    Bsdf::DielectricData reflection;
+    reflection.weight = 1.0f;
+    reflection.tint = Vec3f(1.0f);
+    reflection.ior = 1.5f;
+    reflection.scatterMode = Bsdf::ScatterMode::Reflection;
+
+    Bsdf::DielectricData transmission;
+    transmission.weight = 1.0f;
+    transmission.tint = Vec3f(0.95f, 0.97f, 1.0f);
+    transmission.ior = 1.5f;
+    transmission.scatterMode = Bsdf::ScatterMode::Transmission;
+
+    Bsdf::AddData add;
+    add.in1 = tree.Add(reflection);
+    add.in2 = tree.Add(transmission);
+    tree.root = tree.Add(add);
+    c.bsdfTree = tree;
+
+    Vec3f N(0, 1, 0);
+    Vec3f wo = Vec3f(0, 1, 0);
+
+    auto s = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.99f);
+    if (!s.isSpecular || s.pdf <= 0.0f) {
+        printf("    Expected valid specular transmission sample from add node\n");
+        return false;
+    }
+
+    if (s.f[0] < 0.80f || s.f[1] < 0.82f || s.f[2] < 0.84f) {
+        printf("    Add-node transmission unexpectedly dim: (%f,%f,%f)\n",
+               s.f[0], s.f[1], s.f[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
 TestPowerHeuristic()
 {
     float w = Bsdf::PowerHeuristic(1.0f, 1.0f);
@@ -337,6 +407,8 @@ Test_RegisterBsdfTests()
     _REG(TestSampleGGXSpecularHemisphere);
     _REG(TestSampleGGXSpecularPdfConsistency);
     _REG(TestSampleSurfacePdfConsistency);
+    _REG(TestTreeDeltaTransmissionPreservesWeight);
+    _REG(TestTreeAddDeltaTransmissionPreservesWeight);
     _REG(TestPowerHeuristic);
 }
 
