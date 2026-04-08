@@ -1310,12 +1310,76 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         baseSeed = static_cast<uint32_t>(_randomNumberSeed);
     }
 
-    // Render the image. Each pass through the loop adds a sample per pixel
-    // (with jittered ray direction); the longer the loop runs, the less noisy
-    // the image becomes. We add a cancellation point once per loop.
-    //
-    // We consider the image converged after N samples, which is a convenient
-    // and simple heuristic.
+    const unsigned int tileSize = HdEmbreeConfig::GetInstance().tileSize;
+    const unsigned int numTilesX =
+        (_dataWindow.GetWidth() + tileSize - 1) / tileSize;
+    const unsigned int numTilesY =
+        (_dataWindow.GetHeight() + tileSize - 1) / tileSize;
+
+    // ---- Coarse preview passes ----
+    // Render a sparse subset of pixels and block-fill the display buffer
+    // so the user sees a mosaic preview almost immediately, then refine.
+    {
+        static const unsigned int kPreviewStrides[] = {8, 4, 2};
+        for (unsigned int stride : kPreviewStrides) {
+            if (renderThread->IsStopRequested()) {
+                break;
+            }
+
+            // Only run coarse passes that are coarser than a single pixel.
+            if (stride >= static_cast<unsigned int>(_dataWindow.GetWidth()) &&
+                stride >= static_cast<unsigned int>(_dataWindow.GetHeight())) {
+                continue;
+            }
+
+            WorkParallelForN(numTilesX * numTilesY,
+                std::bind(&HdEmbreeRenderer::_RenderTiles, this,
+                    renderThread, /*sampleNum=*/0, baseSeed, stride,
+                    std::placeholders::_1, std::placeholders::_2));
+
+            if (renderThread->IsStopRequested()) {
+                break;
+            }
+
+            // Resolve sparse samples into the display buffer and
+            // replicate each sampled pixel across its block.
+            {
+                auto lock = renderThread->LockFramebuffer();
+                for (size_t a = 0; a < _aovBindings.size(); ++a) {
+                    HdEmbreeRenderBuffer *rb =
+                        static_cast<HdEmbreeRenderBuffer*>(
+                            _aovBindings[a].renderBuffer);
+                    rb->Resolve();
+                    rb->BlockFill(stride);
+                }
+            }
+        }
+
+        // Clear the sample accumulation so the full-resolution passes
+        // start from a clean slate, while the display buffer retains
+        // the coarse preview for visual continuity.
+        if (!renderThread->IsStopRequested()) {
+            for (size_t a = 0; a < _aovBindings.size(); ++a) {
+                HdEmbreeRenderBuffer *rb =
+                    static_cast<HdEmbreeRenderBuffer*>(
+                        _aovBindings[a].renderBuffer);
+                rb->ClearSamples();
+            }
+            // Reset adaptive sampling state that was partially filled
+            // by the coarse passes.
+            std::fill(_pixelMean.begin(), _pixelMean.end(), GfVec3f(0.0f));
+            std::fill(_pixelM2.begin(), _pixelM2.end(), GfVec3f(0.0f));
+            std::fill(
+                _pixelSampleCount.begin(), _pixelSampleCount.end(), 0);
+            std::fill(
+                _pixelConverged.begin(), _pixelConverged.end(), false);
+        }
+    }
+
+    // ---- Full-resolution multi-sample rendering ----
+    // Each pass adds one sample per pixel.  After every pass we resolve
+    // the accumulation buffer so the display shows progressively
+    // improving quality.
     for (int i = 0; i < _samplesToConvergence; ++i) {
         // Pause point.
         while (renderThread->IsPauseRequested()) {
@@ -1329,29 +1393,31 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
             break;
         }
 
-        const unsigned int tileSize = HdEmbreeConfig::GetInstance().tileSize;
-        const unsigned int numTilesX =
-            (_dataWindow.GetWidth() + tileSize - 1) / tileSize;
-        const unsigned int numTilesY =
-            (_dataWindow.GetHeight() + tileSize - 1) / tileSize;
-
-        // Render by scheduling square tiles of the sample buffer in a parallel
-        // for loop.
-        // Always pass the renderThread to _RenderTiles to allow the first frame
-        // to be interrupted.
         WorkParallelForN(numTilesX * numTilesY,
             std::bind(&HdEmbreeRenderer::_RenderTiles, this,
-                renderThread, i, baseSeed,
+                renderThread, i, baseSeed, /*stride=*/1u,
                 std::placeholders::_1, std::placeholders::_2));
+
+        // Resolve intermediate results so the viewport shows progressive
+        // refinement instead of staying blank until convergence.
+        {
+            auto lock = renderThread->LockFramebuffer();
+            for (size_t a = 0; a < _aovBindings.size(); ++a) {
+                HdEmbreeRenderBuffer *rb =
+                    static_cast<HdEmbreeRenderBuffer*>(
+                        _aovBindings[a].renderBuffer);
+                rb->Resolve();
+            }
+        }
 
         // After the first pass, mark the single-sampled attachments as
         // converged and unmap them. If there are no multisampled attachments,
         // we are done.
         if (i == 0) {
             bool moreWork = false;
-            for (size_t i = 0; i < _aovBindings.size(); ++i) {
+            for (size_t a = 0; a < _aovBindings.size(); ++a) {
                 HdEmbreeRenderBuffer *rb = static_cast<HdEmbreeRenderBuffer*>(
-                    _aovBindings[i].renderBuffer);
+                    _aovBindings[a].renderBuffer);
                 if (rb->IsMultiSampled()) {
                     moreWork = true;
                 }
@@ -1446,7 +1512,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
 
 void
 HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
-                               uint32_t baseSeed,
+                               uint32_t baseSeed, unsigned int stride,
                                size_t tileStart, size_t tileEnd)
 {
     const unsigned int minX = _dataWindow.GetMinX();
@@ -1489,7 +1555,16 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
 
         // Loop over pixels casting rays.
         for (unsigned int y = y0; y < y1; ++y) {
+            // For coarse preview passes, only render sparse pixels
+            // whose data-window-relative coordinates are multiples
+            // of the stride.
+            if (stride > 1 && ((y - minY) % stride != 0)) {
+                continue;
+            }
             for (unsigned int x = x0; x < x1; ++x) {
+                if (stride > 1 && ((x - minX) % stride != 0)) {
+                    continue;
+                }
 
                 // Skip converged pixels in adaptive sampling mode.
                 const size_t pixelIdx = y * _width + x;

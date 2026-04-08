@@ -296,4 +296,42 @@ HdEmbreeRenderBuffer::Resolve()
     }
 }
 
+void
+HdEmbreeRenderBuffer::ClearSamples()
+{
+    if (_multiSampled) {
+        std::fill(_sampleCount.begin(), _sampleCount.end(), 0);
+        std::fill(_sampleBuffer.begin(), _sampleBuffer.end(), 0);
+    }
+}
+
+void
+HdEmbreeRenderBuffer::BlockFill(unsigned int blockSize)
+{
+    if (blockSize <= 1) {
+        return;
+    }
+
+    const size_t formatSize = HdDataSizeOfFormat(_format);
+
+    for (unsigned int by = 0; by < _height; by += blockSize) {
+        for (unsigned int bx = 0; bx < _width; bx += blockSize) {
+            const uint8_t *src =
+                &_buffer[(by * _width + bx) * formatSize];
+            const unsigned int yEnd = std::min(by + blockSize, _height);
+            const unsigned int xEnd = std::min(bx + blockSize, _width);
+            for (unsigned int y = by; y < yEnd; ++y) {
+                for (unsigned int x = bx; x < xEnd; ++x) {
+                    if (x == bx && y == by) {
+                        continue;
+                    }
+                    uint8_t *dst =
+                        &_buffer[(y * _width + x) * formatSize];
+                    memcpy(dst, src, formatSize);
+                }
+            }
+        }
+    }
+}
+
 PXR_NAMESPACE_CLOSE_SCOPE

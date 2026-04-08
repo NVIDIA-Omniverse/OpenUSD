@@ -209,8 +209,10 @@ private:
     // work. For each tile, iterate over pixels in the tile, generating camera
     // rays, and following them/calculating color with _TraceRay. This function
     // renders all tiles between tileStart and tileEnd.
+    // When \p stride > 1, only pixels whose data-window-relative coordinates
+    // are multiples of stride are rendered (used for coarse preview passes).
     void _RenderTiles(HdRenderThread* renderThread, int sampleNum,
-                      uint32_t baseSeed,
+                      uint32_t baseSeed, unsigned int stride,
                       size_t tileStart, size_t tileEnd);
 
     // Cast a ray into the scene and if it hits an object, write to the bound

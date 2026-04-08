@@ -102,6 +102,17 @@ public:
     /// Resolve the sample buffer into final values.
     void Resolve() override;
 
+    /// Clear only the sample accumulation buffers (sampleBuffer and
+    /// sampleCount), leaving the resolved output buffer intact.  This is
+    /// used between the coarse preview and the full-resolution render so
+    /// that the preview image remains visible while new samples accumulate.
+    void ClearSamples();
+
+    /// Fill blocks of the resolved output buffer by replicating the value of
+    /// the top-left pixel in each blockSize x blockSize block.  Call after
+    /// Resolve() to turn a sparsely-sampled image into a mosaic preview.
+    void BlockFill(unsigned int blockSize);
+
     // ---------------------------------------------------------------------- //
     /// \name I/O helpers
     // ---------------------------------------------------------------------- //
