@@ -37,9 +37,13 @@ public:
 
     /// Accessor for the top-level embree scene.
     RTCScene AcquireSceneForEdit() {
+        NotifySceneChange();
+        return _scene;
+    }
+    /// Notify the render pass that scene-dependent state has changed.
+    void NotifySceneChange() {
         _renderThread->StopRender();
         (*_sceneVersion)++;
-        return _scene;
     }
     /// Accessor for the top-level embree device (library handle).
     RTCDevice GetEmbreeDevice() { return _device; }

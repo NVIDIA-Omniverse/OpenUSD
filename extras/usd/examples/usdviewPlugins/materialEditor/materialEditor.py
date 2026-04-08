@@ -33,6 +33,36 @@ _SLIDER_STEPS = 1000
 
 _LABEL_STYLE_DEFAULT = "color: #888; font-style: italic;"
 _LABEL_STYLE_AUTHORED = ""
+_LABEL_WIDTH_REFERENCE = "transmission_dispersion_abbe_number"
+
+_BASIC_COLOR_COLS = 8
+_BASIC_COLOR_ROWS = 6
+_BASIC_COLOR_MIN_VALUE = 64
+
+
+# ---------------------------------------------------------------------------
+# Qt helpers
+# ---------------------------------------------------------------------------
+
+class _NoWheelSlider(QtWidgets.QSlider):
+    """QSlider variant that ignores wheel input."""
+
+    def wheelEvent(self, event):
+        event.ignore()
+
+
+class _NoWheelDoubleSpinBox(QtWidgets.QDoubleSpinBox):
+    """QDoubleSpinBox variant that ignores wheel input."""
+
+    def wheelEvent(self, event):
+        event.ignore()
+
+
+class _NoWheelSpinBox(QtWidgets.QSpinBox):
+    """QSpinBox variant that ignores wheel input."""
+
+    def wheelEvent(self, event):
+        event.ignore()
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +102,8 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         self._api = usdviewApi
         self._currentMaterial = None
         self._inputWidgets = []
+        self._inputLabels = {}
+        self._inputLabelWidth = 0
         self._lastPrimPath = None
         self._shaderStack = []
 
@@ -94,11 +126,14 @@ class MaterialEditorWindow(QtWidgets.QWidget):
     def _buildUI(self):
         self.setWindowTitle("Material Editor")
         self.setMinimumSize(720, 480)
-        self.resize(1000, 1000)
+        self.resize(860, 1000)
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
 
         root = QtWidgets.QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
+        self._inputLabelWidth = (
+            QtGui.QFontMetrics(self.font()).horizontalAdvance(
+                _LABEL_WIDTH_REFERENCE) + 8)
 
         # toolbar
         toolbar = QtWidgets.QHBoxLayout()
@@ -174,6 +209,7 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         )
         self._scroll.setWidget(self._formContainer)
         self._inputWidgets = []
+        self._inputLabels = {}
 
     # ---- material list ----------------------------------------------------
 
@@ -330,6 +366,7 @@ class MaterialEditorWindow(QtWidgets.QWidget):
             if widget:
                 self._formLayout.addRow(label, widget)
                 self._inputWidgets.append(widget)
+                self._inputLabels[name] = label
 
         self._setStatus(
             f"{authoredCount} authored, "
@@ -355,13 +392,26 @@ class MaterialEditorWindow(QtWidgets.QWidget):
 
     def _makeLabel(self, name, authored, shader):
         label = QtWidgets.QLabel(name)
-        label.setStyleSheet(
-            _LABEL_STYLE_AUTHORED if authored else _LABEL_STYLE_DEFAULT)
+        label.setFixedWidth(self._inputLabelWidth)
+        self._setLabelAuthoredState(label, authored)
         label.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         label.customContextMenuRequested.connect(
             lambda pos, n=name, s=shader, lbl=label:
                 self._showInputContextMenu(pos, n, s, lbl))
         return label
+
+    def _setLabelAuthoredState(self, label, authored):
+        label.setStyleSheet(
+            _LABEL_STYLE_AUTHORED if authored else _LABEL_STYLE_DEFAULT)
+
+    def _refreshCurrentShaderLabelStyles(self):
+        if not self._shaderStack:
+            return
+        authoredNames = {
+            inp.GetBaseName() for inp in self._shaderStack[-1].GetInputs()
+        }
+        for name, label in self._inputLabels.items():
+            self._setLabelAuthoredState(label, name in authoredNames)
 
     def _showInputContextMenu(self, pos, name, shader, label):
         menu = QtWidgets.QMenu(self)
@@ -473,7 +523,7 @@ class MaterialEditorWindow(QtWidgets.QWidget):
 
         disconnBtn = QtWidgets.QPushButton()
         disconnBtn.setIcon(
-            self.style().standardIcon(QtWidgets.QStyle.SP_TitleBarCloseButton))
+            self.style().standardIcon(QtWidgets.QStyle.SP_DialogDiscardButton))
         disconnBtn.setFixedSize(22, 22)
         disconnBtn.setToolTip("Disconnect")
         disconnBtn.clicked.connect(lambda _=False, i=inp: self._disconnect(i))
@@ -490,10 +540,10 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         lay = QtWidgets.QHBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
 
-        slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        slider = _NoWheelSlider(QtCore.Qt.Horizontal)
         slider.setRange(0, _SLIDER_STEPS)
 
-        spin = QtWidgets.QDoubleSpinBox()
+        spin = _NoWheelDoubleSpinBox()
         spin.setRange(-1e6, 1e6)
         spin.setSingleStep(0.01)
         spin.setDecimals(4)
@@ -534,7 +584,7 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         swatch = QtWidgets.QPushButton()
         swatch.setFixedSize(36, 22)
         swatch.setCursor(QtCore.Qt.PointingHandCursor)
-        lbl = QtWidgets.QLabel()
+        spins = []
 
         if value is not None:
             state = {"r": float(value[0]), "g": float(value[1]), "b": float(value[2])}
@@ -548,14 +598,27 @@ class MaterialEditorWindow(QtWidgets.QWidget):
             swatch.setStyleSheet(
                 f"background-color: rgb({ri},{gi},{bi});"
                 " border: 1px solid #888; border-radius: 2px;")
-            lbl.setText(f"({state['r']:.3f}, {state['g']:.3f}, {state['b']:.3f})")
+            for spin, channel in zip(spins, ("r", "g", "b")):
+                spin.blockSignals(True)
+                spin.setValue(state[channel])
+                spin.blockSignals(False)
 
         refresh()
 
+        def applyFromSpins():
+            state["r"] = spins[0].value()
+            state["g"] = spins[1].value()
+            state["b"] = spins[2].value()
+            refresh()
+            self._setValue(
+                inp, Gf.Vec3f(state["r"], state["g"], state["b"]))
+
         def pick():
             initial = QtGui.QColor.fromRgbF(state["r"], state["g"], state["b"])
+            _configureBasicColors()
             color = QtWidgets.QColorDialog.getColor(
-                initial, self, inp.GetBaseName())
+                initial, self, inp.GetBaseName(),
+                QtWidgets.QColorDialog.DontUseNativeDialog)
             if color.isValid():
                 state["r"] = color.redF()
                 state["g"] = color.greenF()
@@ -566,13 +629,22 @@ class MaterialEditorWindow(QtWidgets.QWidget):
 
         swatch.clicked.connect(pick)
         lay.addWidget(swatch)
-        lay.addWidget(lbl, 1)
+        for _axis_label in ("R", "G", "B"):
+            spin = _NoWheelDoubleSpinBox()
+            spin.setRange(0.0, 1.0)
+            spin.setSingleStep(0.01)
+            spin.setDecimals(3)
+            spin.setMinimumWidth(80)
+            spin.valueChanged.connect(lambda _=None: applyFromSpins())
+            spins.append(spin)
+            lay.addWidget(spin, 1)
+        refresh()
         return w
 
     # ---- int --------------------------------------------------------------
 
     def _widgetInt(self, inp, value):
-        spin = QtWidgets.QSpinBox()
+        spin = _NoWheelSpinBox()
         spin.setRange(-999999, 999999)
         if value is not None:
             spin.setValue(int(value))
@@ -596,12 +668,12 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
 
         spins = []
-        for axis, axis_label in enumerate(("X", "Y", "Z")):
-            lay.addWidget(QtWidgets.QLabel(axis_label))
-            sb = QtWidgets.QDoubleSpinBox()
+        for axis, _axis_label in enumerate(("X", "Y", "Z")):
+            sb = _NoWheelDoubleSpinBox()
             sb.setRange(-1e6, 1e6)
             sb.setSingleStep(0.01)
             sb.setDecimals(3)
+            sb.setMinimumWidth(80)
             if value is not None:
                 sb.setValue(float(value[axis]))
             spins.append(sb)
@@ -668,6 +740,7 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         except Exception as e:
             self._setStatus(f"Error: {e}")
         self._pendingValues.clear()
+        self._refreshCurrentShaderLabelStyles()
         self._api.UpdateViewport()
 
     def _disconnect(self, inp):
@@ -742,6 +815,23 @@ def _floatToSlider(val, fmin, fmax):
 
 def _sliderToFloat(pos, fmin, fmax):
     return fmin + (pos / float(_SLIDER_STEPS)) * (fmax - fmin)
+
+
+def _configureBasicColors():
+    """Populate Qt's shared basic-color swatches with a hue/value grid."""
+    for row in range(_BASIC_COLOR_ROWS):
+        if _BASIC_COLOR_ROWS <= 1:
+            value = 255
+        else:
+            valueT = row / float(_BASIC_COLOR_ROWS - 1)
+            value = int(round(
+                255 + (_BASIC_COLOR_MIN_VALUE - 255) * valueT))
+        for col in range(_BASIC_COLOR_COLS):
+            hue = int(round(
+                (360.0 * (_BASIC_COLOR_COLS - 1 - col)) / _BASIC_COLOR_COLS)) % 360
+            index = col * _BASIC_COLOR_ROWS + row
+            QtWidgets.QColorDialog.setStandardColor(
+                index, QtGui.QColor.fromHsv(hue, 255, value))
 
 
 # ---------------------------------------------------------------------------

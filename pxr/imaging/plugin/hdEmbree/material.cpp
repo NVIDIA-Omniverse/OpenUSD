@@ -6,6 +6,7 @@
 //
 #include "pxr/imaging/plugin/hdEmbree/material.h"
 #include "pxr/imaging/plugin/hdEmbree/mxcppAdapter.h"
+#include "pxr/imaging/plugin/hdEmbree/renderParam.h"
 
 #include "pxr/imaging/hd/sceneDelegate.h"
 #include "pxr/base/tf/diagnostic.h"
@@ -35,6 +36,12 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
     if (!(*dirtyBits & HdMaterial::AllDirty)) {
         *dirtyBits = HdMaterial::Clean;
         return;
+    }
+
+    if (renderParam) {
+        // The render thread reads the compiled graph during shading, so stop
+        // the current render and bump the scene version before replacing it.
+        static_cast<HdEmbreeRenderParam*>(renderParam)->NotifySceneChange();
     }
 
     SdfPath const& id = GetId();
