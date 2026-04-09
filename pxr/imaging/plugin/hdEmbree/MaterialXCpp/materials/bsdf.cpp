@@ -18,6 +18,7 @@ namespace mxcpp {
 namespace {
 
 constexpr float _kEpsilon = 1e-7f;
+constexpr int _kThinFilmAiryIterations = 2;
 
 inline float
 _Clamp01(float x)
@@ -74,12 +75,29 @@ _SchlickFresnelScalar(float ior, float cosTheta)
 inline Vec3f
 _GeneralizedSchlickFresnel(
     const Vec3f& color0,
+    const Vec3f& color82,
     const Vec3f& color90,
     float exponent,
     float cosTheta)
 {
-    float x = std::pow(_Clamp01(1.0f - cosTheta), std::max(exponent, 0.0f));
-    return _LerpVec(color0, color90, x);
+    constexpr float kCosThetaMax = 1.0f / 7.0f;
+    const float clampedExponent = std::max(exponent, 0.0f);
+    const float x = _Clamp01(cosTheta);
+    const float oneMinusX = _Clamp01(1.0f - x);
+    const float baseMix =
+        std::pow(1.0f - kCosThetaMax, clampedExponent);
+    const float factor = 1.0f /
+        (kCosThetaMax * std::pow(1.0f - kCosThetaMax, 6.0f));
+    const Vec3f a = CompMul(
+        _LerpVec(color0, color90, baseMix),
+        (Vec3f(1.0f) - color82) * factor);
+    const Vec3f result =
+        _LerpVec(color0, color90, std::pow(oneMinusX, clampedExponent)) -
+        a * x * std::pow(oneMinusX, 6.0f);
+    return Vec3f(
+        std::max(result[0], 0.0f),
+        std::max(result[1], 0.0f),
+        std::max(result[2], 0.0f));
 }
 
 inline Vec3f
@@ -298,6 +316,421 @@ inline Vec3f
 _SaturateVec(const Vec3f& v)
 {
     return Vec3f(_Clamp01(v[0]), _Clamp01(v[1]), _Clamp01(v[2]));
+}
+
+inline bool
+_HasThinFilm(float weight, float thickness, float ior)
+{
+    return weight > _kEpsilon &&
+           thickness > _kEpsilon &&
+           ior > (1.0f + _kEpsilon);
+}
+
+enum class _ThinFilmModel
+{
+    Dielectric,
+    Conductor,
+    Schlick
+};
+
+struct _ThinFilmParams
+{
+    _ThinFilmModel model = _ThinFilmModel::Dielectric;
+    Vec3f ior = Vec3f(1.0f);
+    Vec3f extinction = Vec3f(0.0f);
+    Vec3f tint = Vec3f(1.0f);
+    Vec3f F0 = Vec3f(0.0f);
+    Vec3f F82 = Vec3f(0.0f);
+    Vec3f F90 = Vec3f(1.0f);
+    float exponent = 5.0f;
+};
+
+inline Vec3f
+_SqrtVec(const Vec3f& v)
+{
+    return Vec3f(
+        std::sqrt(std::max(v[0], 0.0f)),
+        std::sqrt(std::max(v[1], 0.0f)),
+        std::sqrt(std::max(v[2], 0.0f)));
+}
+
+inline Vec3f
+_CosVec(const Vec3f& v)
+{
+    return Vec3f(std::cos(v[0]), std::cos(v[1]), std::cos(v[2]));
+}
+
+inline Vec3f
+_ExpVec(const Vec3f& v)
+{
+    return Vec3f(std::exp(v[0]), std::exp(v[1]), std::exp(v[2]));
+}
+
+inline Vec3f
+_SquareVec(const Vec3f& v)
+{
+    return CompMul(v, v);
+}
+
+inline Vec3f
+_MaxVec(const Vec3f& v, float minimum)
+{
+    return Vec3f(
+        std::max(v[0], minimum),
+        std::max(v[1], minimum),
+        std::max(v[2], minimum));
+}
+
+inline Vec3f
+_F0ToIor(const Vec3f& F0)
+{
+    const Vec3f sqrtF0 = _SqrtVec(_SaturateVec(Vec3f(
+        std::clamp(F0[0], 0.01f, 0.99f),
+        std::clamp(F0[1], 0.01f, 0.99f),
+        std::clamp(F0[2], 0.01f, 0.99f))));
+    return CompDiv(Vec3f(1.0f) + sqrtF0, Vec3f(1.0f) - sqrtF0);
+}
+
+inline Vec2f
+_FresnelDielectricPolarized(float cosTheta, float ior)
+{
+    const float cosTheta2 = _Clamp01(cosTheta) * _Clamp01(cosTheta);
+    const float sinTheta2 = 1.0f - cosTheta2;
+
+    const float t0 = std::max(ior * ior - sinTheta2, 0.0f);
+    const float t1 = t0 + cosTheta2;
+    const float t2 = 2.0f * std::sqrt(t0) * _Clamp01(cosTheta);
+    const float Rs = (t1 - t2) / std::max(t1 + t2, _kEpsilon);
+
+    const float t3 = cosTheta2 * t0 + sinTheta2 * sinTheta2;
+    const float t4 = t2 * sinTheta2;
+    const float Rp = Rs * (t3 - t4) / std::max(t3 + t4, _kEpsilon);
+
+    return Vec2f(Rp, Rs);
+}
+
+inline void
+_FresnelConductorPolarized(
+    float cosTheta,
+    const Vec3f& n,
+    const Vec3f& k,
+    Vec3f* Rp,
+    Vec3f* Rs)
+{
+    const float clampedCos = _Clamp01(cosTheta);
+    const float cosTheta2 = clampedCos * clampedCos;
+    const float sinTheta2 = 1.0f - cosTheta2;
+    const Vec3f n2 = _SquareVec(n);
+    const Vec3f k2 = _SquareVec(k);
+
+    const Vec3f t0 = n2 - k2 - Vec3f(sinTheta2);
+    const Vec3f a2plusb2 = _SqrtVec(t0 * t0 + 4.0f * CompMul(n2, k2));
+    const Vec3f t1 = a2plusb2 + Vec3f(cosTheta2);
+    const Vec3f a = _SqrtVec(_MaxVec(0.5f * (a2plusb2 + t0), 0.0f));
+    const Vec3f t2 = 2.0f * a * clampedCos;
+    *Rs = CompDiv(t1 - t2, t1 + t2);
+
+    const Vec3f t3 = a2plusb2 * cosTheta2 + Vec3f(sinTheta2 * sinTheta2);
+    const Vec3f t4 = t2 * sinTheta2;
+    *Rp = CompMul(*Rs, CompDiv(t3 - t4, t3 + t4));
+}
+
+inline void
+_FresnelConductorPhasePolarized(
+    float cosTheta,
+    float eta1,
+    const Vec3f& eta2,
+    const Vec3f& kappa2,
+    Vec3f* phiP,
+    Vec3f* phiS)
+{
+    const Vec3f k2 = CompDiv(kappa2, eta2);
+    const Vec3f sinThetaSqr(1.0f - cosTheta * cosTheta);
+    const Vec3f A =
+        CompMul(eta2, eta2) * (Vec3f(1.0f) - CompMul(k2, k2)) -
+        eta1 * eta1 * sinThetaSqr;
+    const Vec3f B = _SqrtVec(CompMul(A, A) +
+                             4.0f * CompMul(CompMul(eta2, eta2), CompMul(k2, k2)));
+    const Vec3f U = _SqrtVec((A + B) * 0.5f);
+    const Vec3f V = _MaxVec(_SqrtVec((B - A) * 0.5f), 0.0f);
+
+    *phiS = Vec3f(
+        std::atan2(2.0f * eta1 * V[0] * cosTheta,
+                   U[0] * U[0] + V[0] * V[0] - eta1 * eta1 * cosTheta * cosTheta),
+        std::atan2(2.0f * eta1 * V[1] * cosTheta,
+                   U[1] * U[1] + V[1] * V[1] - eta1 * eta1 * cosTheta * cosTheta),
+        std::atan2(2.0f * eta1 * V[2] * cosTheta,
+                   U[2] * U[2] + V[2] * V[2] - eta1 * eta1 * cosTheta * cosTheta));
+
+    const Vec3f eta2Squared = CompMul(eta2, eta2);
+    const Vec3f oneMinusK2 = Vec3f(1.0f) - CompMul(k2, k2);
+    const Vec3f onePlusK2 = Vec3f(1.0f) + CompMul(k2, k2);
+    *phiP = Vec3f(
+        std::atan2(
+            2.0f * eta1 * eta2Squared[0] * cosTheta *
+                (2.0f * k2[0] * U[0] - oneMinusK2[0] * V[0]),
+            eta2Squared[0] * eta2Squared[0] * onePlusK2[0] * onePlusK2[0] *
+                    cosTheta * cosTheta -
+                eta1 * eta1 * (U[0] * U[0] + V[0] * V[0])),
+        std::atan2(
+            2.0f * eta1 * eta2Squared[1] * cosTheta *
+                (2.0f * k2[1] * U[1] - oneMinusK2[1] * V[1]),
+            eta2Squared[1] * eta2Squared[1] * onePlusK2[1] * onePlusK2[1] *
+                    cosTheta * cosTheta -
+                eta1 * eta1 * (U[1] * U[1] + V[1] * V[1])),
+        std::atan2(
+            2.0f * eta1 * eta2Squared[2] * cosTheta *
+                (2.0f * k2[2] * U[2] - oneMinusK2[2] * V[2]),
+            eta2Squared[2] * eta2Squared[2] * onePlusK2[2] * onePlusK2[2] *
+                    cosTheta * cosTheta -
+                eta1 * eta1 * (U[2] * U[2] + V[2] * V[2])));
+}
+
+inline Vec3f
+_EvalSensitivity(float opd, const Vec3f& shift)
+{
+    const float phase = 2.0f * kPi * opd;
+    const Vec3f val(5.4856e-13f, 4.4201e-13f, 5.2481e-13f);
+    const Vec3f pos(1.6810e+06f, 1.7953e+06f, 2.2084e+06f);
+    const Vec3f var(4.3278e+09f, 9.3046e+09f, 6.6121e+09f);
+    const Vec3f phaseVec = pos * phase + shift;
+    const Vec3f gaussian = _ExpVec(-var * phase * phase);
+    Vec3f xyz = CompMul(
+        CompMul(val, _SqrtVec(2.0f * kPi * var)),
+        CompMul(_CosVec(phaseVec), gaussian));
+    xyz[0] += 9.7470e-14f * std::sqrt(2.0f * kPi * 4.5282e+09f) *
+        std::cos(2.2399e+06f * phase + shift[0]) *
+        std::exp(-4.5282e+09f * phase * phase);
+    return xyz * (1.0f / 1.0685e-7f);
+}
+
+inline Vec3f
+_XYZToRGB(const Vec3f& xyz)
+{
+    const Vec3f redVec(2.3706743f, -0.9000405f, -0.4706338f);
+    const Vec3f grnVec(-0.5138850f, 1.4253036f, 0.0885814f);
+    const Vec3f bluVec(0.0052982f, -0.0146949f, 1.0093968f);
+    return Vec3f(
+        std::max(Dot(redVec, xyz), 0.0f),
+        std::max(Dot(grnVec, xyz), 0.0f),
+        std::max(Dot(bluVec, xyz), 0.0f));
+}
+
+inline Vec3f
+_ThinFilmAiryReflectance(
+    float cosTheta,
+    float thinFilmThickness,
+    float thinFilmIor,
+    const _ThinFilmParams& params)
+{
+    const float clampedCos = _Clamp01(cosTheta);
+    const float eta1 = 1.0f;
+    const float eta2 = std::max(thinFilmIor, eta1);
+    const Vec3f eta3 = (params.model == _ThinFilmModel::Schlick)
+        ? _F0ToIor(params.F0)
+        : params.ior;
+    const Vec3f kappa3 = (params.model == _ThinFilmModel::Schlick)
+        ? Vec3f(0.0f)
+        : params.extinction;
+
+    const float sinTheta2 = std::max(1.0f - clampedCos * clampedCos, 0.0f);
+    const float eta = eta1 / eta2;
+    const float cosThetaTSqr = 1.0f - sinTheta2 * eta * eta;
+    const float cosThetaT = (cosThetaTSqr > 0.0f) ? std::sqrt(cosThetaTSqr) : 0.0f;
+
+    Vec2f R12 = _FresnelDielectricPolarized(clampedCos, eta2 / eta1);
+    if (cosThetaT <= 0.0f) {
+        R12 = Vec2f(1.0f, 1.0f);
+    }
+    const Vec2f T121 = Vec2f(1.0f, 1.0f) - R12;
+
+    Vec3f R23p(0.0f), R23s(0.0f);
+    Vec3f phi23p(0.0f), phi23s(0.0f);
+    if (params.model == _ThinFilmModel::Schlick) {
+        const Vec3f f = _GeneralizedSchlickFresnel(
+            params.F0, params.F82, params.F90, params.exponent, cosThetaT);
+        R23p = f * 0.5f;
+        R23s = f * 0.5f;
+        phi23p = Vec3f(
+            eta3[0] < eta2 ? kPi : 0.0f,
+            eta3[1] < eta2 ? kPi : 0.0f,
+            eta3[2] < eta2 ? kPi : 0.0f);
+        phi23s = phi23p;
+    } else {
+        _FresnelConductorPolarized(
+            cosThetaT, CompDiv(eta3, Vec3f(eta2)), CompDiv(kappa3, Vec3f(eta2)),
+            &R23p, &R23s);
+        _FresnelConductorPhasePolarized(
+            cosThetaT, eta2, eta3, kappa3, &phi23p, &phi23s);
+    }
+
+    const float cosB = std::cos(std::atan(eta2 / eta1));
+    const Vec2f phi21(clampedCos < cosB ? 0.0f : kPi, kPi);
+    const Vec3f r123p = _SqrtVec(_MaxVec(R23p * R12[0], 0.0f));
+    const Vec3f r123s = _SqrtVec(_MaxVec(R23s * R12[1], 0.0f));
+
+    const float distMeters = thinFilmThickness * 1.0e-9f;
+    const float opd = 2.0f * eta2 * cosThetaT * distMeters;
+
+    Vec3f I(0.0f);
+    Vec3f Rs = (T121[0] * T121[0]) *
+        CompDiv(R23p, Vec3f(1.0f) - R12[0] * R23p);
+    I += Vec3f(R12[0]) + Rs;
+
+    Vec3f Cm = Rs - Vec3f(T121[0]);
+    for (int m = 1; m <= _kThinFilmAiryIterations; ++m) {
+        Cm = CompMul(Cm, r123p);
+        I += CompMul(
+            Cm,
+            2.0f * _EvalSensitivity(
+                static_cast<float>(m) * opd,
+                static_cast<float>(m) * (phi23p + Vec3f(phi21[0]))));
+    }
+
+    Vec3f Rp = (T121[1] * T121[1]) *
+        CompDiv(R23s, Vec3f(1.0f) - R12[1] * R23s);
+    I += Vec3f(R12[1]) + Rp;
+
+    Cm = Rp - Vec3f(T121[1]);
+    for (int m = 1; m <= _kThinFilmAiryIterations; ++m) {
+        Cm = CompMul(Cm, r123s);
+        I += CompMul(
+            Cm,
+            2.0f * _EvalSensitivity(
+                static_cast<float>(m) * opd,
+                static_cast<float>(m) * (phi23s + Vec3f(phi21[1]))));
+    }
+
+    return _SaturateVec(CompMul(_XYZToRGB(I * 0.5f), params.tint));
+}
+
+inline Vec3f
+_ApplyThinFilm(
+    const Vec3f& baseReflectance,
+    float cosTheta,
+    float thinFilmWeight,
+    float thinFilmThickness,
+    float thinFilmIor,
+    const _ThinFilmParams& params)
+{
+    if (!_HasThinFilm(thinFilmWeight, thinFilmThickness, thinFilmIor)) {
+        return baseReflectance;
+    }
+
+    const Vec3f thinFilmReflectance = _ThinFilmAiryReflectance(
+        cosTheta, thinFilmThickness, thinFilmIor, params);
+    return _SaturateVec(_LerpVec(
+        baseReflectance,
+        thinFilmReflectance,
+        _Clamp01(thinFilmWeight)));
+}
+
+inline float
+_ReflectionFresnelCosTheta(const Vec3f& wi, const Vec3f& wo)
+{
+    const Vec3f halfVector = wi + wo;
+    if (halfVector.length() < _kEpsilon) {
+        return 1.0f;
+    }
+    return std::max(Dot(wo, halfVector.normalized()), 0.0f);
+}
+
+inline float
+_TransmissionFresnelCosTheta(
+    float ior,
+    const Vec3f& N,
+    const Vec3f& wi,
+    const Vec3f& wo)
+{
+    _Frame frame = _Frame::FromNormal(N);
+    const Vec3f woLocal = frame.ToLocal(wo);
+    const Vec3f wiLocal = frame.ToLocal(wi);
+    const float etap = (woLocal[2] > 0.0f) ? ior : (1.0f / ior);
+
+    Vec3f wm = wiLocal * etap + woLocal;
+    if (wm.length() < _kEpsilon) {
+        return std::max(std::abs(Dot(N, wo)), 0.0f);
+    }
+    wm.normalize();
+    return std::abs(Dot(woLocal, wm));
+}
+
+inline Vec3f
+_TransmissionScale(float baseReflectance, const Vec3f& finalReflectance)
+{
+    const float baseTransmission = std::max(1.0f - baseReflectance, 1.0e-4f);
+    return _SafeVec((Vec3f(1.0f) - finalReflectance) *
+                    (1.0f / baseTransmission));
+}
+
+inline Vec3f
+_DielectricReflectionFresnel(
+    const Bsdf::DielectricData& data,
+    float cosTheta)
+{
+    float F0 = (data.ior - 1.0f) / (data.ior + 1.0f);
+    F0 *= F0;
+    const Vec3f baseReflectance = _SchlickFresnel(
+        Vec3f(F0) * data.tint,
+        cosTheta);
+    _ThinFilmParams thinFilm;
+    thinFilm.model = _ThinFilmModel::Dielectric;
+    thinFilm.ior = Vec3f(std::max(data.ior, 1.0f));
+    thinFilm.tint = _SafeVec(data.tint);
+    return _ApplyThinFilm(
+        baseReflectance,
+        cosTheta,
+        data.thinFilmWeight,
+        data.thinFilmThickness,
+        data.thinFilmIor,
+        thinFilm);
+}
+
+inline Vec3f
+_ConductorReflectionFresnel(
+    const Bsdf::ConductorData& data,
+    float cosTheta)
+{
+    const Vec3f baseReflectance = _SchlickFresnel(
+        _ConductorF0(data.ior, data.extinction),
+        cosTheta);
+    _ThinFilmParams thinFilm;
+    thinFilm.model = _ThinFilmModel::Conductor;
+    thinFilm.ior = _MaxVec(data.ior, 0.0f);
+    thinFilm.extinction = _MaxVec(data.extinction, 0.0f);
+    return _ApplyThinFilm(
+        baseReflectance,
+        cosTheta,
+        data.thinFilmWeight,
+        data.thinFilmThickness,
+        data.thinFilmIor,
+        thinFilm);
+}
+
+inline Vec3f
+_GeneralizedSchlickReflectionFresnel(
+    const Bsdf::GeneralizedSchlickData& data,
+    float cosTheta)
+{
+    const Vec3f baseReflectance = _GeneralizedSchlickFresnel(
+        data.color0,
+        data.color82,
+        data.color90,
+        data.exponent,
+        cosTheta);
+    _ThinFilmParams thinFilm;
+    thinFilm.model = _ThinFilmModel::Schlick;
+    thinFilm.F0 = _SaturateVec(data.color0);
+    thinFilm.F82 = _SaturateVec(data.color82);
+    thinFilm.F90 = _SaturateVec(data.color90);
+    thinFilm.exponent = data.exponent;
+    return _ApplyThinFilm(
+        baseReflectance,
+        cosTheta,
+        data.thinFilmWeight,
+        data.thinFilmThickness,
+        data.thinFilmIor,
+        thinFilm);
 }
 
 inline Vec3f
@@ -629,21 +1062,28 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             float roughness = _AverageRoughness(data.roughness);
             bool sameSide = _IsSameSide(N, wi, wo);
             Vec3f shadingN = _FaceForwardNormal(N, wo);
-            float F0 = ((data.ior - 1.0f) / (data.ior + 1.0f));
-            F0 *= F0;
-            Vec3f F0Color = Vec3f(F0) * data.tint;
             if (sameSide &&
                 data.scatterMode != Bsdf::ScatterMode::Transmission) {
-                Vec3f H = (wi + wo).normalized();
-                float VdotH = std::max(Dot(wo, H), 0.0f);
-                Vec3f fresnel = _SchlickFresnel(F0Color, VdotH);
+                const Vec3f fresnel = _DielectricReflectionFresnel(
+                    data,
+                    _ReflectionFresnelCosTheta(wi, wo));
                 result += _EvalMicrofacetReflection(
                     roughness, fresnel * data.weight, shadingN, wi, wo);
             }
             if (!sameSide &&
                 data.scatterMode != Bsdf::ScatterMode::Reflection) {
-                result += Bsdf::EvalGGXTransmission(
-                    roughness, data.ior, data.tint, N, wi, wo) * data.weight;
+                const float fresnelCos =
+                    _TransmissionFresnelCosTheta(data.ior, N, wi, wo);
+                const float baseReflectance =
+                    _SchlickFresnelScalar(data.ior, fresnelCos);
+                const Vec3f transmissionScale = _TransmissionScale(
+                    baseReflectance,
+                    _DielectricReflectionFresnel(data, fresnelCos));
+                result += CompMul(
+                    Bsdf::EvalGGXTransmission(
+                        roughness, data.ior, data.tint, N, wi, wo) *
+                        data.weight,
+                    transmissionScale);
             }
             return _SafeVec(result);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
@@ -651,10 +1091,9 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 return Vec3f(0.0f);
             }
             float roughness = _AverageRoughness(data.roughness);
-            Vec3f H = (wi + wo).normalized();
-            float VdotH = std::max(Dot(wo, H), 0.0f);
-            Vec3f F0 = _ConductorF0(data.ior, data.extinction);
-            Vec3f fresnel = _SchlickFresnel(F0, VdotH);
+            const Vec3f fresnel = _ConductorReflectionFresnel(
+                data,
+                _ReflectionFresnelCosTheta(wi, wo));
             return _EvalMicrofacetReflection(
                 roughness, fresnel * data.weight, N, wi, wo);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
@@ -664,10 +1103,9 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             Vec3f shadingN = _FaceForwardNormal(N, wo);
             if (sameSide &&
                 data.scatterMode != Bsdf::ScatterMode::Transmission) {
-                Vec3f H = (wi + wo).normalized();
-                float VdotH = std::max(Dot(wo, H), 0.0f);
-                Vec3f fresnel = _GeneralizedSchlickFresnel(
-                    data.color0, data.color90, data.exponent, VdotH);
+                const Vec3f fresnel = _GeneralizedSchlickReflectionFresnel(
+                    data,
+                    _ReflectionFresnelCosTheta(wi, wo));
                 result += _EvalMicrofacetReflection(
                     roughness, fresnel * data.weight, shadingN, wi, wo);
             }
@@ -676,8 +1114,17 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 float avgF0 = _Clamp01(_Luminance(_SaturateVec(data.color0)));
                 float ior = (1.0f + std::sqrt(std::max(avgF0, 0.01f))) /
                             (1.0f - std::sqrt(std::max(avgF0, 0.01f)));
-                result += Bsdf::EvalGGXTransmission(
-                    roughness, ior, Vec3f(1.0f), N, wi, wo) * data.weight;
+                const float fresnelCos =
+                    _TransmissionFresnelCosTheta(ior, N, wi, wo);
+                const float baseReflectance =
+                    _SchlickFresnelScalar(ior, fresnelCos);
+                const Vec3f transmissionScale = _TransmissionScale(
+                    baseReflectance,
+                    _GeneralizedSchlickReflectionFresnel(data, fresnelCos));
+                result += CompMul(
+                    Bsdf::EvalGGXTransmission(
+                        roughness, ior, Vec3f(1.0f), N, wi, wo) * data.weight,
+                    transmissionScale);
             }
             return _SafeVec(result);
         } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
@@ -730,19 +1177,21 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
             Vec3f throughput(1.0f);
             if (data.scatterMode != Bsdf::ScatterMode::Transmission) {
-                float F = _SchlickFresnelScalar(data.ior, NdotV);
-                throughput -= Vec3f(F * data.weight);
+                throughput -= _DielectricReflectionFresnel(data, NdotV) *
+                    data.weight;
             }
             return _SaturateVec(throughput);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
-            float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
-            Vec3f F = _SchlickFresnel(_ConductorF0(data.ior, data.extinction), NdotV);
-            return _SaturateVec(Vec3f(1.0f) - F * data.weight);
+            const float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
+            return _SaturateVec(
+                Vec3f(1.0f) -
+                _ConductorReflectionFresnel(data, NdotV) * data.weight);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
-            float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
-            Vec3f F = _GeneralizedSchlickFresnel(
-                data.color0, data.color90, data.exponent, NdotV);
-            return _SaturateVec(Vec3f(1.0f) - F * data.weight);
+            const float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
+            return _SaturateVec(
+                Vec3f(1.0f) -
+                _GeneralizedSchlickReflectionFresnel(data, NdotV) *
+                    data.weight);
         } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
             float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
             float dirAlbedo = _ApproxSheenDirAlbedo(NdotV, data.roughness);
@@ -791,21 +1240,64 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::DielectricData>) {
             float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
-            float F = _SchlickFresnelScalar(data.ior, NdotV);
-            float t = data.weight * std::max(_Luminance(data.tint), 0.05f);
+            const Vec3f reflectance = _DielectricReflectionFresnel(data, NdotV);
+            const float baseReflectance = _SchlickFresnelScalar(data.ior, NdotV);
+            const Vec3f transmissionScale = _TransmissionScale(
+                baseReflectance,
+                reflectance);
             if (data.scatterMode == Bsdf::ScatterMode::Reflection) {
-                return std::max(F * data.weight, 0.05f);
+                return std::max(_Luminance(reflectance) * data.weight, 0.05f);
             }
             if (data.scatterMode == Bsdf::ScatterMode::Transmission) {
-                return std::max((1.0f - F) * t, 0.05f);
+                return std::max(
+                    data.weight *
+                        _Luminance(CompMul(data.tint, transmissionScale)),
+                    0.05f);
             }
-            return std::max(t, 0.05f);
+            return std::max(
+                data.weight *
+                    (_Luminance(reflectance) +
+                     _Luminance(CompMul(data.tint, transmissionScale))),
+                0.05f);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
             return data.weight *
-                std::max(_Luminance(_ConductorF0(data.ior, data.extinction)), 0.05f);
+                std::max(
+                    _Luminance(_ConductorReflectionFresnel(
+                        data,
+                        std::max(std::abs(Dot(N, wo)), _kEpsilon))),
+                    0.05f);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
+            const float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
+            const Vec3f reflectance = _GeneralizedSchlickReflectionFresnel(
+                data,
+                NdotV);
+            if (data.scatterMode == Bsdf::ScatterMode::Transmission) {
+                const float avgF0 =
+                    _Clamp01(_Luminance(_SaturateVec(data.color0)));
+                const float sqrtF0 = std::sqrt(std::max(avgF0, 0.01f));
+                const float ior = (1.0f + sqrtF0) / (1.0f - sqrtF0);
+                return std::max(
+                    data.weight *
+                        _Luminance(_TransmissionScale(
+                            _SchlickFresnelScalar(ior, NdotV),
+                            reflectance)),
+                    0.05f);
+            }
+            if (data.scatterMode == Bsdf::ScatterMode::ReflectionTransmission) {
+                const float avgF0 =
+                    _Clamp01(_Luminance(_SaturateVec(data.color0)));
+                const float sqrtF0 = std::sqrt(std::max(avgF0, 0.01f));
+                const float ior = (1.0f + sqrtF0) / (1.0f - sqrtF0);
+                return std::max(
+                    data.weight *
+                        (_Luminance(reflectance) +
+                         _Luminance(_TransmissionScale(
+                             _SchlickFresnelScalar(ior, NdotV),
+                             reflectance))),
+                    0.05f);
+            }
             return data.weight *
-                std::max(_Luminance(_SaturateVec(data.color0)), 0.05f);
+                std::max(_Luminance(reflectance), 0.05f);
         } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
             return data.weight * std::max(_Luminance(data.color), 0.0f) * 0.25f;
         } else if constexpr (std::is_same_v<T, Bsdf::UnsupportedData>) {
@@ -969,12 +1461,12 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         } else if constexpr (std::is_same_v<T, Bsdf::DielectricData>) {
             float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
-            float fresnelProb = _Clamp01(_SchlickFresnelScalar(data.ior, NdotV));
+            float fresnelProb = _Clamp01(_Luminance(
+                _DielectricReflectionFresnel(data, NdotV)));
             Vec3f shadingN = _FaceForwardNormal(N, wo);
             if (data.scatterMode == Bsdf::ScatterMode::Reflection) {
-                Vec3f F0 = Vec3f(_SchlickFresnelScalar(data.ior, 1.0f)) * data.tint;
                 auto sample = Bsdf::SampleGGXSpecular(
-                    _AverageRoughness(data.roughness), data.ior, F0,
+                    _AverageRoughness(data.roughness), data.ior, data.tint,
                     shadingN, wo, u1, u2);
                 return _FinalizeSubtreeSample(tree, nodeId, N, wo, sample);
             }
@@ -983,16 +1475,23 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     _AverageRoughness(data.roughness), data.ior,
                     data.tint, N, wo, u1, u2);
                 if (sample.pdf <= 0.0f) {
-                    return _SampleDeltaTransmission(
+                    auto deltaSample = _SampleDeltaTransmission(
                         data.ior, data.tint, data.weight, N, wo);
+                    const float baseReflectance =
+                        _SchlickFresnelScalar(data.ior, NdotV);
+                    deltaSample.f = CompMul(
+                        deltaSample.f,
+                        _TransmissionScale(
+                            baseReflectance,
+                            _DielectricReflectionFresnel(data, NdotV)));
+                    return deltaSample;
                 }
                 sample.f *= data.weight;
                 return _FinalizeSubtreeSample(tree, nodeId, N, wo, sample);
             }
             if (uChoice < fresnelProb) {
-                Vec3f F0 = Vec3f(_SchlickFresnelScalar(data.ior, 1.0f)) * data.tint;
                 auto sample = Bsdf::SampleGGXSpecular(
-                    _AverageRoughness(data.roughness), data.ior, F0,
+                    _AverageRoughness(data.roughness), data.ior, data.tint,
                     shadingN, wo, u1, u2);
                 return _FinalizeSubtreeSample(tree, nodeId, N, wo, sample);
             }
@@ -1001,8 +1500,16 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     _AverageRoughness(data.roughness), data.ior,
                     data.tint, N, wo, u1, u2);
                 if (sample.pdf <= 0.0f) {
-                    return _SampleDeltaTransmission(
+                    auto deltaSample = _SampleDeltaTransmission(
                         data.ior, data.tint, data.weight, N, wo);
+                    const float baseReflectance =
+                        _SchlickFresnelScalar(data.ior, NdotV);
+                    deltaSample.f = CompMul(
+                        deltaSample.f,
+                        _TransmissionScale(
+                            baseReflectance,
+                            _DielectricReflectionFresnel(data, NdotV)));
+                    return deltaSample;
                 }
                 sample.f *= data.weight;
                 return _FinalizeSubtreeSample(tree, nodeId, N, wo, sample);
@@ -1013,9 +1520,9 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 _ConductorF0(data.ior, data.extinction), N, wo, u1, u2);
             return _FinalizeSubtreeSample(tree, nodeId, N, wo, sample);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
-            float fresnelProb = _Clamp01(_Luminance(_GeneralizedSchlickFresnel(
-                data.color0, data.color90, data.exponent,
-                std::max(std::abs(Dot(N, wo)), _kEpsilon))));
+            const float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
+            float fresnelProb = _Clamp01(_Luminance(
+                _GeneralizedSchlickReflectionFresnel(data, NdotV)));
             Vec3f shadingN = _FaceForwardNormal(N, wo);
             if (data.scatterMode == Bsdf::ScatterMode::Transmission) {
                 float avgF0 = _Clamp01(_Luminance(_SaturateVec(data.color0)));
@@ -1025,8 +1532,15 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     _AverageRoughness(data.roughness), ior,
                     Vec3f(1.0f), N, wo, u1, u2);
                 if (sample.pdf <= 0.0f) {
-                    return _SampleDeltaTransmission(
+                    auto deltaSample = _SampleDeltaTransmission(
                         ior, Vec3f(1.0f), data.weight, N, wo);
+                    deltaSample.f = CompMul(
+                        deltaSample.f,
+                        _TransmissionScale(
+                            _SchlickFresnelScalar(ior, NdotV),
+                            _GeneralizedSchlickReflectionFresnel(
+                                data, NdotV)));
+                    return deltaSample;
                 }
                 sample.f *= data.weight;
                 return _FinalizeSubtreeSample(tree, nodeId, N, wo, sample);
@@ -1040,8 +1554,15 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     _AverageRoughness(data.roughness), ior,
                     Vec3f(1.0f), N, wo, u1, u2);
                 if (sample.pdf <= 0.0f) {
-                    return _SampleDeltaTransmission(
+                    auto deltaSample = _SampleDeltaTransmission(
                         ior, Vec3f(1.0f), data.weight, N, wo);
+                    deltaSample.f = CompMul(
+                        deltaSample.f,
+                        _TransmissionScale(
+                            _SchlickFresnelScalar(ior, NdotV),
+                            _GeneralizedSchlickReflectionFresnel(
+                                data, NdotV)));
+                    return deltaSample;
                 }
                 sample.f *= data.weight;
                 return _FinalizeSubtreeSample(tree, nodeId, N, wo, sample);

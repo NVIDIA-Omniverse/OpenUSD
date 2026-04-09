@@ -515,6 +515,151 @@ TestRoughTransmissionSpreads()
 }
 
 static bool
+TestThinFilmDielectricChangesReflectionColor()
+{
+    Bsdf::DielectricData base;
+    base.weight = 1.0f;
+    base.tint = Vec3f(1.0f);
+    base.ior = 1.5f;
+    base.scatterMode = Bsdf::ScatterMode::Reflection;
+
+    Bsdf::DielectricData thinFilm = base;
+    thinFilm.thinFilmWeight = 1.0f;
+    thinFilm.thinFilmThickness = 300.0f;
+    thinFilm.thinFilmIor = 1.3f;
+
+    SurfaceClosure baseClosure;
+    baseClosure.bsdfTree.root = baseClosure.bsdfTree.Add(base);
+
+    SurfaceClosure thinFilmClosure;
+    thinFilmClosure.bsdfTree.root = thinFilmClosure.bsdfTree.Add(thinFilm);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.3f, 0.95f, 0.0f).normalized();
+    const Vec3f wi = Vec3f(-0.2f, 0.98f, 0.0f).normalized();
+
+    const Vec3f baseEval = Bsdf::EvalSurface(baseClosure, N, wi, wo);
+    const Vec3f thinFilmEval = Bsdf::EvalSurface(thinFilmClosure, N, wi, wo);
+
+    return !Test_IsClose(baseEval, thinFilmEval, 1e-4f) &&
+           std::abs(thinFilmEval[0] - thinFilmEval[1]) > 1e-4f;
+}
+
+static bool
+TestThinFilmConductorChangesReflectionColor()
+{
+    Bsdf::ConductorData base;
+    base.weight = 1.0f;
+
+    Bsdf::ConductorData thinFilm = base;
+    thinFilm.thinFilmWeight = 1.0f;
+    thinFilm.thinFilmThickness = 300.0f;
+    thinFilm.thinFilmIor = 1.3f;
+
+    SurfaceClosure baseClosure;
+    baseClosure.bsdfTree.root = baseClosure.bsdfTree.Add(base);
+
+    SurfaceClosure thinFilmClosure;
+    thinFilmClosure.bsdfTree.root = thinFilmClosure.bsdfTree.Add(thinFilm);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.25f, 0.96f, 0.1f).normalized();
+    const Vec3f wi = Vec3f(-0.1f, 0.99f, 0.05f).normalized();
+
+    const Vec3f baseEval = Bsdf::EvalSurface(baseClosure, N, wi, wo);
+    const Vec3f thinFilmEval = Bsdf::EvalSurface(thinFilmClosure, N, wi, wo);
+
+    const bool changed = !Test_IsClose(baseEval, thinFilmEval, 1e-5f);
+    const bool chromatic =
+        std::abs(thinFilmEval[0] - thinFilmEval[1]) > 1e-5f;
+    if (!changed || !chromatic) {
+        printf(
+            "    base=(%f,%f,%f) thinFilm=(%f,%f,%f)\n",
+            baseEval[0], baseEval[1], baseEval[2],
+            thinFilmEval[0], thinFilmEval[1], thinFilmEval[2]);
+    }
+
+    return changed && chromatic;
+}
+
+static bool
+TestThinFilmGeneralizedSchlickChangesReflectionColor()
+{
+    Bsdf::GeneralizedSchlickData base;
+    base.weight = 1.0f;
+    base.color0 = Vec3f(0.08f);
+    base.color82 = Vec3f(0.08f);
+    base.color90 = Vec3f(1.0f);
+    base.exponent = 5.0f;
+    base.roughness = Vec2f(0.05f, 0.05f);
+    base.scatterMode = Bsdf::ScatterMode::Reflection;
+
+    Bsdf::GeneralizedSchlickData thinFilm = base;
+    thinFilm.thinFilmWeight = 1.0f;
+    thinFilm.thinFilmThickness = 320.0f;
+    thinFilm.thinFilmIor = 1.45f;
+
+    SurfaceClosure baseClosure;
+    baseClosure.bsdfTree.root = baseClosure.bsdfTree.Add(base);
+
+    SurfaceClosure thinFilmClosure;
+    thinFilmClosure.bsdfTree.root = thinFilmClosure.bsdfTree.Add(thinFilm);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.82f, 0.57f, 0.0f).normalized();
+    const Vec3f wi = Vec3f(-0.68f, 0.71f, 0.18f).normalized();
+
+    const Vec3f baseEval = Bsdf::EvalSurface(baseClosure, N, wi, wo);
+    const Vec3f thinFilmEval = Bsdf::EvalSurface(thinFilmClosure, N, wi, wo);
+
+    const bool changed = !Test_IsClose(baseEval, thinFilmEval, 1e-5f);
+    const bool chromatic =
+        std::abs(thinFilmEval[0] - thinFilmEval[1]) > 1e-5f;
+    if (!changed || !chromatic) {
+        printf(
+            "    base=(%f,%f,%f) thinFilm=(%f,%f,%f)\n",
+            baseEval[0], baseEval[1], baseEval[2],
+            thinFilmEval[0], thinFilmEval[1], thinFilmEval[2]);
+    }
+
+    return changed && chromatic;
+}
+
+static bool
+TestThinFilmSampleSurfacePdfConsistency()
+{
+    SurfaceClosure c;
+    Bsdf::DielectricData dielectric;
+    dielectric.weight = 1.0f;
+    dielectric.tint = Vec3f(1.0f);
+    dielectric.ior = 1.5f;
+    dielectric.roughness = Vec2f(0.2f, 0.2f);
+    dielectric.scatterMode = Bsdf::ScatterMode::ReflectionTransmission;
+    dielectric.thinFilmWeight = 1.0f;
+    dielectric.thinFilmThickness = 280.0f;
+    dielectric.thinFilmIor = 1.35f;
+    c.bsdfTree.root = c.bsdfTree.Add(dielectric);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.2f, 0.98f, 0.0f).normalized();
+
+    const auto sample = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.65f);
+    if (sample.pdf <= 0.0f) {
+        printf("    Expected valid thin-film sample\n");
+        return false;
+    }
+
+    const float pdf = Bsdf::PdfSurface(c, N, sample.wi, wo);
+    const float ratio = sample.pdf / (pdf + 1e-10f);
+    if (ratio < 0.8f || ratio > 1.2f) {
+        printf("    Thin-film sample pdf=%f != PdfSurface=%f (ratio=%f)\n",
+               sample.pdf, pdf, ratio);
+        return false;
+    }
+    return true;
+}
+
+static bool
 TestPowerHeuristic()
 {
     float w = Bsdf::PowerHeuristic(1.0f, 1.0f);
@@ -563,6 +708,10 @@ Test_RegisterBsdfTests()
     _REG(TestSampleGGXTransmissionHemisphere);
     _REG(TestSampleGGXTransmissionPdfConsistency);
     _REG(TestRoughTransmissionSpreads);
+    _REG(TestThinFilmDielectricChangesReflectionColor);
+    _REG(TestThinFilmConductorChangesReflectionColor);
+    _REG(TestThinFilmGeneralizedSchlickChangesReflectionColor);
+    _REG(TestThinFilmSampleSurfacePdfConsistency);
     _REG(TestPowerHeuristic);
 }
 

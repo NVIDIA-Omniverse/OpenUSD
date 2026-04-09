@@ -4,8 +4,10 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "../../mxcppAdapter.h"
 #include "pxr/base/gf/vec2f.h"
+#include "pxr/base/vt/value.h"
+
+#include "../../mxcppAdapter.h"
 
 #include <cstdio>
 #include <functional>

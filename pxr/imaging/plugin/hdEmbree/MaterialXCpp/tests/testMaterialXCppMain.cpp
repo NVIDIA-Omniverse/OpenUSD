@@ -59,7 +59,7 @@ void Test_RegisterGraphTests();
 void Test_RegisterAdapterTests();
 
 int
-main(int /*argc*/, char** /*argv*/)
+main(int argc, char** argv)
 {
     Test_RegisterBsdfTests();
     Test_RegisterNodeTests();
@@ -67,7 +67,12 @@ main(int /*argc*/, char** /*argv*/)
     Test_RegisterGraphTests();
     Test_RegisterAdapterTests();
 
+    const char* filter = (argc > 1) ? argv[1] : nullptr;
+
     for (const auto& entry : _Tests()) {
+        if (filter && entry.name.find(filter) == std::string::npos) {
+            continue;
+        }
         _totalTests++;
         printf("  [RUN ] %s\n", entry.name.c_str());
         bool passed = false;

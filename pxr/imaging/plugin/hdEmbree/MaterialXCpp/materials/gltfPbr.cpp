@@ -209,29 +209,16 @@ EvalGltfPbr(const ParamMap& params)
     reflection.roughness = baseRoughness;
     reflection.tangent = tangent;
     reflection.scatterMode = Bsdf::ScatterMode::Reflection;
-
-    Bsdf::GeneralizedSchlickData reflectionTf = reflection;
-    reflectionTf.thinFilmIor = iridescenceIor;
-    reflectionTf.thinFilmThickness = iridescenceThickness;
+    reflection.thinFilmWeight = _Clamp01(iridescence);
+    reflection.thinFilmIor = iridescenceIor;
+    reflection.thinFilmThickness = iridescenceThickness;
 
     const Bsdf::NodeId reflectionId = tree.Add(reflection);
-    const Bsdf::NodeId reflectionTfId = tree.Add(reflectionTf);
 
     Bsdf::LayerData dielectricLayer;
     dielectricLayer.top = reflectionId;
     dielectricLayer.base = transmissionMixId;
     const Bsdf::NodeId dielectricLayerId = tree.Add(dielectricLayer);
-
-    Bsdf::LayerData dielectricTfLayer;
-    dielectricTfLayer.top = reflectionTfId;
-    dielectricTfLayer.base = transmissionMixId;
-    const Bsdf::NodeId dielectricTfLayerId = tree.Add(dielectricTfLayer);
-
-    Bsdf::MixData iridescentDielectricMix;
-    iridescentDielectricMix.bg = dielectricLayerId;
-    iridescentDielectricMix.fg = dielectricTfLayerId;
-    iridescentDielectricMix.mix = _Clamp01(iridescence);
-    const Bsdf::NodeId dielectricBranchId = tree.Add(iridescentDielectricMix);
 
     Bsdf::GeneralizedSchlickData metal;
     metal.color0 = baseColor;
@@ -239,19 +226,13 @@ EvalGltfPbr(const ParamMap& params)
     metal.color90 = Vec3f(1.0f);
     metal.roughness = baseRoughness;
     metal.tangent = tangent;
-
-    Bsdf::GeneralizedSchlickData metalTf = metal;
-    metalTf.thinFilmIor = iridescenceIor;
-    metalTf.thinFilmThickness = iridescenceThickness;
-
-    Bsdf::MixData iridescentMetalMix;
-    iridescentMetalMix.bg = tree.Add(metal);
-    iridescentMetalMix.fg = tree.Add(metalTf);
-    iridescentMetalMix.mix = _Clamp01(iridescence);
-    const Bsdf::NodeId metalBranchId = tree.Add(iridescentMetalMix);
+    metal.thinFilmWeight = _Clamp01(iridescence);
+    metal.thinFilmIor = iridescenceIor;
+    metal.thinFilmThickness = iridescenceThickness;
+    const Bsdf::NodeId metalBranchId = tree.Add(metal);
 
     Bsdf::MixData baseMix;
-    baseMix.bg = dielectricBranchId;
+    baseMix.bg = dielectricLayerId;
     baseMix.fg = metalBranchId;
     baseMix.mix = _Clamp01(metallic);
     Bsdf::NodeId root = tree.Add(baseMix);

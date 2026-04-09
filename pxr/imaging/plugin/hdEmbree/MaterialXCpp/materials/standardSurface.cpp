@@ -39,6 +39,8 @@ static const SlotName _kCoatColor("coat_color");
 static const SlotName _kCoatRoughness("coat_roughness");
 static const SlotName _kCoatIOR("coat_IOR");
 static const SlotName _kCoatNormal("coat_normal");
+static const SlotName _kThinFilmThickness("thin_film_thickness");
+static const SlotName _kThinFilmIOR("thin_film_IOR");
 static const SlotName _kEmission("emission");
 static const SlotName _kEmissionColor("emission_color");
 static const SlotName _kOpacity("opacity");
@@ -174,6 +176,12 @@ EvalStandardSurface(const ParamMap& params)
     const Vec3f coatColor = Get<Vec3f>(params, _kCoatColor, Vec3f(1.0f));
     c.coatRoughness = Get<float>(params, _kCoatRoughness, 0.1f);
     c.coatIor = Get<float>(params, _kCoatIOR, 1.5f);
+    const float thinFilmThicknessNm = std::max(
+        Get<float>(params, _kThinFilmThickness, 0.0f),
+        0.0f);
+    const float thinFilmIor = std::max(
+        Get<float>(params, _kThinFilmIOR, 1.5f),
+        1.0f);
 
     c.sheen = Get<float>(params, _kSheen, 0.0f);
     c.sheenColor = Get<Vec3f>(params, _kSheenColor, Vec3f(1.0f));
@@ -220,11 +228,19 @@ EvalStandardSurface(const ParamMap& params)
         dielectric.roughness = specularRoughness;
         dielectric.tangent = tangent;
         dielectric.scatterMode = Bsdf::ScatterMode::Reflection;
+        dielectric.thinFilmWeight = 1.0f;
+        dielectric.thinFilmThickness = thinFilmThicknessNm;
+        dielectric.thinFilmIor = thinFilmIor;
 
         const Vec3f metalF0 = _Saturate(CompMul(baseCol, c.specularColor));
+        Bsdf::ConductorData conductor =
+            _MakeApproxConductor(clampedSpec, metalF0, specularRoughness, tangent);
+        conductor.thinFilmWeight = 1.0f;
+        conductor.thinFilmThickness = thinFilmThicknessNm;
+        conductor.thinFilmIor = thinFilmIor;
+
         const Bsdf::NodeId dielectricId = tree.Add(dielectric);
-        const Bsdf::NodeId conductorId = tree.Add(
-            _MakeApproxConductor(clampedSpec, metalF0, specularRoughness, tangent));
+        const Bsdf::NodeId conductorId = tree.Add(conductor);
 
         if (metalMix <= 0.0f) {
             root = _AppendAdd(&tree, root, dielectricId);

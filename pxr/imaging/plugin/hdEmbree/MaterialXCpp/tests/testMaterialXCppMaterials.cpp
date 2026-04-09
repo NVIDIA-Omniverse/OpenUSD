@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <variant>
 
 using namespace mxcpp;
 
@@ -21,6 +22,20 @@ bool Test_IsClose(float a, float b, float eps = 1e-5f);
 bool Test_IsClose(const Vec3f& a, const Vec3f& b, float eps = 1e-5f);
 
 #define _REG(name) Test_Register("Materials." #name, &name)
+
+template <typename T, typename Predicate>
+static const T*
+FindNodeIf(const mxcpp::Bsdf::ClosureTree& tree, Predicate predicate)
+{
+    for (const auto& node : tree.nodes) {
+        if (const auto* data = std::get_if<T>(&node.data)) {
+            if (predicate(*data)) {
+                return data;
+            }
+        }
+    }
+    return nullptr;
+}
 
 // ---------------------------------------------------------------------------
 // Standard Surface
@@ -82,6 +97,30 @@ TestStandardSurfaceCustomParams()
     return true;
 }
 
+static bool
+TestStandardSurfaceThinFilmParametersReachBsdf()
+{
+    ParamMap params;
+    params["thin_film_thickness"] = Value(350.0f);
+    params["thin_film_IOR"] = Value(1.8f);
+
+    const SurfaceClosure c = EvalStandardSurface(params);
+    const auto* dielectric = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    if (!dielectric) {
+        printf("    Failed to find Standard Surface reflection dielectric node\n");
+        return false;
+    }
+
+    return Test_IsClose(dielectric->thinFilmWeight, 1.0f) &&
+           Test_IsClose(dielectric->thinFilmThickness, 350.0f, 1e-4f) &&
+           Test_IsClose(dielectric->thinFilmIor, 1.8f, 1e-4f);
+}
+
 // ---------------------------------------------------------------------------
 // OpenPBR
 // ---------------------------------------------------------------------------
@@ -116,6 +155,31 @@ TestOpenPbrTransmission()
     if (!Test_IsClose(c.transmissionColor, Vec3f(0.8f, 0.9f, 1.0f), 1e-4f))
         return false;
     return true;
+}
+
+static bool
+TestOpenPbrThinFilmParametersReachBsdf()
+{
+    ParamMap params;
+    params["thin_film_weight"] = Value(0.25f);
+    params["thin_film_thickness"] = Value(0.4f);
+    params["thin_film_ior"] = Value(1.7f);
+
+    const SurfaceClosure c = EvalOpenPbr(params);
+    const auto* dielectric = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    if (!dielectric) {
+        printf("    Failed to find OpenPBR reflection dielectric node\n");
+        return false;
+    }
+
+    return Test_IsClose(dielectric->thinFilmWeight, 0.25f) &&
+           Test_IsClose(dielectric->thinFilmThickness, 400.0f, 1e-4f) &&
+           Test_IsClose(dielectric->thinFilmIor, 1.7f, 1e-4f);
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +229,32 @@ TestGltfPbrAlphaMask()
     const SurfaceClosure c = EvalGltfPbr(params);
     return Test_IsClose(c.opacity, 0.0f) &&
            Test_IsClose(c.presence, 0.0f);
+}
+
+static bool
+TestGltfPbrIridescenceParametersReachBsdf()
+{
+    ParamMap params;
+    params["iridescence"] = Value(0.6f);
+    params["iridescence_ior"] = Value(1.45f);
+    params["iridescence_thickness"] = Value(220.0f);
+
+    const SurfaceClosure c = EvalGltfPbr(params);
+    const auto* reflective = FindNodeIf<Bsdf::GeneralizedSchlickData>(
+        c.bsdfTree,
+        [](const Bsdf::GeneralizedSchlickData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection &&
+                   data.thinFilmWeight > 0.0f;
+        });
+
+    if (!reflective) {
+        printf("    Failed to find glTF iridescent reflection node\n");
+        return false;
+    }
+
+    return Test_IsClose(reflective->thinFilmWeight, 0.6f) &&
+           Test_IsClose(reflective->thinFilmThickness, 220.0f, 1e-4f) &&
+           Test_IsClose(reflective->thinFilmIor, 1.45f, 1e-4f);
 }
 
 // ---------------------------------------------------------------------------
@@ -278,11 +368,14 @@ Test_RegisterMaterialTests()
     _REG(TestStandardSurfaceDefaults);
     _REG(TestStandardSurfaceMetallic);
     _REG(TestStandardSurfaceCustomParams);
+    _REG(TestStandardSurfaceThinFilmParametersReachBsdf);
     _REG(TestOpenPbrDefaults);
     _REG(TestOpenPbrTransmission);
+    _REG(TestOpenPbrThinFilmParametersReachBsdf);
     _REG(TestDisneyPrincipledDefaults);
     _REG(TestGltfPbrDefaults);
     _REG(TestGltfPbrAlphaMask);
+    _REG(TestGltfPbrIridescenceParametersReachBsdf);
     _REG(TestUsdPreviewSurfaceDefaults);
     _REG(TestUsdPreviewSurfaceMetallicWorkflow);
     _REG(TestUsdPreviewSurfaceSpecularWorkflow);

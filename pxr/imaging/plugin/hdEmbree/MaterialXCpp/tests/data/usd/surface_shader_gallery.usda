@@ -186,14 +186,19 @@ def Xform "World"
             {
                 uniform token info:id = "ND_open_pbr_surface_surfaceshader"
                 float inputs:base_weight = 1.0
-                color3f inputs:base_color = (0.76, 0.55, 0.18)
-                float inputs:base_metalness = 0.0
+                # color3f inputs:base_color = (0.76, 0.55, 0.18)
+                color3f inputs:base_color = (0.8, 0.8, 0.8)
+                # float inputs:base_metalness = 0.0
+                float inputs:base_metalness = 1.0
                 float inputs:specular_weight = 1.0
-                float inputs:specular_roughness = 0.26
+                float inputs:specular_roughness = 0.3
                 color3f inputs:specular_color = (1.0, 1.0, 1.0)
                 float inputs:specular_ior = 1.5
                 float inputs:transmission_weight = 0.0
                 float inputs:subsurface_weight = 0.0
+                float inputs:thin_film_weight = 1.0
+                float inputs:thin_film_thickness = 0.25
+                float inputs:thin_film_ior = 1.6
                 token outputs:out
             }
         }

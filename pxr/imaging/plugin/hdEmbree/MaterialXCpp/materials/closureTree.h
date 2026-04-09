@@ -73,6 +73,7 @@ struct DielectricData
     float ior = 1.5f;
     Vec2f roughness = Vec2f(0.05f, 0.05f);
     bool retroreflective = false;
+    float thinFilmWeight = 1.0f;
     float thinFilmThickness = 0.0f;
     float thinFilmIor = 1.5f;
     Vec3f tangent = Vec3f(1.0f, 0.0f, 0.0f);
@@ -86,6 +87,7 @@ struct ConductorData
     Vec3f extinction = Vec3f(3.424f, 2.346f, 1.770f);
     Vec2f roughness = Vec2f(0.05f, 0.05f);
     bool retroreflective = false;
+    float thinFilmWeight = 1.0f;
     float thinFilmThickness = 0.0f;
     float thinFilmIor = 1.5f;
     Vec3f tangent = Vec3f(1.0f, 0.0f, 0.0f);
@@ -100,6 +102,7 @@ struct GeneralizedSchlickData
     float exponent = 5.0f;
     Vec2f roughness = Vec2f(0.05f, 0.05f);
     bool retroreflective = false;
+    float thinFilmWeight = 1.0f;
     float thinFilmThickness = 0.0f;
     float thinFilmIor = 1.5f;
     Vec3f tangent = Vec3f(1.0f, 0.0f, 0.0f);

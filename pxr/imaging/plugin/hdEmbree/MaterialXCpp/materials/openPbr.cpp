@@ -34,6 +34,9 @@ static const SlotName _kCoatWeight("coat_weight");
 static const SlotName _kCoatColor("coat_color");
 static const SlotName _kCoatRoughness("coat_roughness");
 static const SlotName _kCoatIor("coat_ior");
+static const SlotName _kThinFilmWeight("thin_film_weight");
+static const SlotName _kThinFilmThickness("thin_film_thickness");
+static const SlotName _kThinFilmIor("thin_film_ior");
 static const SlotName _kCoatNormal("coat_normal");
 static const SlotName _kFuzzWeight("fuzz_weight");
 static const SlotName _kFuzzColor("fuzz_color");
@@ -144,6 +147,14 @@ EvalOpenPbr(const ParamMap& params)
     const Vec3f coatColor = Get<Vec3f>(params, _kCoatColor, Vec3f(1.0f));
     c.coatRoughness = Get<float>(params, _kCoatRoughness, 0.0f);
     c.coatIor = Get<float>(params, _kCoatIor, 1.6f);
+    const float thinFilmWeight = _Clamp01(
+        Get<float>(params, _kThinFilmWeight, 0.0f));
+    const float thinFilmThicknessNm = std::max(
+        Get<float>(params, _kThinFilmThickness, 0.5f) * 1000.0f,
+        0.0f);
+    const float thinFilmIor = std::max(
+        Get<float>(params, _kThinFilmIor, 1.4f),
+        1.0f);
 
     c.sheen = Get<float>(params, _kFuzzWeight, 0.0f);
     c.sheenColor = Get<Vec3f>(params, _kFuzzColor, Vec3f(1.0f));
@@ -189,6 +200,9 @@ EvalOpenPbr(const ParamMap& params)
         dielectric.roughness = specularRoughness;
         dielectric.tangent = tangent;
         dielectric.scatterMode = Bsdf::ScatterMode::Reflection;
+        dielectric.thinFilmWeight = thinFilmWeight;
+        dielectric.thinFilmThickness = thinFilmThicknessNm;
+        dielectric.thinFilmIor = thinFilmIor;
 
         Bsdf::GeneralizedSchlickData metal;
         metal.weight = specularWeight;
@@ -199,6 +213,9 @@ EvalOpenPbr(const ParamMap& params)
         metal.roughness = specularRoughness;
         metal.tangent = tangent;
         metal.scatterMode = Bsdf::ScatterMode::Reflection;
+        metal.thinFilmWeight = thinFilmWeight;
+        metal.thinFilmThickness = thinFilmThicknessNm;
+        metal.thinFilmIor = thinFilmIor;
 
         const Bsdf::NodeId dielectricId = tree.Add(dielectric);
         const Bsdf::NodeId metalId = tree.Add(metal);
