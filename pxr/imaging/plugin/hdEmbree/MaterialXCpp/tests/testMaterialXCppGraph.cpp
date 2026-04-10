@@ -406,8 +406,8 @@ TestEvalGeometricInput()
     ctx.displayColor = Vec3f(0.3f, 0.6f, 0.9f);
     SurfaceClosure closure = graph->Evaluate(ctx);
 
-    // UsdPreviewSurface multiplies baseColor by occlusion (default 1.0),
-    // so it should match displayColor.
+    // UsdPreviewSurface leaves diffuseColor unchanged here because the
+    // occlusion input is ignored and defaults do not modify displayColor.
     if (!Test_IsClose(closure.baseColor, Vec3f(0.3f, 0.6f, 0.9f), 1e-4f)) {
         printf("    baseColor: (%f,%f,%f)\n",
                closure.baseColor[0], closure.baseColor[1], closure.baseColor[2]);

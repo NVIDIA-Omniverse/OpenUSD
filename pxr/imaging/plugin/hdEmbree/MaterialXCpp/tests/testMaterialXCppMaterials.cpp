@@ -710,6 +710,17 @@ TestUsdPreviewSurfaceMaterialXOpacityModeInteger()
            Test_IsClose(c.transmission, 0.0f);
 }
 
+static bool
+TestUsdPreviewSurfaceIgnoresOcclusion()
+{
+    ParamMap params;
+    params["diffuseColor"] = Value(Vec3f(0.2f, 0.4f, 0.8f));
+    params["occlusion"] = Value(0.0f);
+
+    const SurfaceClosure c = EvalUsdPreviewSurface(params);
+    return Test_IsClose(c.baseColor, Vec3f(0.2f, 0.4f, 0.8f), 1e-4f);
+}
+
 // ---------------------------------------------------------------------------
 
 void
@@ -743,6 +754,7 @@ Test_RegisterMaterialTests()
     _REG(TestUsdPreviewSurfaceTransparentModeKeepsLightingResponse);
     _REG(TestUsdPreviewSurfacePresenceModeCutsLightingResponse);
     _REG(TestUsdPreviewSurfaceMaterialXOpacityModeInteger);
+    _REG(TestUsdPreviewSurfaceIgnoresOcclusion);
 }
 
 #undef _REG

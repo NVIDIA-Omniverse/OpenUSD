@@ -186,9 +186,6 @@ EvalUsdPreviewSurface(const ParamMap& params)
     c.specularIor = Get<float>(params, _kIor, 1.5f);
     c.normal = Get<Vec3f>(params, _kNormal, Vec3f(0.0f, 0.0f, 1.0f));
 
-    const float occlusion = Get<float>(params, _kOcclusion, 1.0f);
-    c.baseColor = c.baseColor * occlusion;
-
     c.transmissionColor = Vec3f(1.0f);
     c.sheen = 0.0f;
     c.thinWalled = false;
