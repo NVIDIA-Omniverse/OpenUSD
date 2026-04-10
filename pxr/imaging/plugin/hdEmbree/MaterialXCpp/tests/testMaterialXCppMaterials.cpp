@@ -144,6 +144,50 @@ TestOpenPbrDefaults()
 }
 
 static bool
+TestOpenPbrBuildsLayeredDielectricBase()
+{
+    ParamMap params;
+    params["base_metalness"] = Value(0.0f);
+    params["transmission_weight"] = Value(0.0f);
+    params["coat_weight"] = Value(0.0f);
+    params["fuzz_weight"] = Value(0.0f);
+
+    const SurfaceClosure c = EvalOpenPbr(params);
+    const auto* root = c.bsdfTree.Get(c.bsdfTree.root);
+    if (!root) {
+        printf("    Missing OpenPBR root node\n");
+        return false;
+    }
+
+    const auto* layer = std::get_if<Bsdf::LayerData>(&root->data);
+    if (!layer) {
+        printf("    Expected layered dielectric base at the root\n");
+        return false;
+    }
+
+    const auto* top = c.bsdfTree.Get(layer->top);
+    const auto* base = c.bsdfTree.Get(layer->base);
+    if (!top || !base) {
+        printf("    Missing layered OpenPBR child nodes\n");
+        return false;
+    }
+
+    const auto* dielectric = std::get_if<Bsdf::DielectricData>(&top->data);
+    if (!dielectric ||
+        dielectric->scatterMode != Bsdf::ScatterMode::Reflection) {
+        printf("    Expected dielectric reflection layer on top of base\n");
+        return false;
+    }
+
+    if (!std::holds_alternative<Bsdf::OrenNayarDiffuseData>(base->data)) {
+        printf("    Expected diffuse base under dielectric reflection\n");
+        return false;
+    }
+
+    return true;
+}
+
+static bool
 TestOpenPbrTransmission()
 {
     ParamMap params;
@@ -155,6 +199,127 @@ TestOpenPbrTransmission()
     if (!Test_IsClose(c.transmissionColor, Vec3f(0.8f, 0.9f, 1.0f), 1e-4f))
         return false;
     return true;
+}
+
+static bool
+TestOpenPbrLayersReflectionOverTransmissionMix()
+{
+    ParamMap params;
+    params["transmission_weight"] = Value(0.7f);
+    params["geometry_thin_walled"] = Value(false);
+    params["coat_weight"] = Value(0.0f);
+    params["fuzz_weight"] = Value(0.0f);
+
+    const SurfaceClosure c = EvalOpenPbr(params);
+    const auto* root = c.bsdfTree.Get(c.bsdfTree.root);
+    const auto* layer =
+        root ? std::get_if<Bsdf::LayerData>(&root->data) : nullptr;
+    if (!layer) {
+        printf("    Expected layered OpenPBR root with transmission\n");
+        return false;
+    }
+
+    const auto* base = c.bsdfTree.Get(layer->base);
+    const auto* mix = base ? std::get_if<Bsdf::MixData>(&base->data) : nullptr;
+    if (!mix) {
+        printf("    Expected transmission mixed into dielectric substrate\n");
+        return false;
+    }
+
+    const auto* bg = c.bsdfTree.Get(mix->bg);
+    const auto* fg = c.bsdfTree.Get(mix->fg);
+    if (!bg || !fg) {
+        printf("    Missing transmission mix children\n");
+        return false;
+    }
+
+    if (!std::holds_alternative<Bsdf::OrenNayarDiffuseData>(bg->data)) {
+        printf("    Expected diffuse node as transmission background\n");
+        return false;
+    }
+
+    const auto* transmission = std::get_if<Bsdf::DielectricData>(&fg->data);
+    if (!transmission ||
+        transmission->scatterMode != Bsdf::ScatterMode::Transmission) {
+        printf("    Expected transmission dielectric in substrate mix\n");
+        return false;
+    }
+
+    return true;
+}
+
+static bool
+TestOpenPbrCoatDarkeningReachesBaseSubstrate()
+{
+    ParamMap params;
+    params["base_color"] = Value(Vec3f(0.8f, 0.4f, 0.2f));
+    params["base_metalness"] = Value(0.0f);
+    params["specular_weight"] = Value(1.0f);
+    params["subsurface_weight"] = Value(0.0f);
+    params["coat_weight"] = Value(1.0f);
+    params["coat_darkening"] = Value(1.0f);
+    params["coat_ior"] = Value(1.6f);
+    params["fuzz_weight"] = Value(0.0f);
+
+    const SurfaceClosure c = EvalOpenPbr(params);
+    const auto* multiply = FindNodeIf<Bsdf::MultiplyData>(
+        c.bsdfTree,
+        [](const Bsdf::MultiplyData& data) {
+            return std::abs(data.weight[0] - 1.0f) > 1.0e-6f ||
+                   std::abs(data.weight[1] - 1.0f) > 1.0e-6f ||
+                   std::abs(data.weight[2] - 1.0f) > 1.0e-6f;
+        });
+
+    if (!multiply) {
+        printf("    Expected non-identity substrate multiply for coat darkening\n");
+        return false;
+    }
+
+    const float coatF0 = std::pow((1.6f - 1.0f) / (1.6f + 1.0f), 2.0f);
+    const float kCoat = 1.0f - (1.0f - coatF0) / (1.6f * 1.6f);
+    const Vec3f eBase(0.8f, 0.4f, 0.2f);
+    const Vec3f expected(
+        (1.0f - kCoat) / (1.0f - eBase[0] * kCoat),
+        (1.0f - kCoat) / (1.0f - eBase[1] * kCoat),
+        (1.0f - kCoat) / (1.0f - eBase[2] * kCoat));
+
+    return Test_IsClose(multiply->weight, expected, 1e-4f);
+}
+
+static bool
+TestOpenPbrCoatColorAttenuatesSubstrate()
+{
+    const Vec3f expectedCoatColor(0.25f, 0.5f, 0.75f);
+
+    ParamMap params;
+    params["coat_weight"] = Value(1.0f);
+    params["coat_darkening"] = Value(0.0f);
+    params["coat_color"] = Value(expectedCoatColor);
+    params["fuzz_weight"] = Value(0.0f);
+
+    const SurfaceClosure c = EvalOpenPbr(params);
+    const auto* attenuation = FindNodeIf<Bsdf::MultiplyData>(
+        c.bsdfTree,
+        [&](const Bsdf::MultiplyData& data) {
+            return Test_IsClose(data.weight, expectedCoatColor, 1e-4f);
+        });
+    if (!attenuation) {
+        printf("    Expected coat_color attenuation multiply on substrate\n");
+        return false;
+    }
+
+    const auto* coat = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection &&
+                   std::abs(data.ior - 1.6f) < 1e-4f;
+        });
+    if (!coat) {
+        printf("    Expected coat dielectric node\n");
+        return false;
+    }
+
+    return Test_IsClose(coat->tint, Vec3f(1.0f), 1e-4f);
 }
 
 static bool
@@ -180,6 +345,191 @@ TestOpenPbrThinFilmParametersReachBsdf()
     return Test_IsClose(dielectric->thinFilmWeight, 0.25f) &&
            Test_IsClose(dielectric->thinFilmThickness, 400.0f, 1e-4f) &&
            Test_IsClose(dielectric->thinFilmIor, 1.7f, 1e-4f);
+}
+
+static bool
+TestOpenPbrBaseDiffuseRoughnessUsesCanonicalName()
+{
+    ParamMap params;
+    params["base_diffuse_roughness"] = Value(0.65f);
+    params["base_roughness"] = Value(0.1f);
+
+    const SurfaceClosure c = EvalOpenPbr(params);
+    const auto* diffuse = FindNodeIf<Bsdf::OrenNayarDiffuseData>(
+        c.bsdfTree,
+        [](const Bsdf::OrenNayarDiffuseData&) {
+            return true;
+        });
+
+    if (!diffuse) {
+        printf("    Failed to find OpenPBR diffuse node\n");
+        return false;
+    }
+
+    return Test_IsClose(diffuse->roughness, 0.65f, 1e-4f);
+}
+
+static bool
+TestOpenPbrSpecularRoughnessAnisotropyUsesCanonicalName()
+{
+    constexpr float roughness = 0.45f;
+    constexpr float anisotropy = 0.75f;
+
+    ParamMap params;
+    params["specular_roughness"] = Value(roughness);
+    params["specular_roughness_anisotropy"] = Value(anisotropy);
+    params["specular_anisotropy"] = Value(0.0f);
+
+    const SurfaceClosure c = EvalOpenPbr(params);
+    const auto* dielectric = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    if (!dielectric) {
+        printf("    Failed to find OpenPBR reflection dielectric node\n");
+        return false;
+    }
+
+    const float clampedRoughness = std::clamp(roughness, 0.001f, 1.0f);
+    const float clampedAnisotropy = std::clamp(anisotropy, 0.0f, 1.0f);
+    const float alphaRoughness = clampedRoughness * clampedRoughness;
+    const float oneMinusAnisotropy = 1.0f - clampedAnisotropy;
+    const float alphaX = alphaRoughness * std::sqrt(
+        2.0f /
+        std::max(oneMinusAnisotropy * oneMinusAnisotropy + 1.0f, 1.0e-6f));
+    const float alphaY = oneMinusAnisotropy * alphaX;
+    const Vec2f expected(
+        std::clamp(alphaX, 1.0e-5f, 1.0f),
+        std::clamp(alphaY, 1.0e-5f, 1.0f));
+
+    return Test_IsClose(dielectric->roughness[0], expected[0], 1e-4f) &&
+           Test_IsClose(dielectric->roughness[1], expected[1], 1e-4f);
+}
+
+static bool
+TestOpenPbrGeometryInputsUseCanonicalNames()
+{
+    const Vec3f expectedNormal(0.25f, 0.5f, 0.75f);
+    const Vec3f expectedTangent(0.0f, 1.0f, 0.0f);
+
+    ParamMap params;
+    params["geometry_normal"] = Value(expectedNormal);
+    params["normal"] = Value(Vec3f(0.0f, 0.0f, 1.0f));
+    params["geometry_tangent"] = Value(expectedTangent);
+    params["tangent"] = Value(Vec3f(1.0f, 0.0f, 0.0f));
+
+    const SurfaceClosure c = EvalOpenPbr(params);
+    const auto* dielectric = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    if (!dielectric) {
+        printf("    Failed to find OpenPBR reflection dielectric node\n");
+        return false;
+    }
+
+    return Test_IsClose(c.normal, expectedNormal, 1e-4f) &&
+           Test_IsClose(dielectric->tangent, expectedTangent, 1e-4f);
+}
+
+static bool
+TestOpenPbrGeometryCoatNormalUsesCanonicalName()
+{
+    const Vec3f expectedCoatNormal =
+        Vec3f(0.0f, 0.70710677f, 0.70710677f);
+
+    ParamMap params;
+    params["specular_weight"] = Value(0.0f);
+    params["coat_weight"] = Value(1.0f);
+    params["geometry_normal"] = Value(Vec3f(0.0f, 0.0f, 1.0f));
+    params["coat_normal"] = Value(Vec3f(1.0f, 0.0f, 0.0f));
+    params["geometry_coat_normal"] = Value(expectedCoatNormal);
+
+    const SurfaceClosure c = EvalOpenPbr(params);
+    const auto* coat = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    if (!coat) {
+        printf("    Failed to find OpenPBR coat dielectric node\n");
+        return false;
+    }
+
+    return coat->hasShadingNormal &&
+           Test_IsClose(coat->normal, expectedCoatNormal, 1e-4f);
+}
+
+static bool
+TestOpenPbrCoatRoughnessAnisotropyUsesCanonicalName()
+{
+    constexpr float roughness = 0.45f;
+    constexpr float anisotropy = 0.75f;
+
+    ParamMap params;
+    params["specular_weight"] = Value(0.0f);
+    params["coat_weight"] = Value(1.0f);
+    params["coat_roughness"] = Value(roughness);
+    params["coat_roughness_anisotropy"] = Value(anisotropy);
+
+    const SurfaceClosure c = EvalOpenPbr(params);
+    const auto* coat = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection &&
+                   std::abs(data.ior - 1.6f) < 1e-4f;
+        });
+
+    if (!coat) {
+        printf("    Failed to find OpenPBR coat dielectric node\n");
+        return false;
+    }
+
+    const float clampedRoughness = std::clamp(roughness, 0.001f, 1.0f);
+    const float clampedAnisotropy = std::clamp(anisotropy, 0.0f, 1.0f);
+    const float alphaRoughness = clampedRoughness * clampedRoughness;
+    const float oneMinusAnisotropy = 1.0f - clampedAnisotropy;
+    const float alphaX = alphaRoughness * std::sqrt(
+        2.0f /
+        std::max(oneMinusAnisotropy * oneMinusAnisotropy + 1.0f, 1.0e-6f));
+    const float alphaY = oneMinusAnisotropy * alphaX;
+    const Vec2f expected(
+        std::clamp(alphaX, 1.0e-5f, 1.0f),
+        std::clamp(alphaY, 1.0e-5f, 1.0f));
+
+    return Test_IsClose(coat->roughness[0], expected[0], 1e-4f) &&
+           Test_IsClose(coat->roughness[1], expected[1], 1e-4f);
+}
+
+static bool
+TestOpenPbrGeometryCoatTangentUsesCanonicalName()
+{
+    const Vec3f expectedCoatTangent(0.0f, 1.0f, 0.0f);
+
+    ParamMap params;
+    params["specular_weight"] = Value(0.0f);
+    params["coat_weight"] = Value(1.0f);
+    params["geometry_tangent"] = Value(Vec3f(1.0f, 0.0f, 0.0f));
+    params["geometry_coat_tangent"] = Value(expectedCoatTangent);
+
+    const SurfaceClosure c = EvalOpenPbr(params);
+    const auto* coat = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    if (!coat) {
+        printf("    Failed to find OpenPBR coat dielectric node\n");
+        return false;
+    }
+
+    return Test_IsClose(coat->tangent, expectedCoatTangent, 1e-4f);
 }
 
 // ---------------------------------------------------------------------------
@@ -370,8 +720,18 @@ Test_RegisterMaterialTests()
     _REG(TestStandardSurfaceCustomParams);
     _REG(TestStandardSurfaceThinFilmParametersReachBsdf);
     _REG(TestOpenPbrDefaults);
+    _REG(TestOpenPbrBuildsLayeredDielectricBase);
     _REG(TestOpenPbrTransmission);
+    _REG(TestOpenPbrLayersReflectionOverTransmissionMix);
+    _REG(TestOpenPbrCoatDarkeningReachesBaseSubstrate);
+    _REG(TestOpenPbrCoatColorAttenuatesSubstrate);
     _REG(TestOpenPbrThinFilmParametersReachBsdf);
+    _REG(TestOpenPbrBaseDiffuseRoughnessUsesCanonicalName);
+    _REG(TestOpenPbrSpecularRoughnessAnisotropyUsesCanonicalName);
+    _REG(TestOpenPbrGeometryInputsUseCanonicalNames);
+    _REG(TestOpenPbrGeometryCoatNormalUsesCanonicalName);
+    _REG(TestOpenPbrCoatRoughnessAnisotropyUsesCanonicalName);
+    _REG(TestOpenPbrGeometryCoatTangentUsesCanonicalName);
     _REG(TestDisneyPrincipledDefaults);
     _REG(TestGltfPbrDefaults);
     _REG(TestGltfPbrAlphaMask);

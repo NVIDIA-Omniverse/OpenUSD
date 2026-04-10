@@ -75,12 +75,26 @@ Vec2f
 _ComputeAnisotropicRoughness(float roughness, float anisotropy)
 {
     const float clampedRoughness = _ClampRoughness(roughness);
-    const float clampedAnisotropy = std::clamp(anisotropy, -0.95f, 0.95f);
-    const float aspect =
-        std::sqrt(std::max(0.01f, 1.0f - 0.9f * clampedAnisotropy));
+    const float alphaRoughness =
+        std::clamp(clampedRoughness * clampedRoughness, 1.0e-5f, 1.0f);
+    const float clampedAnisotropy = std::clamp(anisotropy, 0.0f, 0.98f);
+    if (clampedAnisotropy <= 0.0f) {
+        return Vec2f(alphaRoughness, alphaRoughness);
+    }
+
+    const float aspect = std::sqrt(1.0f - clampedAnisotropy);
     return Vec2f(
-        _ClampRoughness(clampedRoughness / aspect),
-        _ClampRoughness(clampedRoughness * aspect));
+        std::min(alphaRoughness / aspect, 1.0f),
+        std::clamp(alphaRoughness * aspect, 1.0e-5f, 1.0f));
+}
+
+Vec2f
+_ComputeIsotropicAlpha(float roughness)
+{
+    const float clampedRoughness = _ClampRoughness(roughness);
+    const float alpha =
+        std::clamp(clampedRoughness * clampedRoughness, 1.0e-5f, 1.0f);
+    return Vec2f(alpha, alpha);
 }
 
 Vec3f
@@ -288,9 +302,7 @@ EvalStandardSurface(const ParamMap& params)
         coat.weight = _Clamp01(c.coat);
         coat.tint = _Saturate(coatColor);
         coat.ior = std::max(c.coatIor, 1.0f);
-        coat.roughness = Vec2f(
-            _ClampRoughness(c.coatRoughness),
-            _ClampRoughness(c.coatRoughness));
+        coat.roughness = _ComputeIsotropicAlpha(c.coatRoughness);
         coat.tangent = tangent;
         coat.scatterMode = Bsdf::ScatterMode::Reflection;
         root = _AppendLayer(&tree, tree.Add(coat), root);

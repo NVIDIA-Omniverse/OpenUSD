@@ -1,0 +1,194 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    doc = """OpenPBR parameter parity regression scene.
+
+Row 0:
+- base_diffuse_roughness = 0.0
+- base_diffuse_roughness = 1.0
+- geometry_normal override
+
+Row 1:
+- specular_roughness_anisotropy with tangent along +X
+- specular_roughness_anisotropy with tangent along +Y
+- coat_roughness_anisotropy with geometry_coat_normal / geometry_coat_tangent override
+"""
+)
+
+def Xform "World"
+{
+    def Sphere "DiffuseSmooth" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.65
+        double3 xformOp:translate = (-2.2, 1.1, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/DiffuseSmoothMat>
+    }
+
+    def Sphere "DiffuseRough" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.65
+        double3 xformOp:translate = (0, 1.1, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/DiffuseRoughMat>
+    }
+
+    def Sphere "NormalOverride" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.65
+        double3 xformOp:translate = (2.2, 1.1, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/NormalOverrideMat>
+    }
+
+    def Sphere "AnisoTangentX" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.65
+        double3 xformOp:translate = (-2.2, -1.1, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/AnisoTangentXMat>
+    }
+
+    def Sphere "AnisoTangentY" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.65
+        double3 xformOp:translate = (0, -1.1, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/AnisoTangentYMat>
+    }
+
+    def Sphere "CoatTangentOverride" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.65
+        double3 xformOp:translate = (2.2, -1.1, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/CoatTangentOverrideMat>
+    }
+
+    def Scope "Materials"
+    {
+        def Material "DiffuseSmoothMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/DiffuseSmoothMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.78, 0.42, 0.18)
+                float inputs:base_diffuse_roughness = 0.0
+                float inputs:specular_weight = 0.35
+                float inputs:specular_roughness = 0.25
+                token outputs:out
+            }
+        }
+
+        def Material "DiffuseRoughMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/DiffuseRoughMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.78, 0.42, 0.18)
+                float inputs:base_diffuse_roughness = 1.0
+                float inputs:specular_weight = 0.35
+                float inputs:specular_roughness = 0.25
+                token outputs:out
+            }
+        }
+
+        def Material "NormalOverrideMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/NormalOverrideMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.22, 0.66, 0.84)
+                float inputs:specular_weight = 0.5
+                float inputs:specular_roughness = 0.2
+                vector3 inputs:geometry_normal = (0.7, 0.0, 0.7)
+                token outputs:out
+            }
+        }
+
+        def Material "AnisoTangentXMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/AnisoTangentXMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 0.0
+                float inputs:specular_weight = 1.0
+                color3f inputs:specular_color = (0.95, 0.95, 0.95)
+                float inputs:specular_roughness = 0.35
+                float inputs:specular_roughness_anisotropy = 0.8
+                vector3 inputs:geometry_tangent = (1.0, 0.0, 0.0)
+                token outputs:out
+            }
+        }
+
+        def Material "AnisoTangentYMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/AnisoTangentYMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 0.0
+                float inputs:specular_weight = 1.0
+                color3f inputs:specular_color = (0.95, 0.95, 0.95)
+                float inputs:specular_roughness = 0.35
+                float inputs:specular_roughness_anisotropy = 0.8
+                vector3 inputs:geometry_tangent = (0.0, 1.0, 0.0)
+                token outputs:out
+            }
+        }
+
+        def Material "CoatTangentOverrideMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/CoatTangentOverrideMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.62, 0.14, 0.16)
+                float inputs:specular_weight = 0.2
+                float inputs:specular_roughness = 0.25
+                float inputs:coat_weight = 1.0
+                float inputs:coat_roughness = 0.08
+                float inputs:coat_roughness_anisotropy = 0.8
+                vector3 inputs:geometry_coat_normal = (0.0, 0.70710677, 0.70710677)
+                vector3 inputs:geometry_tangent = (1.0, 0.0, 0.0)
+                vector3 inputs:geometry_coat_tangent = (0.0, 1.0, 0.0)
+                token outputs:out
+            }
+        }
+    }
+
+    def SphereLight "KeyLight"
+    {
+        float inputs:intensity = 450
+        float inputs:radius = 0.5
+        double3 xformOp:translate = (3, 4, 4)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

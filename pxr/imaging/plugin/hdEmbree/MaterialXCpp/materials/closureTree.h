@@ -76,6 +76,8 @@ struct DielectricData
     float thinFilmWeight = 1.0f;
     float thinFilmThickness = 0.0f;
     float thinFilmIor = 1.5f;
+    Vec3f normal = Vec3f(0.0f, 0.0f, 1.0f);
+    bool hasShadingNormal = false;
     Vec3f tangent = Vec3f(1.0f, 0.0f, 0.0f);
     ScatterMode scatterMode = ScatterMode::Reflection;
 };

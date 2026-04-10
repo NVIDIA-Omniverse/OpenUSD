@@ -50,6 +50,15 @@ _ClampRoughness(float roughness)
     return std::clamp(roughness, 0.001f, 1.0f);
 }
 
+Vec2f
+_ComputeIsotropicAlpha(float roughness)
+{
+    const float clampedRoughness = _ClampRoughness(roughness);
+    const float alpha = std::clamp(clampedRoughness * clampedRoughness,
+                                   1.0e-5f, 1.0f);
+    return Vec2f(alpha, alpha);
+}
+
 Vec3f
 _Saturate(const Vec3f& value)
 {
@@ -254,9 +263,7 @@ EvalUsdPreviewSurface(const ParamMap& params)
         coat.weight = _Clamp01(c.coat);
         coat.tint = Vec3f(1.0f);
         coat.ior = c.coatIor;
-        coat.roughness = Vec2f(
-            _ClampRoughness(c.coatRoughness),
-            _ClampRoughness(c.coatRoughness));
+        coat.roughness = _ComputeIsotropicAlpha(c.coatRoughness);
         coat.scatterMode = Bsdf::ScatterMode::Reflection;
         root = _AppendLayer(&tree, tree.Add(coat), root);
     }

@@ -55,61 +55,61 @@ def Xform "World"
         rel material:binding = </World/Materials/GroundDiffuseMat>
     }
 
-    def Sphere "SpherePreviewNative" (
+    def Xform "SpherePreviewNative" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@
         prepend apiSchemas = ["MaterialBindingAPI"]
     )
     {
-        double radius = 0.9
         double3 xformOp:translate = (-7.5, 0.9, 0)
         token[] xformOpOrder = ["xformOp:translate"]
         rel material:binding = </World/Materials/PreviewNativeMat>
     }
 
-    def Sphere "SpherePreviewMaterialX" (
+    def Xform "SpherePreviewMaterialX" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@
         prepend apiSchemas = ["MaterialBindingAPI"]
     )
     {
-        double radius = 0.9
         double3 xformOp:translate = (-4.5, 0.9, 0)
         token[] xformOpOrder = ["xformOp:translate"]
         rel material:binding = </World/Materials/PreviewMaterialXMat>
     }
 
-    def Sphere "SphereStandardSurface" (
+    def Xform "SphereStandardSurface" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@
         prepend apiSchemas = ["MaterialBindingAPI"]
     )
     {
-        double radius = 0.9
         double3 xformOp:translate = (-1.5, 0.9, 0)
         token[] xformOpOrder = ["xformOp:translate"]
         rel material:binding = </World/Materials/StandardSurfaceMat>
     }
 
-    def Sphere "SphereOpenPbr" (
+    def Xform "SphereOpenPbr" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@
         prepend apiSchemas = ["MaterialBindingAPI"]
     )
     {
-        double radius = 0.9
         double3 xformOp:translate = (1.5, 0.9, 0)
         token[] xformOpOrder = ["xformOp:translate"]
         rel material:binding = </World/Materials/OpenPbrMat>
     }
 
-    def Sphere "SphereDisneyPrincipled" (
+    def Xform "SphereDisneyPrincipled" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@
         prepend apiSchemas = ["MaterialBindingAPI"]
     )
     {
-        double radius = 0.9
         double3 xformOp:translate = (4.5, 0.9, 0)
         token[] xformOpOrder = ["xformOp:translate"]
         rel material:binding = </World/Materials/DisneyPrincipledMat>
     }
 
-    def Sphere "SphereGltfPbr" (
+    def Xform "SphereGltfPbr" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@
         prepend apiSchemas = ["MaterialBindingAPI"]
     )
     {
-        double radius = 0.9
         double3 xformOp:translate = (7.5, 0.9, 0)
         token[] xformOpOrder = ["xformOp:translate"]
         rel material:binding = </World/Materials/GltfPbrMat>

@@ -89,6 +89,38 @@ TestGGXSpecularPeak()
 }
 
 static bool
+TestTreeDielectricReflectionMatchesStandaloneGgx()
+{
+    SurfaceClosure c;
+    Bsdf::DielectricData dielectric;
+    dielectric.weight = 1.0f;
+    dielectric.tint = Vec3f(1.0f);
+    dielectric.ior = 1.5f;
+    dielectric.roughness = Vec2f(0.05f * 0.05f, 0.05f * 0.05f);
+    dielectric.scatterMode = Bsdf::ScatterMode::Reflection;
+    c.bsdfTree.root = c.bsdfTree.Add(dielectric);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.3f, 0.9539392f, 0.0f).normalized();
+    const Vec3f wi = Vec3f(-0.3f, 0.9539392f, 0.0f).normalized();
+
+    const Vec3f treeEval = Bsdf::EvalSurface(c, N, wi, wo);
+    const Vec3f ggxEval = Bsdf::EvalGGXSpecular(
+        0.05f, 1.5f, Vec3f(0.04f), N, wi, wo);
+
+    const float treeLum = treeEval.length();
+    const float ggxLum = ggxEval.length();
+    const float ratio = treeLum / std::max(ggxLum, 1.0e-8f);
+    if (ratio < 0.9f || ratio > 1.1f) {
+        printf(
+            "    Tree dielectric != standalone GGX: tree=%f ggx=%f ratio=%f\n",
+            treeLum, ggxLum, ratio);
+        return false;
+    }
+    return true;
+}
+
+static bool
 TestCoatZeroWeight()
 {
     Vec3f N(0, 1, 0);
@@ -269,6 +301,44 @@ TestSampleGGXSpecularPdfConsistency()
                s.pdf, pdf2, ratio);
         return false;
     }
+    return true;
+}
+
+static bool
+TestSampleGGXSpecularLowRoughnessBoundedThroughput()
+{
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.2f, 0.9797959f, 0.0f).normalized();
+    const Vec3f F0(1.0f);
+    const float kRoughness = 0.001f;
+    const float kSamples[][2] = {
+        {0.1f, 0.2f},
+        {0.3f, 0.7f},
+        {0.6f, 0.4f},
+        {0.85f, 0.15f},
+    };
+
+    for (const auto& sampleUV : kSamples) {
+        const auto sample = Bsdf::SampleGGXSpecular(
+            kRoughness, 1.5f, F0, N, wo, sampleUV[0], sampleUV[1]);
+        if (sample.pdf <= 0.0f) {
+            printf("    Expected valid low-roughness GGX sample\n");
+            return false;
+        }
+
+        const float cosTheta = std::abs(Dot(N, sample.wi));
+        const Vec3f throughput = sample.f * (cosTheta / sample.pdf);
+        for (int i = 0; i < 3; ++i) {
+            if (!std::isfinite(throughput[i]) || throughput[i] > 1.05f) {
+                printf(
+                    "    Low-roughness GGX throughput blew up: "
+                    "sample=(%f,%f) channel=%d value=%f\n",
+                    sampleUV[0], sampleUV[1], i, throughput[i]);
+                return false;
+            }
+        }
+    }
+
     return true;
 }
 
@@ -660,6 +730,170 @@ TestThinFilmSampleSurfacePdfConsistency()
 }
 
 static bool
+TestTreeDielectricCustomNormalMatchesStandaloneShadingNormal()
+{
+    SurfaceClosure customNormalClosure;
+    Bsdf::DielectricData customNormal;
+    customNormal.weight = 1.0f;
+    customNormal.tint = Vec3f(1.0f);
+    customNormal.ior = 1.5f;
+    customNormal.roughness = Vec2f(0.08f * 0.08f, 0.08f * 0.08f);
+    customNormal.normal = Vec3f(0.0f, 0.70710677f, 0.70710677f);
+    customNormal.hasShadingNormal = true;
+    customNormal.scatterMode = Bsdf::ScatterMode::Reflection;
+    customNormalClosure.bsdfTree.root =
+        customNormalClosure.bsdfTree.Add(customNormal);
+
+    SurfaceClosure referenceClosure;
+    Bsdf::DielectricData reference = customNormal;
+    reference.hasShadingNormal = false;
+    referenceClosure.bsdfTree.root = referenceClosure.bsdfTree.Add(reference);
+
+    const Vec3f surfaceNormal(0.0f, 1.0f, 0.0f);
+    const Vec3f coatNormal = customNormal.normal.normalized();
+    const Vec3f wo = Vec3f(0.0f, 0.9238795f, 0.3826834f).normalized();
+    const Vec3f wi = Vec3f(0.15f, 0.8293090f, 0.5382608f).normalized();
+
+    const Vec3f customEval =
+        Bsdf::EvalSurface(customNormalClosure, surfaceNormal, wi, wo);
+    const Vec3f referenceEval =
+        Bsdf::EvalSurface(referenceClosure, coatNormal, wi, wo);
+    if (!Test_IsClose(customEval, referenceEval, 1e-4f)) {
+        printf(
+            "    Custom normal eval mismatch: custom=(%f,%f,%f) "
+            "reference=(%f,%f,%f)\n",
+            customEval[0], customEval[1], customEval[2],
+            referenceEval[0], referenceEval[1], referenceEval[2]);
+        return false;
+    }
+
+    const float customPdf =
+        Bsdf::PdfSurface(customNormalClosure, surfaceNormal, wi, wo);
+    const float referencePdf =
+        Bsdf::PdfSurface(referenceClosure, coatNormal, wi, wo);
+    if (!Test_IsClose(customPdf, referencePdf, 1e-4f)) {
+        printf("    Custom normal pdf mismatch: custom=%f reference=%f\n",
+               customPdf, referencePdf);
+        return false;
+    }
+
+    const auto customSample = Bsdf::SampleSurface(
+        customNormalClosure, surfaceNormal, wo, 0.3f, 0.7f, 0.2f);
+    const auto referenceSample = Bsdf::SampleSurface(
+        referenceClosure, coatNormal, wo, 0.3f, 0.7f, 0.2f);
+    if (!Test_IsClose(customSample.wi, referenceSample.wi, 1e-4f) ||
+        !Test_IsClose(customSample.f, referenceSample.f, 1e-4f) ||
+        !Test_IsClose(customSample.pdf, referenceSample.pdf, 1e-4f)) {
+        printf(
+            "    Custom normal sample mismatch: "
+            "customWi=(%f,%f,%f) referenceWi=(%f,%f,%f) customPdf=%f "
+            "referencePdf=%f\n",
+            customSample.wi[0], customSample.wi[1], customSample.wi[2],
+            referenceSample.wi[0], referenceSample.wi[1], referenceSample.wi[2],
+            customSample.pdf, referenceSample.pdf);
+        return false;
+    }
+
+    return true;
+}
+
+static bool
+TestTreeAnisotropicReflectionRespondsToTangent()
+{
+    SurfaceClosure tangentXClosure;
+    Bsdf::DielectricData tangentX;
+    tangentX.weight = 1.0f;
+    tangentX.tint = Vec3f(1.0f);
+    tangentX.ior = 1.5f;
+    tangentX.roughness = Vec2f(0.05f, 0.45f);
+    tangentX.tangent = Vec3f(1.0f, 0.0f, 0.0f);
+    tangentX.scatterMode = Bsdf::ScatterMode::Reflection;
+    tangentXClosure.bsdfTree.root = tangentXClosure.bsdfTree.Add(tangentX);
+
+    SurfaceClosure tangentZClosure;
+    Bsdf::DielectricData tangentZ = tangentX;
+    tangentZ.tangent = Vec3f(0.0f, 0.0f, 1.0f);
+    tangentZClosure.bsdfTree.root = tangentZClosure.bsdfTree.Add(tangentZ);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.0f, 1.0f, 0.0f);
+    const Vec3f wi = Vec3f(0.05f, 0.9987492f, 0.0f).normalized();
+
+    const Vec3f evalX = Bsdf::EvalSurface(tangentXClosure, N, wi, wo);
+    const Vec3f evalZ = Bsdf::EvalSurface(tangentZClosure, N, wi, wo);
+    const float magX = evalX.length();
+    const float magZ = evalZ.length();
+    const float ratio = std::max(magX, magZ) / std::max(std::min(magX, magZ), 1e-8f);
+
+    if (ratio <= 1.3f) {
+        printf("    Expected tangent rotation to change anisotropic response:"
+               " tangentX=%f tangentZ=%f ratio=%f\n",
+               magX, magZ, ratio);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestLayerReflectionAttenuatesBaseOnBothSides()
+{
+    SurfaceClosure topClosure;
+    Bsdf::DielectricData top;
+    top.weight = 1.0f;
+    top.tint = Vec3f(1.0f);
+    top.ior = 1.6f;
+    top.roughness = Vec2f(0.02f, 0.02f);
+    top.scatterMode = Bsdf::ScatterMode::Reflection;
+    topClosure.bsdfTree.root = topClosure.bsdfTree.Add(top);
+
+    SurfaceClosure baseClosure;
+    Bsdf::OrenNayarDiffuseData base;
+    base.weight = 1.0f;
+    base.color = Vec3f(1.0f);
+    base.roughness = 0.0f;
+    base.energyCompensation = true;
+    baseClosure.bsdfTree.root = baseClosure.bsdfTree.Add(base);
+
+    SurfaceClosure layerClosure;
+    const auto topId = layerClosure.bsdfTree.Add(top);
+    const auto baseId = layerClosure.bsdfTree.Add(base);
+    Bsdf::LayerData layer;
+    layer.top = topId;
+    layer.base = baseId;
+    layerClosure.bsdfTree.root = layerClosure.bsdfTree.Add(layer);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.95f, 0.3122499f, 0.0f).normalized();
+    const Vec3f wi = Vec3f(-0.6f, 0.8f, 0.0f).normalized();
+
+    const Vec3f topEval = Bsdf::EvalSurface(topClosure, N, wi, wo);
+    const Vec3f baseEval = Bsdf::EvalSurface(baseClosure, N, wi, wo);
+    const Vec3f layerEval = Bsdf::EvalSurface(layerClosure, N, wi, wo);
+
+    const float f0 = std::pow((top.ior - 1.0f) / (top.ior + 1.0f), 2.0f);
+    const auto schlick = [f0](float cosTheta) {
+        const float t = 1.0f - cosTheta;
+        const float t2 = t * t;
+        return f0 + (1.0f - f0) * t2 * t2 * t;
+    };
+    const float attOut = 1.0f - schlick(std::abs(Dot(N, wo)));
+    const float attIn = 1.0f - schlick(std::abs(Dot(N, wi)));
+    const Vec3f expected =
+        topEval + baseEval * (attOut * attIn);
+
+    const float expectedLum = expected.length();
+    const float actualLum = layerEval.length();
+    const float ratio = actualLum / std::max(expectedLum, 1.0e-8f);
+    if (ratio < 0.9f || ratio > 1.1f) {
+        printf(
+            "    Layer attenuation mismatch: expected=%f actual=%f ratio=%f\n",
+            expectedLum, actualLum, ratio);
+        return false;
+    }
+    return true;
+}
+
+static bool
 TestPowerHeuristic()
 {
     float w = Bsdf::PowerHeuristic(1.0f, 1.0f);
@@ -691,6 +925,7 @@ Test_RegisterBsdfTests()
     _REG(TestLambertianColorScaling);
     _REG(TestGGXSpecularNonNegative);
     _REG(TestGGXSpecularPeak);
+    _REG(TestTreeDielectricReflectionMatchesStandaloneGgx);
     _REG(TestCoatZeroWeight);
     _REG(TestEvalSurfaceEmissiveOnly);
     _REG(TestSheenGrazingAngle);
@@ -700,6 +935,7 @@ Test_RegisterBsdfTests()
     _REG(TestSampleLambertianPdfConsistency);
     _REG(TestSampleGGXSpecularHemisphere);
     _REG(TestSampleGGXSpecularPdfConsistency);
+    _REG(TestSampleGGXSpecularLowRoughnessBoundedThroughput);
     _REG(TestSampleSurfacePdfConsistency);
     _REG(TestTreeTransmissionPreservesWeight);
     _REG(TestTreeTransmissionPreservesWeightFromInterior);
@@ -712,6 +948,9 @@ Test_RegisterBsdfTests()
     _REG(TestThinFilmConductorChangesReflectionColor);
     _REG(TestThinFilmGeneralizedSchlickChangesReflectionColor);
     _REG(TestThinFilmSampleSurfacePdfConsistency);
+    _REG(TestTreeDielectricCustomNormalMatchesStandaloneShadingNormal);
+    _REG(TestTreeAnisotropicReflectionRespondsToTangent);
+    _REG(TestLayerReflectionAttenuatesBaseOnBothSides);
     _REG(TestPowerHeuristic);
 }
 
