@@ -383,9 +383,9 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             aovBindings.push_back(depthAov);
         }
         _renderer->SetAovBindings(aovBindings);
-        // In general, the render thread clears aov bindings, but make sure
-        // they are cleared initially on this thread.
-        _renderer->Clear();
+        // Preserve the last resolved image across restarts and only reset
+        // progressive accumulation state on the new attachments.
+        _renderer->ResetAccumulation();
         needStartRender = true;
     }
 

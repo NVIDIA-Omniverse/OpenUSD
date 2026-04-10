@@ -1119,6 +1119,26 @@ HdEmbreeRenderer::Clear()
 }
 
 void
+HdEmbreeRenderer::ResetAccumulation()
+{
+    if (!_ValidateAovBindings()) {
+        return;
+    }
+
+    for (size_t i = 0; i < _aovBindings.size(); ++i) {
+        HdEmbreeRenderBuffer *rb =
+            static_cast<HdEmbreeRenderBuffer*>(_aovBindings[i].renderBuffer);
+        rb->ClearSamples();
+        rb->SetConverged(false);
+    }
+
+    std::fill(_pixelMean.begin(), _pixelMean.end(), GfVec3f(0.0f));
+    std::fill(_pixelM2.begin(), _pixelM2.end(), GfVec3f(0.0f));
+    std::fill(_pixelSampleCount.begin(), _pixelSampleCount.end(), 0);
+    std::fill(_pixelConverged.begin(), _pixelConverged.end(), false);
+}
+
+void
 HdEmbreeRenderer::MarkAovBuffersUnconverged()
 {
     for (size_t i = 0; i < _aovBindings.size(); ++i) {

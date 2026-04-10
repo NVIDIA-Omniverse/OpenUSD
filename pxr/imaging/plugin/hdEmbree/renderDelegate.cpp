@@ -88,7 +88,7 @@ void HdEmbreeRenderDelegate::HandleRtcError (void* userPtr, RTCError code, const
 static void _RenderCallback(HdEmbreeRenderer *renderer,
                             HdRenderThread *renderThread)
 {
-    renderer->Clear();
+    renderer->ResetAccumulation();
     renderer->Render(renderThread);
 }
 

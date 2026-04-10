@@ -179,6 +179,10 @@ public:
     /// Clear the bound aov buffers (typically before rendering).
     void Clear();
 
+    /// Reset progressive accumulation while preserving the resolved output
+    /// buffers so the previous image remains visible until new samples arrive.
+    void ResetAccumulation();
+
     /// Mark the aov buffers as unconverged.
     void MarkAovBuffersUnconverged();
 
