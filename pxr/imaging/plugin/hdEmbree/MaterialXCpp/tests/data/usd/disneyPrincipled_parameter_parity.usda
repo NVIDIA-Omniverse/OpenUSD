@@ -1,0 +1,243 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    doc = """Disney Principled parameter parity regression scene.
+
+Row 0:
+- anisotropic = 0.0
+- anisotropic = 0.85
+- sheen / sheenTint response
+
+Row 1:
+- clearcoat = 1.0, clearcoatGloss = 1.0
+- clearcoat = 1.0, clearcoatGloss = 0.2
+- specTrans / ior response
+
+All cases keep subsurface = 0.0 because subsurface is out of scope for ticket 312.
+"""
+)
+
+def Xform "World"
+{
+    def Sphere "AnisotropicOff" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.65
+        double3 xformOp:translate = (-2.2, 1.1, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/AnisotropicOffMat>
+    }
+
+    def Sphere "AnisotropicOn" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.65
+        double3 xformOp:translate = (0, 1.1, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/AnisotropicOnMat>
+    }
+
+    def Sphere "SheenTinted" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.65
+        double3 xformOp:translate = (2.2, 1.1, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/SheenTintedMat>
+    }
+
+    def Sphere "ClearcoatSharp" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.65
+        double3 xformOp:translate = (-2.2, -1.1, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/ClearcoatSharpMat>
+    }
+
+    def Sphere "ClearcoatRough" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.65
+        double3 xformOp:translate = (0, -1.1, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/ClearcoatRoughMat>
+    }
+
+    def Sphere "TransmissionGlass" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.65
+        double3 xformOp:translate = (2.2, -1.1, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/TransmissionGlassMat>
+    }
+
+    def Scope "Materials"
+    {
+        def Material "AnisotropicOffMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/AnisotropicOffMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_disney_principled"
+                color3f inputs:baseColor = (0.9, 0.9, 0.9)
+                float inputs:metallic = 0.0
+                float inputs:roughness = 0.35
+                float inputs:anisotropic = 0.0
+                float inputs:specular = 1.0
+                float inputs:specularTint = 0.0
+                float inputs:sheen = 0.0
+                float inputs:sheenTint = 0.5
+                float inputs:clearcoat = 0.0
+                float inputs:clearcoatGloss = 1.0
+                float inputs:specTrans = 0.0
+                float inputs:ior = 1.5
+                float inputs:subsurface = 0.0
+                color3f inputs:subsurfaceDistance = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+
+        def Material "AnisotropicOnMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/AnisotropicOnMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_disney_principled"
+                color3f inputs:baseColor = (0.9, 0.9, 0.9)
+                float inputs:metallic = 0.0
+                float inputs:roughness = 0.35
+                float inputs:anisotropic = 0.85
+                float inputs:specular = 1.0
+                float inputs:specularTint = 0.0
+                float inputs:sheen = 0.0
+                float inputs:sheenTint = 0.5
+                float inputs:clearcoat = 0.0
+                float inputs:clearcoatGloss = 1.0
+                float inputs:specTrans = 0.0
+                float inputs:ior = 1.5
+                float inputs:subsurface = 0.0
+                color3f inputs:subsurfaceDistance = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+
+        def Material "SheenTintedMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/SheenTintedMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_disney_principled"
+                color3f inputs:baseColor = (0.82, 0.28, 0.14)
+                float inputs:metallic = 0.0
+                float inputs:roughness = 0.45
+                float inputs:anisotropic = 0.0
+                float inputs:specular = 0.25
+                float inputs:specularTint = 0.0
+                float inputs:sheen = 0.8
+                float inputs:sheenTint = 1.0
+                float inputs:clearcoat = 0.0
+                float inputs:clearcoatGloss = 1.0
+                float inputs:specTrans = 0.0
+                float inputs:ior = 1.5
+                float inputs:subsurface = 0.0
+                color3f inputs:subsurfaceDistance = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+
+        def Material "ClearcoatSharpMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/ClearcoatSharpMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_disney_principled"
+                color3f inputs:baseColor = (0.08, 0.22, 0.75)
+                float inputs:metallic = 0.0
+                float inputs:roughness = 0.45
+                float inputs:anisotropic = 0.0
+                float inputs:specular = 0.5
+                float inputs:specularTint = 0.0
+                float inputs:sheen = 0.0
+                float inputs:sheenTint = 0.5
+                float inputs:clearcoat = 1.0
+                float inputs:clearcoatGloss = 1.0
+                float inputs:specTrans = 0.0
+                float inputs:ior = 1.5
+                float inputs:subsurface = 0.0
+                color3f inputs:subsurfaceDistance = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+
+        def Material "ClearcoatRoughMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/ClearcoatRoughMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_disney_principled"
+                color3f inputs:baseColor = (0.08, 0.22, 0.75)
+                float inputs:metallic = 0.0
+                float inputs:roughness = 0.45
+                float inputs:anisotropic = 0.0
+                float inputs:specular = 0.5
+                float inputs:specularTint = 0.0
+                float inputs:sheen = 0.0
+                float inputs:sheenTint = 0.5
+                float inputs:clearcoat = 1.0
+                float inputs:clearcoatGloss = 0.2
+                float inputs:specTrans = 0.0
+                float inputs:ior = 1.5
+                float inputs:subsurface = 0.0
+                color3f inputs:subsurfaceDistance = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+
+        def Material "TransmissionGlassMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/TransmissionGlassMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_disney_principled"
+                color3f inputs:baseColor = (0.7, 0.92, 0.98)
+                float inputs:metallic = 0.0
+                float inputs:roughness = 0.1
+                float inputs:anisotropic = 0.0
+                float inputs:specular = 0.5
+                float inputs:specularTint = 0.0
+                float inputs:sheen = 0.0
+                float inputs:sheenTint = 0.5
+                float inputs:clearcoat = 0.0
+                float inputs:clearcoatGloss = 1.0
+                float inputs:specTrans = 0.95
+                float inputs:ior = 1.8
+                float inputs:subsurface = 0.0
+                color3f inputs:subsurfaceDistance = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+    }
+
+    def SphereLight "KeyLight"
+    {
+        float inputs:intensity = 450
+        float inputs:radius = 0.5
+        double3 xformOp:translate = (3, 4, 4)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

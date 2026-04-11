@@ -940,8 +940,166 @@ TestDisneyPrincipledDefaults()
     if (!Test_IsClose(c.roughness, 0.5f)) return false;
     if (!Test_IsClose(c.metallic, 0.0f)) return false;
     if (!Test_IsClose(c.transmission, 0.0f)) return false;
+    if (!Test_IsClose(c.sheenRoughness, 0.3f)) return false;
     if (!c.HasBsdfTree()) return false;
     return true;
+}
+
+static bool
+TestDisneyPrincipledSpecularTintReachesDielectricLayer()
+{
+    const Vec3f baseColor(0.2f, 0.4f, 0.7f);
+
+    ParamMap params;
+    params["baseColor"] = Value(baseColor);
+    params["specular"] = Value(1.0f);
+    params["specularTint"] = Value(1.0f);
+    params["clearcoat"] = Value(0.0f);
+
+    const SurfaceClosure c = EvalDisneyPrincipled(params);
+    const auto* dielectric = FindNodeIf<Bsdf::GeneralizedSchlickData>(
+        c.bsdfTree,
+        [](const Bsdf::GeneralizedSchlickData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection &&
+                   data.weight < 0.5f;
+        });
+
+    if (!dielectric) {
+        printf("    Failed to find Disney Principled dielectric layer\n");
+        return false;
+    }
+
+    return Test_IsClose(c.specularColor, baseColor, 1e-4f) &&
+           Test_IsClose(dielectric->weight, 0.08f, 1e-4f) &&
+           Test_IsClose(dielectric->color0, baseColor, 1e-4f) &&
+           Test_IsClose(dielectric->color82, baseColor, 1e-4f) &&
+           Test_IsClose(dielectric->color90, Vec3f(1.0f), 1e-4f);
+}
+
+static bool
+TestDisneyPrincipledAnisotropyUsesMaterialXFormula()
+{
+    constexpr float roughness = 0.45f;
+    constexpr float anisotropy = 0.75f;
+
+    ParamMap params;
+    params["roughness"] = Value(roughness);
+    params["anisotropic"] = Value(anisotropy);
+    params["specular"] = Value(1.0f);
+    params["clearcoat"] = Value(0.0f);
+
+    const SurfaceClosure c = EvalDisneyPrincipled(params);
+    const auto* dielectric = FindNodeIf<Bsdf::GeneralizedSchlickData>(
+        c.bsdfTree,
+        [](const Bsdf::GeneralizedSchlickData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection &&
+                   data.weight < 0.5f;
+        });
+
+    if (!dielectric) {
+        printf("    Failed to find Disney Principled anisotropic dielectric layer\n");
+        return false;
+    }
+
+    const float roughnessSqr =
+        std::clamp(roughness * roughness, 1.0e-5f, 1.0f);
+    const float clampedAnisotropy = std::clamp(anisotropy, 0.0f, 0.98f);
+    const float aspect = std::sqrt(1.0f - clampedAnisotropy);
+    const Vec2f expected(
+        std::min(roughnessSqr / std::max(aspect, 1.0e-5f), 1.0f),
+        roughnessSqr * aspect);
+
+    return Test_IsClose(dielectric->roughness[0], expected[0], 1e-4f) &&
+           Test_IsClose(dielectric->roughness[1], expected[1], 1e-4f);
+}
+
+static bool
+TestDisneyPrincipledSheenUsesMaterialXDefaults()
+{
+    const Vec3f baseColor(0.82f, 0.28f, 0.14f);
+
+    ParamMap params;
+    params["baseColor"] = Value(baseColor);
+    params["sheen"] = Value(0.7f);
+    params["sheenTint"] = Value(1.0f);
+
+    const SurfaceClosure c = EvalDisneyPrincipled(params);
+    const auto* sheen = FindNodeIf<Bsdf::SheenData>(
+        c.bsdfTree,
+        [](const Bsdf::SheenData&) {
+            return true;
+        });
+
+    if (!sheen) {
+        printf("    Failed to find Disney Principled sheen layer\n");
+        return false;
+    }
+
+    return Test_IsClose(c.sheenColor, baseColor, 1e-4f) &&
+           Test_IsClose(c.sheenRoughness, 0.3f, 1e-4f) &&
+           Test_IsClose(sheen->weight, 0.7f, 1e-4f) &&
+           Test_IsClose(sheen->color, baseColor, 1e-4f) &&
+           Test_IsClose(sheen->roughness, 0.3f, 1e-4f) &&
+           sheen->mode == Bsdf::SheenMode::ContyKulla;
+}
+
+static bool
+TestDisneyPrincipledTransmissionUsesSharpDielectric()
+{
+    const Vec3f baseColor(0.7f, 0.92f, 0.98f);
+
+    ParamMap params;
+    params["baseColor"] = Value(baseColor);
+    params["specTrans"] = Value(0.65f);
+    params["ior"] = Value(1.8f);
+
+    const SurfaceClosure c = EvalDisneyPrincipled(params);
+    const auto* transmission = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Transmission;
+        });
+
+    if (!transmission) {
+        printf("    Failed to find Disney Principled transmission layer\n");
+        return false;
+    }
+
+    return Test_IsClose(c.transmission, 0.65f, 1e-4f) &&
+           Test_IsClose(transmission->tint, baseColor, 1e-4f) &&
+           Test_IsClose(transmission->ior, 1.8f, 1e-4f) &&
+           Test_IsClose(transmission->roughness[0], 1.0e-5f, 1e-7f) &&
+           Test_IsClose(transmission->roughness[1], 1.0e-5f, 1e-7f);
+}
+
+static bool
+TestDisneyPrincipledClearcoatGlossControlsCoatRoughness()
+{
+    ParamMap params;
+    params["baseColor"] = Value(Vec3f(0.08f, 0.22f, 0.75f));
+    params["specular"] = Value(0.0f);
+    params["clearcoat"] = Value(1.0f);
+    params["clearcoatGloss"] = Value(0.2f);
+
+    const SurfaceClosure c = EvalDisneyPrincipled(params);
+    const auto* coat = FindNodeIf<Bsdf::GeneralizedSchlickData>(
+        c.bsdfTree,
+        [](const Bsdf::GeneralizedSchlickData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection &&
+                   Test_IsClose(data.color0, Vec3f(1.0f), 1e-4f) &&
+                   Test_IsClose(data.weight, 0.04f, 1e-4f);
+        });
+
+    if (!coat) {
+        printf("    Failed to find Disney Principled clearcoat layer\n");
+        return false;
+    }
+
+    const float expectedRoughness = 0.8f * 0.8f;
+    return Test_IsClose(c.coat, 0.04f, 1e-4f) &&
+           Test_IsClose(c.coatRoughness, 0.8f, 1e-4f) &&
+           Test_IsClose(coat->roughness[0], expectedRoughness, 1e-4f) &&
+           Test_IsClose(coat->roughness[1], expectedRoughness, 1e-4f);
 }
 
 // ---------------------------------------------------------------------------
@@ -1147,6 +1305,11 @@ Test_RegisterMaterialTests()
     _REG(TestOpenPbrCoatRoughnessAnisotropyUsesCanonicalName);
     _REG(TestOpenPbrGeometryCoatTangentUsesCanonicalName);
     _REG(TestDisneyPrincipledDefaults);
+    _REG(TestDisneyPrincipledSpecularTintReachesDielectricLayer);
+    _REG(TestDisneyPrincipledAnisotropyUsesMaterialXFormula);
+    _REG(TestDisneyPrincipledSheenUsesMaterialXDefaults);
+    _REG(TestDisneyPrincipledTransmissionUsesSharpDielectric);
+    _REG(TestDisneyPrincipledClearcoatGlossControlsCoatRoughness);
     _REG(TestGltfPbrDefaults);
     _REG(TestGltfPbrAlphaMask);
     _REG(TestGltfPbrIridescenceParametersReachBsdf);

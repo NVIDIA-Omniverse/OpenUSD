@@ -28,6 +28,7 @@ static const SlotName _kSpecTrans("specTrans");
 static const SlotName _kIor("ior");
 static const SlotName _kSubsurface("subsurface");
 static const SlotName _kSubsurfaceDistance("subsurfaceDistance");
+static constexpr float _kDisneySheenRoughness = 0.3f;
 
 namespace {
 
@@ -95,18 +96,19 @@ EvalDisneyPrincipled(const ParamMap& params)
     SurfaceClosure c;
 
     const Vec3f baseColor = Get<Vec3f>(params, _kBaseColor, Vec3f(0.16f));
-    const float metallic = Get<float>(params, _kMetallic, 0.0f);
+    const float metallic = _Clamp01(Get<float>(params, _kMetallic, 0.0f));
     const float roughness = Get<float>(params, _kRoughness, 0.5f);
     const float anisotropic = Get<float>(params, _kAnisotropic, 0.0f);
-    const float specular = Get<float>(params, _kSpecular, 0.5f);
-    const float specularTint = Get<float>(params, _kSpecularTint, 0.0f);
-    const float sheen = Get<float>(params, _kSheen, 0.0f);
-    const float sheenTint = Get<float>(params, _kSheenTint, 0.5f);
-    const float clearcoat = Get<float>(params, _kClearcoat, 0.0f);
+    const float specular = _Clamp01(Get<float>(params, _kSpecular, 0.5f));
+    const float specularTint =
+        _Clamp01(Get<float>(params, _kSpecularTint, 0.0f));
+    const float sheen = _Clamp01(Get<float>(params, _kSheen, 0.0f));
+    const float sheenTint = _Clamp01(Get<float>(params, _kSheenTint, 0.5f));
+    const float clearcoat = _Clamp01(Get<float>(params, _kClearcoat, 0.0f));
     const float clearcoatGloss = Get<float>(params, _kClearcoatGloss, 1.0f);
-    const float specTrans = Get<float>(params, _kSpecTrans, 0.0f);
+    const float specTrans = _Clamp01(Get<float>(params, _kSpecTrans, 0.0f));
     const float ior = Get<float>(params, _kIor, 1.5f);
-    const float subsurface = Get<float>(params, _kSubsurface, 0.0f);
+    const float subsurface = _Clamp01(Get<float>(params, _kSubsurface, 0.0f));
     const Vec3f subsurfaceDistance =
         Get<Vec3f>(params, _kSubsurfaceDistance, Vec3f(1.0f));
 
@@ -119,7 +121,8 @@ EvalDisneyPrincipled(const ParamMap& params)
     c.transmission = specTrans;
     c.transmissionColor = baseColor;
     c.sheen = sheen;
-    c.sheenColor = _Lerp(Vec3f(1.0f), baseColor, _Clamp01(sheenTint));
+    c.sheenColor = _Lerp(Vec3f(1.0f), baseColor, sheenTint);
+    c.sheenRoughness = _kDisneySheenRoughness;
     c.coat = clearcoat * 0.04f;
     c.coatRoughness = 1.0f - clearcoatGloss;
     c.coatIor = 1.5f;
@@ -141,17 +144,19 @@ EvalDisneyPrincipled(const ParamMap& params)
     Bsdf::MixData subsurfaceMix;
     subsurfaceMix.bg = diffuseId;
     subsurfaceMix.fg = subsurfaceId;
-    subsurfaceMix.mix = _Clamp01(subsurface);
+    subsurfaceMix.mix = subsurface;
     Bsdf::NodeId root = tree.Add(subsurfaceMix);
 
-    if (_Clamp01(sheen) > 0.0f) {
+    if (sheen > 0.0f) {
         Bsdf::SheenData sheenData;
-        sheenData.weight = _Clamp01(sheen);
-        sheenData.color = _Lerp(Vec3f(1.0f), baseColor, _Clamp01(sheenTint));
+        sheenData.weight = sheen;
+        sheenData.color = _Lerp(Vec3f(1.0f), baseColor, sheenTint);
+        sheenData.roughness = _kDisneySheenRoughness;
+        sheenData.mode = Bsdf::SheenMode::ContyKulla;
         root = _AppendLayer(&tree, tree.Add(sheenData), root);
     }
 
-    if (_Clamp01(specTrans) > 0.0f) {
+    if (specTrans > 0.0f) {
         Bsdf::DielectricData transmission;
         transmission.weight = 1.0f;
         transmission.tint = baseColor;
@@ -162,22 +167,23 @@ EvalDisneyPrincipled(const ParamMap& params)
         Bsdf::MixData transmissionMix;
         transmissionMix.bg = root;
         transmissionMix.fg = tree.Add(transmission);
-        transmissionMix.mix = _Clamp01(specTrans);
+        transmissionMix.mix = specTrans;
         root = tree.Add(transmissionMix);
     }
 
     const Vec2f specularRoughness =
         _ComputeRoughnessAnisotropy(roughness, anisotropic);
     const Vec3f dielectricTint =
-        _Lerp(Vec3f(1.0f), baseColor, _Clamp01(specularTint));
+        _Lerp(Vec3f(1.0f), baseColor, specularTint);
 
-    if (_Clamp01(specular) > 0.0f) {
+    if (specular > 0.0f) {
         Bsdf::GeneralizedSchlickData dielectric;
         dielectric.weight = specular * 0.08f;
         dielectric.color0 = dielectricTint;
         dielectric.color82 = dielectricTint;
         dielectric.color90 = Vec3f(1.0f);
         dielectric.roughness = specularRoughness;
+        dielectric.scatterMode = Bsdf::ScatterMode::Reflection;
         root = _AppendLayer(&tree, tree.Add(dielectric), root);
     }
 
@@ -187,27 +193,29 @@ EvalDisneyPrincipled(const ParamMap& params)
     metallicData.color82 = baseColor;
     metallicData.color90 = Vec3f(1.0f);
     metallicData.roughness = specularRoughness;
+    metallicData.scatterMode = Bsdf::ScatterMode::Reflection;
 
     const Bsdf::NodeId metallicId = tree.Add(metallicData);
-    if (_Clamp01(metallic) <= 0.0f) {
+    if (metallic <= 0.0f) {
         // no-op
-    } else if (_Clamp01(metallic) >= 1.0f) {
+    } else if (metallic >= 1.0f) {
         root = metallicId;
     } else {
         Bsdf::MixData metallicMix;
         metallicMix.bg = root;
         metallicMix.fg = metallicId;
-        metallicMix.mix = _Clamp01(metallic);
+        metallicMix.mix = metallic;
         root = tree.Add(metallicMix);
     }
 
-    if (_Clamp01(clearcoat) > 0.0f) {
+    if (clearcoat > 0.0f) {
         Bsdf::GeneralizedSchlickData coat;
         coat.weight = clearcoat * 0.04f;
         coat.color0 = Vec3f(1.0f);
         coat.color82 = Vec3f(1.0f);
         coat.color90 = Vec3f(1.0f);
         coat.roughness = _ComputeDualRoughness(1.0f - clearcoatGloss);
+        coat.scatterMode = Bsdf::ScatterMode::Reflection;
         root = _AppendLayer(&tree, tree.Add(coat), root);
     }
 
