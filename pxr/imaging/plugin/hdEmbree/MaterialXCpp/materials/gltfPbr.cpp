@@ -7,6 +7,7 @@
 #include "gltfPbr.h"
 
 #include "../paramMap.h"
+#include "../nodes/helpers/mathHelpers.h"
 
 #include <algorithm>
 #include <cmath>
@@ -38,6 +39,7 @@ static const SlotName _kEmissive("emissive");
 static const SlotName _kEmissiveStrength("emissive_strength");
 static const SlotName _kThickness("thickness");
 static const SlotName _kAnisotropyStrength("anisotropy_strength");
+static const SlotName _kAnisotropyRotation("anisotropy_rotation");
 
 namespace {
 
@@ -84,6 +86,34 @@ _ComputeIsotropicRoughness(float roughness)
 {
     const float alphaRoughness = _ClampEpsilon(roughness * roughness);
     return Vec2f(alphaRoughness, alphaRoughness);
+}
+
+Vec3f
+_NormalizeOrFallback(const Vec3f& value, const Vec3f& fallback)
+{
+    const float length = value.length();
+    if (length < 1.0e-6f) {
+        return fallback;
+    }
+    return value / length;
+}
+
+Vec3f
+_RotateTangent(
+    const Vec3f& tangent,
+    const Vec3f& axis,
+    float anisotropyStrength,
+    float rotationRadians)
+{
+    if (std::clamp(anisotropyStrength, 0.0f, 1.0f) <= 0.0f ||
+        std::abs(rotationRadians) <= 1.0e-6f) {
+        return tangent;
+    }
+
+    constexpr float kRadiansToDegrees = 180.0f / kPi;
+    return _NormalizeOrFallback(
+        Rotate3d(tangent, -rotationRadians * kRadiansToDegrees, axis),
+        tangent);
 }
 
 Bsdf::NodeId
@@ -134,12 +164,18 @@ EvalGltfPbr(const ParamMap& params)
     const float sheenRoughness = Get<float>(params, _kSheenRoughness, 0.0f);
     const float clearcoat = Get<float>(params, _kClearcoat, 0.0f);
     const float clearcoatRoughness = Get<float>(params, _kClearcoatRoughness, 0.0f);
-    const Vec3f clearcoatNormal =
-        Get<Vec3f>(params, _kClearcoatNormal, Vec3f(0.0f, 0.0f, 1.0f));
+    const Vec3f normal = Get<Vec3f>(params, _kNormal, Vec3f(0.0f, 0.0f, 1.0f));
+    const Vec3f clearcoatNormal = Get<Vec3f>(params, _kClearcoatNormal, normal);
     const Vec3f emissive = Get<Vec3f>(params, _kEmissive, Vec3f(0.0f));
     const float emissiveStrength = Get<float>(params, _kEmissiveStrength, 1.0f);
     const float thickness = Get<float>(params, _kThickness, 0.0f);
     const float anisotropyStrength = Get<float>(params, _kAnisotropyStrength, 0.0f);
+    const float anisotropyRotation = Get<float>(params, _kAnisotropyRotation, 0.0f);
+    const Vec3f mainTangent = _RotateTangent(
+        tangent,
+        normal,
+        anisotropyStrength,
+        anisotropyRotation);
 
     c.baseColor = baseColor;
     c.roughness = roughness;
@@ -156,7 +192,7 @@ EvalGltfPbr(const ParamMap& params)
     c.coatRoughness = clearcoatRoughness;
     c.coatIor = 1.5f;
     c.emissiveColor = emissive * emissiveStrength;
-    c.normal = Get<Vec3f>(params, _kNormal, Vec3f(0.0f, 0.0f, 1.0f));
+    c.normal = normal;
     c.thinWalled = thickness <= 0.0f;
 
     const _AlphaMode alphaMode = static_cast<_AlphaMode>(alphaModeValue);
@@ -185,7 +221,7 @@ EvalGltfPbr(const ParamMap& params)
     transmissionData.tint = baseColor;
     transmissionData.ior = std::max(ior, 1.0f);
     transmissionData.roughness = baseRoughness;
-    transmissionData.tangent = tangent;
+    transmissionData.tangent = mainTangent;
     transmissionData.scatterMode = Bsdf::ScatterMode::Transmission;
 
     Bsdf::MixData transmissionMix;
@@ -207,7 +243,7 @@ EvalGltfPbr(const ParamMap& params)
     reflection.color82 = dielectricF0;
     reflection.color90 = dielectricF90;
     reflection.roughness = baseRoughness;
-    reflection.tangent = tangent;
+    reflection.tangent = mainTangent;
     reflection.scatterMode = Bsdf::ScatterMode::Reflection;
     reflection.thinFilmWeight = _Clamp01(iridescence);
     reflection.thinFilmIor = iridescenceIor;
@@ -225,7 +261,7 @@ EvalGltfPbr(const ParamMap& params)
     metal.color82 = baseColor;
     metal.color90 = Vec3f(1.0f);
     metal.roughness = baseRoughness;
-    metal.tangent = tangent;
+    metal.tangent = mainTangent;
     metal.thinFilmWeight = _Clamp01(iridescence);
     metal.thinFilmIor = iridescenceIor;
     metal.thinFilmThickness = iridescenceThickness;
@@ -252,8 +288,9 @@ EvalGltfPbr(const ParamMap& params)
         clearcoatData.ior = 1.5f;
         clearcoatData.roughness = _ComputeIsotropicRoughness(clearcoatRoughness);
         clearcoatData.tangent = tangent;
+        clearcoatData.normal = clearcoatNormal;
+        clearcoatData.hasShadingNormal = true;
         root = _AppendLayer(&tree, tree.Add(clearcoatData), root);
-        (void)clearcoatNormal;
     }
 
     tree.root = root;

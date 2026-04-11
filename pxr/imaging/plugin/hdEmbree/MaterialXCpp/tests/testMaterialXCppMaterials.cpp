@@ -1159,6 +1159,79 @@ TestGltfPbrIridescenceParametersReachBsdf()
            Test_IsClose(reflective->thinFilmIor, 1.45f, 1e-4f);
 }
 
+static bool
+TestGltfPbrClearcoatNormalReachesBsdf()
+{
+    const Vec3f clearcoatNormal(0.0f, 0.70710677f, 0.70710677f);
+
+    ParamMap params;
+    params["metallic"] = Value(0.0f);
+    params["clearcoat"] = Value(1.0f);
+    params["clearcoat_roughness"] = Value(0.15f);
+    params["clearcoat_normal"] = Value(clearcoatNormal);
+    params["tangent"] = Value(Vec3f(1.0f, 0.0f, 0.0f));
+
+    const SurfaceClosure c = EvalGltfPbr(params);
+    const auto* coat = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection &&
+                   Test_IsClose(data.ior, 1.5f, 1e-4f) &&
+                   Test_IsClose(data.weight, 1.0f, 1e-4f);
+        });
+
+    if (!coat) {
+        printf("    Failed to find glTF clearcoat dielectric node\n");
+        return false;
+    }
+
+    const float expectedRoughness = 0.15f * 0.15f;
+    return coat->hasShadingNormal &&
+           Test_IsClose(coat->normal, clearcoatNormal, 1e-4f) &&
+           Test_IsClose(coat->tangent, Vec3f(1.0f, 0.0f, 0.0f), 1e-4f) &&
+           Test_IsClose(coat->roughness[0], expectedRoughness, 1e-4f) &&
+           Test_IsClose(coat->roughness[1], expectedRoughness, 1e-4f);
+}
+
+static bool
+TestGltfPbrAnisotropyRotationRotatesTangent()
+{
+    constexpr float kQuarterTurnRadians = 1.57079632679f;
+
+    ParamMap params;
+    params["metallic"] = Value(0.0f);
+    params["roughness"] = Value(0.4f);
+    params["anisotropy_strength"] = Value(0.8f);
+    params["anisotropy_rotation"] = Value(kQuarterTurnRadians);
+    params["tangent"] = Value(Vec3f(1.0f, 0.0f, 0.0f));
+    params["normal"] = Value(Vec3f(0.0f, 0.0f, 1.0f));
+
+    const SurfaceClosure c = EvalGltfPbr(params);
+    const auto* reflective = FindNodeIf<Bsdf::GeneralizedSchlickData>(
+        c.bsdfTree,
+        [](const Bsdf::GeneralizedSchlickData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection &&
+                   data.thinFilmWeight <= 0.0f;
+        });
+
+    if (!reflective) {
+        printf("    Failed to find glTF anisotropic reflection node\n");
+        return false;
+    }
+
+    const float roughnessSquared = std::clamp(0.4f * 0.4f, 1.0e-5f, 1.0f);
+    const float strengthSquared = 0.8f * 0.8f;
+    const float alphaX = std::clamp(
+        roughnessSquared * (1.0f - strengthSquared) + strengthSquared,
+        1.0e-5f,
+        1.0f);
+    const Vec2f expected(alphaX, roughnessSquared);
+
+    return Test_IsClose(reflective->tangent, Vec3f(0.0f, -1.0f, 0.0f), 1e-4f) &&
+           Test_IsClose(reflective->roughness[0], expected[0], 1e-4f) &&
+           Test_IsClose(reflective->roughness[1], expected[1], 1e-4f);
+}
+
 // ---------------------------------------------------------------------------
 // UsdPreviewSurface
 // ---------------------------------------------------------------------------
@@ -1313,6 +1386,8 @@ Test_RegisterMaterialTests()
     _REG(TestGltfPbrDefaults);
     _REG(TestGltfPbrAlphaMask);
     _REG(TestGltfPbrIridescenceParametersReachBsdf);
+    _REG(TestGltfPbrClearcoatNormalReachesBsdf);
+    _REG(TestGltfPbrAnisotropyRotationRotatesTangent);
     _REG(TestUsdPreviewSurfaceDefaults);
     _REG(TestUsdPreviewSurfaceMetallicWorkflow);
     _REG(TestUsdPreviewSurfaceSpecularWorkflow);
