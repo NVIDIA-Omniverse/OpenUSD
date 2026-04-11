@@ -27,6 +27,7 @@ static const SlotName _kSpecularAnisotropy("specular_anisotropy");
 static const SlotName _kSpecularRotation("specular_rotation");
 static const SlotName _kTransmission("transmission");
 static const SlotName _kTransmissionColor("transmission_color");
+static const SlotName _kTransmissionDispersion("transmission_dispersion");
 static const SlotName _kTransmissionDepth("transmission_depth");
 static const SlotName _kTransmissionExtraRoughness("transmission_extra_roughness");
 static const SlotName _kSubsurface("subsurface");
@@ -279,6 +280,8 @@ EvalStandardSurface(const ParamMap& params)
     c.transmission = Get<float>(params, _kTransmission, 0.0f);
     c.transmissionColor =
         Get<Vec3f>(params, _kTransmissionColor, Vec3f(1.0f));
+    const float transmissionDispersionAbbe =
+        std::max(Get<float>(params, _kTransmissionDispersion, 0.0f), 0.0f);
 
     c.coat = Get<float>(params, _kCoat, 0.0f);
     const Vec3f coatColor = Get<Vec3f>(params, _kCoatColor, Vec3f(1.0f));
@@ -401,6 +404,7 @@ EvalStandardSurface(const ParamMap& params)
             transmission.weight = 1.0f;
             transmission.tint = _Saturate(c.transmissionColor);
             transmission.ior = 1.0f;
+            transmission.dispersionAbbe = transmissionDispersionAbbe;
             transmission.roughness = transmissionRoughness;
             transmission.tangent = mainTangent;
             transmission.scatterMode = Bsdf::ScatterMode::Transmission;
@@ -410,6 +414,7 @@ EvalStandardSurface(const ParamMap& params)
             transmission.weight = 1.0f;
             transmission.tint = _Saturate(c.transmissionColor);
             transmission.ior = std::max(c.specularIor, 1.0f);
+            transmission.dispersionAbbe = transmissionDispersionAbbe;
             transmission.roughness = transmissionRoughness;
             transmission.tangent = mainTangent;
             transmission.scatterMode = Bsdf::ScatterMode::Transmission;
@@ -424,6 +429,7 @@ EvalStandardSurface(const ParamMap& params)
         dielectric.weight = clampedSpec;
         dielectric.tint = _Saturate(c.specularColor);
         dielectric.ior = std::max(c.specularIor, 1.0f);
+        dielectric.dispersionAbbe = transmissionDispersionAbbe;
         dielectric.roughness = specularRoughness;
         dielectric.tangent = mainTangent;
         dielectric.scatterMode = Bsdf::ScatterMode::Reflection;

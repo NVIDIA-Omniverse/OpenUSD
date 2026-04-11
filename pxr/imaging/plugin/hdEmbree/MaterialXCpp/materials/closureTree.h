@@ -71,6 +71,7 @@ struct DielectricData
     float weight = 1.0f;
     Vec3f tint = Vec3f(1.0f);
     float ior = 1.5f;
+    float dispersionAbbe = 0.0f;
     Vec2f roughness = Vec2f(0.05f, 0.05f);
     bool retroreflective = false;
     float thinFilmWeight = 1.0f;

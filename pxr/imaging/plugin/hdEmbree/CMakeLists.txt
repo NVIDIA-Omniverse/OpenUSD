@@ -105,6 +105,7 @@ pxr_plugin(hdEmbree
         pxrPbrt/pbrtUtils.h
         MaterialXCpp/mathTypes.h
         MaterialXCpp/shadingContext.h
+        MaterialXCpp/spectral.h
         MaterialXCpp/surfaceClosure.h
         MaterialXCpp/materials/closureTree.h
         MaterialXCpp/paramMap.h

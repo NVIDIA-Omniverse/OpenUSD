@@ -8,10 +8,25 @@
 #include "materials/closureTree.h"
 
 #include <algorithm>
+#include <cmath>
 #include <type_traits>
 #include <variant>
 
 namespace mxcpp {
+
+inline float
+_RegularizeAlphaRoughness(float alphaRoughness)
+{
+    const float clampedAlpha = std::clamp(alphaRoughness, 1.0e-5f, 1.0f);
+    const float perceptualRoughness = std::sqrt(clampedAlpha);
+    if (perceptualRoughness >= 0.3f) {
+        return clampedAlpha;
+    }
+
+    const float widenedRoughness = std::clamp(
+        2.0f * perceptualRoughness, 0.1f, 0.3f);
+    return widenedRoughness * widenedRoughness;
+}
 
 /// Surface closure produced by material model evaluation.
 /// Contains all parameters needed for BSDF evaluation.
@@ -44,6 +59,18 @@ struct SurfaceClosure
         return !bsdfTree.Empty();
     }
 
+    bool HasDispersion() const {
+        for (const auto& node : bsdfTree.nodes) {
+            if (const auto* dielectric =
+                    std::get_if<Bsdf::DielectricData>(&node.data)) {
+                if (dielectric->dispersionAbbe > 0.0f) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     /// Regularize the surface closure by widening narrow specular lobes.
     void Regularize() {
         if (roughness < 0.3f) {
@@ -59,10 +86,8 @@ struct SurfaceClosure
                               std::is_same_v<T, Bsdf::ConductorData> ||
                               std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
                     for (int i = 0; i < 2; ++i) {
-                        if (data.roughness[i] < 0.3f) {
-                            data.roughness[i] = std::clamp(
-                                2.0f * data.roughness[i], 0.1f, 0.3f);
-                        }
+                        data.roughness[i] =
+                            _RegularizeAlphaRoughness(data.roughness[i]);
                     }
                 } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
                     if (data.roughness < 0.3f) {

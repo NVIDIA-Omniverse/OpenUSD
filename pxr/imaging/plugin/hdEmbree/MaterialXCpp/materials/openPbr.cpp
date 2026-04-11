@@ -28,6 +28,10 @@ static const SlotName _kSpecularRoughnessAnisotropy(
 static const SlotName _kLegacySpecularAnisotropy("specular_anisotropy");
 static const SlotName _kTransmissionWeight("transmission_weight");
 static const SlotName _kTransmissionColor("transmission_color");
+static const SlotName _kTransmissionDispersionScale(
+    "transmission_dispersion_scale");
+static const SlotName _kTransmissionDispersionAbbeNumber(
+    "transmission_dispersion_abbe_number");
 static const SlotName _kTransmissionDepth("transmission_depth");
 static const SlotName _kSubsurfaceWeight("subsurface_weight");
 static const SlotName _kSubsurfaceColor("subsurface_color");
@@ -261,6 +265,15 @@ EvalOpenPbr(const ParamMap& params)
     c.transmission = Get<float>(params, _kTransmissionWeight, 0.0f);
     c.transmissionColor =
         Get<Vec3f>(params, _kTransmissionColor, Vec3f(1.0f));
+    const float transmissionDispersionScale = _Clamp01(
+        Get<float>(params, _kTransmissionDispersionScale, 0.0f));
+    const float transmissionDispersionAbbe = std::max(
+        Get<float>(params, _kTransmissionDispersionAbbeNumber, 20.0f),
+        0.0f);
+    const float effectiveDispersionAbbe =
+        transmissionDispersionScale > 0.0f
+        ? transmissionDispersionAbbe / transmissionDispersionScale
+        : 0.0f;
     const float subsurfaceWeight = Get<float>(params, _kSubsurfaceWeight, 0.0f);
     const Vec3f subsurfaceColor = Get<Vec3f>(
         params, _kSubsurfaceColor, Vec3f(1.0f));
@@ -351,6 +364,7 @@ EvalOpenPbr(const ParamMap& params)
             transmission.weight = transmissionWeight;
             transmission.tint = _Saturate(c.transmissionColor);
             transmission.ior = 1.0f;
+            transmission.dispersionAbbe = effectiveDispersionAbbe;
             transmission.roughness = specularRoughness;
             transmission.tangent = tangent;
             transmission.scatterMode = Bsdf::ScatterMode::Transmission;
@@ -360,6 +374,7 @@ EvalOpenPbr(const ParamMap& params)
             transmission.weight = transmissionWeight;
             transmission.tint = _Saturate(c.transmissionColor);
             transmission.ior = std::max(c.specularIor, 1.0f);
+            transmission.dispersionAbbe = effectiveDispersionAbbe;
             transmission.roughness = specularRoughness;
             transmission.tangent = tangent;
             transmission.scatterMode = Bsdf::ScatterMode::Transmission;
@@ -375,6 +390,7 @@ EvalOpenPbr(const ParamMap& params)
         dielectric.weight = specularWeight;
         dielectric.tint = _Saturate(c.specularColor);
         dielectric.ior = std::max(c.specularIor, 1.0f);
+        dielectric.dispersionAbbe = effectiveDispersionAbbe;
         dielectric.roughness = specularRoughness;
         dielectric.tangent = tangent;
         dielectric.scatterMode = Bsdf::ScatterMode::Reflection;

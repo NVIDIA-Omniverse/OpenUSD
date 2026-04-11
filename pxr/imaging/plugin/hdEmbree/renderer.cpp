@@ -16,6 +16,7 @@
 #include "pxr/imaging/plugin/hdEmbree/renderBuffer.h"
 #include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/materials/bsdf.h"
 #include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/shadingContext.h"
+#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/spectral.h"
 
 #include "pxr/imaging/hd/perfLog.h"
 
@@ -171,6 +172,35 @@ _ToMx(const GfMatrix4d& m)
         }
     }
     return result;
+}
+
+struct _HeroWavelengthState
+{
+    bool active = false;
+    float wavelengthNm = 0.0f;
+    float pdf = 0.0f;
+};
+
+inline float
+_RgbToSpectralValue(const GfVec3f& rgb, const _HeroWavelengthState& hero)
+{
+    return mxcpp::Spectral::RgbToSpectralValue(_ToMx(rgb), hero.wavelengthNm);
+}
+
+inline GfVec3f
+_SpectralValueToRgb(float value, const _HeroWavelengthState& hero)
+{
+    return _ToGf(mxcpp::Spectral::SpectralValueToRgb(
+        value,
+        hero.wavelengthNm,
+        hero.pdf));
+}
+
+inline GfVec3f
+_SpectralScalarToRgb(float value, const _HeroWavelengthState& hero)
+{
+    return hero.active ? _SpectralValueToRgb(value, hero)
+                       : GfVec3f(value);
 }
 
 // Callback data for geompropvalue node — holds references needed to
@@ -2687,8 +2717,13 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
     GfVec3f const& wo,
     HdEmbreeSobolSampler &sampler,
     bool /*doubleSided*/,
-    mxcpp::SurfaceClosure const* closure) const
+    mxcpp::SurfaceClosure const* closure,
+    bool spectralActive,
+    float heroWavelengthNm,
+    float heroWavelengthPdf) const
 {
+    const _HeroWavelengthState hero{
+        spectralActive, heroWavelengthNm, heroWavelengthPdf};
     GfVec3f finalColor(0.0f);
 
     const int N = _lightSamplesPerHit;
@@ -2750,7 +2785,11 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
             GfVec3f sampleContrib(0.0f);
             if (closure) {
                 GfVec3f bsdfValue = _ToGf(mxcpp::Bsdf::EvalSurface(
-                    *closure, _ToMx(normal), _ToMx(ls.wI), _ToMx(wo)));
+                    *closure,
+                    _ToMx(normal),
+                    _ToMx(ls.wI),
+                    _ToMx(wo),
+                    heroWavelengthNm));
 
                 for (int i = 0; i < 3; ++i) {
                     if (!std::isfinite(bsdfValue[i])) bsdfValue[i] = 0.0f;
@@ -2763,15 +2802,36 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 float lightPdf = (ls.invPdfW > 0.0f)
                     ? 1.0f / ls.invPdfW : 0.0f;
                 float bsdfPdf = mxcpp::Bsdf::PdfSurface(
-                    *closure, _ToMx(normal), _ToMx(ls.wI), _ToMx(wo));
+                    *closure,
+                    _ToMx(normal),
+                    _ToMx(ls.wI),
+                    _ToMx(wo),
+                    heroWavelengthNm);
                 float misW = mxcpp::Bsdf::PowerHeuristic(lightPdf, bsdfPdf);
 
-                sampleContrib = GfCompMult(ls.Li, bsdfValue)
-                    * absDotNL * vis * ls.invPdfW * misW;
+                if (hero.active) {
+                    const float spectralLi = _RgbToSpectralValue(ls.Li, hero);
+                    const float spectralBsdf =
+                        _RgbToSpectralValue(bsdfValue, hero);
+                    sampleContrib = _SpectralValueToRgb(
+                        spectralLi * spectralBsdf *
+                            absDotNL * vis * ls.invPdfW * misW,
+                        hero);
+                } else {
+                    sampleContrib = GfCompMult(ls.Li, bsdfValue)
+                        * absDotNL * vis * ls.invPdfW * misW;
+                }
             } else {
                 float brdf = 1.0f / _pi<float>;
-                sampleContrib = ls.Li * absDotNL * brdf
-                    * vis * ls.invPdfW;
+                if (hero.active) {
+                    const float spectralLi = _RgbToSpectralValue(ls.Li, hero);
+                    sampleContrib = _SpectralValueToRgb(
+                        spectralLi * absDotNL * brdf * vis * ls.invPdfW,
+                        hero);
+                } else {
+                    sampleContrib = ls.Li * absDotNL * brdf
+                        * vis * ls.invPdfW;
+                }
             }
 
             // Firefly clamping.
@@ -2806,6 +2866,8 @@ HdEmbreeRenderer::_TracePath(
     HdEmbreeRayDifferential currentRayDiff = rayDiff;
     GfVec3f radiance(0.0f);
     GfVec3f throughput(1.0f);
+    float spectralThroughput = 1.0f;
+    _HeroWavelengthState hero;
     GfVec3f rayOrigin = origin;
     GfVec3f rayDir = dir;
     float lastBsdfPdf = 0.0f;
@@ -2853,7 +2915,15 @@ HdEmbreeRenderer::_TracePath(
                     domeContrib *= misW;
                 }
 
-                radiance += GfCompMult(throughput, domeContrib);
+                if (hero.active) {
+                    const float spectralDome =
+                        _RgbToSpectralValue(domeContrib, hero);
+                    radiance += _SpectralValueToRgb(
+                        spectralThroughput * spectralDome,
+                        hero);
+                } else {
+                    radiance += GfCompMult(throughput, domeContrib);
+                }
             }
             break;
         }
@@ -2979,16 +3049,40 @@ HdEmbreeRenderer::_TracePath(
             closure.presence = 1.0f;
         }
 
+        if (hasClosure && closure.HasDispersion() && !hero.active) {
+            hero.active = true;
+            hero.wavelengthNm =
+                mxcpp::Spectral::SampleHeroWavelength(sampler.Next());
+            hero.pdf = mxcpp::Spectral::HeroWavelengthPdf();
+            spectralThroughput = _RgbToSpectralValue(throughput, hero);
+        }
+
         // --- Emissive ---
         if (hasClosure) {
-            radiance += GfCompMult(throughput, _ToGf(closure.emissiveColor));
+            if (hero.active) {
+                const float spectralEmissive = mxcpp::Spectral::RgbToSpectralValue(
+                    closure.emissiveColor, hero.wavelengthNm);
+                radiance += _SpectralValueToRgb(
+                    spectralThroughput * spectralEmissive,
+                    hero);
+            } else {
+                radiance += GfCompMult(throughput, _ToGf(closure.emissiveColor));
+            }
         }
 
         // --- Direct lighting (NEE) with MIS ---
         GfVec3f direct(0.0f);
         if (hasClosure) {
             direct = _ComputeDirectLightingMIS(
-                hitPos, normal, wo, sampler, doubleSided, &closure);
+                hitPos,
+                normal,
+                wo,
+                sampler,
+                doubleSided,
+                &closure,
+                hero.active,
+                hero.wavelengthNm,
+                hero.pdf);
         } else {
             GfVec3f matColor = _enableSceneColors
                 ? _ToGf(ctx.displayColor) : GfVec3f(0.5f);
@@ -3001,9 +3095,21 @@ HdEmbreeRenderer::_TracePath(
             fallback.specularIor = 1.5f;
             fallback.opacity = 1.0f;
             direct = _ComputeDirectLightingMIS(
-                hitPos, normal, wo, sampler, doubleSided, &fallback);
+                hitPos,
+                normal,
+                wo,
+                sampler,
+                doubleSided,
+                &fallback,
+                hero.active,
+                hero.wavelengthNm,
+                hero.pdf);
         }
-        radiance += GfCompMult(throughput, direct);
+        if (hero.active) {
+            radiance += direct * spectralThroughput;
+        } else {
+            radiance += GfCompMult(throughput, direct);
+        }
 
         // --- Stop after last allowed bounce ---
         if (bounce >= _maxBounces) break;
@@ -3013,26 +3119,45 @@ HdEmbreeRenderer::_TracePath(
 
         mxcpp::Bsdf::BsdfSample bs = mxcpp::Bsdf::SampleSurface(
             closure, _ToMx(normal), _ToMx(wo),
-            sampler.Next(), sampler.Next(), sampler.Next());
+            sampler.Next(), sampler.Next(), sampler.Next(),
+            hero.wavelengthNm);
         if (bs.pdf <= 0.0f) break;
 
-        GfVec3f bsdfContrib;
-        if (bs.isSpecular) {
-            // Delta distribution (e.g. thin-surface transmission):
-            // f already contains the throughput coefficient; no cosine
-            // or pdf division needed.
-            bsdfContrib = _ToGf(bs.f);
+        if (hero.active) {
+            float bsdfContrib = 0.0f;
+            if (bs.isSpecular) {
+                bsdfContrib = mxcpp::Spectral::RgbToSpectralValue(
+                    bs.f, hero.wavelengthNm);
+            } else {
+                const float cosTheta =
+                    std::abs(GfDot(normal, _ToGf(bs.wi)));
+                bsdfContrib = mxcpp::Spectral::RgbToSpectralValue(
+                    bs.f, hero.wavelengthNm) * cosTheta / bs.pdf;
+            }
+
+            if (!std::isfinite(bsdfContrib) || bsdfContrib < 0.0f) {
+                bsdfContrib = 0.0f;
+            }
+            spectralThroughput *= bsdfContrib;
         } else {
-            float cosTheta = std::abs(GfDot(normal, _ToGf(bs.wi)));
-            bsdfContrib = _ToGf(bs.f) * cosTheta / bs.pdf;
-        }
+            GfVec3f bsdfContrib;
+            if (bs.isSpecular) {
+                // Delta distribution (e.g. thin-surface transmission):
+                // f already contains the throughput coefficient; no cosine
+                // or pdf division needed.
+                bsdfContrib = _ToGf(bs.f);
+            } else {
+                float cosTheta = std::abs(GfDot(normal, _ToGf(bs.wi)));
+                bsdfContrib = _ToGf(bs.f) * cosTheta / bs.pdf;
+            }
 
-        for (int i = 0; i < 3; ++i) {
-            if (!std::isfinite(bsdfContrib[i]) || bsdfContrib[i] < 0.0f)
-                bsdfContrib[i] = 0.0f;
-        }
+            for (int i = 0; i < 3; ++i) {
+                if (!std::isfinite(bsdfContrib[i]) || bsdfContrib[i] < 0.0f)
+                    bsdfContrib[i] = 0.0f;
+            }
 
-        throughput = GfCompMult(throughput, bsdfContrib);
+            throughput = GfCompMult(throughput, bsdfContrib);
+        }
 
         lastBsdfPdf = bs.isSpecular ? 0.0f : bs.pdf;
         if (!bs.isSpecular) {
@@ -3042,10 +3167,19 @@ HdEmbreeRenderer::_TracePath(
 
         // --- Russian Roulette ---
         if (bounce >= _minBouncesBeforeRR) {
-            float q = std::max({throughput[0], throughput[1], throughput[2]});
+            float q = hero.active
+                ? std::max({
+                    _SpectralScalarToRgb(spectralThroughput, hero)[0],
+                    _SpectralScalarToRgb(spectralThroughput, hero)[1],
+                    _SpectralScalarToRgb(spectralThroughput, hero)[2]})
+                : std::max({throughput[0], throughput[1], throughput[2]});
             q = std::min(q, 0.95f);
             if (q <= 0.0f || sampler.Next() > q) break;
-            throughput /= q;
+            if (hero.active) {
+                spectralThroughput /= q;
+            } else {
+                throughput /= q;
+            }
         }
 
         // --- Propagate ray differentials ---

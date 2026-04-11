@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "../materials/bsdf.h"
+#include "../spectral.h"
 #include "../nodes/helpers/mathHelpers.h"
 
 #include <cmath>
@@ -115,6 +116,124 @@ TestTreeDielectricReflectionMatchesStandaloneGgx()
         printf(
             "    Tree dielectric != standalone GGX: tree=%f ggx=%f ratio=%f\n",
             treeLum, ggxLum, ratio);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestDispersionCauchyIorMonotonic()
+{
+    const float iorBlue =
+        Spectral::CauchyDispersionIOR(20.0f, 1.5f, 450.0f);
+    const float iorRed =
+        Spectral::CauchyDispersionIOR(20.0f, 1.5f, 650.0f);
+    if (!(iorBlue > iorRed && iorRed > 1.0f)) {
+        printf("    Expected blue IOR > red IOR, got blue=%f red=%f\n",
+               iorBlue, iorRed);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestDispersionChangesTransmissionSampling()
+{
+    SurfaceClosure c;
+    Bsdf::DielectricData dielectric;
+    dielectric.weight = 1.0f;
+    dielectric.tint = Vec3f(1.0f);
+    dielectric.ior = 1.5f;
+    dielectric.dispersionAbbe = 20.0f;
+    dielectric.roughness = Vec2f(0.1f, 0.1f);
+    dielectric.scatterMode = Bsdf::ScatterMode::Transmission;
+    c.bsdfTree.root = c.bsdfTree.Add(dielectric);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.35f, 0.93675f, 0.0f).normalized();
+
+    const auto blue = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.65f, 450.0f);
+    const auto red = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.65f, 650.0f);
+    if (blue.pdf <= 0.0f || red.pdf <= 0.0f) {
+        printf("    Expected valid transmission samples for dispersion test\n");
+        return false;
+    }
+
+    if (Test_IsClose(blue.wi, red.wi, 1e-4f)) {
+        printf("    Expected wavelength-dependent transmission direction\n");
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestDispersionDisabledIgnoresHeroWavelength()
+{
+    SurfaceClosure c;
+    Bsdf::DielectricData dielectric;
+    dielectric.weight = 1.0f;
+    dielectric.tint = Vec3f(1.0f);
+    dielectric.ior = 1.5f;
+    dielectric.roughness = Vec2f(0.1f, 0.1f);
+    dielectric.scatterMode = Bsdf::ScatterMode::Transmission;
+    c.bsdfTree.root = c.bsdfTree.Add(dielectric);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.35f, 0.93675f, 0.0f).normalized();
+
+    const auto blue = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.65f, 450.0f);
+    const auto red = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.65f, 650.0f);
+
+    return Test_IsClose(blue.wi, red.wi, 1e-5f) &&
+           Test_IsClose(blue.f, red.f, 1e-5f) &&
+           Test_IsClose(blue.pdf, red.pdf, 1e-5f);
+}
+
+static Vec3f
+_AverageHeroRoundTrip(const Vec3f& rgb)
+{
+    Vec3f average(0.0f);
+    const float pdf = Spectral::HeroWavelengthPdf();
+
+    for (int i = 0; i < static_cast<int>(Spectral::kLambdaResolution); ++i) {
+        const float wavelengthNm =
+            Spectral::kLambdaMinNm + static_cast<float>(i) * Spectral::kLambdaStepNm;
+        const float spectralValue =
+            Spectral::RgbToSpectralValue(rgb, wavelengthNm);
+        const Vec3f reconstructed =
+            Spectral::SpectralValueToRgb(
+                spectralValue,
+                wavelengthNm,
+                pdf);
+        const float weight = (i == 0 || i + 1 == static_cast<int>(Spectral::kLambdaResolution))
+            ? 0.5f * Spectral::kLambdaStepNm
+            : Spectral::kLambdaStepNm;
+        average += reconstructed * (weight / Spectral::kLambdaRangeNm);
+    }
+
+    return average;
+}
+
+static bool
+TestSpectralNeutralRoundTripWhite()
+{
+    const Vec3f reconstructed = _AverageHeroRoundTrip(Vec3f(1.0f));
+    if (!Test_IsClose(reconstructed, Vec3f(1.0f), 1.0e-3f)) {
+        printf("    Expected white round-trip to remain neutral, got (%f,%f,%f)\n",
+               reconstructed[0], reconstructed[1], reconstructed[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestSpectralNeutralRoundTripGray()
+{
+    const Vec3f target(0.18f);
+    const Vec3f reconstructed = _AverageHeroRoundTrip(target);
+    if (!Test_IsClose(reconstructed, target, 1.0e-3f)) {
+        printf("    Expected gray round-trip to remain neutral, got (%f,%f,%f)\n",
+               reconstructed[0], reconstructed[1], reconstructed[2]);
         return false;
     }
     return true;
@@ -395,6 +514,51 @@ TestTreeTransmissionPreservesWeight()
     if (mag < 0.01f) {
         printf("    Transmission sample unexpectedly dim: (%f,%f,%f)\n",
                s.f[0], s.f[1], s.f[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestZeroRoughnessDielectricSamplesDelta()
+{
+    SurfaceClosure c;
+    Bsdf::DielectricData dielectric;
+    dielectric.weight = 1.0f;
+    dielectric.tint = Vec3f(1.0f);
+    dielectric.ior = 1.5f;
+    dielectric.roughness = Vec2f(1.0e-5f, 1.0e-5f);
+    dielectric.scatterMode = Bsdf::ScatterMode::ReflectionTransmission;
+    c.bsdfTree.root = c.bsdfTree.Add(dielectric);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.2f, 0.9797959f, 0.0f).normalized();
+
+    const auto reflected = Bsdf::SampleSurface(c, N, wo, 0.2f, 0.8f, 0.0f);
+    const auto transmitted = Bsdf::SampleSurface(c, N, wo, 0.7f, 0.1f, 0.99f);
+
+    if (!reflected.isSpecular || reflected.pdf <= 0.0f) {
+        printf("    Expected zero-roughness reflection to be delta\n");
+        return false;
+    }
+    if (Dot(reflected.wi, N) <= 0.0f) {
+        printf("    Delta reflection should stay on the same side\n");
+        return false;
+    }
+
+    if (!transmitted.isSpecular || transmitted.pdf <= 0.0f) {
+        printf("    Expected zero-roughness transmission to be delta\n");
+        return false;
+    }
+    if (Dot(transmitted.wi, N) >= 0.0f) {
+        printf("    Delta transmission should cross the interface\n");
+        return false;
+    }
+
+    const auto transmittedAlt =
+        Bsdf::SampleSurface(c, N, wo, 0.1f, 0.9f, 0.99f);
+    if (!Test_IsClose(transmitted.wi, transmittedAlt.wi, 1.0e-6f)) {
+        printf("    Delta transmission should ignore microfacet random numbers\n");
         return false;
     }
     return true;
@@ -926,6 +1090,11 @@ Test_RegisterBsdfTests()
     _REG(TestGGXSpecularNonNegative);
     _REG(TestGGXSpecularPeak);
     _REG(TestTreeDielectricReflectionMatchesStandaloneGgx);
+    _REG(TestDispersionCauchyIorMonotonic);
+    _REG(TestDispersionChangesTransmissionSampling);
+    _REG(TestDispersionDisabledIgnoresHeroWavelength);
+    _REG(TestSpectralNeutralRoundTripWhite);
+    _REG(TestSpectralNeutralRoundTripGray);
     _REG(TestCoatZeroWeight);
     _REG(TestEvalSurfaceEmissiveOnly);
     _REG(TestSheenGrazingAngle);
@@ -938,6 +1107,7 @@ Test_RegisterBsdfTests()
     _REG(TestSampleGGXSpecularLowRoughnessBoundedThroughput);
     _REG(TestSampleSurfacePdfConsistency);
     _REG(TestTreeTransmissionPreservesWeight);
+    _REG(TestZeroRoughnessDielectricSamplesDelta);
     _REG(TestTreeTransmissionPreservesWeightFromInterior);
     _REG(TestEvalSurfaceTransmissionFromInterior);
     _REG(TestTreeAddTransmissionPreservesWeight);

@@ -262,7 +262,10 @@ private:
         GfVec3f const& wo,
         HdEmbreeSobolSampler& sampler,
         bool doubleSided,
-        mxcpp::SurfaceClosure const* closure) const;
+        mxcpp::SurfaceClosure const* closure,
+        bool spectralActive = false,
+        float heroWavelengthNm = 0.0f,
+        float heroWavelengthPdf = 0.0f) const;
 
     /// Multi-bounce path tracer with MIS.
     GfVec3f _TracePath(

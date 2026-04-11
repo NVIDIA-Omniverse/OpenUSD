@@ -71,7 +71,8 @@ namespace Bsdf
         const SurfaceClosure& closure,
         const Vec3f& N,
         const Vec3f& wi,
-        const Vec3f& wo);
+        const Vec3f& wo,
+        float heroWavelengthNm = 0.0f);
 
     // ------------------------------------------------------------------
     // Sampling & PDF (Phase 9)
@@ -135,13 +136,15 @@ namespace Bsdf
         const SurfaceClosure& closure,
         const Vec3f& N,
         const Vec3f& wo,
-        float u1, float u2, float uLobe);
+        float u1, float u2, float uLobe,
+        float heroWavelengthNm = 0.0f);
 
     float PdfSurface(
         const SurfaceClosure& closure,
         const Vec3f& N,
         const Vec3f& wi,
-        const Vec3f& wo);
+        const Vec3f& wo,
+        float heroWavelengthNm = 0.0f);
 
     // ------------------------------------------------------------------
     // MIS utilities

@@ -1,0 +1,225 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1.0
+    upAxis = "Y"
+    renderSettingsPrimPath = "/RenderSettings"
+    doc = """Cut-glass dispersion comparison scene for hdEmbree.
+
+Based on the lighting/camera setup from surface_shader_gallery.usda.
+Two copies of the same cutglass mesh are placed side by side:
+  - left: MaterialX standard_surface
+  - right: MaterialX open_pbr_surface
+
+Both materials are configured as sharp transmissive glass with strong
+dispersion so that chromatic splitting is easy to compare.
+"""
+)
+
+def RenderSettings "RenderSettings"
+{
+    int hdEmbree:maxBounces = 64
+}
+
+def Xform "World"
+{
+    def Camera "MainCamera"
+    {
+        float focalLength = 38
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        float2 clippingRange = (0.1, 1000)
+        double3 xformOp:translate = (0, 2.7, 15.5)
+        float3 xformOp:rotateXYZ = (-7, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+    }
+
+    def Mesh "GroundPlane" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [
+            (-5, 0, -5), (5, 0, -5),
+            (5, 0, 5), (-5, 0, 5)
+        ]
+        normal3f[] normals = [
+            (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)
+        ] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [
+            (0, 0), (1, 0), (1, 1), (0, 1)
+        ] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </World/Materials/GroundDiffuseMat>
+    }
+
+    def Sphere "BlueBackdrop" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 1.35
+        double3 xformOp:translate = (-2.4, 1.45, -4.2)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/BlueBackdropMat>
+    }
+
+    def Sphere "WarmBackdrop" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 1.15
+        double3 xformOp:translate = (2.7, 1.55, -5.3)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/WarmBackdropMat>
+    }
+
+    def Xform "CutglassStandardSurface" (
+        prepend references = @./meshes/cutglass.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-1.0, -0.057, 0)
+        float3 xformOp:scale = (0.012, 0.012, 0.012)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/StandardSurfaceDispersionMat>
+    }
+
+    def Xform "CutglassOpenPbr" (
+        prepend references = @./meshes/cutglass.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (1.0, -0.057, 0)
+        float3 xformOp:scale = (0.012, 0.012, 0.012)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/OpenPbrDispersionMat>
+    }
+
+    def Scope "Materials"
+    {
+        def Material "StandardSurfaceDispersionMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/StandardSurfaceDispersionMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                color3f inputs:base_color = (1.0, 1.0, 1.0)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.0
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.52
+                float inputs:metalness = 0.0
+                float inputs:transmission = 1.0
+                color3f inputs:transmission_color = (1.0, 1.0, 1.0)
+                float inputs:transmission_dispersion = 0.0
+                float inputs:thin_film_thickness = 0.0
+                float inputs:thin_film_IOR = 1.5
+                token outputs:out
+            }
+        }
+
+        def Material "OpenPbrDispersionMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/OpenPbrDispersionMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 0.0
+                color3f inputs:base_color = (1.0, 1.0, 1.0)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.0
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.52
+                float inputs:transmission_weight = 1.0
+                color3f inputs:transmission_color = (1.0, 1.0, 1.0)
+                float inputs:transmission_dispersion_scale = 1.0
+                float inputs:transmission_dispersion_abbe_number = 10.0
+                float inputs:thin_film_weight = 0.0
+                float inputs:thin_film_thickness = 0.0
+                float inputs:thin_film_ior = 1.5
+                token outputs:out
+            }
+        }
+
+        def Material "GroundDiffuseMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/GroundDiffuseMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.2, 0.2, 0.2)
+                float inputs:diffuse_roughness = 0.0
+                float inputs:specular = 0.0
+                float inputs:specular_roughness = 0.2
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                float inputs:transmission = 0.0
+                float inputs:subsurface = 0.0
+                token outputs:out
+            }
+        }
+
+        def Material "BlueBackdropMat"
+        {
+            token outputs:surface.connect = </World/Materials/BlueBackdropMat/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.16, 0.56, 0.95)
+                float inputs:roughness = 0.34
+                float inputs:metallic = 0.0
+                float inputs:ior = 1.5
+                float inputs:opacity = 1.0
+                token outputs:surface
+            }
+        }
+
+        def Material "WarmBackdropMat"
+        {
+            token outputs:surface.connect = </World/Materials/WarmBackdropMat/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.86, 0.48, 0.22)
+                float inputs:roughness = 0.42
+                float inputs:metallic = 0.0
+                float inputs:ior = 1.5
+                float inputs:opacity = 1.0
+                token outputs:surface
+            }
+        }
+    }
+
+    def DomeLight "Environment"
+    {
+        asset inputs:texture:file = @../images/StinsonBeach.hdr@
+        color3f inputs:color = (1.0, 1.0, 1.0)
+        float inputs:intensity = 1.0
+        float xformOp:rotateY = 180 
+        token[] xformOpOrder = ["xformOp:rotateY"]
+    }
+}

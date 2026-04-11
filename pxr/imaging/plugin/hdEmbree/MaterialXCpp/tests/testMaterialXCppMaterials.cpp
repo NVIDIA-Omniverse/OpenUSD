@@ -123,6 +123,35 @@ TestStandardSurfaceThinFilmParametersReachBsdf()
 }
 
 static bool
+TestStandardSurfaceDispersionParametersReachBsdf()
+{
+    ParamMap params;
+    params["transmission"] = Value(1.0f);
+    params["transmission_dispersion"] = Value(18.0f);
+
+    const SurfaceClosure c = EvalStandardSurface(params);
+    const auto* transmission = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Transmission;
+        });
+    const auto* reflection = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    if (!transmission || !reflection) {
+        printf("    Expected Standard Surface dielectric nodes for dispersion\n");
+        return false;
+    }
+
+    return Test_IsClose(transmission->dispersionAbbe, 18.0f, 1e-4f) &&
+           Test_IsClose(reflection->dispersionAbbe, 18.0f, 1e-4f) &&
+           c.HasDispersion();
+}
+
+static bool
 TestStandardSurfaceLayersSpecularOverTransmissionMix()
 {
     ParamMap params;
@@ -418,6 +447,35 @@ TestStandardSurfaceCoatAffectRoughnessMatchesMaterialXGraph()
            Test_IsClose(reflection->roughness[1], expectedSpecularAlpha, 1e-4f) &&
            Test_IsClose(transmission->roughness[0], expectedTransmissionAlpha, 1e-4f) &&
            Test_IsClose(transmission->roughness[1], expectedTransmissionAlpha, 1e-4f);
+}
+
+static bool
+TestRegularizeTreatsDielectricRoughnessAsAlpha()
+{
+    SurfaceClosure c;
+    c.roughness = 0.02f;
+
+    Bsdf::DielectricData dielectric;
+    dielectric.roughness = Vec2f(0.09f, 0.04f);
+    dielectric.scatterMode = Bsdf::ScatterMode::Transmission;
+    c.bsdfTree.root = c.bsdfTree.Add(dielectric);
+
+    c.Regularize();
+
+    const auto* regularized = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData&) { return true; });
+    if (!regularized) {
+        printf("    Failed to find regularized dielectric node\n");
+        return false;
+    }
+
+    // 0.09 alpha corresponds to perceptual roughness 0.3, so it should stay.
+    // 0.04 alpha corresponds to perceptual roughness 0.2, so it widens to 0.3,
+    // i.e. alpha 0.09.
+    return Test_IsClose(c.roughness, 0.1f, 1e-4f) &&
+           Test_IsClose(regularized->roughness[0], 0.09f, 1e-4f) &&
+           Test_IsClose(regularized->roughness[1], 0.09f, 1e-4f);
 }
 
 static bool
@@ -739,6 +797,36 @@ TestOpenPbrThinFilmParametersReachBsdf()
     return Test_IsClose(dielectric->thinFilmWeight, 0.25f) &&
            Test_IsClose(dielectric->thinFilmThickness, 400.0f, 1e-4f) &&
            Test_IsClose(dielectric->thinFilmIor, 1.7f, 1e-4f);
+}
+
+static bool
+TestOpenPbrDispersionParametersReachBsdf()
+{
+    ParamMap params;
+    params["transmission_weight"] = Value(1.0f);
+    params["transmission_dispersion_scale"] = Value(0.5f);
+    params["transmission_dispersion_abbe_number"] = Value(20.0f);
+
+    const SurfaceClosure c = EvalOpenPbr(params);
+    const auto* transmission = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Transmission;
+        });
+    const auto* reflection = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    if (!transmission || !reflection) {
+        printf("    Expected OpenPBR dielectric nodes for dispersion\n");
+        return false;
+    }
+
+    return Test_IsClose(transmission->dispersionAbbe, 40.0f, 1e-4f) &&
+           Test_IsClose(reflection->dispersionAbbe, 40.0f, 1e-4f) &&
+           c.HasDispersion();
 }
 
 static bool
@@ -1355,12 +1443,14 @@ Test_RegisterMaterialTests()
     _REG(TestStandardSurfaceMetallic);
     _REG(TestStandardSurfaceCustomParams);
     _REG(TestStandardSurfaceThinFilmParametersReachBsdf);
+    _REG(TestStandardSurfaceDispersionParametersReachBsdf);
     _REG(TestStandardSurfaceLayersSpecularOverTransmissionMix);
     _REG(TestStandardSurfaceThinWalledUsesUnitIorTransmission);
     _REG(TestStandardSurfaceSpecularRotationUsesCanonicalName);
     _REG(TestStandardSurfaceMetalThinFilmChangesReflectionColor);
     _REG(TestStandardSurfaceThinFilmUsesNanometerUnits);
     _REG(TestStandardSurfaceCoatAffectRoughnessMatchesMaterialXGraph);
+    _REG(TestRegularizeTreatsDielectricRoughnessAsAlpha);
     _REG(TestStandardSurfaceCoatColorSemanticsMatchMaterialX);
     _REG(TestStandardSurfaceCoatNormalAndRotationReachBsdf);
     _REG(TestOpenPbrDefaults);
@@ -1371,6 +1461,7 @@ Test_RegisterMaterialTests()
     _REG(TestOpenPbrCoatDarkeningReachesBaseSubstrate);
     _REG(TestOpenPbrCoatColorAttenuatesSubstrate);
     _REG(TestOpenPbrThinFilmParametersReachBsdf);
+    _REG(TestOpenPbrDispersionParametersReachBsdf);
     _REG(TestOpenPbrBaseDiffuseRoughnessUsesCanonicalName);
     _REG(TestOpenPbrSpecularRoughnessAnisotropyUsesCanonicalName);
     _REG(TestOpenPbrGeometryInputsUseCanonicalNames);
