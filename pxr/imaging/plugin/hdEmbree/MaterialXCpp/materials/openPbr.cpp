@@ -347,10 +347,14 @@ EvalOpenPbr(const ParamMap& params)
     if (transmissionWeight > 0.0f) {
         Bsdf::NodeId transmissionId = Bsdf::InvalidNodeId;
         if (c.thinWalled) {
-            Bsdf::TranslucentData translucent;
-            translucent.weight = transmissionWeight;
-            translucent.color = _Saturate(c.transmissionColor);
-            transmissionId = tree.Add(translucent);
+            Bsdf::DielectricData transmission;
+            transmission.weight = transmissionWeight;
+            transmission.tint = _Saturate(c.transmissionColor);
+            transmission.ior = 1.0f;
+            transmission.roughness = specularRoughness;
+            transmission.tangent = tangent;
+            transmission.scatterMode = Bsdf::ScatterMode::Transmission;
+            transmissionId = tree.Add(transmission);
         } else {
             Bsdf::DielectricData transmission;
             transmission.weight = transmissionWeight;

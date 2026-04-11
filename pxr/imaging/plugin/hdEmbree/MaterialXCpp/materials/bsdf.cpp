@@ -843,19 +843,19 @@ _TransmissionScale(float baseReflectance, const Vec3f& finalReflectance)
 }
 
 inline Vec3f
-_DielectricReflectionFresnel(
+_DielectricReflectionFresnelUntinted(
     const Bsdf::DielectricData& data,
     float cosTheta)
 {
     float F0 = (data.ior - 1.0f) / (data.ior + 1.0f);
     F0 *= F0;
     const Vec3f baseReflectance = _SchlickFresnel(
-        Vec3f(F0) * data.tint,
+        Vec3f(F0),
         cosTheta);
     _ThinFilmParams thinFilm;
     thinFilm.model = _ThinFilmModel::Dielectric;
     thinFilm.ior = Vec3f(std::max(data.ior, 1.0f));
-    thinFilm.tint = _SafeVec(data.tint);
+    thinFilm.tint = Vec3f(1.0f);
     return _ApplyThinFilm(
         baseReflectance,
         cosTheta,
@@ -863,6 +863,16 @@ _DielectricReflectionFresnel(
         data.thinFilmThickness,
         data.thinFilmIor,
         thinFilm);
+}
+
+inline Vec3f
+_DielectricReflectionFresnel(
+    const Bsdf::DielectricData& data,
+    float cosTheta)
+{
+    return CompMul(
+        _DielectricReflectionFresnelUntinted(data, cosTheta),
+        _SafeVec(data.tint));
 }
 
 inline Vec3f
@@ -1399,7 +1409,7 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     _SchlickFresnelScalar(data.ior, fresnelCos);
                 const Vec3f transmissionScale = _TransmissionScale(
                     baseReflectance,
-                    _DielectricReflectionFresnel(data, fresnelCos));
+                    _DielectricReflectionFresnelUntinted(data, fresnelCos));
                 result += CompMul(
                     Bsdf::EvalGGXTransmission(
                         _AverageAlphaAsRoughness(data.roughness),
@@ -1539,7 +1549,7 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
             Vec3f throughput(1.0f);
             if (data.scatterMode != Bsdf::ScatterMode::Transmission) {
-                throughput -= _DielectricReflectionFresnel(data, NdotV) *
+                throughput -= _DielectricReflectionFresnelUntinted(data, NdotV) *
                     data.weight;
             }
             return _SaturateVec(throughput);
@@ -1604,7 +1614,8 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
             const float NdotV =
                 std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
-            const Vec3f reflectance = _DielectricReflectionFresnel(data, NdotV);
+            const Vec3f reflectance =
+                _DielectricReflectionFresnelUntinted(data, NdotV);
             const float baseReflectance = _SchlickFresnelScalar(data.ior, NdotV);
             const Vec3f transmissionScale = _TransmissionScale(
                 baseReflectance,
@@ -1871,7 +1882,7 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             const float NdotV =
                 std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
             float fresnelProb = _Clamp01(_Luminance(
-                _DielectricReflectionFresnel(data, NdotV)));
+                _DielectricReflectionFresnelUntinted(data, NdotV)));
             if (data.scatterMode == Bsdf::ScatterMode::Reflection) {
                 if (_IsEffectivelyIsotropic(data.roughness)) {
                     auto sample = Bsdf::SampleGGXSpecular(
@@ -1911,7 +1922,7 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                         deltaSample.f,
                         _TransmissionScale(
                             baseReflectance,
-                            _DielectricReflectionFresnel(data, NdotV)));
+                            _DielectricReflectionFresnelUntinted(data, NdotV)));
                     return deltaSample;
                 }
                 sample.f *= data.weight;
@@ -1956,7 +1967,7 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                         deltaSample.f,
                         _TransmissionScale(
                             baseReflectance,
-                            _DielectricReflectionFresnel(data, NdotV)));
+                            _DielectricReflectionFresnelUntinted(data, NdotV)));
                     return deltaSample;
                 }
                 sample.f *= data.weight;

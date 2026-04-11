@@ -9,6 +9,7 @@
 #include "../materials/disneyPrincipled.h"
 #include "../materials/gltfPbr.h"
 #include "../materials/usdPreviewSurface.h"
+#include "../materials/bsdf.h"
 
 #include <cmath>
 #include <cstdio>
@@ -119,6 +120,399 @@ TestStandardSurfaceThinFilmParametersReachBsdf()
     return Test_IsClose(dielectric->thinFilmWeight, 1.0f) &&
            Test_IsClose(dielectric->thinFilmThickness, 350.0f, 1e-4f) &&
            Test_IsClose(dielectric->thinFilmIor, 1.8f, 1e-4f);
+}
+
+static bool
+TestStandardSurfaceLayersSpecularOverTransmissionMix()
+{
+    ParamMap params;
+    params["transmission"] = Value(0.6f);
+    params["coat"] = Value(0.0f);
+    params["metalness"] = Value(0.0f);
+
+    const SurfaceClosure c = EvalStandardSurface(params);
+    const auto* root = c.bsdfTree.Get(c.bsdfTree.root);
+    const auto* layer = root ? std::get_if<Bsdf::LayerData>(&root->data) : nullptr;
+    if (!layer) {
+        printf("    Expected Standard Surface root layer for specular stack\n");
+        return false;
+    }
+
+    const auto* base = c.bsdfTree.Get(layer->base);
+    const auto* mix = base ? std::get_if<Bsdf::MixData>(&base->data) : nullptr;
+    if (!mix) {
+        printf("    Expected transmission mix under Standard Surface specular layer\n");
+        return false;
+    }
+
+    const auto* transmission = c.bsdfTree.Get(mix->fg);
+    const auto* substrate = c.bsdfTree.Get(mix->bg);
+    if (!transmission || !substrate) {
+        printf("    Missing Standard Surface transmission mix children\n");
+        return false;
+    }
+
+    return std::holds_alternative<Bsdf::DielectricData>(transmission->data) &&
+           std::holds_alternative<Bsdf::OrenNayarDiffuseData>(substrate->data);
+}
+
+static bool
+TestStandardSurfaceThinWalledUsesUnitIorTransmission()
+{
+    ParamMap params;
+    params["transmission"] = Value(1.0f);
+    params["thin_walled"] = Value(true);
+    params["specular_IOR"] = Value(1.0f);
+    params["coat"] = Value(0.0f);
+    params["metalness"] = Value(0.0f);
+
+    const SurfaceClosure c = EvalStandardSurface(params);
+    const auto* transmission = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Transmission;
+        });
+
+    if (!transmission) {
+        printf("    Expected Standard Surface thin_walled to build dielectric transmission\n");
+        return false;
+    }
+    if (!Test_IsClose(transmission->ior, 1.0f, 1e-4f)) {
+        printf("    Expected Standard Surface thin_walled transmission IOR to be 1.0\n");
+        return false;
+    }
+    const auto* reflection = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+    if (!reflection || !Test_IsClose(reflection->ior, 1.0f, 1e-4f)) {
+        printf("    Expected Standard Surface thin_walled reflection IOR to be 1.0\n");
+        return false;
+    }
+
+    ParamMap openPbrParams;
+    openPbrParams["base_weight"] = Value(0.0f);
+    openPbrParams["base_color"] = Value(Vec3f(1.0f));
+    openPbrParams["base_metalness"] = Value(0.0f);
+    openPbrParams["specular_weight"] = Value(1.0f);
+    openPbrParams["specular_color"] = Value(Vec3f(1.0f));
+    openPbrParams["specular_roughness"] = Value(0.0f);
+    openPbrParams["specular_ior"] = Value(1.0f);
+    openPbrParams["transmission_weight"] = Value(1.0f);
+    openPbrParams["transmission_color"] = Value(Vec3f(1.0f));
+    openPbrParams["geometry_thin_walled"] = Value(true);
+
+    const SurfaceClosure openPbrClosure = EvalOpenPbr(openPbrParams);
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.0f, 1.0f, 0.0f);
+    const Vec3f wi = Vec3f(0.0f, -1.0f, 0.0f);
+    const Vec3f standardEval = Bsdf::EvalSurface(c, N, wi, wo);
+    const Vec3f openPbrEval = Bsdf::EvalSurface(openPbrClosure, N, wi, wo);
+    if (!Test_IsClose(standardEval, openPbrEval, 1e-4f)) {
+        printf(
+            "    standard=(%f,%f,%f) openpbr=(%f,%f,%f)\n",
+            standardEval[0], standardEval[1], standardEval[2],
+            openPbrEval[0], openPbrEval[1], openPbrEval[2]);
+        return false;
+    }
+
+    return true;
+}
+
+static bool
+TestOpenPbrThinWalledUsesUnitIorTransmission()
+{
+    ParamMap params;
+    params["base_weight"] = Value(0.0f);
+    params["base_color"] = Value(Vec3f(1.0f));
+    params["base_metalness"] = Value(0.0f);
+    params["specular_weight"] = Value(1.0f);
+    params["specular_color"] = Value(Vec3f(1.0f));
+    params["specular_roughness"] = Value(0.0f);
+    params["specular_ior"] = Value(1.0f);
+    params["transmission_weight"] = Value(1.0f);
+    params["transmission_color"] = Value(Vec3f(1.0f));
+    params["geometry_thin_walled"] = Value(true);
+
+    const SurfaceClosure c = EvalOpenPbr(params);
+    const auto* transmission = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Transmission;
+        });
+
+    if (!transmission) {
+        printf("    Expected OpenPBR thin_walled to build dielectric transmission\n");
+        return false;
+    }
+
+    return Test_IsClose(transmission->ior, 1.0f, 1e-4f);
+}
+
+static bool
+TestStandardSurfaceSpecularRotationUsesCanonicalName()
+{
+    ParamMap params;
+    params["specular_anisotropy"] = Value(0.7f);
+    params["specular_rotation"] = Value(0.25f);
+    params["normal"] = Value(Vec3f(0.0f, 0.0f, 1.0f));
+    params["tangent"] = Value(Vec3f(1.0f, 0.0f, 0.0f));
+    params["coat"] = Value(0.0f);
+
+    const SurfaceClosure c = EvalStandardSurface(params);
+    const auto* dielectric = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    if (!dielectric) {
+        printf("    Failed to find Standard Surface reflection dielectric node\n");
+        return false;
+    }
+
+    return Test_IsClose(dielectric->tangent, Vec3f(0.0f, 1.0f, 0.0f), 1e-4f);
+}
+
+static bool
+TestStandardSurfaceMetalThinFilmChangesReflectionColor()
+{
+    ParamMap standardParams;
+    standardParams["base"] = Value(1.0f);
+    standardParams["base_color"] = Value(Vec3f(0.8f, 0.8f, 0.8f));
+    standardParams["metalness"] = Value(1.0f);
+    standardParams["specular"] = Value(1.0f);
+    standardParams["specular_color"] = Value(Vec3f(1.0f));
+    standardParams["specular_roughness"] = Value(0.3f);
+    standardParams["specular_IOR"] = Value(1.5f);
+    standardParams["thin_film_thickness"] = Value(250.0f);
+    standardParams["thin_film_IOR"] = Value(1.6f);
+    standardParams["coat"] = Value(0.0f);
+
+    ParamMap openPbrParams;
+    openPbrParams["base_weight"] = Value(1.0f);
+    openPbrParams["base_color"] = Value(Vec3f(0.8f, 0.8f, 0.8f));
+    openPbrParams["base_metalness"] = Value(1.0f);
+    openPbrParams["specular_weight"] = Value(1.0f);
+    openPbrParams["specular_color"] = Value(Vec3f(1.0f));
+    openPbrParams["specular_roughness"] = Value(0.3f);
+    openPbrParams["specular_ior"] = Value(1.5f);
+    openPbrParams["thin_film_weight"] = Value(1.0f);
+    openPbrParams["thin_film_thickness"] = Value(0.25f);
+    openPbrParams["thin_film_ior"] = Value(1.6f);
+
+    const SurfaceClosure standardClosure = EvalStandardSurface(standardParams);
+    const SurfaceClosure openPbrClosure = EvalOpenPbr(openPbrParams);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.25f, 0.96f, 0.1f).normalized();
+    const Vec3f wi = Vec3f(-0.1f, 0.99f, 0.05f).normalized();
+
+    const Vec3f standardEval = Bsdf::EvalSurface(standardClosure, N, wi, wo);
+    const Vec3f openPbrEval = Bsdf::EvalSurface(openPbrClosure, N, wi, wo);
+
+    const bool chromatic =
+        std::abs(standardEval[0] - standardEval[1]) > 1e-5f;
+    const bool matchesOpenPbr =
+        Test_IsClose(standardEval, openPbrEval, 5e-3f);
+    if (!chromatic || !matchesOpenPbr) {
+        printf(
+            "    standard=(%f,%f,%f) openpbr=(%f,%f,%f)\n",
+            standardEval[0], standardEval[1], standardEval[2],
+            openPbrEval[0], openPbrEval[1], openPbrEval[2]);
+    }
+
+    return chromatic && matchesOpenPbr;
+}
+
+static bool
+TestStandardSurfaceThinFilmUsesNanometerUnits()
+{
+    ParamMap nanometerParams;
+    nanometerParams["base"] = Value(0.0f);
+    nanometerParams["base_color"] = Value(Vec3f(1.0f));
+    nanometerParams["metalness"] = Value(0.0f);
+    nanometerParams["specular"] = Value(1.0f);
+    nanometerParams["specular_color"] = Value(Vec3f(1.0f));
+    nanometerParams["specular_roughness"] = Value(0.02f);
+    nanometerParams["specular_IOR"] = Value(2.5f);
+    nanometerParams["thin_film_thickness"] = Value(550.0f);
+    nanometerParams["thin_film_IOR"] = Value(1.5f);
+
+    ParamMap subNanometerParams;
+    subNanometerParams["base"] = Value(0.0f);
+    subNanometerParams["base_color"] = Value(Vec3f(1.0f));
+    subNanometerParams["metalness"] = Value(0.0f);
+    subNanometerParams["specular"] = Value(1.0f);
+    subNanometerParams["specular_color"] = Value(Vec3f(1.0f));
+    subNanometerParams["specular_roughness"] = Value(0.02f);
+    subNanometerParams["specular_IOR"] = Value(2.5f);
+    subNanometerParams["thin_film_thickness"] = Value(0.55f);
+    subNanometerParams["thin_film_IOR"] = Value(1.5f);
+
+    const SurfaceClosure nanometerClosure = EvalStandardSurface(nanometerParams);
+    const SurfaceClosure subNanometerClosure =
+        EvalStandardSurface(subNanometerParams);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.25f, 0.96f, 0.1f).normalized();
+    const Vec3f wi = Vec3f(-0.1f, 0.99f, 0.05f).normalized();
+
+    const Vec3f nanometerEval =
+        Bsdf::EvalSurface(nanometerClosure, N, wi, wo);
+    const Vec3f subNanometerEval =
+        Bsdf::EvalSurface(subNanometerClosure, N, wi, wo);
+
+    const bool nanometerChromatic =
+        std::abs(nanometerEval[0] - nanometerEval[1]) > 1e-6f ||
+        std::abs(nanometerEval[1] - nanometerEval[2]) > 1e-6f;
+    const bool differsFromSubNanometer = !Test_IsClose(
+        nanometerEval, subNanometerEval, 1e-6f);
+
+    if (!nanometerChromatic || !differsFromSubNanometer) {
+        printf(
+            "    550nm=(%.8f,%.8f,%.8f) 0.55nm=(%.8f,%.8f,%.8f)\n",
+            nanometerEval[0], nanometerEval[1], nanometerEval[2],
+            subNanometerEval[0], subNanometerEval[1], subNanometerEval[2]);
+        }
+
+    return nanometerChromatic && differsFromSubNanometer;
+}
+
+static bool
+TestStandardSurfaceCoatAffectRoughnessMatchesMaterialXGraph()
+{
+    ParamMap params;
+    params["specular_roughness"] = Value(0.2f);
+    params["transmission"] = Value(1.0f);
+    params["transmission_extra_roughness"] = Value(0.1f);
+    params["coat"] = Value(1.0f);
+    params["coat_roughness"] = Value(0.6f);
+    params["coat_affect_roughness"] = Value(1.0f);
+
+    const SurfaceClosure c = EvalStandardSurface(params);
+    const auto* reflection = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+    const auto* transmission = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Transmission;
+        });
+
+    if (!reflection || !transmission) {
+        printf("    Failed to find Standard Surface dielectric nodes\n");
+        return false;
+    }
+
+    const float affectedSpecular = 0.2f * 0.4f + 0.6f;
+    const float affectedTransmission = 0.3f * 0.4f + 0.6f;
+    const float expectedSpecularAlpha = affectedSpecular * affectedSpecular;
+    const float expectedTransmissionAlpha =
+        affectedTransmission * affectedTransmission;
+
+    return Test_IsClose(reflection->roughness[0], expectedSpecularAlpha, 1e-4f) &&
+           Test_IsClose(reflection->roughness[1], expectedSpecularAlpha, 1e-4f) &&
+           Test_IsClose(transmission->roughness[0], expectedTransmissionAlpha, 1e-4f) &&
+           Test_IsClose(transmission->roughness[1], expectedTransmissionAlpha, 1e-4f);
+}
+
+static bool
+TestStandardSurfaceCoatColorSemanticsMatchMaterialX()
+{
+    const Vec3f baseColor(0.25f, 0.5f, 0.75f);
+    const Vec3f coatColor(0.2f, 0.4f, 0.8f);
+    const Vec3f emissionColor(0.5f, 0.25f, 0.125f);
+
+    ParamMap params;
+    params["base_color"] = Value(baseColor);
+    params["specular"] = Value(0.0f);
+    params["coat"] = Value(1.0f);
+    params["coat_color"] = Value(coatColor);
+    params["coat_affect_color"] = Value(0.5f);
+    params["emission"] = Value(2.0f);
+    params["emission_color"] = Value(emissionColor);
+
+    const SurfaceClosure c = EvalStandardSurface(params);
+    const auto* diffuse = FindNodeIf<Bsdf::OrenNayarDiffuseData>(
+        c.bsdfTree,
+        [](const Bsdf::OrenNayarDiffuseData&) {
+            return true;
+        });
+    const auto* attenuation = FindNodeIf<Bsdf::MultiplyData>(
+        c.bsdfTree,
+        [&](const Bsdf::MultiplyData& data) {
+            return Test_IsClose(data.weight, coatColor, 1e-4f);
+        });
+    const auto* coat = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    if (!diffuse || !attenuation || !coat) {
+        printf("    Failed to find Standard Surface coat semantic nodes\n");
+        return false;
+    }
+
+    const Vec3f expectedDiffuse(
+        std::pow(baseColor[0], 1.5f),
+        std::pow(baseColor[1], 1.5f),
+        std::pow(baseColor[2], 1.5f));
+    const Vec3f expectedEmission(
+        emissionColor[0] * 2.0f * coatColor[0],
+        emissionColor[1] * 2.0f * coatColor[1],
+        emissionColor[2] * 2.0f * coatColor[2]);
+
+    return Test_IsClose(diffuse->color, expectedDiffuse, 1e-4f) &&
+           Test_IsClose(c.emissiveColor, expectedEmission, 1e-4f) &&
+           Test_IsClose(coat->tint, Vec3f(1.0f), 1e-4f);
+}
+
+static bool
+TestStandardSurfaceCoatNormalAndRotationReachBsdf()
+{
+    constexpr float roughness = 0.45f;
+    constexpr float anisotropy = 0.8f;
+
+    ParamMap params;
+    params["specular"] = Value(0.0f);
+    params["coat"] = Value(1.0f);
+    params["coat_roughness"] = Value(roughness);
+    params["coat_anisotropy"] = Value(anisotropy);
+    params["coat_rotation"] = Value(0.25f);
+    params["tangent"] = Value(Vec3f(1.0f, 0.0f, 0.0f));
+    params["coat_normal"] = Value(Vec3f(0.0f, 1.0f, 0.0f));
+
+    const SurfaceClosure c = EvalStandardSurface(params);
+    const auto* coat = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    if (!coat) {
+        printf("    Failed to find Standard Surface coat dielectric node\n");
+        return false;
+    }
+
+    const float roughnessSquared = std::clamp(
+        roughness * roughness,
+        1.0e-5f,
+        1.0f);
+    const float aspect = std::sqrt(1.0f - std::clamp(anisotropy, 0.0f, 0.98f));
+    const Vec2f expected(
+        std::min(roughnessSquared / aspect, 1.0f),
+        roughnessSquared * aspect);
+
+    return coat->hasShadingNormal &&
+           Test_IsClose(coat->normal, Vec3f(0.0f, 1.0f, 0.0f), 1e-4f) &&
+           Test_IsClose(coat->tangent, Vec3f(0.0f, 0.0f, -1.0f), 1e-4f) &&
+           Test_IsClose(coat->roughness[0], expected[0], 1e-4f) &&
+           Test_IsClose(coat->roughness[1], expected[1], 1e-4f);
 }
 
 // ---------------------------------------------------------------------------
@@ -730,10 +1124,19 @@ Test_RegisterMaterialTests()
     _REG(TestStandardSurfaceMetallic);
     _REG(TestStandardSurfaceCustomParams);
     _REG(TestStandardSurfaceThinFilmParametersReachBsdf);
+    _REG(TestStandardSurfaceLayersSpecularOverTransmissionMix);
+    _REG(TestStandardSurfaceThinWalledUsesUnitIorTransmission);
+    _REG(TestStandardSurfaceSpecularRotationUsesCanonicalName);
+    _REG(TestStandardSurfaceMetalThinFilmChangesReflectionColor);
+    _REG(TestStandardSurfaceThinFilmUsesNanometerUnits);
+    _REG(TestStandardSurfaceCoatAffectRoughnessMatchesMaterialXGraph);
+    _REG(TestStandardSurfaceCoatColorSemanticsMatchMaterialX);
+    _REG(TestStandardSurfaceCoatNormalAndRotationReachBsdf);
     _REG(TestOpenPbrDefaults);
     _REG(TestOpenPbrBuildsLayeredDielectricBase);
     _REG(TestOpenPbrTransmission);
     _REG(TestOpenPbrLayersReflectionOverTransmissionMix);
+    _REG(TestOpenPbrThinWalledUsesUnitIorTransmission);
     _REG(TestOpenPbrCoatDarkeningReachesBaseSubstrate);
     _REG(TestOpenPbrCoatColorAttenuatesSubstrate);
     _REG(TestOpenPbrThinFilmParametersReachBsdf);
