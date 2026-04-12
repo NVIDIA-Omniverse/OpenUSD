@@ -1899,9 +1899,10 @@ HdEmbreeRenderer::_WriteId(
     unsigned int x, unsigned int y)
 {
     int32_t id;
-    if (self->_ComputeId(rayHit, w.token, &id)) {
-        w.buffer->Write(GfVec3i(x, y, 1), 1, &id);
+    if (!self->_ComputeId(rayHit, w.token, &id)) {
+        id = -1;
     }
+    w.buffer->Write(GfVec3i(x, y, 1), 1, &id);
 }
 
 /* static */

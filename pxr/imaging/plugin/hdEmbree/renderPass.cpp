@@ -319,6 +319,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
         _renderThread->StopRender();
         _renderer->SetCamera(_viewMatrix, _projMatrix);
+        _renderer->ResetAccumulation();
         needStartRender = true;
     }
 
@@ -329,6 +330,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
         _renderThread->StopRender();
         _renderer->SetDataWindow(dataWindow);
+        _renderer->ResetAccumulation();
 
         if (!renderPassState->GetFraming().IsValid()) {
             // Support clients that do not use the new framing API
