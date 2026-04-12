@@ -1,5 +1,7 @@
 """Material Editor – a usdview plugin for editing shader inputs in real-time."""
 
+import fnmatch
+
 from pxr.Usdviewq.qt import QtWidgets, QtCore, QtGui
 from pxr import UsdShade, Sdf, Gf, Sdr
 
@@ -8,24 +10,7 @@ _RENDER_CONTEXTS = ("", "mtlx")
 
 # Slider-friendly ranges for well-known float inputs.
 _FLOAT_RANGES = {
-    "roughness": (0.0, 1.0),
-    "metallic": (0.0, 1.0),
-    "opacity": (0.0, 1.0),
-    "clearcoat": (0.0, 1.0),
-    "clearcoatRoughness": (0.0, 1.0),
-    "opacityThreshold": (0.0, 1.0),
-    "occlusion": (0.0, 1.0),
-    "ior": (1.0, 3.0),
-    "displacement": (-1.0, 1.0),
-    "base": (0.0, 1.0),
-    "specular": (0.0, 1.0),
-    "specular_roughness": (0.0, 1.0),
-    "transmission": (0.0, 1.0),
-    "coat": (0.0, 1.0),
-    "coat_roughness": (0.0, 1.0),
-    "sheen": (0.0, 1.0),
-    "sheen_roughness": (0.0, 1.0),
-    "emission": (0.0, 10.0),
+    "anisotropy_rotation": (0.0, 6.283185)
 }
 _DEFAULT_FLOAT_RANGE = (0.0, 1.0)
 
@@ -34,10 +19,61 @@ _SLIDER_STEPS = 1000
 _LABEL_STYLE_DEFAULT = "color: #888; font-style: italic;"
 _LABEL_STYLE_AUTHORED = ""
 _LABEL_WIDTH_REFERENCE = "transmission_dispersion_abbe_number"
+_LABEL_WIDTH_PADDING = 16
+_MIN_EDITOR_PANE_WIDTH = 440
+_MIN_EDITOR_CONTROL_WIDTH = 260
+_MIN_MATERIAL_LIST_WIDTH = 120
+_MAX_MATERIAL_LIST_WIDTH = 520
+_MIN_WINDOW_WIDTH = 720
+_FLOAT_SPINBOX_WIDTH = 104
+_WINDOW_CHROME_WIDTH = 48
 
 _BASIC_COLOR_COLS = 8
 _BASIC_COLOR_ROWS = 6
 _BASIC_COLOR_MIN_VALUE = 64
+_COLOR_SWATCH_WIDTH = 36
+_COLOR_SWATCH_HEIGHT = 22
+
+
+def _getFallbackFloatRange(inputName):
+    normalizedName = inputName.lower()
+
+    for pattern, valueRange in _FLOAT_RANGES.items():
+        if normalizedName == pattern.lower() and len(valueRange) == 2:
+            return valueRange
+
+    for pattern, valueRange in _FLOAT_RANGES.items():
+        if len(valueRange) == 2 and fnmatch.fnmatchcase(
+                normalizedName, pattern.lower()):
+            return valueRange
+
+    return _DEFAULT_FLOAT_RANGE
+
+
+def _getFloatRangeFromSdrProperty(sdrProp):
+    if not sdrProp:
+        return None
+
+    metadata = sdrProp.GetMetadata()
+    if not metadata:
+        return None
+
+    minValue = metadata.get("uisoftmin", metadata.get("uimin"))
+    maxValue = metadata.get("uisoftmax", metadata.get("uimax"))
+    if minValue is None or maxValue is None:
+        return None
+
+    try:
+        return float(minValue), float(maxValue)
+    except (TypeError, ValueError):
+        return None
+
+
+def _getFloatRange(inputName, sdrProp=None):
+    sdrRange = _getFloatRangeFromSdrProperty(sdrProp)
+    if sdrRange is not None:
+        return sdrRange
+    return _getFallbackFloatRange(inputName)
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +142,7 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         self._inputLabelWidth = 0
         self._lastPrimPath = None
         self._shaderStack = []
+        self._fitScheduled = False
 
         # Debounce: accumulate rapid edits and flush once the user pauses.
         self._pendingValues = {}
@@ -125,15 +162,14 @@ class MaterialEditorWindow(QtWidgets.QWidget):
 
     def _buildUI(self):
         self.setWindowTitle("Material Editor")
-        self.setMinimumSize(720, 480)
-        self.resize(860, 1000)
+        self.setMinimumSize(_MIN_WINDOW_WIDTH, 480)
+        self.resize(860, 900)
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
 
         root = QtWidgets.QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
-        self._inputLabelWidth = (
-            QtGui.QFontMetrics(self.font()).horizontalAdvance(
-                _LABEL_WIDTH_REFERENCE) + 8)
+        self._inputLabelWidth = self._computeInputLabelWidth(
+            [_LABEL_WIDTH_REFERENCE])
 
         # toolbar
         toolbar = QtWidgets.QHBoxLayout()
@@ -226,16 +262,88 @@ class MaterialEditorWindow(QtWidgets.QWidget):
                 self._matList.addItem(item)
                 count += 1
         self._fitMaterialListWidth()
+        self._scheduleLayoutFit()
         self._setStatus(f"{count} material(s) found")
 
-    def _fitMaterialListWidth(self):
+    def _computeMaterialListWidth(self):
         if self._matList.count() == 0:
-            return
+            return _MIN_MATERIAL_LIST_WIDTH
+
         hint = (self._matList.sizeHintForColumn(0)
                 + 2 * self._matList.frameWidth() + 24)
-        hint = max(120, min(hint, 360))
+        screen = self.screen()
+        maxWidth = _MAX_MATERIAL_LIST_WIDTH
+        if screen:
+            maxWidth = max(
+                maxWidth,
+                int(screen.availableGeometry().width() * 0.45))
+        return max(_MIN_MATERIAL_LIST_WIDTH, min(hint, maxWidth))
+
+    def _computePreferredEditorWidth(self):
+        controlWidth = _MIN_EDITOR_CONTROL_WIDTH
+        if self._inputWidgets:
+            controlWidth = max(
+                controlWidth,
+                max(max(widget.sizeHint().width(),
+                        widget.minimumSizeHint().width(),
+                        widget.minimumWidth())
+                    for widget in self._inputWidgets))
+
+        horizontalSpacing = self._formLayout.horizontalSpacing()
+        if horizontalSpacing < 0:
+            horizontalSpacing = 6
+
+        formMargins = self._formLayout.contentsMargins()
+        scrollBarWidth = self._scroll.verticalScrollBar().sizeHint().width()
+        preferredWidth = max(
+            _MIN_EDITOR_PANE_WIDTH,
+            self._inputLabelWidth
+            + horizontalSpacing
+            + controlWidth
+            + formMargins.left()
+            + formMargins.right()
+            + scrollBarWidth
+            + 12)
+
+        if hasattr(self, "_formContainer") and self._formContainer is not None:
+            preferredWidth = max(
+                preferredWidth,
+                self._formContainer.sizeHint().width() + scrollBarWidth + 12)
+
+        return preferredWidth
+
+    def _ensurePreferredWindowWidth(self, materialListWidth):
+        extraWidth = _WINDOW_CHROME_WIDTH
+        splitterWidth = self._splitter.width()
+        if splitterWidth > 0:
+            extraWidth = max(extraWidth, self.width() - splitterWidth)
+
+        desiredWindowWidth = (
+            materialListWidth
+            + self._computePreferredEditorWidth()
+            + self._splitter.handleWidth()
+            + extraWidth)
+        desiredWindowWidth = max(_MIN_WINDOW_WIDTH, desiredWindowWidth)
+        self.setMinimumWidth(desiredWindowWidth)
+        if self.width() < desiredWindowWidth:
+            self.resize(desiredWindowWidth, self.height())
+
+    def _fitMaterialListWidth(self):
+        hint = self._computeMaterialListWidth()
+        self._ensurePreferredWindowWidth(hint)
         total = self._splitter.width() or self.width()
-        self._splitter.setSizes([hint, max(200, total - hint)])
+        self._splitter.setSizes(
+            [hint, max(self._computePreferredEditorWidth(), total - hint)])
+
+    def _scheduleLayoutFit(self):
+        if self._fitScheduled:
+            return
+        self._fitScheduled = True
+        QtCore.QTimer.singleShot(0, self._applyScheduledLayoutFit)
+
+    def _applyScheduledLayoutFit(self):
+        self._fitScheduled = False
+        self._fitMaterialListWidth()
 
     def _onMaterialClicked(self, current, _previous):
         if not current:
@@ -333,6 +441,7 @@ class MaterialEditorWindow(QtWidgets.QWidget):
                     sdrPropMap[name] = prop
 
         allNames = sorted(set(authoredMap) | set(sdrPropMap))
+        self._inputLabelWidth = self._computeInputLabelWidth(allNames)
         authoredCount = 0
 
         for name in allNames:
@@ -347,7 +456,7 @@ class MaterialEditorWindow(QtWidgets.QWidget):
                 typeName = str(inp.GetTypeName())
                 value = inp.Get()
                 label = self._makeLabel(name, True, shader)
-                widget = self._widgetForType(inp, typeName, value)
+                widget = self._widgetForType(inp, typeName, value, sdrProp)
             elif sdrProp:
                 sdfType = sdrProp.GetTypeAsSdfType().GetSdfType()
                 typeName = str(sdfType)
@@ -357,7 +466,7 @@ class MaterialEditorWindow(QtWidgets.QWidget):
                     value = None
                 label = self._makeLabel(name, False, shader)
                 widget = self._widgetForType(
-                    _LazyInput(shader, name, sdfType), typeName, value)
+                    _LazyInput(shader, name, sdfType), typeName, value, sdrProp)
             else:
                 continue
 
@@ -368,6 +477,9 @@ class MaterialEditorWindow(QtWidgets.QWidget):
                 self._inputWidgets.append(widget)
                 self._inputLabels[name] = label
 
+        self._formContainer.adjustSize()
+        self._fitMaterialListWidth()
+        self._scheduleLayoutFit()
         self._setStatus(
             f"{authoredCount} authored, "
             f"{len(allNames) - authoredCount} defaults")
@@ -389,6 +501,17 @@ class MaterialEditorWindow(QtWidgets.QWidget):
             self._headerLabel.setText(f"Shader: <b>{shaderId}</b>")
 
     # ---- labels with context menu -----------------------------------------
+
+    def _computeInputLabelWidth(self, names):
+        referenceNames = list(names) + [_LABEL_WIDTH_REFERENCE]
+        normalMetrics = QtGui.QFontMetrics(self.font())
+        italicFont = QtGui.QFont(self.font())
+        italicFont.setItalic(True)
+        italicMetrics = QtGui.QFontMetrics(italicFont)
+        return max(
+            max(normalMetrics.horizontalAdvance(name) for name in referenceNames),
+            max(italicMetrics.horizontalAdvance(name) for name in referenceNames)
+        ) + _LABEL_WIDTH_PADDING
 
     def _makeLabel(self, name, authored, shader):
         label = QtWidgets.QLabel(name)
@@ -472,9 +595,9 @@ class MaterialEditorWindow(QtWidgets.QWidget):
 
     # ---- type dispatch ----------------------------------------------------
 
-    def _widgetForType(self, inp, typeName, value):
+    def _widgetForType(self, inp, typeName, value, sdrProp=None):
         if typeName in ("float", "half", "double"):
-            return self._widgetFloat(inp, value)
+            return self._widgetFloat(inp, value, sdrProp)
         if typeName in ("color3f", "color3d", "color3h"):
             return self._widgetColor(inp, value)
         if typeName == "int":
@@ -533,8 +656,8 @@ class MaterialEditorWindow(QtWidgets.QWidget):
 
     # ---- float ------------------------------------------------------------
 
-    def _widgetFloat(self, inp, value):
-        fmin, fmax = _FLOAT_RANGES.get(inp.GetBaseName(), _DEFAULT_FLOAT_RANGE)
+    def _widgetFloat(self, inp, value, sdrProp=None):
+        fmin, fmax = _getFloatRange(inp.GetBaseName(), sdrProp)
 
         w = QtWidgets.QWidget()
         lay = QtWidgets.QHBoxLayout(w)
@@ -547,7 +670,7 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         spin.setRange(-1e6, 1e6)
         spin.setSingleStep(0.01)
         spin.setDecimals(4)
-        spin.setFixedWidth(80)
+        spin.setFixedWidth(_FLOAT_SPINBOX_WIDTH)
 
         if value is not None:
             v = float(value)
@@ -582,7 +705,7 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
 
         swatch = QtWidgets.QPushButton()
-        swatch.setFixedSize(36, 22)
+        swatch.setFixedSize(_COLOR_SWATCH_WIDTH, _COLOR_SWATCH_HEIGHT)
         swatch.setCursor(QtCore.Qt.PointingHandCursor)
         spins = []
 
@@ -629,27 +752,34 @@ class MaterialEditorWindow(QtWidgets.QWidget):
 
         swatch.clicked.connect(pick)
         lay.addWidget(swatch)
+        lay.addStretch(1)
         for _axis_label in ("R", "G", "B"):
             spin = _NoWheelDoubleSpinBox()
             spin.setRange(0.0, 1.0)
             spin.setSingleStep(0.01)
             spin.setDecimals(3)
-            spin.setMinimumWidth(80)
+            spin.setFixedWidth(_FLOAT_SPINBOX_WIDTH)
             spin.valueChanged.connect(lambda _=None: applyFromSpins())
             spins.append(spin)
-            lay.addWidget(spin, 1)
+            lay.addWidget(spin)
         refresh()
         return w
 
     # ---- int --------------------------------------------------------------
 
     def _widgetInt(self, inp, value):
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QHBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addStretch(1)
         spin = _NoWheelSpinBox()
         spin.setRange(-999999, 999999)
+        spin.setFixedWidth(_FLOAT_SPINBOX_WIDTH)
         if value is not None:
             spin.setValue(int(value))
         spin.valueChanged.connect(lambda v, i=inp: self._setValue(i, v))
-        return spin
+        lay.addWidget(spin)
+        return w
 
     # ---- bool -------------------------------------------------------------
 
@@ -667,17 +797,19 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         lay = QtWidgets.QHBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
 
+        lay.addStretch(1)
+
         spins = []
-        for axis, _axis_label in enumerate(("X", "Y", "Z")):
+        for axis in range(3):
             sb = _NoWheelDoubleSpinBox()
             sb.setRange(-1e6, 1e6)
             sb.setSingleStep(0.01)
             sb.setDecimals(3)
-            sb.setMinimumWidth(80)
+            sb.setFixedWidth(_FLOAT_SPINBOX_WIDTH)
             if value is not None:
                 sb.setValue(float(value[axis]))
             spins.append(sb)
-            lay.addWidget(sb, 1)
+            lay.addWidget(sb)
 
         def changed():
             self._setValue(
@@ -685,7 +817,6 @@ class MaterialEditorWindow(QtWidgets.QWidget):
 
         for sb in spins:
             sb.valueChanged.connect(lambda _: changed())
-
         return w
 
     # ---- string / token ---------------------------------------------------
@@ -766,6 +897,10 @@ class MaterialEditorWindow(QtWidgets.QWidget):
     def _setStatus(self, msg):
         self._status.setText(msg)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._scheduleLayoutFit()
+
     def closeEvent(self, event):
         self._pollTimer.stop()
         self._flushTimer.stop()
@@ -788,6 +923,11 @@ def _findSurfaceShader(material):
 
 def _getSdrNode(shader):
     """Look up the Sdr definition for a UsdShade.Shader."""
+    for sourceType in ("mtlx", ""):
+        node = shader.GetShaderNodeForSourceType(sourceType)
+        if node:
+            return node
+
     shaderId = shader.GetShaderId()
     if not shaderId:
         return None

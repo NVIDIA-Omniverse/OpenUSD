@@ -257,6 +257,7 @@ def Xform "World"
                 float inputs:clearcoat_roughness = 0.0
                 float inputs:thickness = 0.0
                 float inputs:anisotropy_strength = 0.0
+                float inputs:anisotropy_rotation = 0.0
                 float inputs:alpha = 1.0
                 int inputs:alpha_mode = 0
                 float inputs:alpha_cutoff = 0.5
