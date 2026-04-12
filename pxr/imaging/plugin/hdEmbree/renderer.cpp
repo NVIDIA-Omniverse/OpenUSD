@@ -1430,6 +1430,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
     // Each pass adds one sample per pixel.  After every pass we resolve
     // the accumulation buffer so the display shows progressively
     // improving quality.
+    bool renderFinished = false;
     for (int i = 0; i < _samplesToConvergence; ++i) {
         // Pause point.
         while (renderThread->IsPauseRequested()) {
@@ -1474,6 +1475,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
             }
             if (!moreWork) {
                 _completedSamples.store(i + 1);
+                renderFinished = true;
                 break;
             }
         }
@@ -1491,6 +1493,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
                 }
             }
             if (allConverged) {
+                renderFinished = true;
                 break;
             }
         }
@@ -1498,6 +1501,11 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         // Cancellation point.
         if (renderThread->IsStopRequested()) {
             break;
+        }
+
+        // If this is the last iteration, rendering completed naturally.
+        if (i == _samplesToConvergence - 1) {
+            renderFinished = true;
         }
     }
 
@@ -1509,8 +1517,8 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         rb->SetConverged(true);
     }
 
-    // Print render statistics.
-    {
+    // Print render statistics only when rendering completed (not interrupted).
+    if (renderFinished) {
         const float elapsedSec = GetRenderElapsedSeconds();
         const int completedSamples = _completedSamples.load();
         const int w = _dataWindow.GetWidth();
