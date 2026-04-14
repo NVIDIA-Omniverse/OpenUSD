@@ -6,6 +6,7 @@
 //
 #include "openPbr.h"
 
+#include "../../medium.h"
 #include "../paramMap.h"
 
 #include <algorithm>
@@ -33,10 +34,15 @@ static const SlotName _kTransmissionDispersionScale(
 static const SlotName _kTransmissionDispersionAbbeNumber(
     "transmission_dispersion_abbe_number");
 static const SlotName _kTransmissionDepth("transmission_depth");
+static const SlotName _kTransmissionScatter("transmission_scatter");
+static const SlotName _kTransmissionScatterAnisotropy(
+    "transmission_scatter_anisotropy");
 static const SlotName _kSubsurfaceWeight("subsurface_weight");
 static const SlotName _kSubsurfaceColor("subsurface_color");
 static const SlotName _kSubsurfaceRadius("subsurface_radius");
 static const SlotName _kSubsurfaceRadiusScale("subsurface_radius_scale");
+static const SlotName _kSubsurfaceScatterAnisotropy(
+    "subsurface_scatter_anisotropy");
 static const SlotName _kCoatWeight("coat_weight");
 static const SlotName _kCoatColor("coat_color");
 static const SlotName _kCoatRoughness("coat_roughness");
@@ -265,6 +271,12 @@ EvalOpenPbr(const ParamMap& params)
     c.transmission = Get<float>(params, _kTransmissionWeight, 0.0f);
     c.transmissionColor =
         Get<Vec3f>(params, _kTransmissionColor, Vec3f(1.0f));
+    const float transmissionDepth =
+        Get<float>(params, _kTransmissionDepth, 0.0f);
+    const Vec3f transmissionScatter =
+        Get<Vec3f>(params, _kTransmissionScatter, Vec3f(0.0f));
+    const float transmissionScatterAnisotropy = Get<float>(
+        params, _kTransmissionScatterAnisotropy, 0.0f);
     const float transmissionDispersionScale = _Clamp01(
         Get<float>(params, _kTransmissionDispersionScale, 0.0f));
     const float transmissionDispersionAbbe = std::max(
@@ -274,9 +286,27 @@ EvalOpenPbr(const ParamMap& params)
         transmissionDispersionScale > 0.0f
         ? transmissionDispersionAbbe / transmissionDispersionScale
         : 0.0f;
-    const float subsurfaceWeight = Get<float>(params, _kSubsurfaceWeight, 0.0f);
-    const Vec3f subsurfaceColor = Get<Vec3f>(
-        params, _kSubsurfaceColor, Vec3f(1.0f));
+    c.interiorMedium = MakeTransmissionMedium(
+        c.transmission,
+        c.transmissionColor,
+        transmissionDepth,
+        transmissionScatter,
+        transmissionScatterAnisotropy);
+
+    c.subsurfaceWeight = Get<float>(params, _kSubsurfaceWeight, 0.0f);
+    c.subsurfaceColor = Get<Vec3f>(params, _kSubsurfaceColor, Vec3f(1.0f));
+    c.subsurfaceRadius =
+        Get<Vec3f>(params, _kSubsurfaceRadius, Vec3f(1.0f));
+    c.subsurfaceRadiusScale = Get<Vec3f>(
+        params, _kSubsurfaceRadiusScale, Vec3f(1.0f, 0.5f, 0.25f));
+    c.subsurfaceAnisotropy = Get<float>(
+        params, _kSubsurfaceScatterAnisotropy, 0.0f);
+    c.subsurfaceMedium = MakeSubsurfaceMedium(
+        c.subsurfaceWeight,
+        c.subsurfaceColor,
+        c.subsurfaceRadius,
+        c.subsurfaceRadiusScale,
+        c.subsurfaceAnisotropy);
 
     c.coat = Get<float>(params, _kCoatWeight, 0.0f);
     const Vec3f coatColor = Get<Vec3f>(params, _kCoatColor, Vec3f(1.0f));
@@ -312,6 +342,8 @@ EvalOpenPbr(const ParamMap& params)
     c.presence = c.opacity;
 
     c.thinWalled = Get<bool>(params, _kGeometryThinWalled, false);
+    c.hasInteriorMedium = !c.thinWalled && !c.interiorMedium.IsVacuum();
+    c.hasSubsurfaceMedium = !c.subsurfaceMedium.IsVacuum();
     c.normal = _GetWithFallback<Vec3f>(
         params,
         _kGeometryNormal,
@@ -349,6 +381,21 @@ EvalOpenPbr(const ParamMap& params)
         diffuse.roughness = baseRoughness;
         diffuse.energyCompensation = true;
         opaqueBase = tree.Add(diffuse);
+    }
+
+    if (c.hasSubsurfaceMedium && c.subsurfaceWeight > 0.0f) {
+        Bsdf::SubsurfaceData subsurface;
+        subsurface.weight = _Clamp01(c.subsurfaceWeight);
+        subsurface.color = _Saturate(c.subsurfaceColor);
+        subsurface.radius = c.subsurfaceRadius;
+        subsurface.anisotropy = c.subsurfaceAnisotropy;
+        const Bsdf::NodeId subsurfaceId = tree.Add(subsurface);
+        if (opaqueBase == Bsdf::InvalidNodeId) {
+            opaqueBase = subsurfaceId;
+        } else {
+            opaqueBase = _AppendMix(
+                &tree, opaqueBase, subsurfaceId, subsurface.weight);
+        }
     }
 
     const float metalMix = _Clamp01(c.metallic);
@@ -428,8 +475,8 @@ EvalOpenPbr(const ParamMap& params)
                 baseColor,
                 metalMix,
                 specularWeight,
-                subsurfaceColor,
-                subsurfaceWeight,
+                c.subsurfaceColor,
+                c.subsurfaceWeight,
                 c.coatIor,
                 c.coat,
                 coatDarkening));

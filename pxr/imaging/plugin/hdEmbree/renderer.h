@@ -11,6 +11,7 @@
 
 #include "pxr/imaging/plugin/hdEmbree/context.h"
 #include "pxr/imaging/plugin/hdEmbree/light.h"
+#include "pxr/imaging/plugin/hdEmbree/medium.h"
 #include "pxr/imaging/plugin/hdEmbree/sampling.h"
 
 #include "pxr/imaging/hd/aov.h"
@@ -37,6 +38,7 @@ class TextureSystem;
 PXR_NAMESPACE_OPEN_SCOPE
 
 class HdEmbreeRenderBuffer;
+class HdEmbreeMesh;
 
 enum HdEmbree_RayMask : uint32_t {
     None = 0,
@@ -52,6 +54,18 @@ struct HdEmbreeRayDifferential {
     bool hasDifferentials = false;
     GfVec3f rxOrigin, ryOrigin;       // offset ray origins (x/y pixel shift)
     GfVec3f rxDirection, ryDirection;  // offset ray directions
+};
+
+struct HdEmbreeMediumState {
+    enum class Mode {
+        Transmission,
+        Subsurface,
+    };
+
+    bool active = false;
+    mxcpp::MediumProperties medium;
+    HdEmbreeMesh* ownerMesh = nullptr;
+    Mode mode = Mode::Transmission;
 };
 
 /// \class HdEmbreeRenderer
@@ -263,6 +277,16 @@ private:
         HdEmbreeSobolSampler& sampler,
         bool doubleSided,
         mxcpp::SurfaceClosure const* closure,
+        HdEmbreeMediumState const& mediumState = HdEmbreeMediumState(),
+        bool spectralActive = false,
+        float heroWavelengthNm = 0.0f,
+        float heroWavelengthPdf = 0.0f) const;
+
+    GfVec3f _ComputeMediumDirectLighting(
+        GfVec3f const& position,
+        GfVec3f const& wo,
+        HdEmbreeMediumState const& mediumState,
+        HdEmbreeSobolSampler& sampler,
         bool spectralActive = false,
         float heroWavelengthNm = 0.0f,
         float heroWavelengthPdf = 0.0f) const;
@@ -275,10 +299,12 @@ private:
         HdEmbreeSobolSampler& sampler) const;
 
     // Return the visibility from `position` along `direction`
-    float _Visibility(GfVec3f const& position,
-                      GfVec3f const& normal,
-                      GfVec3f const& direction,
-                      float dist) const;
+    GfVec3f _Visibility(GfVec3f const& position,
+                        GfVec3f const& normal,
+                        GfVec3f const& direction,
+                        float dist,
+                        HdEmbreeMediumState const& mediumState =
+                            HdEmbreeMediumState()) const;
 
     // Should the ray continue based on the possibly intersected prim's visibility settings?
     bool _RayShouldContinue(RTCRayHit const& rayHit) const;
@@ -308,9 +334,13 @@ private:
         GfVec3f* outDndv = nullptr,
         _ShadingContextOptions options = _ShadingContextOptions()) const;
 
-    // Evaluate the material opacity at a ray hit.
-    // Returns 1.0 if no material is bound or evaluation fails.
-    float _EvalOpacityAtHit(RTCRayHit const& rayHit) const;
+    // Evaluate a material closure at a ray hit.
+    // Returns false if no material is bound or evaluation fails.
+    bool _TryEvalSurfaceClosureAtHit(
+        RTCRayHit const& rayHit,
+        mxcpp::SurfaceClosure* outClosure,
+        GfVec3f* outGeometricNormal = nullptr,
+        HdEmbreeMesh** outMesh = nullptr) const;
 
     // ---- AOV dispatch table (built once per frame in _PreRenderSetup) ----
 

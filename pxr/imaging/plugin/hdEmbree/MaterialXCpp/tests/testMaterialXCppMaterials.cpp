@@ -10,6 +10,7 @@
 #include "../materials/gltfPbr.h"
 #include "../materials/usdPreviewSurface.h"
 #include "../materials/bsdf.h"
+#include "../../medium.h"
 
 #include <cmath>
 #include <cstdio>
@@ -149,6 +150,49 @@ TestStandardSurfaceDispersionParametersReachBsdf()
     return Test_IsClose(transmission->dispersionAbbe, 18.0f, 1e-4f) &&
            Test_IsClose(reflection->dispersionAbbe, 18.0f, 1e-4f) &&
            c.HasDispersion();
+}
+
+static bool
+TestStandardSurfaceVolumeParametersReachClosure()
+{
+    ParamMap params;
+    params["transmission"] = Value(1.0f);
+    params["transmission_color"] = Value(Vec3f(0.8f, 0.6f, 0.4f));
+    params["transmission_depth"] = Value(2.0f);
+    params["transmission_scatter"] = Value(Vec3f(0.1f, 0.2f, 0.5f));
+    params["transmission_scatter_anisotropy"] = Value(0.35f);
+    params["subsurface"] = Value(0.75f);
+    params["subsurface_color"] = Value(Vec3f(0.25f, 0.5f, 0.75f));
+    params["subsurface_radius"] = Value(Vec3f(1.0f, 2.0f, 4.0f));
+    params["subsurface_scale"] = Value(2.0f);
+    params["subsurface_anisotropy"] = Value(0.4f);
+
+    const SurfaceClosure c = EvalStandardSurface(params);
+    const MediumProperties expectedTransmission = MakeTransmissionMedium(
+        1.0f,
+        Vec3f(0.8f, 0.6f, 0.4f),
+        2.0f,
+        Vec3f(0.1f, 0.2f, 0.5f),
+        0.35f);
+    const MediumProperties expectedSubsurface = MakeSubsurfaceMedium(
+        0.75f,
+        Vec3f(0.25f, 0.5f, 0.75f),
+        Vec3f(1.0f, 2.0f, 4.0f),
+        Vec3f(2.0f),
+        0.4f);
+
+    return c.hasInteriorMedium &&
+           Test_IsClose(c.interiorMedium.sigmaA, expectedTransmission.sigmaA, 1e-5f) &&
+           Test_IsClose(c.interiorMedium.sigmaS, expectedTransmission.sigmaS, 1e-5f) &&
+           Test_IsClose(c.interiorMedium.anisotropy, 0.35f, 1e-5f) &&
+           Test_IsClose(c.subsurfaceWeight, 0.75f, 1e-5f) &&
+           Test_IsClose(c.subsurfaceColor, Vec3f(0.25f, 0.5f, 0.75f), 1e-5f) &&
+           Test_IsClose(c.subsurfaceRadius, Vec3f(1.0f, 2.0f, 4.0f), 1e-5f) &&
+           Test_IsClose(c.subsurfaceRadiusScale, Vec3f(2.0f), 1e-5f) &&
+           Test_IsClose(c.subsurfaceAnisotropy, 0.4f, 1e-5f) &&
+           c.hasSubsurfaceMedium &&
+           Test_IsClose(c.subsurfaceMedium.sigmaA, expectedSubsurface.sigmaA, 1e-5f) &&
+           Test_IsClose(c.subsurfaceMedium.sigmaS, expectedSubsurface.sigmaS, 1e-5f);
 }
 
 static bool
@@ -830,6 +874,63 @@ TestOpenPbrDispersionParametersReachBsdf()
 }
 
 static bool
+TestOpenPbrVolumeParametersReachClosure()
+{
+    ParamMap params;
+    params["transmission_weight"] = Value(1.0f);
+    params["transmission_color"] = Value(Vec3f(0.9f, 0.8f, 0.7f));
+    params["transmission_depth"] = Value(0.5f);
+    params["transmission_scatter"] = Value(Vec3f(0.02f, 0.03f, 0.04f));
+    params["transmission_scatter_anisotropy"] = Value(-0.25f);
+    params["subsurface_weight"] = Value(0.6f);
+    params["subsurface_color"] = Value(Vec3f(0.4f, 0.3f, 0.2f));
+    params["subsurface_radius"] = Value(Vec3f(3.0f, 2.0f, 1.0f));
+    params["subsurface_radius_scale"] = Value(Vec3f(1.0f, 0.5f, 0.25f));
+    params["subsurface_scatter_anisotropy"] = Value(0.2f);
+
+    const SurfaceClosure c = EvalOpenPbr(params);
+    const MediumProperties expectedTransmission = MakeTransmissionMedium(
+        1.0f,
+        Vec3f(0.9f, 0.8f, 0.7f),
+        0.5f,
+        Vec3f(0.02f, 0.03f, 0.04f),
+        -0.25f);
+    const MediumProperties expectedSubsurface = MakeSubsurfaceMedium(
+        0.6f,
+        Vec3f(0.4f, 0.3f, 0.2f),
+        Vec3f(3.0f, 2.0f, 1.0f),
+        Vec3f(1.0f, 0.5f, 0.25f),
+        0.2f);
+
+    return c.hasInteriorMedium &&
+           Test_IsClose(c.interiorMedium.sigmaA, expectedTransmission.sigmaA, 1e-5f) &&
+           Test_IsClose(c.interiorMedium.sigmaS, expectedTransmission.sigmaS, 1e-5f) &&
+           Test_IsClose(c.interiorMedium.anisotropy, -0.25f, 1e-5f) &&
+           Test_IsClose(c.subsurfaceWeight, 0.6f, 1e-5f) &&
+           Test_IsClose(c.subsurfaceRadiusScale, Vec3f(1.0f, 0.5f, 0.25f), 1e-5f) &&
+           Test_IsClose(c.subsurfaceAnisotropy, 0.2f, 1e-5f) &&
+           c.hasSubsurfaceMedium &&
+           Test_IsClose(c.subsurfaceMedium.sigmaA, expectedSubsurface.sigmaA, 1e-5f) &&
+           Test_IsClose(c.subsurfaceMedium.sigmaS, expectedSubsurface.sigmaS, 1e-5f);
+}
+
+static bool
+TestTransmissionMediumClampsNegativeAbsorption()
+{
+    const MediumProperties medium = MakeTransmissionMedium(
+        1.0f,
+        Vec3f(0.98f, 0.99f, 1.0f),
+        1.0f,
+        Vec3f(0.5f, 0.5f, 0.5f),
+        0.0f);
+
+    return medium.sigmaA[0] >= 0.0f &&
+           medium.sigmaA[1] >= 0.0f &&
+           medium.sigmaA[2] >= 0.0f &&
+           Test_IsClose(medium.sigmaA[2], 0.0f, 1e-6f);
+}
+
+static bool
 TestOpenPbrBaseDiffuseRoughnessUsesCanonicalName()
 {
     ParamMap params;
@@ -1444,6 +1545,7 @@ Test_RegisterMaterialTests()
     _REG(TestStandardSurfaceCustomParams);
     _REG(TestStandardSurfaceThinFilmParametersReachBsdf);
     _REG(TestStandardSurfaceDispersionParametersReachBsdf);
+    _REG(TestStandardSurfaceVolumeParametersReachClosure);
     _REG(TestStandardSurfaceLayersSpecularOverTransmissionMix);
     _REG(TestStandardSurfaceThinWalledUsesUnitIorTransmission);
     _REG(TestStandardSurfaceSpecularRotationUsesCanonicalName);
@@ -1462,6 +1564,8 @@ Test_RegisterMaterialTests()
     _REG(TestOpenPbrCoatColorAttenuatesSubstrate);
     _REG(TestOpenPbrThinFilmParametersReachBsdf);
     _REG(TestOpenPbrDispersionParametersReachBsdf);
+    _REG(TestOpenPbrVolumeParametersReachClosure);
+    _REG(TestTransmissionMediumClampsNegativeAbsorption);
     _REG(TestOpenPbrBaseDiffuseRoughnessUsesCanonicalName);
     _REG(TestOpenPbrSpecularRoughnessAnisotropyUsesCanonicalName);
     _REG(TestOpenPbrGeometryInputsUseCanonicalNames);

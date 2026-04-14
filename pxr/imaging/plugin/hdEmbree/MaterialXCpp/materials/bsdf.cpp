@@ -1708,7 +1708,7 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
         } else if constexpr (std::is_same_v<T, Bsdf::TranslucentData>) {
             return data.weight * std::max(_Luminance(data.color), 0.0f);
         } else if constexpr (std::is_same_v<T, Bsdf::SubsurfaceData>) {
-            return 0.0f;
+            return data.weight * std::max(_Luminance(data.color), 0.0f);
         } else if constexpr (std::is_same_v<T, Bsdf::DielectricData>) {
             const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
             const float NdotV =
@@ -1952,6 +1952,10 @@ _FinalizeSubtreeSample(const Bsdf::ClosureTree& tree,
                        Bsdf::BsdfSample sample,
                        float heroWavelengthNm)
 {
+    if (sample.isSubsurface) {
+        sample.pdf = std::max(sample.pdf, 1.0f);
+        return sample;
+    }
     if (sample.pdf <= 0.0f) {
         return sample;
     }
@@ -2000,7 +2004,14 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return _FinalizeSubtreeSample(
                 tree, nodeId, N, wo, sample, heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::SubsurfaceData>) {
-            return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
+            Bsdf::BsdfSample sample{
+                Vec3f(0.0f),
+                data.color * data.weight,
+                1.0f,
+                false
+            };
+            sample.isSubsurface = true;
+            return sample;
         } else if constexpr (std::is_same_v<T, Bsdf::DielectricData>) {
             const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
             const float NdotV =
@@ -2233,7 +2244,8 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 : ((1.0f - mix) > 0.0f ? (uChoice - mix) / (1.0f - mix) : 0.0f);
             auto sample = _SampleNode(
                 tree, chosen, N, wo, u1, u2, remapped, heroWavelengthNm);
-            if (sample.isSpecular && sample.pdf > 0.0f && chooseProb > 0.0f) {
+            if ((sample.isSpecular || sample.isSubsurface) &&
+                sample.pdf > 0.0f && chooseProb > 0.0f) {
                 sample.f /= chooseProb;
             }
             return _FinalizeSubtreeSample(
@@ -2258,7 +2270,8 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 : ((1.0f - pTop) > 0.0f ? (uChoice - pTop) / (1.0f - pTop) : 0.0f);
             auto sample = _SampleNode(
                 tree, chosen, N, wo, u1, u2, remapped, heroWavelengthNm);
-            if (sample.isSpecular && sample.pdf > 0.0f) {
+            if ((sample.isSpecular || sample.isSubsurface) &&
+                sample.pdf > 0.0f) {
                 if (!chooseTop) {
                     const Vec3f topThroughputOut =
                         _EvalThroughput(
@@ -2292,7 +2305,8 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 : ((1.0f - p1) > 0.0f ? (uChoice - p1) / (1.0f - p1) : 0.0f);
             auto sample = _SampleNode(
                 tree, chosen, N, wo, u1, u2, remapped, heroWavelengthNm);
-            if (sample.isSpecular && sample.pdf > 0.0f && chooseProb > 0.0f) {
+            if ((sample.isSpecular || sample.isSubsurface) &&
+                sample.pdf > 0.0f && chooseProb > 0.0f) {
                 sample.f /= chooseProb;
             }
             return _FinalizeSubtreeSample(
@@ -2300,7 +2314,8 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
         } else if constexpr (std::is_same_v<T, Bsdf::MultiplyData>) {
             auto sample = _SampleNode(
                 tree, data.input, N, wo, u1, u2, uChoice, heroWavelengthNm);
-            if (sample.isSpecular && sample.pdf > 0.0f) {
+            if ((sample.isSpecular || sample.isSubsurface) &&
+                sample.pdf > 0.0f) {
                 sample.f = CompMul(data.weight, sample.f);
             }
             return _FinalizeSubtreeSample(

@@ -7,6 +7,7 @@
 #include "../materials/bsdf.h"
 #include "../spectral.h"
 #include "../nodes/helpers/mathHelpers.h"
+#include "../../medium.h"
 
 #include <cmath>
 #include <cstdio>
@@ -326,6 +327,176 @@ TestEvalSurfaceNonNegative()
 
     Vec3f result = Bsdf::EvalSurface(c, N, wi, wo);
     return result[0] >= 0.0f && result[1] >= 0.0f && result[2] >= 0.0f;
+}
+
+static bool
+TestPhaseHgIsotropicMatchesUniformSphere()
+{
+    const float expected = 1.0f / (4.0f * 3.14159265358979f);
+    const float actual = PhaseHG(0.25f, 0.0f);
+    if (!Test_IsClose(actual, expected, 1.0e-6f)) {
+        printf("    Expected isotropic phase=%f, got %f\n", expected, actual);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestPhaseHgForwardScatterBias()
+{
+    const float forward = PhaseHG(-0.95f, 0.7f);
+    const float backward = PhaseHG(0.95f, 0.7f);
+    if (!(forward > backward)) {
+        printf("    Expected forward HG lobe to dominate: %f <= %f\n",
+               forward, backward);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestSampleHenyeyGreensteinPdfConsistency()
+{
+    const Vec3f wo = Vec3f(0.0f, 0.0f, -1.0f);
+    const Vec3f wi = SampleHenyeyGreenstein(wo, 0.5f, 0.3f, 0.7f);
+    const float pdf = PdfHenyeyGreenstein(wi, wo, 0.5f);
+    const float phase = PhaseHG(Dot(wi, wo), 0.5f);
+    if (!Test_IsClose(pdf, phase, 1.0e-5f)) {
+        printf("    Expected phase/pdf match, got phase=%f pdf=%f\n",
+               phase, pdf);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestSampleHenyeyGreensteinForwardMean()
+{
+    const Vec3f wo = Vec3f(0.0f, 0.0f, -1.0f);
+    float meanCosTheta = 0.0f;
+    constexpr int kSampleCount = 128;
+
+    for (int i = 0; i < kSampleCount; ++i) {
+        const float u1 = (static_cast<float>(i) + 0.5f) / kSampleCount;
+        const float u2 =
+            (static_cast<float>((i * 37) % kSampleCount) + 0.5f) / kSampleCount;
+        const Vec3f wi = SampleHenyeyGreenstein(wo, 0.7f, u1, u2);
+        meanCosTheta += -Dot(wi, wo);
+    }
+    meanCosTheta /= kSampleCount;
+
+    if (meanCosTheta < 0.45f) {
+        printf("    Expected forward-scattering mean cosine, got %f\n",
+               meanCosTheta);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestFreeFlightScatterWeightFinite()
+{
+    MediumProperties medium;
+    medium.sigmaA = Vec3f(0.2f, 0.8f, 0.4f);
+    medium.sigmaS = Vec3f(0.6f, 0.1f, 0.3f);
+
+    const float distance = SampleFreeFlight(medium, 0.42f);
+    const Vec3f scatterWeight = EvalFreeFlightScatterWeight(medium, distance);
+    const Vec3f transmittanceWeight =
+        EvalMajorantTransmittanceWeight(medium, distance);
+
+    for (int i = 0; i < 3; ++i) {
+        if (!std::isfinite(scatterWeight[i]) || scatterWeight[i] < 0.0f) {
+            printf("    Scatter weight channel %d invalid: %f\n",
+                   i, scatterWeight[i]);
+            return false;
+        }
+        if (!std::isfinite(transmittanceWeight[i]) ||
+            transmittanceWeight[i] < 0.0f) {
+            printf("    Transmittance weight channel %d invalid: %f\n",
+                   i, transmittanceWeight[i]);
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool
+TestSampleSurfaceSubsurfaceReturnsMarker()
+{
+    SurfaceClosure c;
+    Bsdf::SubsurfaceData subsurface;
+    subsurface.weight = 0.7f;
+    subsurface.color = Vec3f(0.4f, 0.6f, 0.8f);
+    c.bsdfTree.root = c.bsdfTree.Add(subsurface);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo(0.0f, 1.0f, 0.0f);
+
+    const auto sample = Bsdf::SampleSurface(c, N, wo, 0.2f, 0.8f, 0.5f);
+    if (!sample.isSubsurface) {
+        printf("    Expected subsurface marker on sampled event\n");
+        return false;
+    }
+    if (sample.isSpecular) {
+        printf("    Subsurface event should not be marked specular\n");
+        return false;
+    }
+    if (!Test_IsClose(sample.f, subsurface.color * subsurface.weight, 1.0e-6f)) {
+        printf(
+            "    Expected subsurface weight to propagate: got (%f,%f,%f)\n",
+            sample.f[0], sample.f[1], sample.f[2]);
+        return false;
+    }
+    if (!Test_IsClose(sample.pdf, 1.0f, 1.0e-6f)) {
+        printf("    Expected unit pdf for subsurface marker, got %f\n",
+               sample.pdf);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestSampleSurfaceMixCanChooseSubsurface()
+{
+    SurfaceClosure c;
+
+    Bsdf::OrenNayarDiffuseData diffuse;
+    diffuse.weight = 1.0f;
+    diffuse.color = Vec3f(0.8f, 0.6f, 0.4f);
+
+    Bsdf::SubsurfaceData subsurface;
+    subsurface.weight = 1.0f;
+    subsurface.color = Vec3f(0.3f, 0.5f, 0.7f);
+
+    const Bsdf::NodeId diffuseId = c.bsdfTree.Add(diffuse);
+    const Bsdf::NodeId subsurfaceId = c.bsdfTree.Add(subsurface);
+
+    Bsdf::MixData mix;
+    mix.fg = diffuseId;
+    mix.bg = subsurfaceId;
+    mix.mix = 0.25f;
+    c.bsdfTree.root = c.bsdfTree.Add(mix);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo(0.0f, 1.0f, 0.0f);
+
+    const auto sample = Bsdf::SampleSurface(c, N, wo, 0.2f, 0.8f, 0.8f);
+    if (!sample.isSubsurface) {
+        printf("    Expected mix node to be able to select subsurface branch\n");
+        return false;
+    }
+
+    const Vec3f expected = subsurface.color * (subsurface.weight / 0.75f);
+    if (!Test_IsClose(sample.f, expected, 1.0e-6f)) {
+        printf(
+            "    Expected mix probability compensation, got (%f,%f,%f) "
+            "expected (%f,%f,%f)\n",
+            sample.f[0], sample.f[1], sample.f[2],
+            expected[0], expected[1], expected[2]);
+        return false;
+    }
+    return true;
 }
 
 // ===========================================================================
@@ -1100,6 +1271,13 @@ Test_RegisterBsdfTests()
     _REG(TestSheenGrazingAngle);
     _REG(TestTransmissionNonNegative);
     _REG(TestEvalSurfaceNonNegative);
+    _REG(TestPhaseHgIsotropicMatchesUniformSphere);
+    _REG(TestPhaseHgForwardScatterBias);
+    _REG(TestSampleHenyeyGreensteinPdfConsistency);
+    _REG(TestSampleHenyeyGreensteinForwardMean);
+    _REG(TestFreeFlightScatterWeightFinite);
+    _REG(TestSampleSurfaceSubsurfaceReturnsMarker);
+    _REG(TestSampleSurfaceMixCanChooseSubsurface);
     _REG(TestSampleLambertianHemisphere);
     _REG(TestSampleLambertianPdfConsistency);
     _REG(TestSampleGGXSpecularHemisphere);

@@ -83,6 +83,7 @@ namespace Bsdf
         Vec3f f;
         float   pdf;
         bool    isSpecular;
+        bool    isSubsurface = false;
         float eta = 1.0f;     // IOR ratio (incident/transmitted), for refraction differential propagation
     };
 

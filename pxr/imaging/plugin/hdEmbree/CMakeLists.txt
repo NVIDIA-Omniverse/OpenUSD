@@ -64,6 +64,7 @@ pxr_plugin(hdEmbree
         material
         mesh
         meshSamplers
+        medium
         mxcppAdapter
         pxrIES/ies
         pxrIES/pxrIES
@@ -119,6 +120,7 @@ pxr_plugin(hdEmbree
         debugCodes
         implicitSurfaceSceneIndexPlugin
         oiioTextureSystem
+        sss
 
     RESOURCE_FILES
         plugInfo.json
@@ -171,6 +173,7 @@ pxr_build_test(testMaterialXCpp
         MaterialXCpp/tests/testMaterialXCppMaterials.cpp
         MaterialXCpp/tests/testMaterialXCppGraph.cpp
         MaterialXCpp/tests/testMaterialXCppAdapter.cpp
+        medium.cpp
         mxcppAdapter.cpp
         MaterialXCpp/materials/bsdf.cpp
         MaterialXCpp/materials/disneyPrincipled.cpp

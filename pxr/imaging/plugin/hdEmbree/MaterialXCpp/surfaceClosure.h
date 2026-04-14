@@ -4,6 +4,7 @@
 #ifndef MXCPP_SURFACE_CLOSURE_H
 #define MXCPP_SURFACE_CLOSURE_H
 
+#include "../medium.h"
 #include "mathTypes.h"
 #include "materials/closureTree.h"
 
@@ -53,6 +54,15 @@ struct SurfaceClosure
     float sheenRoughness = 0.3f;
     Vec3f normal = Vec3f(0.0f, 0.0f, 1.0f);
     bool thinWalled = false;
+    bool hasInteriorMedium = false;
+    MediumProperties interiorMedium;
+    float subsurfaceWeight = 0.0f;
+    Vec3f subsurfaceColor = Vec3f(1.0f);
+    Vec3f subsurfaceRadius = Vec3f(1.0f);
+    Vec3f subsurfaceRadiusScale = Vec3f(1.0f);
+    float subsurfaceAnisotropy = 0.0f;
+    bool hasSubsurfaceMedium = false;
+    MediumProperties subsurfaceMedium;
     Bsdf::ClosureTree bsdfTree;
 
     bool HasBsdfTree() const {

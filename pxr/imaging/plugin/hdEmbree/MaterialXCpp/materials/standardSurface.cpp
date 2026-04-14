@@ -6,6 +6,7 @@
 //
 #include "standardSurface.h"
 
+#include "../../medium.h"
 #include "../paramMap.h"
 #include "../nodes/helpers/mathHelpers.h"
 
@@ -29,11 +30,15 @@ static const SlotName _kTransmission("transmission");
 static const SlotName _kTransmissionColor("transmission_color");
 static const SlotName _kTransmissionDispersion("transmission_dispersion");
 static const SlotName _kTransmissionDepth("transmission_depth");
+static const SlotName _kTransmissionScatter("transmission_scatter");
+static const SlotName _kTransmissionScatterAnisotropy(
+    "transmission_scatter_anisotropy");
 static const SlotName _kTransmissionExtraRoughness("transmission_extra_roughness");
 static const SlotName _kSubsurface("subsurface");
 static const SlotName _kSubsurfaceColor("subsurface_color");
 static const SlotName _kSubsurfaceRadius("subsurface_radius");
 static const SlotName _kSubsurfaceScale("subsurface_scale");
+static const SlotName _kSubsurfaceAnisotropy("subsurface_anisotropy");
 static const SlotName _kSheen("sheen");
 static const SlotName _kSheenColor("sheen_color");
 static const SlotName _kSheenRoughness("sheen_roughness");
@@ -280,8 +285,35 @@ EvalStandardSurface(const ParamMap& params)
     c.transmission = Get<float>(params, _kTransmission, 0.0f);
     c.transmissionColor =
         Get<Vec3f>(params, _kTransmissionColor, Vec3f(1.0f));
+    const float transmissionDepth =
+        Get<float>(params, _kTransmissionDepth, 0.0f);
+    const Vec3f transmissionScatter =
+        Get<Vec3f>(params, _kTransmissionScatter, Vec3f(0.0f));
+    const float transmissionScatterAnisotropy = Get<float>(
+        params, _kTransmissionScatterAnisotropy, 0.0f);
     const float transmissionDispersionAbbe =
         std::max(Get<float>(params, _kTransmissionDispersion, 0.0f), 0.0f);
+    c.interiorMedium = MakeTransmissionMedium(
+        c.transmission,
+        c.transmissionColor,
+        transmissionDepth,
+        transmissionScatter,
+        transmissionScatterAnisotropy);
+
+    c.subsurfaceWeight = Get<float>(params, _kSubsurface, 0.0f);
+    c.subsurfaceColor = Get<Vec3f>(params, _kSubsurfaceColor, Vec3f(1.0f));
+    c.subsurfaceRadius = Get<Vec3f>(params, _kSubsurfaceRadius, Vec3f(1.0f));
+    c.subsurfaceRadiusScale = Vec3f(
+        std::max(Get<float>(params, _kSubsurfaceScale, 1.0f), 0.0f));
+    c.subsurfaceAnisotropy =
+        Get<float>(params, _kSubsurfaceAnisotropy, 0.0f);
+    c.subsurfaceMedium = MakeSubsurfaceMedium(
+        c.subsurfaceWeight,
+        c.subsurfaceColor,
+        c.subsurfaceRadius,
+        c.subsurfaceRadiusScale,
+        c.subsurfaceAnisotropy);
+    c.hasSubsurfaceMedium = !c.subsurfaceMedium.IsVacuum();
 
     c.coat = Get<float>(params, _kCoat, 0.0f);
     const Vec3f coatColor = Get<Vec3f>(params, _kCoatColor, Vec3f(1.0f));
@@ -313,6 +345,7 @@ EvalStandardSurface(const ParamMap& params)
     c.opacity = (opacityVec[0] + opacityVec[1] + opacityVec[2]) / 3.0f;
 
     c.thinWalled = Get<bool>(params, _kThinWalled, false);
+    c.hasInteriorMedium = !c.thinWalled && !c.interiorMedium.IsVacuum();
     if (c.opacity == 1.0f) {
         c.opacity = Get<float>(params, _kOpacity, 1.0f);
     }
@@ -386,6 +419,20 @@ EvalStandardSurface(const ParamMap& params)
         diffuse.roughness = diffuseRoughness;
         diffuse.energyCompensation = true;
         root = tree.Add(diffuse);
+    }
+
+    if (c.hasSubsurfaceMedium && c.subsurfaceWeight > 0.0f) {
+        Bsdf::SubsurfaceData subsurface;
+        subsurface.weight = _Clamp01(c.subsurfaceWeight);
+        subsurface.color = _Saturate(c.subsurfaceColor);
+        subsurface.radius = c.subsurfaceRadius;
+        subsurface.anisotropy = c.subsurfaceAnisotropy;
+        const Bsdf::NodeId subsurfaceId = tree.Add(subsurface);
+        if (root == Bsdf::InvalidNodeId) {
+            root = subsurfaceId;
+        } else {
+            root = _AppendMix(&tree, root, subsurfaceId, subsurface.weight);
+        }
     }
 
     if (_Clamp01(c.sheen) > 0.0f) {

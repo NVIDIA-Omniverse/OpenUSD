@@ -14,6 +14,7 @@
 #include "pxr/imaging/plugin/hdEmbree/material.h"
 #include "pxr/imaging/plugin/hdEmbree/mesh.h"
 #include "pxr/imaging/plugin/hdEmbree/renderBuffer.h"
+#include "pxr/imaging/plugin/hdEmbree/sss.h"
 #include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/materials/bsdf.h"
 #include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/shadingContext.h"
 #include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/spectral.h"
@@ -160,6 +161,14 @@ _ToMx(const GfMatrix4f& m)
         }
     }
     return result;
+}
+
+inline bool
+_IsNearlyBlack(const GfVec3f& value, float threshold = 1.0e-4f)
+{
+    return value[0] <= threshold &&
+           value[1] <= threshold &&
+           value[2] <= threshold;
 }
 
 inline mxcpp::Mat4f
@@ -2395,8 +2404,12 @@ HdEmbreeRenderer::_BuildShadingContext(
     return ctx;
 }
 
-float
-HdEmbreeRenderer::_EvalOpacityAtHit(RTCRayHit const& rayHit) const
+bool
+HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
+    RTCRayHit const& rayHit,
+    mxcpp::SurfaceClosure* outClosure,
+    GfVec3f* outGeometricNormal,
+    HdEmbreeMesh** outMesh) const
 {
     const HdEmbreeInstanceContext *instanceContext =
         static_cast<HdEmbreeInstanceContext*>(
@@ -2409,10 +2422,13 @@ HdEmbreeRenderer::_EvalOpacityAtHit(RTCRayHit const& rayHit) const
                                rayHit.hit.geomID)));
 
     HdEmbreeMaterial *material = prototypeContext->material;
-    if (!material) return 1.0f;
+    if (outMesh) {
+        *outMesh = dynamic_cast<HdEmbreeMesh*>(prototypeContext->rprim);
+    }
+    if (!material || !outClosure) return false;
 
     mxcpp::EvalGraph *evalGraph = material->GetEvalGraph();
-    if (!evalGraph) return 1.0f;
+    if (!evalGraph) return false;
 
     GfVec3f hitPos = _CalculateHitPosition(rayHit);
     GfVec3f normal = _ResolveObjectSpaceNormal(
@@ -2420,6 +2436,9 @@ HdEmbreeRenderer::_EvalOpacityAtHit(RTCRayHit const& rayHit) const
         rayHit);
     normal = instanceContext->objectToWorldMatrix.TransformDir(normal);
     normal.Normalize();
+    if (outGeometricNormal) {
+        *outGeometricNormal = normal;
+    }
 
     try {
         HdEmbreeRayDifferential defaultRayDiff;
@@ -2434,25 +2453,27 @@ HdEmbreeRenderer::_EvalOpacityAtHit(RTCRayHit const& rayHit) const
         ctx.geomPropLookup = &_SampleGeomProp;
         ctx.geomPropUserData = &cbData;
         ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
-        mxcpp::SurfaceClosure closure = evalGraph->Evaluate(ctx);
-        return closure.opacity;
+        *outClosure = evalGraph->Evaluate(ctx);
+        return true;
     } catch (...) {
-        return 1.0f;
+        return false;
     }
 }
 
-float
+GfVec3f
 HdEmbreeRenderer::_Visibility(
     GfVec3f const& position,
     GfVec3f const& normal,
     GfVec3f const& direction,
-    float dist) const
+    float dist,
+    HdEmbreeMediumState const& mediumState) const
 {
     constexpr int kMaxTransparentHits = 16;
     constexpr float kVisThreshold = 1e-4f;
     constexpr float kRayBias = 1e-4f;
 
-    float visibility = 1.0f;
+    GfVec3f visibility(1.0f);
+    HdEmbreeMediumState shadowMedium = mediumState;
     GfVec3f rayOrigin = _OffsetRayOrigin(position, normal, direction, kRayBias);
     float remaining = dist;
 
@@ -2464,27 +2485,72 @@ HdEmbreeRenderer::_Visibility(
         rtcIntersect1(_scene, &rayHit);
 
         if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
+            if (shadowMedium.active && remaining > 0.0f) {
+                visibility = GfCompMult(
+                    visibility,
+                    _ToGf(mxcpp::EvalBeerTransmittance(
+                        shadowMedium.medium,
+                        remaining)));
+            }
             return visibility;
         }
 
-        float opacity = _EvalOpacityAtHit(rayHit);
-        visibility *= (1.0f - opacity);
-
-        if (visibility <= kVisThreshold) {
-            return 0.0f;
+        const float hitDist = std::min(rayHit.ray.tfar, remaining);
+        if (shadowMedium.active && hitDist > 0.0f) {
+            visibility = GfCompMult(
+                visibility,
+                _ToGf(mxcpp::EvalBeerTransmittance(
+                    shadowMedium.medium,
+                    hitDist)));
+        }
+        if (_IsNearlyBlack(visibility, kVisThreshold)) {
+            return GfVec3f(0.0f);
         }
 
-        float hitDist = rayHit.ray.tfar;
+        mxcpp::SurfaceClosure closure;
+        GfVec3f hitNormal(0.0f);
+        HdEmbreeMesh* hitMesh = nullptr;
+        const bool hasClosure = _TryEvalSurfaceClosureAtHit(
+            rayHit, &closure, &hitNormal, &hitMesh);
+
+        float surfaceVisibility = hasClosure ? (1.0f - closure.opacity) : 0.0f;
+        if (hasClosure) {
+            surfaceVisibility = std::max(surfaceVisibility, closure.transmission);
+        }
+        visibility *= surfaceVisibility;
+
+        if (_IsNearlyBlack(visibility, kVisThreshold)) {
+            return GfVec3f(0.0f);
+        }
+
         remaining -= hitDist;
         if (remaining <= 0.001f) {
             return visibility;
+        }
+
+        if (shadowMedium.active && hitMesh == shadowMedium.ownerMesh) {
+            shadowMedium = HdEmbreeMediumState();
+        } else if (!shadowMedium.active &&
+                   hasClosure &&
+                   closure.hasInteriorMedium &&
+                   closure.transmission > 0.0f &&
+                   hitMesh &&
+                   GfDot(direction, hitNormal) < 0.0f) {
+            shadowMedium.active = true;
+            shadowMedium.medium = closure.interiorMedium;
+            shadowMedium.ownerMesh = hitMesh;
+            shadowMedium.mode = HdEmbreeMediumState::Mode::Transmission;
         }
 
         GfVec3f hitPos = GfVec3f(
             rayHit.ray.org_x + hitDist * rayHit.ray.dir_x,
             rayHit.ray.org_y + hitDist * rayHit.ray.dir_y,
             rayHit.ray.org_z + hitDist * rayHit.ray.dir_z);
-        rayOrigin = _OffsetRayOrigin(hitPos, normal, direction, kRayBias);
+        rayOrigin = _OffsetRayOrigin(
+            hitPos,
+            hasClosure ? hitNormal : normal,
+            direction,
+            kRayBias);
     }
 
     return visibility;
@@ -2727,6 +2793,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
     HdEmbreeSobolSampler &sampler,
     bool /*doubleSided*/,
     mxcpp::SurfaceClosure const* closure,
+    HdEmbreeMediumState const& mediumState,
     bool spectralActive,
     float heroWavelengthNm,
     float heroWavelengthPdf) const
@@ -2785,9 +2852,9 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 continue;
             }
 
-            float vis = _Visibility(
-                position, normal, ls.wI, ls.dist * 0.99f);
-            if (vis <= 0.0f) {
+            GfVec3f vis = _Visibility(
+                position, normal, ls.wI, ls.dist * 0.99f, mediumState);
+            if (_IsNearlyBlack(vis)) {
                 continue;
             }
 
@@ -2820,26 +2887,29 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
 
                 if (hero.active) {
                     const float spectralLi = _RgbToSpectralValue(ls.Li, hero);
+                    const float spectralVis = _RgbToSpectralValue(vis, hero);
                     const float spectralBsdf =
                         _RgbToSpectralValue(bsdfValue, hero);
                     sampleContrib = _SpectralValueToRgb(
                         spectralLi * spectralBsdf *
-                            absDotNL * vis * ls.invPdfW * misW,
+                            absDotNL * spectralVis * ls.invPdfW * misW,
                         hero);
                 } else {
-                    sampleContrib = GfCompMult(ls.Li, bsdfValue)
-                        * absDotNL * vis * ls.invPdfW * misW;
+                    sampleContrib = GfCompMult(
+                        GfCompMult(ls.Li, bsdfValue),
+                        vis) * absDotNL * ls.invPdfW * misW;
                 }
             } else {
                 float brdf = 1.0f / _pi<float>;
                 if (hero.active) {
                     const float spectralLi = _RgbToSpectralValue(ls.Li, hero);
+                    const float spectralVis = _RgbToSpectralValue(vis, hero);
                     sampleContrib = _SpectralValueToRgb(
-                        spectralLi * absDotNL * brdf * vis * ls.invPdfW,
+                        spectralLi * absDotNL * brdf * spectralVis * ls.invPdfW,
                         hero);
                 } else {
-                    sampleContrib = ls.Li * absDotNL * brdf
-                        * vis * ls.invPdfW;
+                    sampleContrib = GfCompMult(ls.Li, vis)
+                        * absDotNL * brdf * ls.invPdfW;
                 }
             }
 
@@ -2858,6 +2928,110 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
 
         finalColor += lightContrib * invN;
     }
+    return finalColor;
+}
+
+GfVec3f
+HdEmbreeRenderer::_ComputeMediumDirectLighting(
+    GfVec3f const& position,
+    GfVec3f const& wo,
+    HdEmbreeMediumState const& mediumState,
+    HdEmbreeSobolSampler& sampler,
+    bool spectralActive,
+    float heroWavelengthNm,
+    float heroWavelengthPdf) const
+{
+    const _HeroWavelengthState hero{
+        spectralActive, heroWavelengthNm, heroWavelengthPdf};
+    if (!mediumState.active || mediumState.medium.IsAbsorbingOnly()) {
+        return GfVec3f(0.0f);
+    }
+
+    GfVec3f finalColor(0.0f);
+    const int N = _lightSamplesPerHit;
+    const float invN = 1.0f / static_cast<float>(N);
+
+    int stratDimU = 1, stratDimV = 1;
+    if (_stratifyLightSamples && N > 1) {
+        stratDimU = static_cast<int>(std::sqrt(static_cast<float>(N)));
+        if (stratDimU < 1) {
+            stratDimU = 1;
+        }
+        stratDimV = (N + stratDimU - 1) / stratDimU;
+    }
+
+    for (auto const& it : _lightMap) {
+        auto const& light = it.second->LightData();
+        if (!light.visible) {
+            continue;
+        }
+
+        GfVec3f lightContrib(0.0f);
+        for (int s = 0; s < N; ++s) {
+            float u1 = 0.0f;
+            float u2 = 0.0f;
+            if (_stratifyLightSamples && N > 1) {
+                int su = s % stratDimU;
+                int sv = s / stratDimU;
+                u1 = (su + sampler.Next()) / static_cast<float>(stratDimU);
+                u2 = (sv + sampler.Next()) / static_cast<float>(stratDimV);
+            } else {
+                u1 = sampler.Next();
+                u2 = sampler.Next();
+            }
+
+            const HdEmbreeLightSampler::LightSample ls =
+                HdEmbreeLightSampler::GetLightSample(
+                    light,
+                    position,
+                    GfVec3f(0.0f),
+                    u1,
+                    u2);
+            if (GfIsClose(ls.Li, GfVec3f(0.0f), _minLuminanceCutoff)) {
+                continue;
+            }
+
+            const GfVec3f vis = _Visibility(
+                position, ls.wI, ls.wI, ls.dist * 0.99f, mediumState);
+            if (_IsNearlyBlack(vis)) {
+                continue;
+            }
+
+            const float phasePdf = mxcpp::PdfHenyeyGreenstein(
+                _ToMx(ls.wI),
+                _ToMx(wo),
+                mediumState.medium.anisotropy);
+            if (phasePdf <= 0.0f) {
+                continue;
+            }
+
+            GfVec3f sampleContrib(0.0f);
+            if (hero.active) {
+                const float spectralLi = _RgbToSpectralValue(ls.Li, hero);
+                const float spectralVis = _RgbToSpectralValue(vis, hero);
+                sampleContrib = _SpectralValueToRgb(
+                    spectralLi * spectralVis * phasePdf * ls.invPdfW,
+                    hero);
+            } else {
+                sampleContrib =
+                    GfCompMult(ls.Li, vis) * phasePdf * ls.invPdfW;
+            }
+
+            if (_fireflyClampThreshold > 0.0f) {
+                const float lum = 0.2126f * sampleContrib[0]
+                                + 0.7152f * sampleContrib[1]
+                                + 0.0722f * sampleContrib[2];
+                if (lum > _fireflyClampThreshold) {
+                    sampleContrib *= _fireflyClampThreshold / lum;
+                }
+            }
+
+            lightContrib += sampleContrib;
+        }
+
+        finalColor += lightContrib * invN;
+    }
+
     return finalColor;
 }
 
@@ -2882,6 +3056,7 @@ HdEmbreeRenderer::_TracePath(
     float lastBsdfPdf = 0.0f;
     bool isFirstBounce = true;
     bool anyNonSpecularBounces = false;
+    HdEmbreeMediumState currentMedium;
 
     // Per-bounce derivative state for ray differential propagation
     GfVec3f lastDPdu(0.0f), lastDPdv(0.0f);
@@ -2903,6 +3078,135 @@ HdEmbreeRenderer::_TracePath(
                         std::numeric_limits<float>::max(),
                         HdEmbree_RayMask::Camera);
         rtcIntersect1(_scene, &rayHit);
+
+        const float surfaceDist =
+            rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID
+                ? rayHit.ray.tfar
+                : std::numeric_limits<float>::infinity();
+
+        if (currentMedium.active) {
+            const mxcpp::MediumProperties& medium = currentMedium.medium;
+            if (!medium.IsAbsorbingOnly()) {
+                const float scatterDist =
+                    mxcpp::SampleFreeFlight(medium, sampler.Next());
+                if (scatterDist < surfaceDist) {
+                    const GfVec3f scatterWeight =
+                        _ToGf(mxcpp::EvalFreeFlightScatterWeight(
+                            medium,
+                            scatterDist));
+                    if (hero.active) {
+                        spectralThroughput *=
+                            _RgbToSpectralValue(scatterWeight, hero);
+                    } else {
+                        throughput = GfCompMult(throughput, scatterWeight);
+                    }
+
+                    const GfVec3f rgbThroughput = hero.active
+                        ? _SpectralScalarToRgb(spectralThroughput, hero)
+                        : throughput;
+                    if (_IsNearlyBlack(rgbThroughput, _minLuminanceCutoff)) {
+                        break;
+                    }
+
+                    const GfVec3f scatterPos = rayOrigin + rayDir * scatterDist;
+                    const GfVec3f wo = -rayDir;
+                    const GfVec3f direct = _ComputeMediumDirectLighting(
+                        scatterPos,
+                        wo,
+                        currentMedium,
+                        sampler,
+                        hero.active,
+                        hero.wavelengthNm,
+                        hero.pdf);
+                    if (hero.active) {
+                        radiance += direct * spectralThroughput;
+                    } else {
+                        radiance += GfCompMult(throughput, direct);
+                    }
+
+                    if (bounce >= _maxBounces) {
+                        break;
+                    }
+
+                    if (bounce >= _minBouncesBeforeRR) {
+                        float q = hero.active
+                            ? std::max({
+                                _SpectralScalarToRgb(spectralThroughput, hero)[0],
+                                _SpectralScalarToRgb(spectralThroughput, hero)[1],
+                                _SpectralScalarToRgb(spectralThroughput, hero)[2]})
+                            : std::max({
+                                throughput[0],
+                                throughput[1],
+                                throughput[2]});
+                        q = std::min(q, 0.95f);
+                        if (q <= 0.0f || sampler.Next() > q) {
+                            break;
+                        }
+                        if (hero.active) {
+                            spectralThroughput /= q;
+                        } else {
+                            throughput /= q;
+                        }
+                    }
+
+                    const GfVec3f wi = _ToGf(mxcpp::SampleHenyeyGreenstein(
+                        _ToMx(wo),
+                        medium.anisotropy,
+                        sampler.Next(),
+                        sampler.Next()));
+                    const float phasePdf = mxcpp::PdfHenyeyGreenstein(
+                        _ToMx(wi),
+                        _ToMx(wo),
+                        medium.anisotropy);
+                    if (phasePdf <= 0.0f || !std::isfinite(phasePdf)) {
+                        break;
+                    }
+
+                    rayOrigin = _OffsetRayOrigin(scatterPos, wi, wi, 1e-4f);
+                    rayDir = wi;
+                    currentRayDiff.hasDifferentials = false;
+                    lastBsdfPdf = phasePdf;
+                    anyNonSpecularBounces = true;
+                    isFirstBounce = false;
+                    continue;
+                }
+
+                if (rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID &&
+                    std::isfinite(surfaceDist) &&
+                    surfaceDist > 0.0f) {
+                    const GfVec3f transmittanceWeight =
+                        _ToGf(mxcpp::EvalMajorantTransmittanceWeight(
+                            medium,
+                            surfaceDist));
+                    if (hero.active) {
+                        spectralThroughput *=
+                            _RgbToSpectralValue(transmittanceWeight, hero);
+                    } else {
+                        throughput = GfCompMult(throughput, transmittanceWeight);
+                    }
+                } else if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
+                    break;
+                }
+            } else if (rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID &&
+                       rayHit.ray.tfar > 0.0f) {
+                const GfVec3f transmittance = _ToGf(
+                    mxcpp::EvalBeerTransmittance(medium, rayHit.ray.tfar));
+                if (hero.active) {
+                    spectralThroughput *= _RgbToSpectralValue(transmittance, hero);
+                } else {
+                    throughput = GfCompMult(throughput, transmittance);
+                }
+            } else {
+                break;
+            }
+
+            const GfVec3f rgbThroughput = hero.active
+                ? _SpectralScalarToRgb(spectralThroughput, hero)
+                : throughput;
+            if (_IsNearlyBlack(rgbThroughput, _minLuminanceCutoff)) {
+                break;
+            }
+        }
 
         // --- Miss: dome light contribution ---
         if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
@@ -2955,10 +3259,13 @@ HdEmbreeRenderer::_TracePath(
             rayHit.ray.org_z + rayHit.ray.tfar * rayHit.ray.dir_z);
 
         // Normal
-        GfVec3f normal = _ResolveObjectSpaceNormal(
+        GfVec3f geometricNormal = _ResolveObjectSpaceNormal(
             prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
             rayHit);
-        normal = instanceContext->objectToWorldMatrix.TransformDir(normal);
+        geometricNormal =
+            instanceContext->objectToWorldMatrix.TransformDir(geometricNormal);
+        geometricNormal.Normalize();
+        GfVec3f normal = geometricNormal;
         normal.Normalize();
 
         GfVec3f wo = -rayDir;
@@ -3066,8 +3373,72 @@ HdEmbreeRenderer::_TracePath(
             spectralThroughput = _RgbToSpectralValue(throughput, hero);
         }
 
+        const bool isSubsurfaceExitSurface =
+            currentMedium.active &&
+            currentMedium.mode == HdEmbreeMediumState::Mode::Subsurface &&
+            mesh &&
+            currentMedium.ownerMesh == mesh;
+
+        mxcpp::Bsdf::BsdfSample bs;
+        bool hasBsdfSample = false;
+        if (hasClosure && bounce < _maxBounces && !isSubsurfaceExitSurface) {
+            bs = mxcpp::Bsdf::SampleSurface(
+                closure, _ToMx(normal), _ToMx(wo),
+                sampler.Next(), sampler.Next(), sampler.Next(),
+                hero.wavelengthNm);
+            hasBsdfSample = bs.isSubsurface || bs.pdf > 0.0f;
+        }
+
+        if (hasClosure &&
+            hasBsdfSample &&
+            bs.isSubsurface &&
+            closure.hasSubsurfaceMedium &&
+            mesh) {
+            if (hero.active) {
+                float eventWeight = mxcpp::Spectral::RgbToSpectralValue(
+                    bs.f, hero.wavelengthNm);
+                if (!std::isfinite(eventWeight) || eventWeight < 0.0f) {
+                    eventWeight = 0.0f;
+                }
+                spectralThroughput *= eventWeight;
+            } else {
+                GfVec3f eventWeight = _ToGf(bs.f);
+                for (int i = 0; i < 3; ++i) {
+                    if (!std::isfinite(eventWeight[i]) || eventWeight[i] < 0.0f) {
+                        eventWeight[i] = 0.0f;
+                    }
+                }
+                throughput = GfCompMult(throughput, eventWeight);
+            }
+
+            const GfVec3f rgbThroughput = hero.active
+                ? _SpectralScalarToRgb(spectralThroughput, hero)
+                : throughput;
+            if (_IsNearlyBlack(rgbThroughput, _minLuminanceCutoff)) {
+                break;
+            }
+
+            const HdEmbreeSubsurfaceEntry entry =
+                HdEmbreeSampleSubsurfaceEntry(
+                    hitPos,
+                    geometricNormal,
+                    sampler.Next(),
+                    sampler.Next());
+            currentMedium.active = true;
+            currentMedium.medium = closure.subsurfaceMedium;
+            currentMedium.ownerMesh = mesh;
+            currentMedium.mode = HdEmbreeMediumState::Mode::Subsurface;
+            currentRayDiff.hasDifferentials = false;
+            lastBsdfPdf = 0.0f;
+            anyNonSpecularBounces = true;
+            isFirstBounce = false;
+            rayOrigin = entry.origin;
+            rayDir = entry.direction;
+            continue;
+        }
+
         // --- Emissive ---
-        if (hasClosure) {
+        if (hasClosure && !isSubsurfaceExitSurface) {
             if (hero.active) {
                 const float spectralEmissive = mxcpp::Spectral::RgbToSpectralValue(
                     closure.emissiveColor, hero.wavelengthNm);
@@ -3077,6 +3448,94 @@ HdEmbreeRenderer::_TracePath(
             } else {
                 radiance += GfCompMult(throughput, _ToGf(closure.emissiveColor));
             }
+        }
+
+        if (isSubsurfaceExitSurface) {
+            GfVec3f exitNormal = geometricNormal;
+            if (GfDot(exitNormal, rayDir) < 0.0f) {
+                exitNormal = -exitNormal;
+            }
+            const mxcpp::SurfaceClosure exitClosure =
+                HdEmbreeMakeSubsurfaceExitClosure(closure);
+            currentMedium = HdEmbreeMediumState();
+
+            const GfVec3f direct = _ComputeDirectLightingMIS(
+                hitPos,
+                exitNormal,
+                wo,
+                sampler,
+                true,
+                &exitClosure,
+                currentMedium,
+                hero.active,
+                hero.wavelengthNm,
+                hero.pdf);
+            if (hero.active) {
+                radiance += direct * spectralThroughput;
+            } else {
+                radiance += GfCompMult(throughput, direct);
+            }
+
+            if (bounce >= _maxBounces) {
+                break;
+            }
+
+            bs = mxcpp::Bsdf::SampleSurface(
+                exitClosure, _ToMx(exitNormal), _ToMx(wo),
+                sampler.Next(), sampler.Next(), sampler.Next(),
+                hero.wavelengthNm);
+            if (bs.pdf <= 0.0f) {
+                break;
+            }
+
+            if (hero.active) {
+                float bsdfContrib = 0.0f;
+                const float cosTheta =
+                    std::abs(GfDot(exitNormal, _ToGf(bs.wi)));
+                bsdfContrib = mxcpp::Spectral::RgbToSpectralValue(
+                    bs.f, hero.wavelengthNm) * cosTheta / bs.pdf;
+                if (!std::isfinite(bsdfContrib) || bsdfContrib < 0.0f) {
+                    bsdfContrib = 0.0f;
+                }
+                spectralThroughput *= bsdfContrib;
+            } else {
+                GfVec3f bsdfContrib =
+                    _ToGf(bs.f) * (std::abs(GfDot(exitNormal, _ToGf(bs.wi))) /
+                                   bs.pdf);
+                for (int i = 0; i < 3; ++i) {
+                    if (!std::isfinite(bsdfContrib[i]) || bsdfContrib[i] < 0.0f) {
+                        bsdfContrib[i] = 0.0f;
+                    }
+                }
+                throughput = GfCompMult(throughput, bsdfContrib);
+            }
+
+            lastBsdfPdf = bs.pdf;
+            anyNonSpecularBounces = true;
+            isFirstBounce = false;
+
+            if (bounce >= _minBouncesBeforeRR) {
+                float q = hero.active
+                    ? std::max({
+                        _SpectralScalarToRgb(spectralThroughput, hero)[0],
+                        _SpectralScalarToRgb(spectralThroughput, hero)[1],
+                        _SpectralScalarToRgb(spectralThroughput, hero)[2]})
+                    : std::max({throughput[0], throughput[1], throughput[2]});
+                q = std::min(q, 0.95f);
+                if (q <= 0.0f || sampler.Next() > q) {
+                    break;
+                }
+                if (hero.active) {
+                    spectralThroughput /= q;
+                } else {
+                    throughput /= q;
+                }
+            }
+
+            currentRayDiff.hasDifferentials = false;
+            rayOrigin = hitPos + exitNormal * 1e-4f;
+            rayDir = _ToGf(bs.wi);
+            continue;
         }
 
         // --- Direct lighting (NEE) with MIS ---
@@ -3089,6 +3548,7 @@ HdEmbreeRenderer::_TracePath(
                 sampler,
                 doubleSided,
                 &closure,
+                currentMedium,
                 hero.active,
                 hero.wavelengthNm,
                 hero.pdf);
@@ -3110,6 +3570,7 @@ HdEmbreeRenderer::_TracePath(
                 sampler,
                 doubleSided,
                 &fallback,
+                currentMedium,
                 hero.active,
                 hero.wavelengthNm,
                 hero.pdf);
@@ -3124,13 +3585,7 @@ HdEmbreeRenderer::_TracePath(
         if (bounce >= _maxBounces) break;
 
         // --- BSDF sampling for next direction ---
-        if (!hasClosure) break;
-
-        mxcpp::Bsdf::BsdfSample bs = mxcpp::Bsdf::SampleSurface(
-            closure, _ToMx(normal), _ToMx(wo),
-            sampler.Next(), sampler.Next(), sampler.Next(),
-            hero.wavelengthNm);
-        if (bs.pdf <= 0.0f) break;
+        if (!hasClosure || !hasBsdfSample || bs.isSubsurface) break;
 
         if (hero.active) {
             float bsdfContrib = 0.0f;
@@ -3174,6 +3629,30 @@ HdEmbreeRenderer::_TracePath(
         }
         isFirstBounce = false;
 
+        const GfVec3f wi = _ToGf(bs.wi);
+        const float woDotNg = GfDot(wo, geometricNormal);
+        const float wiDotNg = GfDot(wi, geometricNormal);
+        const bool crossesBoundary =
+            (woDotNg > 0.0f && wiDotNg < 0.0f) ||
+            (woDotNg < 0.0f && wiDotNg > 0.0f);
+        if (crossesBoundary) {
+            // Initial implementation keeps only one medium active at a time;
+            // nested dielectric stacks are deferred to a later task.
+            if (currentMedium.active && currentMedium.ownerMesh == mesh &&
+                wiDotNg > 0.0f) {
+                currentMedium = HdEmbreeMediumState();
+            } else if (!currentMedium.active &&
+                       hasClosure &&
+                       closure.hasInteriorMedium &&
+                       mesh &&
+                       wiDotNg < 0.0f) {
+                currentMedium.active = true;
+                currentMedium.medium = closure.interiorMedium;
+                currentMedium.ownerMesh = mesh;
+                currentMedium.mode = HdEmbreeMediumState::Mode::Transmission;
+            }
+        }
+
         // --- Russian Roulette ---
         if (bounce >= _minBouncesBeforeRR) {
             float q = hero.active
@@ -3193,7 +3672,6 @@ HdEmbreeRenderer::_TracePath(
 
         // --- Propagate ray differentials ---
         if (currentRayDiff.hasDifferentials && bs.isSpecular) {
-            GfVec3f wi = _ToGf(bs.wi);
             GfVec3f dndx = lastDndu * lastDudx + lastDndv * lastDvdx;
             GfVec3f dndy = lastDndu * lastDudy + lastDndv * lastDvdy;
 
@@ -3255,9 +3733,9 @@ HdEmbreeRenderer::_TracePath(
         }
 
         // --- Next ray ---
-        float bias = (GfDot(_ToGf(bs.wi), normal) > 0.0f) ? 1e-4f : -1e-4f;
-        rayOrigin = hitPos + normal * bias;
-        rayDir = _ToGf(bs.wi);
+        float bias = (GfDot(wi, geometricNormal) > 0.0f) ? 1e-4f : -1e-4f;
+        rayOrigin = hitPos + geometricNormal * bias;
+        rayDir = wi;
     }
 
     return radiance;
