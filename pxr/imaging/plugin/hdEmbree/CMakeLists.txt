@@ -161,6 +161,7 @@ endif()
 pxr_build_test(testMaterialXCpp
     LIBRARIES
         ${__MXCPP_TEST_IMATH_LIBS}
+        ${EMBREE_LIBRARY}
         gf
         hd
         sdf
@@ -175,6 +176,7 @@ pxr_build_test(testMaterialXCpp
         MaterialXCpp/tests/testMaterialXCppAdapter.cpp
         medium.cpp
         mxcppAdapter.cpp
+        sss.cpp
         MaterialXCpp/materials/bsdf.cpp
         MaterialXCpp/materials/disneyPrincipled.cpp
         MaterialXCpp/materials/gltfPbr.cpp

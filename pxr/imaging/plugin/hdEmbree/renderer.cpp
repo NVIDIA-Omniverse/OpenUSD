@@ -171,6 +171,15 @@ _IsNearlyBlack(const GfVec3f& value, float threshold = 1.0e-4f)
            value[2] <= threshold;
 }
 
+inline float
+_GetOneSampleMisLightPdf(float lightPdf, int sampleCount, bool applyCount)
+{
+    if (lightPdf <= 0.0f) {
+        return 0.0f;
+    }
+    return applyCount ? lightPdf * static_cast<float>(sampleCount) : lightPdf;
+}
+
 inline mxcpp::Mat4f
 _ToMx(const GfMatrix4d& m)
 {
@@ -748,6 +757,10 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _sceneFrame(0.0f)
     , _sceneTime(0.0f)
     , _completedSamples(0)
+    , _sssCallCount(0)
+    , _sssSuccessCount(0)
+    , _sssWalkStepCount(0)
+    , _sssIntersectionCount(0)
 {
 }
 
@@ -1200,6 +1213,30 @@ HdEmbreeRenderer::GetRenderElapsedSeconds() const
     return std::chrono::duration<float>(now - _renderStartTime).count();
 }
 
+uint64_t
+HdEmbreeRenderer::GetSssCallCount() const
+{
+    return _sssCallCount.load();
+}
+
+uint64_t
+HdEmbreeRenderer::GetSssSuccessCount() const
+{
+    return _sssSuccessCount.load();
+}
+
+uint64_t
+HdEmbreeRenderer::GetSssWalkStepCount() const
+{
+    return _sssWalkStepCount.load();
+}
+
+uint64_t
+HdEmbreeRenderer::GetSssIntersectionCount() const
+{
+    return _sssIntersectionCount.load();
+}
+
 static
 bool
 _IsContained(const GfRect2i& rect, int width, int height)
@@ -1213,6 +1250,10 @@ void
 HdEmbreeRenderer::_PreRenderSetup()
 {
     _completedSamples.store(0);
+    _sssCallCount.store(0);
+    _sssSuccessCount.store(0);
+    _sssWalkStepCount.store(0);
+    _sssIntersectionCount.store(0);
 
     // Commit any pending changes to the scene.
     rtcCommitScene(_scene);
@@ -1553,6 +1594,40 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         std::printf("  Light samples    : %d\n", _lightSamplesPerHit);
         std::printf("  Sampler sequence : %s\n",
                     HdEmbreeGetSamplerSequenceToken(_samplerSequence).GetText());
+        const uint64_t sssCalls = _sssCallCount.load();
+        if (sssCalls > 0) {
+            const uint64_t sssSuccesses = _sssSuccessCount.load();
+            const uint64_t sssWalkSteps = _sssWalkStepCount.load();
+            const uint64_t sssIntersections = _sssIntersectionCount.load();
+            const double successRate =
+                100.0 * static_cast<double>(sssSuccesses)
+                / static_cast<double>(sssCalls);
+            const double avgStepsPerCall =
+                static_cast<double>(sssWalkSteps)
+                / static_cast<double>(sssCalls);
+            const double avgStepsPerSuccess =
+                (sssSuccesses > 0)
+                    ? static_cast<double>(sssWalkSteps)
+                        / static_cast<double>(sssSuccesses)
+                    : 0.0;
+            const double avgIntersectionsPerCall =
+                static_cast<double>(sssIntersections)
+                / static_cast<double>(sssCalls);
+
+            std::printf(
+                "  SSS walks        : %llu calls, %llu success (%.1f%%)\n",
+                static_cast<unsigned long long>(sssCalls),
+                static_cast<unsigned long long>(sssSuccesses),
+                successRate);
+            std::printf(
+                "  SSS avg steps    : %.2f / call, %.2f / success\n",
+                avgStepsPerCall,
+                avgStepsPerSuccess);
+            std::printf(
+                "  SSS intersects   : %llu total, %.2f / call\n",
+                static_cast<unsigned long long>(sssIntersections),
+                avgIntersectionsPerCall);
+        }
 
         if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
             size_t convergedCount = 0;
@@ -2539,7 +2614,6 @@ HdEmbreeRenderer::_Visibility(
             shadowMedium.active = true;
             shadowMedium.medium = closure.interiorMedium;
             shadowMedium.ownerMesh = hitMesh;
-            shadowMedium.mode = HdEmbreeMediumState::Mode::Transmission;
         }
 
         GfVec3f hitPos = GfVec3f(
@@ -2554,6 +2628,52 @@ HdEmbreeRenderer::_Visibility(
     }
 
     return visibility;
+}
+
+bool
+HdEmbreeRenderer::_FindNearestFiniteLightHit(
+    GfVec3f const& position,
+    GfVec3f const& direction,
+    float maxDist,
+    HdEmbreeLightSampler::LightSample* outSample) const
+{
+    if (!outSample || maxDist <= 0.0f) {
+        return false;
+    }
+
+    bool found = false;
+    float closestDist = maxDist;
+    HdEmbreeLightSampler::LightSample closestSample{};
+
+    for (auto const& it : _lightMap) {
+        if (!it.second || it.second->IsDome()) {
+            continue;
+        }
+
+        auto const& light = it.second->LightData();
+        if (!light.visible) {
+            continue;
+        }
+
+        const HdEmbreeLightSampler::LightSample ls =
+            HdEmbreeLightSampler::EvaluateLightDirection(
+                light, position, direction);
+        if (!ls.valid || ls.dist <= 0.0f || !std::isfinite(ls.dist)) {
+            continue;
+        }
+        if (ls.dist >= closestDist) {
+            continue;
+        }
+
+        closestDist = ls.dist;
+        closestSample = ls;
+        found = true;
+    }
+
+    if (found) {
+        *outSample = closestSample;
+    }
+    return found;
 }
 
 GfVec4f
@@ -3005,16 +3125,30 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
                 continue;
             }
 
+            float misW = 1.0f;
+            if (ls.invPdfW > 0.0f) {
+                const float lightPdf = 1.0f / ls.invPdfW;
+                const float effectiveLightPdf = _GetOneSampleMisLightPdf(
+                    lightPdf,
+                    N,
+                    true);
+                if (effectiveLightPdf > 0.0f) {
+                    misW = mxcpp::Bsdf::PowerHeuristic(
+                        effectiveLightPdf,
+                        phasePdf);
+                }
+            }
+
             GfVec3f sampleContrib(0.0f);
             if (hero.active) {
                 const float spectralLi = _RgbToSpectralValue(ls.Li, hero);
                 const float spectralVis = _RgbToSpectralValue(vis, hero);
                 sampleContrib = _SpectralValueToRgb(
-                    spectralLi * spectralVis * phasePdf * ls.invPdfW,
+                    spectralLi * spectralVis * phasePdf * ls.invPdfW * misW,
                     hero);
             } else {
                 sampleContrib =
-                    GfCompMult(ls.Li, vis) * phasePdf * ls.invPdfW;
+                    GfCompMult(ls.Li, vis) * phasePdf * ls.invPdfW * misW;
             }
 
             if (_fireflyClampThreshold > 0.0f) {
@@ -3054,8 +3188,12 @@ HdEmbreeRenderer::_TracePath(
     GfVec3f rayOrigin = origin;
     GfVec3f rayDir = dir;
     float lastBsdfPdf = 0.0f;
+    bool lastScatterWasMedium = false;
     bool isFirstBounce = true;
     bool anyNonSpecularBounces = false;
+    bool useSyntheticLambertian = false;
+    unsigned int syntheticLambertianInstanceId = RTC_INVALID_GEOMETRY_ID;
+    unsigned int syntheticLambertianGeomId = RTC_INVALID_GEOMETRY_ID;
     HdEmbreeMediumState currentMedium;
 
     // Per-bounce derivative state for ray differential propagation
@@ -3083,17 +3221,35 @@ HdEmbreeRenderer::_TracePath(
             rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID
                 ? rayHit.ray.tfar
                 : std::numeric_limits<float>::infinity();
+        HdEmbreeLightSampler::LightSample finiteLightHit{};
+        const bool hasFiniteLightHit =
+            !isFirstBounce &&
+            _FindNearestFiniteLightHit(
+                rayOrigin,
+                rayDir,
+                surfaceDist,
+                &finiteLightHit);
+        const float finiteLightDist =
+            hasFiniteLightHit
+                ? finiteLightHit.dist
+                : std::numeric_limits<float>::infinity();
 
         if (currentMedium.active) {
             const mxcpp::MediumProperties& medium = currentMedium.medium;
             if (!medium.IsAbsorbingOnly()) {
-                const float scatterDist =
-                    mxcpp::SampleFreeFlight(medium, sampler.Next());
-                if (scatterDist < surfaceDist) {
-                    const GfVec3f scatterWeight =
-                        _ToGf(mxcpp::EvalFreeFlightScatterWeight(
-                            medium,
-                            scatterDist));
+                const int trackCh = currentMedium.trackingChannel;
+                const float scatterDist = (trackCh >= 0)
+                    ? mxcpp::SampleFreeFlightChannel(
+                          medium, trackCh, sampler.Next())
+                    : mxcpp::SampleFreeFlight(medium, sampler.Next());
+                const float maxTravelDist =
+                    std::min(surfaceDist, finiteLightDist);
+                if (scatterDist < maxTravelDist) {
+                    const GfVec3f scatterWeight = (trackCh >= 0)
+                        ? _ToGf(mxcpp::EvalChannelScatterWeight(
+                              medium, trackCh, scatterDist))
+                        : _ToGf(mxcpp::EvalFreeFlightScatterWeight(
+                              medium, scatterDist));
                     if (hero.active) {
                         spectralThroughput *=
                             _RgbToSpectralValue(scatterWeight, hero);
@@ -3131,9 +3287,12 @@ HdEmbreeRenderer::_TracePath(
                     if (bounce >= _minBouncesBeforeRR) {
                         float q = hero.active
                             ? std::max({
-                                _SpectralScalarToRgb(spectralThroughput, hero)[0],
-                                _SpectralScalarToRgb(spectralThroughput, hero)[1],
-                                _SpectralScalarToRgb(spectralThroughput, hero)[2]})
+                                _SpectralScalarToRgb(
+                                    spectralThroughput, hero)[0],
+                                _SpectralScalarToRgb(
+                                    spectralThroughput, hero)[1],
+                                _SpectralScalarToRgb(
+                                    spectralThroughput, hero)[2]})
                             : std::max({
                                 throughput[0],
                                 throughput[1],
@@ -3166,18 +3325,68 @@ HdEmbreeRenderer::_TracePath(
                     rayDir = wi;
                     currentRayDiff.hasDifferentials = false;
                     lastBsdfPdf = phasePdf;
+                    lastScatterWasMedium = true;
                     anyNonSpecularBounces = true;
                     isFirstBounce = false;
                     continue;
                 }
 
+                if (hasFiniteLightHit &&
+                    finiteLightDist < surfaceDist &&
+                    finiteLightDist > 0.0f) {
+                    const GfVec3f transmittanceWeight = (trackCh >= 0)
+                        ? _ToGf(mxcpp::EvalChannelTransmittanceWeight(
+                              medium, trackCh, finiteLightDist))
+                        : _ToGf(mxcpp::EvalMajorantTransmittanceWeight(
+                              medium, finiteLightDist));
+                    if (hero.active) {
+                        spectralThroughput *=
+                            _RgbToSpectralValue(transmittanceWeight, hero);
+                    } else {
+                        throughput = GfCompMult(throughput, transmittanceWeight);
+                    }
+
+                    const GfVec3f rgbThroughput = hero.active
+                        ? _SpectralScalarToRgb(spectralThroughput, hero)
+                        : throughput;
+                    if (_IsNearlyBlack(rgbThroughput, _minLuminanceCutoff)) {
+                        break;
+                    }
+
+                    GfVec3f lightContrib = finiteLightHit.Li;
+                    if (lastBsdfPdf > 0.0f && finiteLightHit.invPdfW > 0.0f) {
+                        const float lightPdf = 1.0f / finiteLightHit.invPdfW;
+                        const float effectiveLightPdf = _GetOneSampleMisLightPdf(
+                            lightPdf,
+                            _lightSamplesPerHit,
+                            lastScatterWasMedium);
+                        if (effectiveLightPdf > 0.0f) {
+                            lightContrib *= mxcpp::Bsdf::PowerHeuristic(
+                                lastBsdfPdf,
+                                effectiveLightPdf);
+                        }
+                    }
+
+                    if (hero.active) {
+                        const float spectralLight =
+                            _RgbToSpectralValue(lightContrib, hero);
+                        radiance += _SpectralValueToRgb(
+                            spectralThroughput * spectralLight,
+                            hero);
+                    } else {
+                        radiance += GfCompMult(throughput, lightContrib);
+                    }
+                    break;
+                }
+
                 if (rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID &&
                     std::isfinite(surfaceDist) &&
                     surfaceDist > 0.0f) {
-                    const GfVec3f transmittanceWeight =
-                        _ToGf(mxcpp::EvalMajorantTransmittanceWeight(
-                            medium,
-                            surfaceDist));
+                    const GfVec3f transmittanceWeight = (trackCh >= 0)
+                        ? _ToGf(mxcpp::EvalChannelTransmittanceWeight(
+                              medium, trackCh, surfaceDist))
+                        : _ToGf(mxcpp::EvalMajorantTransmittanceWeight(
+                              medium, surfaceDist));
                     if (hero.active) {
                         spectralThroughput *=
                             _RgbToSpectralValue(transmittanceWeight, hero);
@@ -3187,6 +3396,48 @@ HdEmbreeRenderer::_TracePath(
                 } else if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
                     break;
                 }
+            } else if (hasFiniteLightHit &&
+                       finiteLightDist < surfaceDist &&
+                       finiteLightDist > 0.0f) {
+                const GfVec3f transmittance = _ToGf(
+                    mxcpp::EvalBeerTransmittance(medium, finiteLightDist));
+                if (hero.active) {
+                    spectralThroughput *= _RgbToSpectralValue(transmittance, hero);
+                } else {
+                    throughput = GfCompMult(throughput, transmittance);
+                }
+
+                const GfVec3f rgbThroughput = hero.active
+                    ? _SpectralScalarToRgb(spectralThroughput, hero)
+                    : throughput;
+                if (_IsNearlyBlack(rgbThroughput, _minLuminanceCutoff)) {
+                    break;
+                }
+
+                GfVec3f lightContrib = finiteLightHit.Li;
+                if (lastBsdfPdf > 0.0f && finiteLightHit.invPdfW > 0.0f) {
+                    const float lightPdf = 1.0f / finiteLightHit.invPdfW;
+                    const float effectiveLightPdf = _GetOneSampleMisLightPdf(
+                        lightPdf,
+                        _lightSamplesPerHit,
+                        lastScatterWasMedium);
+                    if (effectiveLightPdf > 0.0f) {
+                        lightContrib *= mxcpp::Bsdf::PowerHeuristic(
+                            lastBsdfPdf,
+                            effectiveLightPdf);
+                        }
+                }
+
+                if (hero.active) {
+                    const float spectralLight =
+                        _RgbToSpectralValue(lightContrib, hero);
+                    radiance += _SpectralValueToRgb(
+                        spectralThroughput * spectralLight,
+                        hero);
+                } else {
+                    radiance += GfCompMult(throughput, lightContrib);
+                }
+                break;
             } else if (rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID &&
                        rayHit.ray.tfar > 0.0f) {
                 const GfVec3f transmittance = _ToGf(
@@ -3208,6 +3459,33 @@ HdEmbreeRenderer::_TracePath(
             }
         }
 
+        if (hasFiniteLightHit && finiteLightDist < surfaceDist) {
+            GfVec3f lightContrib = finiteLightHit.Li;
+            if (lastBsdfPdf > 0.0f && finiteLightHit.invPdfW > 0.0f) {
+                const float lightPdf = 1.0f / finiteLightHit.invPdfW;
+                const float effectiveLightPdf = _GetOneSampleMisLightPdf(
+                    lightPdf,
+                    _lightSamplesPerHit,
+                    lastScatterWasMedium);
+                if (effectiveLightPdf > 0.0f) {
+                    lightContrib *= mxcpp::Bsdf::PowerHeuristic(
+                        lastBsdfPdf,
+                        effectiveLightPdf);
+                }
+            }
+
+            if (hero.active) {
+                const float spectralLight =
+                    _RgbToSpectralValue(lightContrib, hero);
+                radiance += _SpectralValueToRgb(
+                    spectralThroughput * spectralLight,
+                    hero);
+            } else {
+                radiance += GfCompMult(throughput, lightContrib);
+            }
+            break;
+        }
+
         // --- Miss: dome light contribution ---
         if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
             for (auto* dome : _domes) {
@@ -3223,6 +3501,10 @@ HdEmbreeRenderer::_TracePath(
                     // MIS weight for BSDF sampling strategy hitting dome.
                     float domePdf = (ls.invPdfW > 0.0f)
                         ? 1.0f / ls.invPdfW : 0.0f;
+                    domePdf = _GetOneSampleMisLightPdf(
+                        domePdf,
+                        _lightSamplesPerHit,
+                        lastScatterWasMedium);
                     float misW = mxcpp::Bsdf::PowerHeuristic(
                         lastBsdfPdf, domePdf);
                     domeContrib *= misW;
@@ -3258,15 +3540,36 @@ HdEmbreeRenderer::_TracePath(
             rayHit.ray.org_y + rayHit.ray.tfar * rayHit.ray.dir_y,
             rayHit.ray.org_z + rayHit.ray.tfar * rayHit.ray.dir_z);
 
-        // Normal
+        // Normals.
+        //
+        // - `geometricNormal`: unflipped smooth shading normal (interpolated
+        //   vertex / subdiv-limit normal, else face Ng). Kept in its
+        //   world-oriented form because later stages (medium-boundary
+        //   crossing detection, next-ray self-intersection bias) rely on
+        //   its sign relative to world orientation rather than relative
+        //   to the ray direction.
+        // - `faceNg`: the true geometric face normal from Embree, then
+        //   face-forwarded toward `wo`. This is Cycles' `sd->Ng` and is
+        //   used for validity checks that can't tolerate shading-normal
+        //   lies (e.g., rejecting an SSS entry whose refracted direction
+        //   is outward relative to the face).
+        // - `normal`: the shading normal used for BSDF evaluation /
+        //   sampling. Starts from `geometricNormal`, then face-forwarded
+        //   against `wo`, then perturbed by the material's tangent-space
+        //   normal map. This is Cycles' `sd->N`.
         GfVec3f geometricNormal = _ResolveObjectSpaceNormal(
             prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
             rayHit);
         geometricNormal =
             instanceContext->objectToWorldMatrix.TransformDir(geometricNormal);
         geometricNormal.Normalize();
+
+        GfVec3f faceNg(rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
+        faceNg =
+            instanceContext->objectToWorldMatrix.TransformDir(faceNg);
+        faceNg.Normalize();
+
         GfVec3f normal = geometricNormal;
-        normal.Normalize();
 
         GfVec3f wo = -rayDir;
 
@@ -3278,8 +3581,22 @@ HdEmbreeRenderer::_TracePath(
             doubleSided = mesh->EmbreeMeshIsDoubleSided();
         }
 
-        // Orient normal toward the ray
-        if (GfDot(normal, wo) < 0.0f && doubleSided) {
+        // Face-forward the shading normal and the face Ng against the
+        // incoming ray, matching pbrt-v4 and Cycles. USD's doubleSided=
+        // false doesn't prescribe back-face behavior in a path tracer;
+        // without flipping here, back-face hits would leak light (BSDF
+        // sampling would continue through an opaque surface since the
+        // sampled hemisphere is oriented around a normal pointing away
+        // from wo). Flipping both shading N and face Ng together (Cycles
+        // kernel/geom/shader_data.h) also prevents shading-normal
+        // terminator artifacts from rejecting SSS entries on otherwise
+        // front-facing hits. `geometricNormal` is intentionally left
+        // unflipped because downstream medium/bias code needs its world
+        // orientation.
+        if (GfDot(faceNg, wo) < 0.0f) {
+            faceNg = -faceNg;
+        }
+        if (GfDot(normal, wo) < 0.0f) {
             normal = -normal;
         }
 
@@ -3327,14 +3644,37 @@ HdEmbreeRenderer::_TracePath(
             }
         }
 
+        // SSS exit synthesis: at the exit-side surface hit immediately
+        // following HdEmbreeRandomWalkSSS, replace the evaluated closure
+        // with a weight-1.0 Lambertian so the random-walk's albedo isn't
+        // double-counted. Cycles uses the same trick.
+        if (useSyntheticLambertian) {
+            const bool hitOwner =
+                (rayHit.hit.instID[0] == syntheticLambertianInstanceId) &&
+                (rayHit.hit.geomID == syntheticLambertianGeomId);
+            if (hitOwner) {
+                closure = mxcpp::SurfaceClosure{};
+                closure.baseColor = mxcpp::Vec3f(1.0f);
+                closure.roughness = 1.0f;
+                closure.opacity = 1.0f;
+                closure.presence = 1.0f;
+                hasClosure = true;
+            }
+            // Always clear flag; even on mismatch we don't want it to linger.
+            useSyntheticLambertian = false;
+            syntheticLambertianInstanceId = RTC_INVALID_GEOMETRY_ID;
+            syntheticLambertianGeomId = RTC_INVALID_GEOMETRY_ID;
+        }
+
         // Apply material normal map (tangent-space -> world-space).
         if (hasClosure &&
             closure.normal != mxcpp::Vec3f(0.0f, 0.0f, 1.0f)) {
             normal = (tangent   * closure.normal[0] +
                       bitangent * closure.normal[1] +
                       normal    * closure.normal[2]).GetNormalized();
-            // Re-orient toward the ray for double-sided geometry.
-            if (GfDot(normal, wo) < 0.0f && doubleSided) {
+            // Re-orient toward the ray (face-forward, matches the geometric
+            // normal treatment above).
+            if (GfDot(normal, wo) < 0.0f) {
                 normal = -normal;
             }
         }
@@ -3358,6 +3698,7 @@ HdEmbreeRenderer::_TracePath(
                 --bounce;
                 isFirstBounce = false;
                 lastBsdfPdf = 0.0f;
+                lastScatterWasMedium = false;
                 continue;
             }
             // We chose to interact; clear the stochastic presence term so
@@ -3373,15 +3714,9 @@ HdEmbreeRenderer::_TracePath(
             spectralThroughput = _RgbToSpectralValue(throughput, hero);
         }
 
-        const bool isSubsurfaceExitSurface =
-            currentMedium.active &&
-            currentMedium.mode == HdEmbreeMediumState::Mode::Subsurface &&
-            mesh &&
-            currentMedium.ownerMesh == mesh;
-
         mxcpp::Bsdf::BsdfSample bs;
         bool hasBsdfSample = false;
-        if (hasClosure && bounce < _maxBounces && !isSubsurfaceExitSurface) {
+        if (hasClosure && bounce < _maxBounces) {
             bs = mxcpp::Bsdf::SampleSurface(
                 closure, _ToMx(normal), _ToMx(wo),
                 sampler.Next(), sampler.Next(), sampler.Next(),
@@ -3392,53 +3727,154 @@ HdEmbreeRenderer::_TracePath(
         if (hasClosure &&
             hasBsdfSample &&
             bs.isSubsurface &&
-            closure.hasSubsurfaceMedium &&
+            closure.HasSubsurfaceScattering() &&
             mesh) {
-            if (hero.active) {
-                float eventWeight = mxcpp::Spectral::RgbToSpectralValue(
-                    bs.f, hero.wavelengthNm);
-                if (!std::isfinite(eventWeight) || eventWeight < 0.0f) {
-                    eventWeight = 0.0f;
-                }
-                spectralThroughput *= eventWeight;
-            } else {
-                GfVec3f eventWeight = _ToGf(bs.f);
-                for (int i = 0; i < 3; ++i) {
-                    if (!std::isfinite(eventWeight[i]) || eventWeight[i] < 0.0f) {
-                        eventWeight[i] = 0.0f;
-                    }
-                }
-                throughput = GfCompMult(throughput, eventWeight);
-            }
 
-            const GfVec3f rgbThroughput = hero.active
-                ? _SpectralScalarToRgb(spectralThroughput, hero)
-                : throughput;
-            if (_IsNearlyBlack(rgbThroughput, _minLuminanceCutoff)) {
+            // Entry direction from BSDF (GGX VNDF refraction via specular
+            // roughness + IOR).
+            //
+            // We pass the face-forwarded shading normal (Cycles `sd->N`),
+            // not the raw face Ng. This matches Cycles' `bssrdf->N = sd->N`
+            // and keeps normal-map perturbations in the refraction basis.
+            // Using the unmodified smooth normal here caused the early
+            // `cosNI <= 0` rejection to fire on shading-normal terminator
+            // hits, which in turn caused the entire path to break with
+            // zero radiance (black artifacts at grazing regions).
+            mxcpp::Vec3f entryDirMx;
+            if (!mxcpp::Bsdf::SampleSubsurfaceEntry(
+                    closure, _ToMx(normal), _ToMx(wo),
+                    sampler.Next(), sampler.Next(), entryDirMx)) {
+                break;
+            }
+            const GfVec3f entryDir = _ToGf(entryDirMx);
+
+            // Cycles-parity secondary check: reject if the refracted
+            // direction still points outward relative to the true face
+            // normal. This can happen when the shading normal (used for
+            // the GGX-VNDF + Snell refraction) tilts far enough from the
+            // face that an "inward" direction in shading-normal space is
+            // actually above the geometric face plane. See
+            // `subsurface_bounce()` in
+            // Cycles (kernel/integrator/subsurface.h): the corresponding
+            // LABEL_NONE also terminates the bounce.
+            if (GfDot(faceNg, entryDir) >= 0.0f) {
                 break;
             }
 
-            const HdEmbreeSubsurfaceEntry entry =
-                HdEmbreeSampleSubsurfaceEntry(
-                    hitPos,
-                    geometricNormal,
-                    sampler.Next(),
-                    sampler.Next());
-            currentMedium.active = true;
-            currentMedium.medium = closure.subsurfaceMedium;
-            currentMedium.ownerMesh = mesh;
-            currentMedium.mode = HdEmbreeMediumState::Mode::Subsurface;
+            // Entry weight (bs.f = Vec3f(subsurface_weight)).
+            if (hero.active) {
+                float w = mxcpp::Spectral::RgbToSpectralValue(
+                    bs.f, hero.wavelengthNm);
+                if (!std::isfinite(w) || w < 0.0f) w = 0.0f;
+                spectralThroughput *= w;
+            } else {
+                GfVec3f w = _ToGf(bs.f);
+                for (int i = 0; i < 3; ++i) {
+                    if (!std::isfinite(w[i]) || w[i] < 0.0f) w[i] = 0.0f;
+                }
+                throughput = GfCompMult(throughput, w);
+            }
+
+            const GfVec3f rgbTpCheck = hero.active
+                ? _SpectralScalarToRgb(spectralThroughput, hero)
+                : throughput;
+            if (_IsNearlyBlack(rgbTpCheck, _minLuminanceCutoff)) {
+                break;
+            }
+
+            // Random walk inside the medium. The Dwivedi guide axis is the
+            // face-forwarded shading normal (Cycles' `subsurface_state.N =
+            // sd->N`); using the raw smooth normal here would leave the
+            // guide axis pointing away from `wo` on terminator hits.
+            HdEmbreeSssInput sssIn;
+            sssIn.entryPos = hitPos;
+            sssIn.entryGeomNormal = normal;
+            sssIn.entryDir = entryDir;
+            sssIn.albedo = _ToGf(closure.subsurfaceColor);
+            sssIn.radius = GfCompMult(_ToGf(closure.subsurfaceRadius),
+                                      _ToGf(closure.subsurfaceRadiusScale));
+            sssIn.anisotropy =
+                std::clamp(closure.subsurfaceAnisotropy, -0.99f, 0.99f);
+            sssIn.ior = std::max(closure.specularIor, 1.0f);
+            sssIn.ownerInstanceId = rayHit.hit.instID[0];
+            sssIn.ownerGeomId = rayHit.hit.geomID;
+
+            HdEmbreeSssOutput sssOut = HdEmbreeRandomWalkSSS(
+                sssIn, sampler, _scene);
+            _sssCallCount.fetch_add(1, std::memory_order_relaxed);
+            _sssWalkStepCount.fetch_add(
+                sssOut.walkSteps, std::memory_order_relaxed);
+            _sssIntersectionCount.fetch_add(
+                sssOut.intersectionTests, std::memory_order_relaxed);
+            if (sssOut.success) {
+                _sssSuccessCount.fetch_add(1, std::memory_order_relaxed);
+            }
+
+            if (!sssOut.success) {
+                break;
+            }
+
+            // Apply the random-walk multiplier to throughput.
+            if (hero.active) {
+                float w = _RgbToSpectralValue(sssOut.throughputWeight, hero);
+                if (!std::isfinite(w) || w < 0.0f) w = 0.0f;
+                spectralThroughput *= w;
+            } else {
+                GfVec3f w = sssOut.throughputWeight;
+                for (int i = 0; i < 3; ++i) {
+                    if (!std::isfinite(w[i]) || w[i] < 0.0f) w[i] = 0.0f;
+                }
+                throughput = GfCompMult(throughput, w);
+            }
+
+            const GfVec3f rgbTpAfter = hero.active
+                ? _SpectralScalarToRgb(spectralThroughput, hero)
+                : throughput;
+            if (_IsNearlyBlack(rgbTpAfter, _minLuminanceCutoff)) {
+                break;
+            }
+
+            // Cycles-style ray flip: pretend we come from outside at the
+            // exit point. The next iteration will hit the same geometry
+            // and synthesize a Lambertian closure for the exit BRDF.
+            //
+            // The origin offset must be *strictly larger* than the next
+            // ray cast's tnear (1e-4 for non-first-bounce rays); otherwise
+            // the intended exit hit lands at t == tnear, exposing FP
+            // precision edge cases where the hit is missed and the ray
+            // travels through the mesh to hit the opposite face from the
+            // inside. That backfacing hit yields a Lambertian f == 0
+            // (non-doubleSided geometry), painting dark artifacts near
+            // whatever face the SSS walk tends to exit through.
+            constexpr float kSssExitOffset = 1.0e-3f;
+            rayOrigin = sssOut.exitPos + sssOut.exitGeomNormal * kSssExitOffset;
+            rayDir = -sssOut.exitDir;
             currentRayDiff.hasDifferentials = false;
             lastBsdfPdf = 0.0f;
+            lastScatterWasMedium = false;
             anyNonSpecularBounces = true;
             isFirstBounce = false;
-            rayOrigin = entry.origin;
-            rayDir = entry.direction;
+            syntheticLambertianInstanceId = rayHit.hit.instID[0];
+            syntheticLambertianGeomId = rayHit.hit.geomID;
+            useSyntheticLambertian = true;
+
+            // Clear any medium state. The new Phase 1 design has NO
+            // subsurface-in-medium state; SSS is fully handled inside
+            // HdEmbreeRandomWalkSSS.
+            currentMedium = HdEmbreeMediumState();
+
+            // Count the entire SSS closure (entry + random walk + exit
+            // Lambertian) as a single bounce, matching how a plain diffuse
+            // surface hit costs 1 bounce. Without this, the synthetic
+            // Lambertian exit iteration would consume an extra bounce,
+            // effectively halving the user's indirect-light budget for
+            // paths that traverse SSS.
+            --bounce;
             continue;
         }
 
         // --- Emissive ---
-        if (hasClosure && !isSubsurfaceExitSurface) {
+        if (hasClosure) {
             if (hero.active) {
                 const float spectralEmissive = mxcpp::Spectral::RgbToSpectralValue(
                     closure.emissiveColor, hero.wavelengthNm);
@@ -3448,94 +3884,6 @@ HdEmbreeRenderer::_TracePath(
             } else {
                 radiance += GfCompMult(throughput, _ToGf(closure.emissiveColor));
             }
-        }
-
-        if (isSubsurfaceExitSurface) {
-            GfVec3f exitNormal = geometricNormal;
-            if (GfDot(exitNormal, rayDir) < 0.0f) {
-                exitNormal = -exitNormal;
-            }
-            const mxcpp::SurfaceClosure exitClosure =
-                HdEmbreeMakeSubsurfaceExitClosure(closure);
-            currentMedium = HdEmbreeMediumState();
-
-            const GfVec3f direct = _ComputeDirectLightingMIS(
-                hitPos,
-                exitNormal,
-                wo,
-                sampler,
-                true,
-                &exitClosure,
-                currentMedium,
-                hero.active,
-                hero.wavelengthNm,
-                hero.pdf);
-            if (hero.active) {
-                radiance += direct * spectralThroughput;
-            } else {
-                radiance += GfCompMult(throughput, direct);
-            }
-
-            if (bounce >= _maxBounces) {
-                break;
-            }
-
-            bs = mxcpp::Bsdf::SampleSurface(
-                exitClosure, _ToMx(exitNormal), _ToMx(wo),
-                sampler.Next(), sampler.Next(), sampler.Next(),
-                hero.wavelengthNm);
-            if (bs.pdf <= 0.0f) {
-                break;
-            }
-
-            if (hero.active) {
-                float bsdfContrib = 0.0f;
-                const float cosTheta =
-                    std::abs(GfDot(exitNormal, _ToGf(bs.wi)));
-                bsdfContrib = mxcpp::Spectral::RgbToSpectralValue(
-                    bs.f, hero.wavelengthNm) * cosTheta / bs.pdf;
-                if (!std::isfinite(bsdfContrib) || bsdfContrib < 0.0f) {
-                    bsdfContrib = 0.0f;
-                }
-                spectralThroughput *= bsdfContrib;
-            } else {
-                GfVec3f bsdfContrib =
-                    _ToGf(bs.f) * (std::abs(GfDot(exitNormal, _ToGf(bs.wi))) /
-                                   bs.pdf);
-                for (int i = 0; i < 3; ++i) {
-                    if (!std::isfinite(bsdfContrib[i]) || bsdfContrib[i] < 0.0f) {
-                        bsdfContrib[i] = 0.0f;
-                    }
-                }
-                throughput = GfCompMult(throughput, bsdfContrib);
-            }
-
-            lastBsdfPdf = bs.pdf;
-            anyNonSpecularBounces = true;
-            isFirstBounce = false;
-
-            if (bounce >= _minBouncesBeforeRR) {
-                float q = hero.active
-                    ? std::max({
-                        _SpectralScalarToRgb(spectralThroughput, hero)[0],
-                        _SpectralScalarToRgb(spectralThroughput, hero)[1],
-                        _SpectralScalarToRgb(spectralThroughput, hero)[2]})
-                    : std::max({throughput[0], throughput[1], throughput[2]});
-                q = std::min(q, 0.95f);
-                if (q <= 0.0f || sampler.Next() > q) {
-                    break;
-                }
-                if (hero.active) {
-                    spectralThroughput /= q;
-                } else {
-                    throughput /= q;
-                }
-            }
-
-            currentRayDiff.hasDifferentials = false;
-            rayOrigin = hitPos + exitNormal * 1e-4f;
-            rayDir = _ToGf(bs.wi);
-            continue;
         }
 
         // --- Direct lighting (NEE) with MIS ---
@@ -3624,6 +3972,7 @@ HdEmbreeRenderer::_TracePath(
         }
 
         lastBsdfPdf = bs.isSpecular ? 0.0f : bs.pdf;
+        lastScatterWasMedium = false;
         if (!bs.isSpecular) {
             anyNonSpecularBounces = true;
         }
@@ -3649,7 +3998,6 @@ HdEmbreeRenderer::_TracePath(
                 currentMedium.active = true;
                 currentMedium.medium = closure.interiorMedium;
                 currentMedium.ownerMesh = mesh;
-                currentMedium.mode = HdEmbreeMediumState::Mode::Transmission;
             }
         }
 

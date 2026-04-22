@@ -212,6 +212,36 @@ struct ValueGetter<float>
     }
 };
 
+template<>
+struct ValueGetter<Vec3f>
+{
+    template<typename NameT>
+    static Vec3f Get(const ParamMap& params,
+                     const NameT& name,
+                     const Vec3f& defaultVal)
+    {
+        const Value* value = params.Find(name);
+        if (!value) {
+            return defaultVal;
+        }
+        if (ValueHolds<Vec3f>(*value)) {
+            return ValueGet<Vec3f>(*value);
+        }
+        // Promote scalar float/int to uniform Vec3f so that parameters
+        // declared as float in USD (e.g. OpenPBR subsurface_radius) are
+        // picked up correctly when the material code reads them as Vec3f.
+        if (ValueHolds<float>(*value)) {
+            const float f = ValueGet<float>(*value);
+            return Vec3f(f, f, f);
+        }
+        if (ValueHolds<int>(*value)) {
+            const float f = static_cast<float>(ValueGet<int>(*value));
+            return Vec3f(f, f, f);
+        }
+        return defaultVal;
+    }
+};
+
 /// Extract a typed value from a parameter map with a default fallback.
 template<typename T, typename NameT>
 inline T Get(const ParamMap& params,

@@ -2006,7 +2006,7 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
         } else if constexpr (std::is_same_v<T, Bsdf::SubsurfaceData>) {
             Bsdf::BsdfSample sample{
                 Vec3f(0.0f),
-                data.color * data.weight,
+                Vec3f(data.weight),
                 1.0f,
                 false
             };
@@ -2276,12 +2276,22 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     const Vec3f topThroughputOut =
                         _EvalThroughput(
                             tree, data.top, N, wo, heroWavelengthNm);
-                    const Vec3f topThroughputIn =
-                        _EvalThroughput(
-                            tree, data.top, N, sample.wi, heroWavelengthNm);
-                    sample.f = CompMul(
-                        sample.f,
-                        CompMul(topThroughputOut, topThroughputIn));
+                    if (sample.isSubsurface) {
+                        // Subsurface has no meaningful incoming direction
+                        // (wi is zero); only the outgoing Fresnel
+                        // transmission at the entry point applies.  The
+                        // incoming Fresnel is handled by the random walk
+                        // exit logic in the renderer.
+                        sample.f = CompMul(sample.f, topThroughputOut);
+                    } else {
+                        const Vec3f topThroughputIn =
+                            _EvalThroughput(
+                                tree, data.top, N, sample.wi,
+                                heroWavelengthNm);
+                        sample.f = CompMul(
+                            sample.f,
+                            CompMul(topThroughputOut, topThroughputIn));
+                    }
                 }
                 if (chooseProb > 0.0f) {
                     sample.f /= chooseProb;
@@ -2331,10 +2341,20 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
 Vec3f
 Bsdf::EvalLambertian(
     const Vec3f& baseColor,
-    const Vec3f& /*N*/,
-    const Vec3f& /*wi*/,
-    const Vec3f& /*wo*/)
+    const Vec3f& N,
+    const Vec3f& wi,
+    const Vec3f& wo)
 {
+    // Lambertian reflection: both wi and wo must lie on the front side of N.
+    // Previously this function ignored N/wi/wo entirely and returned
+    // baseColor/pi unconditionally, causing back-face hits (e.g. viewing an
+    // opaque ground from below, or secondary rays landing on the inside of
+    // a closed mesh) to "leak" light through the surface. The SSS exit
+    // path post-flip was especially vulnerable to this because the flipped
+    // ray routinely crosses surfaces at grazing angles.
+    if (Dot(N, wi) <= 0.0f || Dot(N, wo) <= 0.0f) {
+        return Vec3f(0.0f);
+    }
     return baseColor * kInvPi;
 }
 
@@ -2741,6 +2761,69 @@ Bsdf::PdfSurface(
             heroWavelengthNm);
     }
     return _PdfLegacySurface(closure, N, wi, wo);
+}
+
+namespace {
+constexpr float _kSmoothRoughnessThreshold = 1.0e-3f;
+}
+
+bool
+Bsdf::SampleSubsurfaceEntry(
+    const SurfaceClosure& closure,
+    const Vec3f& N,
+    const Vec3f& wo,
+    float u1, float u2,
+    Vec3f& wi_into_medium)
+{
+    // Clamp IOR >= 1 to avoid TIR at entry (matches Cycles).
+    const float ior = std::max(closure.specularIor, 1.0f);
+    const float eta = 1.0f / ior;  // outside -> inside
+
+    const float cosNI = Dot(N, wo);
+    if (cosNI <= 0.0f) {
+        return false;
+    }
+
+    // Smooth surface: deterministic Snell refraction about geometric normal.
+    if (closure.roughness < _kSmoothRoughnessThreshold) {
+        const float sin2T = eta * eta * (1.0f - cosNI * cosNI);
+        if (sin2T >= 1.0f) {
+            // Shouldn't happen with IOR >= 1 but guard anyway.
+            wi_into_medium = -wo;
+            return true;
+        }
+        const float cosT = std::sqrt(std::max(0.0f, 1.0f - sin2T));
+        wi_into_medium = -eta * wo + (eta * cosNI - cosT) * N;
+        return true;
+    }
+
+    // Rough surface: GGX VNDF samples microfacet normal H, then Snell about H.
+    const _Frame frame = _Frame::FromNormal(N);
+    const Vec3f woLocal = frame.ToLocal(wo);
+    const float alpha = _RoughnessToAlpha(closure.roughness);
+    const Vec3f hLocal = _SampleGGX_VNDF(woLocal, alpha, u1, u2);
+    const Vec3f H = frame.ToWorld(hLocal);
+
+    const float cosHI = Dot(H, wo);
+    const float sin2T = eta * eta * (1.0f - cosHI * cosHI);
+    if (sin2T >= 1.0f) {
+        wi_into_medium = -wo;
+        return true;
+    }
+    const float cosT = std::sqrt(std::max(0.0f, 1.0f - sin2T));
+    wi_into_medium = -eta * wo + (eta * cosHI - cosT) * H;
+
+    // Fallback if the refracted direction ends up outward (numerical edge):
+    // sample a cosine-weighted hemisphere around -N so we still enter the
+    // medium.
+    if (Dot(wi_into_medium, N) >= 0.0f) {
+        const Vec3f hemi = _SampleCosineHemisphere(u1, u2);
+        // hemi is expressed in a frame with +Z = up; reflect to -N by
+        // negating the Z component when transforming back through `frame`.
+        wi_into_medium = frame.ToWorld(
+            Vec3f(hemi[0], hemi[1], -hemi[2]));
+    }
+    return true;
 }
 
 }  // namespace mxcpp

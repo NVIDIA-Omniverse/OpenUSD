@@ -295,18 +295,17 @@ EvalOpenPbr(const ParamMap& params)
 
     c.subsurfaceWeight = Get<float>(params, _kSubsurfaceWeight, 0.0f);
     c.subsurfaceColor = Get<Vec3f>(params, _kSubsurfaceColor, Vec3f(1.0f));
-    c.subsurfaceRadius =
-        Get<Vec3f>(params, _kSubsurfaceRadius, Vec3f(1.0f));
+    // OpenPBR defines `subsurface_radius` as a *scalar* (float), broadcast to
+    // per-channel via the separate `subsurface_radius_scale` color3.
+    // Reading it as Vec3f here would silently fall back to the default,
+    // giving a 1 m base mfp regardless of the scene value.
+    const float subsurfaceRadiusScalar =
+        Get<float>(params, _kSubsurfaceRadius, 1.0f);
+    c.subsurfaceRadius = Vec3f(subsurfaceRadiusScalar);
     c.subsurfaceRadiusScale = Get<Vec3f>(
         params, _kSubsurfaceRadiusScale, Vec3f(1.0f, 0.5f, 0.25f));
     c.subsurfaceAnisotropy = Get<float>(
         params, _kSubsurfaceScatterAnisotropy, 0.0f);
-    c.subsurfaceMedium = MakeSubsurfaceMedium(
-        c.subsurfaceWeight,
-        c.subsurfaceColor,
-        c.subsurfaceRadius,
-        c.subsurfaceRadiusScale,
-        c.subsurfaceAnisotropy);
 
     c.coat = Get<float>(params, _kCoatWeight, 0.0f);
     const Vec3f coatColor = Get<Vec3f>(params, _kCoatColor, Vec3f(1.0f));
@@ -343,7 +342,6 @@ EvalOpenPbr(const ParamMap& params)
 
     c.thinWalled = Get<bool>(params, _kGeometryThinWalled, false);
     c.hasInteriorMedium = !c.thinWalled && !c.interiorMedium.IsVacuum();
-    c.hasSubsurfaceMedium = !c.subsurfaceMedium.IsVacuum();
     c.normal = _GetWithFallback<Vec3f>(
         params,
         _kGeometryNormal,
@@ -383,7 +381,7 @@ EvalOpenPbr(const ParamMap& params)
         opaqueBase = tree.Add(diffuse);
     }
 
-    if (c.hasSubsurfaceMedium && c.subsurfaceWeight > 0.0f) {
+    if (c.HasSubsurfaceScattering()) {
         Bsdf::SubsurfaceData subsurface;
         subsurface.weight = _Clamp01(c.subsurfaceWeight);
         subsurface.color = _Saturate(c.subsurfaceColor);

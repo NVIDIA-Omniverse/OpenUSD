@@ -61,9 +61,17 @@ struct SurfaceClosure
     Vec3f subsurfaceRadius = Vec3f(1.0f);
     Vec3f subsurfaceRadiusScale = Vec3f(1.0f);
     float subsurfaceAnisotropy = 0.0f;
-    bool hasSubsurfaceMedium = false;
-    MediumProperties subsurfaceMedium;
     Bsdf::ClosureTree bsdfTree;
+
+    /// Returns whether subsurface scattering should be performed for this closure.
+    /// True when a positive subsurface weight is specified and any radius channel
+    /// has positive mfp (otherwise SSS would be a no-op / degenerate).
+    bool HasSubsurfaceScattering() const {
+        return subsurfaceWeight > 0.0f &&
+               (subsurfaceRadius[0] > 0.0f ||
+                subsurfaceRadius[1] > 0.0f ||
+                subsurfaceRadius[2] > 0.0f);
+    }
 
     bool HasBsdfTree() const {
         return !bsdfTree.Empty();

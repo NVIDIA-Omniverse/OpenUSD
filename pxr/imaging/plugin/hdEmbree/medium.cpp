@@ -9,25 +9,12 @@
 
 namespace mxcpp {
 
+float PhaseHG(float cosTheta, float anisotropy) noexcept;
+
 namespace {
 
 constexpr float _kEpsilon = 1.0e-6f;
 constexpr float _kPi = 3.14159265358979323846f;
-
-float
-_ClampUnitFloat(float value) noexcept
-{
-    return std::clamp(value, 0.0f, 1.0f);
-}
-
-Vec3f
-_ClampUnitColor(const Vec3f& value) noexcept
-{
-    return Vec3f(
-        _ClampUnitFloat(value[0]),
-        _ClampUnitFloat(value[1]),
-        _ClampUnitFloat(value[2]));
-}
 
 Vec3f
 _ClampNonNegative(const Vec3f& value) noexcept
@@ -36,15 +23,6 @@ _ClampNonNegative(const Vec3f& value) noexcept
         std::max(value[0], 0.0f),
         std::max(value[1], 0.0f),
         std::max(value[2], 0.0f));
-}
-
-Vec3f
-_SafeDiv(const Vec3f& numerator, const Vec3f& denominator) noexcept
-{
-    return Vec3f(
-        denominator[0] > _kEpsilon ? numerator[0] / denominator[0] : 0.0f,
-        denominator[1] > _kEpsilon ? numerator[1] / denominator[1] : 0.0f,
-        denominator[2] > _kEpsilon ? numerator[2] / denominator[2] : 0.0f);
 }
 
 Vec3f
@@ -242,34 +220,117 @@ MakeTransmissionMedium(
         -std::log(safeColor[1]) / transmissionDepth,
         -std::log(safeColor[2]) / transmissionDepth);
     medium.sigmaS = scatter / transmissionDepth;
-    medium.sigmaA = Vec3f(
-        std::max(extinction[0] - medium.sigmaS[0], 0.0f),
-        std::max(extinction[1] - medium.sigmaS[1], 0.0f),
-        std::max(extinction[2] - medium.sigmaS[2], 0.0f));
+    Vec3f absorption(
+        extinction[0] - medium.sigmaS[0],
+        extinction[1] - medium.sigmaS[1],
+        extinction[2] - medium.sigmaS[2]);
+
+    // Match the MaterialX volume graph: if scattering pushes any absorption
+    // channel below zero, shift the full absorption vector so the minimum
+    // lands on zero instead of clamping channels independently.
+    const float minAbsorption = std::min(
+        {absorption[0], absorption[1], absorption[2]});
+    if (minAbsorption < 0.0f) {
+        absorption -= Vec3f(minAbsorption);
+    }
+
+    medium.sigmaA = _ClampNonNegative(absorption);
     medium.anisotropy = std::clamp(transmissionScatterAnisotropy, -1.0f, 1.0f);
     return medium;
 }
 
-MediumProperties
-MakeSubsurfaceMedium(
-    float subsurfaceWeight,
-    const Vec3f& subsurfaceColor,
-    const Vec3f& subsurfaceRadius,
-    const Vec3f& subsurfaceRadiusScale,
-    float subsurfaceAnisotropy) noexcept
+int
+MinExtinctionChannel(const MediumProperties& medium) noexcept
 {
-    MediumProperties medium;
-    if (subsurfaceWeight <= 0.0f) {
-        return medium;
+    const Vec3f sigmaT = medium.SigmaT();
+    int minCh = 0;
+    float minVal = sigmaT[0];
+    for (int i = 1; i < 3; ++i) {
+        if (sigmaT[i] > _kEpsilon && sigmaT[i] < minVal) {
+            minVal = sigmaT[i];
+            minCh = i;
+        }
+    }
+    return minCh;
+}
+
+float
+SampleFreeFlightChannel(
+    const MediumProperties& medium,
+    int channel,
+    float u) noexcept
+{
+    const float sigmaT = medium.SigmaT()[std::clamp(channel, 0, 2)];
+    if (sigmaT <= _kEpsilon) {
+        return std::numeric_limits<float>::infinity();
+    }
+    const float clampedU = std::clamp(u, _kEpsilon, 1.0f - _kEpsilon);
+    return -std::log(1.0f - clampedU) / sigmaT;
+}
+
+Vec3f
+EvalChannelScatterWeight(
+    const MediumProperties& medium,
+    int channel,
+    float distance) noexcept
+{
+    const Vec3f sigmaT = medium.SigmaT();
+    const float trackSigmaT = sigmaT[std::clamp(channel, 0, 2)];
+    if (trackSigmaT <= _kEpsilon) {
+        return Vec3f(0.0f);
+    }
+    const Vec3f sigmaS = _ClampNonNegative(medium.sigmaS);
+    return Vec3f(
+        sigmaS[0] / trackSigmaT *
+            std::exp((trackSigmaT - sigmaT[0]) * distance),
+        sigmaS[1] / trackSigmaT *
+            std::exp((trackSigmaT - sigmaT[1]) * distance),
+        sigmaS[2] / trackSigmaT *
+            std::exp((trackSigmaT - sigmaT[2]) * distance));
+}
+
+Vec3f
+EvalChannelTransmittanceWeight(
+    const MediumProperties& medium,
+    int channel,
+    float distance) noexcept
+{
+    if (distance <= 0.0f) {
+        return Vec3f(1.0f);
+    }
+    const Vec3f sigmaT = medium.SigmaT();
+    const float trackSigmaT = sigmaT[std::clamp(channel, 0, 2)];
+    return Vec3f(
+        std::exp((trackSigmaT - sigmaT[0]) * distance),
+        std::exp((trackSigmaT - sigmaT[1]) * distance),
+        std::exp((trackSigmaT - sigmaT[2]) * distance));
+}
+
+int
+ChannelMIS(
+    const Vec3f& throughput,
+    const Vec3f& weights,
+    float u,
+    Vec3f* channelPdf)
+{
+    Vec3f raw(
+        std::max(throughput[0] * weights[0], 0.0f),
+        std::max(throughput[1] * weights[1], 0.0f),
+        std::max(throughput[2] * weights[2], 0.0f));
+    const float sum = raw[0] + raw[1] + raw[2];
+
+    if (sum <= 1.0e-12f) {
+        // Uniform fallback.
+        *channelPdf = Vec3f(1.0f / 3.0f);
+        const float scaled = std::clamp(u * 3.0f, 0.0f, 3.0f - 1.0e-6f);
+        return static_cast<int>(scaled);
     }
 
-    const Vec3f rho = _ClampUnitColor(subsurfaceColor);
-    const Vec3f mfp = _ClampNonNegative(
-        CompMul(subsurfaceRadius, subsurfaceRadiusScale));
-    medium.sigmaS = _SafeDiv(rho, mfp);
-    medium.sigmaA = _SafeDiv(Vec3f(1.0f) - rho, mfp);
-    medium.anisotropy = std::clamp(subsurfaceAnisotropy, -1.0f, 1.0f);
-    return medium;
+    *channelPdf = raw * (1.0f / sum);
+    const float u01 = std::clamp(u, 0.0f, 1.0f - 1.0e-6f);
+    if (u01 < (*channelPdf)[0]) return 0;
+    if (u01 < (*channelPdf)[0] + (*channelPdf)[1]) return 1;
+    return 2;
 }
 
 }  // namespace mxcpp

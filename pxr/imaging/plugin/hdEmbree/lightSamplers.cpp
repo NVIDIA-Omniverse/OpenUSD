@@ -424,6 +424,40 @@ _SampleCylinder(GfMatrix4f const& xf, GfMatrix3f const& normalXform,
     };
 }
 
+_ShapeSample
+_MakeAreaShapeSample(
+    GfMatrix4f const& xf,
+    GfMatrix3f const& normalXform,
+    GfVec3f const& pLight,
+    GfVec3f const& nLight,
+    GfVec2f const& uv,
+    float area)
+{
+    return _ShapeSample {
+        xf.Transform(pLight),
+        (nLight * normalXform).GetNormalized(),
+        uv,
+        area
+    };
+}
+
+HdEmbreeLightSampler::LightSample
+_InvalidLightSample()
+{
+    return HdEmbreeLightSampler::LightSample {
+        GfVec3f(0.0f),
+        GfVec3f(0.0f),
+        0.0f,
+        0.0f,
+        false
+    };
+}
+
+HdEmbreeLightSampler::LightSample
+_EvaluateDomeLightDirection(
+    HdEmbree_LightData const& light,
+    GfVec3f const& direction);
+
 float
 _EvalIES(HdEmbree_LightData const& light, GfVec3f const& wI)
 {
@@ -467,6 +501,9 @@ _EvalAreaLight(HdEmbree_LightData const& light, _ShapeSample const& ss,
     // behind the light
     GfVec3f wI = ss.pWorld - position;
     const float dist = wI.GetLength();
+    if (dist <= 0.0f || !std::isfinite(dist)) {
+        return _InvalidLightSample();
+    }
     wI /= dist;
     const float cosThetaOffNormal = _DotZeroClip(-wI, ss.nWorld);
     float invPdfW = cosThetaOffNormal / _Sqr(dist) * ss.invPdfA;
@@ -513,8 +550,257 @@ _EvalAreaLight(HdEmbree_LightData const& light, _ShapeSample const& ss,
         Le,
         wI,
         dist,
-        invPdfW
+        invPdfW,
+        invPdfW > 0.0f && std::isfinite(dist)
     };
+}
+
+bool
+_IntersectRectLight(
+    HdEmbree_LightData const& light,
+    HdEmbree_Rect const& rect,
+    GfVec3f const& position,
+    GfVec3f const& direction,
+    _ShapeSample* outSample)
+{
+    if (!outSample) {
+        return false;
+    }
+
+    const GfVec3f pLight = light.xformWorldToLight.Transform(position);
+    const GfVec3f dLight = light.xformWorldToLight.TransformDir(direction);
+    if (std::abs(dLight[2]) <= 1.0e-6f) {
+        return false;
+    }
+
+    const float t = -pLight[2] / dLight[2];
+    if (t <= 1.0e-6f || !std::isfinite(t)) {
+        return false;
+    }
+
+    const GfVec3f hitLight = pLight + dLight * t;
+    const float halfWidth = rect.width * 0.5f;
+    const float halfHeight = rect.height * 0.5f;
+    if (std::abs(hitLight[0]) > halfWidth || std::abs(hitLight[1]) > halfHeight) {
+        return false;
+    }
+
+    *outSample = _MakeAreaShapeSample(
+        light.xformLightToWorld,
+        light.normalXformLightToWorld,
+        hitLight,
+        GfVec3f(0.0f, 0.0f, -1.0f),
+        GfVec2f(
+            (rect.width != 0.0f) ? (hitLight[0] / rect.width + 0.5f) : 0.5f,
+            (rect.height != 0.0f) ? (hitLight[1] / rect.height + 0.5f) : 0.5f),
+        _AreaRect(light.xformLightToWorld, rect.width, rect.height));
+    return true;
+}
+
+bool
+_IntersectDiskLight(
+    HdEmbree_LightData const& light,
+    HdEmbree_Disk const& disk,
+    GfVec3f const& position,
+    GfVec3f const& direction,
+    _ShapeSample* outSample)
+{
+    if (!outSample) {
+        return false;
+    }
+
+    const GfVec3f pLight = light.xformWorldToLight.Transform(position);
+    const GfVec3f dLight = light.xformWorldToLight.TransformDir(direction);
+    if (std::abs(dLight[2]) <= 1.0e-6f) {
+        return false;
+    }
+
+    const float t = -pLight[2] / dLight[2];
+    if (t <= 1.0e-6f || !std::isfinite(t)) {
+        return false;
+    }
+
+    const GfVec3f hitLight = pLight + dLight * t;
+    if (hitLight[0] * hitLight[0] + hitLight[1] * hitLight[1] >
+        disk.radius * disk.radius) {
+        return false;
+    }
+
+    *outSample = _MakeAreaShapeSample(
+        light.xformLightToWorld,
+        light.normalXformLightToWorld,
+        hitLight,
+        GfVec3f(0.0f, 0.0f, -1.0f),
+        GfVec2f(
+            (disk.radius != 0.0f) ? (hitLight[0] / disk.radius) : 0.0f,
+            (disk.radius != 0.0f) ? (hitLight[1] / disk.radius) : 0.0f),
+        _AreaDisk(light.xformLightToWorld, disk.radius));
+    return true;
+}
+
+bool
+_IntersectSphereLight(
+    HdEmbree_LightData const& light,
+    HdEmbree_Sphere const& sphere,
+    GfVec3f const& position,
+    GfVec3f const& direction,
+    _ShapeSample* outSample)
+{
+    if (!outSample) {
+        return false;
+    }
+
+    const GfVec3f pLight = light.xformWorldToLight.Transform(position);
+    const GfVec3f dLight = light.xformWorldToLight.TransformDir(direction);
+    const float a = GfDot(dLight, dLight);
+    const float b = 2.0f * GfDot(pLight, dLight);
+    const float c = GfDot(pLight, pLight) - sphere.radius * sphere.radius;
+    const float disc = b * b - 4.0f * a * c;
+    if (a <= 0.0f || disc < 0.0f) {
+        return false;
+    }
+
+    const float sqrtDisc = std::sqrt(disc);
+    float t0 = (-b - sqrtDisc) / (2.0f * a);
+    float t1 = (-b + sqrtDisc) / (2.0f * a);
+    if (t0 > t1) {
+        std::swap(t0, t1);
+    }
+    const float t = (t0 > 1.0e-6f) ? t0 : t1;
+    if (t <= 1.0e-6f || !std::isfinite(t)) {
+        return false;
+    }
+
+    const GfVec3f hitLight = pLight + dLight * t;
+    GfVec3f nLight = hitLight;
+    if (sphere.radius != 0.0f) {
+        nLight /= sphere.radius;
+    }
+    nLight.Normalize();
+
+    float phi = std::atan2(hitLight[1], hitLight[0]);
+    if (phi < 0.0f) {
+        phi += 2.0f * _pi<float>;
+    }
+
+    *outSample = _MakeAreaShapeSample(
+        light.xformLightToWorld,
+        light.normalXformLightToWorld,
+        hitLight,
+        nLight,
+        GfVec2f(
+            phi / (2.0f * _pi<float>),
+            (sphere.radius != 0.0f) ? (hitLight[2] / sphere.radius) : 0.0f),
+        _AreaSphere(light.xformLightToWorld, sphere.radius));
+    return true;
+}
+
+bool
+_IntersectCylinderLight(
+    HdEmbree_LightData const& light,
+    HdEmbree_Cylinder const& cylinder,
+    GfVec3f const& position,
+    GfVec3f const& direction,
+    _ShapeSample* outSample)
+{
+    if (!outSample) {
+        return false;
+    }
+
+    const GfVec3f pLight = light.xformWorldToLight.Transform(position);
+    const GfVec3f dLight = light.xformWorldToLight.TransformDir(direction);
+
+    const float a = dLight[1] * dLight[1] + dLight[2] * dLight[2];
+    const float b = 2.0f * (pLight[1] * dLight[1] + pLight[2] * dLight[2]);
+    const float c =
+        pLight[1] * pLight[1] + pLight[2] * pLight[2] -
+        cylinder.radius * cylinder.radius;
+    const float disc = b * b - 4.0f * a * c;
+    if (a <= 0.0f || disc < 0.0f) {
+        return false;
+    }
+
+    const float sqrtDisc = std::sqrt(disc);
+    float t0 = (-b - sqrtDisc) / (2.0f * a);
+    float t1 = (-b + sqrtDisc) / (2.0f * a);
+    if (t0 > t1) {
+        std::swap(t0, t1);
+    }
+
+    const float halfLength = cylinder.length * 0.5f;
+    float t = std::numeric_limits<float>::infinity();
+    if (t0 > 1.0e-6f) {
+        const float x = pLight[0] + dLight[0] * t0;
+        if (x >= -halfLength && x <= halfLength) {
+            t = t0;
+        }
+    }
+    if (!std::isfinite(t) && t1 > 1.0e-6f) {
+        const float x = pLight[0] + dLight[0] * t1;
+        if (x >= -halfLength && x <= halfLength) {
+            t = t1;
+        }
+    }
+    if (!std::isfinite(t)) {
+        return false;
+    }
+
+    const GfVec3f hitLight = pLight + dLight * t;
+    GfVec3f nLight(0.0f, hitLight[1], hitLight[2]);
+    nLight.Normalize();
+    float phi = std::atan2(hitLight[2], hitLight[1]);
+    if (phi < 0.0f) {
+        phi += 2.0f * _pi<float>;
+    }
+
+    *outSample = _MakeAreaShapeSample(
+        light.xformLightToWorld,
+        light.normalXformLightToWorld,
+        hitLight,
+        nLight,
+        GfVec2f(
+            phi / (2.0f * _pi<float>),
+            (cylinder.length != 0.0f)
+                ? ((hitLight[0] + halfLength) / cylinder.length)
+                : 0.0f),
+        _AreaCylinder(light.xformLightToWorld, cylinder.radius, cylinder.length));
+    return true;
+}
+
+HdEmbreeLightSampler::LightSample
+_EvaluateLightDirection(
+    HdEmbree_LightData const& light,
+    GfVec3f const& position,
+    GfVec3f const& direction)
+{
+    const GfVec3f normalizedDirection = direction.GetNormalized();
+    _ShapeSample shapeSample;
+    bool hit = false;
+
+    if (auto const* rect = std::get_if<HdEmbree_Rect>(&light.lightVariant)) {
+        hit = _IntersectRectLight(light, *rect, position, normalizedDirection,
+                                  &shapeSample);
+    } else if (auto const* sphere =
+                   std::get_if<HdEmbree_Sphere>(&light.lightVariant)) {
+        hit = _IntersectSphereLight(
+            light, *sphere, position, normalizedDirection, &shapeSample);
+    } else if (auto const* disk =
+                   std::get_if<HdEmbree_Disk>(&light.lightVariant)) {
+        hit = _IntersectDiskLight(
+            light, *disk, position, normalizedDirection, &shapeSample);
+    } else if (auto const* cylinder =
+                   std::get_if<HdEmbree_Cylinder>(&light.lightVariant)) {
+        hit = _IntersectCylinderLight(
+            light, *cylinder, position, normalizedDirection, &shapeSample);
+    } else if (std::holds_alternative<HdEmbree_Dome>(light.lightVariant)) {
+        return _EvaluateDomeLightDirection(light, normalizedDirection);
+    }
+
+    if (!hit) {
+        return _InvalidLightSample();
+    }
+
+    return _EvalAreaLight(light, shapeSample, position);
 }
 
 HdEmbreeLightSampler::LightSample
@@ -554,7 +840,8 @@ _EvaluateDomeLightDirection(
         Li,
         direction.GetNormalized(),
         std::numeric_limits<float>::max(),
-        (pdfW > 0.0f) ? (1.0f / pdfW) : 0.0f
+        (pdfW > 0.0f) ? (1.0f / pdfW) : 0.0f,
+        pdfW > 0.0f
     };
 }
 
@@ -650,6 +937,15 @@ HdEmbreeLightSampler::EvaluateDomeLightDirection(
     return _EvaluateDomeLightDirection(lightData, direction);
 }
 
+HdEmbreeLightSampler::LightSample
+HdEmbreeLightSampler::EvaluateLightDirection(
+    HdEmbree_LightData const& lightData,
+    GfVec3f const& hitPosition,
+    GfVec3f const& direction)
+{
+    return _EvaluateLightDirection(lightData, hitPosition, direction);
+}
+
 HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
         HdEmbree_UnknownLight const& unk) {
     // Could warn, but we should have already warned when lightVariant
@@ -660,6 +956,7 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
         GfVec3f(0.0f),
         0.0f,
         0.0f,
+        false,
     };
 }
 

@@ -8,10 +8,13 @@
 #include "../spectral.h"
 #include "../nodes/helpers/mathHelpers.h"
 #include "../../medium.h"
+#include "../../sss.h"
 
 #include <cmath>
 #include <cstdio>
 #include <functional>
+
+PXR_NAMESPACE_USING_DIRECTIVE
 
 using namespace mxcpp;
 
@@ -442,9 +445,9 @@ TestSampleSurfaceSubsurfaceReturnsMarker()
         printf("    Subsurface event should not be marked specular\n");
         return false;
     }
-    if (!Test_IsClose(sample.f, subsurface.color * subsurface.weight, 1.0e-6f)) {
+    if (!Test_IsClose(sample.f, Vec3f(subsurface.weight), 1.0e-6f)) {
         printf(
-            "    Expected subsurface weight to propagate: got (%f,%f,%f)\n",
+            "    Expected neutral subsurface marker weight, got (%f,%f,%f)\n",
             sample.f[0], sample.f[1], sample.f[2]);
         return false;
     }
@@ -487,7 +490,7 @@ TestSampleSurfaceMixCanChooseSubsurface()
         return false;
     }
 
-    const Vec3f expected = subsurface.color * (subsurface.weight / 0.75f);
+    const Vec3f expected(subsurface.weight / 0.75f);
     if (!Test_IsClose(sample.f, expected, 1.0e-6f)) {
         printf(
             "    Expected mix probability compensation, got (%f,%f,%f) "
@@ -1252,6 +1255,248 @@ TestPowerHeuristic()
 }
 
 // ---------------------------------------------------------------------------
+// Bsdf::SampleSubsurfaceEntry tests (Phase 1 Task 1.2)
+
+static bool
+TestSampleSubsurfaceEntrySmoothRefraction()
+{
+    // Smooth dielectric at normal incidence: deterministic Snell refraction
+    // should yield wi pointing straight into the medium.
+    SurfaceClosure c;
+    c.roughness = 1.0e-6f;
+    c.specularIor = 1.5f;
+    Vec3f N(0, 0, 1);
+    Vec3f wo(0, 0, 1);
+    Vec3f wi;
+    bool ok = Bsdf::SampleSubsurfaceEntry(c, N, wo, 0.5f, 0.5f, wi);
+    if (!ok) {
+        printf("    Expected successful sample\n");
+        return false;
+    }
+    if (!Test_IsClose(wi, Vec3f(0, 0, -1), 1e-4f)) {
+        printf("    Expected (0,0,-1), got (%f,%f,%f)\n", wi[0], wi[1], wi[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestSampleSubsurfaceEntryRoughGGX()
+{
+    // Rough dielectric should sample a direction pointing into the medium.
+    SurfaceClosure c;
+    c.roughness = 0.5f;
+    c.specularIor = 1.5f;
+    Vec3f N(0, 0, 1);
+    Vec3f wo(0, 0, 1);
+    Vec3f wi;
+    bool ok = Bsdf::SampleSubsurfaceEntry(c, N, wo, 0.3f, 0.7f, wi);
+    if (!ok) {
+        printf("    Expected successful sample\n");
+        return false;
+    }
+    if (Dot(wi, N) >= 0.0f) {
+        printf("    Expected wi pointing into medium (Dot(wi,N) < 0), "
+               "got (%f,%f,%f)\n", wi[0], wi[1], wi[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestSampleSubsurfaceEntryIorClamp()
+{
+    // IOR < 1 should be clamped to 1.0 (no TIR at entry).
+    SurfaceClosure c;
+    c.roughness = 1.0e-6f;
+    c.specularIor = 0.5f;
+    Vec3f N(0, 0, 1);
+    Vec3f wo(0, 0, 1);
+    Vec3f wi;
+    bool ok = Bsdf::SampleSubsurfaceEntry(c, N, wo, 0.5f, 0.5f, wi);
+    if (!ok) {
+        printf("    Expected successful sample with IOR clamp\n");
+        return false;
+    }
+    if (!Test_IsClose(wi, Vec3f(0, 0, -1), 1e-4f)) {
+        printf("    Expected (0,0,-1) with IOR clamped to 1.0, got (%f,%f,%f)\n",
+               wi[0], wi[1], wi[2]);
+        return false;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// mxcpp::ChannelMIS tests (Phase 2 Task 2.1)
+
+static bool
+TestChannelMISUniform()
+{
+    Vec3f tp(1.0f);
+    Vec3f w(1.0f);
+    Vec3f pdf;
+    int ch = mxcpp::ChannelMIS(tp, w, 0.0f, &pdf);
+    if (ch != 0) {
+        printf("    u=0 expected ch 0, got %d\n", ch);
+        return false;
+    }
+    if (!Test_IsClose(pdf, Vec3f(1.0f/3.0f), 1e-4f)) {
+        printf("    Expected uniform pdf (1/3,1/3,1/3), got (%f,%f,%f)\n",
+               pdf[0], pdf[1], pdf[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestChannelMISWeighted()
+{
+    Vec3f tp(1.0f);
+    Vec3f w(0.1f, 0.8f, 0.1f);
+    Vec3f pdf;
+    int ch = mxcpp::ChannelMIS(tp, w, 0.5f, &pdf);
+    if (!Test_IsClose(pdf, Vec3f(0.1f, 0.8f, 0.1f), 1e-4f)) {
+        printf("    Expected (0.1,0.8,0.1) pdf, got (%f,%f,%f)\n",
+               pdf[0], pdf[1], pdf[2]);
+        return false;
+    }
+    // u=0.5 falls in green channel [0.1, 0.9)
+    if (ch != 1) {
+        printf("    u=0.5 expected ch 1, got %d\n", ch);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestChannelMISZeroFallback()
+{
+    Vec3f tp(0.0f);
+    Vec3f w(0.0f);
+    Vec3f pdf;
+    mxcpp::ChannelMIS(tp, w, 0.5f, &pdf);
+    if (!Test_IsClose(pdf, Vec3f(1.0f/3.0f), 1e-4f)) {
+        printf("    Expected uniform fallback, got (%f,%f,%f)\n",
+               pdf[0], pdf[1], pdf[2]);
+        return false;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// HdEmbreeChiangRemap tests (Phase 2 Task 2.3)
+
+static bool
+TestChiangRemapHighAlbedo()
+{
+    // High albedo (0.95) should yield high alpha (close to but below 0.999999).
+    GfVec3f albedo(0.95f);
+    GfVec3f radius(1.0f);
+    GfVec3f sigma_t, alpha;
+    HdEmbreeChiangRemap(albedo, radius, 0.0f, &sigma_t, &alpha);
+    if (alpha[0] < 0.5f || alpha[0] > 0.999999f) {
+        printf("    Expected 0.5 <= alpha <= 0.999999 for albedo=0.95, "
+               "got %f\n", alpha[0]);
+        return false;
+    }
+    // At g=0, sigma_t = sigma_t_prime / (1 - g) = 1/radius = 1.0
+    if (!Test_IsClose(sigma_t[0], 1.0f, 1e-3f)) {
+        printf("    Expected sigma_t ~ 1.0 at g=0, radius=1, got %f\n",
+               sigma_t[0]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestChiangRemapLowAlbedo()
+{
+    // Very low albedo (0.025): Cycles comment notes this is where rawAlpha
+    // drops below min_alpha=0.2, triggering the min-alpha clamp.
+    GfVec3f albedo(0.025f);
+    GfVec3f radius(1.0f);
+    GfVec3f sigma_t, alpha, rawAlpha;
+    HdEmbreeChiangRemap(albedo, radius, 0.0f,
+                        &sigma_t, &alpha, &rawAlpha);
+    if (alpha[0] < 0.19f) {
+        printf("    Expected alpha >= 0.2 (min_alpha clamp), got %f\n",
+               alpha[0]);
+        return false;
+    }
+    // Raw alpha should be below 0.2 for albedo=0.025.
+    if (rawAlpha[0] >= 0.2f) {
+        printf("    Expected rawAlpha < 0.2 for low albedo, got %f\n",
+               rawAlpha[0]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestChiangRemapAnisotropy()
+{
+    // sigma_t depends on anisotropy: sigma_t = sigma_t_prime / (1 - g).
+    // For g=0.5, sigma_t should be ~2x compared to g=0.
+    GfVec3f albedo(0.5f);
+    GfVec3f radius(1.0f);
+    GfVec3f sigma_t0, alpha0, sigma_t5, alpha5;
+    HdEmbreeChiangRemap(albedo, radius, 0.0f,
+                        &sigma_t0, &alpha0);
+    HdEmbreeChiangRemap(albedo, radius, 0.5f,
+                        &sigma_t5, &alpha5);
+    if (sigma_t5[0] < 1.5f * sigma_t0[0]) {
+        printf("    Expected sigma_t(g=0.5) > 1.5*sigma_t(g=0); "
+               "g=0: %f, g=0.5: %f\n", sigma_t0[0], sigma_t5[0]);
+        return false;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Dwivedi sampling helper tests (Phase 3 Task 3.1)
+
+static bool
+TestDiffusionLengthDwivedi()
+{
+    // Diffusion length should be finite and increase with alpha.
+    float l1 = PXR_INTERNAL_NS::HdEmbreeDiffusionLengthDwivedi(0.99f);
+    if (!std::isfinite(l1) || l1 < 5.0f || l1 > 15.0f) {
+        printf("    Expected 5 < L(0.99) < 15, got %f\n", l1);
+        return false;
+    }
+    float l2 = PXR_INTERNAL_NS::HdEmbreeDiffusionLengthDwivedi(0.5f);
+    if (!std::isfinite(l2) || l2 < 1.0f || l2 > 2.0f) {
+        printf("    Expected 1.0 < L(0.5) < 2.0, got %f\n", l2);
+        return false;
+    }
+    if (l1 <= l2) {
+        printf("    Expected L(0.99) > L(0.5), got %f <= %f\n", l1, l2);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestSamplePhaseDwivediRange()
+{
+    // Sampled cos_theta must be in [-1, 1].
+    const float L = 2.0f;
+    const float phase_log = std::log((L + 1.0f) / (L - 1.0f));
+    for (int i = 0; i < 100; ++i) {
+        const float u = static_cast<float>(i) / 99.0f;
+        const float cos_theta =
+            PXR_INTERNAL_NS::HdEmbreeSamplePhaseDwivedi(L, phase_log, u);
+        if (!std::isfinite(cos_theta) ||
+            cos_theta < -1.0f - 1e-4f ||
+            cos_theta > 1.0f + 1e-4f) {
+            printf("    cos_theta out of range: %f at u=%f\n", cos_theta, u);
+            return false;
+        }
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 
 void
 Test_RegisterBsdfTests()
@@ -1278,6 +1523,9 @@ Test_RegisterBsdfTests()
     _REG(TestFreeFlightScatterWeightFinite);
     _REG(TestSampleSurfaceSubsurfaceReturnsMarker);
     _REG(TestSampleSurfaceMixCanChooseSubsurface);
+    _REG(TestSampleSubsurfaceEntrySmoothRefraction);
+    _REG(TestSampleSubsurfaceEntryRoughGGX);
+    _REG(TestSampleSubsurfaceEntryIorClamp);
     _REG(TestSampleLambertianHemisphere);
     _REG(TestSampleLambertianPdfConsistency);
     _REG(TestSampleGGXSpecularHemisphere);
@@ -1300,6 +1548,14 @@ Test_RegisterBsdfTests()
     _REG(TestTreeAnisotropicReflectionRespondsToTangent);
     _REG(TestLayerReflectionAttenuatesBaseOnBothSides);
     _REG(TestPowerHeuristic);
+    _REG(TestChannelMISUniform);
+    _REG(TestChannelMISWeighted);
+    _REG(TestChannelMISZeroFallback);
+    _REG(TestChiangRemapHighAlbedo);
+    _REG(TestChiangRemapLowAlbedo);
+    _REG(TestChiangRemapAnisotropy);
+    _REG(TestDiffusionLengthDwivedi);
+    _REG(TestSamplePhaseDwivediRange);
 }
 
 #undef _REG

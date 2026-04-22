@@ -23,6 +23,7 @@ public:
         GfVec3f wI;
         float dist;
         float invPdfW;
+        bool valid;
     };
 
     static LightSample GetLightSample(
@@ -36,6 +37,14 @@ public:
     /// corresponding radiance and directional PDF.
     static LightSample EvaluateDomeLightDirection(
             HdEmbree_LightData const& lightData,
+            GfVec3f const& direction);
+
+    /// Evaluates a light along a fixed direction from a point and returns the
+    /// corresponding radiance, distance, and directional PDF when the ray
+    /// intersects the light shape.
+    static LightSample EvaluateLightDirection(
+            HdEmbree_LightData const& lightData,
+            GfVec3f const& hitPosition,
             GfVec3f const& direction);
 
     // callables to be used with std::visit

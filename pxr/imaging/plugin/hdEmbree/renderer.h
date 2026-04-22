@@ -11,6 +11,7 @@
 
 #include "pxr/imaging/plugin/hdEmbree/context.h"
 #include "pxr/imaging/plugin/hdEmbree/light.h"
+#include "pxr/imaging/plugin/hdEmbree/lightSamplers.h"
 #include "pxr/imaging/plugin/hdEmbree/medium.h"
 #include "pxr/imaging/plugin/hdEmbree/sampling.h"
 
@@ -25,6 +26,7 @@
 #include <embree4/rtcore_ray.h>
 
 #include <atomic>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -57,15 +59,10 @@ struct HdEmbreeRayDifferential {
 };
 
 struct HdEmbreeMediumState {
-    enum class Mode {
-        Transmission,
-        Subsurface,
-    };
-
     bool active = false;
     mxcpp::MediumProperties medium;
     HdEmbreeMesh* ownerMesh = nullptr;
-    Mode mode = Mode::Transmission;
+    int trackingChannel = -1;  // >= 0: per-channel free-flight tracking
 };
 
 /// \class HdEmbreeRenderer
@@ -206,6 +203,12 @@ public:
     /// Get elapsed render time in seconds since the last Render() call.
     float GetRenderElapsedSeconds() const;
 
+    /// Get accumulated SSS random-walk statistics for the current render.
+    uint64_t GetSssCallCount() const;
+    uint64_t GetSssSuccessCount() const;
+    uint64_t GetSssWalkStepCount() const;
+    uint64_t GetSssIntersectionCount() const;
+
 private:
     // Perform validation and setup immediately before starting a render
     void _PreRenderSetup();
@@ -305,6 +308,12 @@ private:
                         float dist,
                         HdEmbreeMediumState const& mediumState =
                             HdEmbreeMediumState()) const;
+
+    bool _FindNearestFiniteLightHit(
+        GfVec3f const& position,
+        GfVec3f const& direction,
+        float maxDist,
+        HdEmbreeLightSampler::LightSample* outSample) const;
 
     // Should the ray continue based on the possibly intersected prim's visibility settings?
     bool _RayShouldContinue(RTCRayHit const& rayHit) const;
@@ -483,6 +492,12 @@ private:
 
     // How many samples have been completed.
     std::atomic<int> _completedSamples;
+
+    // SSS random-walk statistics accumulated over the current render.
+    mutable std::atomic<uint64_t> _sssCallCount;
+    mutable std::atomic<uint64_t> _sssSuccessCount;
+    mutable std::atomic<uint64_t> _sssWalkStepCount;
+    mutable std::atomic<uint64_t> _sssIntersectionCount;
 
     // Render start time for elapsed time tracking.
     std::chrono::steady_clock::time_point _renderStartTime;

@@ -18,7 +18,7 @@ The following settings can be configured via `renderSettings` (Hydra render dele
 | Enable Adaptive Sampling | `enableAdaptiveSampling` | `bool` | `true` | `HDEMBREE_ENABLE_ADAPTIVE_SAMPLING` |
 | Adaptive Threshold | `adaptiveThreshold` | `float` | `0.01` | — |
 | Min Samples Before Adaptive | `minSamplesBeforeAdaptive` | `int` | `16` | — |
-| Max Bounces | `maxBounces` | `int` | `4` | — |
+| Max Bounces | `maxBounces` | `int` | `16` | — |
 | Min Bounces Before Russian Roulette | `minBouncesBeforeRR` | `int` | `2` | — |
 | Light Samples Per Hit | `lightSamplesPerHit` | `int` | `8` | `HDEMBREE_LIGHT_SAMPLES_PER_HIT` |
 | Stratify Light Samples | `stratifyLightSamples` | `bool` | `true` | `HDEMBREE_STRATIFY_LIGHT_SAMPLES` |
@@ -60,7 +60,7 @@ hdEmbree falls back to `sobol` and emits a warning.
 When enabled, per-pixel variance is tracked using Welford's online algorithm. Pixels whose variance falls below `adaptiveThreshold` after at least `minSamplesBeforeAdaptive` samples are marked as converged and skipped in subsequent passes. This can yield significant speedups (2-4x) for scenes with non-uniform complexity.
 
 ### Path Tracing Depth (`maxBounces`, `minBouncesBeforeRR`)
-`maxBounces` controls the maximum number of indirect light bounces (default `4`). Higher values capture more global illumination but increase render time. `minBouncesBeforeRR` sets the minimum number of bounces before Russian Roulette path termination kicks in (default `2`). Paths shorter than this threshold are never randomly terminated, ensuring basic indirect illumination is always captured.
+`maxBounces` controls the maximum number of indirect light bounces (default `16`). Higher values capture more global illumination but increase render time. An SSS closure (entry + random walk + exit) counts as a single bounce, matching a plain diffuse surface hit. `minBouncesBeforeRR` sets the minimum number of bounces before Russian Roulette path termination kicks in (default `2`). Paths shorter than this threshold are never randomly terminated, ensuring basic indirect illumination is always captured.
 
 ### Light Samples Per Hit (`lightSamplesPerHit`)
 Number of shadow/light samples taken per hit point per light source. Higher values reduce noise in direct lighting at the cost of render time. Must be >= 1.
@@ -82,3 +82,18 @@ A value of `-1` (default) seeds the RNG non-deterministically. Any other value, 
 
 ### Adaptive Heatmap (`adaptiveHeatmap`)
 When this AOV is bound (and `enableAdaptiveSampling` is active), it outputs a heatmap visualizing per-pixel sample counts. The color ramp maps the ratio `sampleCount / convergedSamplesPerPixel`: blue (few samples) -> cyan -> green -> yellow -> red (many samples). In usdview, select "adaptiveHeatmap" from the AOV dropdown to display it. The color AOV continues to render normally — the heatmap is written to its own separate buffer.
+
+## Material Interpretation Notes
+
+### Subsurface radius vs. Cycles / Blender Principled BSDF
+
+hdEmbree's random-walk SSS treats the final per-channel radius (`subsurface_radius * subsurface_radius_scale` in OpenPBR, `Subsurface Radius * Subsurface Scale` in Principled BSDF) as the **physical mean free path** fed directly into the Chiang 2016 remap. No additional scaling is applied.
+
+Cycles, in contrast, multiplies the incoming radius by `1 / (4π) ≈ 0.0796` inside `bssrdf_setup_radius` ([cycles/src/kernel/closure/bssrdf.h](https://projects.blender.org/blender/cycles/src/branch/main/src/kernel/closure/bssrdf.h)). Cycles' own comment describes this as a perceptual compatibility shim "so it gives similar looking result to older Cubic, Gaussian and Burley models" — it is not physically motivated, and hdEmbree intentionally does not replicate it because hdEmbree does not support those legacy BSSRDF models.
+
+**Practical consequence**: a radius value that looks right in Cycles will scatter roughly `4π ≈ 12.6×` more densely in hdEmbree. To port material values:
+
+- **Cycles radius → hdEmbree radius**: divide by `4π` (~12.6).
+- **hdEmbree radius → Cycles radius**: multiply by `4π` (~12.6).
+
+Everything else (the Chiang albedo → α polynomial remap, the random-walk step cap of 256, Dwivedi guided sampling, MIS channel selection) matches Cycles directly.

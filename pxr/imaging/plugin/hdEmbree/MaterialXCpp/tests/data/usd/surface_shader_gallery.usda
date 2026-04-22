@@ -2,6 +2,7 @@
 (
     defaultPrim = "World"
     metersPerUnit = 1.0
+    renderSettingsPrimPath = "/RenderSettings"
     upAxis = "Y"
     doc = """Gallery scene for all currently implemented surface shader terminals in hdEmbree.
 
@@ -16,6 +17,25 @@ Included surface shaders:
 The ground plane uses a diffuse-only material with reflectance 0.2.
 The dome light uses StinsonBeach.hdr as the environment map."""
 )
+
+def RenderSettings "RenderSettings"
+{
+    int hdEmbree:lightSamplesPerHit = 32
+    token hdEmbree:samplerSequence = "openqmc_sobolbn"
+    rel products = [</RenderProduct>]
+}
+
+def RenderProduct "RenderProduct"
+{
+    rel orderedVars = [</RenderProduct/Color>]
+
+    def RenderVar "Color"
+    {
+        token dataType = "color4f"
+        string sourceName = "color"
+        string sourceType = "raw"
+    }
+}
 
 def Xform "World"
 {

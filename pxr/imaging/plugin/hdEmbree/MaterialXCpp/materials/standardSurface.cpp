@@ -307,13 +307,6 @@ EvalStandardSurface(const ParamMap& params)
         std::max(Get<float>(params, _kSubsurfaceScale, 1.0f), 0.0f));
     c.subsurfaceAnisotropy =
         Get<float>(params, _kSubsurfaceAnisotropy, 0.0f);
-    c.subsurfaceMedium = MakeSubsurfaceMedium(
-        c.subsurfaceWeight,
-        c.subsurfaceColor,
-        c.subsurfaceRadius,
-        c.subsurfaceRadiusScale,
-        c.subsurfaceAnisotropy);
-    c.hasSubsurfaceMedium = !c.subsurfaceMedium.IsVacuum();
 
     c.coat = Get<float>(params, _kCoat, 0.0f);
     const Vec3f coatColor = Get<Vec3f>(params, _kCoatColor, Vec3f(1.0f));
@@ -421,7 +414,7 @@ EvalStandardSurface(const ParamMap& params)
         root = tree.Add(diffuse);
     }
 
-    if (c.hasSubsurfaceMedium && c.subsurfaceWeight > 0.0f) {
+    if (c.HasSubsurfaceScattering()) {
         Bsdf::SubsurfaceData subsurface;
         subsurface.weight = _Clamp01(c.subsurfaceWeight);
         subsurface.color = _Saturate(c.subsurfaceColor);

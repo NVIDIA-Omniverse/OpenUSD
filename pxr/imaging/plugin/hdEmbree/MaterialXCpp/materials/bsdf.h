@@ -147,6 +147,23 @@ namespace Bsdf
         const Vec3f& wo,
         float heroWavelengthNm = 0.0f);
 
+    /// Sample a direction entering a subsurface medium using the surface's
+    /// specular dielectric parameters (roughness + IOR).
+    ///
+    /// - Smooth surface (roughness < threshold): deterministic Snell refraction.
+    /// - Rough surface: GGX VNDF samples microfacet normal H, then Snell about H.
+    /// - IOR is clamped to >= 1.0 so there is no TIR at entry (matches Cycles).
+    /// - Returns false only on degenerate input (e.g. Dot(N, wo) <= 0).
+    ///
+    /// Source: influenced by Cycles `subsurface_entry_bounce` in
+    /// intern/cycles/kernel/integrator/subsurface.h (Apache 2.0).
+    bool SampleSubsurfaceEntry(
+        const SurfaceClosure& closure,
+        const Vec3f& N,
+        const Vec3f& wo,
+        float u1, float u2,
+        Vec3f& wi_into_medium);
+
     // ------------------------------------------------------------------
     // MIS utilities
     // ------------------------------------------------------------------

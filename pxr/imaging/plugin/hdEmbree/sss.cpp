@@ -3,6 +3,12 @@
 //
 #include "pxr/imaging/plugin/hdEmbree/sss.h"
 
+#include "pxr/imaging/plugin/hdEmbree/medium.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer.h"
+#include "pxr/imaging/plugin/hdEmbree/sampling.h"
+
+#include "pxr/base/gf/math.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -10,89 +16,608 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 namespace {
 
-constexpr float _kPi = 3.14159265358979323846f;
 constexpr float _kBias = 1.0e-4f;
 
-GfVec3f
-_SafeNormalize(GfVec3f const& value, GfVec3f const& fallback)
+}  // namespace
+
+// =============================================================================
+// HdEmbreeRandomWalkSSS: self-contained SSS random walk.
+// - Chiang 2016 polynomial remap (albedo + radius -> sigma_t, alpha).
+// - Channel-MIS (balance heuristic) per bounce.
+// - Henyey-Greenstein classic sampling + forward Dwivedi guided sampling.
+// - Similarity relation after kSimilarityLevel bounces (isotropic + reduced
+//   sigma).
+// Phase 4 / ticket #403 will activate backward Dwivedi guiding + opposite
+// interface detection; the relevant fields are already reserved on the state
+// and as locals in the main loop (see comments tagged "Phase 4").
+// =============================================================================
+
+namespace {
+
+constexpr int _kSssMaxBounces = 256;
+constexpr float _kVolumeThroughputEps = 1.0e-6f;
+constexpr float _kSigmaTEps = 1.0e-6f;
+
+struct _SssWalkState {
+    // Walk state.
+    GfVec3f rayOrigin;
+    GfVec3f rayDir;
+    GfVec3f throughput;           // walk-internal throughput; starts at min-alpha
+                                  // correction factor (Phase 2).
+
+    // Medium coefficients (Phase 2: Chiang polynomial remap).
+    GfVec3f sigma_t;
+    GfVec3f sigma_s;
+    GfVec3f alpha;                // single-scatter albedo (Phase 2)
+    float anisotropy;
+
+    // Opposite-interface state.
+    // Phase 3 reserves these fields for Phase 4 / ticket #403 (backward Dwivedi
+    // guiding + opposite interface detection). They are initialized here but
+    // unused until that work lands.
+    bool have_opposite_interface = false;
+    float opposite_distance = 0.0f;
+    GfVec3f entryPos;
+    GfVec3f entryNormal;
+    unsigned int ownerInstanceId = 0;
+    unsigned int ownerGeomId = 0;
+
+    // Phase 3: Dwivedi + similarity state (computed once from Chiang
+    // coefficients by _InitDwivediAndSimilarity).
+    float diffusion_length = 0.0f;
+    float phase_log = 0.0f;
+    float guided_fraction = 0.0f;
+
+    // Similarity-reduced coefficients (Wrenninge-Villemin-Hery). Used after
+    // bounce > kSimilarityLevel, where scattering is treated as isotropic
+    // with reduced scattering.
+    GfVec3f sigma_t_star = GfVec3f(0.0f);
+    GfVec3f sigma_s_star = GfVec3f(0.0f);
+};
+
+// Phase 2: Chiang polynomial remap + min-alpha throughput correction.
+//
+// HdEmbreeChiangRemap produces (sigma_t, alpha) such that a random walk with
+// these coefficients reproduces the target diffuse reflectance, and clamps
+// alpha to kMinAlpha (0.2) for numerical stability. When alpha was clamped
+// up from a smaller raw value, we compensate by starting the walk throughput
+// at (raw / clamped) so the expected reflectance matches the un-clamped case.
+// (Cycles `subsurface_random_walk_init`.)
+static void
+_InitChiangCoefficients(
+    GfVec3f const& albedo,
+    GfVec3f const& radius,
+    float anisotropy,
+    GfVec3f* sigma_t,
+    GfVec3f* sigma_s,
+    GfVec3f* alpha,
+    GfVec3f* throughputCorrection)
 {
-    if (value.GetLengthSq() <= 1.0e-12f) {
-        return fallback;
+    GfVec3f rawAlpha;
+    HdEmbreeChiangRemap(albedo, radius, anisotropy, sigma_t, alpha, &rawAlpha);
+    for (int i = 0; i < 3; ++i) {
+        (*sigma_s)[i] = (*sigma_t)[i] * (*alpha)[i];
     }
-    return value.GetNormalized();
+
+    // Min-alpha correction: if the Chiang polynomial yielded alpha < kMinAlpha
+    // we clamped alpha up; offset throughput by raw/clamped so the expected
+    // reflectance is unchanged.  Must mirror the clamp value in
+    // HdEmbreeChiangRemap.
+    constexpr float kMinAlpha = 0.2f;
+    *throughputCorrection = GfVec3f(1.0f);
+    for (int i = 0; i < 3; ++i) {
+        if (rawAlpha[i] < kMinAlpha) {
+            (*throughputCorrection)[i] = rawAlpha[i] / kMinAlpha;
+        }
+    }
 }
 
-void
-_CoordinateSystem(
+// Phase 3: Dwivedi diffusion length + similarity-reduced coefficients.
+//
+// Must be called after _InitChiangCoefficients has populated
+// sigma_t / sigma_s / alpha / anisotropy on the walk state.
+//
+// Returns false if the diffusion length is too close to 1 (which would make
+// phase_log explode and collapse throughput).
+static bool
+_InitDwivediAndSimilarity(_SssWalkState* st)
+{
+    // Forward Dwivedi: diffusion_length based on max alpha (safety: use the
+    // strongest-scattering channel to avoid too-long guided stretching).
+    const float maxAlpha = std::max({st->alpha[0], st->alpha[1], st->alpha[2]});
+    st->diffusion_length = HdEmbreeDiffusionLengthDwivedi(maxAlpha);
+
+    // Degenerate guard: L == 1 causes phase_log = inf and throughput collapse.
+    if (st->diffusion_length <= 1.0f + 1.0e-6f) {
+        return false;
+    }
+    st->phase_log = std::log(
+        (st->diffusion_length + 1.0f) / (st->diffusion_length - 1.0f));
+
+    // guided_fraction: favor classic for strong HG anisotropy (the HG sample
+    // already focuses the forward distribution); favor guided for isotropic /
+    // low-anisotropy media (where Dwivedi helps exit the walk faster).
+    //   guided_fraction = 1 - max(0.5, |g|^0.125)
+    st->guided_fraction =
+        1.0f - std::max(0.5f, std::pow(std::fabs(st->anisotropy), 0.125f));
+
+    // Similarity-reduced coefficients (Wrenninge-Villemin-Hery).
+    //   sigma_s* = sigma_s * (1 - g)
+    //   sigma_t* = sigma_a + sigma_s* = sigma_t - sigma_s + sigma_s*
+    for (int i = 0; i < 3; ++i) {
+        st->sigma_s_star[i] = st->sigma_s[i] * (1.0f - st->anisotropy);
+        st->sigma_t_star[i] =
+            st->sigma_t[i] - st->sigma_s[i] + st->sigma_s_star[i];
+    }
+    return true;
+}
+
+// Build an orthonormal basis (xAxis, yAxis) for the plane perpendicular to
+// zAxis. zAxis is assumed to be normalized. Mirrors the internal
+// `mxcpp::_CoordinateSystem` pattern in medium.cpp.
+static void
+_BuildOrthonormalBasis(
     GfVec3f const& zAxis,
     GfVec3f* xAxis,
     GfVec3f* yAxis)
 {
-    const GfVec3f z = _SafeNormalize(zAxis, GfVec3f(0.0f, 0.0f, 1.0f));
-    if (std::abs(z[2]) < 0.999f) {
-        *xAxis = GfVec3f(-z[1], z[0], 0.0f);
+    if (std::fabs(zAxis[2]) < 0.999f) {
+        *xAxis = GfVec3f(-zAxis[1], zAxis[0], 0.0f);
     } else {
-        *xAxis = GfCross(GfVec3f(0.0f, 1.0f, 0.0f), z);
+        *xAxis = GfCross(GfVec3f(0.0f, 1.0f, 0.0f), zAxis);
     }
     if (xAxis->GetLengthSq() <= 1.0e-12f) {
         *xAxis = GfVec3f(1.0f, 0.0f, 0.0f);
     } else {
-        *xAxis = xAxis->GetNormalized();
+        xAxis->Normalize();
     }
-    *yAxis = GfCross(z, *xAxis).GetNormalized();
+    *yAxis = GfCross(zAxis, *xAxis);
+    if (yAxis->GetLengthSq() <= 1.0e-12f) {
+        *yAxis = GfVec3f(0.0f, 1.0f, 0.0f);
+    } else {
+        yAxis->Normalize();
+    }
+}
+
+static GfVec3f
+_EvalTransmittance(GfVec3f const& sigma_t, float dist)
+{
+    return GfVec3f(
+        std::exp(-sigma_t[0] * dist),
+        std::exp(-sigma_t[1] * dist),
+        std::exp(-sigma_t[2] * dist));
+}
+
+// Chiang 2016 remap (Cycles subsurface_random_walk_remap port, per-channel).
+//
+// Converts single-channel (albedo, d=radius, g=anisotropy) into (sigma_t, alpha)
+// such that a random walk with these coefficients produces the target diffuse
+// reflectance.
+//
+// Source: Blender Cycles src/kernel/integrator/subsurface_random_walk.h
+// (Apache 2.0). Polynomial coefficients from Chiang et al. 2016.
+static void
+_ChiangRemapChannel(float albedo, float d, float g,
+                    float* out_sigma_t, float* out_rawAlpha)
+{
+    const float g2 = g * g;
+    const float g3 = g2 * g;
+    const float g4 = g3 * g;
+    const float g5 = g4 * g;
+    const float g6 = g5 * g;
+    const float g7 = g6 * g;
+
+    const float A = 1.8260523782f + -1.28451056436f * g + -1.79904629312f * g2 +
+                    9.19393289202f * g3 + -22.8215585862f * g4 +
+                    32.0234874259f * g5 + -23.6264803333f * g6 +
+                    7.21067002658f * g7;
+    const float B = 4.98511194385f +
+                    0.127355959438f *
+                        std::exp(31.1491581433f * g + -201.847017512f * g2 +
+                                  841.576016723f * g3 + -2018.09288505f * g4 +
+                                  2731.71560286f * g5 + -1935.41424244f * g6 +
+                                  559.009054474f * g7);
+    const float C = 1.09686102424f + -0.394704063468f * g + 1.05258115941f * g2 +
+                    -8.83963712726f * g3 + 28.8643230661f * g4 +
+                    -46.8802913581f * g5 + 38.5402837518f * g6 +
+                    -12.7181042538f * g7;
+    const float D = 0.496310210422f + 0.360146581622f * g +
+                    -2.15139309747f * g2 + 17.8896899217f * g3 +
+                    -55.2984010333f * g4 + 82.065982243f * g5 +
+                    -58.5106008578f * g6 + 15.8478295021f * g7;
+    const float E = 4.23190299701f +
+                    0.00310603949088f *
+                        std::exp(76.7316253952f * g + -594.356773233f * g2 +
+                                  2448.8834203f * g3 + -5576.68528998f * g4 +
+                                  7116.60171912f * g5 + -4763.54467887f * g6 +
+                                  1303.5318055f * g7);
+    const float F = 2.40602999408f + -2.51814844609f * g + 9.18494908356f * g2 +
+                    -79.2191708682f * g3 + 259.082868209f * g4 +
+                    -403.613804597f * g5 + 302.85712436f * g6 +
+                    -87.4370473567f * g7;
+
+    const float blend = std::pow(albedo, 0.25f);
+
+    float alpha = (1.0f - blend) * A * std::pow(std::atan(B * albedo), C) +
+                  blend * D * std::pow(std::atan(E * albedo), F);
+    alpha = std::clamp(alpha, 0.0f, 0.999999f);
+
+    const float sigma_t_prime = 1.0f / std::max(d, 1.0e-16f);
+    const float sigma_t = sigma_t_prime / std::max(1.0f - g, 1.0e-6f);
+
+    *out_sigma_t = sigma_t;
+    *out_rawAlpha = alpha;
 }
 
 }  // namespace
 
-HdEmbreeSubsurfaceEntry
-HdEmbreeSampleSubsurfaceEntry(
-    GfVec3f const& position,
-    GfVec3f const& outwardNormal,
-    float u1,
-    float u2)
+void
+HdEmbreeChiangRemap(
+    const GfVec3f& albedo,
+    const GfVec3f& radius,
+    float anisotropy,
+    GfVec3f* sigma_t,
+    GfVec3f* alpha,
+    GfVec3f* rawAlphaOut)
 {
-    const GfVec3f inwardNormal =
-        -_SafeNormalize(outwardNormal, GfVec3f(0.0f, 1.0f, 0.0f));
-    GfVec3f tangent(1.0f, 0.0f, 0.0f);
-    GfVec3f bitangent(0.0f, 0.0f, 1.0f);
-    _CoordinateSystem(inwardNormal, &tangent, &bitangent);
+    const float g = std::clamp(anisotropy, -0.99f, 0.99f);
+    GfVec3f rawAlpha;
+    for (int i = 0; i < 3; ++i) {
+        _ChiangRemapChannel(
+            std::clamp(albedo[i], 0.0f, 1.0f),
+            std::max(radius[i], 1.0e-16f),
+            g,
+            &(*sigma_t)[i],
+            &rawAlpha[i]);
+    }
 
-    const float clampedU1 = std::clamp(u1, 0.0f, 1.0f);
-    const float clampedU2 = std::clamp(u2, 0.0f, 1.0f);
-    const float r = std::sqrt(clampedU1);
-    const float phi = 2.0f * _kPi * clampedU2;
-    const float x = r * std::cos(phi);
-    const float z = r * std::sin(phi);
-    const float y = std::sqrt(std::max(0.0f, 1.0f - clampedU1));
-
-    GfVec3f direction =
-        tangent * x + inwardNormal * y + bitangent * z;
-    direction.Normalize();
-
-    return HdEmbreeSubsurfaceEntry{
-        position + inwardNormal * _kBias,
-        direction,
-    };
+    // Min-alpha clamp for numerical stability (Cycles pattern).
+    // Callers use rawAlphaOut to compute min-alpha throughput correction.
+    constexpr float kMinAlpha = 0.2f;
+    for (int i = 0; i < 3; ++i) {
+        (*alpha)[i] = std::max(rawAlpha[i], kMinAlpha);
+    }
+    if (rawAlphaOut) {
+        *rawAlphaOut = rawAlpha;
+    }
 }
 
-mxcpp::SurfaceClosure
-HdEmbreeMakeSubsurfaceExitClosure(
-    mxcpp::SurfaceClosure const& /*surfaceClosure*/)
+float
+HdEmbreeDiffusionLengthDwivedi(float alpha)
 {
-    mxcpp::SurfaceClosure closure;
-    closure.baseColor = mxcpp::Vec3f(1.0f);
-    closure.roughness = 1.0f;
-    closure.metallic = 0.0f;
-    closure.specular = 0.0f;
-    closure.specularColor = mxcpp::Vec3f(1.0f);
-    closure.specularIor = 1.5f;
-    closure.transmission = 0.0f;
-    closure.opacity = 1.0f;
-    closure.presence = 1.0f;
-    closure.coat = 0.0f;
-    closure.sheen = 0.0f;
-    closure.emissiveColor = mxcpp::Vec3f(0.0f);
-    return closure;
+    // Eq. 67 from d'Eon-Krivanek 2020 (via Cycles
+    // subsurface_random_walk.h::diffusion_length_dwivedi).
+    //
+    // Source: Blender Cycles (Apache 2.0).
+    alpha = std::clamp(alpha, 1.0e-6f, 0.999999f);
+    const float denom =
+        1.0f - std::pow(alpha, 2.44294f - 0.0215813f * alpha + 0.578637f / alpha);
+    return 1.0f / std::sqrt(std::max(denom, 1.0e-12f));
+}
+
+float
+HdEmbreeEvalPhaseDwivedi(float L, float phase_log, float cos_theta)
+{
+    // Eq. 9 from Meng-Hanika-Dachsbacher 2016, using precomputed phase_log.
+    // Source: Blender Cycles (Apache 2.0).
+    return 1.0f / (std::max(L - cos_theta, 1.0e-6f) * phase_log);
+}
+
+float
+HdEmbreeSamplePhaseDwivedi(float L, float phase_log, float u)
+{
+    // Eq. 10 from Meng-Hanika-Dachsbacher 2016.
+    // Returns cos_theta. Uses inverse CDF:
+    //   cos_theta = L - (L+1) * pow((L-1)/(L+1), u)
+    // Implemented with precomputed phase_log = log((L+1)/(L-1)).
+    // Source: Blender Cycles (Apache 2.0).
+    const float uClamped = std::clamp(u, 0.0f, 1.0f);
+    return L - (L + 1.0f) * std::exp(-uClamped * phase_log);
+}
+
+HdEmbreeSssOutput
+HdEmbreeRandomWalkSSS(
+    HdEmbreeSssInput const& in,
+    HdEmbreeSampler& sampler,
+    RTCScene scene)
+{
+    // Phase 3: after kSimilarityLevel bounces we switch to isotropic scattering
+    // with the similarity-reduced sigma values (Wrenninge-Villemin-Hery).
+    // The guided_fraction is fixed at 0.75 in that regime since there is no
+    // HG forward peak to compete with.
+    constexpr int kSimilarityLevel = 9;
+    constexpr float kReducedGuidedFraction = 0.75f;
+    constexpr float kTwoPi = 2.0f * 3.14159265358979323846f;
+    constexpr float kInvTwoPi = 1.0f / (2.0f * 3.14159265358979323846f);
+
+    HdEmbreeSssOutput out;  // default-initialized (success=false)
+
+    _SssWalkState st;
+    GfVec3f throughputCorrection;
+    _InitChiangCoefficients(in.albedo, in.radius, in.anisotropy,
+                            &st.sigma_t, &st.sigma_s, &st.alpha,
+                            &throughputCorrection);
+    st.throughput = throughputCorrection;
+    st.rayOrigin = in.entryPos;
+    st.rayDir = in.entryDir;
+    st.anisotropy = std::clamp(in.anisotropy, -0.99f, 0.99f);
+    st.entryPos = in.entryPos;
+    st.entryNormal = in.entryGeomNormal;
+    st.ownerInstanceId = in.ownerInstanceId;
+    st.ownerGeomId = in.ownerGeomId;
+    // have_opposite_interface / opposite_distance remain at their default
+    // (false, 0). Phase 4 / ticket #403 will populate and consume them.
+
+    if (!_InitDwivediAndSimilarity(&st)) {
+        return out;  // degenerate diffusion length
+    }
+
+    // Match Cycles: Dwivedi guiding is sampled around the stored entry normal.
+    // In our renderer the entry geometric normal is face-forwarded toward `wo`,
+    // so this axis is the same outward-facing normal Cycles uses for `N`.
+    const GfVec3f guideAxis = st.entryNormal;
+
+    for (int bounce = 0; bounce < _kSssMaxBounces; ++bounce) {
+        ++out.walkSteps;
+
+        // Similarity switch: after kSimilarityLevel the medium is approximated
+        // as isotropic with reduced scattering.
+        GfVec3f sigma_t_eff;
+        GfVec3f sigma_s_eff;
+        float anisotropy_eff;
+        float guided_fraction_eff;
+        if (bounce <= kSimilarityLevel) {
+            sigma_t_eff = st.sigma_t;
+            sigma_s_eff = st.sigma_s;
+            anisotropy_eff = st.anisotropy;
+            guided_fraction_eff = st.guided_fraction;
+        } else {
+            sigma_t_eff = st.sigma_t_star;
+            sigma_s_eff = st.sigma_s_star;
+            anisotropy_eff = 0.0f;  // isotropic regime
+            guided_fraction_eff = kReducedGuidedFraction;
+        }
+
+        // Chiang channel selection MIS (balance heuristic) per bounce.
+        mxcpp::Vec3f channelPdfMx;
+        const int channel = mxcpp::ChannelMIS(
+            /*throughput*/ mxcpp::Vec3f(
+                st.throughput[0], st.throughput[1], st.throughput[2]),
+            /*weights*/ mxcpp::Vec3f(
+                st.alpha[0], st.alpha[1], st.alpha[2]),
+            sampler.Next(),
+            &channelPdfMx);
+        const GfVec3f channelPdf(
+            channelPdfMx[0], channelPdfMx[1], channelPdfMx[2]);
+
+        float sampleSigmaT = sigma_t_eff[channel];
+        if (sampleSigmaT <= _kSigmaTEps) {
+            return out;  // degenerate medium
+        }
+
+        // Direction sampling.
+        // bounce 0 uses the pre-set entry direction (no guiding possible yet).
+        // bounce > 0 picks guided (Dwivedi around guideAxis) vs classic (HG)
+        // stochastically with probability `guided_fraction_eff`.
+        float forward_stretching = 1.0f;
+        float forward_pdf_factor = 0.0f;
+
+        // Phase 4 / ticket #403 reserves these for backward guiding. They
+        // are inert (stretching=1, factor=0, fraction=0) in Phase 3.
+        float backward_stretching = 1.0f;
+        (void)backward_stretching;  // silence unused warning until Phase 4
+        float backward_pdf_factor = 0.0f;
+        (void)backward_pdf_factor;
+        float backwardFraction = 0.0f;
+        (void)backwardFraction;
+
+        bool guidedThisBounce = false;
+        if (bounce > 0) {
+            guidedThisBounce = (sampler.Next() < guided_fraction_eff);
+            const float rand_a = sampler.Next();
+            const float rand_b = sampler.Next();
+
+            GfVec3f newDir;
+            float cosTheta_ent = 0.0f;
+            float hg_pdf = 1.0f;
+
+            if (guidedThisBounce) {
+                // Forward Dwivedi: sample cos_theta around the inward-facing
+                // entry direction (guideAxis).
+                float cos_theta = HdEmbreeSamplePhaseDwivedi(
+                    st.diffusion_length, st.phase_log, rand_a);
+                // Phase 4 / ticket #403: when guideBackward is chosen,
+                // cos_theta would be negated here (guide away from entry
+                // toward the opposite interface).
+                //   if (guideBackward) cos_theta = -cos_theta;
+
+                cosTheta_ent = cos_theta;
+
+                GfVec3f X, Y;
+                _BuildOrthonormalBasis(guideAxis, &X, &Y);
+                const float sin_theta = std::sqrt(
+                    std::max(0.0f, 1.0f - cos_theta * cos_theta));
+                const float phi = kTwoPi * rand_b;
+                newDir = X * (sin_theta * std::cos(phi)) +
+                         Y * (sin_theta * std::sin(phi)) +
+                         guideAxis * cos_theta;
+                if (newDir.GetLengthSq() > 1.0e-20f) {
+                    newDir.Normalize();
+                } else {
+                    newDir = guideAxis;
+                }
+
+                hg_pdf = mxcpp::PdfHenyeyGreenstein(
+                    mxcpp::Vec3f(newDir[0], newDir[1], newDir[2]),
+                    mxcpp::Vec3f(-st.rayDir[0], -st.rayDir[1], -st.rayDir[2]),
+                    anisotropy_eff);
+            } else {
+                // Classic HG sampling around the incoming ray direction.
+                const mxcpp::Vec3f wo(
+                    -st.rayDir[0], -st.rayDir[1], -st.rayDir[2]);
+                const mxcpp::Vec3f sampled =
+                    mxcpp::SampleHenyeyGreenstein(
+                        wo, anisotropy_eff, rand_a, rand_b);
+                newDir = GfVec3f(sampled[0], sampled[1], sampled[2]);
+                cosTheta_ent = GfDot(newDir, guideAxis);
+                hg_pdf = mxcpp::PdfHenyeyGreenstein(
+                    mxcpp::Vec3f(newDir[0], newDir[1], newDir[2]),
+                    mxcpp::Vec3f(-st.rayDir[0], -st.rayDir[1], -st.rayDir[2]),
+                    anisotropy_eff);
+            }
+
+            st.rayDir = newDir;
+
+            // Guided PDF factor used later to mix into the classic PDF.
+            // forward_pdf_factor converts the classic (sigma_s * T) PDF into
+            // the guided-direction PDF by multiplying by
+            //   (1/(2*pi)) * p_Dwivedi(cosTheta_ent) / p_HG(cosTheta_ray)
+            // (the 1/(2*pi) captures the azimuth, which Dwivedi samples
+            //  uniformly while HG already includes it in its normalization).
+            const float hg_pdf_safe = std::max(hg_pdf, 1.0e-8f);
+            forward_pdf_factor = kInvTwoPi *
+                HdEmbreeEvalPhaseDwivedi(
+                    st.diffusion_length, st.phase_log, cosTheta_ent) /
+                hg_pdf_safe;
+            // Phase 4 / ticket #403: backward_pdf_factor would be
+            //   kInvTwoPi * HdEmbreeEvalPhaseDwivedi(L, log, -cosTheta_ent)
+            //       / hg_pdf_safe;
+
+            forward_stretching = 1.0f - cosTheta_ent / st.diffusion_length;
+            backward_stretching = 1.0f + cosTheta_ent / st.diffusion_length;
+
+            if (guidedThisBounce) {
+                // Phase 4 / ticket #403: when guideBackward,
+                //   sampleSigmaT *= backward_stretching.
+                sampleSigmaT *= forward_stretching;
+            }
+        }
+
+        // Free-flight distance sample for the (possibly stretched) sigma_t.
+        const float u = std::clamp(sampler.Next(), 1.0e-6f, 1.0f - 1.0e-6f);
+        float t = -std::log(1.0f - u) /
+                  std::max(sampleSigmaT, _kSigmaTEps);
+
+        // Ray cast (use Camera mask to match the path tracer's visibility set).
+        RTCRayHit rayHit;
+        rayHit.ray.flags = 0;
+        rayHit.ray.org_x = st.rayOrigin[0];
+        rayHit.ray.org_y = st.rayOrigin[1];
+        rayHit.ray.org_z = st.rayOrigin[2];
+        rayHit.ray.tnear = _kBias;
+        rayHit.ray.dir_x = st.rayDir[0];
+        rayHit.ray.dir_y = st.rayDir[1];
+        rayHit.ray.dir_z = st.rayDir[2];
+        rayHit.ray.time = 0.0f;
+        rayHit.ray.tfar = t;
+        rayHit.ray.mask = static_cast<uint32_t>(HdEmbree_RayMask::Camera);
+        rayHit.ray.id = 0;
+        rayHit.hit.primID = RTC_INVALID_GEOMETRY_ID;
+        rayHit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+        rayHit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
+
+        rtcIntersect1(scene, &rayHit);
+        ++out.intersectionTests;
+
+        const bool hit = (rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID);
+        if (hit) {
+            t = rayHit.ray.tfar;
+        }
+
+        // Classic sampling PDF + contribution.
+        //   hit:     sampleContrib = T(t),                classicPdf = T(t)
+        //   scatter: sampleContrib = sigma_s * T(t),      classicPdf = sigma_t * T(t)
+        const GfVec3f transmittance = _EvalTransmittance(sigma_t_eff, t);
+        GfVec3f classicPdf;
+        GfVec3f sampleContrib;
+        if (hit) {
+            classicPdf = transmittance;
+            sampleContrib = transmittance;
+        } else {
+            // Distance-sampling PDF uses sigma_t (exponential sampling pdf).
+            classicPdf = GfCompMult(sigma_t_eff, transmittance);
+            // Throughput numerator uses sigma_s (scatter albedo weighting).
+            sampleContrib = GfCompMult(sigma_s_eff, transmittance);
+        }
+
+        // MIS blend between classic and guided (Dwivedi) sampling PDFs.
+        GfVec3f pdf = classicPdf;
+        if (bounce > 0) {
+            // Guided PDF uses the stretched sigma_t (distance was sampled
+            // with the stretched extinction when guided, and the PDF has to
+            // match that distribution for correct MIS weighting).
+            const GfVec3f stretched_sigma_t = sigma_t_eff * forward_stretching;
+            const GfVec3f stretched_trans =
+                _EvalTransmittance(stretched_sigma_t, t);
+            GfVec3f forward_guided_pdf;
+            if (hit) {
+                forward_guided_pdf = stretched_trans;
+            } else {
+                // Match Cycles' subsurface_random_walk_pdf: pdf = sigma_t * T for scatter.
+                forward_guided_pdf = GfCompMult(stretched_sigma_t, stretched_trans);
+            }
+            forward_guided_pdf = forward_guided_pdf * forward_pdf_factor;
+
+            // Phase 4 / ticket #403 entry point: when st.have_opposite_interface
+            // is true, compute backward_guided_pdf similarly with
+            // backward_stretching + backward_pdf_factor, and blend:
+            //   guidedPdf = mix(forward_guided_pdf,
+            //                    backward_guided_pdf, backwardFraction);
+            const GfVec3f guidedPdf = forward_guided_pdf;
+
+            pdf = classicPdf * (1.0f - guided_fraction_eff) +
+                  guidedPdf * guided_fraction_eff;
+        }
+
+        const float denom = GfDot(channelPdf, pdf);
+        if (!std::isfinite(denom) || denom <= 1.0e-20f) {
+            return out;
+        }
+        st.throughput = GfCompMult(st.throughput,
+                                   sampleContrib * (1.0f / denom));
+
+        // Termination on degenerate / near-zero throughput.
+        const float maxTp = std::max({st.throughput[0],
+                                      st.throughput[1],
+                                      st.throughput[2]});
+        if (!std::isfinite(maxTp) || maxTp < _kVolumeThroughputEps) {
+            return out;
+        }
+
+        if (hit) {
+            // Build exit info from the surface intersection.
+            const GfVec3f hitPos(
+                rayHit.ray.org_x + rayHit.ray.tfar * rayHit.ray.dir_x,
+                rayHit.ray.org_y + rayHit.ray.tfar * rayHit.ray.dir_y,
+                rayHit.ray.org_z + rayHit.ray.tfar * rayHit.ray.dir_z);
+            GfVec3f hitNormal(rayHit.hit.Ng_x,
+                              rayHit.hit.Ng_y,
+                              rayHit.hit.Ng_z);
+            if (hitNormal.GetLengthSq() > 1.0e-20f) {
+                hitNormal.Normalize();
+            } else {
+                hitNormal = -st.rayDir;  // fallback
+            }
+            // Orient outward: the exit normal should align with the ray direction
+            // (the ray leaves the medium, so the outward face's normal is in the
+            // same half-space as rayDir). Flip only if Embree returned an inward Ng.
+            if (GfDot(hitNormal, st.rayDir) < 0.0f) {
+                hitNormal = -hitNormal;
+            }
+
+            out.success = true;
+            out.exitPos = hitPos;
+            out.exitGeomNormal = hitNormal;
+            out.exitDir = st.rayDir;
+            out.throughputWeight = st.throughput;
+            return out;
+        }
+
+        // Advance ray origin to the scatter point for the next bounce.
+        st.rayOrigin = st.rayOrigin + st.rayDir * t;
+    }
+
+    return out;  // max bounces exceeded
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

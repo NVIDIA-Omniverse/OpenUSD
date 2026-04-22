@@ -6,6 +6,7 @@
 //
 #include "disneyPrincipled.h"
 
+#include "../../medium.h"
 #include "../paramMap.h"
 
 #include <algorithm>
@@ -120,6 +121,11 @@ EvalDisneyPrincipled(const ParamMap& params)
     c.specularIor = ior;
     c.transmission = specTrans;
     c.transmissionColor = baseColor;
+    c.subsurfaceWeight = subsurface;
+    c.subsurfaceColor = baseColor;
+    c.subsurfaceRadius = subsurfaceDistance;
+    c.subsurfaceRadiusScale = Vec3f(1.0f);
+    c.subsurfaceAnisotropy = 0.0f;
     c.sheen = sheen;
     c.sheenColor = _Lerp(Vec3f(1.0f), baseColor, sheenTint);
     c.sheenRoughness = _kDisneySheenRoughness;

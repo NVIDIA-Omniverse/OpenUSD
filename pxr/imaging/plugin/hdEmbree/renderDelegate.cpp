@@ -313,9 +313,27 @@ VtDictionary
 HdEmbreeRenderDelegate::GetRenderStats() const
 {
     VtDictionary stats;
+    const uint64_t sssCalls = _renderer.GetSssCallCount();
+    const uint64_t sssSuccesses = _renderer.GetSssSuccessCount();
+    const uint64_t sssWalkSteps = _renderer.GetSssWalkStepCount();
+    const uint64_t sssIntersections = _renderer.GetSssIntersectionCount();
+
     stats[HdPerfTokens->numCompletedSamples.GetString()] =
         _renderer.GetCompletedSamples();
     stats["renderTimeSeconds"] = _renderer.GetRenderElapsedSeconds();
+    stats["sssCallCount"] = static_cast<int64_t>(sssCalls);
+    stats["sssSuccessCount"] = static_cast<int64_t>(sssSuccesses);
+    stats["sssWalkStepCount"] = static_cast<int64_t>(sssWalkSteps);
+    stats["sssIntersectionCount"] = static_cast<int64_t>(sssIntersections);
+    stats["sssSuccessRate"] = (sssCalls > 0)
+        ? static_cast<double>(sssSuccesses) / static_cast<double>(sssCalls)
+        : 0.0;
+    stats["sssAvgStepsPerCall"] = (sssCalls > 0)
+        ? static_cast<double>(sssWalkSteps) / static_cast<double>(sssCalls)
+        : 0.0;
+    stats["sssAvgStepsPerSuccess"] = (sssSuccesses > 0)
+        ? static_cast<double>(sssWalkSteps) / static_cast<double>(sssSuccesses)
+        : 0.0;
     return stats;
 }
 

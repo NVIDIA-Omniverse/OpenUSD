@@ -70,12 +70,51 @@ MediumProperties MakeTransmissionMedium(
     const Vec3f& transmissionScatter,
     float transmissionScatterAnisotropy) noexcept;
 
-MediumProperties MakeSubsurfaceMedium(
-    float subsurfaceWeight,
-    const Vec3f& subsurfaceColor,
-    const Vec3f& subsurfaceRadius,
-    const Vec3f& subsurfaceRadiusScale,
-    float subsurfaceAnisotropy) noexcept;
+// --- Per-channel spectral tracking for SSS random walks ---
+// Using the majorant (max sigmaT) for free-flight sampling creates extreme
+// variance when channels have very different extinction coefficients (e.g.
+// skin).  These functions track by a single channel's sigmaT instead,
+// bounding per-channel weights and eliminating the exponential blow-up.
+
+/// Return the channel index with the minimum non-zero sigmaT.
+int MinExtinctionChannel(
+    const MediumProperties& medium) noexcept;
+
+/// Sample a free-flight distance using a specific channel's sigmaT.
+float SampleFreeFlightChannel(
+    const MediumProperties& medium,
+    int channel,
+    float u) noexcept;
+
+/// Per-channel scatter weight when tracking with a specific channel's
+/// sigmaT (ratio tracking).
+Vec3f EvalChannelScatterWeight(
+    const MediumProperties& medium,
+    int channel,
+    float distance) noexcept;
+
+/// Per-channel transmittance weight when tracking with a specific
+/// channel's sigmaT.
+Vec3f EvalChannelTransmittanceWeight(
+    const MediumProperties& medium,
+    int channel,
+    float distance) noexcept;
+
+/// Chiang balance heuristic channel selection MIS.
+///
+/// Selects one of 3 RGB channels with probability proportional to
+/// `throughput[i] * weights[i]`.  Returns the selected channel index
+/// and writes all channel probabilities to `channelPdf`.
+///
+/// If all weights sum to zero, falls back to uniform (1/3 each).
+///
+/// Used in random walk SSS (Phase 2) to importance-sample color channels.
+/// Designed to be reusable by transmission scattering (Phase 4, ticket #404).
+int ChannelMIS(
+    const Vec3f& throughput,
+    const Vec3f& weights,
+    float u,
+    Vec3f* channelPdf);
 
 }  // namespace mxcpp
 

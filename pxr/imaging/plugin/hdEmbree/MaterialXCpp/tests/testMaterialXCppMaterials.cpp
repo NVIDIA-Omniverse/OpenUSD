@@ -174,12 +174,6 @@ TestStandardSurfaceVolumeParametersReachClosure()
         2.0f,
         Vec3f(0.1f, 0.2f, 0.5f),
         0.35f);
-    const MediumProperties expectedSubsurface = MakeSubsurfaceMedium(
-        0.75f,
-        Vec3f(0.25f, 0.5f, 0.75f),
-        Vec3f(1.0f, 2.0f, 4.0f),
-        Vec3f(2.0f),
-        0.4f);
 
     return c.hasInteriorMedium &&
            Test_IsClose(c.interiorMedium.sigmaA, expectedTransmission.sigmaA, 1e-5f) &&
@@ -189,10 +183,7 @@ TestStandardSurfaceVolumeParametersReachClosure()
            Test_IsClose(c.subsurfaceColor, Vec3f(0.25f, 0.5f, 0.75f), 1e-5f) &&
            Test_IsClose(c.subsurfaceRadius, Vec3f(1.0f, 2.0f, 4.0f), 1e-5f) &&
            Test_IsClose(c.subsurfaceRadiusScale, Vec3f(2.0f), 1e-5f) &&
-           Test_IsClose(c.subsurfaceAnisotropy, 0.4f, 1e-5f) &&
-           c.hasSubsurfaceMedium &&
-           Test_IsClose(c.subsurfaceMedium.sigmaA, expectedSubsurface.sigmaA, 1e-5f) &&
-           Test_IsClose(c.subsurfaceMedium.sigmaS, expectedSubsurface.sigmaS, 1e-5f);
+           Test_IsClose(c.subsurfaceAnisotropy, 0.4f, 1e-5f);
 }
 
 static bool
@@ -895,12 +886,6 @@ TestOpenPbrVolumeParametersReachClosure()
         0.5f,
         Vec3f(0.02f, 0.03f, 0.04f),
         -0.25f);
-    const MediumProperties expectedSubsurface = MakeSubsurfaceMedium(
-        0.6f,
-        Vec3f(0.4f, 0.3f, 0.2f),
-        Vec3f(3.0f, 2.0f, 1.0f),
-        Vec3f(1.0f, 0.5f, 0.25f),
-        0.2f);
 
     return c.hasInteriorMedium &&
            Test_IsClose(c.interiorMedium.sigmaA, expectedTransmission.sigmaA, 1e-5f) &&
@@ -908,14 +893,11 @@ TestOpenPbrVolumeParametersReachClosure()
            Test_IsClose(c.interiorMedium.anisotropy, -0.25f, 1e-5f) &&
            Test_IsClose(c.subsurfaceWeight, 0.6f, 1e-5f) &&
            Test_IsClose(c.subsurfaceRadiusScale, Vec3f(1.0f, 0.5f, 0.25f), 1e-5f) &&
-           Test_IsClose(c.subsurfaceAnisotropy, 0.2f, 1e-5f) &&
-           c.hasSubsurfaceMedium &&
-           Test_IsClose(c.subsurfaceMedium.sigmaA, expectedSubsurface.sigmaA, 1e-5f) &&
-           Test_IsClose(c.subsurfaceMedium.sigmaS, expectedSubsurface.sigmaS, 1e-5f);
+           Test_IsClose(c.subsurfaceAnisotropy, 0.2f, 1e-5f);
 }
 
 static bool
-TestTransmissionMediumClampsNegativeAbsorption()
+TestTransmissionMediumShiftsNegativeAbsorptionLikeMaterialX()
 {
     const MediumProperties medium = MakeTransmissionMedium(
         1.0f,
@@ -924,10 +906,38 @@ TestTransmissionMediumClampsNegativeAbsorption()
         Vec3f(0.5f, 0.5f, 0.5f),
         0.0f);
 
-    return medium.sigmaA[0] >= 0.0f &&
-           medium.sigmaA[1] >= 0.0f &&
-           medium.sigmaA[2] >= 0.0f &&
-           Test_IsClose(medium.sigmaA[2], 0.0f, 1e-6f);
+    const Vec3f extinction(
+        -std::log(0.98f),
+        -std::log(0.99f),
+        -std::log(1.0f - 1.0e-6f));
+    const Vec3f rawAbsorption = extinction - Vec3f(0.5f);
+    const float minAbsorption = std::min(
+        {rawAbsorption[0], rawAbsorption[1], rawAbsorption[2]});
+    const Vec3f expected = rawAbsorption - Vec3f(minAbsorption);
+
+    return Test_IsClose(medium.sigmaA[0], expected[0], 1e-5f) &&
+           Test_IsClose(medium.sigmaA[1], expected[1], 1e-5f) &&
+           Test_IsClose(medium.sigmaA[2], expected[2], 1e-5f);
+}
+
+static bool
+TestDisneyPrincipledSubsurfaceBuildsMediumState()
+{
+    const Vec3f baseColor(0.86f, 0.53f, 0.45f);
+    const Vec3f subsurfaceDistance(0.7f, 1.6f, 3.0f);
+
+    ParamMap params;
+    params["baseColor"] = Value(baseColor);
+    params["subsurface"] = Value(0.85f);
+    params["subsurfaceDistance"] = Value(subsurfaceDistance);
+
+    const SurfaceClosure c = EvalDisneyPrincipled(params);
+
+    return Test_IsClose(c.subsurfaceWeight, 0.85f, 1e-5f) &&
+           Test_IsClose(c.subsurfaceColor, baseColor, 1e-5f) &&
+           Test_IsClose(c.subsurfaceRadius, subsurfaceDistance, 1e-5f) &&
+           Test_IsClose(c.subsurfaceRadiusScale, Vec3f(1.0f), 1e-5f) &&
+           Test_IsClose(c.subsurfaceAnisotropy, 0.0f, 1e-5f);
 }
 
 static bool
@@ -1565,7 +1575,7 @@ Test_RegisterMaterialTests()
     _REG(TestOpenPbrThinFilmParametersReachBsdf);
     _REG(TestOpenPbrDispersionParametersReachBsdf);
     _REG(TestOpenPbrVolumeParametersReachClosure);
-    _REG(TestTransmissionMediumClampsNegativeAbsorption);
+    _REG(TestTransmissionMediumShiftsNegativeAbsorptionLikeMaterialX);
     _REG(TestOpenPbrBaseDiffuseRoughnessUsesCanonicalName);
     _REG(TestOpenPbrSpecularRoughnessAnisotropyUsesCanonicalName);
     _REG(TestOpenPbrGeometryInputsUseCanonicalNames);
@@ -1578,6 +1588,7 @@ Test_RegisterMaterialTests()
     _REG(TestDisneyPrincipledSheenUsesMaterialXDefaults);
     _REG(TestDisneyPrincipledTransmissionUsesSharpDielectric);
     _REG(TestDisneyPrincipledClearcoatGlossControlsCoatRoughness);
+    _REG(TestDisneyPrincipledSubsurfaceBuildsMediumState);
     _REG(TestGltfPbrDefaults);
     _REG(TestGltfPbrAlphaMask);
     _REG(TestGltfPbrIridescenceParametersReachBsdf);
