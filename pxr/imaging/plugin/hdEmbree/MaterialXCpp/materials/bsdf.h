@@ -18,6 +18,11 @@ namespace mxcpp {
 /// from the surface.
 namespace Bsdf
 {
+    /// Enables Turquin-style multiple-scattering compensation for GGX
+    /// reflection lobes and their layered throughput estimates.
+    void SetGgxMicrofacetMultipleScatteringEnabled(bool enabled);
+    bool IsGgxMicrofacetMultipleScatteringEnabled();
+
     // ------------------------------------------------------------------
     // Evaluation (Phase 4)
     // ------------------------------------------------------------------
@@ -113,6 +118,16 @@ namespace Bsdf
         const Vec3f& N,
         const Vec3f& wi,
         const Vec3f& wo);
+
+    /// Directional energy helpers for the isotropic GGX reflection lobe.
+    /// alphaRoughness is the GGX alpha parameter, not perceptual roughness.
+    float GgxDirectionalMissingEnergy(
+        float cosTheta,
+        float alphaRoughness);
+
+    float GgxDirectionalSingleScatterEnergy(
+        float cosTheta,
+        float alphaRoughness);
 
     /// GGX VNDF-based transmission sampling.
     BsdfSample SampleGGXTransmission(

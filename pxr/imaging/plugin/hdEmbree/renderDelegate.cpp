@@ -29,6 +29,9 @@ PXR_NAMESPACE_OPEN_SCOPE
 TF_DEFINE_PUBLIC_TOKENS(HdEmbreeRenderSettingsTokens, HDEMBREE_RENDER_SETTINGS_TOKENS);
 TF_DEFINE_PUBLIC_TOKENS(HdEmbreeAovTokens, HDEMBREE_AOV_TOKENS);
 
+static const TfToken _enableGgxMicrofacetMultipleScatteringToken(
+    "enableGgxMicrofacetMultipleScattering", TfToken::Immortal);
+
 const TfTokenVector HdEmbreeRenderDelegate::SUPPORTED_RPRIM_TYPES =
 {
     HdPrimTypeTokens->mesh,
@@ -109,7 +112,7 @@ void
 HdEmbreeRenderDelegate::_Initialize()
 {
     // Initialize the settings and settings descriptors.
-    _settingDescriptors.resize(17);
+    _settingDescriptors.resize(18);
     _settingDescriptors[0] = { "Enable Scene Colors",
         HdEmbreeRenderSettingsTokens->enableSceneColors,
         VtValue(HdEmbreeConfig::GetInstance().useFaceColors) };
@@ -164,6 +167,9 @@ HdEmbreeRenderDelegate::_Initialize()
     _settingDescriptors[16] = { "Firefly Clamp Threshold",
         HdEmbreeRenderSettingsTokens->fireflyClampThreshold,
         VtValue(HdEmbreeDefaultFireflyClampThreshold) };
+    _settingDescriptors[17] = { "Enable GGX Microfacet Multiple Scattering",
+        _enableGgxMicrofacetMultipleScatteringToken,
+        VtValue(true) };
     _PopulateDefaultSettings(_settingDescriptors);
 
     // Initialize the embree library handle (_rtcDevice).

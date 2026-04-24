@@ -180,6 +180,9 @@ public:
     /// Values <= 0 disable clamping.
     void SetFireflyClampThreshold(float threshold);
 
+    /// Set whether GGX reflection uses microfacet multiple scattering.
+    void SetEnableGgxMicrofacetMultipleScattering(bool enable);
+
     /// Rendering entrypoint: add one sample per pixel to the whole sample
     /// buffer, and then loop until the image is converged.  After each pass,
     /// the image will be resolved into a color buffer.
@@ -476,6 +479,9 @@ private:
 
     // Firefly clamping threshold (max sample luminance). <= 0 disables.
     float _fireflyClampThreshold;
+
+    // Whether GGX reflection uses microfacet multiple scattering compensation.
+    bool _enableGgxMicrofacetMultipleScattering;
 
     // Shared MaterialX texture backend for the whole renderer.
     std::unique_ptr<mxcpp::TextureSystem> _textureSystem;

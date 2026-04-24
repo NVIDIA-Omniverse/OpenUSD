@@ -1,0 +1,579 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1.0
+    renderSettingsPrimPath = "/RenderSettings"
+    upAxis = "Y"
+    doc = """Microfacet multiple-scattering smoke scene for hdEmbree.
+
+All objects reference meshes/uni.usdc. Columns are roughness values:
+0.05, 0.35, 0.65, 1.0.
+
+Rows:
+- white diffuse dielectric
+- white specular-only dielectric with black base
+- silver-like metallic
+- gold-like metallic
+
+The scene is intended for visual inspection of rough GGX energy recovery,
+grazing-angle behavior, and roughness-ramp smoothness after Turquin-style
+microfacet multiple-scattering compensation."""
+)
+
+def RenderSettings "RenderSettings"
+{
+    bool hdEmbree:enableGgxMicrofacetMultipleScattering = true
+    int hdEmbree:lightSamplesPerHit = 32
+    token hdEmbree:samplerSequence = "openqmc_sobolbn"
+    rel products = [</RenderProduct>]
+}
+
+def RenderProduct "RenderProduct"
+{
+    rel orderedVars = [</RenderProduct/Color>]
+    token productType = "raster"
+    token productName = "microfacet_ms_smoke.exr"
+
+    def RenderVar "Color"
+    {
+        token dataType = "color4f"
+        string sourceName = "color"
+        string sourceType = "raw"
+    }
+}
+
+def Xform "World"
+{
+    def Camera "MainCamera"
+    {
+        float focalLength = 36
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        float2 clippingRange = (0.1, 1000)
+        double3 xformOp:translate = (0, 2.8, 12.5)
+        float3 xformOp:rotateXYZ = (-10, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+    }
+
+    # def Mesh "GroundPlane" (
+    #     prepend apiSchemas = ["MaterialBindingAPI"]
+    # )
+    # {
+    #     int[] faceVertexCounts = [4]
+    #     int[] faceVertexIndices = [0, 1, 2, 3]
+    #     point3f[] points = [
+    #         (-8.5, -1.05, -4.5), (8.5, -1.05, -4.5),
+    #         (8.5, -1.05, 4.5), (-8.5, -1.05, 4.5)
+    #     ]
+    #     normal3f[] normals = [
+    #         (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)
+    #     ] (
+    #         interpolation = "vertex"
+    #     )
+    #     texCoord2f[] primvars:st = [
+    #         (0, 0), (1, 0), (1, 1), (0, 1)
+    #     ] (
+    #         interpolation = "vertex"
+    #     )
+    #     bool doubleSided = true
+    #     uniform token subdivisionScheme = "none"
+    #     rel material:binding = </World/Materials/GroundMat>
+    # }
+
+    def Xform "WhiteDiffuse_R005" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-4.5, 3.5, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/WhiteDiffuseR005>
+    }
+
+    def Xform "WhiteDiffuse_R035" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-1.5, 3.5, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/WhiteDiffuseR035>
+    }
+
+    def Xform "WhiteDiffuse_R065" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (1.5, 3.5, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/WhiteDiffuseR065>
+    }
+
+    def Xform "WhiteDiffuse_R100" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (4.5, 3.5, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/WhiteDiffuseR100>
+    }
+
+    def Xform "White_R005" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-4.5, 1.75, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/WhiteSpecR005>
+    }
+
+    def Xform "White_R035" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-1.5, 1.75, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/WhiteSpecR035>
+    }
+
+    def Xform "White_R065" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (1.5, 1.75, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/WhiteSpecR065>
+    }
+
+    def Xform "White_R100" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (4.5, 1.75, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/WhiteSpecR100>
+    }
+
+    def Xform "Silver_R005" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-4.5, 0, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/SilverR005>
+    }
+
+    def Xform "Silver_R035" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-1.5, 0, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/SilverR035>
+    }
+
+    def Xform "Silver_R065" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (1.5, 0, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/SilverR065>
+    }
+
+    def Xform "Silver_R100" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (4.5, 0, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/SilverR100>
+    }
+
+    def Xform "Gold_R005" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-4.5, -1.75, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/GoldR005>
+    }
+
+    def Xform "Gold_R035" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-1.5, -1.75, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/GoldR035>
+    }
+
+    def Xform "Gold_R065" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (1.5, -1.75, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/GoldR065>
+    }
+
+    def Xform "Gold_R100" (
+        prepend references = @./meshes/uni.usdc@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (4.5, -1.75, 0)
+        float3 xformOp:scale = (0.58, 0.58, 0.58)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/GoldR100>
+    }
+
+    def Scope "Materials"
+    {
+        def Material "GroundMat"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/GroundMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.18, 0.18, 0.18)
+                float inputs:diffuse_roughness = 0.5
+                float inputs:specular = 0.0
+                token outputs:out
+            }
+        }
+
+        def Material "WhiteSpecR005"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/WhiteSpecR005/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                color3f inputs:base_color = (0.0, 0.0, 0.0)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.05
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                token outputs:out
+            }
+        }
+
+        def Material "WhiteDiffuseR005"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/WhiteDiffuseR005/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.8, 0.8, 0.8)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.05
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                token outputs:out
+            }
+        }
+
+        def Material "WhiteDiffuseR035"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/WhiteDiffuseR035/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.8, 0.8, 0.8)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.35
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                token outputs:out
+            }
+        }
+
+        def Material "WhiteDiffuseR065"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/WhiteDiffuseR065/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.8, 0.8, 0.8)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.65
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                token outputs:out
+            }
+        }
+
+        def Material "WhiteDiffuseR100"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/WhiteDiffuseR100/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.8, 0.8, 0.8)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 1.0
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                token outputs:out
+            }
+        }
+
+        def Material "WhiteSpecR035"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/WhiteSpecR035/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                color3f inputs:base_color = (0.0, 0.0, 0.0)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.35
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                token outputs:out
+            }
+        }
+
+        def Material "WhiteSpecR065"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/WhiteSpecR065/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                color3f inputs:base_color = (0.0, 0.0, 0.0)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.65
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                token outputs:out
+            }
+        }
+
+        def Material "WhiteSpecR100"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/WhiteSpecR100/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                color3f inputs:base_color = (0.0, 0.0, 0.0)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 1.0
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                token outputs:out
+            }
+        }
+
+        def Material "SilverR005"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/SilverR005/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.93, 0.92, 0.88)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.05
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:metalness = 1.0
+                token outputs:out
+            }
+        }
+
+        def Material "SilverR035"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/SilverR035/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.93, 0.92, 0.88)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.35
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:metalness = 1.0
+                token outputs:out
+            }
+        }
+
+        def Material "SilverR065"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/SilverR065/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.93, 0.92, 0.88)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.65
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:metalness = 1.0
+                token outputs:out
+            }
+        }
+
+        def Material "SilverR100"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/SilverR100/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.93, 0.92, 0.88)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 1.0
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:metalness = 1.0
+                token outputs:out
+            }
+        }
+
+        def Material "GoldR005"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/GoldR005/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (1.0, 0.74, 0.28)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.05
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:metalness = 1.0
+                token outputs:out
+            }
+        }
+
+        def Material "GoldR035"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/GoldR035/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (1.0, 0.74, 0.28)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.35
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:metalness = 1.0
+                token outputs:out
+            }
+        }
+
+        def Material "GoldR065"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/GoldR065/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (1.0, 0.74, 0.28)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.65
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:metalness = 1.0
+                token outputs:out
+            }
+        }
+
+        def Material "GoldR100"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/GoldR100/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (1.0, 0.74, 0.28)
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 1.0
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:metalness = 1.0
+                token outputs:out
+            }
+        }
+    }
+
+    def DomeLight "Environment"
+    {
+        # asset inputs:texture:file = @../images/StinsonBeach.hdr@
+        color3f inputs:color = (1.0, 1.0, 1.0)
+        float inputs:intensity = 1.0
+    }
+
+#     def SphereLight "KeyLight"
+#     {
+#         float inputs:intensity = 450
+#         float inputs:radius = 1.0
+#         double3 xformOp:translate = (-3.5, 5.0, 4.0)
+#         token[] xformOpOrder = ["xformOp:translate"]
+#     }
+# 
+#     def SphereLight "GrazingRimLight"
+#     {
+#         float inputs:intensity = 120
+#         float inputs:radius = 1.5
+#         double3 xformOp:translate = (6.0, 1.4, 2.0)
+#         token[] xformOpOrder = ["xformOp:translate"]
+#     }
+}

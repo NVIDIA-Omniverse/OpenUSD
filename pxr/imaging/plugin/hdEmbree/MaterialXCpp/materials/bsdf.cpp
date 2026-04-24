@@ -11,6 +11,7 @@
 #include "../nodes/helpers/mathHelpers.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
 #include <variant>
@@ -21,6 +22,85 @@ namespace {
 
 constexpr float _kEpsilon = 1e-7f;
 constexpr int _kThinFilmAiryIterations = 2;
+constexpr int _kGgxEnergyCosThetaCount = 16;
+constexpr int _kGgxEnergyAlphaCount = 16;
+
+constexpr float _kGgxEnergyCosTheta[_kGgxEnergyCosThetaCount] = {
+    0.00000100f, 0.00444444f, 0.01777778f, 0.04000000f,
+    0.07111111f, 0.11111111f, 0.16000000f, 0.21777778f,
+    0.28444444f, 0.36000000f, 0.44444444f, 0.53777778f,
+    0.64000000f, 0.75111111f, 0.87111111f, 1.00000000f
+};
+
+std::atomic<bool> _gGgxMicrofacetMultipleScatteringEnabled{true};
+
+constexpr float _kGgxMissingEnergy[_kGgxEnergyAlphaCount]
+                                  [_kGgxEnergyCosThetaCount] = {
+    {0.00000000f, 0.00000000f, 0.00000000f, 0.00000000f,
+     0.00000000f, 0.00000000f, 0.00000000f, 0.00000000f,
+     0.00000000f, 0.00000000f, 0.00000000f, 0.00000000f,
+     0.00000000f, 0.00000000f, 0.00000000f, 0.00000000f},
+    {0.00251842f, 0.10873969f, 0.03560815f, 0.00730103f,
+     0.00219183f, 0.00086720f, 0.00041042f, 0.00022733f,
+     0.00013854f, 0.00009099f, 0.00005874f, 0.00004668f,
+     0.00003773f, 0.00003439f, 0.00002834f, 0.00001910f},
+    {0.00016554f, 0.04769413f, 0.10825214f, 0.07807820f,
+     0.03569875f, 0.01556790f, 0.00744928f, 0.00397593f,
+     0.00233956f, 0.00150004f, 0.00102161f, 0.00073913f,
+     0.00057000f, 0.00045126f, 0.00037881f, 0.00032441f},
+    {0.00003580f, 0.02308404f, 0.07602938f, 0.10933454f,
+     0.09546772f, 0.06268572f, 0.03667217f, 0.02125753f,
+     0.01283863f, 0.00821539f, 0.00558342f, 0.00401587f,
+     0.00304407f, 0.00241294f, 0.00199295f, 0.00170253f},
+    {0.00001365f, 0.01406628f, 0.05014461f, 0.09097353f,
+     0.11231652f, 0.10537768f, 0.08230404f, 0.05800849f,
+     0.03931191f, 0.02673055f, 0.01868067f, 0.01357192f,
+     0.01028648f, 0.00812463f, 0.00666786f, 0.00565942f},
+    {0.00000777f, 0.01032934f, 0.03686307f, 0.07183600f,
+     0.10302268f, 0.11854025f, 0.11517593f, 0.09896376f,
+     0.07851367f, 0.05972929f, 0.04489350f, 0.03404923f,
+     0.02639741f, 0.02105702f, 0.01731795f, 0.01466948f},
+    {0.00000602f, 0.00891040f, 0.03085004f, 0.06074776f,
+     0.09209311f, 0.11708671f, 0.12968219f, 0.12861719f,
+     0.11721273f, 0.10062687f, 0.08327757f, 0.06777745f,
+     0.05511462f, 0.04528339f, 0.03785342f, 0.03230157f},
+    {0.00000574f, 0.00873295f, 0.02908104f, 0.05650993f,
+     0.08675254f, 0.11495294f, 0.13632866f, 0.14768555f,
+     0.14851948f, 0.14078673f, 0.12768892f, 0.11239502f,
+     0.09726997f, 0.08368530f, 0.07219535f, 0.06283393f},
+    {0.00000613f, 0.00933429f, 0.03003326f, 0.05727624f,
+     0.08755878f, 0.11748968f, 0.14371256f, 0.16334926f,
+     0.17466622f, 0.17747106f, 0.17295896f, 0.16315704f,
+     0.15028963f, 0.13629718f, 0.12259652f, 0.11005023f},
+    {0.00000692f, 0.01048651f, 0.03289562f, 0.06172527f,
+     0.09359129f, 0.12571895f, 0.15562138f, 0.18110315f,
+     0.20046429f, 0.21276041f, 0.21792964f, 0.21670574f,
+     0.21036727f, 0.20042989f, 0.18837675f, 0.17547331f},
+    {0.00000797f, 0.01205832f, 0.03718911f, 0.06897347f,
+     0.10383376f, 0.13917673f, 0.17294456f, 0.20344586f,
+     0.22932807f, 0.24963102f, 0.26386024f, 0.27201595f,
+     0.27454422f, 0.27222674f, 0.26604328f, 0.25703797f},
+    {0.00000925f, 0.01396980f, 0.04261073f, 0.07840838f,
+     0.11742203f, 0.15701454f, 0.19529044f, 0.23084265f,
+     0.26262467f, 0.28988098f, 0.31213071f, 0.32916261f,
+     0.34102497f, 0.34799622f, 0.35053956f, 0.34924430f},
+    {0.00001071f, 0.01616679f, 0.04894407f, 0.08957929f,
+     0.13365179f, 0.17835573f, 0.22180320f, 0.26271909f,
+     0.30024740f, 0.33383413f, 0.36315057f, 0.38804170f,
+     0.40849688f, 0.42462658f, 0.43664166f, 0.44483192f},
+    {0.00001234f, 0.01860772f, 0.05602832f, 0.10213552f,
+     0.15194483f, 0.20239539f, 0.25152039f, 0.29807272f,
+     0.34129469f, 0.38076790f, 0.41630668f, 0.44788110f,
+     0.47556614f, 0.49950582f, 0.51988951f, 0.53693525f},
+    {0.00001412f, 0.02125776f, 0.06373329f, 0.11579522f,
+     0.17181902f, 0.22842697f, 0.28351459f, 0.33580008f,
+     0.38455736f, 0.42943946f, 0.47035274f, 0.50736840f,
+     0.54065913f, 0.57045365f, 0.59700798f, 0.62058531f},
+    {0.00001606f, 0.02409140f, 0.07195516f, 0.13032342f,
+     0.19286820f, 0.25584307f, 0.31696033f, 0.37486268f,
+     0.42881246f, 0.47848923f, 0.52384684f, 0.56501516f,
+     0.60222926f, 0.63577955f, 0.66598027f, 0.69314718f}
+};
 
 inline float
 _Clamp01(float x)
@@ -32,6 +112,40 @@ inline float
 _ClampRoughness(float r)
 {
     return std::clamp(r, 0.001f, 1.0f);
+}
+
+inline float
+_LookupGgxMissingEnergy(float cosTheta, float alphaRoughness)
+{
+    const float c = _Clamp01(cosTheta);
+    const float alpha = _Clamp01(alphaRoughness);
+
+    const float alphaCoord =
+        std::sqrt(alpha) * static_cast<float>(_kGgxEnergyAlphaCount - 1);
+    const int alpha0 = std::clamp(
+        static_cast<int>(alphaCoord), 0, _kGgxEnergyAlphaCount - 1);
+    const int alpha1 = std::min(alpha0 + 1, _kGgxEnergyAlphaCount - 1);
+    const float alphaT = alphaCoord - static_cast<float>(alpha0);
+
+    int cos0 = 0;
+    while (cos0 + 1 < _kGgxEnergyCosThetaCount &&
+           c > _kGgxEnergyCosTheta[cos0 + 1]) {
+        ++cos0;
+    }
+    const int cos1 = std::min(cos0 + 1, _kGgxEnergyCosThetaCount - 1);
+    const float cosDenom =
+        std::max(_kGgxEnergyCosTheta[cos1] - _kGgxEnergyCosTheta[cos0],
+                 _kEpsilon);
+    const float cosT =
+        std::clamp((c - _kGgxEnergyCosTheta[cos0]) / cosDenom, 0.0f, 1.0f);
+
+    const float e00 = _kGgxMissingEnergy[alpha0][cos0];
+    const float e01 = _kGgxMissingEnergy[alpha0][cos1];
+    const float e10 = _kGgxMissingEnergy[alpha1][cos0];
+    const float e11 = _kGgxMissingEnergy[alpha1][cos1];
+    const float e0 = e00 * (1.0f - cosT) + e01 * cosT;
+    const float e1 = e10 * (1.0f - cosT) + e11 * cosT;
+    return _Clamp01(e0 * (1.0f - alphaT) + e1 * alphaT);
 }
 
 inline float
@@ -64,12 +178,17 @@ _ClampAlpha(const Vec2f& alpha)
 }
 
 inline float
-_AverageAlphaAsRoughness(const Vec2f& alpha)
+_AverageAlphaForEnergy(const Vec2f& alpha)
 {
     const float clampedX = std::clamp(alpha[0], 1.0e-5f, 1.0f);
     const float clampedY = std::clamp(alpha[1], 1.0e-5f, 1.0f);
-    const float avgAlpha = std::sqrt(clampedX * clampedY);
-    return std::sqrt(avgAlpha);
+    return std::sqrt(clampedX * clampedY);
+}
+
+inline float
+_AverageAlphaAsRoughness(const Vec2f& alpha)
+{
+    return std::sqrt(_AverageAlphaForEnergy(alpha));
 }
 
 inline bool
@@ -182,7 +301,8 @@ _SmithG1(float alpha, float cosTheta)
 inline float
 _GGX_G(float alpha, float NdotV, float NdotL)
 {
-    return _SmithG1(alpha, NdotV) * _SmithG1(alpha, NdotL);
+    return std::max(4.0f * NdotV * NdotL * _GGX_V(alpha, NdotV, NdotL),
+                    0.0f);
 }
 
 inline Vec3f
@@ -517,6 +637,53 @@ inline Vec3f
 _SaturateVec(const Vec3f& v)
 {
     return Vec3f(_Clamp01(v[0]), _Clamp01(v[1]), _Clamp01(v[2]));
+}
+
+inline bool
+_IsGgxMicrofacetMultipleScatteringEnabled()
+{
+    return _gGgxMicrofacetMultipleScatteringEnabled.load(
+        std::memory_order_relaxed);
+}
+
+inline Vec3f
+_TurquinMicrofacetMsScale(
+    float alphaRoughness,
+    float cosThetaO,
+    const Vec3f& fresnel)
+{
+    if (!_IsGgxMicrofacetMultipleScatteringEnabled()) {
+        return Vec3f(1.0f);
+    }
+
+    const float missingEnergy =
+        _LookupGgxMissingEnergy(cosThetaO, alphaRoughness);
+    const float singleScatterEnergy = std::max(0.01f, 1.0f - missingEnergy);
+    const float missingToSingle = missingEnergy / singleScatterEnergy;
+
+    // Turquin compensation keeps the primary lobe shape and scales it by the
+    // outgoing-direction missing energy. This is intentionally not reciprocal.
+    return Vec3f(1.0f) +
+        _SaturateVec(fresnel) * missingToSingle;
+}
+
+inline Vec3f
+_TurquinDirectionalReflectance(
+    float alphaRoughness,
+    float cosThetaO,
+    const Vec3f& fresnel)
+{
+    if (!_IsGgxMicrofacetMultipleScatteringEnabled()) {
+        return _SaturateVec(fresnel);
+    }
+
+    const float missingEnergy =
+        _LookupGgxMissingEnergy(cosThetaO, alphaRoughness);
+    const float singleScatterEnergy = 1.0f - missingEnergy;
+    const Vec3f F = _SaturateVec(fresnel);
+    return _SaturateVec(
+        F * singleScatterEnergy +
+        CompMul(F, F) * missingEnergy);
 }
 
 inline bool
@@ -987,6 +1154,7 @@ _EvalMicrofacetReflectionAnisotropic(
     const Vec2f& roughness,
     const Vec3f& tangent,
     const Vec3f& fresnel,
+    float weight,
     const Vec3f& N,
     const Vec3f& wi,
     const Vec3f& wo)
@@ -1013,8 +1181,12 @@ _EvalMicrofacetReflectionAnisotropic(
     const Vec2f alpha = _ClampAlpha(roughness);
     const float D = _GGX_D_Anisotropic(alpha, wmLocal);
     const float G = _GGX_G_Anisotropic(alpha, woLocal, wiLocal);
-    return _SafeVec(CompMul(
+    const Vec3f compensatedFresnel = CompMul(
         fresnel,
+        _TurquinMicrofacetMsScale(
+            _AverageAlphaForEnergy(alpha), cosThetaO, fresnel)) * weight;
+    return _SafeVec(CompMul(
+        compensatedFresnel,
         Vec3f(D * G / std::max(4.0f * cosThetaI * cosThetaO, _kEpsilon))));
 }
 
@@ -1022,6 +1194,7 @@ Vec3f
 _EvalMicrofacetReflectionIsotropic(
     float alpha,
     const Vec3f& fresnel,
+    float weight,
     const Vec3f& N,
     const Vec3f& wi,
     const Vec3f& wo)
@@ -1041,8 +1214,11 @@ _EvalMicrofacetReflectionIsotropic(
     const float NdotH = std::max(Dot(N, H), 0.0f);
     const float D = _GGX_D(clampedAlpha, NdotH);
     const float G = _GGX_G(clampedAlpha, NdotV, NdotL);
-    return _SafeVec(CompMul(
+    const Vec3f compensatedFresnel = CompMul(
         fresnel,
+        _TurquinMicrofacetMsScale(clampedAlpha, NdotV, fresnel)) * weight;
+    return _SafeVec(CompMul(
+        compensatedFresnel,
         Vec3f(D * G / std::max(4.0f * NdotL * NdotV, _kEpsilon))));
 }
 
@@ -1475,7 +1651,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 if (_IsEffectivelyIsotropic(data.roughness)) {
                     result += _EvalMicrofacetReflectionIsotropic(
                         std::clamp(data.roughness[0], 1.0e-5f, 1.0f),
-                        fresnel * data.weight,
+                        fresnel,
+                        data.weight,
                         shadingN,
                         wi,
                         wo);
@@ -1483,7 +1660,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     result += _EvalMicrofacetReflectionAnisotropic(
                         data.roughness,
                         data.tangent,
-                        fresnel * data.weight,
+                        fresnel,
+                        data.weight,
                         shadingN,
                         wi,
                         wo);
@@ -1520,7 +1698,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             if (_IsEffectivelyIsotropic(data.roughness)) {
                 return _EvalMicrofacetReflectionIsotropic(
                     std::clamp(data.roughness[0], 1.0e-5f, 1.0f),
-                    fresnel * data.weight,
+                    fresnel,
+                    data.weight,
                     N,
                     wi,
                     wo);
@@ -1528,7 +1707,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return _EvalMicrofacetReflectionAnisotropic(
                 data.roughness,
                 data.tangent,
-                fresnel * data.weight,
+                fresnel,
+                data.weight,
                 N,
                 wi,
                 wo);
@@ -1544,7 +1724,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 if (_IsEffectivelyIsotropic(data.roughness)) {
                     result += _EvalMicrofacetReflectionIsotropic(
                         std::clamp(data.roughness[0], 1.0e-5f, 1.0f),
-                        fresnel * data.weight,
+                        fresnel,
+                        data.weight,
                         shadingN,
                         wi,
                         wo);
@@ -1552,7 +1733,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     result += _EvalMicrofacetReflectionAnisotropic(
                         data.roughness,
                         data.tangent,
-                        fresnel * data.weight,
+                        fresnel,
+                        data.weight,
                         shadingN,
                         wi,
                         wo);
@@ -1645,21 +1827,32 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 _ResolveDielectricIor(data, heroWavelengthNm);
             Vec3f throughput(1.0f);
             if (data.scatterMode != Bsdf::ScatterMode::Transmission) {
-                throughput -= _DielectricReflectionFresnelUntinted(
-                    data, NdotV, effectiveIor) * data.weight;
+                const Vec3f reflectance = _TurquinDirectionalReflectance(
+                    _AverageAlphaForEnergy(data.roughness),
+                    NdotV,
+                    _DielectricReflectionFresnelUntinted(
+                        data, NdotV, effectiveIor));
+                throughput -= reflectance * data.weight;
             }
             return _SaturateVec(throughput);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
             const float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
+            const Vec3f reflectance = _TurquinDirectionalReflectance(
+                _AverageAlphaForEnergy(data.roughness),
+                NdotV,
+                _ConductorReflectionFresnel(data, NdotV));
             return _SaturateVec(
                 Vec3f(1.0f) -
-                _ConductorReflectionFresnel(data, NdotV) * data.weight);
+                reflectance * data.weight);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
             const float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
+            const Vec3f reflectance = _TurquinDirectionalReflectance(
+                _AverageAlphaForEnergy(data.roughness),
+                NdotV,
+                _GeneralizedSchlickReflectionFresnel(data, NdotV));
             return _SaturateVec(
                 Vec3f(1.0f) -
-                _GeneralizedSchlickReflectionFresnel(data, NdotV) *
-                    data.weight);
+                reflectance * data.weight);
         } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
             float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
             float dirAlbedo = _ApproxSheenDirAlbedo(NdotV, data.roughness);
@@ -2338,6 +2531,19 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
 
 }  // namespace
 
+void
+Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(bool enabled)
+{
+    _gGgxMicrofacetMultipleScatteringEnabled.store(
+        enabled, std::memory_order_relaxed);
+}
+
+bool
+Bsdf::IsGgxMicrofacetMultipleScatteringEnabled()
+{
+    return _IsGgxMicrofacetMultipleScatteringEnabled();
+}
+
 Vec3f
 Bsdf::EvalLambertian(
     const Vec3f& baseColor,
@@ -2379,8 +2585,11 @@ Bsdf::EvalGGXSpecular(
     float D = _GGX_D(alpha, NdotH);
     float G = _GGX_G(alpha, NdotV, NdotL);
     Vec3f F = _SchlickFresnel(specularColor, VdotH);
-    return _SafeVec(CompMul(
+    Vec3f compensatedF = CompMul(
         F,
+        _TurquinMicrofacetMsScale(alpha, NdotV, F));
+    return _SafeVec(CompMul(
+        compensatedF,
         Vec3f(D * G / std::max(4.0f * NdotL * NdotV, _kEpsilon))));
 }
 
@@ -2570,8 +2779,11 @@ Bsdf::SampleGGXSpecular(
     float D = _GGX_D(alpha, NdotH);
     float G = _GGX_G(alpha, NdotV, NdotL);
     Vec3f F = _SchlickFresnel(specularColor, VdotH);
-    Vec3f f = CompMul(
+    Vec3f compensatedF = CompMul(
         F,
+        _TurquinMicrofacetMsScale(alpha, NdotV, F));
+    Vec3f f = CompMul(
+        compensatedF,
         Vec3f(D * G / std::max(4.0f * NdotL * NdotV, _kEpsilon)));
     float pdf = _PdfGGX_VNDF(woLocal, wmLocal, alpha);
 
@@ -2600,6 +2812,22 @@ Bsdf::PdfGGXSpecular(
     }
 
     return _PdfGGX_VNDF(woLocal, wmLocal, alpha);
+}
+
+float
+Bsdf::GgxDirectionalMissingEnergy(
+    float cosTheta,
+    float alphaRoughness)
+{
+    return _LookupGgxMissingEnergy(cosTheta, alphaRoughness);
+}
+
+float
+Bsdf::GgxDirectionalSingleScatterEnergy(
+    float cosTheta,
+    float alphaRoughness)
+{
+    return 1.0f - _LookupGgxMissingEnergy(cosTheta, alphaRoughness);
 }
 
 Bsdf::BsdfSample

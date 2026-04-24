@@ -306,6 +306,12 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<float>(
                 HdEmbreeRenderSettingsTokens->fireflyClampThreshold,
                 HdEmbreeDefaultFireflyClampThreshold));
+        static const TfToken enableGgxMicrofacetMultipleScatteringToken(
+            "enableGgxMicrofacetMultipleScattering", TfToken::Immortal);
+        _renderer->SetEnableGgxMicrofacetMultipleScattering(
+            renderDelegate->GetRenderSetting<bool>(
+                enableGgxMicrofacetMultipleScatteringToken,
+                true));
 
         needStartRender = true;
     }

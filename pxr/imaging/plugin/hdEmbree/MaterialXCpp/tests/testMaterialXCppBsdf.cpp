@@ -10,8 +10,10 @@
 #include "../../medium.h"
 #include "../../sss.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
 #include <functional>
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -26,6 +28,200 @@ bool Test_IsClose(const Vec3f& a, const Vec3f& b, float eps = 1e-5f);
 #define _REG(name) Test_Register("Bsdf." #name, &name)
 
 // ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr float _kFurnaceTwoPi = 6.2831853071795864769f;
+constexpr float _kFurnacePi = 3.14159265358979323846f;
+constexpr int _kFurnaceSampleCount = 8192;
+constexpr float _kFurnaceEnergyUpperSlack = 0.025f;
+
+constexpr float _kFurnaceAlphaRoughness[] = {
+    0.05f, 0.2f, 0.4f, 0.6f, 0.8f, 1.0f
+};
+
+constexpr float _kFurnaceCosTheta[] = {
+    0.99f, 0.7f, 0.5f, 0.3f, 0.1f, 0.03f
+};
+
+static float
+_RadicalInverseBase2(std::uint32_t bits)
+{
+    bits = (bits << 16) | (bits >> 16);
+    bits = ((bits & 0x55555555u) << 1) | ((bits & 0xAAAAAAAAu) >> 1);
+    bits = ((bits & 0x33333333u) << 2) | ((bits & 0xCCCCCCCCu) >> 2);
+    bits = ((bits & 0x0F0F0F0Fu) << 4) | ((bits & 0xF0F0F0F0u) >> 4);
+    bits = ((bits & 0x00FF00FFu) << 8) | ((bits & 0xFF00FF00u) >> 8);
+    return static_cast<float>(bits) * 2.3283064365386963e-10f;
+}
+
+static Vec3f
+_HemisphereDirectionYUp(float u1, float u2)
+{
+    const float cosTheta = std::clamp(u1, 0.0f, 1.0f);
+    const float sinTheta =
+        std::sqrt(std::max(0.0f, 1.0f - cosTheta * cosTheta));
+    const float phi = _kFurnaceTwoPi * u2;
+    return Vec3f(
+        sinTheta * std::cos(phi),
+        cosTheta,
+        sinTheta * std::sin(phi));
+}
+
+static Vec3f
+_DirectionFromCosThetaYUp(float cosTheta)
+{
+    const float clamped = std::clamp(cosTheta, 0.0f, 1.0f);
+    return Vec3f(std::sqrt(std::max(0.0f, 1.0f - clamped * clamped)),
+                 clamped,
+                 0.0f);
+}
+
+static float
+_SchlickIor(float ior, float cosTheta)
+{
+    float f0 = (ior - 1.0f) / (ior + 1.0f);
+    f0 *= f0;
+    const float t = 1.0f - std::clamp(cosTheta, 0.0f, 1.0f);
+    const float t2 = t * t;
+    return f0 + (1.0f - f0) * t2 * t2 * t;
+}
+
+static float
+_TurquinDirectionalReflectanceScalar(
+    float alphaRoughness,
+    float cosTheta,
+    float fresnel)
+{
+    const float F = std::clamp(fresnel, 0.0f, 1.0f);
+    const float missing =
+        Bsdf::GgxDirectionalMissingEnergy(cosTheta, alphaRoughness);
+    const float single = 1.0f - missing;
+    return std::clamp(F * single + F * F * missing, 0.0f, 1.0f);
+}
+
+static Vec3f
+_IntegrateHemisphereUniform(
+    const std::function<Vec3f(const Vec3f& wi)>& eval,
+    int sampleCount)
+{
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    Vec3f sum(0.0f);
+    for (int i = 0; i < sampleCount; ++i) {
+        const float u1 =
+            (static_cast<float>(i) + 0.5f) / static_cast<float>(sampleCount);
+        const float u2 = _RadicalInverseBase2(static_cast<std::uint32_t>(i));
+        const Vec3f wi = _HemisphereDirectionYUp(u1, u2);
+        sum += eval(wi) * (Dot(N, wi) * _kFurnaceTwoPi);
+    }
+    return sum * (1.0f / static_cast<float>(sampleCount));
+}
+
+static Vec3f
+_IntegrateSurfaceBySampling(
+    const SurfaceClosure& closure,
+    const Vec3f& N,
+    const Vec3f& wo,
+    int sampleCount)
+{
+    Vec3f sum(0.0f);
+    for (int i = 0; i < sampleCount; ++i) {
+        const float u1 =
+            (static_cast<float>(i) + 0.5f) / static_cast<float>(sampleCount);
+        const float u2 = _RadicalInverseBase2(static_cast<std::uint32_t>(i));
+        const float uChoice =
+            _RadicalInverseBase2(static_cast<std::uint32_t>(i) ^ 0x9E3779B9u);
+        const auto sample =
+            Bsdf::SampleSurface(closure, N, wo, u1, u2, uChoice);
+        if (sample.pdf <= 0.0f || sample.isSpecular || sample.isSubsurface) {
+            continue;
+        }
+        const float cosTheta = std::max(Dot(N, sample.wi), 0.0f);
+        sum += sample.f * (cosTheta / sample.pdf);
+    }
+    return sum * (1.0f / static_cast<float>(sampleCount));
+}
+
+static float
+_FurnaceLuminance(const Vec3f& value)
+{
+    return 0.2126f * value[0] + 0.7152f * value[1] + 0.0722f * value[2];
+}
+
+static bool
+_IsFiniteNonNegative(const Vec3f& value)
+{
+    for (int i = 0; i < 3; ++i) {
+        if (!std::isfinite(value[i]) || value[i] < -1.0e-5f) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool
+_CheckFurnaceEnergyBound(
+    const char* label,
+    float alphaRoughness,
+    float cosTheta,
+    const Vec3f& energy)
+{
+    if (!_IsFiniteNonNegative(energy)) {
+        printf(
+            "    %s furnace invalid: alpha=%f NoV=%f E=(%f,%f,%f)\n",
+            label, alphaRoughness, cosTheta,
+            energy[0], energy[1], energy[2]);
+        return false;
+    }
+
+    for (int i = 0; i < 3; ++i) {
+        if (energy[i] > 1.0f + _kFurnaceEnergyUpperSlack) {
+            printf(
+                "    %s furnace energy gain: alpha=%f NoV=%f "
+                "channel=%d E=%f\n",
+                label, alphaRoughness, cosTheta, i, energy[i]);
+            return false;
+        }
+    }
+    return true;
+}
+
+static float
+_GgxDForTest(float alpha, float NdotH)
+{
+    const float a2 = alpha * alpha;
+    const float denom = NdotH * NdotH * (a2 - 1.0f) + 1.0f;
+    return a2 / (_kFurnacePi * denom * denom + 1.0e-7f);
+}
+
+static float
+_SmithG1ForTest(float alpha, float cosTheta)
+{
+    const float a2 = alpha * alpha;
+    const float cos2 = cosTheta * cosTheta;
+    return 2.0f * cosTheta /
+        (cosTheta + std::sqrt(a2 + (1.0f - a2) * cos2) + 1.0e-7f);
+}
+
+static float
+_GgxSeparableGForTest(float alpha, float NdotV, float NdotL)
+{
+    return _SmithG1ForTest(alpha, NdotV) * _SmithG1ForTest(alpha, NdotL);
+}
+
+static float
+_GgxHeightCorrelatedGForTest(float alpha, float NdotV, float NdotL)
+{
+    const float a2 = alpha * alpha;
+    const float ggxV =
+        NdotL * std::sqrt(NdotV * NdotV * (1.0f - a2) + a2);
+    const float ggxL =
+        NdotV * std::sqrt(NdotL * NdotL * (1.0f - a2) + a2);
+    const float visibility = 0.5f / (ggxV + ggxL + 1.0e-7f);
+    return 4.0f * NdotV * NdotL * visibility;
+}
+
+}  // namespace
 
 static bool
 TestLambertianValue()
@@ -47,6 +243,132 @@ TestLambertianValue()
 }
 
 static bool
+TestFurnaceHelperMatchesLambertian()
+{
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = _DirectionFromCosThetaYUp(0.37f);
+    const Vec3f albedo(0.73f, 0.41f, 0.19f);
+    const Vec3f energy = _IntegrateHemisphereUniform(
+        [&](const Vec3f& wi) {
+            return Bsdf::EvalLambertian(albedo, N, wi, wo);
+        },
+        _kFurnaceSampleCount);
+
+    if (!Test_IsClose(energy, albedo, 1.0e-4f)) {
+        printf(
+            "    Lambertian furnace helper mismatch: "
+            "expected=(%f,%f,%f) got=(%f,%f,%f)\n",
+            albedo[0], albedo[1], albedo[2],
+            energy[0], energy[1], energy[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestGGXFurnaceWhiteFresnelGeneralizedSchlickBaseline()
+{
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    bool ok = true;
+    printf("    GGX white-Fresnel Turquin-compensated furnace:\n");
+    for (const float alphaRoughness : _kFurnaceAlphaRoughness) {
+        printf("      alpha=%0.2f:", alphaRoughness);
+        for (const float cosTheta : _kFurnaceCosTheta) {
+            SurfaceClosure closure;
+            Bsdf::GeneralizedSchlickData specular;
+            specular.weight = 1.0f;
+            specular.color0 = Vec3f(1.0f);
+            specular.color82 = Vec3f(1.0f);
+            specular.color90 = Vec3f(1.0f);
+            specular.exponent = 5.0f;
+            specular.roughness = Vec2f(alphaRoughness, alphaRoughness);
+            specular.scatterMode = Bsdf::ScatterMode::Reflection;
+            closure.bsdfTree.root = closure.bsdfTree.Add(specular);
+
+            const Vec3f wo = _DirectionFromCosThetaYUp(cosTheta);
+            const Vec3f energy =
+                _IntegrateSurfaceBySampling(
+                    closure, N, wo, _kFurnaceSampleCount);
+            printf(" %0.4f", _FurnaceLuminance(energy));
+            ok = _CheckFurnaceEnergyBound(
+                "GeneralizedSchlick(F=1)",
+                alphaRoughness,
+                cosTheta,
+                energy) && ok;
+        }
+        printf("\n");
+    }
+    return ok;
+}
+
+static bool
+TestGGXFurnaceConductorEnergyBaseline()
+{
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    bool ok = true;
+    printf("    GGX conductor Turquin-compensated furnace:\n");
+    for (const float alphaRoughness : _kFurnaceAlphaRoughness) {
+        printf("      alpha=%0.2f:", alphaRoughness);
+        for (const float cosTheta : _kFurnaceCosTheta) {
+            SurfaceClosure closure;
+            Bsdf::ConductorData conductor;
+            conductor.weight = 1.0f;
+            conductor.ior = Vec3f(0.15f, 0.14f, 0.13f);
+            conductor.extinction = Vec3f(3.5f, 3.4f, 3.3f);
+            conductor.roughness = Vec2f(alphaRoughness, alphaRoughness);
+            closure.bsdfTree.root = closure.bsdfTree.Add(conductor);
+
+            const Vec3f wo = _DirectionFromCosThetaYUp(cosTheta);
+            const Vec3f energy =
+                _IntegrateSurfaceBySampling(
+                    closure, N, wo, _kFurnaceSampleCount);
+            printf(" %0.4f", _FurnaceLuminance(energy));
+            ok = _CheckFurnaceEnergyBound(
+                "Conductor",
+                alphaRoughness,
+                cosTheta,
+                energy) && ok;
+        }
+        printf("\n");
+    }
+    return ok;
+}
+
+static bool
+TestGGXFurnaceDielectricReflectionEnergyBaseline()
+{
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    bool ok = true;
+    printf("    GGX dielectric reflection Turquin-compensated furnace:\n");
+    for (const float alphaRoughness : _kFurnaceAlphaRoughness) {
+        printf("      alpha=%0.2f:", alphaRoughness);
+        for (const float cosTheta : _kFurnaceCosTheta) {
+            SurfaceClosure closure;
+            Bsdf::DielectricData dielectric;
+            dielectric.weight = 1.0f;
+            dielectric.tint = Vec3f(1.0f);
+            dielectric.ior = 1.5f;
+            dielectric.roughness = Vec2f(alphaRoughness, alphaRoughness);
+            dielectric.scatterMode = Bsdf::ScatterMode::Reflection;
+            closure.bsdfTree.root = closure.bsdfTree.Add(dielectric);
+
+            const Vec3f wo = _DirectionFromCosThetaYUp(cosTheta);
+            const Vec3f energy =
+                _IntegrateSurfaceBySampling(
+                    closure, N, wo, _kFurnaceSampleCount);
+            printf(" %0.4f", _FurnaceLuminance(energy));
+            ok = _CheckFurnaceEnergyBound(
+                "DielectricReflection",
+                alphaRoughness,
+                cosTheta,
+                energy) && ok;
+        }
+        printf("\n");
+    }
+    return ok;
+}
+
+static bool
 TestLambertianColorScaling()
 {
     Vec3f color(0.5f, 0.3f, 0.1f);
@@ -65,6 +387,140 @@ TestGGXSpecularNonNegative()
     Vec3f result = Bsdf::EvalGGXSpecular(
         0.5f, 1.5f, Vec3f(1.0f), N, wi, wo);
     return result[0] >= 0.0f && result[1] >= 0.0f && result[2] >= 0.0f;
+}
+
+static bool
+TestGGXSpecularUsesHeightCorrelatedSmith()
+{
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.62f, 0.68f, 0.39f).normalized();
+    const Vec3f wi = Vec3f(-0.34f, 0.42f, 0.84f).normalized();
+    const float perceptualRoughness = 0.7f;
+    const float alpha = perceptualRoughness * perceptualRoughness;
+
+    const Vec3f actual = Bsdf::EvalGGXSpecular(
+        perceptualRoughness, 1.5f, Vec3f(1.0f), N, wi, wo);
+
+    Vec3f H = wi + wo;
+    H.normalize();
+    const float NdotL = std::max(Dot(N, wi), 0.0f);
+    const float NdotV = std::max(Dot(N, wo), 0.0f);
+    const float NdotH = std::max(Dot(N, H), 0.0f);
+    const float D = _GgxDForTest(alpha, NdotH);
+    const float hcG = _GgxHeightCorrelatedGForTest(alpha, NdotV, NdotL);
+    const float sepG = _GgxSeparableGForTest(alpha, NdotV, NdotL);
+    const float msScale = 1.0f /
+        std::max(Bsdf::GgxDirectionalSingleScatterEnergy(NdotV, alpha), 0.01f);
+    const float expected =
+        D * hcG * msScale /
+        std::max(4.0f * NdotL * NdotV, 1.0e-7f);
+    const float separable =
+        D * sepG * msScale /
+        std::max(4.0f * NdotL * NdotV, 1.0e-7f);
+
+    if (!Test_IsClose(actual, Vec3f(expected), 1.0e-4f)) {
+        printf(
+            "    Expected height-correlated GGX=%f, got (%f,%f,%f); "
+            "separable would be %f\n",
+            expected, actual[0], actual[1], actual[2], separable);
+        return false;
+    }
+
+    if (std::abs(expected - separable) < 1.0e-3f) {
+        printf("    Test directions do not distinguish HC and separable G\n");
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestGGXDirectionalMissingEnergyLutBounds()
+{
+    bool ok = true;
+    for (const float alphaRoughness : _kFurnaceAlphaRoughness) {
+        for (const float cosTheta : _kFurnaceCosTheta) {
+            const float missing = Bsdf::GgxDirectionalMissingEnergy(
+                cosTheta, alphaRoughness);
+            const float singleScatter =
+                Bsdf::GgxDirectionalSingleScatterEnergy(
+                    cosTheta, alphaRoughness);
+            if (!std::isfinite(missing) || missing < 0.0f || missing > 1.0f) {
+                printf(
+                    "    GGX missing-energy LUT out of range: "
+                    "alpha=%f NoV=%f Ems=%f\n",
+                    alphaRoughness, cosTheta, missing);
+                ok = false;
+            }
+            if (!Test_IsClose(missing + singleScatter, 1.0f, 1.0e-5f)) {
+                printf(
+                    "    GGX single/missing energy mismatch: "
+                    "alpha=%f NoV=%f Ess=%f Ems=%f\n",
+                    alphaRoughness, cosTheta, singleScatter, missing);
+                ok = false;
+            }
+        }
+    }
+
+    float previous = -1.0f;
+    for (const float alphaRoughness : _kFurnaceAlphaRoughness) {
+        const float missing = Bsdf::GgxDirectionalMissingEnergy(
+            1.0f, alphaRoughness);
+        if (missing + 5.0e-4f < previous) {
+            printf(
+                "    GGX normal-incidence missing energy is not monotonic: "
+                "previous=%f current=%f alpha=%f\n",
+                previous, missing, alphaRoughness);
+            ok = false;
+        }
+        previous = missing;
+    }
+    return ok;
+}
+
+static bool
+TestGGXTurquinWhiteFurnaceCompensatesMissingEnergy()
+{
+    struct Case {
+        float alphaRoughness;
+        float cosTheta;
+    };
+
+    const Case cases[] = {
+        {0.05f, 0.03f},
+        {0.20f, 0.30f},
+        {0.40f, 0.50f},
+        {0.80f, 0.10f},
+        {1.00f, 0.99f},
+        {1.00f, 0.03f}
+    };
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    bool ok = true;
+    for (const Case& c : cases) {
+        SurfaceClosure closure;
+        Bsdf::GeneralizedSchlickData specular;
+        specular.weight = 1.0f;
+        specular.color0 = Vec3f(1.0f);
+        specular.color82 = Vec3f(1.0f);
+        specular.color90 = Vec3f(1.0f);
+        specular.exponent = 5.0f;
+        specular.roughness = Vec2f(c.alphaRoughness, c.alphaRoughness);
+        specular.scatterMode = Bsdf::ScatterMode::Reflection;
+        closure.bsdfTree.root = closure.bsdfTree.Add(specular);
+
+        const Vec3f wo = _DirectionFromCosThetaYUp(c.cosTheta);
+        const Vec3f energy = _IntegrateSurfaceBySampling(
+            closure, N, wo, _kFurnaceSampleCount);
+        const float measured = _FurnaceLuminance(energy);
+        if (std::abs(measured - 1.0f) > 0.03f) {
+            printf(
+                "    GGX Turquin white furnace mismatch: alpha=%f NoV=%f "
+                "sampled=%f expected=1\n",
+                c.alphaRoughness, c.cosTheta, measured);
+            ok = false;
+        }
+    }
+    return ok;
 }
 
 static bool
@@ -1173,6 +1629,87 @@ TestTreeAnisotropicReflectionRespondsToTangent()
 }
 
 static bool
+TestTreeAnisotropicReflectionUsesTurquinCompensation()
+{
+    constexpr float alpha = 0.8f;
+
+    Bsdf::GeneralizedSchlickData isotropic;
+    isotropic.weight = 1.0f;
+    isotropic.color0 = Vec3f(1.0f);
+    isotropic.color82 = Vec3f(1.0f);
+    isotropic.color90 = Vec3f(1.0f);
+    isotropic.roughness = Vec2f(alpha, alpha);
+    isotropic.scatterMode = Bsdf::ScatterMode::Reflection;
+
+    SurfaceClosure isotropicClosure;
+    isotropicClosure.bsdfTree.root =
+        isotropicClosure.bsdfTree.Add(isotropic);
+
+    Bsdf::GeneralizedSchlickData anisotropic = isotropic;
+    anisotropic.roughness = Vec2f(alpha, alpha + 2.0e-5f);
+    anisotropic.tangent = Vec3f(1.0f, 0.0f, 0.0f);
+
+    SurfaceClosure anisotropicClosure;
+    anisotropicClosure.bsdfTree.root =
+        anisotropicClosure.bsdfTree.Add(anisotropic);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = _DirectionFromCosThetaYUp(0.55f).normalized();
+    const Vec3f wi = Vec3f(-0.25f, 0.78f, 0.57f).normalized();
+
+    const Vec3f isotropicEval =
+        Bsdf::EvalSurface(isotropicClosure, N, wi, wo);
+    const Vec3f anisotropicEval =
+        Bsdf::EvalSurface(anisotropicClosure, N, wi, wo);
+
+    if (!Test_IsClose(isotropicEval, anisotropicEval, 5.0e-4f)) {
+        printf(
+            "    Near-isotropic anisotropic compensation mismatch: "
+            "isotropic=(%f,%f,%f) anisotropic=(%f,%f,%f)\n",
+            isotropicEval[0], isotropicEval[1], isotropicEval[2],
+            anisotropicEval[0], anisotropicEval[1], anisotropicEval[2]);
+        return false;
+    }
+
+    return true;
+}
+
+static bool
+TestGGXMicrofacetMultipleScatteringToggle()
+{
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = _DirectionFromCosThetaYUp(0.55f).normalized();
+    const Vec3f wi = Vec3f(-0.25f, 0.78f, 0.57f).normalized();
+
+    Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
+    const Vec3f enabled = Bsdf::EvalGGXSpecular(
+        0.9f, 1.5f, Vec3f(1.0f), N, wi, wo);
+
+    Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(false);
+    const Vec3f disabled = Bsdf::EvalGGXSpecular(
+        0.9f, 1.5f, Vec3f(1.0f), N, wi, wo);
+
+    Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
+
+    const float enabledLum = _FurnaceLuminance(enabled);
+    const float disabledLum = _FurnaceLuminance(disabled);
+    if (enabledLum <= disabledLum * 1.05f) {
+        printf(
+            "    GGX multiple-scattering toggle had no visible effect: "
+            "enabled=%f disabled=%f\n",
+            enabledLum, disabledLum);
+        return false;
+    }
+
+    if (!Bsdf::IsGgxMicrofacetMultipleScatteringEnabled()) {
+        printf("    GGX multiple-scattering toggle did not reset to enabled\n");
+        return false;
+    }
+
+    return true;
+}
+
+static bool
 TestLayerReflectionAttenuatesBaseOnBothSides()
 {
     SurfaceClosure topClosure;
@@ -1228,6 +1765,66 @@ TestLayerReflectionAttenuatesBaseOnBothSides()
             expectedLum, actualLum, ratio);
         return false;
     }
+    return true;
+}
+
+static bool
+TestLayerThroughputUsesRoughDirectionalReflectance()
+{
+    SurfaceClosure topClosure;
+    Bsdf::DielectricData top;
+    top.weight = 1.0f;
+    top.tint = Vec3f(1.0f);
+    top.ior = 1.5f;
+    top.roughness = Vec2f(1.0f, 1.0f);
+    top.scatterMode = Bsdf::ScatterMode::Reflection;
+    topClosure.bsdfTree.root = topClosure.bsdfTree.Add(top);
+
+    SurfaceClosure baseClosure;
+    Bsdf::OrenNayarDiffuseData base;
+    base.weight = 1.0f;
+    base.color = Vec3f(0.8f);
+    base.roughness = 0.0f;
+    base.energyCompensation = true;
+    baseClosure.bsdfTree.root = baseClosure.bsdfTree.Add(base);
+
+    SurfaceClosure layerClosure;
+    const auto topId = layerClosure.bsdfTree.Add(top);
+    const auto baseId = layerClosure.bsdfTree.Add(base);
+    Bsdf::LayerData layer;
+    layer.top = topId;
+    layer.base = baseId;
+    layerClosure.bsdfTree.root = layerClosure.bsdfTree.Add(layer);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = _DirectionFromCosThetaYUp(0.55f).normalized();
+    const Vec3f wi = Vec3f(-0.35f, 0.72f, 0.60f).normalized();
+
+    const Vec3f topEval = Bsdf::EvalSurface(topClosure, N, wi, wo);
+    const Vec3f baseEval = Bsdf::EvalSurface(baseClosure, N, wi, wo);
+    const Vec3f layerEval = Bsdf::EvalSurface(layerClosure, N, wi, wo);
+
+    const float reflectanceOut = _TurquinDirectionalReflectanceScalar(
+        top.roughness[0],
+        std::abs(Dot(N, wo)),
+        _SchlickIor(top.ior, std::abs(Dot(N, wo))));
+    const float reflectanceIn = _TurquinDirectionalReflectanceScalar(
+        top.roughness[0],
+        std::abs(Dot(N, wi)),
+        _SchlickIor(top.ior, std::abs(Dot(N, wi))));
+    const Vec3f expected =
+        topEval + baseEval * ((1.0f - reflectanceOut) *
+                              (1.0f - reflectanceIn));
+
+    if (!Test_IsClose(layerEval, expected, 1.0e-4f)) {
+        printf(
+            "    Rough layer throughput mismatch: expected=(%f,%f,%f) "
+            "actual=(%f,%f,%f)\n",
+            expected[0], expected[1], expected[2],
+            layerEval[0], layerEval[1], layerEval[2]);
+        return false;
+    }
+
     return true;
 }
 
@@ -1503,7 +2100,14 @@ Test_RegisterBsdfTests()
 {
     _REG(TestLambertianValue);
     _REG(TestLambertianColorScaling);
+    _REG(TestFurnaceHelperMatchesLambertian);
+    _REG(TestGGXFurnaceWhiteFresnelGeneralizedSchlickBaseline);
+    _REG(TestGGXFurnaceConductorEnergyBaseline);
+    _REG(TestGGXFurnaceDielectricReflectionEnergyBaseline);
     _REG(TestGGXSpecularNonNegative);
+    _REG(TestGGXSpecularUsesHeightCorrelatedSmith);
+    _REG(TestGGXDirectionalMissingEnergyLutBounds);
+    _REG(TestGGXTurquinWhiteFurnaceCompensatesMissingEnergy);
     _REG(TestGGXSpecularPeak);
     _REG(TestTreeDielectricReflectionMatchesStandaloneGgx);
     _REG(TestDispersionCauchyIorMonotonic);
@@ -1546,7 +2150,10 @@ Test_RegisterBsdfTests()
     _REG(TestThinFilmSampleSurfacePdfConsistency);
     _REG(TestTreeDielectricCustomNormalMatchesStandaloneShadingNormal);
     _REG(TestTreeAnisotropicReflectionRespondsToTangent);
+    _REG(TestTreeAnisotropicReflectionUsesTurquinCompensation);
+    _REG(TestGGXMicrofacetMultipleScatteringToggle);
     _REG(TestLayerReflectionAttenuatesBaseOnBothSides);
+    _REG(TestLayerThroughputUsesRoughDirectionalReflectance);
     _REG(TestPowerHeuristic);
     _REG(TestChannelMISUniform);
     _REG(TestChannelMISWeighted);

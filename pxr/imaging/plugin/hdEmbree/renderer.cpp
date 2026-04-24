@@ -753,6 +753,7 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _showAdaptiveHeatmap(HdEmbreeDefaultShowAdaptiveHeatmap)
     , _usePerChannelVariance(HdEmbreeDefaultUsePerChannelVariance)
     , _fireflyClampThreshold(HdEmbreeDefaultFireflyClampThreshold)
+    , _enableGgxMicrofacetMultipleScattering(true)
     , _textureSystem(std::make_unique<HdEmbreeOiioTextureSystem>())
     , _sceneFrame(0.0f)
     , _sceneTime(0.0f)
@@ -874,6 +875,13 @@ void
 HdEmbreeRenderer::SetFireflyClampThreshold(float threshold)
 {
     _fireflyClampThreshold = threshold;
+}
+
+void
+HdEmbreeRenderer::SetEnableGgxMicrofacetMultipleScattering(bool enable)
+{
+    _enableGgxMicrofacetMultipleScattering = enable;
+    mxcpp::Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(enable);
 }
 
 void
