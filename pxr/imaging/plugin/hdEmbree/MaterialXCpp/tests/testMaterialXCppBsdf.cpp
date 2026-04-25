@@ -243,6 +243,103 @@ TestFurnaceHelperMatchesLambertian()
 }
 
 static bool
+TestOrenNayarEnergyCompensationFalseUsesLegacyFactor()
+{
+    SurfaceClosure closure;
+    Bsdf::OrenNayarDiffuseData diffuse;
+    diffuse.weight = 0.8f;
+    diffuse.color = Vec3f(0.7f, 0.4f, 0.2f);
+    diffuse.roughness = 0.65f;
+    diffuse.energyCompensation = false;
+    closure.bsdfTree.root = closure.bsdfTree.Add(diffuse);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wi = Vec3f(0.52f, 0.62f, 0.59f).normalized();
+    const Vec3f wo = Vec3f(-0.21f, 0.77f, 0.60f).normalized();
+    const float NdotL = std::max(Dot(N, wi), 0.0f);
+    const float NdotV = std::max(Dot(N, wo), 1.0e-7f);
+    const float LdotV = Dot(wi, wo);
+    const float s = LdotV - NdotL * NdotV;
+    const float stinv = (s > 0.0f) ? s / std::max(NdotL, NdotV) : 0.0f;
+    const float sigma2 = diffuse.roughness * diffuse.roughness;
+    const float A = 1.0f - 0.5f * (sigma2 / (sigma2 + 0.33f));
+    const float B = 0.45f * sigma2 / (sigma2 + 0.09f);
+    const Vec3f expected =
+        diffuse.color * (diffuse.weight * (A + B * stinv) / _kFurnacePi);
+    const Vec3f actual = Bsdf::EvalSurface(closure, N, wi, wo);
+
+    if (!Test_IsClose(actual, expected, 1.0e-6f)) {
+        printf(
+            "    Legacy Oren-Nayar branch changed: "
+            "expected=(%f,%f,%f) got=(%f,%f,%f)\n",
+            expected[0], expected[1], expected[2],
+            actual[0], actual[1], actual[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestEonDiffuseLambertianLimit()
+{
+    SurfaceClosure closure;
+    Bsdf::OrenNayarDiffuseData diffuse;
+    diffuse.weight = 0.7f;
+    diffuse.color = Vec3f(0.73f, 0.41f, 0.19f);
+    diffuse.roughness = 0.0f;
+    diffuse.energyCompensation = true;
+    closure.bsdfTree.root = closure.bsdfTree.Add(diffuse);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wi = Vec3f(0.36f, 0.81f, 0.46f).normalized();
+    const Vec3f wo = Vec3f(-0.48f, 0.67f, 0.57f).normalized();
+    const Vec3f expected =
+        Bsdf::EvalLambertian(diffuse.color * diffuse.weight, N, wi, wo);
+    const Vec3f actual = Bsdf::EvalSurface(closure, N, wi, wo);
+
+    if (!Test_IsClose(actual, expected, 1.0e-6f)) {
+        printf(
+            "    EON roughness=0 should match Lambertian: "
+            "expected=(%f,%f,%f) got=(%f,%f,%f)\n",
+            expected[0], expected[1], expected[2],
+            actual[0], actual[1], actual[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestEonDiffuseWhiteFurnace()
+{
+    SurfaceClosure closure;
+    Bsdf::OrenNayarDiffuseData diffuse;
+    diffuse.weight = 1.0f;
+    diffuse.color = Vec3f(1.0f);
+    diffuse.roughness = 1.0f;
+    diffuse.energyCompensation = true;
+    closure.bsdfTree.root = closure.bsdfTree.Add(diffuse);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    bool ok = true;
+    for (const float cosTheta : {0.99f, 0.5f, 0.1f}) {
+        const Vec3f wo = _DirectionFromCosThetaYUp(cosTheta);
+        const Vec3f energy = _IntegrateHemisphereUniform(
+            [&](const Vec3f& wi) {
+                return Bsdf::EvalSurface(closure, N, wi, wo);
+            },
+            _kFurnaceSampleCount);
+        if (!Test_IsClose(energy, Vec3f(1.0f), 0.025f)) {
+            printf(
+                "    EON white furnace mismatch at NoV=%f: "
+                "energy=(%f,%f,%f)\n",
+                cosTheta, energy[0], energy[1], energy[2]);
+            ok = false;
+        }
+    }
+    return ok;
+}
+
+static bool
 TestGGXFurnaceWhiteFresnelGeneralizedSchlickBaseline()
 {
     const Vec3f N(0.0f, 1.0f, 0.0f);
@@ -2072,6 +2169,9 @@ Test_RegisterBsdfTests()
     _REG(TestLambertianValue);
     _REG(TestLambertianColorScaling);
     _REG(TestFurnaceHelperMatchesLambertian);
+    _REG(TestOrenNayarEnergyCompensationFalseUsesLegacyFactor);
+    _REG(TestEonDiffuseLambertianLimit);
+    _REG(TestEonDiffuseWhiteFurnace);
     _REG(TestGGXFurnaceWhiteFresnelGeneralizedSchlickBaseline);
     _REG(TestGGXFurnaceConductorEnergyBaseline);
     _REG(TestGGXFurnaceDielectricReflectionEnergyBaseline);

@@ -445,6 +445,59 @@ _OrenNayarFactor(float NdotV, float NdotL, float LdotV, float roughness)
     return A + B * stinv;
 }
 
+constexpr float _kFonConstantA = 0.5f - 2.0f / (3.0f * kPi);
+constexpr float _kFonConstantB = 2.0f / 3.0f - 28.0f / (15.0f * kPi);
+
+inline float
+_FonDirectionalAlbedoApprox(float mu, float roughness)
+{
+    const float clampedMu = _Clamp01(mu);
+    const float muComp = 1.0f - clampedMu;
+    constexpr float g1 = 0.0571085289f;
+    constexpr float g2 = 0.491881867f;
+    constexpr float g3 = -0.332181442f;
+    constexpr float g4 = 0.0714429953f;
+    const float gOverPi =
+        muComp * (g1 + muComp * (g2 + muComp * (g3 + muComp * g4)));
+    return (1.0f + roughness * gOverPi) /
+           (1.0f + _kFonConstantA * roughness);
+}
+
+inline Vec3f
+_EvalEonDiffuse(
+    const Vec3f& color,
+    float roughness,
+    float NdotV,
+    float NdotL,
+    float LdotV)
+{
+    const float r = _Clamp01(roughness);
+    if (r <= 0.0f) {
+        return color * kInvPi;
+    }
+
+    const float muI = std::max(NdotL, _kEpsilon);
+    const float muO = std::max(NdotV, _kEpsilon);
+    const float s = LdotV - muI * muO;
+    const float sOverF = (s > 0.0f) ? s / std::max(muI, muO) : s;
+    const float aF = 1.0f / (1.0f + _kFonConstantA * r);
+    const Vec3f fSS = color * (kInvPi * aF * (1.0f + r * sOverF));
+
+    const float eFi = _FonDirectionalAlbedoApprox(muI, r);
+    const float eFo = _FonDirectionalAlbedoApprox(muO, r);
+    const float avgEF = aF * (1.0f + _kFonConstantB * r);
+    const Vec3f rhoMS = CompDiv(
+        CompMul(color, color) * avgEF,
+        Vec3f(1.0f) - color * (1.0f - avgEF));
+    const float fMSScale =
+        kInvPi *
+        std::max(_kEpsilon, 1.0f - eFi) *
+        std::max(_kEpsilon, 1.0f - eFo) /
+        std::max(_kEpsilon, 1.0f - avgEF);
+
+    return fSS + rhoMS * fMSScale;
+}
+
 inline float
 _BurleyFactor(float NdotV, float NdotL, float LdotH, float roughness)
 {
@@ -1746,8 +1799,15 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             }
             float NdotL = std::max(Dot(N, wi), 0.0f);
             float NdotV = std::max(Dot(N, wo), _kEpsilon);
-            float LdotV = std::max(Dot(wi, wo), 0.0f);
-            float factor = _OrenNayarFactor(NdotV, NdotL, LdotV, data.roughness);
+            float LdotV = Dot(wi, wo);
+            if (data.energyCompensation) {
+                return _SafeVec(
+                    _EvalEonDiffuse(
+                        data.color, data.roughness, NdotV, NdotL, LdotV) *
+                    data.weight);
+            }
+            float factor = _OrenNayarFactor(
+                NdotV, NdotL, LdotV, data.roughness);
             return _SafeVec(data.color * (data.weight * factor * kInvPi));
         } else if constexpr (std::is_same_v<T, Bsdf::BurleyDiffuseData>) {
             if (Dot(N, wi) <= 0.0f || data.weight <= 0.0f) {

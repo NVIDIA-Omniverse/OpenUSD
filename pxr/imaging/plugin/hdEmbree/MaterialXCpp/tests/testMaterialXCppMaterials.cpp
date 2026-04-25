@@ -695,6 +695,7 @@ TestAdobeOpenPbrBuildsWholeBackendNode()
     ParamMap params;
     params["base_color"] = Value(Vec3f(0.25f, 0.5f, 0.75f));
     params["transmission_weight"] = Value(0.5f);
+    params["transmission_color"] = Value(Vec3f(0.7f, 0.85f, 1.0f));
     params["transmission_depth"] = Value(0.25f);
 
     const SurfaceClosure closure = EvalAdobeOpenPbr(params);

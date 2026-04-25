@@ -1,0 +1,164 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1.0
+    renderSettingsPrimPath = "/RenderSettings"
+    upAxis = "Y"
+    doc = """OpenPBR diffuse-only EON comparison scene.
+
+The three spheres use specular_weight = 0 and base_diffuse_roughness values
+0.0, 0.5, and 1.0.  Render with hdEmbree:useAdobeOpenPBR=false/true to compare
+native EON diffuse against the Adobe OpenPBR backend."""
+)
+
+def RenderSettings "RenderSettings"
+{
+    int hdEmbree:lightSamplesPerHit = 32
+    token hdEmbree:samplerSequence = "openqmc_sobolbn"
+    bool hdEmbree:useAdobeOpenPBR = false
+    rel products = [</RenderProduct>]
+}
+
+def RenderProduct "RenderProduct"
+{
+    rel orderedVars = [</RenderProduct/Color>]
+    token productType = "raster"
+    token productName = "eon_diffuse_openpbr_compare.png"
+
+    def RenderVar "Color"
+    {
+        token dataType = "color4f"
+        string sourceName = "color"
+        token sourceType = "raw"
+    }
+}
+
+def Xform "World"
+{
+    def Camera "MainCamera"
+    {
+        float focalLength = 55
+        float horizontalAperture = 36
+        float verticalAperture = 18
+        float2 clippingRange = (0.1, 1000)
+        double3 xformOp:translate = (0, 0.2, 10.5)
+        float3 xformOp:rotateXYZ = (0, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+    }
+
+    def Sphere "Roughness00" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 1.0
+        double3 xformOp:translate = (-2.55, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/OpenPbrDiffuseRough00>
+    }
+
+    def Sphere "Roughness05" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 1.0
+        double3 xformOp:translate = (0, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/OpenPbrDiffuseRough05>
+    }
+
+    def Sphere "Roughness10" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 1.0
+        double3 xformOp:translate = (2.55, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/OpenPbrDiffuseRough10>
+    }
+
+    def Scope "Materials"
+    {
+        def Material "OpenPbrDiffuseRough00"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/OpenPbrDiffuseRough00/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.95, 0.36, 0.12)
+                float inputs:base_diffuse_roughness = 0.0
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 0.0
+                float inputs:specular_roughness = 0.5
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+                float inputs:transmission_weight = 0.0
+                float inputs:subsurface_weight = 0.0
+                float inputs:coat_weight = 0.0
+                float inputs:fuzz_weight = 0.0
+                token outputs:out
+            }
+        }
+
+        def Material "OpenPbrDiffuseRough05"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/OpenPbrDiffuseRough05/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.95, 0.36, 0.12)
+                float inputs:base_diffuse_roughness = 0.5
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 0.0
+                float inputs:specular_roughness = 0.5
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+                float inputs:transmission_weight = 0.0
+                float inputs:subsurface_weight = 0.0
+                float inputs:coat_weight = 0.0
+                float inputs:fuzz_weight = 0.0
+                token outputs:out
+            }
+        }
+
+        def Material "OpenPbrDiffuseRough10"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/OpenPbrDiffuseRough10/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.95, 0.36, 0.12)
+                float inputs:base_diffuse_roughness = 1.0
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 0.0
+                float inputs:specular_roughness = 0.5
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+                float inputs:transmission_weight = 0.0
+                float inputs:subsurface_weight = 0.0
+                float inputs:coat_weight = 0.0
+                float inputs:fuzz_weight = 0.0
+                token outputs:out
+            }
+        }
+    }
+
+    def SphereLight "KeyLight"
+    {
+        float inputs:intensity = 380
+        float inputs:radius = 1.2
+        double3 xformOp:translate = (-3.0, 4.5, 4.0)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def DomeLight "Fill"
+    {
+        color3f inputs:color = (0.72, 0.78, 0.88)
+        float inputs:intensity = 0.18
+    }
+}
