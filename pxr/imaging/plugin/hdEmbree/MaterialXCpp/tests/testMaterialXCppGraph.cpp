@@ -9,6 +9,7 @@
 
 #include <cstdio>
 #include <functional>
+#include <variant>
 
 using namespace mxcpp;
 
@@ -175,6 +176,62 @@ TestCompileGltfPbrTerminal()
     return Test_IsClose(closure.baseColor, Vec3f(0.7f, 0.6f, 0.5f), 1e-4f) &&
            Test_IsClose(closure.opacity, 0.0f) &&
            closure.HasBsdfTree();
+}
+
+static bool
+TestOpenPbrEvalOptionsSelectAdobeBackend()
+{
+    MaterialGraph network;
+
+    const std::string termPath = "/Material/OpenPBR";
+    GraphNode termNode;
+    termNode.nodeTypeId = "ND_open_pbr_surface_surfaceshader";
+    termNode.parameters["base_color"] = Value(Vec3f(0.2f, 0.4f, 0.6f));
+    network.nodes[termPath] = termNode;
+
+    GraphConnection termConn;
+    termConn.upstreamNode = termPath;
+    termConn.upstreamOutputName = "out";
+    network.terminals["surface"] = termConn;
+
+    auto graph = EvalGraph::Compile(network);
+    if (!graph || !graph->IsValid()) {
+        return false;
+    }
+
+    const SurfaceClosure nativeClosure = graph->Evaluate(ShadingContext{});
+    const auto* nativeRoot =
+        nativeClosure.bsdfTree.Get(nativeClosure.bsdfTree.root);
+    if (!nativeRoot ||
+        std::holds_alternative<Bsdf::AdobeOpenPbrData>(nativeRoot->data)) {
+        printf("    Expected default OpenPBR graph evaluation to stay native\n");
+        return false;
+    }
+
+    EvalOptions options;
+    options.useAdobeOpenPBR = true;
+    const SurfaceClosure adobeClosure =
+        graph->Evaluate(ShadingContext{}, options);
+    const auto* adobeRoot =
+        adobeClosure.bsdfTree.Get(adobeClosure.bsdfTree.root);
+    if (!adobeRoot) {
+        return false;
+    }
+
+#ifdef PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR
+    if (!std::holds_alternative<Bsdf::AdobeOpenPbrData>(adobeRoot->data)) {
+        printf("    Expected OpenPBR option to select Adobe backend\n");
+        return false;
+    }
+#else
+    if (std::holds_alternative<Bsdf::AdobeOpenPbrData>(adobeRoot->data)) {
+        printf("    Adobe backend node should not appear without support\n");
+        return false;
+    }
+#endif
+
+    return Test_IsClose(
+        adobeClosure.baseColor, Vec3f(0.2f, 0.4f, 0.6f), 1e-4f);
 }
 
 static bool
@@ -576,6 +633,7 @@ Test_RegisterGraphTests()
     _REG(TestCompileMaterialXUsdPreviewSurfaceTerminal);
     _REG(TestCompileDisneyPrincipledTerminal);
     _REG(TestCompileGltfPbrTerminal);
+    _REG(TestOpenPbrEvalOptionsSelectAdobeBackend);
     _REG(TestCompileLinearChain);
     _REG(TestCompileDiamondDAG);
     _REG(TestEvalWithConstantInputs);

@@ -1787,6 +1787,27 @@ def InstallOpenQMC(context, force, buildArgs):
 OPENQMC = Dependency("OpenQMC", InstallOpenQMC, "include/oqmc/oqmc.h")
 
 ############################################################
+# Adobe OpenPBR BSDF
+
+def InstallAdobeOpenPBR(context, force, buildArgs):
+    ADOBE_OPENPBR_URL = (
+        "https://github.com/adobe/openpbr-bsdf/archive/"
+        "7879f3e33bda6565e0a85e33841ef7fb9c1d7a6d.zip")
+
+    if buildArgs:
+        PrintWarning("Ignoring build arguments for header-only Adobe OpenPBR.")
+
+    with CurrentWorkingDirectory(DownloadURL(ADOBE_OPENPBR_URL, context, force)):
+        CopyFiles(context, "openpbr*.h", "include/openpbr")
+        CopyFiles(context, "LICENSE", "include/openpbr")
+        CopyFiles(context, "README.md", "include/openpbr")
+        CopyDirectory(context, "interop", "include/openpbr/interop")
+        CopyDirectory(context, "impl", "include/openpbr/impl")
+
+ADOBEOPENPBR = Dependency("AdobeOpenPBR", InstallAdobeOpenPBR,
+                         "include/openpbr/openpbr.h")
+
+############################################################
 # USD
 
 def InstallUSD(context, force, buildArgs):
@@ -1913,6 +1934,11 @@ def InstallUSD(context, force, buildArgs):
                 extraArgs.append('-DPXR_ENABLE_OPENQMC_SUPPORT=ON')
             else:
                 extraArgs.append('-DPXR_ENABLE_OPENQMC_SUPPORT=OFF')
+
+            if context.buildAdobeOpenPBR:
+                extraArgs.append('-DPXR_ENABLE_ADOBE_OPENPBR_SUPPORT=ON')
+            else:
+                extraArgs.append('-DPXR_ENABLE_ADOBE_OPENPBR_SUPPORT=OFF')
 
             if context.buildPrman:
                 if context.prmanLocation:
@@ -2582,6 +2608,7 @@ class InstallContext:
         # - Imaging plugins
         self.buildEmbree = self.buildImaging and args.build_embree
         self.buildOpenQMC = self.buildEmbree
+        self.buildAdobeOpenPBR = self.buildEmbree
         self.buildPrman = self.buildImaging and args.build_prman
         self.prmanLocation = (os.path.abspath(args.prman_location)
                                if args.prman_location else None)
@@ -2675,7 +2702,7 @@ if context.buildImaging:
         requiredDependencies += [ZLIB, BOOST, JPEG, TIFF, PNG, OPENEXR, OPENIMAGEIO]
 
     if context.buildEmbree:
-        requiredDependencies += [TBB, EMBREE, OPENQMC]
+        requiredDependencies += [TBB, EMBREE, OPENQMC, ADOBEOPENPBR]
                              
 if context.buildUsdview:
     requiredDependencies += [PYOPENGL, PYSIDE]
@@ -2918,6 +2945,7 @@ summaryMsg += """\
       OpenColorIO support:      {buildOCIO} 
       Embree support:           {buildEmbree}
         OpenQMC support:        {buildOpenQMC}
+        Adobe OpenPBR support:  {buildAdobeOpenPBR}
       PRMan support:            {buildPrman}
       Vulkan support:           {enableVulkan}
     UsdImaging                  {buildUsdImaging}
@@ -2999,6 +3027,7 @@ summaryMsg = summaryMsg.format(
     buildOCIO=("On" if context.buildOCIO else "Off"),
     buildEmbree=("On" if context.buildEmbree else "Off"),
     buildOpenQMC=("On" if context.buildOpenQMC else "Off"),
+    buildAdobeOpenPBR=("On" if context.buildAdobeOpenPBR else "Off"),
     buildPrman=("On" if context.buildPrman else "Off"),
     buildUsdImaging=("On" if context.buildUsdImaging else "Off"),
     buildUsdview=("On" if context.buildUsdview else "Off"),

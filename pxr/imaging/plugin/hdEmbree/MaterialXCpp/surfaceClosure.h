@@ -84,6 +84,12 @@ struct SurfaceClosure
                 if (dielectric->dispersionAbbe > 0.0f) {
                     return true;
                 }
+            } else if (const auto* adobe =
+                    std::get_if<Bsdf::AdobeOpenPbrData>(&node.data)) {
+                if (adobe->transmissionDispersionScale > 0.0f ||
+                    adobe->thinFilmWeight > 0.0f) {
+                    return true;
+                }
             }
         }
         return false;

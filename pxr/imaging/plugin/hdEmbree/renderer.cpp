@@ -755,6 +755,7 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _usePerChannelVariance(HdEmbreeDefaultUsePerChannelVariance)
     , _fireflyClampThreshold(HdEmbreeDefaultFireflyClampThreshold)
     , _enableGgxMicrofacetMultipleScattering(true)
+    , _useAdobeOpenPBR(false)
     , _textureSystem(std::make_unique<HdEmbreeOiioTextureSystem>())
     , _sceneFrame(0.0f)
     , _sceneTime(0.0f)
@@ -883,6 +884,12 @@ HdEmbreeRenderer::SetEnableGgxMicrofacetMultipleScattering(bool enable)
 {
     _enableGgxMicrofacetMultipleScattering = enable;
     mxcpp::Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(enable);
+}
+
+void
+HdEmbreeRenderer::SetUseAdobeOpenPBR(bool enable)
+{
+    _useAdobeOpenPBR = enable;
 }
 
 void
@@ -2537,7 +2544,9 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
         ctx.geomPropLookup = &_SampleGeomProp;
         ctx.geomPropUserData = &cbData;
         ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
-        *outClosure = evalGraph->Evaluate(ctx);
+        mxcpp::EvalOptions evalOptions;
+        evalOptions.useAdobeOpenPBR = _useAdobeOpenPBR;
+        *outClosure = evalGraph->Evaluate(ctx, evalOptions);
         return true;
     } catch (...) {
         return false;
@@ -2771,7 +2780,9 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
 
     if (evalGraph) {
         try {
-            closure = evalGraph->Evaluate(ctx);
+            mxcpp::EvalOptions evalOptions;
+            evalOptions.useAdobeOpenPBR = _useAdobeOpenPBR;
+            closure = evalGraph->Evaluate(ctx, evalOptions);
             hasMaterialClosure = true;
         } catch (...) {
             hasMaterialClosure = false;
@@ -3708,7 +3719,9 @@ HdEmbreeRenderer::_TracePath(
 
         if (evalGraph) {
             try {
-                closure = evalGraph->Evaluate(ctx);
+                mxcpp::EvalOptions evalOptions;
+                evalOptions.useAdobeOpenPBR = _useAdobeOpenPBR;
+                closure = evalGraph->Evaluate(ctx, evalOptions);
                 hasClosure = true;
             } catch (...) {
                 hasClosure = false;

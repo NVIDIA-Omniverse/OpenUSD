@@ -6,6 +6,7 @@
 #include "materials/disneyPrincipled.h"
 #include "materials/gltfPbr.h"
 #include "materials/standardSurface.h"
+#include "materials/adobeOpenPbr.h"
 #include "materials/openPbr.h"
 #include "materials/usdPreviewSurface.h"
 
@@ -343,7 +344,7 @@ EvalGraph::_ReevaluateInput(
 }
 
 SurfaceClosure
-EvalGraph::Evaluate(const ShadingContext& ctx) const
+EvalGraph::Evaluate(const ShadingContext& ctx, const EvalOptions& options) const
 {
     if (!_isValid) {
         return SurfaceClosure();
@@ -364,7 +365,7 @@ EvalGraph::Evaluate(const ShadingContext& ctx) const
     auto& terminalParams = scratch.terminalParams;
     _BuildParamMap(_terminalInputs, scratch.nodeOutputs, &terminalParams);
 
-    return _EvalMaterialModel(_materialModelType, terminalParams);
+    return _EvalMaterialModel(_materialModelType, terminalParams, options);
 }
 
 // ---------------------------------------------------------------------------
@@ -375,12 +376,16 @@ EvalGraph::Evaluate(const ShadingContext& ctx) const
 SurfaceClosure
 EvalGraph::_EvalMaterialModel(
     const std::string& modelType,
-    const ParamMap& params)
+    const ParamMap& params,
+    const EvalOptions& options)
 {
     if (modelType == _kStandardSurface) {
         return EvalStandardSurface(params);
     }
     if (modelType == _kOpenPbr) {
+        if (options.useAdobeOpenPBR) {
+            return EvalAdobeOpenPbr(params);
+        }
         return EvalOpenPbr(params);
     }
     if (modelType == _kDisneyPrincipled) {

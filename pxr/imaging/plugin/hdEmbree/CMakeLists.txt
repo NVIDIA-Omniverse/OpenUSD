@@ -49,6 +49,13 @@ if (PXR_ENABLE_OPENQMC_SUPPORT)
     list(APPEND _hdEmbree_libraries OpenQMC::OpenQMC)
 endif()
 
+if (PXR_ENABLE_ADOBE_OPENPBR_SUPPORT)
+    list(APPEND _hdEmbree_libraries
+        AdobeOpenPBR::AdobeOpenPBR
+        glm::glm
+    )
+endif()
+
 pxr_plugin(hdEmbree
    LIBRARIES
         ${_hdEmbree_libraries}
@@ -78,6 +85,7 @@ pxr_plugin(hdEmbree
         MaterialXCpp/slots
         MaterialXCpp/nodeRegistry
         MaterialXCpp/materials/bsdf
+        MaterialXCpp/materials/adobeOpenPbr
         MaterialXCpp/materials/disneyPrincipled
         MaterialXCpp/materials/gltfPbr
         MaterialXCpp/materials/standardSurface
@@ -158,10 +166,20 @@ else()
     set(__MXCPP_TEST_IMATH_LIBS ${OPENEXR_Imath_LIBRARY})
 endif()
 
+set(__MXCPP_TEST_LIBS
+    ${__MXCPP_TEST_IMATH_LIBS}
+    ${EMBREE_LIBRARY}
+)
+if (PXR_ENABLE_ADOBE_OPENPBR_SUPPORT)
+    list(APPEND __MXCPP_TEST_LIBS
+        AdobeOpenPBR::AdobeOpenPBR
+        glm::glm
+    )
+endif()
+
 pxr_build_test(testMaterialXCpp
     LIBRARIES
-        ${__MXCPP_TEST_IMATH_LIBS}
-        ${EMBREE_LIBRARY}
+        ${__MXCPP_TEST_LIBS}
         gf
         hd
         sdf
@@ -178,6 +196,7 @@ pxr_build_test(testMaterialXCpp
         mxcppAdapter.cpp
         sss.cpp
         MaterialXCpp/materials/bsdf.cpp
+        MaterialXCpp/materials/adobeOpenPbr.cpp
         MaterialXCpp/materials/disneyPrincipled.cpp
         MaterialXCpp/materials/gltfPbr.cpp
         MaterialXCpp/materials/standardSurface.cpp
@@ -205,4 +224,13 @@ pxr_build_test(testMaterialXCpp
 
 if (PXR_ENABLE_OPENQMC_SUPPORT)
     target_compile_definitions(hdEmbree PRIVATE PXR_HDEMBREE_ENABLE_OPENQMC=1)
+endif()
+
+if (PXR_ENABLE_ADOBE_OPENPBR_SUPPORT)
+    target_compile_definitions(hdEmbree
+        PRIVATE PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR=1)
+    if (TARGET testMaterialXCpp)
+        target_compile_definitions(testMaterialXCpp
+            PRIVATE PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR=1)
+    endif()
 endif()

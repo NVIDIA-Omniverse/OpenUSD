@@ -14,6 +14,11 @@
 
 namespace mxcpp {
 
+struct EvalOptions
+{
+    bool useAdobeOpenPBR = false;
+};
+
 /// \class EvalGraph
 ///
 /// A compiled, topologically-sorted shader graph ready for per-pixel
@@ -28,7 +33,9 @@ public:
         const std::string& terminalName = std::string());
 
     /// Evaluate the compiled graph for a single shading point.
-    SurfaceClosure Evaluate(const ShadingContext& ctx) const;
+    SurfaceClosure Evaluate(
+        const ShadingContext& ctx,
+        const EvalOptions& options = EvalOptions()) const;
 
     bool IsValid() const { return _isValid; }
 
@@ -59,7 +66,8 @@ private:
 
     static SurfaceClosure _EvalMaterialModel(
         const std::string& modelType,
-        const ParamMap& params);
+        const ParamMap& params,
+        const EvalOptions& options);
 
     void _BuildParamMap(
         const std::vector<InputBinding>& bindings,

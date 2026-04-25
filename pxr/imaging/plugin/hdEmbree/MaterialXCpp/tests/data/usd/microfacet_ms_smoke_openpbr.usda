@@ -1,0 +1,273 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    renderSettingsPrimPath = "/RenderSettings"
+    subLayers = [
+        @microfacet_ms_smoke.usda@
+    ]
+    doc = """OpenPBR counterpart of microfacet_ms_smoke.usda.
+
+This layer keeps the original camera, lights, mesh layout, and material
+bindings, but overrides the material shaders to
+ND_open_pbr_surface_surfaceshader so hdEmbree:useAdobeOpenPBR can switch
+between the native and Adobe OpenPBR backends."""
+)
+
+over "RenderProduct"
+{
+    token productName = "microfacet_ms_smoke_openpbr.exr"
+}
+
+over "World"
+{
+    over "Materials"
+    {
+        over "GroundMat"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.18, 0.18, 0.18)
+                float inputs:base_diffuse_roughness = 0.5
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 0.0
+                float inputs:specular_roughness = 0.5
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+            }
+        }
+
+        over "WhiteSpecR005"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 0.0
+                color3f inputs:base_color = (0.0, 0.0, 0.0)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.05
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+            }
+        }
+
+        over "WhiteDiffuseR005"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.8, 0.8, 0.8)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.05
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+            }
+        }
+
+        over "WhiteDiffuseR035"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.8, 0.8, 0.8)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.35
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+            }
+        }
+
+        over "WhiteDiffuseR065"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.8, 0.8, 0.8)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.65
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+            }
+        }
+
+        over "WhiteDiffuseR100"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.8, 0.8, 0.8)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 1.0
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+            }
+        }
+
+        over "WhiteSpecR035"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 0.0
+                color3f inputs:base_color = (0.0, 0.0, 0.0)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.35
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+            }
+        }
+
+        over "WhiteSpecR065"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 0.0
+                color3f inputs:base_color = (0.0, 0.0, 0.0)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.65
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+            }
+        }
+
+        over "WhiteSpecR100"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 0.0
+                color3f inputs:base_color = (0.0, 0.0, 0.0)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 1.0
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+            }
+        }
+
+        over "SilverR005"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.93, 0.92, 0.88)
+                float inputs:base_metalness = 1.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.05
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+            }
+        }
+
+        over "SilverR035"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.93, 0.92, 0.88)
+                float inputs:base_metalness = 1.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.35
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+            }
+        }
+
+        over "SilverR065"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.93, 0.92, 0.88)
+                float inputs:base_metalness = 1.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.65
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+            }
+        }
+
+        over "SilverR100"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (0.93, 0.92, 0.88)
+                float inputs:base_metalness = 1.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 1.0
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+            }
+        }
+
+        over "GoldR005"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (1.0, 0.74, 0.28)
+                float inputs:base_metalness = 1.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.05
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+            }
+        }
+
+        over "GoldR035"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (1.0, 0.74, 0.28)
+                float inputs:base_metalness = 1.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.35
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+            }
+        }
+
+        over "GoldR065"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (1.0, 0.74, 0.28)
+                float inputs:base_metalness = 1.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.65
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+            }
+        }
+
+        over "GoldR100"
+        {
+            over "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 1.0
+                color3f inputs:base_color = (1.0, 0.74, 0.28)
+                float inputs:base_metalness = 1.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 1.0
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+            }
+        }
+    }
+}

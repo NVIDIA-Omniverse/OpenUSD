@@ -37,7 +37,8 @@ class HdEmbreeRenderParam;
     (stratifyLightSamples)              \
     (showAdaptiveHeatmap)               \
     (usePerChannelVariance)             \
-    (fireflyClampThreshold)
+    (fireflyClampThreshold)             \
+    (useAdobeOpenPBR)
 
 // Also: HdRenderSettingsTokens->convergedSamplesPerPixel
 

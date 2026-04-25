@@ -120,6 +120,59 @@ struct SheenData
     SheenMode mode = SheenMode::ContyKulla;
 };
 
+struct AdobeOpenPbrData
+{
+    float baseWeight = 1.0f;
+    Vec3f baseColor = Vec3f(0.8f);
+    float baseDiffuseRoughness = 0.0f;
+    float baseMetalness = 0.0f;
+
+    float subsurfaceWeight = 0.0f;
+    Vec3f subsurfaceColor = Vec3f(0.8f);
+    float subsurfaceRadius = 1.0f;
+    Vec3f subsurfaceRadiusScale = Vec3f(1.0f, 0.5f, 0.25f);
+    float subsurfaceScatterAnisotropy = 0.0f;
+
+    float specularWeight = 1.0f;
+    Vec3f specularColor = Vec3f(1.0f);
+    float specularRoughness = 0.3f;
+    float specularRoughnessAnisotropy = 0.0f;
+    float specularIor = 1.5f;
+
+    float coatWeight = 0.0f;
+    Vec3f coatColor = Vec3f(1.0f);
+    float coatRoughness = 0.0f;
+    float coatRoughnessAnisotropy = 0.0f;
+    float coatIor = 1.6f;
+    float coatDarkening = 1.0f;
+
+    float fuzzWeight = 0.0f;
+    Vec3f fuzzColor = Vec3f(1.0f);
+    float fuzzRoughness = 0.5f;
+
+    float transmissionWeight = 0.0f;
+    Vec3f transmissionColor = Vec3f(1.0f);
+    float transmissionDepth = 0.0f;
+    Vec3f transmissionScatter = Vec3f(0.0f);
+    float transmissionScatterAnisotropy = 0.0f;
+    float transmissionDispersionScale = 0.0f;
+    float transmissionDispersionAbbeNumber = 20.0f;
+
+    float thinFilmWeight = 0.0f;
+    float thinFilmThickness = 0.5f;
+    float thinFilmIor = 1.4f;
+
+    float emissionLuminance = 0.0f;
+    Vec3f emissionColor = Vec3f(1.0f);
+
+    float geometryOpacity = 1.0f;
+    bool geometryThinWalled = false;
+    Vec3f geometryNormal = Vec3f(0.0f, 0.0f, 1.0f);
+    Vec3f geometryTangent = Vec3f(1.0f, 0.0f, 0.0f);
+    Vec3f geometryCoatNormal = Vec3f(0.0f, 0.0f, 1.0f);
+    Vec3f geometryCoatTangent = Vec3f(1.0f, 0.0f, 0.0f);
+};
+
 struct UnsupportedData
 {
     UnsupportedNodeKind kind = UnsupportedNodeKind::Subsurface;
@@ -159,6 +212,7 @@ using NodeData = std::variant<
     ConductorData,
     GeneralizedSchlickData,
     SheenData,
+    AdobeOpenPbrData,
     UnsupportedData,
     MixData,
     LayerData,

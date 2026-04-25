@@ -183,6 +183,9 @@ public:
     /// Set whether GGX reflection uses microfacet multiple scattering.
     void SetEnableGgxMicrofacetMultipleScattering(bool enable);
 
+    /// Set whether MaterialX OpenPBR uses the Adobe reference backend.
+    void SetUseAdobeOpenPBR(bool enable);
+
     /// Rendering entrypoint: add one sample per pixel to the whole sample
     /// buffer, and then loop until the image is converged.  After each pass,
     /// the image will be resolved into a color buffer.
@@ -520,6 +523,9 @@ private:
 
     // Whether GGX reflection uses microfacet multiple scattering compensation.
     bool _enableGgxMicrofacetMultipleScattering;
+
+    // Whether MaterialX OpenPBR uses the Adobe reference backend.
+    bool _useAdobeOpenPBR;
 
     // Shared MaterialX texture backend for the whole renderer.
     std::unique_ptr<mxcpp::TextureSystem> _textureSystem;

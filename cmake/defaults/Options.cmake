@@ -28,6 +28,8 @@ option(PXR_BUILD_PRMAN_PLUGIN "Build the PRMan imaging plugin" OFF)
 option(PXR_ENABLE_MATERIALX_SUPPORT "Enable MaterialX support" OFF)
 option(PXR_ENABLE_OPENQMC_SUPPORT
        "Enable OpenQMC support for the Embree imaging plugin" OFF)
+option(PXR_ENABLE_ADOBE_OPENPBR_SUPPORT
+       "Enable Adobe OpenPBR support for the Embree imaging plugin" OFF)
 option(PXR_BUILD_DOCUMENTATION "Generate doxygen documentation" OFF)
 option(PXR_BUILD_PYTHON_DOCUMENTATION "Generate Python documentation" OFF)
 option(PXR_BUILD_HTML_DOCUMENTATION "Generate HTML documentation if PXR_BUILD_DOCUMENTATION is ON" ON)
@@ -256,6 +258,15 @@ if (${PXR_ENABLE_OPENQMC_SUPPORT})
             "Setting PXR_ENABLE_OPENQMC_SUPPORT=OFF because "
             "PXR_BUILD_EMBREE_PLUGIN=OFF")
         set(PXR_ENABLE_OPENQMC_SUPPORT "OFF" CACHE BOOL "" FORCE)
+    endif()
+endif()
+
+if (${PXR_ENABLE_ADOBE_OPENPBR_SUPPORT})
+    if (NOT ${PXR_BUILD_EMBREE_PLUGIN})
+        message(STATUS
+            "Setting PXR_ENABLE_ADOBE_OPENPBR_SUPPORT=OFF because "
+            "PXR_BUILD_EMBREE_PLUGIN=OFF")
+        set(PXR_ENABLE_ADOBE_OPENPBR_SUPPORT "OFF" CACHE BOOL "" FORCE)
     endif()
 endif()
 

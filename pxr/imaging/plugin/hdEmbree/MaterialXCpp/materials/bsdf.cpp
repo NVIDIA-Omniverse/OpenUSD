@@ -6,6 +6,7 @@
 //
 #include "bsdf.h"
 
+#include "adobeOpenPbr.h"
 #include "bsdfDielectricReflFrontLut.h"
 
 #include "../spectral.h"
@@ -1895,6 +1896,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             }
             return _SafeVec(Bsdf::EvalSheen(
                 data.color, data.roughness, N, wi, wo) * data.weight);
+        } else if constexpr (std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
+            return _SafeVec(EvalAdobeOpenPbr(data, N, wi, wo));
         } else if constexpr (std::is_same_v<T, Bsdf::UnsupportedData>) {
             return Vec3f(0.0f);
         } else if constexpr (std::is_same_v<T, Bsdf::MixData>) {
@@ -1998,6 +2001,8 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
             float dirAlbedo = _ApproxSheenDirAlbedo(NdotV, data.roughness);
             return _SaturateVec(Vec3f(1.0f - dirAlbedo * data.weight));
+        } else if constexpr (std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
+            return Vec3f(1.0f);
         } else if constexpr (std::is_same_v<T, Bsdf::MixData>) {
             return _LerpVec(
                 _EvalThroughput(tree, data.bg, N, wo, heroWavelengthNm),
@@ -2112,6 +2117,8 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 std::max(_Luminance(reflectance), 0.05f);
         } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
             return data.weight * std::max(_Luminance(data.color), 0.0f) * 0.25f;
+        } else if constexpr (std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
+            return 1.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::UnsupportedData>) {
             return 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::MixData>) {
@@ -2235,6 +2242,8 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
             return (Dot(N, wi) > 0.0f) ? Bsdf::PdfLambertian(N, wi) : 0.0f;
+        } else if constexpr (std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
+            return PdfAdobeOpenPbr(data, N, wi, wo);
         } else if constexpr (std::is_same_v<T, Bsdf::UnsupportedData>) {
             return 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::MixData>) {
@@ -2566,6 +2575,8 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             auto sample = Bsdf::SampleLambertian(data.color * data.weight, N, wo, u1, u2);
             return _FinalizeSubtreeSample(
                 tree, nodeId, N, wo, sample, heroWavelengthNm);
+        } else if constexpr (std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
+            return SampleAdobeOpenPbr(data, N, wo, u1, u2, uChoice);
         } else if constexpr (std::is_same_v<T, Bsdf::UnsupportedData>) {
             return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         } else if constexpr (std::is_same_v<T, Bsdf::MixData>) {

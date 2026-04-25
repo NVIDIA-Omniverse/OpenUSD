@@ -312,6 +312,10 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<bool>(
                 enableGgxMicrofacetMultipleScatteringToken,
                 true));
+        _renderer->SetUseAdobeOpenPBR(
+            renderDelegate->GetRenderSetting<bool>(
+                HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
+                false));
 
         needStartRender = true;
     }

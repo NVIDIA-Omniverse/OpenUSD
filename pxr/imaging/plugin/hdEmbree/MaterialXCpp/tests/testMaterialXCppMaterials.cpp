@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "../materials/standardSurface.h"
+#include "../materials/adobeOpenPbr.h"
 #include "../materials/openPbr.h"
 #include "../materials/disneyPrincipled.h"
 #include "../materials/gltfPbr.h"
@@ -686,6 +687,79 @@ TestOpenPbrTransmission()
     if (!Test_IsClose(c.transmissionColor, Vec3f(0.8f, 0.9f, 1.0f), 1e-4f))
         return false;
     return true;
+}
+
+static bool
+TestAdobeOpenPbrBuildsWholeBackendNode()
+{
+    ParamMap params;
+    params["base_color"] = Value(Vec3f(0.25f, 0.5f, 0.75f));
+    params["transmission_weight"] = Value(0.5f);
+    params["transmission_depth"] = Value(0.25f);
+
+    const SurfaceClosure closure = EvalAdobeOpenPbr(params);
+#ifdef PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR
+    const auto* root = closure.bsdfTree.Get(closure.bsdfTree.root);
+    if (!root ||
+        !std::holds_alternative<Bsdf::AdobeOpenPbrData>(root->data)) {
+        printf("    Expected Adobe OpenPBR whole-backend root node\n");
+        return false;
+    }
+    if (!Test_IsClose(closure.baseColor, Vec3f(0.25f, 0.5f, 0.75f), 1e-4f)) {
+        return false;
+    }
+    return closure.hasInteriorMedium;
+#else
+    return closure.HasBsdfTree();
+#endif
+}
+
+static bool
+TestOpenPbrRegularVolumeDoesNotDoubleTintTransmission()
+{
+    const Vec3f tint(0.8f, 0.6f, 0.4f);
+
+    ParamMap regularVolumeParams;
+    regularVolumeParams["transmission_weight"] = Value(1.0f);
+    regularVolumeParams["transmission_color"] = Value(tint);
+    regularVolumeParams["transmission_depth"] = Value(0.5f);
+    regularVolumeParams["geometry_thin_walled"] = Value(false);
+
+    const SurfaceClosure regularVolume = EvalOpenPbr(regularVolumeParams);
+    const auto* regularTransmission = FindNodeIf<Bsdf::DielectricData>(
+        regularVolume.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Transmission;
+        });
+
+    if (!regularVolume.hasInteriorMedium || !regularTransmission) {
+        printf("    Expected OpenPBR regular transmission volume\n");
+        return false;
+    }
+    if (!Test_IsClose(regularTransmission->tint, Vec3f(1.0f), 1e-4f)) {
+        printf("    Expected regular volume transmission BTDF tint to be white\n");
+        return false;
+    }
+
+    ParamMap zeroDepthParams;
+    zeroDepthParams["transmission_weight"] = Value(1.0f);
+    zeroDepthParams["transmission_color"] = Value(tint);
+    zeroDepthParams["transmission_depth"] = Value(0.0f);
+    zeroDepthParams["geometry_thin_walled"] = Value(false);
+
+    const SurfaceClosure zeroDepth = EvalOpenPbr(zeroDepthParams);
+    const auto* zeroDepthTransmission = FindNodeIf<Bsdf::DielectricData>(
+        zeroDepth.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Transmission;
+        });
+
+    if (zeroDepth.hasInteriorMedium || !zeroDepthTransmission) {
+        printf("    Expected OpenPBR zero-depth transmission tint path\n");
+        return false;
+    }
+
+    return Test_IsClose(zeroDepthTransmission->tint, tint, 1e-4f);
 }
 
 static bool
@@ -1568,6 +1642,8 @@ Test_RegisterMaterialTests()
     _REG(TestOpenPbrDefaults);
     _REG(TestOpenPbrBuildsLayeredDielectricBase);
     _REG(TestOpenPbrTransmission);
+    _REG(TestAdobeOpenPbrBuildsWholeBackendNode);
+    _REG(TestOpenPbrRegularVolumeDoesNotDoubleTintTransmission);
     _REG(TestOpenPbrLayersReflectionOverTransmissionMix);
     _REG(TestOpenPbrThinWalledUsesUnitIorTransmission);
     _REG(TestOpenPbrCoatDarkeningReachesBaseSubstrate);

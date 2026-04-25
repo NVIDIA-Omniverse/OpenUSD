@@ -112,7 +112,7 @@ void
 HdEmbreeRenderDelegate::_Initialize()
 {
     // Initialize the settings and settings descriptors.
-    _settingDescriptors.resize(18);
+    _settingDescriptors.resize(19);
     _settingDescriptors[0] = { "Enable Scene Colors",
         HdEmbreeRenderSettingsTokens->enableSceneColors,
         VtValue(HdEmbreeConfig::GetInstance().useFaceColors) };
@@ -170,6 +170,9 @@ HdEmbreeRenderDelegate::_Initialize()
     _settingDescriptors[17] = { "Enable GGX Microfacet Multiple Scattering",
         _enableGgxMicrofacetMultipleScatteringToken,
         VtValue(true) };
+    _settingDescriptors[18] = { "Use Adobe OpenPBR",
+        HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
+        VtValue(false) };
     _PopulateDefaultSettings(_settingDescriptors);
 
     // Initialize the embree library handle (_rtcDevice).
