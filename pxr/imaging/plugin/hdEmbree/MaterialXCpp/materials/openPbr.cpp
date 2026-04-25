@@ -417,7 +417,11 @@ EvalOpenPbr(const ParamMap& params)
         } else {
             Bsdf::DielectricData transmission;
             transmission.weight = transmissionWeight;
-            transmission.tint = _Saturate(c.transmissionColor);
+            // Regular OpenPBR volumes carry transmission_color through the
+            // interior medium; tinting the surface BTDF would double-color it.
+            transmission.tint = c.hasInteriorMedium
+                ? Vec3f(1.0f)
+                : _Saturate(c.transmissionColor);
             transmission.ior = std::max(c.specularIor, 1.0f);
             transmission.dispersionAbbe = effectiveDispersionAbbe;
             transmission.roughness = specularRoughness;

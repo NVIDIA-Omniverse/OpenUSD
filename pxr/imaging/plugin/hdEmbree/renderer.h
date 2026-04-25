@@ -27,6 +27,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -62,7 +63,6 @@ struct HdEmbreeMediumState {
     bool active = false;
     mxcpp::MediumProperties medium;
     HdEmbreeMesh* ownerMesh = nullptr;
-    int trackingChannel = -1;  // >= 0: per-channel free-flight tracking
 };
 
 /// \class HdEmbreeRenderer
@@ -296,6 +296,44 @@ private:
         bool spectralActive = false,
         float heroWavelengthNm = 0.0f,
         float heroWavelengthPdf = 0.0f) const;
+
+    enum class _VolumeTransmissionResult {
+        ContinueSurface,
+        ContinueRay,
+        Terminate
+    };
+
+    struct _VolumeTransmissionInput {
+        GfVec3f rayOrigin;
+        GfVec3f rayDir;
+        float surfaceDist = std::numeric_limits<float>::infinity();
+        bool hasFiniteLightHit = false;
+        HdEmbreeLightSampler::LightSample finiteLightHit;
+        float finiteLightDist = std::numeric_limits<float>::infinity();
+        int bounce = 0;
+        bool spectralActive = false;
+        float heroWavelengthNm = 0.0f;
+        float heroWavelengthPdf = 0.0f;
+    };
+
+    struct _VolumeTransmissionState {
+        GfVec3f radiance;
+        GfVec3f throughput;
+        float spectralThroughput = 1.0f;
+        GfVec3f rayOrigin;
+        GfVec3f rayDir;
+        HdEmbreeRayDifferential rayDiff;
+        float lastBsdfPdf = 0.0f;
+        bool lastScatterWasMedium = false;
+        bool anyNonSpecularBounces = false;
+        bool isFirstBounce = false;
+    };
+
+    _VolumeTransmissionResult _TraceVolumeTransmission(
+        _VolumeTransmissionInput const& input,
+        HdEmbreeMediumState const& mediumState,
+        HdEmbreeSobolSampler& sampler,
+        _VolumeTransmissionState* state) const;
 
     /// Multi-bounce path tracer with MIS.
     GfVec3f _TracePath(

@@ -90,6 +90,7 @@ constexpr T _pi = static_cast<T>(M_PI);
 
 constexpr float _rayHitContinueBias = 0.001f;
 constexpr float _minLuminanceCutoff = 1e-9f;
+constexpr float _volumePdfEps = 1.0e-20f;
 static const TfToken _tokensTangent("tangent");
 static const TfToken _tokensBitangent("bitangent");
 static const TfToken _tokensComputedTangent("hdEmbreeComputedTangent");
@@ -3177,6 +3178,242 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
     return finalColor;
 }
 
+HdEmbreeRenderer::_VolumeTransmissionResult
+HdEmbreeRenderer::_TraceVolumeTransmission(
+    _VolumeTransmissionInput const& input,
+    HdEmbreeMediumState const& mediumState,
+    HdEmbreeSobolSampler& sampler,
+    _VolumeTransmissionState* state) const
+{
+    if (!state || !mediumState.active) {
+        return _VolumeTransmissionResult::ContinueSurface;
+    }
+
+    const _HeroWavelengthState hero{
+        input.spectralActive,
+        input.heroWavelengthNm,
+        input.heroWavelengthPdf};
+
+    const auto applyWeight = [&](GfVec3f const& weight) {
+        if (hero.active) {
+            state->spectralThroughput *= _RgbToSpectralValue(weight, hero);
+        } else {
+            state->throughput = GfCompMult(state->throughput, weight);
+        }
+    };
+
+    const auto rgbThroughput = [&]() {
+        return hero.active
+            ? _SpectralScalarToRgb(state->spectralThroughput, hero)
+            : state->throughput;
+    };
+
+    const auto throughputIsBlack = [&]() {
+        return _IsNearlyBlack(rgbThroughput(), _minLuminanceCutoff);
+    };
+
+    const auto addFiniteLightHit = [&]() {
+        GfVec3f lightContrib = input.finiteLightHit.Li;
+        if (state->lastBsdfPdf > 0.0f &&
+            input.finiteLightHit.invPdfW > 0.0f) {
+            const float lightPdf = 1.0f / input.finiteLightHit.invPdfW;
+            const float effectiveLightPdf = _GetOneSampleMisLightPdf(
+                lightPdf,
+                _lightSamplesPerHit,
+                state->lastScatterWasMedium);
+            if (effectiveLightPdf > 0.0f) {
+                lightContrib *= mxcpp::Bsdf::PowerHeuristic(
+                    state->lastBsdfPdf,
+                    effectiveLightPdf);
+            }
+        }
+
+        if (hero.active) {
+            const float spectralLight =
+                _RgbToSpectralValue(lightContrib, hero);
+            state->radiance += _SpectralValueToRgb(
+                state->spectralThroughput * spectralLight,
+                hero);
+        } else {
+            state->radiance += GfCompMult(state->throughput, lightContrib);
+        }
+
+        return _VolumeTransmissionResult::Terminate;
+    };
+
+    const mxcpp::MediumProperties& medium = mediumState.medium;
+
+    if (!medium.IsAbsorbingOnly()) {
+        const GfVec3f sigmaT = _ToGf(medium.SigmaT());
+        const GfVec3f sigmaS = _ToGf(medium.sigmaS);
+        GfVec3f albedo(0.0f);
+        for (int i = 0; i < 3; ++i) {
+            if (sigmaT[i] > 1.0e-6f) {
+                albedo[i] = std::clamp(sigmaS[i] / sigmaT[i], 0.0f, 1.0f);
+            }
+        }
+
+        mxcpp::Vec3f channelPdfMx;
+        const int channel = mxcpp::ChannelMIS(
+            _ToMx(rgbThroughput()),
+            _ToMx(albedo),
+            sampler.Next(),
+            &channelPdfMx);
+        const GfVec3f channelPdf =
+            GfVec3f(channelPdfMx[0], channelPdfMx[1], channelPdfMx[2]);
+
+        // Chiang channel MIS: sample a single RGB tracking channel, but
+        // evaluate all RGB channels against the mixture pdf.
+        const auto evalTransmittance = [&](float distance) {
+            return _ToGf(mxcpp::EvalBeerTransmittance(medium, distance));
+        };
+
+        const auto evalScatterWeight = [&](float distance) {
+            const GfVec3f transmittance = evalTransmittance(distance);
+            const GfVec3f pdf = GfCompMult(sigmaT, transmittance);
+            const GfVec3f sampleContrib =
+                GfCompMult(sigmaS, transmittance);
+            const float denom = GfDot(channelPdf, pdf);
+            if (!std::isfinite(denom) || denom <= _volumePdfEps) {
+                return GfVec3f(0.0f);
+            }
+            return sampleContrib * (1.0f / denom);
+        };
+
+        const auto evalTransmittanceWeight = [&](float distance) {
+            const GfVec3f transmittance = evalTransmittance(distance);
+            const float denom = GfDot(channelPdf, transmittance);
+            if (!std::isfinite(denom) || denom <= _volumePdfEps) {
+                return GfVec3f(0.0f);
+            }
+            return transmittance * (1.0f / denom);
+        };
+
+        const float scatterDist =
+            mxcpp::SampleFreeFlightChannel(medium, channel, sampler.Next());
+        const float maxTravelDist =
+            std::min(input.surfaceDist, input.finiteLightDist);
+        if (scatterDist < maxTravelDist) {
+            const GfVec3f scatterWeight = evalScatterWeight(scatterDist);
+            applyWeight(scatterWeight);
+
+            if (throughputIsBlack()) {
+                return _VolumeTransmissionResult::Terminate;
+            }
+
+            const GfVec3f scatterPos =
+                input.rayOrigin + input.rayDir * scatterDist;
+            const GfVec3f wo = -input.rayDir;
+            const GfVec3f direct = _ComputeMediumDirectLighting(
+                scatterPos,
+                wo,
+                mediumState,
+                sampler,
+                hero.active,
+                hero.wavelengthNm,
+                hero.pdf);
+            if (hero.active) {
+                state->radiance += direct * state->spectralThroughput;
+            } else {
+                state->radiance += GfCompMult(state->throughput, direct);
+            }
+
+            if (input.bounce >= _maxBounces) {
+                return _VolumeTransmissionResult::Terminate;
+            }
+
+            if (input.bounce >= _minBouncesBeforeRR) {
+                float q = hero.active
+                    ? std::max({
+                        _SpectralScalarToRgb(
+                            state->spectralThroughput, hero)[0],
+                        _SpectralScalarToRgb(
+                            state->spectralThroughput, hero)[1],
+                        _SpectralScalarToRgb(
+                            state->spectralThroughput, hero)[2]})
+                    : std::max({
+                        state->throughput[0],
+                        state->throughput[1],
+                        state->throughput[2]});
+                q = std::min(q, 0.95f);
+                if (q <= 0.0f || sampler.Next() > q) {
+                    return _VolumeTransmissionResult::Terminate;
+                }
+                if (hero.active) {
+                    state->spectralThroughput /= q;
+                } else {
+                    state->throughput /= q;
+                }
+            }
+
+            const GfVec3f wi = _ToGf(mxcpp::SampleHenyeyGreenstein(
+                _ToMx(wo),
+                medium.anisotropy,
+                sampler.Next(),
+                sampler.Next()));
+            const float phasePdf = mxcpp::PdfHenyeyGreenstein(
+                _ToMx(wi),
+                _ToMx(wo),
+                medium.anisotropy);
+            if (phasePdf <= 0.0f || !std::isfinite(phasePdf)) {
+                return _VolumeTransmissionResult::Terminate;
+            }
+
+            state->rayOrigin =
+                _OffsetRayOrigin(scatterPos, wi, wi, 1e-4f);
+            state->rayDir = wi;
+            state->rayDiff.hasDifferentials = false;
+            state->lastBsdfPdf = phasePdf;
+            state->lastScatterWasMedium = true;
+            state->anyNonSpecularBounces = true;
+            state->isFirstBounce = false;
+            return _VolumeTransmissionResult::ContinueRay;
+        }
+
+        if (input.hasFiniteLightHit &&
+            input.finiteLightDist < input.surfaceDist &&
+            input.finiteLightDist > 0.0f) {
+            applyWeight(evalTransmittanceWeight(input.finiteLightDist));
+
+            if (throughputIsBlack()) {
+                return _VolumeTransmissionResult::Terminate;
+            }
+
+            return addFiniteLightHit();
+        }
+
+        if (std::isfinite(input.surfaceDist) && input.surfaceDist > 0.0f) {
+            applyWeight(evalTransmittanceWeight(input.surfaceDist));
+        } else {
+            return _VolumeTransmissionResult::Terminate;
+        }
+    } else if (input.hasFiniteLightHit &&
+               input.finiteLightDist < input.surfaceDist &&
+               input.finiteLightDist > 0.0f) {
+        const GfVec3f transmittance = _ToGf(
+            mxcpp::EvalBeerTransmittance(medium, input.finiteLightDist));
+        applyWeight(transmittance);
+
+        if (throughputIsBlack()) {
+            return _VolumeTransmissionResult::Terminate;
+        }
+
+        return addFiniteLightHit();
+    } else if (std::isfinite(input.surfaceDist) && input.surfaceDist > 0.0f) {
+        const GfVec3f transmittance = _ToGf(
+            mxcpp::EvalBeerTransmittance(medium, input.surfaceDist));
+        applyWeight(transmittance);
+    } else {
+        return _VolumeTransmissionResult::Terminate;
+    }
+
+    if (throughputIsBlack()) {
+        return _VolumeTransmissionResult::Terminate;
+    }
+
+    return _VolumeTransmissionResult::ContinueSurface;
+}
+
 // ---------------------------------------------------------------------------
 // Multi-bounce path tracer with MIS.
 // ---------------------------------------------------------------------------
@@ -3243,227 +3480,53 @@ HdEmbreeRenderer::_TracePath(
                 : std::numeric_limits<float>::infinity();
 
         if (currentMedium.active) {
-            const mxcpp::MediumProperties& medium = currentMedium.medium;
-            if (!medium.IsAbsorbingOnly()) {
-                const int trackCh = currentMedium.trackingChannel;
-                const float scatterDist = (trackCh >= 0)
-                    ? mxcpp::SampleFreeFlightChannel(
-                          medium, trackCh, sampler.Next())
-                    : mxcpp::SampleFreeFlight(medium, sampler.Next());
-                const float maxTravelDist =
-                    std::min(surfaceDist, finiteLightDist);
-                if (scatterDist < maxTravelDist) {
-                    const GfVec3f scatterWeight = (trackCh >= 0)
-                        ? _ToGf(mxcpp::EvalChannelScatterWeight(
-                              medium, trackCh, scatterDist))
-                        : _ToGf(mxcpp::EvalFreeFlightScatterWeight(
-                              medium, scatterDist));
-                    if (hero.active) {
-                        spectralThroughput *=
-                            _RgbToSpectralValue(scatterWeight, hero);
-                    } else {
-                        throughput = GfCompMult(throughput, scatterWeight);
-                    }
+            _VolumeTransmissionInput volumeInput;
+            volumeInput.rayOrigin = rayOrigin;
+            volumeInput.rayDir = rayDir;
+            volumeInput.surfaceDist = surfaceDist;
+            volumeInput.hasFiniteLightHit = hasFiniteLightHit;
+            volumeInput.finiteLightHit = finiteLightHit;
+            volumeInput.finiteLightDist = finiteLightDist;
+            volumeInput.bounce = bounce;
+            volumeInput.spectralActive = hero.active;
+            volumeInput.heroWavelengthNm = hero.wavelengthNm;
+            volumeInput.heroWavelengthPdf = hero.pdf;
 
-                    const GfVec3f rgbThroughput = hero.active
-                        ? _SpectralScalarToRgb(spectralThroughput, hero)
-                        : throughput;
-                    if (_IsNearlyBlack(rgbThroughput, _minLuminanceCutoff)) {
-                        break;
-                    }
+            _VolumeTransmissionState volumeState;
+            volumeState.radiance = radiance;
+            volumeState.throughput = throughput;
+            volumeState.spectralThroughput = spectralThroughput;
+            volumeState.rayOrigin = rayOrigin;
+            volumeState.rayDir = rayDir;
+            volumeState.rayDiff = currentRayDiff;
+            volumeState.lastBsdfPdf = lastBsdfPdf;
+            volumeState.lastScatterWasMedium = lastScatterWasMedium;
+            volumeState.anyNonSpecularBounces = anyNonSpecularBounces;
+            volumeState.isFirstBounce = isFirstBounce;
 
-                    const GfVec3f scatterPos = rayOrigin + rayDir * scatterDist;
-                    const GfVec3f wo = -rayDir;
-                    const GfVec3f direct = _ComputeMediumDirectLighting(
-                        scatterPos,
-                        wo,
-                        currentMedium,
-                        sampler,
-                        hero.active,
-                        hero.wavelengthNm,
-                        hero.pdf);
-                    if (hero.active) {
-                        radiance += direct * spectralThroughput;
-                    } else {
-                        radiance += GfCompMult(throughput, direct);
-                    }
+            const _VolumeTransmissionResult volumeResult =
+                _TraceVolumeTransmission(
+                    volumeInput,
+                    currentMedium,
+                    sampler,
+                    &volumeState);
 
-                    if (bounce >= _maxBounces) {
-                        break;
-                    }
+            radiance = volumeState.radiance;
+            throughput = volumeState.throughput;
+            spectralThroughput = volumeState.spectralThroughput;
+            rayOrigin = volumeState.rayOrigin;
+            rayDir = volumeState.rayDir;
+            currentRayDiff = volumeState.rayDiff;
+            lastBsdfPdf = volumeState.lastBsdfPdf;
+            lastScatterWasMedium = volumeState.lastScatterWasMedium;
+            anyNonSpecularBounces = volumeState.anyNonSpecularBounces;
+            isFirstBounce = volumeState.isFirstBounce;
 
-                    if (bounce >= _minBouncesBeforeRR) {
-                        float q = hero.active
-                            ? std::max({
-                                _SpectralScalarToRgb(
-                                    spectralThroughput, hero)[0],
-                                _SpectralScalarToRgb(
-                                    spectralThroughput, hero)[1],
-                                _SpectralScalarToRgb(
-                                    spectralThroughput, hero)[2]})
-                            : std::max({
-                                throughput[0],
-                                throughput[1],
-                                throughput[2]});
-                        q = std::min(q, 0.95f);
-                        if (q <= 0.0f || sampler.Next() > q) {
-                            break;
-                        }
-                        if (hero.active) {
-                            spectralThroughput /= q;
-                        } else {
-                            throughput /= q;
-                        }
-                    }
-
-                    const GfVec3f wi = _ToGf(mxcpp::SampleHenyeyGreenstein(
-                        _ToMx(wo),
-                        medium.anisotropy,
-                        sampler.Next(),
-                        sampler.Next()));
-                    const float phasePdf = mxcpp::PdfHenyeyGreenstein(
-                        _ToMx(wi),
-                        _ToMx(wo),
-                        medium.anisotropy);
-                    if (phasePdf <= 0.0f || !std::isfinite(phasePdf)) {
-                        break;
-                    }
-
-                    rayOrigin = _OffsetRayOrigin(scatterPos, wi, wi, 1e-4f);
-                    rayDir = wi;
-                    currentRayDiff.hasDifferentials = false;
-                    lastBsdfPdf = phasePdf;
-                    lastScatterWasMedium = true;
-                    anyNonSpecularBounces = true;
-                    isFirstBounce = false;
-                    continue;
-                }
-
-                if (hasFiniteLightHit &&
-                    finiteLightDist < surfaceDist &&
-                    finiteLightDist > 0.0f) {
-                    const GfVec3f transmittanceWeight = (trackCh >= 0)
-                        ? _ToGf(mxcpp::EvalChannelTransmittanceWeight(
-                              medium, trackCh, finiteLightDist))
-                        : _ToGf(mxcpp::EvalMajorantTransmittanceWeight(
-                              medium, finiteLightDist));
-                    if (hero.active) {
-                        spectralThroughput *=
-                            _RgbToSpectralValue(transmittanceWeight, hero);
-                    } else {
-                        throughput = GfCompMult(throughput, transmittanceWeight);
-                    }
-
-                    const GfVec3f rgbThroughput = hero.active
-                        ? _SpectralScalarToRgb(spectralThroughput, hero)
-                        : throughput;
-                    if (_IsNearlyBlack(rgbThroughput, _minLuminanceCutoff)) {
-                        break;
-                    }
-
-                    GfVec3f lightContrib = finiteLightHit.Li;
-                    if (lastBsdfPdf > 0.0f && finiteLightHit.invPdfW > 0.0f) {
-                        const float lightPdf = 1.0f / finiteLightHit.invPdfW;
-                        const float effectiveLightPdf = _GetOneSampleMisLightPdf(
-                            lightPdf,
-                            _lightSamplesPerHit,
-                            lastScatterWasMedium);
-                        if (effectiveLightPdf > 0.0f) {
-                            lightContrib *= mxcpp::Bsdf::PowerHeuristic(
-                                lastBsdfPdf,
-                                effectiveLightPdf);
-                        }
-                    }
-
-                    if (hero.active) {
-                        const float spectralLight =
-                            _RgbToSpectralValue(lightContrib, hero);
-                        radiance += _SpectralValueToRgb(
-                            spectralThroughput * spectralLight,
-                            hero);
-                    } else {
-                        radiance += GfCompMult(throughput, lightContrib);
-                    }
-                    break;
-                }
-
-                if (rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID &&
-                    std::isfinite(surfaceDist) &&
-                    surfaceDist > 0.0f) {
-                    const GfVec3f transmittanceWeight = (trackCh >= 0)
-                        ? _ToGf(mxcpp::EvalChannelTransmittanceWeight(
-                              medium, trackCh, surfaceDist))
-                        : _ToGf(mxcpp::EvalMajorantTransmittanceWeight(
-                              medium, surfaceDist));
-                    if (hero.active) {
-                        spectralThroughput *=
-                            _RgbToSpectralValue(transmittanceWeight, hero);
-                    } else {
-                        throughput = GfCompMult(throughput, transmittanceWeight);
-                    }
-                } else if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
-                    break;
-                }
-            } else if (hasFiniteLightHit &&
-                       finiteLightDist < surfaceDist &&
-                       finiteLightDist > 0.0f) {
-                const GfVec3f transmittance = _ToGf(
-                    mxcpp::EvalBeerTransmittance(medium, finiteLightDist));
-                if (hero.active) {
-                    spectralThroughput *= _RgbToSpectralValue(transmittance, hero);
-                } else {
-                    throughput = GfCompMult(throughput, transmittance);
-                }
-
-                const GfVec3f rgbThroughput = hero.active
-                    ? _SpectralScalarToRgb(spectralThroughput, hero)
-                    : throughput;
-                if (_IsNearlyBlack(rgbThroughput, _minLuminanceCutoff)) {
-                    break;
-                }
-
-                GfVec3f lightContrib = finiteLightHit.Li;
-                if (lastBsdfPdf > 0.0f && finiteLightHit.invPdfW > 0.0f) {
-                    const float lightPdf = 1.0f / finiteLightHit.invPdfW;
-                    const float effectiveLightPdf = _GetOneSampleMisLightPdf(
-                        lightPdf,
-                        _lightSamplesPerHit,
-                        lastScatterWasMedium);
-                    if (effectiveLightPdf > 0.0f) {
-                        lightContrib *= mxcpp::Bsdf::PowerHeuristic(
-                            lastBsdfPdf,
-                            effectiveLightPdf);
-                        }
-                }
-
-                if (hero.active) {
-                    const float spectralLight =
-                        _RgbToSpectralValue(lightContrib, hero);
-                    radiance += _SpectralValueToRgb(
-                        spectralThroughput * spectralLight,
-                        hero);
-                } else {
-                    radiance += GfCompMult(throughput, lightContrib);
-                }
-                break;
-            } else if (rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID &&
-                       rayHit.ray.tfar > 0.0f) {
-                const GfVec3f transmittance = _ToGf(
-                    mxcpp::EvalBeerTransmittance(medium, rayHit.ray.tfar));
-                if (hero.active) {
-                    spectralThroughput *= _RgbToSpectralValue(transmittance, hero);
-                } else {
-                    throughput = GfCompMult(throughput, transmittance);
-                }
-            } else {
+            if (volumeResult == _VolumeTransmissionResult::Terminate) {
                 break;
             }
-
-            const GfVec3f rgbThroughput = hero.active
-                ? _SpectralScalarToRgb(spectralThroughput, hero)
-                : throughput;
-            if (_IsNearlyBlack(rgbThroughput, _minLuminanceCutoff)) {
-                break;
+            if (volumeResult == _VolumeTransmissionResult::ContinueRay) {
+                continue;
             }
         }
 
