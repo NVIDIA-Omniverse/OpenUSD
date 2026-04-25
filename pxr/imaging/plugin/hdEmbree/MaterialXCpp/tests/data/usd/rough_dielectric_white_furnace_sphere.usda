@@ -1,0 +1,87 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1.0
+    renderSettingsPrimPath = "/RenderSettings"
+    upAxis = "Y"
+    doc = """White furnace-style rough dielectric layer test for hdEmbree.
+
+The scene intentionally contains only a Sphere_Poly mesh and a solid white
+DomeLight.  The Standard Surface material uses base_color = 1.0 and
+specular_roughness = 1.0 so remaining grazing-angle darkening can be checked
+without ground-plane visibility or sub-white diffuse albedo."""
+)
+
+def RenderSettings "RenderSettings"
+{
+    bool hdEmbree:enableGgxMicrofacetMultipleScattering = true
+    int hdEmbree:lightSamplesPerHit = 32
+    token hdEmbree:samplerSequence = "openqmc_sobolbn"
+    rel products = [</RenderProduct>]
+}
+
+def RenderProduct "RenderProduct"
+{
+    rel orderedVars = [</RenderProduct/Color>]
+    token productType = "raster"
+    token productName = "rough_dielectric_white_furnace_sphere.exr"
+
+    def RenderVar "Color"
+    {
+        token dataType = "color4f"
+        string sourceName = "color"
+        token sourceType = "raw"
+    }
+}
+
+def Xform "World"
+{
+    def Camera "MainCamera"
+    {
+        float focalLength = 70
+        float horizontalAperture = 36
+        float verticalAperture = 36
+        float2 clippingRange = (0.1, 1000)
+        double3 xformOp:translate = (0, 0, 4)
+        float3 xformOp:rotateXYZ = (0, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+    }
+
+    def Xform "Sphere" (
+        prepend references = @./meshes/Sphere_Poly.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        float3 xformOp:scale = (2.0, 2.0, 2.0)
+        token[] xformOpOrder = ["xformOp:scale"]
+        rel material:binding = </World/Materials/WhiteRoughDielectric>
+    }
+
+    def Scope "Materials"
+    {
+        def Material "WhiteRoughDielectric"
+        {
+            token outputs:mtlx:surface.connect = </World/Materials/WhiteRoughDielectric/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (1.0, 1.0, 1.0)
+                float inputs:diffuse_roughness = 0.0
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 1.0
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                token outputs:out
+            }
+        }
+    }
+
+    def DomeLight "Environment"
+    {
+        color3f inputs:color = (1.0, 1.0, 1.0)
+        float inputs:intensity = 1.0
+    }
+}

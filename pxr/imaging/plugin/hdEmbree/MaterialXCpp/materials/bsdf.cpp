@@ -6,6 +6,8 @@
 //
 #include "bsdf.h"
 
+#include "bsdfDielectricReflFrontLut.h"
+
 #include "../spectral.h"
 #include "../nodes/helpers/colorHelpers.h"
 #include "../nodes/helpers/mathHelpers.h"
@@ -24,6 +26,8 @@ constexpr float _kEpsilon = 1e-7f;
 constexpr int _kThinFilmAiryIterations = 2;
 constexpr int _kGgxEnergyCosThetaCount = 16;
 constexpr int _kGgxEnergyAlphaCount = 16;
+constexpr float _kBsdlDielectricIorMin = 1.001f;
+constexpr float _kBsdlDielectricIorMax = 5.0f;
 
 constexpr float _kGgxEnergyCosTheta[_kGgxEnergyCosThetaCount] = {
     0.00000100f, 0.00444444f, 0.01777778f, 0.04000000f,
@@ -149,6 +153,95 @@ _LookupGgxMissingEnergy(float cosTheta, float alphaRoughness)
 }
 
 inline float
+_BsdlDielectricReflFrontCosine(int index)
+{
+    const float t =
+        static_cast<float>(index) /
+        static_cast<float>(
+            bsdf_luts::kBsdlDielectricReflFrontCosThetaCount - 1);
+    return std::max(t * t, 1.0e-6f);
+}
+
+inline float
+_LookupBsdlDielectricReflFrontFilter(
+    float cosTheta,
+    float perceptualRoughness,
+    float ior)
+{
+    namespace lut = bsdf_luts;
+
+    const float c = _Clamp01(cosTheta);
+    const float roughness = _Clamp01(perceptualRoughness);
+    const float clampedIor = std::clamp(
+        ior,
+        _kBsdlDielectricIorMin,
+        _kBsdlDielectricIorMax);
+
+    const float iorIndex = std::sqrt(
+        (clampedIor - _kBsdlDielectricIorMin) /
+        (_kBsdlDielectricIorMax - _kBsdlDielectricIorMin));
+    const float iorCoord =
+        iorIndex *
+        static_cast<float>(lut::kBsdlDielectricReflFrontIorCount - 1);
+    const int ior0 = std::clamp(
+        static_cast<int>(iorCoord),
+        0,
+        lut::kBsdlDielectricReflFrontIorCount - 1);
+    const int ior1 = std::min(
+        ior0 + 1,
+        lut::kBsdlDielectricReflFrontIorCount - 1);
+    const float iorT = iorCoord - static_cast<float>(ior0);
+
+    const float roughnessCoord =
+        roughness *
+        static_cast<float>(lut::kBsdlDielectricReflFrontRoughnessCount - 1);
+    const int roughness0 = std::clamp(
+        static_cast<int>(roughnessCoord),
+        0,
+        lut::kBsdlDielectricReflFrontRoughnessCount - 1);
+    const int roughness1 = std::min(
+        roughness0 + 1,
+        lut::kBsdlDielectricReflFrontRoughnessCount - 1);
+    const float roughnessT =
+        roughnessCoord - static_cast<float>(roughness0);
+
+    int cos0 = 0;
+    int cos1 = 0;
+    float cosT = 0.0f;
+    float prevCos = _BsdlDielectricReflFrontCosine(0);
+    if (c > prevCos) {
+        cos0 = lut::kBsdlDielectricReflFrontCosThetaCount - 1;
+        cos1 = cos0;
+        for (int i = 1; i < lut::kBsdlDielectricReflFrontCosThetaCount; ++i) {
+            const float nextCos = _BsdlDielectricReflFrontCosine(i);
+            if (c < nextCos) {
+                cos0 = i - 1;
+                cos1 = i;
+                cosT = (c - prevCos) / (nextCos - prevCos);
+                break;
+            }
+            prevCos = nextCos;
+        }
+    }
+
+    const auto lookup = [&](int i, int r, int c0) {
+        return lut::kBsdlDielectricReflFrontFilter[i][r][c0];
+    };
+    const auto lerpCos = [&](int i, int r) {
+        return lookup(i, r, cos0) * (1.0f - cosT) +
+               lookup(i, r, cos1) * cosT;
+    };
+    const auto lerpRoughness = [&](int i) {
+        return lerpCos(i, roughness0) * (1.0f - roughnessT) +
+               lerpCos(i, roughness1) * roughnessT;
+    };
+
+    return _Clamp01(
+        lerpRoughness(ior0) * (1.0f - iorT) +
+        lerpRoughness(ior1) * iorT);
+}
+
+inline float
 _RoughnessToAlpha(float roughness)
 {
     float r = _ClampRoughness(roughness);
@@ -189,6 +282,15 @@ inline float
 _AverageAlphaAsRoughness(const Vec2f& alpha)
 {
     return std::sqrt(_AverageAlphaForEnergy(alpha));
+}
+
+inline float
+_BsdlLayerRoughnessFromAlpha(const Vec2f& alpha)
+{
+    const float alphaX = std::clamp(alpha[0], 1.0e-5f, 1.0f);
+    const float alphaY = std::clamp(alpha[1], 1.0e-5f, 1.0f);
+    return std::sqrt((std::max(alphaX, alphaY) +
+                      std::min(alphaX, alphaY)) * 0.5f);
 }
 
 inline bool
@@ -684,6 +786,15 @@ _TurquinDirectionalReflectance(
     return _SaturateVec(
         F * singleScatterEnergy +
         CompMul(F, F) * missingEnergy);
+}
+
+inline Vec3f
+_LayerThroughputReflectance(
+    float alphaRoughness,
+    float cosThetaO,
+    const Vec3f& fresnel)
+{
+    return _TurquinDirectionalReflectance(alphaRoughness, cosThetaO, fresnel);
 }
 
 inline bool
@@ -1602,6 +1713,21 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             float heroWavelengthNm);
 
 Vec3f
+_EvalLayerBaseThroughput(const Bsdf::ClosureTree& tree,
+                         Bsdf::NodeId topNodeId,
+                         const Vec3f& N,
+                         const Vec3f& wi,
+                         const Vec3f& wo,
+                         float heroWavelengthNm)
+{
+    const Vec3f throughputOut =
+        _EvalThroughput(tree, topNodeId, N, wo, heroWavelengthNm);
+    const Vec3f throughputIn =
+        _EvalThroughput(tree, topNodeId, N, wi, heroWavelengthNm);
+    return CompMul(throughputOut, throughputIn);
+}
+
+Vec3f
 _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
           const Vec3f& N, const Vec3f& wi, const Vec3f& wo,
           float heroWavelengthNm)
@@ -1781,13 +1907,10 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 tree, data.top, N, wi, wo, heroWavelengthNm);
             Vec3f baseEval = _EvalNode(
                 tree, data.base, N, wi, wo, heroWavelengthNm);
-            const Vec3f topThroughputOut =
-                _EvalThroughput(tree, data.top, N, wo, heroWavelengthNm);
-            const Vec3f topThroughputIn =
-                _EvalThroughput(tree, data.top, N, wi, heroWavelengthNm);
             return topEval + CompMul(
                 baseEval,
-                CompMul(topThroughputOut, topThroughputIn));
+                _EvalLayerBaseThroughput(
+                    tree, data.top, N, wi, wo, heroWavelengthNm));
         } else if constexpr (std::is_same_v<T, Bsdf::AddData>) {
             return _EvalNode(tree, data.in1, N, wi, wo, heroWavelengthNm) +
                    _EvalNode(tree, data.in2, N, wi, wo, heroWavelengthNm);
@@ -1827,17 +1950,35 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 _ResolveDielectricIor(data, heroWavelengthNm);
             Vec3f throughput(1.0f);
             if (data.scatterMode != Bsdf::ScatterMode::Transmission) {
-                const Vec3f reflectance = _TurquinDirectionalReflectance(
-                    _AverageAlphaForEnergy(data.roughness),
-                    NdotV,
-                    _DielectricReflectionFresnelUntinted(
-                        data, NdotV, effectiveIor));
-                throughput -= reflectance * data.weight;
+                const bool useBsdlFilter =
+                    _IsGgxMicrofacetMultipleScatteringEnabled() &&
+                    !_HasThinFilm(
+                        data.thinFilmWeight,
+                        data.thinFilmThickness,
+                        data.thinFilmIor);
+                if (useBsdlFilter) {
+                    const float filter =
+                        _LookupBsdlDielectricReflFrontFilter(
+                            NdotV,
+                            _BsdlLayerRoughnessFromAlpha(data.roughness),
+                            effectiveIor);
+                    throughput = _LerpVec(
+                        Vec3f(1.0f),
+                        Vec3f(filter),
+                        _Clamp01(data.weight));
+                } else {
+                    const Vec3f reflectance = _LayerThroughputReflectance(
+                        _AverageAlphaForEnergy(data.roughness),
+                        NdotV,
+                        _DielectricReflectionFresnelUntinted(
+                            data, NdotV, effectiveIor));
+                    throughput -= reflectance * data.weight;
+                }
             }
             return _SaturateVec(throughput);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
             const float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
-            const Vec3f reflectance = _TurquinDirectionalReflectance(
+            const Vec3f reflectance = _LayerThroughputReflectance(
                 _AverageAlphaForEnergy(data.roughness),
                 NdotV,
                 _ConductorReflectionFresnel(data, NdotV));
@@ -1846,7 +1987,7 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 reflectance * data.weight);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
             const float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
-            const Vec3f reflectance = _TurquinDirectionalReflectance(
+            const Vec3f reflectance = _LayerThroughputReflectance(
                 _AverageAlphaForEnergy(data.roughness),
                 NdotV,
                 _GeneralizedSchlickReflectionFresnel(data, NdotV));
@@ -2477,13 +2618,11 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                         // exit logic in the renderer.
                         sample.f = CompMul(sample.f, topThroughputOut);
                     } else {
-                        const Vec3f topThroughputIn =
-                            _EvalThroughput(
-                                tree, data.top, N, sample.wi,
-                                heroWavelengthNm);
                         sample.f = CompMul(
                             sample.f,
-                            CompMul(topThroughputOut, topThroughputIn));
+                            _EvalLayerBaseThroughput(
+                                tree, data.top, N, sample.wi, wo,
+                                heroWavelengthNm));
                     }
                 }
                 if (chooseProb > 0.0f) {

@@ -77,29 +77,6 @@ _DirectionFromCosThetaYUp(float cosTheta)
                  0.0f);
 }
 
-static float
-_SchlickIor(float ior, float cosTheta)
-{
-    float f0 = (ior - 1.0f) / (ior + 1.0f);
-    f0 *= f0;
-    const float t = 1.0f - std::clamp(cosTheta, 0.0f, 1.0f);
-    const float t2 = t * t;
-    return f0 + (1.0f - f0) * t2 * t2 * t;
-}
-
-static float
-_TurquinDirectionalReflectanceScalar(
-    float alphaRoughness,
-    float cosTheta,
-    float fresnel)
-{
-    const float F = std::clamp(fresnel, 0.0f, 1.0f);
-    const float missing =
-        Bsdf::GgxDirectionalMissingEnergy(cosTheta, alphaRoughness);
-    const float single = 1.0f - missing;
-    return std::clamp(F * single + F * F * missing, 0.0f, 1.0f);
-}
-
 static Vec3f
 _IntegrateHemisphereUniform(
     const std::function<Vec3f(const Vec3f& wi)>& eval,
@@ -1712,6 +1689,8 @@ TestGGXMicrofacetMultipleScatteringToggle()
 static bool
 TestLayerReflectionAttenuatesBaseOnBothSides()
 {
+    Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
+
     SurfaceClosure topClosure;
     Bsdf::DielectricData top;
     top.weight = 1.0f;
@@ -1745,32 +1724,29 @@ TestLayerReflectionAttenuatesBaseOnBothSides()
     const Vec3f baseEval = Bsdf::EvalSurface(baseClosure, N, wi, wo);
     const Vec3f layerEval = Bsdf::EvalSurface(layerClosure, N, wi, wo);
 
-    const float f0 = std::pow((top.ior - 1.0f) / (top.ior + 1.0f), 2.0f);
-    const auto schlick = [f0](float cosTheta) {
-        const float t = 1.0f - cosTheta;
-        const float t2 = t * t;
-        return f0 + (1.0f - f0) * t2 * t2 * t;
-    };
-    const float attOut = 1.0f - schlick(std::abs(Dot(N, wo)));
-    const float attIn = 1.0f - schlick(std::abs(Dot(N, wi)));
+    // BSDL mtx::DielectricReflFront filter values for alpha=0.02,
+    // IOR=1.6, cos(wo)=~0.31225 and cos(wi)=0.8.
+    constexpr float attOut = 0.91047547f;
+    constexpr float attIn = 0.94556917f;
     const Vec3f expected =
         topEval + baseEval * (attOut * attIn);
 
-    const float expectedLum = expected.length();
-    const float actualLum = layerEval.length();
-    const float ratio = actualLum / std::max(expectedLum, 1.0e-8f);
-    if (ratio < 0.9f || ratio > 1.1f) {
+    if (!Test_IsClose(layerEval, expected, 1.0e-4f)) {
         printf(
-            "    Layer attenuation mismatch: expected=%f actual=%f ratio=%f\n",
-            expectedLum, actualLum, ratio);
+            "    Layer attenuation mismatch: expected=(%f,%f,%f) "
+            "actual=(%f,%f,%f)\n",
+            expected[0], expected[1], expected[2],
+            layerEval[0], layerEval[1], layerEval[2]);
         return false;
     }
     return true;
 }
 
 static bool
-TestLayerThroughputUsesRoughDirectionalReflectance()
+TestLayerThroughputUsesBsdlDielectricFilter()
 {
+    Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
+
     SurfaceClosure topClosure;
     Bsdf::DielectricData top;
     top.weight = 1.0f;
@@ -1804,21 +1780,16 @@ TestLayerThroughputUsesRoughDirectionalReflectance()
     const Vec3f baseEval = Bsdf::EvalSurface(baseClosure, N, wi, wo);
     const Vec3f layerEval = Bsdf::EvalSurface(layerClosure, N, wi, wo);
 
-    const float reflectanceOut = _TurquinDirectionalReflectanceScalar(
-        top.roughness[0],
-        std::abs(Dot(N, wo)),
-        _SchlickIor(top.ior, std::abs(Dot(N, wo))));
-    const float reflectanceIn = _TurquinDirectionalReflectanceScalar(
-        top.roughness[0],
-        std::abs(Dot(N, wi)),
-        _SchlickIor(top.ior, std::abs(Dot(N, wi))));
+    // BSDL mtx::DielectricReflFront filter values for roughness=1,
+    // IOR=1.5, cos(wo)=0.55 and cos(wi)=~0.719676.
+    constexpr float filterOut = 0.98199452f;
+    constexpr float filterIn = 0.98396947f;
     const Vec3f expected =
-        topEval + baseEval * ((1.0f - reflectanceOut) *
-                              (1.0f - reflectanceIn));
+        topEval + baseEval * (filterOut * filterIn);
 
     if (!Test_IsClose(layerEval, expected, 1.0e-4f)) {
         printf(
-            "    Rough layer throughput mismatch: expected=(%f,%f,%f) "
+            "    BSDL dielectric layer filter mismatch: expected=(%f,%f,%f) "
             "actual=(%f,%f,%f)\n",
             expected[0], expected[1], expected[2],
             layerEval[0], layerEval[1], layerEval[2]);
@@ -2153,7 +2124,7 @@ Test_RegisterBsdfTests()
     _REG(TestTreeAnisotropicReflectionUsesTurquinCompensation);
     _REG(TestGGXMicrofacetMultipleScatteringToggle);
     _REG(TestLayerReflectionAttenuatesBaseOnBothSides);
-    _REG(TestLayerThroughputUsesRoughDirectionalReflectance);
+    _REG(TestLayerThroughputUsesBsdlDielectricFilter);
     _REG(TestPowerHeuristic);
     _REG(TestChannelMISUniform);
     _REG(TestChannelMISWeighted);
