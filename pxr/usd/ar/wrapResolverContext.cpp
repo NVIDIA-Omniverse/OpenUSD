@@ -76,7 +76,13 @@ public:
     {
         pxr_boost::python::list l;
         for (const auto& data : ctx._contexts) {
-            l.append(data->GetPythonObj().Get());
+            TfPyObjWrapper pyWrapper = data->GetPythonObj();
+            if (pyWrapper.ptr()) {
+                l.append(pyWrapper.Get());
+            }
+            else {
+                l.append(pxr_boost::python::object());
+            }
         }
         return l;
     }
@@ -85,7 +91,13 @@ public:
     {
         std::vector<std::string> objReprs;
         for (const auto& data : ctx._contexts) {
-            objReprs.push_back(TfPyObjectRepr(data->GetPythonObj().Get()));
+            TfPyObjWrapper pyWrapper = data->GetPythonObj();
+            if (pyWrapper.ptr()) {
+                objReprs.push_back(TfPyObjectRepr(pyWrapper.Get()));
+            }
+            else {
+                objReprs.push_back(Ar_GetDebugString(typeid(ctx), &ctx));
+            }
         }
         return TF_PY_REPR_PREFIX +
             TfStringPrintf("ResolverContext(%s)", 

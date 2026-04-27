@@ -37,6 +37,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -55,10 +56,40 @@ TF_REGISTRY_FUNCTION(VtValue)
     VtRegisterValueCastsFromPythonSequencesToArray<TfToken>();
 }
 
+static std::optional<VtValue>
+_RebindForPython(VtValue const& self) {
+    switch(self.GetKnownValueTypeIndex()) {
+
+#define REBIND_CASE(unused, elem)                               \
+            case VtGetKnownValueTypeIndex<VT_TYPE(elem)>(): {   \
+                using _RebindT = VT_TYPE(elem);                 \
+                return VtValue(_RebindT{});                     \
+            }
+
+        VT_FOR_EACH_VALUE_TYPE(REBIND_CASE)
+
+#undef REBIND_CASE
+
+        default: break;
+    }
+
+    return {};
+}
+
 TfPyObjWrapper
 Vt_GetPythonObjectFromHeldValue(VtValue const &self)
 {
-    return self._GetPythonObject();
+    if (!self.IsEmpty()) {
+        if (self._HasPyConversion()) {
+            return self._GetPythonObject();
+        }
+
+        std::optional<VtValue> rebound = _RebindForPython(self);
+        if (rebound && rebound.value()._HasPyConversion()) {
+            return rebound.value()._info->GetPyObj(self._storage);
+        }
+    }
+    return TfPyObjWrapper();
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE
@@ -109,7 +140,11 @@ struct Vt_ValueWrapper {
 
 struct Vt_ValueToPython {
     static PyObject *convert(VtValue const &val) {
-        return incref(Vt_GetPythonObjectFromHeldValue(val).ptr());
+        TfPyObjWrapper obj = Vt_GetPythonObjectFromHeldValue(val);
+        if (PyObject* pyObj = obj.ptr()) {
+            return incref(pyObj);
+        }
+        Py_RETURN_NONE;
     }
 };
 
