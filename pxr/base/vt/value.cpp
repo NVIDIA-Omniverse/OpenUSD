@@ -442,8 +442,12 @@ operator<<(std::ostream &out, const VtValue &self) {
 TfPyObjWrapper
 VtValue::_GetPythonObject() const
 {
-    return _info.GetLiteral() ?
-        _info.Get()->GetPyObj(_storage) : TfPyObjWrapper();
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+    if (_info.GetLiteral()) {
+        return _info.Get()->GetPyObj(_storage);
+    }
+#endif
+    return TfPyObjWrapper();
 }
 
 static void const *

@@ -274,7 +274,11 @@ class VtValue
             , _equal(equal)
             , _equalPtr(equalPtr)
             , _makeMutable(makeMutable)
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
             , _getPyObj(getPyObj)
+#else
+            , _getPyObj(nullptr)
+#endif
             , _streamOut(streamOut)
             , _getTypeid(getTypeid)
             , _isArrayValued(isArrayValued)
@@ -313,9 +317,18 @@ class VtValue
         void MakeMutable(_Storage &storage) const {
             _makeMutable(storage);
         }
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
         TfPyObjWrapper GetPyObj(_Storage const &storage) const {
             return _getPyObj(storage);
         }
+        bool HasGetPyObj() const {
+            return _getPyObj;
+        }
+#else
+        bool HasGetPyObj() const {
+            return false;
+        }
+#endif // PXR_PYTHON_SUPPORT_ENABLED
         std::ostream &StreamOut(_Storage const &storage,
                                 std::ostream &out) const {
             return _streamOut(storage, out);
@@ -471,15 +484,13 @@ class VtValue
             // comparison on the *proxied* type instead.
             return _TypedProxyEqualityImpl(a, b, 0);
         }
-        static TfPyObjWrapper GetPyObj(T const &obj) {
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
+        static TfPyObjWrapper GetPyObj(T const &obj) {
             ProxiedType const &p = VtGetProxiedObject(obj);
             TfPyLock lock;
             return pxr_boost::python::api::object(p);
-#else
-            return {};
-#endif //PXR_PYTHON_SUPPORT_ENABLED
         }
+#endif //PXR_PYTHON_SUPPORT_ENABLED
         static std::ostream &StreamOut(T const &obj, std::ostream &out) {
             return VtStreamOut(VtGetProxiedObject(obj), out);
         }
@@ -531,13 +542,11 @@ class VtValue
             // comparison on the VtValue containing the *proxied* type instead.
             return _ErasedProxyEqualityImpl(a, b, 0);
         }
-        static TfPyObjWrapper GetPyObj(ErasedProxy const &obj) {
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
+        static TfPyObjWrapper GetPyObj(ErasedProxy const &obj) {
             VtValue const *val = VtGetErasedProxiedVtValue(obj);
             TfPyLock lock;
             return pxr_boost::python::api::object(*val);
-#else
-            return {};
 #endif //PXR_PYTHON_SUPPORT_ENABLED
         }
         static std::ostream &
@@ -606,7 +615,11 @@ class VtValue
                         &This::_Equal,
                         &This::_EqualPtr,
                         &This::_MakeMutable,
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
                         &This::_GetPyObj,
+#else
+                        nullptr,
+#endif // PXR_PYTHON_SUPPORT_ENABLED
                         &This::_StreamOut,
 
                         &This::_GetTypeid,
@@ -685,9 +698,11 @@ class VtValue
             GetMutableObj(storage);
         }
 
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
         static TfPyObjWrapper _GetPyObj(_Storage const &storage) {
             return ProxyHelper::GetPyObj(GetObj(storage));
         }
+#endif // PXR_PYTHON_SUPPORT_ENABLED
 
         static std::ostream &_StreamOut(
             _Storage const &storage, std::ostream &out) {
@@ -1464,6 +1479,15 @@ ARCH_PRAGMA_POP
     // facility is necessary to get the python API we want.
     friend TfPyObjWrapper
     Vt_GetPythonObjectFromHeldValue(VtValue const &self);
+
+    VT_API bool _HasPyConversion() const {
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+        return _info.GetLiteral() ?
+            _info.Get()->HasGetPyObj() : false;
+#else
+        return false;
+#endif // PXR_PYTHON_SUPPORT_ENALBED
+    }
 
     VT_API TfPyObjWrapper _GetPythonObject() const;
 
