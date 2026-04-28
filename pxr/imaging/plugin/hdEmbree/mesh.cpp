@@ -209,6 +209,26 @@ _MakeSmoothingKey(int vertexIndex, GfVec3f const& normal)
     return key;
 }
 
+bool
+_GeomStyleShouldHonorRefineLevel(HdMeshGeomStyle geomStyle)
+{
+    switch (geomStyle) {
+        case HdMeshGeomStyleSurf:
+        case HdMeshGeomStyleEdgeOnly:
+        case HdMeshGeomStyleEdgeOnSurf:
+        case HdMeshGeomStyleHull:
+        case HdMeshGeomStyleHullEdgeOnly:
+        case HdMeshGeomStyleHullEdgeOnSurf:
+        case HdMeshGeomStylePoints:
+            return true;
+
+        case HdMeshGeomStyleInvalid:
+            return false;
+    }
+
+    return false;
+}
+
 VtIntArray
 _ComputeTriangulatedCornerIds(HdMeshTopology const& topology)
 {
@@ -1192,10 +1212,10 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
     // 2. Resolve drawstyles
 
     // The repr defines a set of geometry styles for drawing the mesh
-    // (see hd/enums.h). We're ignoring points and wireframe for now, so
-    // HdMeshGeomStyleSurf maps to subdivs and everything else maps to
-    // HdMeshGeomStyleHull (coarse triangulated mesh).
-    bool doRefine = (desc.geomStyle == HdMeshGeomStyleSurf);
+    // (see hd/enums.h). HdEmbree does not implement edge/point drawing, but
+    // unsupported mesh reprs still fall back to surface rendering, and that
+    // fallback should honor the active refine level.
+    bool doRefine = _GeomStyleShouldHonorRefineLevel(desc.geomStyle);
 
     // If the subdivision scheme is "none", force us to not refine.
     doRefine = doRefine && (_topology.GetScheme() != PxOsdOpenSubdivTokens->none);
