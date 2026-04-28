@@ -676,6 +676,39 @@ TestOpenPbrBuildsLayeredDielectricBase()
 }
 
 static bool
+TestOpenPbrMetalUsesF82TintSemantics()
+{
+    const Vec3f baseColor(0.7f, 0.45f, 0.2f);
+    const Vec3f specularColor(1.0f, 0.75f, 0.5f);
+    constexpr float baseWeight = 0.5f;
+    constexpr float specularWeight = 0.8f;
+
+    ParamMap params;
+    params["base_weight"] = Value(baseWeight);
+    params["base_color"] = Value(baseColor);
+    params["base_metalness"] = Value(1.0f);
+    params["specular_weight"] = Value(specularWeight);
+    params["specular_color"] = Value(specularColor);
+
+    const SurfaceClosure c = EvalOpenPbr(params);
+    const auto* metal = FindNodeIf<Bsdf::GeneralizedSchlickData>(
+        c.bsdfTree,
+        [](const Bsdf::GeneralizedSchlickData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    if (!metal) {
+        printf("    Failed to find OpenPBR metallic GeneralizedSchlick node\n");
+        return false;
+    }
+
+    return Test_IsClose(metal->weight, specularWeight, 1e-4f) &&
+           Test_IsClose(metal->color0, baseColor * baseWeight, 1e-4f) &&
+           Test_IsClose(metal->color82, specularColor, 1e-4f) &&
+           Test_IsClose(metal->color90, Vec3f(1.0f), 1e-4f);
+}
+
+static bool
 TestOpenPbrTransmission()
 {
     ParamMap params;
@@ -1642,6 +1675,7 @@ Test_RegisterMaterialTests()
     _REG(TestStandardSurfaceCoatNormalAndRotationReachBsdf);
     _REG(TestOpenPbrDefaults);
     _REG(TestOpenPbrBuildsLayeredDielectricBase);
+    _REG(TestOpenPbrMetalUsesF82TintSemantics);
     _REG(TestOpenPbrTransmission);
     _REG(TestAdobeOpenPbrBuildsWholeBackendNode);
     _REG(TestOpenPbrRegularVolumeDoesNotDoubleTintTransmission);

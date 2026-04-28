@@ -454,8 +454,8 @@ EvalOpenPbr(const ParamMap& params)
     if (specularWeight > 0.0f && metalMix > 0.0f) {
         Bsdf::GeneralizedSchlickData metal;
         metal.weight = specularWeight;
-        metal.color0 = _Saturate(CompMul(baseColor, c.specularColor));
-        metal.color82 = metal.color0;
+        metal.color0 = _Saturate(baseColor * baseWeight);
+        metal.color82 = _Saturate(c.specularColor);
         metal.color90 = Vec3f(1.0f);
         metal.exponent = 5.0f;
         metal.roughness = specularRoughness;
