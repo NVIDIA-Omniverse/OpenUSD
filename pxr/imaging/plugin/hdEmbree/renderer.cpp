@@ -96,6 +96,10 @@ static const TfToken _tokensBitangent("bitangent");
 static const TfToken _tokensComputedTangent("hdEmbreeComputedTangent");
 static const TfToken _tokensComputedBitangent("hdEmbreeComputedBitangent");
 static const TfToken _tokensSt("st");
+static const TfToken _tokensDielectricLayerThroughputModeBsdl(
+    "bsdl", TfToken::Immortal);
+static const TfToken _tokensDielectricLayerThroughputModeMaterialXGlsl(
+    "materialxGlsl", TfToken::Immortal);
 
 // -------------------------------------------------------------------------
 // General Ray Utilities
@@ -755,6 +759,8 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _usePerChannelVariance(HdEmbreeDefaultUsePerChannelVariance)
     , _fireflyClampThreshold(HdEmbreeDefaultFireflyClampThreshold)
     , _enableGgxMicrofacetMultipleScattering(true)
+    , _dielectricLayerThroughputMode(
+        _tokensDielectricLayerThroughputModeBsdl)
     , _useAdobeOpenPBR(false)
     , _textureSystem(std::make_unique<HdEmbreeOiioTextureSystem>())
     , _sceneFrame(0.0f)
@@ -884,6 +890,26 @@ HdEmbreeRenderer::SetEnableGgxMicrofacetMultipleScattering(bool enable)
 {
     _enableGgxMicrofacetMultipleScattering = enable;
     mxcpp::Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(enable);
+}
+
+void
+HdEmbreeRenderer::SetDielectricLayerThroughputMode(TfToken const& mode)
+{
+    if (mode == _tokensDielectricLayerThroughputModeMaterialXGlsl) {
+        _dielectricLayerThroughputMode = mode;
+        mxcpp::Bsdf::SetDielectricLayerThroughputMode(
+            mxcpp::Bsdf::DielectricLayerThroughputMode::MaterialXGlsl);
+        return;
+    }
+
+    if (mode != _tokensDielectricLayerThroughputModeBsdl) {
+        TF_WARN("hdEmbree dielectric layer throughput mode '%s' is unknown; "
+                "falling back to 'bsdl'.",
+                mode.GetText());
+    }
+    _dielectricLayerThroughputMode = _tokensDielectricLayerThroughputModeBsdl;
+    mxcpp::Bsdf::SetDielectricLayerThroughputMode(
+        mxcpp::Bsdf::DielectricLayerThroughputMode::Bsdl);
 }
 
 void

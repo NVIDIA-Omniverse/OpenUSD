@@ -18,6 +18,11 @@ over "RenderProduct"
     token productName = "microfacet_ms_smoke_openpbr.exr"
 }
 
+over "RenderSettings"
+{
+    token hdEmbree:dielectricLayerThroughputMode = "bsdl"
+}
+
 over "World"
 {
     over "Materials"

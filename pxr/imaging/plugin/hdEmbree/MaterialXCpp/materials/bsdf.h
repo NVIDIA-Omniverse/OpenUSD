@@ -23,6 +23,17 @@ namespace Bsdf
     void SetGgxMicrofacetMultipleScatteringEnabled(bool enabled);
     bool IsGgxMicrofacetMultipleScatteringEnabled();
 
+    enum class DielectricLayerThroughputMode
+    {
+        Bsdl,
+        MaterialXGlsl
+    };
+
+    /// Selects the rough dielectric top-layer throughput estimate.
+    void SetDielectricLayerThroughputMode(
+        DielectricLayerThroughputMode mode);
+    DielectricLayerThroughputMode GetDielectricLayerThroughputMode();
+
     // ------------------------------------------------------------------
     // Evaluation (Phase 4)
     // ------------------------------------------------------------------

@@ -180,6 +180,70 @@ _DielectricTransmittanceForTest(float eta, float cosTheta)
 }
 
 static float
+_SchlickFresnelForTest(float ior, float cosTheta)
+{
+    float f0 = (ior - 1.0f) / (ior + 1.0f);
+    f0 *= f0;
+    const float t = 1.0f - std::clamp(cosTheta, 0.0f, 1.0f);
+    const float t2 = t * t;
+    return f0 + (1.0f - f0) * t2 * t2 * t;
+}
+
+static Vec2f
+_MaterialXGgxDirAlbedoAnalyticABForTest(float NdotV, float alpha)
+{
+    const float x = std::clamp(NdotV, 0.0f, 1.0f);
+    const float y = std::clamp(alpha, 0.0f, 1.0f);
+    const float x2 = x * x;
+    const float y2 = y * y;
+    const float xy = x * y;
+    const float x2y = x2 * y;
+    const float xy2 = x * y2;
+    const float x2y2 = x2 * y2;
+
+    const float r0 =
+        0.1003f - 0.6303f * x + 9.748f * y - 2.038f * xy +
+        29.34f * x2 - 8.245f * y2 - 26.44f * x2y +
+        19.99f * xy2 - 5.448f * x2y2;
+    const float r1 =
+        0.9345f - 2.323f * x + 2.229f * y - 3.748f * xy +
+        1.424f * x2 - 0.7684f * y2 + 1.436f * x2y +
+        0.2913f * xy2 + 0.6286f * x2y2;
+    const float r2 =
+        1.0f - 1.765f * x + 8.263f * y + 11.53f * xy +
+        28.96f * x2 - 7.507f * y2 - 36.11f * x2y +
+        15.86f * xy2 + 33.37f * x2y2;
+    const float r3 =
+        1.0f + 0.2281f * x + 15.94f * y - 55.83f * xy +
+        13.08f * x2 + 41.26f * y2 + 54.9f * x2y +
+        300.2f * xy2 - 285.1f * x2y2;
+
+    return Vec2f(
+        std::clamp(r0 / r2, 0.0f, 1.0f),
+        std::clamp(r1 / r3, 0.0f, 1.0f));
+}
+
+static Vec3f
+_MaterialXGlslDielectricThroughputForTest(
+    float alpha,
+    float cosTheta,
+    float ior,
+    float weight,
+    float fresnel)
+{
+    float F0 = (ior - 1.0f) / (ior + 1.0f);
+    F0 *= F0;
+
+    const Vec2f ab =
+        _MaterialXGgxDirAlbedoAnalyticABForTest(cosTheta, alpha);
+    const Vec3f dirAlbedo = Vec3f(F0) * ab[0] + Vec3f(1.0f) * ab[1];
+    const float Ess = std::max(ab[0] + ab[1], 1.0e-7f);
+    const Vec3f comp =
+        Vec3f(1.0f) + Vec3f(fresnel) * ((1.0f - Ess) / Ess);
+    return Vec3f(1.0f) - CompMul(dirAlbedo, comp) * weight;
+}
+
+static float
 _GgxDForTest(float alpha, float NdotH)
 {
     const float a2 = alpha * alpha;
@@ -1839,6 +1903,8 @@ static bool
 TestLayerReflectionAttenuatesBaseOnOutgoingSide()
 {
     Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
+    Bsdf::SetDielectricLayerThroughputMode(
+        Bsdf::DielectricLayerThroughputMode::Bsdl);
 
     SurfaceClosure topClosure;
     Bsdf::DielectricData top;
@@ -1894,6 +1960,8 @@ static bool
 TestLayerThroughputUsesBsdlDielectricFilter()
 {
     Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
+    Bsdf::SetDielectricLayerThroughputMode(
+        Bsdf::DielectricLayerThroughputMode::Bsdl);
 
     SurfaceClosure topClosure;
     Bsdf::DielectricData top;
@@ -1940,6 +2008,107 @@ TestLayerThroughputUsesBsdlDielectricFilter()
             "actual=(%f,%f,%f)\n",
             expected[0], expected[1], expected[2],
             layerEval[0], layerEval[1], layerEval[2]);
+        return false;
+    }
+
+    return true;
+}
+
+static bool
+TestLayerThroughputMaterialXGlslModeUsesExactFresnel()
+{
+    Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
+
+    Bsdf::DielectricData top;
+    top.weight = 1.0f;
+    top.tint = Vec3f(1.0f);
+    top.ior = 1.5f;
+    top.roughness = Vec2f(0.35f, 0.35f);
+    top.scatterMode = Bsdf::ScatterMode::Reflection;
+
+    Bsdf::OrenNayarDiffuseData base;
+    base.weight = 1.0f;
+    base.color = Vec3f(0.75f);
+    base.roughness = 0.0f;
+    base.energyCompensation = true;
+
+    SurfaceClosure topClosure;
+    topClosure.bsdfTree.root = topClosure.bsdfTree.Add(top);
+
+    SurfaceClosure baseClosure;
+    baseClosure.bsdfTree.root = baseClosure.bsdfTree.Add(base);
+
+    SurfaceClosure layerClosure;
+    const auto topId = layerClosure.bsdfTree.Add(top);
+    const auto baseId = layerClosure.bsdfTree.Add(base);
+    Bsdf::LayerData layer;
+    layer.top = topId;
+    layer.base = baseId;
+    layerClosure.bsdfTree.root = layerClosure.bsdfTree.Add(layer);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const float cosTheta = 0.18f;
+    const Vec3f wo = _DirectionFromCosThetaYUp(cosTheta).normalized();
+    const Vec3f wi = Vec3f(-0.35f, 0.72f, 0.60f).normalized();
+
+    const Vec3f topEval = Bsdf::EvalSurface(topClosure, N, wi, wo);
+    const Vec3f baseEval = Bsdf::EvalSurface(baseClosure, N, wi, wo);
+
+    Bsdf::SetDielectricLayerThroughputMode(
+        Bsdf::DielectricLayerThroughputMode::MaterialXGlsl);
+    const Vec3f glslLayerEval = Bsdf::EvalSurface(layerClosure, N, wi, wo);
+
+    Bsdf::SetDielectricLayerThroughputMode(
+        Bsdf::DielectricLayerThroughputMode::Bsdl);
+    const Vec3f bsdlLayerEval = Bsdf::EvalSurface(layerClosure, N, wi, wo);
+
+    const float exactFresnel =
+        1.0f - _DielectricTransmittanceForTest(top.ior, cosTheta);
+    const Vec3f exactThroughput =
+        _MaterialXGlslDielectricThroughputForTest(
+            top.roughness[0],
+            cosTheta,
+            top.ior,
+            top.weight,
+            exactFresnel);
+    const Vec3f expectedExact =
+        topEval + CompMul(baseEval, exactThroughput);
+
+    if (!Test_IsClose(glslLayerEval, expectedExact, 1.0e-4f)) {
+        printf(
+            "    MaterialX GLSL dielectric throughput mismatch: "
+            "expected=(%f,%f,%f) actual=(%f,%f,%f)\n",
+            expectedExact[0], expectedExact[1], expectedExact[2],
+            glslLayerEval[0], glslLayerEval[1], glslLayerEval[2]);
+        return false;
+    }
+
+    const float schlickFresnel =
+        _SchlickFresnelForTest(top.ior, cosTheta);
+    const Vec3f schlickThroughput =
+        _MaterialXGlslDielectricThroughputForTest(
+            top.roughness[0],
+            cosTheta,
+            top.ior,
+            top.weight,
+            schlickFresnel);
+    const Vec3f expectedSchlick =
+        topEval + CompMul(baseEval, schlickThroughput);
+    if (Test_IsClose(glslLayerEval, expectedSchlick, 1.0e-4f)) {
+        printf(
+            "    MaterialX GLSL dielectric throughput used Schlick Fresnel: "
+            "actual=(%f,%f,%f) schlickExpected=(%f,%f,%f)\n",
+            glslLayerEval[0], glslLayerEval[1], glslLayerEval[2],
+            expectedSchlick[0], expectedSchlick[1], expectedSchlick[2]);
+        return false;
+    }
+
+    if (Test_IsClose(glslLayerEval, bsdlLayerEval, 1.0e-4f)) {
+        printf(
+            "    Dielectric throughput mode switch had no visible effect: "
+            "bsdl=(%f,%f,%f) glsl=(%f,%f,%f)\n",
+            bsdlLayerEval[0], bsdlLayerEval[1], bsdlLayerEval[2],
+            glslLayerEval[0], glslLayerEval[1], glslLayerEval[2]);
         return false;
     }
 
@@ -2276,6 +2445,7 @@ Test_RegisterBsdfTests()
     _REG(TestBsdlDielectricReflFrontLutUsesLinearCosThetaGrid);
     _REG(TestLayerReflectionAttenuatesBaseOnOutgoingSide);
     _REG(TestLayerThroughputUsesBsdlDielectricFilter);
+    _REG(TestLayerThroughputMaterialXGlslModeUsesExactFresnel);
     _REG(TestPowerHeuristic);
     _REG(TestChannelMISUniform);
     _REG(TestChannelMISWeighted);

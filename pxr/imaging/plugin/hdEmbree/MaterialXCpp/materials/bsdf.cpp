@@ -38,6 +38,8 @@ constexpr float _kGgxEnergyCosTheta[_kGgxEnergyCosThetaCount] = {
 };
 
 std::atomic<bool> _gGgxMicrofacetMultipleScatteringEnabled{true};
+std::atomic<int> _gDielectricLayerThroughputMode{
+    static_cast<int>(Bsdf::DielectricLayerThroughputMode::Bsdl)};
 
 constexpr float _kGgxMissingEnergy[_kGgxEnergyAlphaCount]
                                   [_kGgxEnergyCosThetaCount] = {
@@ -331,6 +333,27 @@ _SchlickFresnelScalar(float ior, float cosTheta)
     float t2 = t * t;
     float t5 = t2 * t2 * t;
     return f0 + (1.0f - f0) * t5;
+}
+
+inline float
+_MaterialXDielectricFresnel(float cosTheta, float ior)
+{
+    const float c = _Clamp01(cosTheta);
+    const float eta = std::max(ior, _kEpsilon);
+    const float g2 = eta * eta + c * c - 1.0f;
+    if (g2 < 0.0f) {
+        return 1.0f;
+    }
+
+    const float g = std::sqrt(g2);
+    const float sNumer = g - c;
+    const float sDenom = std::max(g + c, _kEpsilon);
+    const float pNumer = (g + c) * c - 1.0f;
+    const float pDenom = (g - c) * c + 1.0f;
+    const float s = sNumer / sDenom;
+    const float p = pNumer / std::copysign(
+        std::max(std::abs(pDenom), _kEpsilon), pDenom);
+    return _Clamp01(0.5f * s * s * (1.0f + p * p));
 }
 
 inline Vec3f
@@ -802,6 +825,19 @@ _IsGgxMicrofacetMultipleScatteringEnabled()
         std::memory_order_relaxed);
 }
 
+inline Bsdf::DielectricLayerThroughputMode
+_GetDielectricLayerThroughputMode()
+{
+    const auto mode = static_cast<Bsdf::DielectricLayerThroughputMode>(
+        _gDielectricLayerThroughputMode.load(std::memory_order_relaxed));
+    switch (mode) {
+        case Bsdf::DielectricLayerThroughputMode::Bsdl:
+        case Bsdf::DielectricLayerThroughputMode::MaterialXGlsl:
+            return mode;
+    }
+    return Bsdf::DielectricLayerThroughputMode::Bsdl;
+}
+
 inline Vec3f
 _TurquinMicrofacetMsScale(
     float alphaRoughness,
@@ -849,6 +885,115 @@ _LayerThroughputReflectance(
     const Vec3f& fresnel)
 {
     return _TurquinDirectionalReflectance(alphaRoughness, cosThetaO, fresnel);
+}
+
+inline float
+_ClampFinite01(float x)
+{
+    return std::isfinite(x) ? _Clamp01(x) : 0.0f;
+}
+
+inline Vec2f
+_MaterialXGgxDirAlbedoAnalyticAB(float NdotV, float alpha)
+{
+    const float x = _Clamp01(NdotV);
+    const float y = _Clamp01(alpha);
+    const float x2 = x * x;
+    const float y2 = y * y;
+    const float xy = x * y;
+    const float x2y = x2 * y;
+    const float xy2 = x * y2;
+    const float x2y2 = x2 * y2;
+
+    const float r0 =
+        0.1003f +
+        (-0.6303f * x) +
+        (9.748f * y) +
+        (-2.038f * xy) +
+        (29.34f * x2) +
+        (-8.245f * y2) +
+        (-26.44f * x2y) +
+        (19.99f * xy2) +
+        (-5.448f * x2y2);
+    const float r1 =
+        0.9345f +
+        (-2.323f * x) +
+        (2.229f * y) +
+        (-3.748f * xy) +
+        (1.424f * x2) +
+        (-0.7684f * y2) +
+        (1.436f * x2y) +
+        (0.2913f * xy2) +
+        (0.6286f * x2y2);
+    const float r2 =
+        1.0f +
+        (-1.765f * x) +
+        (8.263f * y) +
+        (11.53f * xy) +
+        (28.96f * x2) +
+        (-7.507f * y2) +
+        (-36.11f * x2y) +
+        (15.86f * xy2) +
+        (33.37f * x2y2);
+    const float r3 =
+        1.0f +
+        (0.2281f * x) +
+        (15.94f * y) +
+        (-55.83f * xy) +
+        (13.08f * x2) +
+        (41.26f * y2) +
+        (54.9f * x2y) +
+        (300.2f * xy2) +
+        (-285.1f * x2y2);
+
+    const float ab0 = r0 / std::copysign(
+        std::max(std::abs(r2), _kEpsilon), r2);
+    const float ab1 = r1 / std::copysign(
+        std::max(std::abs(r3), _kEpsilon), r3);
+    return Vec2f(_ClampFinite01(ab0), _ClampFinite01(ab1));
+}
+
+inline Vec3f
+_MaterialXGgxDirAlbedoAnalytic(
+    float NdotV,
+    float alpha,
+    const Vec3f& F0,
+    const Vec3f& F90)
+{
+    const Vec2f ab = _MaterialXGgxDirAlbedoAnalyticAB(NdotV, alpha);
+    return F0 * ab[0] + F90 * ab[1];
+}
+
+inline Vec3f
+_MaterialXGgxEnergyCompensation(
+    float NdotV,
+    float alpha,
+    const Vec3f& singleScatterFresnel)
+{
+    const float Ess = std::max(
+        _MaterialXGgxDirAlbedoAnalytic(
+            NdotV, alpha, Vec3f(1.0f), Vec3f(1.0f))[0],
+        _kEpsilon);
+    return Vec3f(1.0f) +
+        singleScatterFresnel * ((1.0f - Ess) / Ess);
+}
+
+inline Vec3f
+_MaterialXGlslDielectricLayerReflectance(
+    float alphaRoughness,
+    float cosThetaO,
+    float ior)
+{
+    float F0 = (ior - 1.0f) / (ior + 1.0f);
+    F0 *= F0;
+    const Vec3f F(_MaterialXDielectricFresnel(cosThetaO, ior));
+    return CompMul(
+        _MaterialXGgxDirAlbedoAnalytic(
+            cosThetaO,
+            alphaRoughness,
+            Vec3f(F0),
+            Vec3f(1.0f)),
+        _MaterialXGgxEnergyCompensation(cosThetaO, alphaRoughness, F));
 }
 
 inline bool
@@ -2008,22 +2153,32 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 _ResolveDielectricIor(data, heroWavelengthNm);
             Vec3f throughput(1.0f);
             if (data.scatterMode != Bsdf::ScatterMode::Transmission) {
-                const bool useBsdlFilter =
+                const bool useDirectionalLayerThroughput =
                     _IsGgxMicrofacetMultipleScatteringEnabled() &&
                     !_HasThinFilm(
                         data.thinFilmWeight,
                         data.thinFilmThickness,
                         data.thinFilmIor);
-                if (useBsdlFilter) {
-                    const float filter =
-                        _LookupBsdlDielectricReflFrontFilter(
-                            NdotV,
-                            _BsdlLayerRoughnessFromAlpha(data.roughness),
-                            effectiveIor);
-                    throughput = _LerpVec(
-                        Vec3f(1.0f),
-                        Vec3f(filter),
-                        _Clamp01(data.weight));
+                if (useDirectionalLayerThroughput) {
+                    if (_GetDielectricLayerThroughputMode() ==
+                        Bsdf::DielectricLayerThroughputMode::MaterialXGlsl) {
+                        const Vec3f reflectance =
+                            _MaterialXGlslDielectricLayerReflectance(
+                                _AverageAlphaForEnergy(data.roughness),
+                                NdotV,
+                                effectiveIor);
+                        throughput -= reflectance * data.weight;
+                    } else {
+                        const float filter =
+                            _LookupBsdlDielectricReflFrontFilter(
+                                NdotV,
+                                _BsdlLayerRoughnessFromAlpha(data.roughness),
+                                effectiveIor);
+                        throughput = _LerpVec(
+                            Vec3f(1.0f),
+                            Vec3f(filter),
+                            _Clamp01(data.weight));
+                    }
                 } else {
                     const Vec3f reflectance = _LayerThroughputReflectance(
                         _AverageAlphaForEnergy(data.roughness),
@@ -2734,6 +2889,19 @@ bool
 Bsdf::IsGgxMicrofacetMultipleScatteringEnabled()
 {
     return _IsGgxMicrofacetMultipleScatteringEnabled();
+}
+
+void
+Bsdf::SetDielectricLayerThroughputMode(DielectricLayerThroughputMode mode)
+{
+    _gDielectricLayerThroughputMode.store(
+        static_cast<int>(mode), std::memory_order_relaxed);
+}
+
+Bsdf::DielectricLayerThroughputMode
+Bsdf::GetDielectricLayerThroughputMode()
+{
+    return _GetDielectricLayerThroughputMode();
 }
 
 Vec3f

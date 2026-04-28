@@ -31,6 +31,8 @@ TF_DEFINE_PUBLIC_TOKENS(HdEmbreeAovTokens, HDEMBREE_AOV_TOKENS);
 
 static const TfToken _enableGgxMicrofacetMultipleScatteringToken(
     "enableGgxMicrofacetMultipleScattering", TfToken::Immortal);
+static const TfToken _dielectricLayerThroughputModeBsdlToken(
+    "bsdl", TfToken::Immortal);
 
 const TfTokenVector HdEmbreeRenderDelegate::SUPPORTED_RPRIM_TYPES =
 {
@@ -112,7 +114,7 @@ void
 HdEmbreeRenderDelegate::_Initialize()
 {
     // Initialize the settings and settings descriptors.
-    _settingDescriptors.resize(19);
+    _settingDescriptors.resize(20);
     _settingDescriptors[0] = { "Enable Scene Colors",
         HdEmbreeRenderSettingsTokens->enableSceneColors,
         VtValue(HdEmbreeConfig::GetInstance().useFaceColors) };
@@ -173,6 +175,9 @@ HdEmbreeRenderDelegate::_Initialize()
     _settingDescriptors[18] = { "Use Adobe OpenPBR",
         HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
         VtValue(false) };
+    _settingDescriptors[19] = { "Dielectric Layer Throughput Mode",
+        HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
+        VtValue(_dielectricLayerThroughputModeBsdlToken) };
     _PopulateDefaultSettings(_settingDescriptors);
 
     // Initialize the embree library handle (_rtcDevice).

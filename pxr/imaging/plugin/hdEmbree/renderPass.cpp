@@ -312,6 +312,12 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<bool>(
                 enableGgxMicrofacetMultipleScatteringToken,
                 true));
+        static const TfToken dielectricLayerThroughputModeBsdlToken(
+            "bsdl", TfToken::Immortal);
+        _renderer->SetDielectricLayerThroughputMode(
+            renderDelegate->GetRenderSetting<TfToken>(
+                HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
+                dielectricLayerThroughputModeBsdlToken));
         _renderer->SetUseAdobeOpenPBR(
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,

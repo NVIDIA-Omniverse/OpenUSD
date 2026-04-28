@@ -38,6 +38,7 @@ class HdEmbreeRenderParam;
     (showAdaptiveHeatmap)               \
     (usePerChannelVariance)             \
     (fireflyClampThreshold)             \
+    (dielectricLayerThroughputMode)     \
     (useAdobeOpenPBR)
 
 // Also: HdRenderSettingsTokens->convergedSamplesPerPixel

@@ -20,6 +20,7 @@
 
 #include "pxr/base/gf/matrix4d.h"
 #include "pxr/base/gf/rect2i.h"
+#include "pxr/base/tf/token.h"
 
 #include <embree4/rtcore.h>
 #include <embree4/rtcore_device.h>
@@ -182,6 +183,9 @@ public:
 
     /// Set whether GGX reflection uses microfacet multiple scattering.
     void SetEnableGgxMicrofacetMultipleScattering(bool enable);
+
+    /// Set the rough dielectric layer throughput estimate mode.
+    void SetDielectricLayerThroughputMode(TfToken const& mode);
 
     /// Set whether MaterialX OpenPBR uses the Adobe reference backend.
     void SetUseAdobeOpenPBR(bool enable);
@@ -523,6 +527,9 @@ private:
 
     // Whether GGX reflection uses microfacet multiple scattering compensation.
     bool _enableGgxMicrofacetMultipleScattering;
+
+    // Rough dielectric top-layer throughput estimate mode.
+    TfToken _dielectricLayerThroughputMode;
 
     // Whether MaterialX OpenPBR uses the Adobe reference backend.
     bool _useAdobeOpenPBR;
