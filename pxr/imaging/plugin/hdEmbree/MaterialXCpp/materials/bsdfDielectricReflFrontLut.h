@@ -8,6 +8,15 @@
 // Values were generated with OpenShadingLanguage libbsdl genluts.cpp
 // for mtx::DielectricReflFront (BSD-3-Clause reference).
 //
+// Axis convention, matching mtx::DielectricBSDF at OSL commit
+// 3dd1d94fe07b5374c6519cd44ca65f83d4598a80:
+//   ior index: sqrt((ior - 1.001) / (5.0 - 1.001))
+//   roughness: perceptual roughness in [0, 1]
+//   cosThetaO: max(i / (Nc - 1), 1e-6), linear grid
+//
+// Stored values are 1 - integrated reflection energy, i.e. the outgoing
+// layer filter/transmittance used by BSDL filter_o().
+//
 #ifndef MXCPP_MATERIALS_BSDF_DIELECTRIC_REFL_FRONT_LUT_H
 #define MXCPP_MATERIALS_BSDF_DIELECTRIC_REFL_FRONT_LUT_H
 

@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "../materials/bsdf.h"
+#include "../materials/bsdfDielectricReflFrontLut.h"
 #include "../spectral.h"
 #include "../nodes/helpers/mathHelpers.h"
 #include "../../medium.h"
@@ -161,6 +162,21 @@ _CheckFurnaceEnergyBound(
         }
     }
     return true;
+}
+
+static float
+_DielectricTransmittanceForTest(float eta, float cosTheta)
+{
+    const float c = std::clamp(cosTheta, 0.0f, 1.0f);
+    float g = (eta - 1.0f) * (eta + 1.0f) + c * c;
+    if (g <= 0.0f) {
+        return 0.0f;
+    }
+    g = std::sqrt(g);
+    const float A = (g - c) / (g + c);
+    const float B = (c * (g + c) - 1.0f) / (c * (g - c) + 1.0f);
+    const float reflectance = 0.5f * A * A * (1.0f + B * B);
+    return std::clamp(1.0f - reflectance, 0.0f, 1.0f);
 }
 
 static float
@@ -1784,7 +1800,43 @@ TestGGXMicrofacetMultipleScatteringToggle()
 }
 
 static bool
-TestLayerReflectionAttenuatesBaseOnBothSides()
+TestBsdlDielectricReflFrontLutUsesLinearCosThetaGrid()
+{
+    namespace lut = mxcpp::bsdf_luts;
+
+    constexpr float eta = 1.001f;
+    constexpr int cosIndex = 1;
+    constexpr float linearCos =
+        static_cast<float>(cosIndex) /
+        static_cast<float>(lut::kBsdlDielectricReflFrontCosThetaCount - 1);
+    constexpr float squaredCos = linearCos * linearCos;
+    const float tableValue =
+        lut::kBsdlDielectricReflFrontFilter[0][0][cosIndex];
+    const float expectedLinear =
+        _DielectricTransmittanceForTest(eta, linearCos);
+    const float expectedSquared =
+        _DielectricTransmittanceForTest(eta, squaredCos);
+
+    if (!Test_IsClose(tableValue, expectedLinear, 1.0e-5f)) {
+        printf(
+            "    BSDL DielectricReflFront LUT grid mismatch: "
+            "table=%f expectedLinear=%f\n",
+            tableValue, expectedLinear);
+        return false;
+    }
+    if (Test_IsClose(tableValue, expectedSquared, 1.0e-3f)) {
+        printf(
+            "    BSDL DielectricReflFront LUT unexpectedly matches squared "
+            "cosine grid: table=%f expectedSquared=%f\n",
+            tableValue, expectedSquared);
+        return false;
+    }
+
+    return true;
+}
+
+static bool
+TestLayerReflectionAttenuatesBaseOnOutgoingSide()
 {
     Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
 
@@ -1821,12 +1873,11 @@ TestLayerReflectionAttenuatesBaseOnBothSides()
     const Vec3f baseEval = Bsdf::EvalSurface(baseClosure, N, wi, wo);
     const Vec3f layerEval = Bsdf::EvalSurface(layerClosure, N, wi, wo);
 
-    // BSDL mtx::DielectricReflFront filter values for alpha=0.02,
-    // IOR=1.6, cos(wo)=~0.31225 and cos(wi)=0.8.
-    constexpr float attOut = 0.91047547f;
-    constexpr float attIn = 0.94556917f;
+    // BSDL mtx::DielectricReflFront outgoing filter value for alpha=0.02,
+    // IOR=1.6, and cos(wo)=~0.31225 using the linear cosTheta grid.
+    constexpr float attOut = 0.78626859f;
     const Vec3f expected =
-        topEval + baseEval * (attOut * attIn);
+        topEval + baseEval * attOut;
 
     if (!Test_IsClose(layerEval, expected, 1.0e-4f)) {
         printf(
@@ -1877,12 +1928,11 @@ TestLayerThroughputUsesBsdlDielectricFilter()
     const Vec3f baseEval = Bsdf::EvalSurface(baseClosure, N, wi, wo);
     const Vec3f layerEval = Bsdf::EvalSurface(layerClosure, N, wi, wo);
 
-    // BSDL mtx::DielectricReflFront filter values for roughness=1,
-    // IOR=1.5, cos(wo)=0.55 and cos(wi)=~0.719676.
-    constexpr float filterOut = 0.98199452f;
-    constexpr float filterIn = 0.98396947f;
+    // BSDL mtx::DielectricReflFront outgoing filter value for roughness=1,
+    // IOR=1.5, and cos(wo)=0.55 using the linear cosTheta grid.
+    constexpr float filterOut = 0.97670996f;
     const Vec3f expected =
-        topEval + baseEval * (filterOut * filterIn);
+        topEval + baseEval * filterOut;
 
     if (!Test_IsClose(layerEval, expected, 1.0e-4f)) {
         printf(
@@ -2223,7 +2273,8 @@ Test_RegisterBsdfTests()
     _REG(TestTreeAnisotropicReflectionRespondsToTangent);
     _REG(TestTreeAnisotropicReflectionUsesTurquinCompensation);
     _REG(TestGGXMicrofacetMultipleScatteringToggle);
-    _REG(TestLayerReflectionAttenuatesBaseOnBothSides);
+    _REG(TestBsdlDielectricReflFrontLutUsesLinearCosThetaGrid);
+    _REG(TestLayerReflectionAttenuatesBaseOnOutgoingSide);
     _REG(TestLayerThroughputUsesBsdlDielectricFilter);
     _REG(TestPowerHeuristic);
     _REG(TestChannelMISUniform);

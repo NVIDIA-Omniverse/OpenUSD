@@ -160,7 +160,7 @@ _BsdlDielectricReflFrontCosine(int index)
         static_cast<float>(index) /
         static_cast<float>(
             bsdf_luts::kBsdlDielectricReflFrontCosThetaCount - 1);
-    return std::max(t * t, 1.0e-6f);
+    return std::max(t, 1.0e-6f);
 }
 
 inline float
@@ -1770,15 +1770,10 @@ Vec3f
 _EvalLayerBaseThroughput(const Bsdf::ClosureTree& tree,
                          Bsdf::NodeId topNodeId,
                          const Vec3f& N,
-                         const Vec3f& wi,
                          const Vec3f& wo,
                          float heroWavelengthNm)
 {
-    const Vec3f throughputOut =
-        _EvalThroughput(tree, topNodeId, N, wo, heroWavelengthNm);
-    const Vec3f throughputIn =
-        _EvalThroughput(tree, topNodeId, N, wi, heroWavelengthNm);
-    return CompMul(throughputOut, throughputIn);
+    return _EvalThroughput(tree, topNodeId, N, wo, heroWavelengthNm);
 }
 
 Vec3f
@@ -1973,7 +1968,7 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return topEval + CompMul(
                 baseEval,
                 _EvalLayerBaseThroughput(
-                    tree, data.top, N, wi, wo, heroWavelengthNm));
+                    tree, data.top, N, wo, heroWavelengthNm));
         } else if constexpr (std::is_same_v<T, Bsdf::AddData>) {
             return _EvalNode(tree, data.in1, N, wi, wo, heroWavelengthNm) +
                    _EvalNode(tree, data.in2, N, wi, wo, heroWavelengthNm);
@@ -2678,23 +2673,10 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             if ((sample.isSpecular || sample.isSubsurface) &&
                 sample.pdf > 0.0f) {
                 if (!chooseTop) {
-                    const Vec3f topThroughputOut =
-                        _EvalThroughput(
-                            tree, data.top, N, wo, heroWavelengthNm);
-                    if (sample.isSubsurface) {
-                        // Subsurface has no meaningful incoming direction
-                        // (wi is zero); only the outgoing Fresnel
-                        // transmission at the entry point applies.  The
-                        // incoming Fresnel is handled by the random walk
-                        // exit logic in the renderer.
-                        sample.f = CompMul(sample.f, topThroughputOut);
-                    } else {
-                        sample.f = CompMul(
-                            sample.f,
-                            _EvalLayerBaseThroughput(
-                                tree, data.top, N, sample.wi, wo,
-                                heroWavelengthNm));
-                    }
+                    sample.f = CompMul(
+                        sample.f,
+                        _EvalLayerBaseThroughput(
+                            tree, data.top, N, wo, heroWavelengthNm));
                 }
                 if (chooseProb > 0.0f) {
                     sample.f /= chooseProb;
