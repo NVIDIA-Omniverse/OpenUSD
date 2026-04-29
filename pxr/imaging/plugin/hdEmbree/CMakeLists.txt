@@ -160,6 +160,13 @@ pxr_build_test(testHdEmbreeLightSamplers
 )
 endif()
 
+pxr_build_test(testHdEmbreeSampling
+    LIBRARIES
+        tf
+    CPPFILES
+        testenv/testHdEmbreeSampling.cpp
+)
+
 if (Imath_FOUND)
     set(__MXCPP_TEST_IMATH_LIBS "Imath::Imath")
 else()
@@ -224,6 +231,12 @@ pxr_build_test(testMaterialXCpp
 
 if (PXR_ENABLE_OPENQMC_SUPPORT)
     target_compile_definitions(hdEmbree PRIVATE PXR_HDEMBREE_ENABLE_OPENQMC=1)
+    if (TARGET testHdEmbreeSampling)
+        target_compile_definitions(testHdEmbreeSampling
+            PRIVATE PXR_HDEMBREE_ENABLE_OPENQMC=1)
+        target_link_libraries(testHdEmbreeSampling
+            PRIVATE OpenQMC::OpenQMC)
+    endif()
 endif()
 
 if (PXR_ENABLE_ADOBE_OPENPBR_SUPPORT)

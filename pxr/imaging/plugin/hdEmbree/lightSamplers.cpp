@@ -290,6 +290,112 @@ _SampleDomeUv(HdEmbree_LightTexture const& texture, float u1, float u2)
         (static_cast<float>(y) + remappedY) / static_cast<float>(texture.height));
 }
 
+bool
+_IsFinite(GfVec3f const& v)
+{
+    return std::isfinite(v[0]) && std::isfinite(v[1]) &&
+           std::isfinite(v[2]);
+}
+
+float
+_DomeDirectionalPdf(
+    HdEmbree_LightData const& light,
+    GfVec2f const& uv)
+{
+    float pdfW = 1.0f / (4.0f * _pi<float>);
+    if (_HasDomeDistribution(light.texture)) {
+        const int x = std::clamp(
+            static_cast<int>(
+                static_cast<float>(light.texture.width) * _WrapUnit(uv[0])),
+            0,
+            light.texture.width - 1);
+        const int y = std::clamp(
+            static_cast<int>(
+                static_cast<float>(light.texture.height) * _ClampUnit(uv[1])),
+            0,
+            light.texture.height - 1);
+        const float theta = _pi<float> * _ClampUnit(uv[1]);
+        pdfW = _TexelDirectionalPdf(light.texture, x, y, theta);
+    }
+    return pdfW;
+}
+
+float
+_DomeDirectionalPdf(
+    HdEmbree_LightData const& light,
+    GfVec3f const& worldDirection)
+{
+    if (!_IsFinite(worldDirection) || worldDirection.GetLengthSq() <= 0.0f) {
+        return 0.0f;
+    }
+
+    const GfVec3f localDirection =
+        light.xformWorldToLight.TransformDir(
+            worldDirection.GetNormalized()).GetNormalized();
+    return _DomeDirectionalPdf(light, _DirectionToLatLongUv(localDirection));
+}
+
+bool
+_GetReflectionHemisphereNormal(
+    GfVec3f const& normal,
+    GfVec3f* normalizedNormal)
+{
+    if (!normalizedNormal || !_IsFinite(normal) ||
+        normal.GetLengthSq() <= 0.0f) {
+        return false;
+    }
+    *normalizedNormal = normal.GetNormalized();
+    return true;
+}
+
+GfVec3f
+_ReflectAcrossPlane(
+    GfVec3f const& direction,
+    GfVec3f const& normal)
+{
+    return (direction - normal * (2.0f * GfDot(direction, normal)))
+        .GetNormalized();
+}
+
+float
+_ReflectionHemispherePdf(
+    HdEmbree_LightData const& light,
+    GfVec3f const& normal,
+    GfVec3f const& direction)
+{
+    GfVec3f n;
+    if (!_GetReflectionHemisphereNormal(normal, &n) ||
+        !_IsFinite(direction) || direction.GetLengthSq() <= 0.0f) {
+        return 0.0f;
+    }
+
+    const GfVec3f wi = direction.GetNormalized();
+    if (GfDot(n, wi) <= 0.0f) {
+        return 0.0f;
+    }
+
+    const GfVec3f mirrored = _ReflectAcrossPlane(wi, n);
+    return _DomeDirectionalPdf(light, wi) +
+           _DomeDirectionalPdf(light, mirrored);
+}
+
+GfVec3f
+_FoldDirectionToReflectionHemisphere(
+    GfVec3f const& direction,
+    GfVec3f const& normal)
+{
+    GfVec3f n;
+    if (!_GetReflectionHemisphereNormal(normal, &n) ||
+        !_IsFinite(direction) || direction.GetLengthSq() <= 0.0f) {
+        return GfVec3f(0.0f);
+    }
+
+    const GfVec3f wi = direction.GetNormalized();
+    return (GfDot(n, wi) > 0.0f)
+        ? wi
+        : _ReflectAcrossPlane(wi, n);
+}
+
 GfVec3f
 _SampleLightTexture(HdEmbree_LightTexture const& texture, float s, float t)
 {
@@ -362,6 +468,68 @@ _SampleSphere(GfMatrix4f const& xf, GfMatrix3f const& normalXform, float radius,
         area
     };
 }
+
+bool
+_CanSampleSphereBySolidAngle(HdEmbree_LightData const& light)
+{
+    const GfVec3f x =
+        light.xformLightToWorld.TransformDir(GfVec3f::XAxis());
+    const GfVec3f y =
+        light.xformLightToWorld.TransformDir(GfVec3f::YAxis());
+    const GfVec3f z =
+        light.xformLightToWorld.TransformDir(GfVec3f::ZAxis());
+
+    const float lx = x.GetLength();
+    const float ly = y.GetLength();
+    const float lz = z.GetLength();
+    const float maxLen = std::max({lx, ly, lz});
+    if (maxLen <= 0.0f) {
+        return false;
+    }
+
+    const float scaleEps = 1.0e-4f * maxLen;
+    const float orthoEps = 1.0e-4f * maxLen * maxLen;
+    return std::abs(lx - ly) <= scaleEps &&
+           std::abs(lx - lz) <= scaleEps &&
+           std::abs(GfDot(x, y)) <= orthoEps &&
+           std::abs(GfDot(x, z)) <= orthoEps &&
+           std::abs(GfDot(y, z)) <= orthoEps;
+}
+
+float
+_SphereSolidAngle(
+    HdEmbree_LightData const& light,
+    HdEmbree_Sphere const& sphere,
+    GfVec3f const& position)
+{
+    if (!_CanSampleSphereBySolidAngle(light) || sphere.radius <= 0.0f) {
+        return 0.0f;
+    }
+
+    const GfVec3f pLight = light.xformWorldToLight.Transform(position);
+    const float dist2 = pLight.GetLengthSq();
+    const float radius2 = sphere.radius * sphere.radius;
+    if (dist2 <= radius2 || !std::isfinite(dist2)) {
+        return 0.0f;
+    }
+
+    const float sinThetaMax2 = radius2 / dist2;
+    const float cosThetaMax =
+        sqrtf(std::max(0.0f, 1.0f - sinThetaMax2));
+    const float oneMinusCosThetaMax =
+        sinThetaMax2 / (1.0f + cosThetaMax);
+    const float solidAngle =
+        2.0f * _pi<float> * oneMinusCosThetaMax;
+    return std::isfinite(solidAngle) ? solidAngle : 0.0f;
+}
+
+HdEmbreeLightSampler::LightSample
+_EvalSphereLightSolidAngle(
+    HdEmbree_LightData const& light,
+    HdEmbree_Sphere const& sphere,
+    GfVec3f const& position,
+    float u1,
+    float u2);
 
 GfVec3f
 _SampleDiskPolar(float u1, float u2)
@@ -458,6 +626,21 @@ _EvaluateDomeLightDirection(
     HdEmbree_LightData const& light,
     GfVec3f const& direction);
 
+HdEmbreeLightSampler::LightSample
+_EvaluateDomeLightDirection(
+    HdEmbree_LightData const& light,
+    GfVec3f const& direction,
+    GfVec3f const& normal,
+    HdEmbreeLightSampler::SamplingMode samplingMode);
+
+bool
+_IntersectSphereLight(
+    HdEmbree_LightData const& light,
+    HdEmbree_Sphere const& sphere,
+    GfVec3f const& position,
+    GfVec3f const& direction,
+    _ShapeSample* outSample);
+
 float
 _EvalIES(HdEmbree_LightData const& light, GfVec3f const& wI)
 {
@@ -553,6 +736,52 @@ _EvalAreaLight(HdEmbree_LightData const& light, _ShapeSample const& ss,
         invPdfW,
         invPdfW > 0.0f && std::isfinite(dist)
     };
+}
+
+HdEmbreeLightSampler::LightSample
+_EvalSphereLightSolidAngle(
+    HdEmbree_LightData const& light,
+    HdEmbree_Sphere const& sphere,
+    GfVec3f const& position,
+    float u1,
+    float u2)
+{
+    const float solidAngle = _SphereSolidAngle(light, sphere, position);
+    if (solidAngle <= 0.0f) {
+        return _InvalidLightSample();
+    }
+
+    const GfVec3f pLight = light.xformWorldToLight.Transform(position);
+    const GfVec3f axis = (-pLight).GetNormalized();
+    GfVec3f tangent;
+    GfVec3f bitangent;
+    GfBuildOrthonormalFrame(axis, &tangent, &bitangent);
+
+    const float cosThetaMax =
+        1.0f - solidAngle / (2.0f * _pi<float>);
+    const float cosTheta =
+        1.0f - _ClampUnit(u1) * (1.0f - cosThetaMax);
+    const float sinTheta =
+        sqrtf(std::max(0.0f, 1.0f - _Sqr(cosTheta)));
+    const float phi = 2.0f * _pi<float> * _ClampUnit(u2);
+    const GfVec3f localDirection =
+        (tangent * (sinTheta * cosf(phi)) +
+         bitangent * (sinTheta * sinf(phi)) +
+         axis * cosTheta).GetNormalized();
+    const GfVec3f worldDirection =
+        light.xformLightToWorld.TransformDir(localDirection).GetNormalized();
+
+    _ShapeSample shapeSample;
+    if (!_IntersectSphereLight(
+            light, sphere, position, worldDirection, &shapeSample)) {
+        return _InvalidLightSample();
+    }
+
+    HdEmbreeLightSampler::LightSample sample =
+        _EvalAreaLight(light, shapeSample, position);
+    sample.invPdfW = solidAngle;
+    sample.valid = sample.valid && sample.invPdfW > 0.0f;
+    return sample;
 }
 
 bool
@@ -784,6 +1013,17 @@ _EvaluateLightDirection(
                    std::get_if<HdEmbree_Sphere>(&light.lightVariant)) {
         hit = _IntersectSphereLight(
             light, *sphere, position, normalizedDirection, &shapeSample);
+        if (hit) {
+            HdEmbreeLightSampler::LightSample sample =
+                _EvalAreaLight(light, shapeSample, position);
+            const float solidAngle =
+                _SphereSolidAngle(light, *sphere, position);
+            if (solidAngle > 0.0f) {
+                sample.invPdfW = solidAngle;
+                sample.valid = sample.valid && sample.invPdfW > 0.0f;
+            }
+            return sample;
+        }
     } else if (auto const* disk =
                    std::get_if<HdEmbree_Disk>(&light.lightVariant)) {
         hit = _IntersectDiskLight(
@@ -808,8 +1048,13 @@ _EvaluateDomeLightDirection(
     HdEmbree_LightData const& light,
     GfVec3f const& direction)
 {
+    if (!_IsFinite(direction) || direction.GetLengthSq() <= 0.0f) {
+        return _InvalidLightSample();
+    }
+
+    const GfVec3f normalizedDirection = direction.GetNormalized();
     const GfVec3f localDirection =
-        light.xformWorldToLight.TransformDir(direction).GetNormalized();
+        light.xformWorldToLight.TransformDir(normalizedDirection).GetNormalized();
     const GfVec2f uv = _DirectionToLatLongUv(localDirection);
 
     GfVec3f Li = light.texture.pixels.empty() ?
@@ -820,25 +1065,11 @@ _EvaluateDomeLightDirection(
     // color temperature) consistently with area lights.
     Li = GfCompMult(Li, _EvalLightBasic(light));
 
-    float pdfW = 1.0f / (4.0f * _pi<float>);
-    if (_HasDomeDistribution(light.texture)) {
-        const int x = std::clamp(
-            static_cast<int>(
-                static_cast<float>(light.texture.width) * _WrapUnit(uv[0])),
-            0,
-            light.texture.width - 1);
-        const int y = std::clamp(
-            static_cast<int>(
-                static_cast<float>(light.texture.height) * _ClampUnit(uv[1])),
-            0,
-            light.texture.height - 1);
-        const float theta = _pi<float> * _ClampUnit(uv[1]);
-        pdfW = _TexelDirectionalPdf(light.texture, x, y, theta);
-    }
+    const float pdfW = _DomeDirectionalPdf(light, uv);
 
     return HdEmbreeLightSampler::LightSample {
         Li,
-        direction.GetNormalized(),
+        normalizedDirection,
         std::numeric_limits<float>::max(),
         (pdfW > 0.0f) ? (1.0f / pdfW) : 0.0f,
         pdfW > 0.0f
@@ -846,9 +1077,49 @@ _EvaluateDomeLightDirection(
 }
 
 HdEmbreeLightSampler::LightSample
-_EvalDomeLight(HdEmbree_LightData const& light, GfVec3f const& /*W*/,
-               float u1, float u2)
+_EvaluateDomeLightDirection(
+    HdEmbree_LightData const& light,
+    GfVec3f const& direction,
+    GfVec3f const& normal,
+    HdEmbreeLightSampler::SamplingMode samplingMode)
 {
+    if (samplingMode !=
+        HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere) {
+        return _EvaluateDomeLightDirection(light, direction);
+    }
+
+    if (!_IsFinite(direction) || direction.GetLengthSq() <= 0.0f) {
+        return _InvalidLightSample();
+    }
+
+    const GfVec3f normalizedDirection = direction.GetNormalized();
+    const GfVec3f localDirection =
+        light.xformWorldToLight.TransformDir(normalizedDirection).GetNormalized();
+    const GfVec2f uv = _DirectionToLatLongUv(localDirection);
+
+    GfVec3f Li = light.texture.pixels.empty() ?
+        GfVec3f(1.0f)
+        : _SampleLightTexture(light.texture, uv[0], uv[1]);
+    Li = GfCompMult(Li, _EvalLightBasic(light));
+
+    const float pdfW =
+        _ReflectionHemispherePdf(light, normal, normalizedDirection);
+
+    return HdEmbreeLightSampler::LightSample {
+        Li,
+        normalizedDirection,
+        std::numeric_limits<float>::max(),
+        (pdfW > 0.0f) ? (1.0f / pdfW) : 0.0f,
+        pdfW > 0.0f
+    };
+}
+
+HdEmbreeLightSampler::LightSample
+_EvalDomeLight(HdEmbree_LightData const& light, GfVec3f const& normal,
+               float u1, float u2,
+               HdEmbreeLightSampler::SamplingMode samplingMode)
+{
+    GfVec3f worldDirection;
     if (!_HasDomeDistribution(light.texture)) {
         const float localY = 1.0f - 2.0f * _ClampUnit(u1);
         const float localR = sqrtf(std::max(0.0f, 1.0f - _Sqr(localY)));
@@ -857,15 +1128,25 @@ _EvalDomeLight(HdEmbree_LightData const& light, GfVec3f const& /*W*/,
             localR * sinf(phi),
             localY,
             localR * cosf(phi));
-        const GfVec3f worldDirection =
+        worldDirection =
             light.xformLightToWorld.TransformDir(localDirection).GetNormalized();
-        return _EvaluateDomeLightDirection(light, worldDirection);
+    } else {
+        const GfVec2f uv = _SampleDomeUv(light.texture, u1, u2);
+        const GfVec3f localDirection = _LatLongUvToDirection(uv);
+        worldDirection =
+            light.xformLightToWorld.TransformDir(localDirection).GetNormalized();
     }
 
-    const GfVec2f uv = _SampleDomeUv(light.texture, u1, u2);
-    const GfVec3f localDirection = _LatLongUvToDirection(uv);
-    const GfVec3f worldDirection =
-        light.xformLightToWorld.TransformDir(localDirection).GetNormalized();
+    if (samplingMode ==
+        HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere) {
+        const GfVec3f hemisphereDirection =
+            _FoldDirectionToReflectionHemisphere(worldDirection, normal);
+        if (hemisphereDirection.GetLengthSq() > 0.0f) {
+            return _EvaluateDomeLightDirection(
+                light, hemisphereDirection, normal, samplingMode);
+        }
+    }
+
     return _EvaluateDomeLightDirection(light, worldDirection);
 }
 
@@ -923,9 +1204,11 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::GetLightSample(
         GfVec3f const& hitPosition,
         GfVec3f const& normal,
         float u1,
-        float u2)
+        float u2,
+        SamplingMode samplingMode)
 {
-    HdEmbreeLightSampler lightSampler(lightData, hitPosition, normal, u1, u2);
+    HdEmbreeLightSampler lightSampler(
+        lightData, hitPosition, normal, u1, u2, samplingMode);
     return std::visit(lightSampler, lightData.lightVariant);
 }
 
@@ -935,6 +1218,17 @@ HdEmbreeLightSampler::EvaluateDomeLightDirection(
     GfVec3f const& direction)
 {
     return _EvaluateDomeLightDirection(lightData, direction);
+}
+
+HdEmbreeLightSampler::LightSample
+HdEmbreeLightSampler::EvaluateDomeLightDirection(
+    HdEmbree_LightData const& lightData,
+    GfVec3f const& direction,
+    GfVec3f const& normal,
+    SamplingMode samplingMode)
+{
+    return _EvaluateDomeLightDirection(
+        lightData, direction, normal, samplingMode);
 }
 
 HdEmbreeLightSampler::LightSample
@@ -974,6 +1268,13 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
 
 HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
         HdEmbree_Sphere const& sphere) {
+    const HdEmbreeLightSampler::LightSample solidAngleSample =
+        _EvalSphereLightSolidAngle(
+            _lightData, sphere, _hitPosition, _u1, _u2);
+    if (solidAngleSample.valid) {
+        return solidAngleSample;
+    }
+
     _ShapeSample shapeSample = _SampleSphere(
             _lightData.xformLightToWorld,
             _lightData.normalXformLightToWorld,
@@ -1013,7 +1314,7 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
 
 HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
         HdEmbree_Dome const& dome) {
-    return _EvalDomeLight(_lightData, _normal, _u1, _u2);
+    return _EvalDomeLight(_lightData, _normal, _u1, _u2, _samplingMode);
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

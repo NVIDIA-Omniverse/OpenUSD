@@ -541,6 +541,7 @@ struct HdEmbreeSampler
                 },
                 openQmcRoot);
 #endif
+            dimension = 0;
             return;
         }
 

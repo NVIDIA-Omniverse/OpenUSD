@@ -87,6 +87,19 @@ _MakeDomeLight(const std::vector<GfVec3f>& pixels, int width, int height)
     return light;
 }
 
+HdEmbree_LightData
+_MakeSphereLight(const GfVec3f& center, float radius)
+{
+    HdEmbree_LightData light;
+    light.xformLightToWorld = GfMatrix4f(1.0f);
+    light.xformLightToWorld.SetTranslate(center);
+    light.xformWorldToLight = light.xformLightToWorld.GetInverse();
+    light.normalXformLightToWorld = GfMatrix3f(1.0f);
+    light.color = GfVec3f(1.0f);
+    light.lightVariant = HdEmbree_Sphere{radius};
+    return light;
+}
+
 bool
 TestDomeDistributionBuildsCdfs()
 {
@@ -221,6 +234,173 @@ TestDomeSampleMatchesDirectionalEvaluation()
 }
 
 bool
+TestDomeReflectionHemisphereSampleUsesHemispherePdf()
+{
+    const HdEmbree_LightData light = _MakeDomeLight({}, 0, 0);
+    const GfVec3f normal = GfVec3f::YAxis();
+    const auto sampled = HdEmbreeLightSampler::GetLightSample(
+        light,
+        GfVec3f(0.0f),
+        normal,
+        0.25f,
+        0.5f,
+        HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere);
+
+    if (!sampled.valid) {
+        std::printf("    expected valid hemisphere sample\n");
+        return false;
+    }
+    if (!(GfDot(sampled.wI, normal) > 0.0f)) {
+        std::printf("    sample was outside the reflection hemisphere\n");
+        return false;
+    }
+
+    const float pdfW =
+        (sampled.invPdfW > 0.0f) ? (1.0f / sampled.invPdfW) : 0.0f;
+    const float expectedPdf = 1.0f / (2.0f * static_cast<float>(M_PI));
+    if (!_IsClose(pdfW, expectedPdf, 1e-6f)) {
+        std::printf("    expected hemisphere pdf %f, got %f\n",
+                    expectedPdf, pdfW);
+        return false;
+    }
+
+    return true;
+}
+
+bool
+TestDomeReflectionHemisphereDirectionalPdf()
+{
+    const HdEmbree_LightData light = _MakeDomeLight({}, 0, 0);
+    const GfVec3f normal = GfVec3f::YAxis();
+    const auto above = HdEmbreeLightSampler::EvaluateDomeLightDirection(
+        light,
+        GfVec3f::YAxis(),
+        normal,
+        HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere);
+    const auto below = HdEmbreeLightSampler::EvaluateDomeLightDirection(
+        light,
+        -GfVec3f::YAxis(),
+        normal,
+        HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere);
+
+    if (!above.valid) {
+        std::printf("    expected direction above the surface to be valid\n");
+        return false;
+    }
+    const float abovePdf =
+        (above.invPdfW > 0.0f) ? (1.0f / above.invPdfW) : 0.0f;
+    const float expectedPdf = 1.0f / (2.0f * static_cast<float>(M_PI));
+    if (!_IsClose(abovePdf, expectedPdf, 1e-6f)) {
+        std::printf("    expected hemisphere directional pdf %f, got %f\n",
+                    expectedPdf, abovePdf);
+        return false;
+    }
+    if (below.valid || below.invPdfW != 0.0f) {
+        std::printf("    expected direction below the surface to have zero pdf\n");
+        return false;
+    }
+
+    return true;
+}
+
+bool
+TestDomeReflectionHemisphereSampleMatchesDirectionalEvaluation()
+{
+    const HdEmbree_LightData light = _MakeDomeLight(
+        {
+            GfVec3f(1.0f), GfVec3f(8.0f), GfVec3f(2.0f), GfVec3f(1.0f),
+            GfVec3f(1.0f), GfVec3f(3.0f), GfVec3f(1.0f), GfVec3f(6.0f)
+        },
+        4,
+        2);
+    const GfVec3f normal = GfVec3f::YAxis();
+    const std::vector<GfVec2f> samples = {
+        GfVec2f(0.1f, 0.2f),
+        GfVec2f(0.8f, 0.3f),
+        GfVec2f(0.4f, 0.7f),
+        GfVec2f(0.95f, 0.95f),
+    };
+
+    for (const GfVec2f& u : samples) {
+        const auto sampled = HdEmbreeLightSampler::GetLightSample(
+            light,
+            GfVec3f(0.0f),
+            normal,
+            u[0],
+            u[1],
+            HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere);
+        const auto evaluated = HdEmbreeLightSampler::EvaluateDomeLightDirection(
+            light,
+            sampled.wI,
+            normal,
+            HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere);
+
+        if (!sampled.valid || !(GfDot(sampled.wI, normal) > 0.0f)) {
+            std::printf("    expected valid hemisphere sample\n");
+            return false;
+        }
+        if (!_IsClose(sampled.Li, evaluated.Li, 1e-5f)) {
+            std::printf("    sampled/evaluated hemisphere Li mismatch\n");
+            return false;
+        }
+        if (!_IsClose(sampled.invPdfW, evaluated.invPdfW, 1e-4f)) {
+            std::printf(
+                "    sampled/evaluated hemisphere invPdf mismatch: %f vs %f\n",
+                sampled.invPdfW,
+                evaluated.invPdfW);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool
+TestSphereSampleMatchesDirectionalEvaluation()
+{
+    const HdEmbree_LightData light =
+        _MakeSphereLight(GfVec3f(0.0f, 0.0f, 4.0f), 1.0f);
+    const GfVec3f position(0.0f);
+    const GfVec3f normal = GfVec3f::ZAxis();
+    const std::vector<GfVec2f> samples = {
+        GfVec2f(0.1f, 0.2f),
+        GfVec2f(0.4f, 0.7f),
+        GfVec2f(0.9f, 0.95f),
+    };
+
+    const float cosThetaMax = std::sqrt(1.0f - 1.0f / 16.0f);
+    const float expectedInvPdfW =
+        2.0f * static_cast<float>(M_PI) * (1.0f - cosThetaMax);
+
+    for (const GfVec2f& u : samples) {
+        const auto sampled = HdEmbreeLightSampler::GetLightSample(
+            light, position, normal, u[0], u[1]);
+        const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
+            light, position, sampled.wI);
+
+        if (!sampled.valid || !evaluated.valid) {
+            std::printf("    expected valid sphere light samples\n");
+            return false;
+        }
+        if (!_IsClose(sampled.Li, evaluated.Li, 1e-5f)) {
+            std::printf("    sampled/evaluated sphere Li mismatch\n");
+            return false;
+        }
+        if (!_IsClose(sampled.invPdfW, expectedInvPdfW, 1e-5f) ||
+            !_IsClose(evaluated.invPdfW, expectedInvPdfW, 1e-5f)) {
+            std::printf(
+                "    sphere invPdf mismatch: sampled=%f evaluated=%f expected=%f\n",
+                sampled.invPdfW,
+                evaluated.invPdfW,
+                expectedInvPdfW);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool
 TestDomePdfApproximatelyNormalizes()
 {
     const HdEmbree_LightData light = _MakeDomeLight(
@@ -273,8 +453,16 @@ main(int /*argc*/, char** /*argv*/)
               &TestDomeDirectionalPdfPrefersBrightTexel);
     _Register("DomeSampleMatchesDirectionalEvaluation",
               &TestDomeSampleMatchesDirectionalEvaluation);
+    _Register("DomeReflectionHemisphereSampleUsesHemispherePdf",
+              &TestDomeReflectionHemisphereSampleUsesHemispherePdf);
+    _Register("DomeReflectionHemisphereDirectionalPdf",
+              &TestDomeReflectionHemisphereDirectionalPdf);
+    _Register("DomeReflectionHemisphereSampleMatchesDirectionalEvaluation",
+              &TestDomeReflectionHemisphereSampleMatchesDirectionalEvaluation);
     _Register("DomePdfApproximatelyNormalizes",
               &TestDomePdfApproximatelyNormalizes);
+    _Register("SphereSampleMatchesDirectionalEvaluation",
+              &TestSphereSampleMatchesDirectionalEvaluation);
 
     for (const auto& entry : _Tests()) {
         ++_totalTests;

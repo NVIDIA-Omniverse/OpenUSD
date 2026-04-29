@@ -41,6 +41,8 @@
 #include <limits>
 #include <stdint.h>
 #include <thread>
+#include <type_traits>
+#include <variant>
 
 // -------------------------------------------------------------------------
 // Old TBB workaround - we plan to remove this once OpenUSD adopts
@@ -176,6 +178,22 @@ _IsNearlyBlack(const GfVec3f& value, float threshold = 1.0e-4f)
            value[2] <= threshold;
 }
 
+inline GfVec3f
+_ClampFireflyContribution(GfVec3f contribution, float threshold)
+{
+    if (threshold <= 0.0f) {
+        return contribution;
+    }
+
+    const float luminance = 0.2126f * contribution[0]
+                          + 0.7152f * contribution[1]
+                          + 0.0722f * contribution[2];
+    if (luminance > threshold) {
+        contribution *= threshold / luminance;
+    }
+    return contribution;
+}
+
 inline float
 _GetOneSampleMisLightPdf(float lightPdf, int sampleCount, bool applyCount)
 {
@@ -183,6 +201,101 @@ _GetOneSampleMisLightPdf(float lightPdf, int sampleCount, bool applyCount)
         return 0.0f;
     }
     return applyCount ? lightPdf * static_cast<float>(sampleCount) : lightPdf;
+}
+
+constexpr float _reflectionOnlyEps = 1.0e-6f;
+
+inline bool
+_IsEffectivelyZero(float value)
+{
+    return value <= _reflectionOnlyEps;
+}
+
+inline bool
+_IsEffectivelyOpaque(float value)
+{
+    return value >= 1.0f - _reflectionOnlyEps;
+}
+
+bool
+_IsReflectionOnlyNode(
+    mxcpp::Bsdf::ClosureTree const& tree,
+    mxcpp::Bsdf::NodeId nodeId)
+{
+    const mxcpp::Bsdf::Node* const node = tree.Get(nodeId);
+    if (!node) {
+        return false;
+    }
+
+    return std::visit(
+        [&](auto const& data) -> bool {
+            using T = std::decay_t<decltype(data)>;
+            if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::OrenNayarDiffuseData> ||
+                std::is_same_v<T, mxcpp::Bsdf::BurleyDiffuseData> ||
+                std::is_same_v<T, mxcpp::Bsdf::ConductorData> ||
+                std::is_same_v<T, mxcpp::Bsdf::SheenData>) {
+                return true;
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::DielectricData>) {
+                return _IsEffectivelyZero(data.weight) ||
+                       data.scatterMode == mxcpp::Bsdf::ScatterMode::Reflection;
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::GeneralizedSchlickData>) {
+                return _IsEffectivelyZero(data.weight) ||
+                       data.scatterMode == mxcpp::Bsdf::ScatterMode::Reflection;
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::AdobeOpenPbrData>) {
+                return _IsEffectivelyOpaque(data.geometryOpacity) &&
+                       _IsEffectivelyZero(data.transmissionWeight) &&
+                       _IsEffectivelyZero(data.subsurfaceWeight);
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::TranslucentData> ||
+                std::is_same_v<T, mxcpp::Bsdf::SubsurfaceData>) {
+                return _IsEffectivelyZero(data.weight);
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::MixData>) {
+                if (_IsEffectivelyZero(data.mix)) {
+                    return _IsReflectionOnlyNode(tree, data.bg);
+                }
+                if (_IsEffectivelyOpaque(data.mix)) {
+                    return _IsReflectionOnlyNode(tree, data.fg);
+                }
+                return _IsReflectionOnlyNode(tree, data.fg) &&
+                       _IsReflectionOnlyNode(tree, data.bg);
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::LayerData>) {
+                return _IsReflectionOnlyNode(tree, data.top) &&
+                       _IsReflectionOnlyNode(tree, data.base);
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::AddData>) {
+                return _IsReflectionOnlyNode(tree, data.in1) &&
+                       _IsReflectionOnlyNode(tree, data.in2);
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::MultiplyData>) {
+                return _IsReflectionOnlyNode(tree, data.input);
+            } else {
+                return false;
+            }
+        },
+        node->data);
+}
+
+bool
+_IsReflectionOnlyClosure(mxcpp::SurfaceClosure const& closure)
+{
+    if (!_IsEffectivelyOpaque(closure.presence) ||
+        !_IsEffectivelyOpaque(closure.opacity) ||
+        closure.HasSubsurfaceScattering()) {
+        return false;
+    }
+
+    if (closure.HasBsdfTree()) {
+        return _IsReflectionOnlyNode(closure.bsdfTree, closure.bsdfTree.root);
+    }
+
+    return _IsEffectivelyZero(closure.transmission) &&
+           _IsEffectivelyZero(closure.subsurfaceWeight);
 }
 
 inline mxcpp::Mat4f
@@ -2970,6 +3083,10 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
 
     const int N = _lightSamplesPerHit;
     const float invN = 1.0f / static_cast<float>(N);
+    const HdEmbreeLightSampler::SamplingMode lightSamplingMode =
+        (closure && _IsReflectionOnlyClosure(*closure))
+            ? HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere
+            : HdEmbreeLightSampler::SamplingMode::FullSphere;
 
     // For stratification: compute grid dimensions for N samples.
     // Find the largest sqrtN such that sqrtN*sqrtN <= N, then
@@ -3005,7 +3122,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
 
             HdEmbreeLightSampler::LightSample ls =
                 HdEmbreeLightSampler::GetLightSample(
-                light, position, normal, u1, u2);
+                    light, position, normal, u1, u2, lightSamplingMode);
             if (GfIsClose(ls.Li, GfVec3f(0.0f), _minLuminanceCutoff)) {
                 continue;
             }
@@ -3079,15 +3196,8 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 }
             }
 
-            // Firefly clamping.
-            if (_fireflyClampThreshold > 0.0f) {
-                float lum = 0.2126f * sampleContrib[0]
-                          + 0.7152f * sampleContrib[1]
-                          + 0.0722f * sampleContrib[2];
-                if (lum > _fireflyClampThreshold) {
-                    sampleContrib *= _fireflyClampThreshold / lum;
-                }
-            }
+            sampleContrib = _ClampFireflyContribution(
+                sampleContrib, _fireflyClampThreshold);
 
             lightContrib += sampleContrib;
         }
@@ -3197,14 +3307,8 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
                     GfCompMult(ls.Li, vis) * phasePdf * ls.invPdfW * misW;
             }
 
-            if (_fireflyClampThreshold > 0.0f) {
-                const float lum = 0.2126f * sampleContrib[0]
-                                + 0.7152f * sampleContrib[1]
-                                + 0.0722f * sampleContrib[2];
-                if (lum > _fireflyClampThreshold) {
-                    sampleContrib *= _fireflyClampThreshold / lum;
-                }
-            }
+            sampleContrib = _ClampFireflyContribution(
+                sampleContrib, _fireflyClampThreshold);
 
             lightContrib += sampleContrib;
         }
@@ -3249,6 +3353,11 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
         return _IsNearlyBlack(rgbThroughput(), _minLuminanceCutoff);
     };
 
+    const auto clampRadiance = [&](GfVec3f const& contribution) {
+        return _ClampFireflyContribution(
+            contribution, _fireflyClampThreshold);
+    };
+
     const auto addFiniteLightHit = [&]() {
         GfVec3f lightContrib = input.finiteLightHit.Li;
         if (state->lastBsdfPdf > 0.0f &&
@@ -3268,11 +3377,13 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
         if (hero.active) {
             const float spectralLight =
                 _RgbToSpectralValue(lightContrib, hero);
-            state->radiance += _SpectralValueToRgb(
-                state->spectralThroughput * spectralLight,
-                hero);
+            state->radiance += clampRadiance(
+                _SpectralValueToRgb(
+                    state->spectralThroughput * spectralLight,
+                    hero));
         } else {
-            state->radiance += GfCompMult(state->throughput, lightContrib);
+            state->radiance += clampRadiance(
+                GfCompMult(state->throughput, lightContrib));
         }
 
         return _VolumeTransmissionResult::Terminate;
@@ -3350,9 +3461,11 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
                 hero.wavelengthNm,
                 hero.pdf);
             if (hero.active) {
-                state->radiance += direct * state->spectralThroughput;
+                state->radiance += clampRadiance(
+                    direct * state->spectralThroughput);
             } else {
-                state->radiance += GfCompMult(state->throughput, direct);
+                state->radiance += clampRadiance(
+                    GfCompMult(state->throughput, direct));
             }
 
             if (input.bounce >= _maxBounces) {
@@ -3471,6 +3584,9 @@ HdEmbreeRenderer::_TracePath(
     GfVec3f rayDir = dir;
     float lastBsdfPdf = 0.0f;
     bool lastScatterWasMedium = false;
+    HdEmbreeLightSampler::SamplingMode lastLightSamplingMode =
+        HdEmbreeLightSampler::SamplingMode::FullSphere;
+    GfVec3f lastLightSamplingNormal(0.0f);
     bool isFirstBounce = true;
     bool anyNonSpecularBounces = false;
     bool useSyntheticLambertian = false;
@@ -3483,6 +3599,11 @@ HdEmbreeRenderer::_TracePath(
     GfVec3f lastDndu(0.0f), lastDndv(0.0f);
     GfVec3f lastDpdx(0.0f), lastDpdy(0.0f);
     float lastDudx = 0, lastDvdx = 0, lastDudy = 0, lastDvdy = 0;
+
+    const auto addRadiance = [&](GfVec3f const& contribution) {
+        radiance += _ClampFireflyContribution(
+            contribution, _fireflyClampThreshold);
+    };
 
     for (int bounce = 0; bounce <= _maxBounces; ++bounce) {
         // QMC padding: reset the sampler so each bounce independently
@@ -3585,11 +3706,12 @@ HdEmbreeRenderer::_TracePath(
             if (hero.active) {
                 const float spectralLight =
                     _RgbToSpectralValue(lightContrib, hero);
-                radiance += _SpectralValueToRgb(
-                    spectralThroughput * spectralLight,
-                    hero);
+                addRadiance(
+                    _SpectralValueToRgb(
+                        spectralThroughput * spectralLight,
+                        hero));
             } else {
-                radiance += GfCompMult(throughput, lightContrib);
+                addRadiance(GfCompMult(throughput, lightContrib));
             }
             break;
         }
@@ -3600,9 +3722,22 @@ HdEmbreeRenderer::_TracePath(
                 if (!dome->LightData().visible) {
                     continue;
                 }
-                HdEmbreeLightSampler::LightSample ls =
-                    HdEmbreeLightSampler::EvaluateDomeLightDirection(
+                const HdEmbreeLightSampler::SamplingMode domeSamplingMode =
+                    (!lastScatterWasMedium)
+                        ? lastLightSamplingMode
+                        : HdEmbreeLightSampler::SamplingMode::FullSphere;
+                HdEmbreeLightSampler::LightSample ls;
+                if (domeSamplingMode ==
+                    HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere) {
+                    ls = HdEmbreeLightSampler::EvaluateDomeLightDirection(
+                        dome->LightData(),
+                        rayDir,
+                        lastLightSamplingNormal,
+                        domeSamplingMode);
+                } else {
+                    ls = HdEmbreeLightSampler::EvaluateDomeLightDirection(
                         dome->LightData(), rayDir);
+                }
                 GfVec3f domeContrib = ls.Li;
 
                 if (!isFirstBounce && lastBsdfPdf > 0.0f) {
@@ -3621,11 +3756,12 @@ HdEmbreeRenderer::_TracePath(
                 if (hero.active) {
                     const float spectralDome =
                         _RgbToSpectralValue(domeContrib, hero);
-                    radiance += _SpectralValueToRgb(
-                        spectralThroughput * spectralDome,
-                        hero);
+                    addRadiance(
+                        _SpectralValueToRgb(
+                            spectralThroughput * spectralDome,
+                            hero));
                 } else {
-                    radiance += GfCompMult(throughput, domeContrib);
+                    addRadiance(GfCompMult(throughput, domeContrib));
                 }
             }
             break;
@@ -3988,11 +4124,13 @@ HdEmbreeRenderer::_TracePath(
             if (hero.active) {
                 const float spectralEmissive = mxcpp::Spectral::RgbToSpectralValue(
                     closure.emissiveColor, hero.wavelengthNm);
-                radiance += _SpectralValueToRgb(
-                    spectralThroughput * spectralEmissive,
-                    hero);
+                addRadiance(
+                    _SpectralValueToRgb(
+                        spectralThroughput * spectralEmissive,
+                        hero));
             } else {
-                radiance += GfCompMult(throughput, _ToGf(closure.emissiveColor));
+                addRadiance(
+                    GfCompMult(throughput, _ToGf(closure.emissiveColor)));
             }
         }
 
@@ -4034,9 +4172,9 @@ HdEmbreeRenderer::_TracePath(
                 hero.pdf);
         }
         if (hero.active) {
-            radiance += direct * spectralThroughput;
+            addRadiance(direct * spectralThroughput);
         } else {
-            radiance += GfCompMult(throughput, direct);
+            addRadiance(GfCompMult(throughput, direct));
         }
 
         // --- Stop after last allowed bounce ---
@@ -4083,6 +4221,11 @@ HdEmbreeRenderer::_TracePath(
 
         lastBsdfPdf = bs.isSpecular ? 0.0f : bs.pdf;
         lastScatterWasMedium = false;
+        lastLightSamplingMode =
+            (!bs.isSpecular && _IsReflectionOnlyClosure(closure))
+                ? HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere
+                : HdEmbreeLightSampler::SamplingMode::FullSphere;
+        lastLightSamplingNormal = normal;
         if (!bs.isSpecular) {
             anyNonSpecularBounces = true;
         }
