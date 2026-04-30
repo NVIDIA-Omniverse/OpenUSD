@@ -34,6 +34,7 @@
 #include <mutex>
 
 namespace mxcpp {
+struct AdobeOpenPbrPreparedSurface;
 struct ShadingContext;
 struct SurfaceClosure;
 class TextureSystem;
@@ -293,7 +294,9 @@ private:
         HdEmbreeMediumState const& mediumState = HdEmbreeMediumState(),
         bool spectralActive = false,
         float heroWavelengthNm = 0.0f,
-        float heroWavelengthPdf = 0.0f) const;
+        float heroWavelengthPdf = 0.0f,
+        mxcpp::AdobeOpenPbrPreparedSurface const*
+            adobeOpenPbrSurface = nullptr) const;
 
     GfVec3f _ComputeMediumDirectLighting(
         GfVec3f const& position,

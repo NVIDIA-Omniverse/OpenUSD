@@ -17,6 +17,7 @@ namespace mxcpp {
 struct EvalOptions
 {
     bool useAdobeOpenPBR = false;
+    bool visibilityOnly = false;
 };
 
 /// \class EvalGraph

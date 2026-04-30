@@ -384,6 +384,9 @@ EvalGraph::_EvalMaterialModel(
     }
     if (modelType == _kOpenPbr) {
         if (options.useAdobeOpenPBR) {
+            if (options.visibilityOnly) {
+                return EvalAdobeOpenPbrVisibility(params);
+            }
             return EvalAdobeOpenPbr(params);
         }
         return EvalOpenPbr(params);

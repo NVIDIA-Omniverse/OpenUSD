@@ -15,6 +15,7 @@
 #include "pxr/imaging/plugin/hdEmbree/mesh.h"
 #include "pxr/imaging/plugin/hdEmbree/renderBuffer.h"
 #include "pxr/imaging/plugin/hdEmbree/sss.h"
+#include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/materials/adobeOpenPbr.h"
 #include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/materials/bsdf.h"
 #include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/shadingContext.h"
 #include "pxr/imaging/plugin/hdEmbree/MaterialXCpp/spectral.h"
@@ -2685,6 +2686,7 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
         ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
         mxcpp::EvalOptions evalOptions;
         evalOptions.useAdobeOpenPBR = _useAdobeOpenPBR;
+        evalOptions.visibilityOnly = true;
         *outClosure = evalGraph->Evaluate(ctx, evalOptions);
         return true;
     } catch (...) {
@@ -2709,6 +2711,17 @@ HdEmbreeRenderer::_Visibility(
     GfVec3f rayOrigin = _OffsetRayOrigin(position, normal, direction, kRayBias);
     float remaining = dist;
 
+    const auto evalShadowTransmittance = [&](float distance) {
+        const bool useAdobeVolumeTransport =
+            _useAdobeOpenPBR &&
+            shadowMedium.medium.transportModel ==
+                mxcpp::MediumTransportModel::AdobeOpenPBR;
+        return _ToGf(useAdobeVolumeTransport
+            ? mxcpp::AdobeOpenPbrEvalVolumeTransmittance(
+                  shadowMedium.medium, distance)
+            : mxcpp::EvalBeerTransmittance(shadowMedium.medium, distance));
+    };
+
     for (int i = 0; i < kMaxTransparentHits; ++i) {
         RTCRayHit rayHit;
         rayHit.ray.flags = 0;
@@ -2720,9 +2733,7 @@ HdEmbreeRenderer::_Visibility(
             if (shadowMedium.active && remaining > 0.0f) {
                 visibility = GfCompMult(
                     visibility,
-                    _ToGf(mxcpp::EvalBeerTransmittance(
-                        shadowMedium.medium,
-                        remaining)));
+                    evalShadowTransmittance(remaining));
             }
             return visibility;
         }
@@ -2731,9 +2742,7 @@ HdEmbreeRenderer::_Visibility(
         if (shadowMedium.active && hitDist > 0.0f) {
             visibility = GfCompMult(
                 visibility,
-                _ToGf(mxcpp::EvalBeerTransmittance(
-                    shadowMedium.medium,
-                    hitDist)));
+                evalShadowTransmittance(hitDist));
         }
         if (_IsNearlyBlack(visibility, kVisThreshold)) {
             return GfVec3f(0.0f);
@@ -3075,7 +3084,8 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
     HdEmbreeMediumState const& mediumState,
     bool spectralActive,
     float heroWavelengthNm,
-    float heroWavelengthPdf) const
+    float heroWavelengthPdf,
+    mxcpp::AdobeOpenPbrPreparedSurface const* adobeOpenPbrSurface) const
 {
     const _HeroWavelengthState hero{
         spectralActive, heroWavelengthNm, heroWavelengthPdf};
@@ -3143,12 +3153,39 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
 
             GfVec3f sampleContrib(0.0f);
             if (closure) {
-                GfVec3f bsdfValue = _ToGf(mxcpp::Bsdf::EvalSurface(
-                    *closure,
-                    _ToMx(normal),
-                    _ToMx(ls.wI),
-                    _ToMx(wo),
-                    heroWavelengthNm));
+                const mxcpp::Vec3f normalMx = _ToMx(normal);
+                const mxcpp::Vec3f wiMx = _ToMx(ls.wI);
+                const mxcpp::Vec3f woMx = _ToMx(wo);
+                const mxcpp::AdobeOpenPbrEvalPdfResult adobeEvalPdf =
+                    (adobeOpenPbrSurface && adobeOpenPbrSurface->valid)
+                    ? mxcpp::EvalPdfPreparedAdobeOpenPbrSurface(
+                          *adobeOpenPbrSurface,
+                          wiMx)
+                    : mxcpp::TryEvalPdfAdobeOpenPbrSurface(
+                          *closure,
+                          normalMx,
+                          wiMx,
+                          woMx);
+
+                GfVec3f bsdfValue(0.0f);
+                float bsdfPdf = 0.0f;
+                if (adobeEvalPdf.evaluated) {
+                    bsdfValue = _ToGf(adobeEvalPdf.value);
+                    bsdfPdf = adobeEvalPdf.pdf;
+                } else {
+                    bsdfValue = _ToGf(mxcpp::Bsdf::EvalSurface(
+                        *closure,
+                        normalMx,
+                        wiMx,
+                        woMx,
+                        heroWavelengthNm));
+                    bsdfPdf = mxcpp::Bsdf::PdfSurface(
+                        *closure,
+                        normalMx,
+                        wiMx,
+                        woMx,
+                        heroWavelengthNm);
+                }
 
                 for (int i = 0; i < 3; ++i) {
                     if (!std::isfinite(bsdfValue[i])) bsdfValue[i] = 0.0f;
@@ -3160,12 +3197,6 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 // averaging is handled outside).
                 float lightPdf = (ls.invPdfW > 0.0f)
                     ? 1.0f / ls.invPdfW : 0.0f;
-                float bsdfPdf = mxcpp::Bsdf::PdfSurface(
-                    *closure,
-                    _ToMx(normal),
-                    _ToMx(ls.wI),
-                    _ToMx(wo),
-                    heroWavelengthNm);
                 float misW = mxcpp::Bsdf::PowerHeuristic(lightPdf, bsdfPdf);
 
                 if (hero.active) {
@@ -3222,6 +3253,10 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
     if (!mediumState.active || mediumState.medium.IsAbsorbingOnly()) {
         return GfVec3f(0.0f);
     }
+    const bool useAdobeVolumeTransport =
+        _useAdobeOpenPBR &&
+        mediumState.medium.transportModel ==
+            mxcpp::MediumTransportModel::AdobeOpenPBR;
 
     GfVec3f finalColor(0.0f);
     const int N = _lightSamplesPerHit;
@@ -3273,10 +3308,15 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
                 continue;
             }
 
-            const float phasePdf = mxcpp::PdfHenyeyGreenstein(
-                _ToMx(ls.wI),
-                _ToMx(wo),
-                mediumState.medium.anisotropy);
+            const float phasePdf = useAdobeVolumeTransport
+                ? mxcpp::AdobeOpenPbrEvalVolumePhasePdf(
+                      mediumState.medium,
+                      _ToMx(ls.wI),
+                      _ToMx(wo))
+                : mxcpp::PdfHenyeyGreenstein(
+                      _ToMx(ls.wI),
+                      _ToMx(wo),
+                      mediumState.medium.anisotropy);
             if (phasePdf <= 0.0f) {
                 continue;
             }
@@ -3390,33 +3430,54 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
     };
 
     const mxcpp::MediumProperties& medium = mediumState.medium;
+    const bool useAdobeVolumeTransport =
+        _useAdobeOpenPBR &&
+        medium.transportModel == mxcpp::MediumTransportModel::AdobeOpenPBR;
 
     if (!medium.IsAbsorbingOnly()) {
-        const GfVec3f sigmaT = _ToGf(medium.SigmaT());
-        const GfVec3f sigmaS = _ToGf(medium.sigmaS);
-        GfVec3f albedo(0.0f);
-        for (int i = 0; i < 3; ++i) {
-            if (sigmaT[i] > 1.0e-6f) {
-                albedo[i] = std::clamp(sigmaS[i] / sigmaT[i], 0.0f, 1.0f);
-            }
-        }
+        GfVec3f sigmaT(0.0f);
+        GfVec3f sigmaS(0.0f);
+        GfVec3f channelPdf(0.0f);
+        int channel = 0;
 
-        mxcpp::Vec3f channelPdfMx;
-        const int channel = mxcpp::ChannelMIS(
-            _ToMx(rgbThroughput()),
-            _ToMx(albedo),
-            sampler.Next(),
-            &channelPdfMx);
-        const GfVec3f channelPdf =
-            GfVec3f(channelPdfMx[0], channelPdfMx[1], channelPdfMx[2]);
+        if (!useAdobeVolumeTransport) {
+            sigmaT = _ToGf(medium.SigmaT());
+            sigmaS = _ToGf(medium.sigmaS);
+            GfVec3f albedo(0.0f);
+            for (int i = 0; i < 3; ++i) {
+                if (sigmaT[i] > 1.0e-6f) {
+                    albedo[i] =
+                        std::clamp(sigmaS[i] / sigmaT[i], 0.0f, 1.0f);
+                }
+            }
+
+            mxcpp::Vec3f channelPdfMx;
+            channel = mxcpp::ChannelMIS(
+                _ToMx(rgbThroughput()),
+                _ToMx(albedo),
+                sampler.Next(),
+                &channelPdfMx);
+            channelPdf =
+                GfVec3f(channelPdfMx[0], channelPdfMx[1], channelPdfMx[2]);
+        }
 
         // Chiang channel MIS: sample a single RGB tracking channel, but
         // evaluate all RGB channels against the mixture pdf.
         const auto evalTransmittance = [&](float distance) {
-            return _ToGf(mxcpp::EvalBeerTransmittance(medium, distance));
+            return _ToGf(useAdobeVolumeTransport
+                ? mxcpp::AdobeOpenPbrEvalVolumeTransmittance(
+                      medium, distance)
+                : mxcpp::EvalBeerTransmittance(medium, distance));
         };
 
         const auto evalScatterWeight = [&](float distance) {
+            if (useAdobeVolumeTransport) {
+                return _ToGf(
+                    mxcpp::AdobeOpenPbrCalculateVolumeEventWeight(
+                        medium,
+                        _ToMx(rgbThroughput()),
+                        distance));
+            }
             const GfVec3f transmittance = evalTransmittance(distance);
             const GfVec3f pdf = GfCompMult(sigmaT, transmittance);
             const GfVec3f sampleContrib =
@@ -3429,6 +3490,13 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
         };
 
         const auto evalTransmittanceWeight = [&](float distance) {
+            if (useAdobeVolumeTransport) {
+                return _ToGf(
+                    mxcpp::AdobeOpenPbrCalculateVolumeSurfaceWeight(
+                        medium,
+                        _ToMx(rgbThroughput()),
+                        distance));
+            }
             const GfVec3f transmittance = evalTransmittance(distance);
             const float denom = GfDot(channelPdf, transmittance);
             if (!std::isfinite(denom) || denom <= _volumePdfEps) {
@@ -3437,8 +3505,12 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
             return transmittance * (1.0f / denom);
         };
 
-        const float scatterDist =
-            mxcpp::SampleFreeFlightChannel(medium, channel, sampler.Next());
+        const float scatterDist = useAdobeVolumeTransport
+            ? mxcpp::AdobeOpenPbrSampleVolumeEventDistance(
+                  medium,
+                  _ToMx(rgbThroughput()),
+                  sampler.Next())
+            : mxcpp::SampleFreeFlightChannel(medium, channel, sampler.Next());
         const float maxTravelDist =
             std::min(input.surfaceDist, input.finiteLightDist);
         if (scatterDist < maxTravelDist) {
@@ -3496,15 +3568,26 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
                 }
             }
 
-            const GfVec3f wi = _ToGf(mxcpp::SampleHenyeyGreenstein(
-                _ToMx(wo),
-                medium.anisotropy,
-                sampler.Next(),
-                sampler.Next()));
-            const float phasePdf = mxcpp::PdfHenyeyGreenstein(
-                _ToMx(wi),
-                _ToMx(wo),
-                medium.anisotropy);
+            const GfVec3f wi = _ToGf(useAdobeVolumeTransport
+                ? mxcpp::AdobeOpenPbrSampleVolumePhase(
+                      medium,
+                      _ToMx(wo),
+                      sampler.Next(),
+                      sampler.Next())
+                : mxcpp::SampleHenyeyGreenstein(
+                      _ToMx(wo),
+                      medium.anisotropy,
+                      sampler.Next(),
+                      sampler.Next()));
+            const float phasePdf = useAdobeVolumeTransport
+                ? mxcpp::AdobeOpenPbrEvalVolumePhasePdf(
+                      medium,
+                      _ToMx(wi),
+                      _ToMx(wo))
+                : mxcpp::PdfHenyeyGreenstein(
+                      _ToMx(wi),
+                      _ToMx(wo),
+                      medium.anisotropy);
             if (phasePdf <= 0.0f || !std::isfinite(phasePdf)) {
                 return _VolumeTransmissionResult::Terminate;
             }
@@ -3540,8 +3623,11 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
     } else if (input.hasFiniteLightHit &&
                input.finiteLightDist < input.surfaceDist &&
                input.finiteLightDist > 0.0f) {
-        const GfVec3f transmittance = _ToGf(
-            mxcpp::EvalBeerTransmittance(medium, input.finiteLightDist));
+        const GfVec3f transmittance = _ToGf(useAdobeVolumeTransport
+            ? mxcpp::AdobeOpenPbrEvalVolumeTransmittance(
+                  medium, input.finiteLightDist)
+            : mxcpp::EvalBeerTransmittance(
+                  medium, input.finiteLightDist));
         applyWeight(transmittance);
 
         if (throughputIsBlack()) {
@@ -3550,8 +3636,11 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
 
         return addFiniteLightHit();
     } else if (std::isfinite(input.surfaceDist) && input.surfaceDist > 0.0f) {
-        const GfVec3f transmittance = _ToGf(
-            mxcpp::EvalBeerTransmittance(medium, input.surfaceDist));
+        const GfVec3f transmittance = _ToGf(useAdobeVolumeTransport
+            ? mxcpp::AdobeOpenPbrEvalVolumeTransmittance(
+                  medium, input.surfaceDist)
+            : mxcpp::EvalBeerTransmittance(
+                  medium, input.surfaceDist));
         applyWeight(transmittance);
     } else {
         return _VolumeTransmissionResult::Terminate;
@@ -3960,13 +4049,29 @@ HdEmbreeRenderer::_TracePath(
             spectralThroughput = _RgbToSpectralValue(throughput, hero);
         }
 
+        mxcpp::AdobeOpenPbrPreparedSurface adobeOpenPbrSurface;
+        if (hasClosure) {
+            adobeOpenPbrSurface = mxcpp::PrepareAdobeOpenPbrSurface(
+                closure,
+                _ToMx(normal),
+                _ToMx(wo));
+        }
+
         mxcpp::Bsdf::BsdfSample bs;
         bool hasBsdfSample = false;
         if (hasClosure && bounce < _maxBounces) {
-            bs = mxcpp::Bsdf::SampleSurface(
-                closure, _ToMx(normal), _ToMx(wo),
-                sampler.Next(), sampler.Next(), sampler.Next(),
-                hero.wavelengthNm);
+            if (adobeOpenPbrSurface.valid) {
+                bs = mxcpp::SamplePreparedAdobeOpenPbrSurface(
+                    adobeOpenPbrSurface,
+                    sampler.Next(),
+                    sampler.Next(),
+                    sampler.Next());
+            } else {
+                bs = mxcpp::Bsdf::SampleSurface(
+                    closure, _ToMx(normal), _ToMx(wo),
+                    sampler.Next(), sampler.Next(), sampler.Next(),
+                    hero.wavelengthNm);
+            }
             hasBsdfSample = bs.isSubsurface || bs.pdf > 0.0f;
         }
 
@@ -4147,7 +4252,8 @@ HdEmbreeRenderer::_TracePath(
                 currentMedium,
                 hero.active,
                 hero.wavelengthNm,
-                hero.pdf);
+                hero.pdf,
+                adobeOpenPbrSurface.valid ? &adobeOpenPbrSurface : nullptr);
         } else {
             GfVec3f matColor = _enableSceneColors
                 ? _ToGf(ctx.displayColor) : GfVec3f(0.5f);

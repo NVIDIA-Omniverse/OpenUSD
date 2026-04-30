@@ -733,6 +733,7 @@ TestAdobeOpenPbrBuildsWholeBackendNode()
 
     const SurfaceClosure closure = EvalAdobeOpenPbr(params);
 #ifdef PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR
+    const SurfaceClosure visibilityClosure = EvalAdobeOpenPbrVisibility(params);
     const auto* root = closure.bsdfTree.Get(closure.bsdfTree.root);
     if (!root ||
         !std::holds_alternative<Bsdf::AdobeOpenPbrData>(root->data)) {
@@ -742,9 +743,77 @@ TestAdobeOpenPbrBuildsWholeBackendNode()
     if (!Test_IsClose(closure.baseColor, Vec3f(0.25f, 0.5f, 0.75f), 1e-4f)) {
         return false;
     }
-    return closure.hasInteriorMedium;
+    if (visibilityClosure.HasBsdfTree() ||
+        !Test_IsClose(visibilityClosure.transmission, 0.5f, 1e-4f)) {
+        printf("    Expected lightweight Adobe OpenPBR visibility closure\n");
+        return false;
+    }
+    return closure.hasInteriorMedium &&
+           closure.interiorMedium.transportModel ==
+               MediumTransportModel::AdobeOpenPBR &&
+           visibilityClosure.hasInteriorMedium &&
+           visibilityClosure.interiorMedium.transportModel ==
+               MediumTransportModel::AdobeOpenPBR &&
+           visibilityClosure.interiorMedium.adobeOpenPbrVolume.valid;
 #else
     return closure.HasBsdfTree();
+#endif
+}
+
+static bool
+TestAdobeOpenPbrEvalPdfSurfaceMatchesSeparateCalls()
+{
+    ParamMap params;
+    params["base_color"] = Value(Vec3f(0.25f, 0.5f, 0.75f));
+    params["specular_roughness"] = Value(0.35f);
+    params["transmission_weight"] = Value(0.25f);
+
+    const SurfaceClosure closure = EvalAdobeOpenPbr(params);
+    const Vec3f normal(0.0f, 0.0f, 1.0f);
+    Vec3f wi(0.2f, -0.1f, 0.97f);
+    wi.normalize();
+    const Vec3f wo(0.0f, 0.0f, 1.0f);
+
+    const AdobeOpenPbrEvalPdfResult combined =
+        TryEvalPdfAdobeOpenPbrSurface(closure, normal, wi, wo);
+#ifdef PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR
+    if (!combined.evaluated) {
+        printf("    Expected combined Adobe OpenPBR eval/pdf path\n");
+        return false;
+    }
+
+    const auto* root = closure.bsdfTree.Get(closure.bsdfTree.root);
+    const auto* data = root
+        ? std::get_if<Bsdf::AdobeOpenPbrData>(&root->data)
+        : nullptr;
+    if (!data) {
+        printf("    Expected Adobe OpenPBR backend data\n");
+        return false;
+    }
+
+    const Vec3f separateValue = EvalAdobeOpenPbr(*data, normal, wi, wo);
+    const float separatePdf = PdfAdobeOpenPbr(*data, normal, wi, wo);
+    const AdobeOpenPbrPreparedSurface prepared =
+        PrepareAdobeOpenPbrSurface(closure, normal, wo);
+    const AdobeOpenPbrEvalPdfResult preparedEvalPdf =
+        EvalPdfPreparedAdobeOpenPbrSurface(prepared, wi);
+    const Bsdf::BsdfSample separateSample =
+        SampleAdobeOpenPbr(*data, normal, wo, 0.23f, 0.47f, 0.61f);
+    const Bsdf::BsdfSample preparedSample =
+        SamplePreparedAdobeOpenPbrSurface(prepared, 0.23f, 0.47f, 0.61f);
+
+    return prepared.valid &&
+           Test_IsClose(combined.value, separateValue, 1e-5f) &&
+           Test_IsClose(combined.pdf, separatePdf, 1e-5f) &&
+           Test_IsClose(preparedEvalPdf.value, separateValue, 1e-5f) &&
+           Test_IsClose(preparedEvalPdf.pdf, separatePdf, 1e-5f) &&
+           Test_IsClose(preparedSample.wi, separateSample.wi, 1e-5f) &&
+           Test_IsClose(preparedSample.f, separateSample.f, 1e-5f) &&
+           Test_IsClose(preparedSample.pdf, separateSample.pdf, 1e-5f) &&
+           preparedSample.isSpecular == separateSample.isSpecular &&
+           Test_IsClose(preparedSample.eta, separateSample.eta, 1e-5f);
+#else
+    return !combined.evaluated;
 #endif
 }
 
@@ -1678,6 +1747,7 @@ Test_RegisterMaterialTests()
     _REG(TestOpenPbrMetalUsesF82TintSemantics);
     _REG(TestOpenPbrTransmission);
     _REG(TestAdobeOpenPbrBuildsWholeBackendNode);
+    _REG(TestAdobeOpenPbrEvalPdfSurfaceMatchesSeparateCalls);
     _REG(TestOpenPbrRegularVolumeDoesNotDoubleTintTransmission);
     _REG(TestOpenPbrLayersReflectionOverTransmissionMix);
     _REG(TestOpenPbrThinWalledUsesUnitIorTransmission);

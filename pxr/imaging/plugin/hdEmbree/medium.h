@@ -8,11 +8,27 @@
 
 namespace mxcpp {
 
+enum class MediumTransportModel
+{
+    HdEmbree,
+    AdobeOpenPBR
+};
+
+struct AdobeOpenPbrVolumeProperties
+{
+    Vec3f extinctionCoefficient = Vec3f(0.0f);
+    Vec3f albedo = Vec3f(0.0f);
+    float anisotropy = 0.0f;
+    bool valid = false;
+};
+
 struct MediumProperties
 {
     Vec3f sigmaA = Vec3f(0.0f);
     Vec3f sigmaS = Vec3f(0.0f);
     float anisotropy = 0.0f;
+    MediumTransportModel transportModel = MediumTransportModel::HdEmbree;
+    AdobeOpenPbrVolumeProperties adobeOpenPbrVolume;
 
     Vec3f SigmaT() const noexcept {
         return sigmaA + sigmaS;
