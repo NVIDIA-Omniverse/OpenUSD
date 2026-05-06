@@ -4207,14 +4207,18 @@ HdEmbreeRenderer::_TracePath(
             // hits, which in turn caused the entire path to break with
             // zero radiance (black artifacts at grazing regions).
             mxcpp::Vec3f entryDirMx;
-            const GfVec2f entrySample =
-                bounceDomain
-                    .Fork(HdEmbreeSampleDomainKey::SssEntryDirection)
-                    .Draw2D();
-            if (!mxcpp::Bsdf::SampleSubsurfaceEntry(
-                    closure, _ToMx(normal), _ToMx(wo),
-                    entrySample[0], entrySample[1], entryDirMx)) {
-                break;
+            if (bs.hasSubsurfaceEntryDirection) {
+                entryDirMx = bs.wi;
+            } else {
+                const GfVec2f entrySample =
+                    bounceDomain
+                        .Fork(HdEmbreeSampleDomainKey::SssEntryDirection)
+                        .Draw2D();
+                if (!mxcpp::Bsdf::SampleSubsurfaceEntry(
+                        closure, _ToMx(normal), _ToMx(wo),
+                        entrySample[0], entrySample[1], entryDirMx)) {
+                    break;
+                }
             }
             const GfVec3f entryDir = _ToGf(entryDirMx);
 
@@ -4265,6 +4269,18 @@ HdEmbreeRenderer::_TracePath(
                                       _ToGf(closure.subsurfaceRadiusScale));
             sssIn.anisotropy =
                 std::clamp(closure.subsurfaceAnisotropy, -0.99f, 0.99f);
+            if (closure.hasPrecomputedSubsurfaceMedium &&
+                !closure.precomputedSubsurfaceMedium.IsVacuum()) {
+                sssIn.usePrecomputedCoefficients = true;
+                sssIn.precomputedSigmaA =
+                    _ToGf(closure.precomputedSubsurfaceMedium.sigmaA);
+                sssIn.precomputedSigmaS =
+                    _ToGf(closure.precomputedSubsurfaceMedium.sigmaS);
+                sssIn.anisotropy = std::clamp(
+                    closure.precomputedSubsurfaceMedium.anisotropy,
+                    -0.99f,
+                    0.99f);
+            }
             sssIn.ior = std::max(closure.specularIor, 1.0f);
             sssIn.ownerInstanceId = rayHit.hit.instID[0];
             sssIn.ownerGeomId = rayHit.hit.geomID;

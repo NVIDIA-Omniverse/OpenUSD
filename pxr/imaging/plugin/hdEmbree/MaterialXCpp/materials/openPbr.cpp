@@ -294,7 +294,7 @@ EvalOpenPbr(const ParamMap& params)
         transmissionScatterAnisotropy);
 
     c.subsurfaceWeight = Get<float>(params, _kSubsurfaceWeight, 0.0f);
-    c.subsurfaceColor = Get<Vec3f>(params, _kSubsurfaceColor, Vec3f(1.0f));
+    c.subsurfaceColor = Get<Vec3f>(params, _kSubsurfaceColor, Vec3f(0.8f));
     // OpenPBR defines `subsurface_radius` as a *scalar* (float), broadcast to
     // per-channel via the separate `subsurface_radius_scale` color3.
     // Reading it as Vec3f here would silently fall back to the default,

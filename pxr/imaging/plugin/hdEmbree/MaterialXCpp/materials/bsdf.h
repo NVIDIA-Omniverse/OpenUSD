@@ -100,7 +100,8 @@ namespace Bsdf
         float   pdf;
         bool    isSpecular;
         bool    isSubsurface = false;
-        float eta = 1.0f;     // IOR ratio (incident/transmitted), for refraction differential propagation
+        bool    hasSubsurfaceEntryDirection = false;
+        float   eta = 1.0f;     // IOR ratio (incident/transmitted), for refraction differential propagation
     };
 
     /// Cosine-weighted hemisphere sampling for Lambertian diffuse.

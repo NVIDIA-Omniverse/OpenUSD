@@ -391,6 +391,179 @@ _CleanThroughput(const Vec3f& value)
     return result;
 }
 
+float
+_Clamp01(float value)
+{
+    if (!std::isfinite(value)) {
+        return 0.0f;
+    }
+    return std::clamp(value, 0.0f, 1.0f);
+}
+
+bool
+_IsEffectivelyZero(float value)
+{
+    return std::abs(value) <= _kEpsilon;
+}
+
+bool
+_HasPositiveSubsurfaceRadius(const Bsdf::AdobeOpenPbrData& data)
+{
+    const Vec3f radius = data.subsurfaceRadiusScale * data.subsurfaceRadius;
+    return radius[0] > _kEpsilon ||
+           radius[1] > _kEpsilon ||
+           radius[2] > _kEpsilon;
+}
+
+bool
+_IsPureThickSubsurface(const Bsdf::AdobeOpenPbrData& data)
+{
+    return !data.geometryThinWalled &&
+           data.subsurfaceWeight > _kEpsilon &&
+           data.baseMetalness < 1.0f - _kEpsilon &&
+           _IsEffectivelyZero(data.transmissionWeight) &&
+           _HasPositiveSubsurfaceRadius(data);
+}
+
+struct _AdobeSurfaceSampleResult
+{
+    Bsdf::BsdfSample sample{
+        Vec3f(0.0f),
+        Vec3f(0.0f),
+        0.0f,
+        false
+    };
+    Vec3f throughputWeight = Vec3f(0.0f);
+    OpenPBR_BsdfLobeType sampledType = OpenPBR_BsdfLobeTypeNone;
+    bool valid = false;
+};
+
+_AdobeSurfaceSampleResult
+_SamplePreparedAdobeOpenPbrSurfaceRaw(
+    const AdobeOpenPbrPreparedSurfaceState& state,
+    float u1,
+    float u2,
+    float uLobe)
+{
+    _AdobeSurfaceSampleResult result;
+
+    vec3 lightDirection(0.0f);
+    OpenPBR_DiffuseSpecular weight;
+    float pdf = 0.0f;
+    OpenPBR_BsdfLobeType sampledType = OpenPBR_BsdfLobeTypeNone;
+    openpbr_sample(
+        state.prepared,
+        vec3(u1, u2, uLobe),
+        lightDirection,
+        weight,
+        pdf,
+        sampledType);
+
+    if (!std::isfinite(pdf) || pdf <= 0.0f) {
+        return result;
+    }
+
+    const Vec3f wi = _NormalizeOrFallback(
+        _FromOpenPbr(lightDirection),
+        state.normal);
+    const Vec3f weightSum =
+        _CleanNonnegative(_FromOpenPbr(openpbr_get_sum_of_diffuse_specular(weight)));
+    const bool isSpecular =
+        (sampledType & OpenPBR_BsdfLobeTypeSpecular) != 0;
+
+    Vec3f f(0.0f);
+    if (isSpecular) {
+        f = weightSum;
+    } else {
+        const float cosThetaI = std::abs(Dot(state.normal, wi));
+        if (cosThetaI <= _kEpsilon) {
+            return result;
+        }
+        f = weightSum * (state.presence * pdf / cosThetaI);
+    }
+
+    result.sample = Bsdf::BsdfSample{
+        wi,
+        _CleanNonnegative(f),
+        pdf,
+        isSpecular
+    };
+    result.throughputWeight = weightSum;
+    result.sampledType = sampledType;
+    result.valid = true;
+
+    const bool isSpecularTransmission =
+        isSpecular &&
+        ((sampledType & OpenPBR_BsdfLobeTypeTransmission) != 0);
+    if (isSpecularTransmission) {
+        const float ior = std::max(state.data.specularIor, 1.0f);
+        result.sample.eta = Dot(state.normal, state.wo) > 0.0f
+            ? (1.0f / ior)
+            : ior;
+    }
+
+    return result;
+}
+
+Bsdf::BsdfSample
+_MakeSubsurfaceMarker(float weight)
+{
+    Bsdf::BsdfSample sample{
+        Vec3f(0.0f),
+        Vec3f(std::max(weight, 0.0f)),
+        1.0f,
+        false
+    };
+    sample.isSubsurface = sample.f[0] > 0.0f ||
+                          sample.f[1] > 0.0f ||
+                          sample.f[2] > 0.0f;
+    return sample;
+}
+
+Bsdf::BsdfSample
+_SamplePureSubsurfaceFallback(
+    const AdobeOpenPbrPreparedSurfaceState& state,
+    float u1,
+    float u2,
+    float uLobe)
+{
+    const float sssProbability = _Clamp01(state.data.subsurfaceWeight);
+    if (sssProbability <= _kEpsilon) {
+        return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
+    }
+
+    if (sssProbability >= 1.0f - _kEpsilon || uLobe < sssProbability) {
+        return _MakeSubsurfaceMarker(
+            state.data.subsurfaceWeight / std::max(sssProbability, _kEpsilon));
+    }
+
+    Bsdf::AdobeOpenPbrData surfaceOnlyData = state.data;
+    surfaceOnlyData.subsurfaceWeight = 0.0f;
+
+    AdobeOpenPbrPreparedSurfaceState surfaceOnlyState;
+    surfaceOnlyState.data = surfaceOnlyData;
+    surfaceOnlyState.normal = state.normal;
+    surfaceOnlyState.wo = state.wo;
+    surfaceOnlyState.presence = state.presence;
+    surfaceOnlyState.prepared =
+        _Prepare(surfaceOnlyData, state.normal, state.wo);
+
+    const float surfaceProbability = 1.0f - sssProbability;
+    const float remappedLobe =
+        (uLobe - sssProbability) / std::max(surfaceProbability, _kEpsilon);
+    _AdobeSurfaceSampleResult surfaceSample =
+        _SamplePreparedAdobeOpenPbrSurfaceRaw(
+            surfaceOnlyState,
+            u1,
+            u2,
+            remappedLobe);
+    if (!surfaceSample.valid) {
+        return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
+    }
+    surfaceSample.sample.f *= 1.0f / std::max(surfaceProbability, _kEpsilon);
+    return surfaceSample.sample;
+}
+
 }  // namespace
 
 #endif  // PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR
@@ -428,9 +601,16 @@ EvalAdobeOpenPbr(const ParamMap& params)
     closure.subsurfaceRadius = Vec3f(data.subsurfaceRadius);
     closure.subsurfaceRadiusScale = data.subsurfaceRadiusScale;
     closure.subsurfaceAnisotropy = data.subsurfaceScatterAnisotropy;
-    closure.interiorMedium = MakeAdobeOpenPbrInteriorMedium(data);
-    closure.hasInteriorMedium =
-        !data.geometryThinWalled && !closure.interiorMedium.IsVacuum();
+    const MediumProperties adobeMedium =
+        MakeAdobeOpenPbrInteriorMedium(data);
+    if (_IsPureThickSubsurface(data)) {
+        closure.precomputedSubsurfaceMedium = adobeMedium;
+        closure.hasPrecomputedSubsurfaceMedium = !adobeMedium.IsVacuum();
+    } else {
+        closure.interiorMedium = adobeMedium;
+        closure.hasInteriorMedium =
+            !data.geometryThinWalled && !closure.interiorMedium.IsVacuum();
+    }
 
     Bsdf::ClosureTree tree;
     tree.root = tree.Add(data);
@@ -453,9 +633,11 @@ EvalAdobeOpenPbrVisibility(const ParamMap& params)
     closure.opacity = data.geometryOpacity;
     closure.presence = data.geometryOpacity;
     closure.thinWalled = data.geometryThinWalled;
-    closure.interiorMedium = MakeAdobeOpenPbrInteriorMedium(data);
-    closure.hasInteriorMedium =
-        !data.geometryThinWalled && !closure.interiorMedium.IsVacuum();
+    if (!_IsPureThickSubsurface(data)) {
+        closure.interiorMedium = MakeAdobeOpenPbrInteriorMedium(data);
+        closure.hasInteriorMedium =
+            !data.geometryThinWalled && !closure.interiorMedium.IsVacuum();
+    }
     return closure;
 #endif
 }
@@ -685,57 +867,35 @@ SamplePreparedAdobeOpenPbrSurface(
     }
     const AdobeOpenPbrPreparedSurfaceState& state = *preparedSurface.state;
 
-    vec3 lightDirection(0.0f);
-    OpenPBR_DiffuseSpecular weight;
-    float pdf = 0.0f;
-    OpenPBR_BsdfLobeType sampledType = OpenPBR_BsdfLobeTypeNone;
-    openpbr_sample(
-        state.prepared,
-        vec3(u1, u2, uLobe),
-        lightDirection,
-        weight,
-        pdf,
-        sampledType);
+    const bool pureThickSubsurface = _IsPureThickSubsurface(state.data);
+    if (pureThickSubsurface && _IsEffectivelyZero(state.data.specularWeight)) {
+        return _SamplePureSubsurfaceFallback(state, u1, u2, uLobe);
+    }
 
-    if (!std::isfinite(pdf) || pdf <= 0.0f) {
+    _AdobeSurfaceSampleResult result =
+        _SamplePreparedAdobeOpenPbrSurfaceRaw(state, u1, u2, uLobe);
+    if (!result.valid) {
+        if (pureThickSubsurface) {
+            return _SamplePureSubsurfaceFallback(state, u1, u2, uLobe);
+        }
         return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
 
-    const Vec3f wi = _NormalizeOrFallback(
-        _FromOpenPbr(lightDirection),
-        state.normal);
-    const Vec3f weightSum =
-        _CleanNonnegative(_FromOpenPbr(openpbr_get_sum_of_diffuse_specular(weight)));
-    const bool isSpecular =
-        (sampledType & OpenPBR_BsdfLobeTypeSpecular) != 0;
-
-    Vec3f f(0.0f);
-    if (isSpecular) {
-        f = weightSum;
-    } else {
-        const float cosThetaI = std::abs(Dot(state.normal, wi));
-        if (cosThetaI <= _kEpsilon) {
-            return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
-        }
-        f = weightSum * (state.presence * pdf / cosThetaI);
+    const bool sampledTransmission =
+        (result.sampledType & OpenPBR_BsdfLobeTypeTransmission) != 0;
+    if (pureThickSubsurface && sampledTransmission) {
+        Bsdf::BsdfSample sample{
+            result.sample.wi,
+            _CleanNonnegative(result.throughputWeight * state.presence),
+            1.0f,
+            false
+        };
+        sample.isSubsurface = true;
+        sample.hasSubsurfaceEntryDirection = true;
+        return sample;
     }
 
-    Bsdf::BsdfSample sample{
-        wi,
-        _CleanNonnegative(f),
-        pdf,
-        isSpecular
-    };
-    const bool isSpecularTransmission =
-        isSpecular &&
-        ((sampledType & OpenPBR_BsdfLobeTypeTransmission) != 0);
-    if (isSpecularTransmission) {
-        const float ior = std::max(state.data.specularIor, 1.0f);
-        sample.eta = Dot(state.normal, state.wo) > 0.0f
-            ? (1.0f / ior)
-            : ior;
-    }
-    return sample;
+    return result.sample;
 #endif
 }
 

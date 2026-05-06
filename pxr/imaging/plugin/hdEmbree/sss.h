@@ -30,6 +30,9 @@ struct HdEmbreeSssInput {
     GfVec3f radius;              // = subsurface_radius * radius_scale (world units, per channel)
     float anisotropy;            // clamp to [-0.99, 0.99]
     float ior;                   // clamp to >= 1.0
+    bool usePrecomputedCoefficients = false;
+    GfVec3f precomputedSigmaA = GfVec3f(0.0f);
+    GfVec3f precomputedSigmaS = GfVec3f(0.0f);
     unsigned int ownerInstanceId;
     unsigned int ownerGeomId;
     RTCScene ownerScene = nullptr;  // prototype scene containing ownerGeomId

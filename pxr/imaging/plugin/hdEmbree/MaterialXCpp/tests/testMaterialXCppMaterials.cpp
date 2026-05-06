@@ -13,6 +13,7 @@
 #include "../materials/bsdf.h"
 #include "../../medium.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -38,6 +39,39 @@ FindNodeIf(const mxcpp::Bsdf::ClosureTree& tree, Predicate predicate)
         }
     }
     return nullptr;
+}
+
+static Vec3f
+ExpectedAdobeOpenPbrSubsurfaceExtinction(
+    float radius,
+    const Vec3f& radiusScale)
+{
+    Vec3f result(0.0f);
+    for (int i = 0; i < 3; ++i) {
+        const float mfp = std::max(radius * radiusScale[i], 1.0e-3f);
+        result[i] = 1.0f / mfp;
+    }
+    return result;
+}
+
+static Vec3f
+ExpectedAdobeOpenPbrSubsurfaceAlbedo(
+    const Vec3f& subsurfaceColor,
+    float anisotropy)
+{
+    const float g = std::clamp(anisotropy, -0.999f, 0.999f);
+    Vec3f result(0.0f);
+    for (int i = 0; i < 3; ++i) {
+        const float color = subsurfaceColor[i];
+        const float s =
+            4.09712f + 4.20863f * color -
+            std::sqrt(9.59217f + 41.6808f * color +
+                      17.7126f * color * color);
+        const float s2 = s * s;
+        result[i] = std::clamp((1.0f - s2) / (1.0f - g * s2),
+                               0.0f, 1.0f);
+    }
+    return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -622,10 +656,32 @@ TestOpenPbrDefaults()
     if (!Test_IsClose(c.baseColor, Vec3f(0.8f), 1e-4f)) return false;
     if (!Test_IsClose(c.roughness, 0.3f)) return false;
     if (!Test_IsClose(c.metallic, 0.0f)) return false;
+    if (!Test_IsClose(c.specular, 1.0f)) return false;
+    if (!Test_IsClose(c.specularColor, Vec3f(1.0f), 1e-4f)) return false;
     if (!Test_IsClose(c.specularIor, 1.5f)) return false;
     if (!Test_IsClose(c.transmission, 0.0f)) return false;
+    if (!Test_IsClose(c.transmissionColor, Vec3f(1.0f), 1e-4f)) return false;
+    if (c.hasInteriorMedium) return false;
+    if (!c.interiorMedium.IsVacuum()) return false;
+    if (!Test_IsClose(c.subsurfaceWeight, 0.0f)) return false;
+    if (!Test_IsClose(c.subsurfaceColor, Vec3f(0.8f), 1e-4f)) return false;
+    if (!Test_IsClose(c.subsurfaceRadius, Vec3f(1.0f), 1e-4f)) return false;
+    if (!Test_IsClose(c.subsurfaceRadiusScale,
+                      Vec3f(1.0f, 0.5f, 0.25f), 1e-4f)) return false;
+    if (!Test_IsClose(c.subsurfaceAnisotropy, 0.0f)) return false;
     if (!Test_IsClose(c.coat, 0.0f)) return false;
+    if (!Test_IsClose(c.coatRoughness, 0.0f)) return false;
+    if (!Test_IsClose(c.coatIor, 1.6f)) return false;
     if (!Test_IsClose(c.sheen, 0.0f)) return false;
+    if (!Test_IsClose(c.sheenColor, Vec3f(1.0f), 1e-4f)) return false;
+    if (!Test_IsClose(c.sheenRoughness, 0.5f)) return false;
+    if (!Test_IsClose(c.emissiveColor, Vec3f(0.0f), 1e-4f)) return false;
+    if (!Test_IsClose(c.opacity, 1.0f)) return false;
+    if (!Test_IsClose(c.presence, 1.0f)) return false;
+    if (c.thinWalled) return false;
+    if (!Test_IsClose(c.normal, Vec3f(0.0f, 0.0f, 1.0f), 1e-4f)) {
+        return false;
+    }
     if (!c.HasBsdfTree()) return false;
 
     return true;
@@ -814,6 +870,98 @@ TestAdobeOpenPbrEvalPdfSurfaceMatchesSeparateCalls()
            Test_IsClose(preparedSample.eta, separateSample.eta, 1e-5f);
 #else
     return !combined.evaluated;
+#endif
+}
+
+static bool
+TestAdobeOpenPbrPureSubsurfaceUsesRandomWalkPayload()
+{
+    ParamMap params;
+    params["base_color"] = Value(Vec3f(0.9f, 0.55f, 0.45f));
+    params["specular_weight"] = Value(0.0f);
+    params["transmission_weight"] = Value(0.0f);
+    params["subsurface_weight"] = Value(1.0f);
+    params["subsurface_color"] = Value(Vec3f(0.8f, 0.45f, 0.25f));
+    params["subsurface_radius"] = Value(0.25f);
+    params["subsurface_radius_scale"] =
+        Value(Vec3f(1.0f, 0.5f, 0.25f));
+    params["subsurface_scatter_anisotropy"] = Value(0.2f);
+    params["geometry_thin_walled"] = Value(false);
+
+    const SurfaceClosure closure = EvalAdobeOpenPbr(params);
+#ifdef PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR
+    const SurfaceClosure visibilityClosure = EvalAdobeOpenPbrVisibility(params);
+    if (!closure.HasSubsurfaceScattering()) {
+        printf("    Expected Adobe OpenPBR pure SSS summary fields\n");
+        return false;
+    }
+    if (closure.hasInteriorMedium || !closure.interiorMedium.IsVacuum()) {
+        printf("    Pure SSS should not activate Adobe interior medium\n");
+        return false;
+    }
+    if (!closure.hasPrecomputedSubsurfaceMedium ||
+        closure.precomputedSubsurfaceMedium.IsVacuum()) {
+        printf("    Expected Adobe SSS precomputed medium coefficients\n");
+        return false;
+    }
+    if (closure.precomputedSubsurfaceMedium.transportModel !=
+        MediumTransportModel::AdobeOpenPBR) {
+        printf("    Expected Adobe-origin SSS coefficients\n");
+        return false;
+    }
+    if (!closure.precomputedSubsurfaceMedium.adobeOpenPbrVolume.valid) {
+        printf("    Expected cached Adobe homogeneous volume payload\n");
+        return false;
+    }
+    const Vec3f expectedExtinction =
+        ExpectedAdobeOpenPbrSubsurfaceExtinction(
+            0.25f, Vec3f(1.0f, 0.5f, 0.25f));
+    const Vec3f expectedAlbedo =
+        ExpectedAdobeOpenPbrSubsurfaceAlbedo(
+            Vec3f(0.8f, 0.45f, 0.25f), 0.2f);
+    const Vec3f expectedSigmaS = CompMul(expectedExtinction, expectedAlbedo);
+    const Vec3f expectedSigmaA =
+        CompMul(expectedExtinction, Vec3f(1.0f) - expectedAlbedo);
+    if (!Test_IsClose(
+            closure.precomputedSubsurfaceMedium.adobeOpenPbrVolume.
+                extinctionCoefficient,
+            expectedExtinction, 1e-4f) ||
+        !Test_IsClose(
+            closure.precomputedSubsurfaceMedium.adobeOpenPbrVolume.albedo,
+            expectedAlbedo, 1e-4f) ||
+        !Test_IsClose(
+            closure.precomputedSubsurfaceMedium.sigmaS,
+            expectedSigmaS, 1e-4f) ||
+        !Test_IsClose(
+            closure.precomputedSubsurfaceMedium.sigmaA,
+            expectedSigmaA, 1e-4f)) {
+        printf("    Expected Adobe van-de-Hulst SSS volume coefficients\n");
+        return false;
+    }
+    if (!Test_IsClose(
+            closure.precomputedSubsurfaceMedium.anisotropy, 0.2f, 1e-5f)) {
+        printf("    Expected Adobe SSS anisotropy to reach payload\n");
+        return false;
+    }
+    if (visibilityClosure.hasInteriorMedium ||
+        !visibilityClosure.interiorMedium.IsVacuum()) {
+        printf("    Pure SSS visibility closure should not Beer-attenuate shadows\n");
+        return false;
+    }
+
+    const Vec3f normal(0.0f, 0.0f, 1.0f);
+    const Vec3f wo(0.0f, 0.0f, 1.0f);
+    const AdobeOpenPbrPreparedSurface prepared =
+        PrepareAdobeOpenPbrSurface(closure, normal, wo);
+    const Bsdf::BsdfSample sample =
+        SamplePreparedAdobeOpenPbrSurface(prepared, 0.23f, 0.47f, 0.61f);
+    if (!prepared.valid || !sample.isSubsurface) {
+        printf("    Expected pure Adobe SSS to synthesize subsurface marker\n");
+        return false;
+    }
+    return Test_IsClose(sample.f, Vec3f(1.0f), 1e-5f);
+#else
+    return !closure.hasPrecomputedSubsurfaceMedium;
 #endif
 }
 
@@ -1748,6 +1896,7 @@ Test_RegisterMaterialTests()
     _REG(TestOpenPbrTransmission);
     _REG(TestAdobeOpenPbrBuildsWholeBackendNode);
     _REG(TestAdobeOpenPbrEvalPdfSurfaceMatchesSeparateCalls);
+    _REG(TestAdobeOpenPbrPureSubsurfaceUsesRandomWalkPayload);
     _REG(TestOpenPbrRegularVolumeDoesNotDoubleTintTransmission);
     _REG(TestOpenPbrLayersReflectionOverTransmissionMix);
     _REG(TestOpenPbrThinWalledUsesUnitIorTransmission);

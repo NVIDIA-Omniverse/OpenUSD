@@ -56,6 +56,8 @@ struct SurfaceClosure
     bool thinWalled = false;
     bool hasInteriorMedium = false;
     MediumProperties interiorMedium;
+    bool hasPrecomputedSubsurfaceMedium = false;
+    MediumProperties precomputedSubsurfaceMedium;
     float subsurfaceWeight = 0.0f;
     Vec3f subsurfaceColor = Vec3f(1.0f);
     Vec3f subsurfaceRadius = Vec3f(1.0f);

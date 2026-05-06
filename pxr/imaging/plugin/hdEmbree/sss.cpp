@@ -123,6 +123,33 @@ _InitChiangCoefficients(
     }
 }
 
+static float
+_CleanCoefficient(float value)
+{
+    return (std::isfinite(value) && value > 0.0f) ? value : 0.0f;
+}
+
+static void
+_InitPrecomputedCoefficients(
+    GfVec3f const& sigmaA,
+    GfVec3f const& sigmaS,
+    GfVec3f* sigma_t,
+    GfVec3f* sigma_s,
+    GfVec3f* alpha,
+    GfVec3f* throughputCorrection)
+{
+    for (int i = 0; i < 3; ++i) {
+        const float cleanSigmaA = _CleanCoefficient(sigmaA[i]);
+        const float cleanSigmaS = _CleanCoefficient(sigmaS[i]);
+        (*sigma_s)[i] = cleanSigmaS;
+        (*sigma_t)[i] = cleanSigmaA + cleanSigmaS;
+        (*alpha)[i] = (*sigma_t)[i] > _kSigmaTEps
+            ? std::clamp(cleanSigmaS / (*sigma_t)[i], 0.0f, 0.999999f)
+            : 0.0f;
+    }
+    *throughputCorrection = GfVec3f(1.0f);
+}
+
 // Phase 3: Dwivedi diffusion length + similarity-reduced coefficients.
 //
 // Must be called after _InitChiangCoefficients has populated
@@ -452,9 +479,24 @@ HdEmbreeRandomWalkSSS(
 
     _SssWalkState st;
     GfVec3f throughputCorrection;
-    _InitChiangCoefficients(in.albedo, in.radius, in.anisotropy,
-                            &st.sigma_t, &st.sigma_s, &st.alpha,
-                            &throughputCorrection);
+    if (in.usePrecomputedCoefficients) {
+        _InitPrecomputedCoefficients(
+            in.precomputedSigmaA,
+            in.precomputedSigmaS,
+            &st.sigma_t,
+            &st.sigma_s,
+            &st.alpha,
+            &throughputCorrection);
+    } else {
+        _InitChiangCoefficients(
+            in.albedo,
+            in.radius,
+            in.anisotropy,
+            &st.sigma_t,
+            &st.sigma_s,
+            &st.alpha,
+            &throughputCorrection);
+    }
     st.throughput = throughputCorrection;
     st.rayOrigin = in.entryPos;
     st.rayDir = in.entryDir;
