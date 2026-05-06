@@ -18,6 +18,18 @@ _SLIDER_STEPS = 1000
 
 _LABEL_STYLE_DEFAULT = "color: #888; font-style: italic;"
 _LABEL_STYLE_AUTHORED = ""
+_GROUP_HEADER_STYLE = (
+    "QToolButton {"
+    " font-weight: bold;"
+    " border: none;"
+    " border-radius: 3px;"
+    " color: #999999;"
+    " background-color: #2d2d2d;"
+    " padding: 3px 6px;"
+    " margin-top: 5px;"
+    " text-align: left;"
+    "}"
+    "QToolButton:hover { background-color: #333; border-color: #777; }")
 _LABEL_WIDTH_REFERENCE = "transmission_dispersion_abbe_number"
 _LABEL_WIDTH_PADDING = 16
 _MIN_EDITOR_PANE_WIDTH = 440
@@ -27,6 +39,7 @@ _MAX_MATERIAL_LIST_WIDTH = 520
 _MIN_WINDOW_WIDTH = 720
 _FLOAT_SPINBOX_WIDTH = 104
 _WINDOW_CHROME_WIDTH = 48
+_GROUP_CONTENT_LEFT_MARGIN = 12
 
 _BASIC_COLOR_COLS = 8
 _BASIC_COLOR_ROWS = 6
@@ -89,6 +102,10 @@ class _NoWheelSlider(QtWidgets.QSlider):
 
 class _NoWheelDoubleSpinBox(QtWidgets.QDoubleSpinBox):
     """QDoubleSpinBox variant that ignores wheel input."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setKeyboardTracking(False)
 
     def wheelEvent(self, event):
         event.ignore()
@@ -246,6 +263,8 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         self._scroll.setWidget(self._formContainer)
         self._inputWidgets = []
         self._inputLabels = {}
+        self._inputFieldWidgets = {}
+        self._inputLayouts = {}
 
     # ---- material list ----------------------------------------------------
 
@@ -425,64 +444,207 @@ class MaterialEditorWindow(QtWidgets.QWidget):
 
     # ---- display ----------------------------------------------------------
 
-    def _displayCurrentShader(self):
+    def _displayCurrentShader(self, preserveScroll=False):
         shader = self._shaderStack[-1]
+        scrollPosition = (
+            self._captureScrollPosition() if preserveScroll else None)
         self._updateHeader()
         self._newFormWidget()
 
         authoredMap = {inp.GetBaseName(): inp for inp in shader.GetInputs()}
         sdrNode = _getSdrNode(shader)
+        sdrPropMap = self._getSdrPropMap(sdrNode)
 
+        allNames = self._getOrderedInputNames(shader, sdrNode)
+        self._inputLabelWidth = self._computeInputLabelWidth(allNames)
+        authoredCount = 0
+        currentPage = None
+        currentLayout = self._formLayout
+
+        for name in allNames:
+            authored, widget = self._makeInputWidget(
+                name, shader, authoredMap, sdrPropMap)
+            if not widget:
+                continue
+
+            if authored:
+                authoredCount += 1
+            page = self._getInputPage(name, sdrPropMap)
+            if page and page != currentPage:
+                currentLayout = self._addCollapsibleGroup(page)
+            elif not page:
+                currentLayout = self._formLayout
+            currentPage = page
+
+            label = self._makeLabel(name, authored, shader)
+            self._addInputRow(name, label, widget, currentLayout)
+
+        self._formContainer.adjustSize()
+        self._fitMaterialListWidth()
+        self._scheduleLayoutFit()
+        if scrollPosition is not None:
+            self._restoreScrollPosition(scrollPosition)
+        self._setStatus(
+            f"{authoredCount} authored, "
+            f"{len(allNames) - authoredCount} defaults")
+
+    def _captureScrollPosition(self):
+        return (
+            self._scroll.horizontalScrollBar().value(),
+            self._scroll.verticalScrollBar().value())
+
+    def _restoreScrollPosition(self, scrollPosition):
+        def restore():
+            for scrollBar, value in (
+                    (self._scroll.horizontalScrollBar(), scrollPosition[0]),
+                    (self._scroll.verticalScrollBar(), scrollPosition[1])):
+                scrollBar.setValue(max(
+                    scrollBar.minimum(),
+                    min(value, scrollBar.maximum())))
+
+        restore()
+        QtCore.QTimer.singleShot(0, restore)
+
+    def _getSdrPropMap(self, sdrNode):
         sdrPropMap = {}
         if sdrNode:
             for name in sdrNode.GetShaderInputNames():
                 prop = sdrNode.GetShaderInput(name)
                 if prop:
                     sdrPropMap[name] = prop
+        return sdrPropMap
 
-        allNames = sorted(set(authoredMap) | set(sdrPropMap))
-        self._inputLabelWidth = self._computeInputLabelWidth(allNames)
-        authoredCount = 0
+    def _getOrderedInputNames(self, shader, sdrNode):
+        orderedNames = []
+        seenNames = set()
 
-        for name in allNames:
-            inp = authoredMap.get(name)
-            sdrProp = sdrPropMap.get(name)
-            authored = inp is not None
+        def addName(name):
+            if name not in seenNames:
+                orderedNames.append(name)
+                seenNames.add(name)
 
-            if authored and inp.HasConnectedSource():
-                label = self._makeLabel(name, True, shader)
-                widget = self._widgetConnected(inp)
-            elif authored:
-                typeName = str(inp.GetTypeName())
-                value = inp.Get()
-                label = self._makeLabel(name, True, shader)
-                widget = self._widgetForType(inp, typeName, value, sdrProp)
-            elif sdrProp:
-                sdfType = sdrProp.GetTypeAsSdfType().GetSdfType()
-                typeName = str(sdfType)
-                try:
-                    value = sdrProp.GetDefaultValueAsSdfType()
-                except Exception:
-                    value = None
-                label = self._makeLabel(name, False, shader)
-                widget = self._widgetForType(
-                    _LazyInput(shader, name, sdfType), typeName, value, sdrProp)
-            else:
-                continue
+        if sdrNode:
+            for name in sdrNode.GetShaderInputNames():
+                addName(name)
 
-            if authored:
-                authoredCount += 1
+        for inp in shader.GetInputs():
+            addName(inp.GetBaseName())
+
+        return orderedNames
+
+    def _getInputPage(self, name, sdrPropMap):
+        sdrProp = sdrPropMap.get(name)
+        if not sdrProp:
+            return ""
+        return str(sdrProp.GetPage())
+
+    def _addCollapsibleGroup(self, page):
+        button = QtWidgets.QToolButton()
+        button.setText(page)
+        button.setCheckable(True)
+        button.setChecked(True)
+        button.setArrowType(QtCore.Qt.DownArrow)
+        button.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        button.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        button.setStyleSheet(_GROUP_HEADER_STYLE)
+
+        content = QtWidgets.QWidget()
+        layout = QtWidgets.QFormLayout(content)
+        layout.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
+        layout.setContentsMargins(_GROUP_CONTENT_LEFT_MARGIN, 2, 0, 6)
+
+        def toggled(checked):
+            content.setVisible(checked)
+            button.setArrowType(
+                QtCore.Qt.DownArrow if checked else QtCore.Qt.RightArrow)
+            self._formContainer.adjustSize()
+            self._scheduleLayoutFit()
+
+        button.toggled.connect(toggled)
+        self._formLayout.addRow(button)
+        self._formLayout.addRow(content)
+        return layout
+
+    def _addInputRow(self, name, label, widget, layout):
+        layout.addRow(label, widget)
+        self._inputWidgets.append(widget)
+        self._inputLabels[name] = label
+        self._inputFieldWidgets[name] = widget
+        self._inputLayouts[name] = layout
+
+    def _makeInputWidget(self, name, shader, authoredMap=None, sdrPropMap=None):
+        if authoredMap is None:
+            authoredMap = {
+                inp.GetBaseName(): inp for inp in shader.GetInputs()}
+        if sdrPropMap is None:
+            sdrPropMap = self._getSdrPropMap(_getSdrNode(shader))
+
+        inp = authoredMap.get(name)
+        sdrProp = sdrPropMap.get(name)
+        authored = inp is not None
+
+        if authored and inp.HasConnectedSource():
+            return True, self._widgetConnected(inp)
+
+        if authored:
+            typeName = str(inp.GetTypeName())
+            return True, self._widgetForType(
+                inp, typeName, inp.Get(), sdrProp)
+
+        if sdrProp:
+            sdfType = sdrProp.GetTypeAsSdfType().GetSdfType()
+            typeName = str(sdfType)
+            try:
+                value = sdrProp.GetDefaultValueAsSdfType()
+            except Exception:
+                value = None
+            return False, self._widgetForType(
+                _LazyInput(shader, name, sdfType), typeName, value, sdrProp)
+
+        return False, None
+
+    def _refreshInputRow(self, name, shader):
+        authored, widget = self._makeInputWidget(name, shader)
+        label = self._inputLabels.get(name)
+        oldWidget = self._inputFieldWidgets.get(name)
+
+        if label is None:
             if widget:
-                self._formLayout.addRow(label, widget)
-                self._inputWidgets.append(widget)
-                self._inputLabels[name] = label
+                self._displayCurrentShader(preserveScroll=True)
+            return
 
+        layout = self._inputLayouts.get(name, self._formLayout)
+
+        if not widget:
+            if oldWidget in self._inputWidgets:
+                self._inputWidgets.remove(oldWidget)
+            layout.removeRow(label)
+            self._inputLabels.pop(name, None)
+            self._inputFieldWidgets.pop(name, None)
+            self._inputLayouts.pop(name, None)
+            return
+
+        row, _role = layout.getWidgetPosition(label)
+        if row < 0:
+            self._displayCurrentShader(preserveScroll=True)
+            return
+
+        self._setLabelAuthoredState(label, authored)
+        if oldWidget:
+            layout.removeWidget(oldWidget)
+            oldWidget.setParent(None)
+            oldWidget.deleteLater()
+            if oldWidget in self._inputWidgets:
+                self._inputWidgets.remove(oldWidget)
+
+        layout.setWidget(row, QtWidgets.QFormLayout.FieldRole, widget)
+        self._inputWidgets.append(widget)
+        self._inputFieldWidgets[name] = widget
+        self._inputLayouts[name] = layout
         self._formContainer.adjustSize()
         self._fitMaterialListWidth()
         self._scheduleLayoutFit()
-        self._setStatus(
-            f"{authoredCount} authored, "
-            f"{len(allNames) - authoredCount} defaults")
 
     def _updateHeader(self):
         shader = self._shaderStack[-1]
@@ -538,7 +700,7 @@ class MaterialEditorWindow(QtWidgets.QWidget):
 
     def _showInputContextMenu(self, pos, name, shader, label):
         menu = QtWidgets.QMenu(self)
-        resetAction = menu.addAction("Reset to Default")
+        resetAction = menu.addAction("Reset to Original")
         action = menu.exec_(label.mapToGlobal(pos))
         if action == resetAction:
             self._resetInput(name, shader)
@@ -547,7 +709,7 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         if not self._shaderStack:
             return
         menu = QtWidgets.QMenu(self)
-        resetAllAction = menu.addAction("Reset All to Default")
+        resetAllAction = menu.addAction("Reset All to Original")
         action = menu.exec_(self._headerLabel.mapToGlobal(pos))
         if action == resetAllAction:
             self._resetAllInputs()
@@ -558,9 +720,10 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         prim = shader.GetPrim()
         propName = f"inputs:{name}"
         if prim.HasProperty(propName):
+            self._pendingValues.pop(name, None)
             prim.RemoveProperty(propName)
             self._api.UpdateViewport()
-            self._displayCurrentShader()
+            self._refreshInputRow(name, shader)
             self._setStatus(f"Reset {name}")
 
     def _resetAllInputs(self):
@@ -569,13 +732,18 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         shader = self._shaderStack[-1]
         prim = shader.GetPrim()
         removed = 0
+        removedNames = []
         with Sdf.ChangeBlock():
             for inp in list(shader.GetInputs()):
                 if not inp.HasConnectedSource():
                     prim.RemoveProperty(inp.GetFullName())
+                    removedNames.append(inp.GetBaseName())
                     removed += 1
+        for name in removedNames:
+            self._pendingValues.pop(name, None)
         self._api.UpdateViewport()
-        self._displayCurrentShader()
+        for name in removedNames:
+            self._refreshInputRow(name, shader)
         self._setStatus(f"Reset {removed} input(s)")
 
     # ---- shader input editor ----------------------------------------------
