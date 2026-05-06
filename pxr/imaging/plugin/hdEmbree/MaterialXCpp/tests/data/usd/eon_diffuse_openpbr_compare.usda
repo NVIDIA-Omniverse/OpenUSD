@@ -150,7 +150,7 @@ def Xform "World"
 
     def SphereLight "KeyLight"
     {
-        float inputs:intensity = 380
+        float inputs:intensity = 180
         float inputs:radius = 1.2
         double3 xformOp:translate = (-3.0, 4.5, 4.0)
         token[] xformOpOrder = ["xformOp:translate"]
