@@ -2044,6 +2044,42 @@ _PopulateRayHit(
     rayHit->hit.geomID = RTC_INVALID_GEOMETRY_ID;
 }
 
+static bool
+_PopulateSssExitRayHit(
+    RTCRayHit* rayHit,
+    HdEmbreeSssOutput const& sssOut)
+{
+    if (sssOut.exitInstanceId == RTC_INVALID_GEOMETRY_ID ||
+        sssOut.exitGeomId == RTC_INVALID_GEOMETRY_ID ||
+        sssOut.exitPrimId == RTC_INVALID_GEOMETRY_ID) {
+        return false;
+    }
+
+    GfVec3f rayDir = -sssOut.exitDir;
+    if (rayDir.GetLengthSq() <= 1.0e-20f) {
+        return false;
+    }
+    rayDir.Normalize();
+
+    _PopulateRayHit(
+        rayHit,
+        sssOut.exitPos,
+        rayDir,
+        0.0f,
+        0.0f,
+        HdEmbree_RayMask::Camera);
+
+    rayHit->hit.primID = sssOut.exitPrimId;
+    rayHit->hit.geomID = sssOut.exitGeomId;
+    rayHit->hit.instID[0] = sssOut.exitInstanceId;
+    rayHit->hit.u = sssOut.exitU;
+    rayHit->hit.v = sssOut.exitV;
+    rayHit->hit.Ng_x = sssOut.exitObjectGeomNormal[0];
+    rayHit->hit.Ng_y = sssOut.exitObjectGeomNormal[1];
+    rayHit->hit.Ng_z = sssOut.exitObjectGeomNormal[2];
+    return true;
+}
+
 /// Generate a random cosine-weighted direction ray (in the hemisphere
 /// around <0,0,1>).  The input is a pair of uniformly distributed random
 /// numbers in the range [0,1].
@@ -3077,6 +3113,7 @@ GfVec3f
 HdEmbreeRenderer::_ComputeDirectLightingMIS(
     GfVec3f const& position,
     GfVec3f const& normal,
+    GfVec3f const& visibilityNormal,
     GfVec3f const& wo,
     HdEmbreeSobolSampler &sampler,
     bool /*doubleSided*/,
@@ -3146,7 +3183,11 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
             }
 
             GfVec3f vis = _Visibility(
-                position, normal, ls.wI, ls.dist * 0.99f, mediumState);
+                position,
+                visibilityNormal,
+                ls.wI,
+                ls.dist * 0.99f,
+                mediumState);
             if (_IsNearlyBlack(vis)) {
                 continue;
             }
@@ -3679,8 +3720,7 @@ HdEmbreeRenderer::_TracePath(
     bool isFirstBounce = true;
     bool anyNonSpecularBounces = false;
     bool useSyntheticLambertian = false;
-    unsigned int syntheticLambertianInstanceId = RTC_INVALID_GEOMETRY_ID;
-    unsigned int syntheticLambertianGeomId = RTC_INVALID_GEOMETRY_ID;
+    HdEmbreeSssOutput syntheticLambertianExit;
     HdEmbreeMediumState currentMedium;
 
     // Per-bounce derivative state for ray differential propagation
@@ -3703,11 +3743,18 @@ HdEmbreeRenderer::_TracePath(
 
         RTCRayHit rayHit;
         rayHit.ray.flags = 0;
-        _PopulateRayHit(&rayHit, rayOrigin, rayDir,
-                        isFirstBounce ? 0.0f : 1e-4f,
-                        std::numeric_limits<float>::max(),
-                        HdEmbree_RayMask::Camera);
-        rtcIntersect1(_scene, &rayHit);
+        const bool syntheticLambertianHit = useSyntheticLambertian;
+        if (syntheticLambertianHit) {
+            if (!_PopulateSssExitRayHit(&rayHit, syntheticLambertianExit)) {
+                break;
+            }
+        } else {
+            _PopulateRayHit(&rayHit, rayOrigin, rayDir,
+                            isFirstBounce ? 0.0f : 1e-4f,
+                            std::numeric_limits<float>::max(),
+                            HdEmbree_RayMask::Camera);
+            rtcIntersect1(_scene, &rayHit);
+        }
 
         const float surfaceDist =
             rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID
@@ -3715,6 +3762,7 @@ HdEmbreeRenderer::_TracePath(
                 : std::numeric_limits<float>::infinity();
         HdEmbreeLightSampler::LightSample finiteLightHit{};
         const bool hasFiniteLightHit =
+            !syntheticLambertianHit &&
             !isFirstBounce &&
             _FindNearestFiniteLightHit(
                 rayOrigin,
@@ -3968,7 +4016,7 @@ HdEmbreeRenderer::_TracePath(
         mxcpp::SurfaceClosure closure;
         bool hasClosure = false;
 
-        if (evalGraph) {
+        if (evalGraph && !useSyntheticLambertian) {
             try {
                 mxcpp::EvalOptions evalOptions;
                 evalOptions.useAdobeOpenPBR = _useAdobeOpenPBR;
@@ -3985,20 +4033,25 @@ HdEmbreeRenderer::_TracePath(
         // double-counted. Cycles uses the same trick.
         if (useSyntheticLambertian) {
             const bool hitOwner =
-                (rayHit.hit.instID[0] == syntheticLambertianInstanceId) &&
-                (rayHit.hit.geomID == syntheticLambertianGeomId);
+                (rayHit.hit.instID[0] ==
+                 syntheticLambertianExit.exitInstanceId) &&
+                (rayHit.hit.geomID == syntheticLambertianExit.exitGeomId);
             if (hitOwner) {
                 closure = mxcpp::SurfaceClosure{};
                 closure.baseColor = mxcpp::Vec3f(1.0f);
                 closure.roughness = 1.0f;
+                // SurfaceClosure defaults include a dielectric specular
+                // lobe. Clear it so the SSS exit matches Cycles'
+                // DiffuseBsdf replacement instead of adding Fresnel loss.
+                closure.specular = 0.0f;
+                closure.specularColor = mxcpp::Vec3f(0.0f);
                 closure.opacity = 1.0f;
                 closure.presence = 1.0f;
                 hasClosure = true;
             }
             // Always clear flag; even on mismatch we don't want it to linger.
             useSyntheticLambertian = false;
-            syntheticLambertianInstanceId = RTC_INVALID_GEOMETRY_ID;
-            syntheticLambertianGeomId = RTC_INVALID_GEOMETRY_ID;
+            syntheticLambertianExit = HdEmbreeSssOutput{};
         }
 
         // Apply material normal map (tangent-space -> world-space).
@@ -4149,6 +4202,9 @@ HdEmbreeRenderer::_TracePath(
             sssIn.ior = std::max(closure.specularIor, 1.0f);
             sssIn.ownerInstanceId = rayHit.hit.instID[0];
             sssIn.ownerGeomId = rayHit.hit.geomID;
+            sssIn.ownerScene = instanceContext->rootScene;
+            sssIn.objectToWorldMatrix = instanceContext->objectToWorldMatrix;
+            sssIn.worldToObjectMatrix = instanceContext->worldToObjectMatrix;
 
             HdEmbreeSssOutput sssOut = HdEmbreeRandomWalkSSS(
                 sssIn, sampler, _scene);
@@ -4185,28 +4241,18 @@ HdEmbreeRenderer::_TracePath(
                 break;
             }
 
-            // Cycles-style ray flip: pretend we come from outside at the
-            // exit point. The next iteration will hit the same geometry
-            // and synthesize a Lambertian closure for the exit BRDF.
-            //
-            // The origin offset must be *strictly larger* than the next
-            // ray cast's tnear (1e-4 for non-first-bounce rays); otherwise
-            // the intended exit hit lands at t == tnear, exposing FP
-            // precision edge cases where the hit is missed and the ray
-            // travels through the mesh to hit the opposite face from the
-            // inside. That backfacing hit yields a Lambertian f == 0
-            // (non-doubleSided geometry), painting dark artifacts near
-            // whatever face the SSS walk tends to exit through.
-            constexpr float kSssExitOffset = 1.0e-3f;
-            rayOrigin = sssOut.exitPos + sssOut.exitGeomNormal * kSssExitOffset;
+            // Process the SSS exit as a synthetic surface hit on the next
+            // loop iteration, using the intersection data returned by the
+            // random walk. This keeps the Cycles-style Lambertian exit BRDF
+            // while avoiding a fragile same-surface re-hit.
+            rayOrigin = sssOut.exitPos;
             rayDir = -sssOut.exitDir;
             currentRayDiff.hasDifferentials = false;
             lastBsdfPdf = 0.0f;
             lastScatterWasMedium = false;
             anyNonSpecularBounces = true;
             isFirstBounce = false;
-            syntheticLambertianInstanceId = rayHit.hit.instID[0];
-            syntheticLambertianGeomId = rayHit.hit.geomID;
+            syntheticLambertianExit = sssOut;
             useSyntheticLambertian = true;
 
             // Clear any medium state. The new Phase 1 design has NO
@@ -4245,6 +4291,7 @@ HdEmbreeRenderer::_TracePath(
             direct = _ComputeDirectLightingMIS(
                 hitPos,
                 normal,
+                geometricNormal,
                 wo,
                 sampler,
                 doubleSided,
@@ -4268,6 +4315,7 @@ HdEmbreeRenderer::_TracePath(
             direct = _ComputeDirectLightingMIS(
                 hitPos,
                 normal,
+                geometricNormal,
                 wo,
                 sampler,
                 doubleSided,

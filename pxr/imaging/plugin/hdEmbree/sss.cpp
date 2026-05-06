@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -24,12 +25,11 @@ constexpr float _kBias = 1.0e-4f;
 // HdEmbreeRandomWalkSSS: self-contained SSS random walk.
 // - Chiang 2016 polynomial remap (albedo + radius -> sigma_t, alpha).
 // - Channel-MIS (balance heuristic) per bounce.
-// - Henyey-Greenstein classic sampling + forward Dwivedi guided sampling.
+// - Henyey-Greenstein classic sampling + forward/backward Dwivedi guided
+//   sampling.
 // - Similarity relation after kSimilarityLevel bounces (isotropic + reduced
 //   sigma).
-// Phase 4 / ticket #403 will activate backward Dwivedi guiding + opposite
-// interface detection; the relevant fields are already reserved on the state
-// and as locals in the main loop (see comments tagged "Phase 4").
+// - Opposite interface detection on the first bounce for backward guiding.
 // =============================================================================
 
 namespace {
@@ -51,10 +51,7 @@ struct _SssWalkState {
     GfVec3f alpha;                // single-scatter albedo (Phase 2)
     float anisotropy;
 
-    // Opposite-interface state.
-    // Phase 3 reserves these fields for Phase 4 / ticket #403 (backward Dwivedi
-    // guiding + opposite interface detection). They are initialized here but
-    // unused until that work lands.
+    // Opposite-interface state used by backward Dwivedi guiding.
     bool have_opposite_interface = false;
     float opposite_distance = 0.0f;
     GfVec3f entryPos;
@@ -73,6 +70,20 @@ struct _SssWalkState {
     // with reduced scattering.
     GfVec3f sigma_t_star = GfVec3f(0.0f);
     GfVec3f sigma_s_star = GfVec3f(0.0f);
+};
+
+struct _SssTraceResult {
+    bool foundSurface = false;
+    bool hitOwner = false;
+    float t = 0.0f;
+    GfVec3f hitPos = GfVec3f(0.0f);
+    GfVec3f hitNormal = GfVec3f(0.0f);
+    GfVec3f objectHitNormal = GfVec3f(0.0f);
+    unsigned int instanceId = RTC_INVALID_GEOMETRY_ID;
+    unsigned int geomId = RTC_INVALID_GEOMETRY_ID;
+    unsigned int primId = RTC_INVALID_GEOMETRY_ID;
+    float u = 0.0f;
+    float v = 0.0f;
 };
 
 // Phase 2: Chiang polynomial remap + min-alpha throughput correction.
@@ -186,6 +197,97 @@ _EvalTransmittance(GfVec3f const& sigma_t, float dist)
         std::exp(-sigma_t[0] * dist),
         std::exp(-sigma_t[1] * dist),
         std::exp(-sigma_t[2] * dist));
+}
+
+static float
+_MinPositiveComponent(GfVec3f const& v)
+{
+    float result = std::numeric_limits<float>::max();
+    for (int i = 0; i < 3; ++i) {
+        if (v[i] > _kSigmaTEps) {
+            result = std::min(result, v[i]);
+        }
+    }
+    return result;
+}
+
+static bool
+_HitOwnerGeometry(RTCRayHit const& rayHit, _SssWalkState const& st)
+{
+    return rayHit.hit.instID[0] == st.ownerInstanceId &&
+           rayHit.hit.geomID == st.ownerGeomId;
+}
+
+static _SssTraceResult
+_TraceSssBoundary(
+    _SssWalkState const& st,
+    HdEmbreeSssInput const& in,
+    RTCScene scene,
+    float rayTfar)
+{
+    _SssTraceResult result;
+
+    const bool useOwnerScene = (in.ownerScene != nullptr);
+    const RTCScene traceScene = useOwnerScene ? in.ownerScene : scene;
+
+    GfVec3f rayOrigin = st.rayOrigin;
+    GfVec3f rayDir = st.rayDir;
+    if (useOwnerScene) {
+        rayOrigin = in.worldToObjectMatrix.Transform(st.rayOrigin);
+        rayDir = in.worldToObjectMatrix.TransformDir(st.rayDir);
+    }
+    if (rayDir.GetLengthSq() <= 1.0e-20f) {
+        return result;
+    }
+
+    RTCRayHit rayHit;
+    rayHit.ray.flags = 0;
+    rayHit.ray.org_x = rayOrigin[0];
+    rayHit.ray.org_y = rayOrigin[1];
+    rayHit.ray.org_z = rayOrigin[2];
+    rayHit.ray.tnear = _kBias;
+    rayHit.ray.dir_x = rayDir[0];
+    rayHit.ray.dir_y = rayDir[1];
+    rayHit.ray.dir_z = rayDir[2];
+    rayHit.ray.time = 0.0f;
+    rayHit.ray.tfar = rayTfar;
+    rayHit.ray.mask = static_cast<uint32_t>(HdEmbree_RayMask::Camera);
+    rayHit.ray.id = 0;
+    rayHit.hit.primID = RTC_INVALID_GEOMETRY_ID;
+    rayHit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+    rayHit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
+
+    rtcIntersect1(traceScene, &rayHit);
+
+    result.foundSurface = (rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID);
+    if (!result.foundSurface) {
+        return result;
+    }
+
+    result.hitOwner = useOwnerScene
+        ? (rayHit.hit.geomID == st.ownerGeomId)
+        : _HitOwnerGeometry(rayHit, st);
+    result.t = rayHit.ray.tfar;
+    result.hitPos = st.rayOrigin + st.rayDir * result.t;
+    result.instanceId = useOwnerScene ? st.ownerInstanceId : rayHit.hit.instID[0];
+    result.geomId = rayHit.hit.geomID;
+    result.primId = rayHit.hit.primID;
+    result.u = rayHit.hit.u;
+    result.v = rayHit.hit.v;
+
+    GfVec3f hitNormal(rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
+    result.objectHitNormal = hitNormal;
+    if (useOwnerScene) {
+        hitNormal = in.objectToWorldMatrix.TransformDir(hitNormal);
+    }
+    if (hitNormal.GetLengthSq() > 1.0e-20f) {
+        hitNormal.Normalize();
+    } else {
+        hitNormal = -st.rayDir;
+    }
+    result.hitNormal = hitNormal;
+
+    return result;
 }
 
 // Chiang 2016 remap (Cycles subsurface_random_walk_remap port, per-channel).
@@ -315,6 +417,22 @@ HdEmbreeSamplePhaseDwivedi(float L, float phase_log, float u)
     return L - (L + 1.0f) * std::exp(-uClamped * phase_log);
 }
 
+float
+HdEmbreeBackwardDwivediFraction(
+    float oppositeDistance,
+    float x,
+    float diffusionLength)
+{
+    if (oppositeDistance <= 0.0f || diffusionLength <= 0.0f) {
+        return 0.0f;
+    }
+
+    const float clampedX = std::clamp(x, 0.0f, oppositeDistance);
+    const float exponent =
+        (oppositeDistance - 2.0f * clampedX) / diffusionLength;
+    return 1.0f / (1.0f + std::exp(exponent));
+}
+
 HdEmbreeSssOutput
 HdEmbreeRandomWalkSSS(
     HdEmbreeSssInput const& in,
@@ -345,8 +463,8 @@ HdEmbreeRandomWalkSSS(
     st.entryNormal = in.entryGeomNormal;
     st.ownerInstanceId = in.ownerInstanceId;
     st.ownerGeomId = in.ownerGeomId;
-    // have_opposite_interface / opposite_distance remain at their default
-    // (false, 0). Phase 4 / ticket #403 will populate and consume them.
+    // have_opposite_interface / opposite_distance start empty and may be
+    // populated by the extended first-bounce ray below.
 
     if (!_InitDwivediAndSimilarity(&st)) {
         return out;  // degenerate diffusion length
@@ -402,18 +520,28 @@ HdEmbreeRandomWalkSSS(
         float forward_stretching = 1.0f;
         float forward_pdf_factor = 0.0f;
 
-        // Phase 4 / ticket #403 reserves these for backward guiding. They
-        // are inert (stretching=1, factor=0, fraction=0) in Phase 3.
         float backward_stretching = 1.0f;
-        (void)backward_stretching;  // silence unused warning until Phase 4
         float backward_pdf_factor = 0.0f;
-        (void)backward_pdf_factor;
         float backwardFraction = 0.0f;
-        (void)backwardFraction;
 
         bool guidedThisBounce = false;
+        bool guideBackward = false;
         if (bounce > 0) {
             guidedThisBounce = (sampler.Next() < guided_fraction_eff);
+
+            if (st.have_opposite_interface) {
+                const float x = GfDot(
+                    st.rayOrigin - st.entryPos,
+                    -st.entryNormal);
+                backwardFraction = HdEmbreeBackwardDwivediFraction(
+                    st.opposite_distance,
+                    x,
+                    st.diffusion_length);
+                if (guidedThisBounce) {
+                    guideBackward = (sampler.Next() < backwardFraction);
+                }
+            }
+
             const float rand_a = sampler.Next();
             const float rand_b = sampler.Next();
 
@@ -426,10 +554,11 @@ HdEmbreeRandomWalkSSS(
                 // entry direction (guideAxis).
                 float cos_theta = HdEmbreeSamplePhaseDwivedi(
                     st.diffusion_length, st.phase_log, rand_a);
-                // Phase 4 / ticket #403: when guideBackward is chosen,
-                // cos_theta would be negated here (guide away from entry
-                // toward the opposite interface).
-                //   if (guideBackward) cos_theta = -cos_theta;
+                // Backward Dwivedi mirrors the guide distribution along the
+                // entry normal, biasing directions toward the opposite side.
+                if (guideBackward) {
+                    cos_theta = -cos_theta;
+                }
 
                 cosTheta_ent = cos_theta;
 
@@ -479,17 +608,18 @@ HdEmbreeRandomWalkSSS(
                 HdEmbreeEvalPhaseDwivedi(
                     st.diffusion_length, st.phase_log, cosTheta_ent) /
                 hg_pdf_safe;
-            // Phase 4 / ticket #403: backward_pdf_factor would be
-            //   kInvTwoPi * HdEmbreeEvalPhaseDwivedi(L, log, -cosTheta_ent)
-            //       / hg_pdf_safe;
+            backward_pdf_factor = kInvTwoPi *
+                HdEmbreeEvalPhaseDwivedi(
+                    st.diffusion_length, st.phase_log, -cosTheta_ent) /
+                hg_pdf_safe;
 
             forward_stretching = 1.0f - cosTheta_ent / st.diffusion_length;
             backward_stretching = 1.0f + cosTheta_ent / st.diffusion_length;
 
             if (guidedThisBounce) {
-                // Phase 4 / ticket #403: when guideBackward,
-                //   sampleSigmaT *= backward_stretching.
-                sampleSigmaT *= forward_stretching;
+                sampleSigmaT *= guideBackward
+                    ? backward_stretching
+                    : forward_stretching;
             }
         }
 
@@ -497,31 +627,40 @@ HdEmbreeRandomWalkSSS(
         const float u = std::clamp(sampler.Next(), 1.0e-6f, 1.0f - 1.0e-6f);
         float t = -std::log(1.0f - u) /
                   std::max(sampleSigmaT, _kSigmaTEps);
+        const float sampledT = t;
 
         // Ray cast (use Camera mask to match the path tracer's visibility set).
-        RTCRayHit rayHit;
-        rayHit.ray.flags = 0;
-        rayHit.ray.org_x = st.rayOrigin[0];
-        rayHit.ray.org_y = st.rayOrigin[1];
-        rayHit.ray.org_z = st.rayOrigin[2];
-        rayHit.ray.tnear = _kBias;
-        rayHit.ray.dir_x = st.rayDir[0];
-        rayHit.ray.dir_y = st.rayDir[1];
-        rayHit.ray.dir_z = st.rayDir[2];
-        rayHit.ray.time = 0.0f;
-        rayHit.ray.tfar = t;
-        rayHit.ray.mask = static_cast<uint32_t>(HdEmbree_RayMask::Camera);
-        rayHit.ray.id = 0;
-        rayHit.hit.primID = RTC_INVALID_GEOMETRY_ID;
-        rayHit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
-        rayHit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
+        float rayTfar = sampledT;
+        if (bounce == 0) {
+            const float minSigmaT = _MinPositiveComponent(sigma_t_eff);
+            if (minSigmaT < std::numeric_limits<float>::max()) {
+                rayTfar = std::max(sampledT, 10.0f / minSigmaT);
+            }
+        }
 
-        rtcIntersect1(scene, &rayHit);
+        const _SssTraceResult trace =
+            _TraceSssBoundary(st, in, scene, rayTfar);
         ++out.intersectionTests;
 
-        const bool hit = (rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID);
+        bool hit = trace.foundSurface && trace.hitOwner;
+        if (bounce == 0) {
+            if (trace.foundSurface && trace.hitOwner) {
+                const float oppositeDistance =
+                    GfDot(trace.hitPos - st.entryPos, -st.entryNormal);
+                if (oppositeDistance > _kBias) {
+                    st.have_opposite_interface = true;
+                    st.opposite_distance = oppositeDistance;
+                }
+            }
+
+            // The extended first ray is only for detecting the opposite
+            // interface. The actual walk still scatters if the sampled free
+            // flight distance is shorter than the first surface hit.
+            hit = trace.foundSurface && trace.hitOwner && trace.t < sampledT;
+        }
+
         if (hit) {
-            t = rayHit.ray.tfar;
+            t = trace.t;
         }
 
         // Classic sampling PDF + contribution.
@@ -558,12 +697,27 @@ HdEmbreeRandomWalkSSS(
             }
             forward_guided_pdf = forward_guided_pdf * forward_pdf_factor;
 
-            // Phase 4 / ticket #403 entry point: when st.have_opposite_interface
-            // is true, compute backward_guided_pdf similarly with
-            // backward_stretching + backward_pdf_factor, and blend:
-            //   guidedPdf = mix(forward_guided_pdf,
-            //                    backward_guided_pdf, backwardFraction);
-            const GfVec3f guidedPdf = forward_guided_pdf;
+            GfVec3f guidedPdf = forward_guided_pdf;
+            if (st.have_opposite_interface) {
+                const GfVec3f backward_stretched_sigma_t =
+                    sigma_t_eff * backward_stretching;
+                const GfVec3f backward_stretched_trans =
+                    _EvalTransmittance(backward_stretched_sigma_t, t);
+                GfVec3f backward_guided_pdf;
+                if (hit) {
+                    backward_guided_pdf = backward_stretched_trans;
+                } else {
+                    backward_guided_pdf = GfCompMult(
+                        backward_stretched_sigma_t,
+                        backward_stretched_trans);
+                }
+                backward_guided_pdf =
+                    backward_guided_pdf * backward_pdf_factor;
+
+                guidedPdf =
+                    forward_guided_pdf * (1.0f - backwardFraction) +
+                    backward_guided_pdf * backwardFraction;
+            }
 
             pdf = classicPdf * (1.0f - guided_fraction_eff) +
                   guidedPdf * guided_fraction_eff;
@@ -586,29 +740,36 @@ HdEmbreeRandomWalkSSS(
 
         if (hit) {
             // Build exit info from the surface intersection.
-            const GfVec3f hitPos(
-                rayHit.ray.org_x + rayHit.ray.tfar * rayHit.ray.dir_x,
-                rayHit.ray.org_y + rayHit.ray.tfar * rayHit.ray.dir_y,
-                rayHit.ray.org_z + rayHit.ray.tfar * rayHit.ray.dir_z);
-            GfVec3f hitNormal(rayHit.hit.Ng_x,
-                              rayHit.hit.Ng_y,
-                              rayHit.hit.Ng_z);
+            const GfVec3f hitPos = trace.hitPos;
+            GfVec3f hitNormal = trace.hitNormal;
+            GfVec3f objectHitNormal = trace.objectHitNormal;
             if (hitNormal.GetLengthSq() > 1.0e-20f) {
                 hitNormal.Normalize();
             } else {
                 hitNormal = -st.rayDir;  // fallback
+                objectHitNormal = in.worldToObjectMatrix.TransformDir(hitNormal);
             }
             // Orient outward: the exit normal should align with the ray direction
             // (the ray leaves the medium, so the outward face's normal is in the
             // same half-space as rayDir). Flip only if Embree returned an inward Ng.
             if (GfDot(hitNormal, st.rayDir) < 0.0f) {
                 hitNormal = -hitNormal;
+                objectHitNormal = -objectHitNormal;
+            }
+            if (objectHitNormal.GetLengthSq() > 1.0e-20f) {
+                objectHitNormal.Normalize();
             }
 
             out.success = true;
             out.exitPos = hitPos;
             out.exitGeomNormal = hitNormal;
             out.exitDir = st.rayDir;
+            out.exitObjectGeomNormal = objectHitNormal;
+            out.exitInstanceId = trace.instanceId;
+            out.exitGeomId = trace.geomId;
+            out.exitPrimId = trace.primId;
+            out.exitU = trace.u;
+            out.exitV = trace.v;
             out.throughputWeight = st.throughput;
             return out;
         }

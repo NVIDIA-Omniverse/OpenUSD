@@ -6,6 +6,7 @@
 
 #include "pxr/pxr.h"
 
+#include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/vec3f.h"
 
 #include <embree4/rtcore.h>
@@ -31,6 +32,9 @@ struct HdEmbreeSssInput {
     float ior;                   // clamp to >= 1.0
     unsigned int ownerInstanceId;
     unsigned int ownerGeomId;
+    RTCScene ownerScene = nullptr;  // prototype scene containing ownerGeomId
+    GfMatrix4f objectToWorldMatrix = GfMatrix4f(1.0f);
+    GfMatrix4f worldToObjectMatrix = GfMatrix4f(1.0f);
 };
 
 struct HdEmbreeSssOutput {
@@ -38,6 +42,12 @@ struct HdEmbreeSssOutput {
     GfVec3f exitPos = GfVec3f(0.0f);
     GfVec3f exitGeomNormal = GfVec3f(0.0f);      // outward
     GfVec3f exitDir = GfVec3f(0.0f);             // internal -> outside
+    GfVec3f exitObjectGeomNormal = GfVec3f(0.0f);
+    unsigned int exitInstanceId = RTC_INVALID_GEOMETRY_ID;
+    unsigned int exitGeomId = RTC_INVALID_GEOMETRY_ID;
+    unsigned int exitPrimId = RTC_INVALID_GEOMETRY_ID;
+    float exitU = 0.0f;
+    float exitV = 0.0f;
     GfVec3f throughputWeight = GfVec3f(0.0f);    // multiplier applied by caller
     uint32_t walkSteps = 0;                      // random-walk loop iterations
     uint32_t intersectionTests = 0;              // Embree rtcIntersect1 calls
@@ -95,6 +105,14 @@ float HdEmbreeEvalPhaseDwivedi(float L, float phase_log, float cos_theta);
 /// Sample cos_theta from the Dwivedi distribution given phase_log. Inverse CDF.
 /// (Eq. 10 from Meng et al 2016.)
 float HdEmbreeSamplePhaseDwivedi(float L, float phase_log, float u);
+
+/// Probability of using the backward Dwivedi guide when an opposite interface
+/// is known. `x` is the clamped distance from the entry tangent plane toward
+/// that interface. Visible for unit testing ticket #403.
+float HdEmbreeBackwardDwivediFraction(
+    float oppositeDistance,
+    float x,
+    float diffusionLength);
 
 PXR_NAMESPACE_CLOSE_SCOPE
 

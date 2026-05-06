@@ -323,6 +323,33 @@ TestFurnaceHelperMatchesLambertian()
 }
 
 static bool
+TestLegacySurfaceSpecularZeroIsLambertian()
+{
+    SurfaceClosure closure;
+    closure.baseColor = Vec3f(1.0f);
+    closure.roughness = 1.0f;
+    closure.specular = 0.0f;
+    closure.specularColor = Vec3f(0.0f);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wi = Vec3f(0.67f, 0.31f, 0.68f).normalized();
+    const Vec3f wo = Vec3f(-0.19f, 0.24f, 0.95f).normalized();
+    const Vec3f expected = Bsdf::EvalLambertian(
+        closure.baseColor, N, wi, wo);
+    const Vec3f actual = Bsdf::EvalSurface(closure, N, wi, wo);
+
+    if (!Test_IsClose(actual, expected, 1.0e-6f)) {
+        printf(
+            "    specular=0 legacy surface should be Lambertian: "
+            "expected=(%f,%f,%f) got=(%f,%f,%f)\n",
+            expected[0], expected[1], expected[2],
+            actual[0], actual[1], actual[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
 TestOrenNayarEnergyCompensationFalseUsesLegacyFactor()
 {
     SurfaceClosure closure;
@@ -2380,6 +2407,49 @@ TestSamplePhaseDwivediRange()
     return true;
 }
 
+static bool
+TestBackwardDwivediFraction()
+{
+    const float oppositeDistance = 2.0f;
+    const float diffusionLength = 1.0f;
+
+    const float nearEntry = PXR_INTERNAL_NS::HdEmbreeBackwardDwivediFraction(
+        oppositeDistance, 0.0f, diffusionLength);
+    const float midPlane = PXR_INTERNAL_NS::HdEmbreeBackwardDwivediFraction(
+        oppositeDistance, 1.0f, diffusionLength);
+    const float nearOpposite = PXR_INTERNAL_NS::HdEmbreeBackwardDwivediFraction(
+        oppositeDistance, 2.0f, diffusionLength);
+
+    if (!(nearEntry < midPlane && midPlane < nearOpposite)) {
+        printf("    Expected backward fraction to increase across slab: "
+               "%f, %f, %f\n", nearEntry, midPlane, nearOpposite);
+        return false;
+    }
+    if (!Test_IsClose(midPlane, 0.5f, 1.0e-6f)) {
+        printf("    Expected midpoint backward fraction 0.5, got %f\n",
+               midPlane);
+        return false;
+    }
+    if (!Test_IsClose(
+            PXR_INTERNAL_NS::HdEmbreeBackwardDwivediFraction(
+                oppositeDistance, -1.0f, diffusionLength),
+            nearEntry,
+            1.0e-6f)) {
+        printf("    Expected x below entry plane to clamp to near-entry value\n");
+        return false;
+    }
+    if (!Test_IsClose(
+            PXR_INTERNAL_NS::HdEmbreeBackwardDwivediFraction(
+                oppositeDistance, 3.0f, diffusionLength),
+            nearOpposite,
+            1.0e-6f)) {
+        printf("    Expected x beyond opposite plane to clamp to far value\n");
+        return false;
+    }
+
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 
 void
@@ -2388,6 +2458,7 @@ Test_RegisterBsdfTests()
     _REG(TestLambertianValue);
     _REG(TestLambertianColorScaling);
     _REG(TestFurnaceHelperMatchesLambertian);
+    _REG(TestLegacySurfaceSpecularZeroIsLambertian);
     _REG(TestOrenNayarEnergyCompensationFalseUsesLegacyFactor);
     _REG(TestEonDiffuseLambertianLimit);
     _REG(TestEonDiffuseWhiteFurnace);
@@ -2455,6 +2526,7 @@ Test_RegisterBsdfTests()
     _REG(TestChiangRemapAnisotropy);
     _REG(TestDiffusionLengthDwivedi);
     _REG(TestSamplePhaseDwivediRange);
+    _REG(TestBackwardDwivediFraction);
 }
 
 #undef _REG

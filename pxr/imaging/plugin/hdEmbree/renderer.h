@@ -284,9 +284,12 @@ private:
     /// Evaluate direct lighting from all scene lights using MIS.
     /// If \p closure is non-null, uses the MaterialXCpp BSDF evaluation;
     /// otherwise falls back to a simple Lambertian BRDF.
+    /// \p normal is the BSDF normal; \p visibilityNormal is used only for
+    /// shadow-ray origin bias.
     GfVec3f _ComputeDirectLightingMIS(
         GfVec3f const& position,
         GfVec3f const& normal,
+        GfVec3f const& visibilityNormal,
         GfVec3f const& wo,
         HdEmbreeSobolSampler& sampler,
         bool doubleSided,
