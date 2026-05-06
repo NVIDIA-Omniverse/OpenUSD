@@ -20,7 +20,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 // See agent-docs/designs/2026-04-16-design-sss-chiang-dwivedi.md.
 // =============================================================================
 
-struct HdEmbreeSampler;
+struct HdEmbreeSampleDomain;
 
 struct HdEmbreeSssInput {
     GfVec3f entryPos;
@@ -56,7 +56,7 @@ struct HdEmbreeSssOutput {
 HdEmbreeSssOutput
 HdEmbreeRandomWalkSSS(
     HdEmbreeSssInput const& in,
-    HdEmbreeSampler& sampler,
+    HdEmbreeSampleDomain const& domain,
     RTCScene scene);
 
 /// Chiang 2016 random-walk SSS coefficient remap.

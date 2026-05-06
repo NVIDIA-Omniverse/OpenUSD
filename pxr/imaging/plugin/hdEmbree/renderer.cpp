@@ -863,7 +863,7 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _enableLighting(false)
     , _maxBounces(HdEmbreeDefaultMaxBounces)
     , _minBouncesBeforeRR(HdEmbreeDefaultMinBouncesBeforeRR)
-    , _samplerSequence(HdEmbreeSamplerSequence::Sobol)
+    , _samplerSequence(HdEmbreeGetDefaultSamplerSequence(true))
     , _enableAdaptiveSampling(HdEmbreeDefaultEnableAdaptiveSampling)
     , _adaptiveThreshold(HdEmbreeDefaultAdaptiveThreshold)
     , _minSamplesBeforeAdaptive(HdEmbreeDefaultMinSamplesBeforeAdaptive)
@@ -940,9 +940,7 @@ HdEmbreeRenderer::SetMinBouncesBeforeRR(int minBounces)
 void
 HdEmbreeRenderer::SetUseSobol(bool useSobol)
 {
-    _samplerSequence = useSobol
-        ? HdEmbreeSamplerSequence::Sobol
-        : HdEmbreeSamplerSequence::Random;
+    _samplerSequence = HdEmbreeGetDefaultSamplerSequence(useSobol);
 }
 
 void
@@ -1875,7 +1873,7 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
                 // Create a per-pixel sampler (Sobol or pseudo-random).
                 uint32_t pixelSeed = static_cast<uint32_t>(
                     TfHash::Combine(baseSeed, x, y));
-                HdEmbreeSobolSampler sampler(
+                HdEmbreeSampler sampler(
                     pixelSeed,
                     x,
                     y,
@@ -1885,7 +1883,9 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
                 // Jitter the camera ray direction.
                 GfVec2f jitter(0.0f, 0.0f);
                 if (HdEmbreeConfig::GetInstance().jitterCamera) {
-                    jitter = GfVec2f(sampler.Next(), sampler.Next());
+                    jitter = sampler.RootDomain()
+                        .Fork(HdEmbreeSampleDomainKey::CameraJitter)
+                        .Draw2D();
                 }
 
                 // Un-transform the pixel's NDC coordinates through the
@@ -2324,7 +2324,7 @@ HdEmbreeRenderer::_UpdateVarianceLuminance(
 void
 HdEmbreeRenderer::_TraceRay(unsigned int x, unsigned int y,
                             GfVec3f const& origin, GfVec3f const& dir,
-                            HdEmbreeSobolSampler& sampler,
+                            HdEmbreeSampler const& sampler,
                             HdEmbreeRayDifferential const& rayDiff)
 {
     // Intersect the camera ray.
@@ -2881,7 +2881,7 @@ HdEmbreeRenderer::_FindNearestFiniteLightHit(
 GfVec4f
 HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
                                 HdEmbreeRayDifferential const& rayDiff,
-                                HdEmbreeSobolSampler &sampler,
+                                HdEmbreeSampler const& sampler,
                                 GfVec4f const& clearColor)
 {
     if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
@@ -2999,7 +2999,11 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
             HdEmbreeConfig::GetInstance().cameraLightIntensity;
 
         float aoLightIntensity =
-            _ComputeAmbientOcclusion(hitPos, normal, sampler);
+            _ComputeAmbientOcclusion(
+                hitPos,
+                normal,
+                sampler.RootDomain()
+                    .Fork(HdEmbreeSampleDomainKey::AmbientOcclusion));
 
         lightingColor = materialColor * diffuseLight * aoLightIntensity;
     }
@@ -3010,7 +3014,7 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
                        rayHit.ray.org_z);
         GfVec3f dir = GfVec3f(rayHit.ray.dir_x, rayHit.ray.dir_y,
                               rayHit.ray.dir_z).GetNormalized();
-        lightingColor = _TracePath(origin, dir, rayDiff, sampler);
+        lightingColor = _TracePath(origin, dir, rayDiff, sampler.RootDomain());
     }
 
     GfVec4f output;
@@ -3024,7 +3028,7 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
 float
 HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& position,
                                             GfVec3f const& normal,
-                                            HdEmbreeSobolSampler &sampler)
+                                            HdEmbreeSampleDomain const& domain)
 {
     // 0 ambient occlusion samples means disable the ambient occlusion term.
     if (_ambientOcclusionSamples < 1) {
@@ -3056,17 +3060,32 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& position,
     // equal spacing guarantees.
     std::vector<GfVec2f> samples;
     samples.resize(_ambientOcclusionSamples);
+    std::vector<float> yJitter;
+    yJitter.resize(_ambientOcclusionSamples);
     for (int i = 0; i < _ambientOcclusionSamples; ++i) {
-        samples[i][0] = (float(i) + sampler.Next()) / _ambientOcclusionSamples;
+        const GfVec2f sample =
+            domain
+                .Split(
+                    HdEmbreeSampleDomainKey::AmbientOcclusionSample,
+                    _ambientOcclusionSamples,
+                    i)
+                .Draw2D();
+        samples[i][0] =
+            (static_cast<float>(i) + sample[0]) / _ambientOcclusionSamples;
+        yJitter[i] = sample[1];
     }
-    // Fisher-Yates shuffle using the Sobol sampler.
+    // Fisher-Yates shuffle using a separate sampler domain.
     for (int i = _ambientOcclusionSamples - 1; i > 0; --i) {
-        int j = static_cast<int>(sampler.Next() * (i + 1));
+        int j = static_cast<int>(
+            domain
+                .Chain(HdEmbreeSampleDomainKey::AmbientOcclusionShuffle, i)
+                .Draw1D() * (i + 1));
         j = std::min(j, i);
         std::swap(samples[i], samples[j]);
     }
     for (int i = 0; i < _ambientOcclusionSamples; ++i) {
-        samples[i][1] = (float(i) + sampler.Next()) / _ambientOcclusionSamples;
+        samples[i][1] =
+            (static_cast<float>(i) + yJitter[i]) / _ambientOcclusionSamples;
     }
 
     // Trace ambient occlusion rays. The occlusion factor is the fraction of
@@ -3115,7 +3134,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
     GfVec3f const& normal,
     GfVec3f const& visibilityNormal,
     GfVec3f const& wo,
-    HdEmbreeSobolSampler &sampler,
+    HdEmbreeSampleDomain const& domain,
     bool /*doubleSided*/,
     mxcpp::SurfaceClosure const* closure,
     HdEmbreeMediumState const& mediumState,
@@ -3145,26 +3164,35 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
         stratDimV = (N + stratDimU - 1) / stratDimU;
     }
 
+    int lightIndex = 0;
     for (auto const& it : _lightMap)
     {
         auto const& light = it.second->LightData();
         if (!light.visible) {
+            ++lightIndex;
             continue;
         }
+        const HdEmbreeSampleDomain lightDomain =
+            domain.Chain(HdEmbreeSampleDomainKey::DirectLightSelect,
+                         lightIndex);
 
         GfVec3f lightContrib(0.0f);
 
         for (int s = 0; s < N; ++s) {
+            const GfVec2f sample =
+                lightDomain
+                    .Split(HdEmbreeSampleDomainKey::DirectLightSample, N, s)
+                    .Draw2D();
             // Generate sample coordinates, optionally stratified.
             float u1, u2;
             if (_stratifyLightSamples && N > 1) {
                 int su = s % stratDimU;
                 int sv = s / stratDimU;
-                u1 = (su + sampler.Next()) / static_cast<float>(stratDimU);
-                u2 = (sv + sampler.Next()) / static_cast<float>(stratDimV);
+                u1 = (su + sample[0]) / static_cast<float>(stratDimU);
+                u2 = (sv + sample[1]) / static_cast<float>(stratDimV);
             } else {
-                u1 = sampler.Next();
-                u2 = sampler.Next();
+                u1 = sample[0];
+                u2 = sample[1];
             }
 
             HdEmbreeLightSampler::LightSample ls =
@@ -3275,6 +3303,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
         }
 
         finalColor += lightContrib * invN;
+        ++lightIndex;
     }
     return finalColor;
 }
@@ -3284,7 +3313,7 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
     GfVec3f const& position,
     GfVec3f const& wo,
     HdEmbreeMediumState const& mediumState,
-    HdEmbreeSobolSampler& sampler,
+    HdEmbreeSampleDomain const& domain,
     bool spectralActive,
     float heroWavelengthNm,
     float heroWavelengthPdf) const
@@ -3312,24 +3341,36 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
         stratDimV = (N + stratDimU - 1) / stratDimU;
     }
 
+    int lightIndex = 0;
     for (auto const& it : _lightMap) {
         auto const& light = it.second->LightData();
         if (!light.visible) {
+            ++lightIndex;
             continue;
         }
+        const HdEmbreeSampleDomain lightDomain =
+            domain.Chain(HdEmbreeSampleDomainKey::MediumDirectLightSelect,
+                         lightIndex);
 
         GfVec3f lightContrib(0.0f);
         for (int s = 0; s < N; ++s) {
+            const GfVec2f sample =
+                lightDomain
+                    .Split(
+                        HdEmbreeSampleDomainKey::MediumDirectLightSample,
+                        N,
+                        s)
+                    .Draw2D();
             float u1 = 0.0f;
             float u2 = 0.0f;
             if (_stratifyLightSamples && N > 1) {
                 int su = s % stratDimU;
                 int sv = s / stratDimU;
-                u1 = (su + sampler.Next()) / static_cast<float>(stratDimU);
-                u2 = (sv + sampler.Next()) / static_cast<float>(stratDimV);
+                u1 = (su + sample[0]) / static_cast<float>(stratDimU);
+                u2 = (sv + sample[1]) / static_cast<float>(stratDimV);
             } else {
-                u1 = sampler.Next();
-                u2 = sampler.Next();
+                u1 = sample[0];
+                u2 = sample[1];
             }
 
             const HdEmbreeLightSampler::LightSample ls =
@@ -3395,6 +3436,7 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
         }
 
         finalColor += lightContrib * invN;
+        ++lightIndex;
     }
 
     return finalColor;
@@ -3404,7 +3446,7 @@ HdEmbreeRenderer::_VolumeTransmissionResult
 HdEmbreeRenderer::_TraceVolumeTransmission(
     _VolumeTransmissionInput const& input,
     HdEmbreeMediumState const& mediumState,
-    HdEmbreeSobolSampler& sampler,
+    HdEmbreeSampleDomain const& domain,
     _VolumeTransmissionState* state) const
 {
     if (!state || !mediumState.active) {
@@ -3496,7 +3538,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
             channel = mxcpp::ChannelMIS(
                 _ToMx(rgbThroughput()),
                 _ToMx(albedo),
-                sampler.Next(),
+                domain.Fork(HdEmbreeSampleDomainKey::MediumChannel).Draw1D(),
                 &channelPdfMx);
             channelPdf =
                 GfVec3f(channelPdfMx[0], channelPdfMx[1], channelPdfMx[2]);
@@ -3550,8 +3592,15 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
             ? mxcpp::AdobeOpenPbrSampleVolumeEventDistance(
                   medium,
                   _ToMx(rgbThroughput()),
-                  sampler.Next())
-            : mxcpp::SampleFreeFlightChannel(medium, channel, sampler.Next());
+                  domain
+                      .Fork(HdEmbreeSampleDomainKey::MediumFreeFlight)
+                      .Draw1D())
+            : mxcpp::SampleFreeFlightChannel(
+                  medium,
+                  channel,
+                  domain
+                      .Fork(HdEmbreeSampleDomainKey::MediumFreeFlight)
+                      .Draw1D());
         const float maxTravelDist =
             std::min(input.surfaceDist, input.finiteLightDist);
         if (scatterDist < maxTravelDist) {
@@ -3569,7 +3618,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
                 scatterPos,
                 wo,
                 mediumState,
-                sampler,
+                domain.Fork(HdEmbreeSampleDomainKey::MediumDirectLighting),
                 hero.active,
                 hero.wavelengthNm,
                 hero.pdf);
@@ -3599,7 +3648,10 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
                         state->throughput[1],
                         state->throughput[2]});
                 q = std::min(q, 0.95f);
-                if (q <= 0.0f || sampler.Next() > q) {
+                if (q <= 0.0f ||
+                    domain
+                        .Fork(HdEmbreeSampleDomainKey::MediumRussianRoulette)
+                        .Draw1D() > q) {
                     return _VolumeTransmissionResult::Terminate;
                 }
                 if (hero.active) {
@@ -3609,17 +3661,19 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
                 }
             }
 
+            const GfVec2f phaseSample =
+                domain.Fork(HdEmbreeSampleDomainKey::MediumPhase).Draw2D();
             const GfVec3f wi = _ToGf(useAdobeVolumeTransport
                 ? mxcpp::AdobeOpenPbrSampleVolumePhase(
                       medium,
                       _ToMx(wo),
-                      sampler.Next(),
-                      sampler.Next())
+                      phaseSample[0],
+                      phaseSample[1])
                 : mxcpp::SampleHenyeyGreenstein(
                       _ToMx(wo),
                       medium.anisotropy,
-                      sampler.Next(),
-                      sampler.Next()));
+                      phaseSample[0],
+                      phaseSample[1]));
             const float phasePdf = useAdobeVolumeTransport
                 ? mxcpp::AdobeOpenPbrEvalVolumePhasePdf(
                       medium,
@@ -3703,7 +3757,7 @@ HdEmbreeRenderer::_TracePath(
     GfVec3f const& origin,
     GfVec3f const& dir,
     HdEmbreeRayDifferential const& rayDiff,
-    HdEmbreeSobolSampler &sampler) const
+    HdEmbreeSampleDomain const& domain) const
 {
     HdEmbreeRayDifferential currentRayDiff = rayDiff;
     GfVec3f radiance(0.0f);
@@ -3734,12 +3788,11 @@ HdEmbreeRenderer::_TracePath(
             contribution, _fireflyClampThreshold);
     };
 
-    for (int bounce = 0; bounce <= _maxBounces; ++bounce) {
-        // QMC padding: reset the sampler so each bounce independently
-        // uses the best (lowest) Sobol dimensions.  The bounce-specific
-        // key ensures each bounce gets a different Owen scrambling seed.
-        sampler.ResetForBounce(
-            static_cast<uint32_t>(bounce + 1) * 0x9e3779b9u);
+    for (int bounce = 0, pathEvent = 0;
+         bounce <= _maxBounces;
+         ++bounce, ++pathEvent) {
+        const HdEmbreeSampleDomain bounceDomain =
+            domain.Chain(HdEmbreeSampleDomainKey::PathBounce, pathEvent);
 
         RTCRayHit rayHit;
         rayHit.ray.flags = 0;
@@ -3803,7 +3856,7 @@ HdEmbreeRenderer::_TracePath(
                 _TraceVolumeTransmission(
                     volumeInput,
                     currentMedium,
-                    sampler,
+                    bounceDomain,
                     &volumeState);
 
             radiance = volumeState.radiance;
@@ -4076,7 +4129,9 @@ HdEmbreeRenderer::_TracePath(
 
         // --- Stochastic opacity pass-through ---
         if (hasClosure && closure.presence < 1.0f) {
-            if (sampler.Next() > closure.presence) {
+            if (bounceDomain
+                    .Fork(HdEmbreeSampleDomainKey::Presence)
+                    .Draw1D() > closure.presence) {
                 float advance = rayHit.ray.tfar + 1e-4f;
                 rayOrigin = hitPos + rayDir * 1e-4f;
                 if (currentRayDiff.hasDifferentials) {
@@ -4097,7 +4152,10 @@ HdEmbreeRenderer::_TracePath(
         if (hasClosure && closure.HasDispersion() && !hero.active) {
             hero.active = true;
             hero.wavelengthNm =
-                mxcpp::Spectral::SampleHeroWavelength(sampler.Next());
+                mxcpp::Spectral::SampleHeroWavelength(
+                    bounceDomain
+                        .Fork(HdEmbreeSampleDomainKey::Wavelength)
+                        .Draw1D());
             hero.pdf = mxcpp::Spectral::HeroWavelengthPdf();
             spectralThroughput = _RgbToSpectralValue(throughput, hero);
         }
@@ -4113,16 +4171,20 @@ HdEmbreeRenderer::_TracePath(
         mxcpp::Bsdf::BsdfSample bs;
         bool hasBsdfSample = false;
         if (hasClosure && bounce < _maxBounces) {
+            const GfVec3f bsdfSample =
+                bounceDomain
+                    .Fork(HdEmbreeSampleDomainKey::BsdfSample)
+                    .Draw3D();
             if (adobeOpenPbrSurface.valid) {
                 bs = mxcpp::SamplePreparedAdobeOpenPbrSurface(
                     adobeOpenPbrSurface,
-                    sampler.Next(),
-                    sampler.Next(),
-                    sampler.Next());
+                    bsdfSample[0],
+                    bsdfSample[1],
+                    bsdfSample[2]);
             } else {
                 bs = mxcpp::Bsdf::SampleSurface(
                     closure, _ToMx(normal), _ToMx(wo),
-                    sampler.Next(), sampler.Next(), sampler.Next(),
+                    bsdfSample[0], bsdfSample[1], bsdfSample[2],
                     hero.wavelengthNm);
             }
             hasBsdfSample = bs.isSubsurface || bs.pdf > 0.0f;
@@ -4145,9 +4207,13 @@ HdEmbreeRenderer::_TracePath(
             // hits, which in turn caused the entire path to break with
             // zero radiance (black artifacts at grazing regions).
             mxcpp::Vec3f entryDirMx;
+            const GfVec2f entrySample =
+                bounceDomain
+                    .Fork(HdEmbreeSampleDomainKey::SssEntryDirection)
+                    .Draw2D();
             if (!mxcpp::Bsdf::SampleSubsurfaceEntry(
                     closure, _ToMx(normal), _ToMx(wo),
-                    sampler.Next(), sampler.Next(), entryDirMx)) {
+                    entrySample[0], entrySample[1], entryDirMx)) {
                 break;
             }
             const GfVec3f entryDir = _ToGf(entryDirMx);
@@ -4207,7 +4273,9 @@ HdEmbreeRenderer::_TracePath(
             sssIn.worldToObjectMatrix = instanceContext->worldToObjectMatrix;
 
             HdEmbreeSssOutput sssOut = HdEmbreeRandomWalkSSS(
-                sssIn, sampler, _scene);
+                sssIn,
+                bounceDomain.Fork(HdEmbreeSampleDomainKey::SssEntry),
+                _scene);
             _sssCallCount.fetch_add(1, std::memory_order_relaxed);
             _sssWalkStepCount.fetch_add(
                 sssOut.walkSteps, std::memory_order_relaxed);
@@ -4293,7 +4361,7 @@ HdEmbreeRenderer::_TracePath(
                 normal,
                 geometricNormal,
                 wo,
-                sampler,
+                bounceDomain.Fork(HdEmbreeSampleDomainKey::DirectLighting),
                 doubleSided,
                 &closure,
                 currentMedium,
@@ -4317,7 +4385,7 @@ HdEmbreeRenderer::_TracePath(
                 normal,
                 geometricNormal,
                 wo,
-                sampler,
+                bounceDomain.Fork(HdEmbreeSampleDomainKey::DirectLighting),
                 doubleSided,
                 &fallback,
                 currentMedium,
@@ -4417,7 +4485,12 @@ HdEmbreeRenderer::_TracePath(
                     _SpectralScalarToRgb(spectralThroughput, hero)[2]})
                 : std::max({throughput[0], throughput[1], throughput[2]});
             q = std::min(q, 0.95f);
-            if (q <= 0.0f || sampler.Next() > q) break;
+            if (q <= 0.0f ||
+                bounceDomain
+                    .Fork(HdEmbreeSampleDomainKey::RussianRoulette)
+                    .Draw1D() > q) {
+                break;
+            }
             if (hero.active) {
                 spectralThroughput /= q;
             } else {

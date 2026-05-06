@@ -13,7 +13,9 @@
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_SAMPLING_H
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/hash.h"
+#include "pxr/base/gf/vec2f.h"
+#include "pxr/base/gf/vec3f.h"
+#include "pxr/base/gf/vec4f.h"
 #include "pxr/base/tf/token.h"
 
 #include <algorithm>
@@ -434,41 +436,344 @@ HdEmbreeSamplerSequenceIsSupported(HdEmbreeSamplerSequence sequence)
 #endif
 }
 
-// ---------------------------------------------------------------------------
-// Stateful sampler that tracks dimension consumption
-// ---------------------------------------------------------------------------
-
-/// A per-pixel, per-sample sampler abstraction. The default implementation
-/// uses hdEmbree's existing Sobol sequence with FastOwen scrambling, but it
-/// can also route to OpenQMC-backed sequences when available.
-///
-/// Supports "padding" (per-bounce dimension restarting): calling
-/// ResetForBounce() re-derives the Owen seed from the original pixel seed
-/// and resets the dimension counter to 0. This ensures every bounce of a
-/// path independently uses the lowest (best-quality) Sobol dimensions,
-/// dramatically improving QMC effectiveness for high-dimensional path
-/// tracing integrands.
-struct HdEmbreeSampler
+inline HdEmbreeSamplerSequence
+HdEmbreeGetDefaultSamplerSequence(bool useSobol)
 {
-    uint32_t baseSeed;     ///< Original per-pixel seed (immutable, for resets)
-    uint32_t seed;         ///< Current scrambling seed (may differ after resets)
-    uint32_t sampleIndex;  ///< Which sample within this pixel
-    int dimension;         ///< Current dimension counter
-    bool useRandom;        ///< If true, use hash-based pseudo-random instead of Sobol
-    HdEmbreeSamplerSequence sequence;
+    if (!useSobol) {
+        return HdEmbreeSamplerSequence::Random;
+    }
 
 #if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
-    using _OpenQMCVariant = std::variant<
-        std::monostate,
-        oqmc::SobolSampler,
-        oqmc::SobolBnSampler,
-        oqmc::PmjSampler,
-        oqmc::PmjBnSampler,
-        oqmc::LatticeSampler,
-        oqmc::LatticeBnSampler>;
+    return HdEmbreeSamplerSequence::OpenQMCSobolBN;
+#else
+    return HdEmbreeSamplerSequence::Sobol;
+#endif
+}
 
-    _OpenQMCVariant openQmcRoot;
-    _OpenQMCVariant openQmcCurrent;
+// ---------------------------------------------------------------------------
+// Domain-aware sampler API
+// ---------------------------------------------------------------------------
+
+enum class HdEmbreeSampleDomainKey : uint32_t
+{
+    Pixel = 0x0001u,
+    CameraJitter = 0x0010u,
+    AmbientOcclusion = 0x001fu,
+    AmbientOcclusionSample = 0x0020u,
+    AmbientOcclusionShuffle = 0x0021u,
+    PathBounce = 0x0100u,
+    Presence = 0x0110u,
+    Wavelength = 0x0111u,
+    BsdfSample = 0x0120u,
+    DirectLighting = 0x012fu,
+    DirectLightSelect = 0x0130u,
+    DirectLightSample = 0x0131u,
+    RussianRoulette = 0x0140u,
+    MediumChannel = 0x0200u,
+    MediumFreeFlight = 0x0201u,
+    MediumDirectLighting = 0x020fu,
+    MediumDirectLightSelect = 0x0210u,
+    MediumDirectLightSample = 0x0211u,
+    MediumRussianRoulette = 0x0220u,
+    MediumPhase = 0x0230u,
+    SssEntry = 0x0300u,
+    SssEntryDirection = 0x0301u,
+    SssBounce = 0x0310u,
+    SssChannel = 0x0320u,
+    SssGuideChoice = 0x0321u,
+    SssBackwardChoice = 0x0322u,
+    SssPhaseDirection = 0x0323u,
+    SssFreeFlight = 0x0324u
+};
+
+inline uint32_t
+HdEmbreeSampleDomainKeyValue(HdEmbreeSampleDomainKey key)
+{
+    return static_cast<uint32_t>(key);
+}
+
+inline uint32_t
+HdEmbree_MixSampleDomain(uint32_t seed,
+                         HdEmbreeSampleDomainKey key,
+                         uint32_t a = 0u,
+                         uint32_t b = 0u)
+{
+    uint32_t h = seed ^ 0xa511e9b3u;
+    h ^= HdEmbree_MixBits(
+        HdEmbreeSampleDomainKeyValue(key) + 0x9e3779b9u);
+    h ^= HdEmbree_MixBits(a + 0x85ebca6bu);
+    h ^= HdEmbree_MixBits(b + 0xc2b2ae35u);
+    return HdEmbree_MixBits(h);
+}
+
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+using HdEmbreeOpenQMCVariant = std::variant<
+    std::monostate,
+    oqmc::SobolSampler,
+    oqmc::SobolBnSampler,
+    oqmc::PmjSampler,
+    oqmc::PmjBnSampler,
+    oqmc::LatticeSampler,
+    oqmc::LatticeBnSampler>;
+#endif
+
+struct HdEmbreeSampleDomain
+{
+    uint32_t seed = 0u;
+    uint32_t sampleIndex = 0u;
+    bool useRandom = false;
+    HdEmbreeSamplerSequence sequence = HdEmbreeSamplerSequence::Sobol;
+
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+    HdEmbreeOpenQMCVariant openQmcDomain;
+#endif
+
+    HdEmbreeSampleDomain() = default;
+
+    HdEmbreeSampleDomain(uint32_t domainSeed,
+                         uint32_t sampleIdx,
+                         bool random,
+                         HdEmbreeSamplerSequence samplerSequence)
+        : seed(domainSeed)
+        , sampleIndex(sampleIdx)
+        , useRandom(random)
+        , sequence(samplerSequence)
+    {
+    }
+
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+    HdEmbreeSampleDomain(uint32_t domainSeed,
+                         uint32_t sampleIdx,
+                         bool random,
+                         HdEmbreeSamplerSequence samplerSequence,
+                         HdEmbreeOpenQMCVariant openQmcSampler)
+        : seed(domainSeed)
+        , sampleIndex(sampleIdx)
+        , useRandom(random)
+        , sequence(samplerSequence)
+        , openQmcDomain(openQmcSampler)
+    {
+    }
+#endif
+
+    HdEmbreeSampleDomain Fork(HdEmbreeSampleDomainKey key) const
+    {
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+        if (HdEmbreeSamplerSequenceNeedsOpenQMC(sequence)) {
+            const int domainKey =
+                static_cast<int>(HdEmbreeSampleDomainKeyValue(key));
+            return std::visit(
+                [this, key, domainKey](auto const& sampler)
+                    -> HdEmbreeSampleDomain {
+                    using SamplerT = std::decay_t<decltype(sampler)>;
+                    if constexpr (std::is_same_v<SamplerT, std::monostate>) {
+                        return _LegacyChild(key);
+                    } else {
+                        return HdEmbreeSampleDomain(
+                            HdEmbree_MixSampleDomain(seed, key),
+                            sampleIndex,
+                            useRandom,
+                            sequence,
+                            sampler.newDomain(domainKey));
+                    }
+                },
+                openQmcDomain);
+        }
+#endif
+
+        return _LegacyChild(key);
+    }
+
+    HdEmbreeSampleDomain Split(HdEmbreeSampleDomainKey key,
+                               int size,
+                               int index) const
+    {
+        const int safeSize = std::max(size, 1);
+        const int safeIndex = std::max(index, 0);
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+        if (HdEmbreeSamplerSequenceNeedsOpenQMC(sequence)) {
+            const int domainKey =
+                static_cast<int>(HdEmbreeSampleDomainKeyValue(key));
+            return std::visit(
+                [this, key, domainKey, safeSize, safeIndex](auto const& sampler)
+                    -> HdEmbreeSampleDomain {
+                    using SamplerT = std::decay_t<decltype(sampler)>;
+                    if constexpr (std::is_same_v<SamplerT, std::monostate>) {
+                        return _LegacyChild(
+                            key,
+                            static_cast<uint32_t>(safeSize),
+                            static_cast<uint32_t>(safeIndex));
+                    } else {
+                        return HdEmbreeSampleDomain(
+                            HdEmbree_MixSampleDomain(
+                                seed,
+                                key,
+                                static_cast<uint32_t>(safeSize),
+                                static_cast<uint32_t>(safeIndex)),
+                            sampleIndex,
+                            useRandom,
+                            sequence,
+                            sampler.newDomainSplit(
+                                domainKey, safeSize, safeIndex));
+                    }
+                },
+                openQmcDomain);
+        }
+#endif
+        return _LegacyChild(
+            key,
+            static_cast<uint32_t>(safeSize),
+            static_cast<uint32_t>(safeIndex));
+    }
+
+    HdEmbreeSampleDomain Distrib(HdEmbreeSampleDomainKey key,
+                                 int index) const
+    {
+        const int safeIndex = std::max(index, 0);
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+        if (HdEmbreeSamplerSequenceNeedsOpenQMC(sequence)) {
+            const int domainKey =
+                static_cast<int>(HdEmbreeSampleDomainKeyValue(key));
+            return std::visit(
+                [this, key, domainKey, safeIndex](auto const& sampler)
+                    -> HdEmbreeSampleDomain {
+                    using SamplerT = std::decay_t<decltype(sampler)>;
+                    if constexpr (std::is_same_v<SamplerT, std::monostate>) {
+                        return _LegacyChild(
+                            key, static_cast<uint32_t>(safeIndex));
+                    } else {
+                        return HdEmbreeSampleDomain(
+                            HdEmbree_MixSampleDomain(
+                                seed,
+                                key,
+                                static_cast<uint32_t>(safeIndex)),
+                            sampleIndex,
+                            useRandom,
+                            sequence,
+                            sampler.newDomainDistrib(domainKey, safeIndex));
+                    }
+                },
+                openQmcDomain);
+        }
+#endif
+        return _LegacyChild(key, static_cast<uint32_t>(safeIndex));
+    }
+
+    HdEmbreeSampleDomain Chain(HdEmbreeSampleDomainKey key,
+                               int index) const
+    {
+        const int safeIndex = std::max(index, 0);
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+        if (HdEmbreeSamplerSequenceNeedsOpenQMC(sequence)) {
+            const int domainKey =
+                static_cast<int>(HdEmbreeSampleDomainKeyValue(key));
+            return std::visit(
+                [this, key, domainKey, safeIndex](auto const& sampler)
+                    -> HdEmbreeSampleDomain {
+                    using SamplerT = std::decay_t<decltype(sampler)>;
+                    if constexpr (std::is_same_v<SamplerT, std::monostate>) {
+                        return _LegacyChild(
+                            key, static_cast<uint32_t>(safeIndex));
+                    } else {
+                        return HdEmbreeSampleDomain(
+                            HdEmbree_MixSampleDomain(
+                                seed,
+                                key,
+                                static_cast<uint32_t>(safeIndex)),
+                            sampleIndex,
+                            useRandom,
+                            sequence,
+                            sampler.newDomainChain(domainKey, safeIndex));
+                    }
+                },
+                openQmcDomain);
+        }
+#endif
+        return _LegacyChild(key, static_cast<uint32_t>(safeIndex));
+    }
+
+    float Draw1D() const
+    {
+        return _Draw<1>()[0];
+    }
+
+    GfVec2f Draw2D() const
+    {
+        const std::array<float, 2> sample = _Draw<2>();
+        return GfVec2f(sample[0], sample[1]);
+    }
+
+    GfVec3f Draw3D() const
+    {
+        const std::array<float, 3> sample = _Draw<3>();
+        return GfVec3f(sample[0], sample[1], sample[2]);
+    }
+
+    GfVec4f Draw4D() const
+    {
+        const std::array<float, 4> sample = _Draw<4>();
+        return GfVec4f(sample[0], sample[1], sample[2], sample[3]);
+    }
+
+private:
+    HdEmbreeSampleDomain _LegacyChild(HdEmbreeSampleDomainKey key,
+                                      uint32_t a = 0u,
+                                      uint32_t b = 0u) const
+    {
+        return HdEmbreeSampleDomain(
+            HdEmbree_MixSampleDomain(seed, key, a, b),
+            sampleIndex,
+            useRandom,
+            sequence);
+    }
+
+    template <int Size>
+    std::array<float, Size> _Draw() const
+    {
+        static_assert(Size >= 1, "Draw size must be at least one.");
+        static_assert(Size <= 4, "Draw size must be at most four.");
+
+        std::array<float, Size> sample{};
+
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+        if (HdEmbreeSamplerSequenceNeedsOpenQMC(sequence)) {
+            std::visit(
+                [&sample](auto const& sampler) {
+                    using SamplerT = std::decay_t<decltype(sampler)>;
+                    if constexpr (!std::is_same_v<SamplerT, std::monostate>) {
+                        sampler.template drawSample<Size>(sample.data());
+                    }
+                },
+                openQmcDomain);
+            return sample;
+        }
+#endif
+
+        for (int i = 0; i < Size; ++i) {
+            if (useRandom) {
+                const uint32_t h = HdEmbree_MixBits(
+                    seed ^
+                    (sampleIndex * 0x9e3779b9u) ^
+                    (static_cast<uint32_t>(i) * 0x517cc1b7u));
+                sample[i] = std::min(h * 0x1p-32f, 1.0f - FLT_EPSILON);
+            } else {
+                sample[i] = HdEmbree_SobolSample(sampleIndex, i, seed);
+            }
+        }
+
+        return sample;
+    }
+};
+
+struct HdEmbreeSampler
+{
+    uint32_t seed = 0u;
+    uint32_t sampleIndex = 0u;
+    bool useRandom = false;
+    HdEmbreeSamplerSequence sequence = HdEmbreeSamplerSequence::Sobol;
+
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
+    HdEmbreeOpenQMCVariant openQmcRoot;
 #endif
 
     HdEmbreeSampler(uint32_t pixelSeed,
@@ -476,10 +781,8 @@ struct HdEmbreeSampler
                     uint32_t pixelY,
                     uint32_t sampleIdx,
                     HdEmbreeSamplerSequence samplerSequence)
-        : baseSeed(pixelSeed)
-        , seed(pixelSeed)
+        : seed(pixelSeed)
         , sampleIndex(sampleIdx)
-        , dimension(0)
         , useRandom(samplerSequence == HdEmbreeSamplerSequence::Random)
         , sequence(samplerSequence)
     {
@@ -488,32 +791,26 @@ struct HdEmbreeSampler
         case HdEmbreeSamplerSequence::OpenQMCSobol:
             openQmcRoot = oqmc::SobolSampler(
                 pixelX, pixelY, 0u, sampleIdx, _GetOpenQMCCache<oqmc::SobolSampler>());
-            openQmcCurrent = openQmcRoot;
             break;
         case HdEmbreeSamplerSequence::OpenQMCSobolBN:
             openQmcRoot = oqmc::SobolBnSampler(
                 pixelX, pixelY, 0u, sampleIdx, _GetOpenQMCCache<oqmc::SobolBnSampler>());
-            openQmcCurrent = openQmcRoot;
             break;
         case HdEmbreeSamplerSequence::OpenQMCPMJ:
             openQmcRoot = oqmc::PmjSampler(
                 pixelX, pixelY, 0u, sampleIdx, _GetOpenQMCCache<oqmc::PmjSampler>());
-            openQmcCurrent = openQmcRoot;
             break;
         case HdEmbreeSamplerSequence::OpenQMCPMJBN:
             openQmcRoot = oqmc::PmjBnSampler(
                 pixelX, pixelY, 0u, sampleIdx, _GetOpenQMCCache<oqmc::PmjBnSampler>());
-            openQmcCurrent = openQmcRoot;
             break;
         case HdEmbreeSamplerSequence::OpenQMCLattice:
             openQmcRoot = oqmc::LatticeSampler(
                 pixelX, pixelY, 0u, sampleIdx, _GetOpenQMCCache<oqmc::LatticeSampler>());
-            openQmcCurrent = openQmcRoot;
             break;
         case HdEmbreeSamplerSequence::OpenQMCLatticeBN:
             openQmcRoot = oqmc::LatticeBnSampler(
                 pixelX, pixelY, 0u, sampleIdx, _GetOpenQMCCache<oqmc::LatticeBnSampler>());
-            openQmcCurrent = openQmcRoot;
             break;
         case HdEmbreeSamplerSequence::Random:
         case HdEmbreeSamplerSequence::Sobol:
@@ -525,82 +822,19 @@ struct HdEmbreeSampler
 #endif
     }
 
-    /// Reset the dimension counter and re-derive the scrambling seed for a
-    /// new "padded" sub-sequence (e.g. a new path bounce). Each unique
-    /// bounceKey produces an independent low-discrepancy sequence starting
-    /// from dimension 0.
-    void ResetForBounce(uint32_t bounceKey) {
-        if (HdEmbreeSamplerSequenceNeedsOpenQMC(sequence)) {
+    HdEmbreeSampleDomain RootDomain() const
+    {
 #if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
-            std::visit(
-                [this, bounceKey](auto const& sampler) {
-                    using SamplerT = std::decay_t<decltype(sampler)>;
-                    if constexpr (!std::is_same_v<SamplerT, std::monostate>) {
-                        openQmcCurrent = sampler.newDomain(bounceKey);
-                    }
-                },
-                openQmcRoot);
-#endif
-            dimension = 0;
-            return;
+        if (HdEmbreeSamplerSequenceNeedsOpenQMC(sequence)) {
+            return HdEmbreeSampleDomain(
+                seed, sampleIndex, useRandom, sequence, openQmcRoot);
         }
-
-        seed = HdEmbree_MixBits(baseSeed ^ bounceKey);
-        dimension = 0;
+#endif
+        return HdEmbreeSampleDomain(seed, sampleIndex, useRandom, sequence);
     }
 
-    /// Return the next quasi-random (or pseudo-random) float in [0, 1)
-    /// and advance dimension.
-    float Next() {
-        if (HdEmbreeSamplerSequenceNeedsOpenQMC(sequence)) {
-#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
-            constexpr int kOpenQMCDomainDimensions = 4;
-            const int currentDimension = dimension++;
-            return std::visit(
-                [currentDimension](auto const& sampler) {
-                    using SamplerT = std::decay_t<decltype(sampler)>;
-                    if constexpr (std::is_same_v<SamplerT, std::monostate>) {
-                        return 0.0f;
-                    } else {
-                        float sample[kOpenQMCDomainDimensions];
-                        const int domainIndex =
-                            currentDimension / kOpenQMCDomainDimensions;
-                        const int componentIndex =
-                            currentDimension % kOpenQMCDomainDimensions;
-
-                        if (domainIndex == 0) {
-                            sampler.template drawSample<kOpenQMCDomainDimensions>(
-                                sample);
-                        } else {
-                            auto domainSampler = sampler.newDomain(domainIndex);
-                            domainSampler
-                                .template drawSample<kOpenQMCDomainDimensions>(
-                                    sample);
-                        }
-                        return sample[componentIndex];
-                    }
-                },
-                openQmcCurrent);
-#else
-            return 0.0f;
-#endif
-        }
-
-        float val;
-        if (useRandom) {
-            uint32_t h = HdEmbree_MixBits(
-                seed ^ (sampleIndex * 0x9e3779b9u)
-                     ^ (static_cast<uint32_t>(dimension) * 0x517cc1b7u));
-            val = std::min(h * 0x1p-32f, 1.0f - FLT_EPSILON);
-        } else {
-            val = HdEmbree_SobolSample(sampleIndex, dimension, seed);
-        }
-        ++dimension;
-        return val;
-    }
-
-#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
 private:
+#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
     template <typename SamplerT>
     static char*
     _GetOpenQMCCache()
@@ -616,8 +850,6 @@ private:
     }
 #endif
 };
-
-using HdEmbreeSobolSampler = HdEmbreeSampler;
 
 PXR_NAMESPACE_CLOSE_SCOPE
 

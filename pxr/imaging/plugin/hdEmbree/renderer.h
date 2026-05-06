@@ -251,13 +251,13 @@ private:
     // aov buffers.
     void _TraceRay(unsigned int x, unsigned int y,
                    GfVec3f const& origin, GfVec3f const& dir,
-                   HdEmbreeSobolSampler& sampler,
+                   HdEmbreeSampler const& sampler,
                    HdEmbreeRayDifferential const& rayDiff);
 
     // Compute the color at the given ray hit.
     GfVec4f _ComputeColor(RTCRayHit const& rayHit,
                           HdEmbreeRayDifferential const& rayDiff,
-                          HdEmbreeSobolSampler& sampler,
+                          HdEmbreeSampler const& sampler,
                           GfVec4f const& clearColor);
     // Compute the depth at the given ray hit.
     bool _ComputeDepth(RTCRayHit const& rayHit, float* depth, bool clip);
@@ -279,7 +279,7 @@ private:
     // the light contribution of an infinitely far, pure white dome light.
     float _ComputeAmbientOcclusion(GfVec3f const& position,
                                    GfVec3f const& normal,
-                                   HdEmbreeSobolSampler& sampler);
+                                   HdEmbreeSampleDomain const& domain);
 
     /// Evaluate direct lighting from all scene lights using MIS.
     /// If \p closure is non-null, uses the MaterialXCpp BSDF evaluation;
@@ -291,7 +291,7 @@ private:
         GfVec3f const& normal,
         GfVec3f const& visibilityNormal,
         GfVec3f const& wo,
-        HdEmbreeSobolSampler& sampler,
+        HdEmbreeSampleDomain const& domain,
         bool doubleSided,
         mxcpp::SurfaceClosure const* closure,
         HdEmbreeMediumState const& mediumState = HdEmbreeMediumState(),
@@ -305,7 +305,7 @@ private:
         GfVec3f const& position,
         GfVec3f const& wo,
         HdEmbreeMediumState const& mediumState,
-        HdEmbreeSobolSampler& sampler,
+        HdEmbreeSampleDomain const& domain,
         bool spectralActive = false,
         float heroWavelengthNm = 0.0f,
         float heroWavelengthPdf = 0.0f) const;
@@ -345,7 +345,7 @@ private:
     _VolumeTransmissionResult _TraceVolumeTransmission(
         _VolumeTransmissionInput const& input,
         HdEmbreeMediumState const& mediumState,
-        HdEmbreeSobolSampler& sampler,
+        HdEmbreeSampleDomain const& domain,
         _VolumeTransmissionState* state) const;
 
     /// Multi-bounce path tracer with MIS.
@@ -353,7 +353,7 @@ private:
         GfVec3f const& origin,
         GfVec3f const& dir,
         HdEmbreeRayDifferential const& rayDiff,
-        HdEmbreeSobolSampler& sampler) const;
+        HdEmbreeSampleDomain const& domain) const;
 
     // Return the visibility from `position` along `direction`
     GfVec3f _Visibility(GfVec3f const& position,

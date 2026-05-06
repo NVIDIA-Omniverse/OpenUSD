@@ -242,27 +242,34 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                 HdEmbreeRenderSettingsTokens->randomNumberSeed, (unsigned int)-1));
 
         const HdEmbreeSamplerSequence defaultSamplerSequence =
-            HdEmbreeConfig::GetInstance().useSobol
-                ? HdEmbreeSamplerSequence::Sobol
-                : HdEmbreeSamplerSequence::Random;
+            HdEmbreeGetDefaultSamplerSequence(
+                HdEmbreeConfig::GetInstance().useSobol);
+        const TfToken defaultSamplerSequenceToken =
+            HdEmbreeGetSamplerSequenceToken(defaultSamplerSequence);
         TfToken samplerSequenceToken =
             renderDelegate->GetRenderSetting<TfToken>(
                 HdEmbreeRenderSettingsTokens->samplerSequence,
-                HdEmbreeGetSamplerSequenceToken(defaultSamplerSequence));
+                defaultSamplerSequenceToken);
         HdEmbreeSamplerSequence samplerSequence =
             HdEmbreeGetSamplerSequenceFromToken(samplerSequenceToken);
         if (HdEmbreeGetSamplerSequenceToken(samplerSequence) !=
             samplerSequenceToken) {
             TF_WARN("hdEmbree sampler sequence '%s' is unknown; "
-                    "falling back to 'sobol'.",
-                    samplerSequenceToken.GetText());
-            samplerSequence = HdEmbreeSamplerSequence::Sobol;
+                    "falling back to '%s'.",
+                    samplerSequenceToken.GetText(),
+                    defaultSamplerSequenceToken.GetText());
+            samplerSequence = defaultSamplerSequence;
         }
         if (!HdEmbreeSamplerSequenceIsSupported(samplerSequence)) {
+            const HdEmbreeSamplerSequence fallbackSamplerSequence =
+                HdEmbreeGetDefaultSamplerSequence(true);
+            const TfToken fallbackSamplerSequenceToken =
+                HdEmbreeGetSamplerSequenceToken(fallbackSamplerSequence);
             TF_WARN("hdEmbree sampler sequence '%s' requires OpenQMC support; "
-                    "falling back to 'sobol'.",
-                    samplerSequenceToken.GetText());
-            samplerSequence = HdEmbreeSamplerSequence::Sobol;
+                    "falling back to '%s'.",
+                    samplerSequenceToken.GetText(),
+                    fallbackSamplerSequenceToken.GetText());
+            samplerSequence = fallbackSamplerSequence;
         }
         _renderer->SetSamplerSequence(samplerSequence);
 

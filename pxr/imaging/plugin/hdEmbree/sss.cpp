@@ -436,7 +436,7 @@ HdEmbreeBackwardDwivediFraction(
 HdEmbreeSssOutput
 HdEmbreeRandomWalkSSS(
     HdEmbreeSssInput const& in,
-    HdEmbreeSampler& sampler,
+    HdEmbreeSampleDomain const& domain,
     RTCScene scene)
 {
     // Phase 3: after kSimilarityLevel bounces we switch to isotropic scattering
@@ -477,6 +477,8 @@ HdEmbreeRandomWalkSSS(
 
     for (int bounce = 0; bounce < _kSssMaxBounces; ++bounce) {
         ++out.walkSteps;
+        const HdEmbreeSampleDomain bounceDomain =
+            domain.Chain(HdEmbreeSampleDomainKey::SssBounce, bounce);
 
         // Similarity switch: after kSimilarityLevel the medium is approximated
         // as isotropic with reduced scattering.
@@ -503,7 +505,7 @@ HdEmbreeRandomWalkSSS(
                 st.throughput[0], st.throughput[1], st.throughput[2]),
             /*weights*/ mxcpp::Vec3f(
                 st.alpha[0], st.alpha[1], st.alpha[2]),
-            sampler.Next(),
+            bounceDomain.Fork(HdEmbreeSampleDomainKey::SssChannel).Draw1D(),
             &channelPdfMx);
         const GfVec3f channelPdf(
             channelPdfMx[0], channelPdfMx[1], channelPdfMx[2]);
@@ -527,7 +529,9 @@ HdEmbreeRandomWalkSSS(
         bool guidedThisBounce = false;
         bool guideBackward = false;
         if (bounce > 0) {
-            guidedThisBounce = (sampler.Next() < guided_fraction_eff);
+            guidedThisBounce =
+                (bounceDomain.Fork(HdEmbreeSampleDomainKey::SssGuideChoice)
+                     .Draw1D() < guided_fraction_eff);
 
             if (st.have_opposite_interface) {
                 const float x = GfDot(
@@ -538,12 +542,19 @@ HdEmbreeRandomWalkSSS(
                     x,
                     st.diffusion_length);
                 if (guidedThisBounce) {
-                    guideBackward = (sampler.Next() < backwardFraction);
+                    guideBackward =
+                        (bounceDomain
+                             .Fork(HdEmbreeSampleDomainKey::SssBackwardChoice)
+                             .Draw1D() < backwardFraction);
                 }
             }
 
-            const float rand_a = sampler.Next();
-            const float rand_b = sampler.Next();
+            const GfVec2f phaseSample =
+                bounceDomain
+                    .Fork(HdEmbreeSampleDomainKey::SssPhaseDirection)
+                    .Draw2D();
+            const float rand_a = phaseSample[0];
+            const float rand_b = phaseSample[1];
 
             GfVec3f newDir;
             float cosTheta_ent = 0.0f;
@@ -624,7 +635,10 @@ HdEmbreeRandomWalkSSS(
         }
 
         // Free-flight distance sample for the (possibly stretched) sigma_t.
-        const float u = std::clamp(sampler.Next(), 1.0e-6f, 1.0f - 1.0e-6f);
+        const float u = std::clamp(
+            bounceDomain.Fork(HdEmbreeSampleDomainKey::SssFreeFlight).Draw1D(),
+            1.0e-6f,
+            1.0f - 1.0e-6f);
         float t = -std::log(1.0f - u) /
                   std::max(sampleSigmaT, _kSigmaTEps);
         const float sampledT = t;

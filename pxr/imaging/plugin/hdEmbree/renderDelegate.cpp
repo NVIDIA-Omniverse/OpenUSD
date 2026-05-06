@@ -136,9 +136,8 @@ HdEmbreeRenderDelegate::_Initialize()
     _settingDescriptors[6] = { "Sampler Sequence",
         HdEmbreeRenderSettingsTokens->samplerSequence,
         VtValue(HdEmbreeGetSamplerSequenceToken(
-            HdEmbreeConfig::GetInstance().useSobol
-                ? HdEmbreeSamplerSequence::Sobol
-                : HdEmbreeSamplerSequence::Random)) };
+            HdEmbreeGetDefaultSamplerSequence(
+                HdEmbreeConfig::GetInstance().useSobol))) };
     _settingDescriptors[7] = { "Enable Adaptive Sampling",
         HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
         VtValue(HdEmbreeConfig::GetInstance().enableAdaptiveSampling) };
