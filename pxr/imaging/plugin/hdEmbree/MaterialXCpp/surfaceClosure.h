@@ -86,6 +86,13 @@ struct SurfaceClosure
                 if (dielectric->dispersionAbbe > 0.0f) {
                     return true;
                 }
+            } else if (const auto* dielectricInterface =
+                    std::get_if<Bsdf::DielectricInterfaceData>(&node.data)) {
+                if (dielectricInterface->dispersionAbbe > 0.0f ||
+                    (dielectricInterface->thinFilmWeight > 0.0f &&
+                     dielectricInterface->thinFilmThickness > 0.0f)) {
+                    return true;
+                }
             } else if (const auto* adobe =
                     std::get_if<Bsdf::AdobeOpenPbrData>(&node.data)) {
                 if (adobe->transmissionDispersionScale > 0.0f ||
@@ -109,6 +116,7 @@ struct SurfaceClosure
             std::visit([](auto& data) {
                 using T = std::decay_t<decltype(data)>;
                 if constexpr (std::is_same_v<T, Bsdf::DielectricData> ||
+                              std::is_same_v<T, Bsdf::DielectricInterfaceData> ||
                               std::is_same_v<T, Bsdf::ConductorData> ||
                               std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
                     for (int i = 0; i < 2; ++i) {

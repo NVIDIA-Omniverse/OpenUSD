@@ -404,39 +404,37 @@ EvalOpenPbr(const ParamMap& params)
 
     const float transmissionWeight =
         _Clamp01(c.transmission * (1.0f - c.metallic));
+    const bool useCombinedDielectricInterface =
+        transmissionWeight > 0.0f;
     if (transmissionWeight > 0.0f) {
-        Bsdf::NodeId transmissionId = Bsdf::InvalidNodeId;
-        if (c.thinWalled) {
-            Bsdf::DielectricData transmission;
-            transmission.weight = transmissionWeight;
-            transmission.tint = _Saturate(c.transmissionColor);
-            transmission.ior = 1.0f;
-            transmission.dispersionAbbe = effectiveDispersionAbbe;
-            transmission.roughness = specularRoughness;
-            transmission.tangent = tangent;
-            transmission.scatterMode = Bsdf::ScatterMode::Transmission;
-            transmissionId = tree.Add(transmission);
-        } else {
-            Bsdf::DielectricData transmission;
-            transmission.weight = transmissionWeight;
-            // Regular OpenPBR volumes carry transmission_color through the
-            // interior medium; tinting the surface BTDF would double-color it.
-            transmission.tint = c.hasInteriorMedium
-                ? Vec3f(1.0f)
-                : _Saturate(c.transmissionColor);
-            transmission.ior = std::max(c.specularIor, 1.0f);
-            transmission.dispersionAbbe = effectiveDispersionAbbe;
-            transmission.roughness = specularRoughness;
-            transmission.tangent = tangent;
-            transmission.scatterMode = Bsdf::ScatterMode::Transmission;
-            transmissionId = tree.Add(transmission);
-        }
-        dielectricSubstrate = _AppendMix(
-            &tree, dielectricSubstrate, transmissionId, transmissionWeight);
+        Bsdf::DielectricInterfaceData interface;
+        interface.reflectionWeight = specularWeight;
+        interface.reflectionTint = _Saturate(c.specularColor);
+        interface.transmissionWeight = transmissionWeight;
+        // Regular OpenPBR volumes carry transmission_color through the
+        // interior medium; tinting the surface BTDF would double-color it.
+        interface.transmissionTint = c.hasInteriorMedium
+            ? Vec3f(1.0f)
+            : _Saturate(c.transmissionColor);
+        interface.ior = std::max(c.specularIor, 1.0f);
+        interface.dispersionAbbe = effectiveDispersionAbbe;
+        interface.roughness = specularRoughness;
+        interface.tangent = tangent;
+        interface.thinFilmWeight = thinFilmWeight;
+        interface.thinFilmThickness = thinFilmThicknessNm;
+        interface.thinFilmIor = thinFilmIor;
+        interface.thinWalled = c.thinWalled;
+
+        dielectricSubstrate = _AppendMultiply(
+            &tree,
+            dielectricSubstrate,
+            Vec3f(1.0f - transmissionWeight));
+        dielectricSubstrate = _AppendLayer(
+            &tree, tree.Add(interface), dielectricSubstrate);
     }
 
     Bsdf::NodeId dielectricBase = dielectricSubstrate;
-    if (specularWeight > 0.0f) {
+    if (specularWeight > 0.0f && !useCombinedDielectricInterface) {
         Bsdf::DielectricData dielectric;
         dielectric.weight = specularWeight;
         dielectric.tint = _Saturate(c.specularColor);

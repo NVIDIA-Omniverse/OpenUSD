@@ -1850,6 +1850,203 @@ TestTreeAddTransmissionPreservesWeight()
 }
 
 static bool
+TestDielectricInterfaceLayerDoesNotDoubleAttenuateTransmission()
+{
+    Bsdf::ClosureTree tree;
+
+    Bsdf::DielectricInterfaceData interface;
+    interface.reflectionWeight = 1.0f;
+    interface.reflectionTint = Vec3f(1.0f);
+    interface.transmissionWeight = 1.0f;
+    interface.transmissionTint = Vec3f(1.0f);
+    interface.ior = 1.5f;
+    interface.roughness = Vec2f(0.25f, 0.25f);
+
+    Bsdf::OrenNayarDiffuseData diffuse;
+    diffuse.weight = 1.0f;
+    diffuse.color = Vec3f(0.8f);
+
+    Bsdf::LayerData layer;
+    layer.top = tree.Add(interface);
+    layer.base = tree.Add(diffuse);
+    tree.root = tree.Add(layer);
+
+    SurfaceClosure layered;
+    layered.bsdfTree = tree;
+
+    SurfaceClosure interfaceOnly;
+    interfaceOnly.bsdfTree.root = interfaceOnly.bsdfTree.Add(interface);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.2f, 0.98f, 0.0f).normalized();
+    const Vec3f wi = Vec3f(-0.1f, -0.995f, 0.0f).normalized();
+
+    const Vec3f layeredEval = Bsdf::EvalSurface(layered, N, wi, wo);
+    const Vec3f interfaceEval = Bsdf::EvalSurface(interfaceOnly, N, wi, wo);
+    if (!Test_IsClose(layeredEval, interfaceEval, 1.0e-5f)) {
+        printf(
+            "    Interface transmission was attenuated by its own layer: "
+            "layered=(%f,%f,%f) interface=(%f,%f,%f)\n",
+            layeredEval[0], layeredEval[1], layeredEval[2],
+            interfaceEval[0], interfaceEval[1], interfaceEval[2]);
+        return false;
+    }
+
+    return true;
+}
+
+static bool
+TestDielectricInterfaceSamplePdfConsistency()
+{
+    SurfaceClosure c;
+    Bsdf::DielectricInterfaceData interface;
+    interface.reflectionWeight = 1.0f;
+    interface.reflectionTint = Vec3f(1.0f);
+    interface.transmissionWeight = 1.0f;
+    interface.transmissionTint = Vec3f(0.95f, 0.97f, 1.0f);
+    interface.ior = 1.5f;
+    interface.roughness = Vec2f(0.25f, 0.25f);
+    c.bsdfTree.root = c.bsdfTree.Add(interface);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.2f, 0.98f, 0.0f).normalized();
+
+    const float choices[] = {0.01f, 0.8f};
+    for (const float uChoice : choices) {
+        const auto sample =
+            Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, uChoice);
+        if (sample.pdf <= 0.0f || sample.isSpecular) {
+            printf("    Expected valid rough interface sample\n");
+            return false;
+        }
+        const float pdf = Bsdf::PdfSurface(c, N, sample.wi, wo);
+        const float ratio = sample.pdf / (pdf + 1.0e-10f);
+        if (ratio < 0.8f || ratio > 1.2f) {
+            printf(
+                "    Interface sample pdf=%f != PdfSurface=%f "
+                "(ratio=%f, choice=%f)\n",
+                sample.pdf, pdf, ratio, uChoice);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool
+TestDeltaDielectricInterfaceTransmissionSamplesSingleFresnel()
+{
+    SurfaceClosure c;
+    Bsdf::DielectricInterfaceData interface;
+    interface.reflectionWeight = 1.0f;
+    interface.reflectionTint = Vec3f(1.0f);
+    interface.transmissionWeight = 1.0f;
+    interface.transmissionTint = Vec3f(1.0f);
+    interface.ior = 1.5f;
+    interface.roughness = Vec2f(0.0f, 0.0f);
+    c.bsdfTree.root = c.bsdfTree.Add(interface);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo(0.0f, 1.0f, 0.0f);
+    const auto sample = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.9f);
+    if (sample.pdf <= 0.0f || !sample.isSpecular) {
+        printf("    Expected valid delta interface transmission sample\n");
+        return false;
+    }
+    if (Dot(sample.wi, N) >= 0.0f) {
+        printf("    Expected transmitted direction below the interface\n");
+        return false;
+    }
+    if (!Test_IsClose(sample.f, Vec3f(1.0f), 1.0e-4f)) {
+        printf(
+            "    Delta interface transmission should divide by the single "
+            "Fresnel branch probability: f=(%f,%f,%f)\n",
+            sample.f[0], sample.f[1], sample.f[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestThinWalledDielectricInterfaceSamplePdfConsistency()
+{
+    SurfaceClosure c;
+    Bsdf::DielectricInterfaceData interface;
+    interface.reflectionWeight = 1.0f;
+    interface.reflectionTint = Vec3f(1.0f);
+    interface.transmissionWeight = 1.0f;
+    interface.transmissionTint = Vec3f(0.72f, 1.0f, 0.86f);
+    interface.ior = 1.5f;
+    interface.roughness = Vec2f(0.25f, 0.25f);
+    interface.thinWalled = true;
+    c.bsdfTree.root = c.bsdfTree.Add(interface);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.2f, 0.98f, 0.0f).normalized();
+    const auto sample =
+        Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.8f);
+    if (sample.pdf <= 0.0f || sample.isSpecular) {
+        printf("    Expected valid rough thin-walled interface sample\n");
+        return false;
+    }
+    if (Dot(sample.wi, N) >= 0.0f) {
+        printf("    Expected thin-walled transmission below the surface\n");
+        return false;
+    }
+
+    const float pdf = Bsdf::PdfSurface(c, N, sample.wi, wo);
+    const float ratio = sample.pdf / (pdf + 1.0e-10f);
+    if (ratio < 0.8f || ratio > 1.2f) {
+        printf(
+            "    Thin-walled interface sample pdf=%f != PdfSurface=%f "
+            "(ratio=%f)\n",
+            sample.pdf, pdf, ratio);
+        return false;
+    }
+
+    return true;
+}
+
+static bool
+TestDeltaThinWalledDielectricInterfaceTransmitsStraightThrough()
+{
+    SurfaceClosure c;
+    Bsdf::DielectricInterfaceData interface;
+    interface.reflectionWeight = 1.0f;
+    interface.reflectionTint = Vec3f(1.0f);
+    interface.transmissionWeight = 1.0f;
+    interface.transmissionTint = Vec3f(1.0f);
+    interface.ior = 1.5f;
+    interface.roughness = Vec2f(0.0f, 0.0f);
+    interface.thinWalled = true;
+    c.bsdfTree.root = c.bsdfTree.Add(interface);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.3f, 0.953939f, 0.0f).normalized();
+    const auto sample = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.9f);
+    if (sample.pdf <= 0.0f || !sample.isSpecular) {
+        printf("    Expected valid delta thin-walled transmission sample\n");
+        return false;
+    }
+    if (!Test_IsClose(sample.wi, -wo, 1.0e-5f)) {
+        printf(
+            "    Thin-walled transmission should continue straight through: "
+            "wi=(%f,%f,%f), expected=(%f,%f,%f)\n",
+            sample.wi[0], sample.wi[1], sample.wi[2],
+            -wo[0], -wo[1], -wo[2]);
+        return false;
+    }
+    if (!Test_IsClose(sample.f, Vec3f(1.0f), 1.0e-4f)) {
+        printf(
+            "    Delta thin-walled transmission should divide by its "
+            "window-transmission branch probability: f=(%f,%f,%f)\n",
+            sample.f[0], sample.f[1], sample.f[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
 TestSampleGGXTransmissionHemisphere()
 {
     Vec3f N(0, 1, 0);
@@ -2882,6 +3079,11 @@ Test_RegisterBsdfTests()
     _REG(TestTreeTransmissionPreservesWeightFromInterior);
     _REG(TestEvalSurfaceTransmissionFromInterior);
     _REG(TestTreeAddTransmissionPreservesWeight);
+    _REG(TestDielectricInterfaceLayerDoesNotDoubleAttenuateTransmission);
+    _REG(TestDielectricInterfaceSamplePdfConsistency);
+    _REG(TestDeltaDielectricInterfaceTransmissionSamplesSingleFresnel);
+    _REG(TestThinWalledDielectricInterfaceSamplePdfConsistency);
+    _REG(TestDeltaThinWalledDielectricInterfaceTransmitsStraightThrough);
     _REG(TestSampleGGXTransmissionHemisphere);
     _REG(TestSampleGGXTransmissionPdfConsistency);
     _REG(TestRoughTransmissionSpreads);

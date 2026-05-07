@@ -268,6 +268,20 @@ _ResolveDielectricIor(
     return std::max(data.ior, 1.0f);
 }
 
+inline float
+_ResolveDielectricIor(
+    const Bsdf::DielectricInterfaceData& data,
+    float heroWavelengthNm)
+{
+    if (data.dispersionAbbe > 0.0f && heroWavelengthNm > 0.0f) {
+        return std::max(
+            Spectral::CauchyDispersionIOR(
+                data.dispersionAbbe, data.ior, heroWavelengthNm),
+            1.0f);
+    }
+    return std::max(data.ior, 1.0f);
+}
+
 inline Vec2f
 _ClampAlpha(const Vec2f& alpha)
 {
@@ -319,6 +333,25 @@ inline Vec3f
 _LerpVec(const Vec3f& a, const Vec3f& b, float t)
 {
     return a * (1.0f - t) + b * t;
+}
+
+inline Vec3f
+_MirrorAcrossSurface(const Vec3f& v, const Vec3f& normal)
+{
+    return v - 2.0f * Dot(v, normal) * normal;
+}
+
+inline Vec3f
+_ThinWalledWindowReflectance(const Vec3f& frontReflectance)
+{
+    const Vec3f r(
+        _Clamp01(frontReflectance[0]),
+        _Clamp01(frontReflectance[1]),
+        _Clamp01(frontReflectance[2]));
+    return Vec3f(
+        (2.0f * r[0]) / (1.0f + r[0]),
+        (2.0f * r[1]) / (1.0f + r[1]),
+        (2.0f * r[2]) / (1.0f + r[2]));
 }
 
 inline Vec3f
@@ -1394,6 +1427,83 @@ _DielectricReflectionFresnel(
 }
 
 inline Vec3f
+_DielectricInterfaceReflectanceUntinted(
+    const Bsdf::DielectricInterfaceData& data,
+    float cosTheta,
+    float effectiveIor)
+{
+    float F0 = (effectiveIor - 1.0f) / (effectiveIor + 1.0f);
+    F0 *= F0;
+    const Vec3f baseReflectance = _SchlickFresnel(Vec3f(F0), cosTheta);
+    _ThinFilmParams thinFilm;
+    thinFilm.model = _ThinFilmModel::Dielectric;
+    thinFilm.ior = Vec3f(std::max(effectiveIor, 1.0f));
+    thinFilm.tint = Vec3f(1.0f);
+    const Vec3f reflectance = _ApplyThinFilm(
+        baseReflectance,
+        cosTheta,
+        data.thinFilmWeight,
+        data.thinFilmThickness,
+        data.thinFilmIor,
+        thinFilm);
+    return data.thinWalled
+        ? _ThinWalledWindowReflectance(reflectance)
+        : reflectance;
+}
+
+inline Vec3f
+_DielectricInterfaceReflectionCoefficient(
+    const Bsdf::DielectricInterfaceData& data,
+    float cosTheta,
+    float effectiveIor)
+{
+    return CompMul(
+        _DielectricInterfaceReflectanceUntinted(
+            data, cosTheta, effectiveIor),
+        _SafeVec(data.reflectionTint)) * _Clamp01(data.reflectionWeight);
+}
+
+inline Vec3f
+_DielectricInterfaceTransmissionCoefficient(
+    const Bsdf::DielectricInterfaceData& data,
+    float cosTheta,
+    float effectiveIor)
+{
+    return CompMul(
+        Vec3f(1.0f) -
+            _DielectricInterfaceReflectanceUntinted(
+                data, cosTheta, effectiveIor),
+        _SafeVec(data.transmissionTint)) * _Clamp01(data.transmissionWeight);
+}
+
+struct _DielectricInterfaceSelection
+{
+    float reflection = 0.0f;
+    float transmission = 0.0f;
+};
+
+inline _DielectricInterfaceSelection
+_DielectricInterfaceSelectionProbabilities(
+    const Bsdf::DielectricInterfaceData& data,
+    float cosTheta,
+    float effectiveIor)
+{
+    const float reflectionWeight = std::max(
+        _Luminance(_DielectricInterfaceReflectionCoefficient(
+            data, cosTheta, effectiveIor)),
+        0.0f);
+    const float transmissionWeight = std::max(
+        _Luminance(_DielectricInterfaceTransmissionCoefficient(
+            data, cosTheta, effectiveIor)),
+        0.0f);
+    const float total = reflectionWeight + transmissionWeight;
+    if (total <= 0.0f) {
+        return {};
+    }
+    return {reflectionWeight / total, transmissionWeight / total};
+}
+
+inline Vec3f
 _ConductorReflectionFresnel(
     const Bsdf::ConductorData& data,
     float cosTheta)
@@ -1458,6 +1568,20 @@ _NormalizeOrFallback(const Vec3f& v, const Vec3f& fallback)
 
 inline Vec3f
 _ResolveReflectionNormal(const Bsdf::DielectricData& data,
+                         const Vec3f& N,
+                         const Vec3f& wo)
+{
+    if (!data.hasShadingNormal) {
+        return _FaceForwardNormal(N, wo);
+    }
+
+    return _FaceForwardNormal(
+        _NormalizeOrFallback(data.normal, _FaceForwardNormal(N, wo)),
+        wo);
+}
+
+inline Vec3f
+_ResolveReflectionNormal(const Bsdf::DielectricInterfaceData& data,
                          const Vec3f& N,
                          const Vec3f& wo)
 {
@@ -1737,6 +1861,61 @@ _SampleDeltaDielectricTransmission(
         _TransmissionScale(
             baseReflectance,
             _DielectricReflectionFresnelUntinted(
+                data, fresnelCos, effectiveIor)));
+    return sample;
+}
+
+inline Bsdf::BsdfSample
+_SampleDeltaDielectricInterfaceReflection(
+    const Bsdf::DielectricInterfaceData& data,
+    float effectiveIor,
+    const Vec3f& shadingN,
+    const Vec3f& wo)
+{
+    const float cosTheta =
+        std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+    return _SampleDeltaReflection(
+        _DielectricInterfaceReflectionCoefficient(data, cosTheta, effectiveIor),
+        1.0f,
+        shadingN,
+        wo);
+}
+
+inline Bsdf::BsdfSample
+_SampleDeltaDielectricInterfaceTransmission(
+    const Bsdf::DielectricInterfaceData& data,
+    float effectiveIor,
+    float fresnelCos,
+    const Vec3f& N,
+    const Vec3f& wo)
+{
+    if (data.thinWalled) {
+        Vec3f wi = -wo;
+        wi.normalize();
+        Bsdf::BsdfSample sample{
+            wi,
+            _DielectricInterfaceTransmissionCoefficient(
+                data, fresnelCos, effectiveIor),
+            1.0f,
+            true
+        };
+        sample.eta = 1.0f;
+        return sample;
+    }
+
+    auto sample = _SampleDeltaTransmission(
+        effectiveIor,
+        data.transmissionTint,
+        _Clamp01(data.transmissionWeight),
+        N,
+        wo);
+    const float baseReflectance =
+        _SchlickFresnelScalar(effectiveIor, fresnelCos);
+    sample.f = CompMul(
+        sample.f,
+        _TransmissionScale(
+            baseReflectance,
+            _DielectricInterfaceReflectanceUntinted(
                 data, fresnelCos, effectiveIor)));
     return sample;
 }
@@ -2080,6 +2259,94 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     transmissionScale);
             }
             return _SafeVec(result);
+        } else if constexpr (
+            std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
+            Vec3f result(0.0f);
+            const bool sameSide = _IsSameSide(N, wi, wo);
+            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            const float effectiveIor =
+                _ResolveDielectricIor(data, heroWavelengthNm);
+            if (_IsEffectivelyDeltaAlpha(data.roughness)) {
+                return Vec3f(0.0f);
+            }
+            if (sameSide && data.reflectionWeight > 0.0f) {
+                const Vec3f fresnel = _DielectricInterfaceReflectionCoefficient(
+                    data,
+                    _ReflectionFresnelCosTheta(wi, wo),
+                    effectiveIor);
+                if (_IsEffectivelyIsotropic(data.roughness)) {
+                    result += _EvalMicrofacetReflectionIsotropic(
+                        std::clamp(
+                            data.roughness[0], _kMinMicrofacetAlpha, 1.0f),
+                        fresnel,
+                        1.0f,
+                        shadingN,
+                        wi,
+                        wo);
+                } else {
+                    result += _EvalMicrofacetReflectionAnisotropic(
+                        data.roughness,
+                        data.tangent,
+                        fresnel,
+                        1.0f,
+                        shadingN,
+                        wi,
+                        wo);
+                }
+            }
+            if (!sameSide && data.transmissionWeight > 0.0f) {
+                if (data.thinWalled) {
+                    const float NdotV =
+                        std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+                    const Vec3f transmission =
+                        _DielectricInterfaceTransmissionCoefficient(
+                            data, NdotV, effectiveIor);
+                    const Vec3f transmissionN = -shadingN;
+                    Vec3f mirroredWo = _MirrorAcrossSurface(wo, shadingN);
+                    mirroredWo.normalize();
+                    if (_IsEffectivelyIsotropic(data.roughness)) {
+                        result += _EvalMicrofacetReflectionIsotropic(
+                            std::clamp(
+                                data.roughness[0],
+                                _kMinMicrofacetAlpha,
+                                1.0f),
+                            transmission,
+                            1.0f,
+                            transmissionN,
+                            wi,
+                            mirroredWo);
+                    } else {
+                        result += _EvalMicrofacetReflectionAnisotropic(
+                            data.roughness,
+                            data.tangent,
+                            transmission,
+                            1.0f,
+                            transmissionN,
+                            wi,
+                            mirroredWo);
+                    }
+                    return _SafeVec(result);
+                }
+
+                const float fresnelCos =
+                    _TransmissionFresnelCosTheta(effectiveIor, N, wi, wo);
+                const float baseReflectance =
+                    _SchlickFresnelScalar(effectiveIor, fresnelCos);
+                const Vec3f transmissionScale = _TransmissionScale(
+                    baseReflectance,
+                    _DielectricInterfaceReflectanceUntinted(
+                        data, fresnelCos, effectiveIor));
+                result += CompMul(
+                    Bsdf::EvalGGXTransmission(
+                        _AverageAlphaAsRoughness(data.roughness),
+                        effectiveIor,
+                        data.transmissionTint,
+                        N,
+                        wi,
+                        wo) * _Clamp01(data.transmissionWeight),
+                    transmissionScale);
+            }
+            return _SafeVec(result);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
             if (Dot(N, wi) <= 0.0f || data.weight <= 0.0f) {
                 return Vec3f(0.0f);
@@ -2262,6 +2529,53 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 }
             }
             return _SaturateVec(throughput);
+        } else if constexpr (
+            std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
+            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            const float NdotV =
+                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const float effectiveIor =
+                _ResolveDielectricIor(data, heroWavelengthNm);
+            Vec3f throughput(1.0f);
+            if (data.reflectionWeight > 0.0f) {
+                const bool useDirectionalLayerThroughput =
+                    _IsGgxMicrofacetMultipleScatteringEnabled() &&
+                    !_HasThinFilm(
+                        data.thinFilmWeight,
+                        data.thinFilmThickness,
+                        data.thinFilmIor);
+                if (useDirectionalLayerThroughput) {
+                    if (_GetDielectricLayerThroughputMode() ==
+                        Bsdf::DielectricLayerThroughputMode::MaterialXGlsl) {
+                        const Vec3f reflectance =
+                            _MaterialXGlslDielectricLayerReflectance(
+                                _AverageAlphaForEnergy(data.roughness),
+                                NdotV,
+                                effectiveIor);
+                        throughput -=
+                            reflectance * _Clamp01(data.reflectionWeight);
+                    } else {
+                        const float filter =
+                            _LookupBsdlDielectricReflFrontFilter(
+                                NdotV,
+                                _BsdlLayerRoughnessFromAlpha(data.roughness),
+                                effectiveIor);
+                        throughput = _LerpVec(
+                            Vec3f(1.0f),
+                            Vec3f(filter),
+                            _Clamp01(data.reflectionWeight));
+                    }
+                } else {
+                    const Vec3f reflectance = _LayerThroughputReflectance(
+                        _AverageAlphaForEnergy(data.roughness),
+                        NdotV,
+                        _DielectricInterfaceReflectanceUntinted(
+                            data, NdotV, effectiveIor));
+                    throughput -=
+                        reflectance * _Clamp01(data.reflectionWeight);
+                }
+            }
+            return _SaturateVec(throughput);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
             const float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
             const Vec3f reflectance = _LayerThroughputReflectance(
@@ -2359,6 +2673,22 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     (_Luminance(reflectance) +
                      _Luminance(CompMul(data.tint, transmissionScale))),
                 0.05f);
+        } else if constexpr (
+            std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
+            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            const float NdotV =
+                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const float effectiveIor =
+                _ResolveDielectricIor(data, heroWavelengthNm);
+            const Vec3f reflection =
+                _DielectricInterfaceReflectionCoefficient(
+                    data, NdotV, effectiveIor);
+            const Vec3f transmission =
+                _DielectricInterfaceTransmissionCoefficient(
+                    data, NdotV, effectiveIor);
+            const float weight =
+                _Luminance(reflection) + _Luminance(transmission);
+            return weight > 0.0f ? std::max(weight, 0.05f) : 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
             return data.weight *
                 std::max(
@@ -2477,6 +2807,66 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     N,
                     wi,
                     wo);
+            }
+            return 0.0f;
+        } else if constexpr (
+            std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
+            const bool sameSide = _IsSameSide(N, wi, wo);
+            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            const float effectiveIor =
+                _ResolveDielectricIor(data, heroWavelengthNm);
+            if (_IsEffectivelyDeltaAlpha(data.roughness)) {
+                return 0.0f;
+            }
+            const float NdotV =
+                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const _DielectricInterfaceSelection selection =
+                _DielectricInterfaceSelectionProbabilities(
+                    data, NdotV, effectiveIor);
+            if (sameSide && data.reflectionWeight > 0.0f) {
+                const float branchPdf =
+                    _IsEffectivelyIsotropic(data.roughness)
+                    ? Bsdf::PdfGGXSpecular(
+                        _AverageAlphaAsRoughness(data.roughness),
+                        shadingN,
+                        wi,
+                        wo)
+                    : _PdfGGXSpecularAnisotropic(
+                        data.roughness,
+                        data.tangent,
+                        shadingN,
+                        wi,
+                        wo);
+                return selection.reflection * branchPdf;
+            }
+            if (!sameSide && data.transmissionWeight > 0.0f) {
+                if (data.thinWalled) {
+                    const Vec3f transmissionN = -shadingN;
+                    Vec3f mirroredWo = _MirrorAcrossSurface(wo, shadingN);
+                    mirroredWo.normalize();
+                    const float branchPdf =
+                        _IsEffectivelyIsotropic(data.roughness)
+                        ? Bsdf::PdfGGXSpecular(
+                            _AverageAlphaAsRoughness(data.roughness),
+                            transmissionN,
+                            wi,
+                            mirroredWo)
+                        : _PdfGGXSpecularAnisotropic(
+                            data.roughness,
+                            data.tangent,
+                            transmissionN,
+                            wi,
+                            mirroredWo);
+                    return selection.transmission * branchPdf;
+                }
+
+                return selection.transmission *
+                    Bsdf::PdfGGXTransmission(
+                        _AverageAlphaAsRoughness(data.roughness),
+                        effectiveIor,
+                        N,
+                        wi,
+                        wo);
             }
             return 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
@@ -2760,6 +3150,122 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 return _FinalizeSubtreeSample(
                     tree, nodeId, N, wo, sample, heroWavelengthNm);
             }
+        } else if constexpr (
+            std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
+            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            const float NdotV =
+                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const float effectiveIor =
+                _ResolveDielectricIor(data, heroWavelengthNm);
+            const _DielectricInterfaceSelection selection =
+                _DielectricInterfaceSelectionProbabilities(
+                    data, NdotV, effectiveIor);
+            if (selection.reflection + selection.transmission <= 0.0f) {
+                return Bsdf::BsdfSample{
+                    Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
+            }
+
+            const bool hasDeltaRoughness =
+                _IsEffectivelyDeltaAlpha(data.roughness);
+            if (uChoice < selection.reflection) {
+                if (selection.reflection <= 0.0f) {
+                    return Bsdf::BsdfSample{
+                        Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
+                }
+                if (hasDeltaRoughness) {
+                    return _ScaleDiscreteSpecularSample(
+                        _SampleDeltaDielectricInterfaceReflection(
+                            data, effectiveIor, shadingN, wo),
+                        selection.reflection);
+                }
+                if (_IsEffectivelyIsotropic(data.roughness)) {
+                    auto sample = Bsdf::SampleGGXSpecular(
+                        _AverageAlphaAsRoughness(data.roughness),
+                        effectiveIor,
+                        data.reflectionTint,
+                        shadingN,
+                        wo,
+                        u1,
+                        u2);
+                    return _FinalizeSubtreeSample(
+                        tree, nodeId, N, wo, sample, heroWavelengthNm);
+                }
+                auto sample = _SampleGGXSpecularAnisotropic(
+                    data.roughness,
+                    data.tangent,
+                    shadingN,
+                    wo,
+                    u1,
+                    u2);
+                return _FinalizeSubtreeSample(
+                    tree, nodeId, N, wo, sample, heroWavelengthNm);
+            }
+
+            if (selection.transmission <= 0.0f) {
+                return Bsdf::BsdfSample{
+                    Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
+            }
+            if (hasDeltaRoughness) {
+                return _ScaleDiscreteSpecularSample(
+                    _SampleDeltaDielectricInterfaceTransmission(
+                        data, effectiveIor, NdotV, N, wo),
+                    selection.transmission);
+            }
+            if (data.thinWalled) {
+                const Vec3f transmissionN = -shadingN;
+                Vec3f mirroredWo = _MirrorAcrossSurface(wo, shadingN);
+                mirroredWo.normalize();
+                if (_IsEffectivelyIsotropic(data.roughness)) {
+                    auto sample = Bsdf::SampleGGXSpecular(
+                        _AverageAlphaAsRoughness(data.roughness),
+                        1.0f,
+                        data.transmissionTint,
+                        transmissionN,
+                        mirroredWo,
+                        u1,
+                        u2);
+                    if (sample.pdf <= 0.0f) {
+                        return _ScaleDiscreteSpecularSample(
+                            _SampleDeltaDielectricInterfaceTransmission(
+                                data, effectiveIor, NdotV, N, wo),
+                            selection.transmission);
+                    }
+                    return _FinalizeSubtreeSample(
+                        tree, nodeId, N, wo, sample, heroWavelengthNm);
+                }
+                auto sample = _SampleGGXSpecularAnisotropic(
+                    data.roughness,
+                    data.tangent,
+                    transmissionN,
+                    mirroredWo,
+                    u1,
+                    u2);
+                if (sample.pdf <= 0.0f) {
+                    return _ScaleDiscreteSpecularSample(
+                        _SampleDeltaDielectricInterfaceTransmission(
+                            data, effectiveIor, NdotV, N, wo),
+                        selection.transmission);
+                }
+                return _FinalizeSubtreeSample(
+                    tree, nodeId, N, wo, sample, heroWavelengthNm);
+            }
+            auto sample = Bsdf::SampleGGXTransmission(
+                _AverageAlphaAsRoughness(data.roughness),
+                effectiveIor,
+                data.transmissionTint,
+                N,
+                wo,
+                u1,
+                u2);
+            if (sample.pdf <= 0.0f) {
+                return _ScaleDiscreteSpecularSample(
+                    _SampleDeltaDielectricInterfaceTransmission(
+                        data, effectiveIor, NdotV, N, wo),
+                    selection.transmission);
+            }
+            sample.f *= _Clamp01(data.transmissionWeight);
+            return _FinalizeSubtreeSample(
+                tree, nodeId, N, wo, sample, heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
             if (_IsEffectivelyDeltaAlpha(data.roughness)) {
                 return _SampleDeltaConductorReflection(data, N, wo);

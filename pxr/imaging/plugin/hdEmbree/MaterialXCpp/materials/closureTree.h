@@ -83,6 +83,24 @@ struct DielectricData
     ScatterMode scatterMode = ScatterMode::Reflection;
 };
 
+struct DielectricInterfaceData
+{
+    float reflectionWeight = 1.0f;
+    Vec3f reflectionTint = Vec3f(1.0f);
+    float transmissionWeight = 1.0f;
+    Vec3f transmissionTint = Vec3f(1.0f);
+    float ior = 1.5f;
+    float dispersionAbbe = 0.0f;
+    Vec2f roughness = Vec2f(0.05f, 0.05f);
+    float thinFilmWeight = 1.0f;
+    float thinFilmThickness = 0.0f;
+    float thinFilmIor = 1.5f;
+    Vec3f normal = Vec3f(0.0f, 0.0f, 1.0f);
+    bool hasShadingNormal = false;
+    Vec3f tangent = Vec3f(1.0f, 0.0f, 0.0f);
+    bool thinWalled = false;
+};
+
 struct ConductorData
 {
     float weight = 1.0f;
@@ -209,6 +227,7 @@ using NodeData = std::variant<
     TranslucentData,
     SubsurfaceData,
     DielectricData,
+    DielectricInterfaceData,
     ConductorData,
     GeneralizedSchlickData,
     SheenData,

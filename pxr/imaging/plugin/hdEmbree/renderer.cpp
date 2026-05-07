@@ -242,6 +242,9 @@ _IsReflectionOnlyNode(
                 return _IsEffectivelyZero(data.weight) ||
                        data.scatterMode == mxcpp::Bsdf::ScatterMode::Reflection;
             } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::DielectricInterfaceData>) {
+                return _IsEffectivelyZero(data.transmissionWeight);
+            } else if constexpr (
                 std::is_same_v<T, mxcpp::Bsdf::GeneralizedSchlickData>) {
                 return _IsEffectivelyZero(data.weight) ||
                        data.scatterMode == mxcpp::Bsdf::ScatterMode::Reflection;

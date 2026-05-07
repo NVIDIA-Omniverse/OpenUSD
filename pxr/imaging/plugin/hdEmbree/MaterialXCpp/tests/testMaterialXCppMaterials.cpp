@@ -466,7 +466,7 @@ TestStandardSurfaceThinWalledUsesUnitIorTransmission()
 }
 
 static bool
-TestOpenPbrThinWalledUsesUnitIorTransmission()
+TestOpenPbrThinWalledUsesCombinedInterface()
 {
     ParamMap params;
     params["base_weight"] = Value(0.0f);
@@ -475,24 +475,37 @@ TestOpenPbrThinWalledUsesUnitIorTransmission()
     params["specular_weight"] = Value(1.0f);
     params["specular_color"] = Value(Vec3f(1.0f));
     params["specular_roughness"] = Value(0.0f);
-    params["specular_ior"] = Value(1.0f);
+    params["specular_ior"] = Value(1.5f);
     params["transmission_weight"] = Value(1.0f);
-    params["transmission_color"] = Value(Vec3f(1.0f));
+    params["transmission_color"] = Value(Vec3f(0.7f, 1.0f, 0.8f));
     params["geometry_thin_walled"] = Value(true);
 
     const SurfaceClosure c = EvalOpenPbr(params);
-    const auto* transmission = FindNodeIf<Bsdf::DielectricData>(
+    const auto* interface = FindNodeIf<Bsdf::DielectricInterfaceData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricInterfaceData& data) {
+            return data.thinWalled && data.transmissionWeight > 0.0f;
+        });
+
+    if (!interface) {
+        printf("    Expected OpenPBR thin_walled combined interface\n");
+        return false;
+    }
+
+    const auto* transmissionOnly = FindNodeIf<Bsdf::DielectricData>(
         c.bsdfTree,
         [](const Bsdf::DielectricData& data) {
             return data.scatterMode == Bsdf::ScatterMode::Transmission;
         });
-
-    if (!transmission) {
-        printf("    Expected OpenPBR thin_walled to build dielectric transmission\n");
+    if (transmissionOnly) {
+        printf("    Thin-walled OpenPBR should not build transmission-only dielectric\n");
         return false;
     }
 
-    return Test_IsClose(transmission->ior, 1.0f, 1e-4f);
+    return Test_IsClose(interface->ior, 1.5f, 1e-4f) &&
+           Test_IsClose(interface->transmissionTint,
+                        Vec3f(0.7f, 1.0f, 0.8f),
+                        1e-4f);
 }
 
 static bool
@@ -1123,18 +1136,20 @@ TestOpenPbrRegularVolumeDoesNotDoubleTintTransmission()
     regularVolumeParams["geometry_thin_walled"] = Value(false);
 
     const SurfaceClosure regularVolume = EvalOpenPbr(regularVolumeParams);
-    const auto* regularTransmission = FindNodeIf<Bsdf::DielectricData>(
+    const auto* regularTransmission =
+        FindNodeIf<Bsdf::DielectricInterfaceData>(
         regularVolume.bsdfTree,
-        [](const Bsdf::DielectricData& data) {
-            return data.scatterMode == Bsdf::ScatterMode::Transmission;
+        [](const Bsdf::DielectricInterfaceData& data) {
+            return data.transmissionWeight > 0.0f;
         });
 
     if (!regularVolume.hasInteriorMedium || !regularTransmission) {
         printf("    Expected OpenPBR regular transmission volume\n");
         return false;
     }
-    if (!Test_IsClose(regularTransmission->tint, Vec3f(1.0f), 1e-4f)) {
-        printf("    Expected regular volume transmission BTDF tint to be white\n");
+    if (!Test_IsClose(
+            regularTransmission->transmissionTint, Vec3f(1.0f), 1e-4f)) {
+        printf("    Expected regular volume transmission interface tint to be white\n");
         return false;
     }
 
@@ -1145,10 +1160,11 @@ TestOpenPbrRegularVolumeDoesNotDoubleTintTransmission()
     zeroDepthParams["geometry_thin_walled"] = Value(false);
 
     const SurfaceClosure zeroDepth = EvalOpenPbr(zeroDepthParams);
-    const auto* zeroDepthTransmission = FindNodeIf<Bsdf::DielectricData>(
+    const auto* zeroDepthTransmission =
+        FindNodeIf<Bsdf::DielectricInterfaceData>(
         zeroDepth.bsdfTree,
-        [](const Bsdf::DielectricData& data) {
-            return data.scatterMode == Bsdf::ScatterMode::Transmission;
+        [](const Bsdf::DielectricInterfaceData& data) {
+            return data.transmissionWeight > 0.0f;
         });
 
     if (zeroDepth.hasInteriorMedium || !zeroDepthTransmission) {
@@ -1156,11 +1172,12 @@ TestOpenPbrRegularVolumeDoesNotDoubleTintTransmission()
         return false;
     }
 
-    return Test_IsClose(zeroDepthTransmission->tint, tint, 1e-4f);
+    return Test_IsClose(
+        zeroDepthTransmission->transmissionTint, tint, 1e-4f);
 }
 
 static bool
-TestOpenPbrLayersReflectionOverTransmissionMix()
+TestOpenPbrUsesCombinedInterfaceForThickTransmission()
 {
     ParamMap params;
     params["transmission_weight"] = Value(0.7f);
@@ -1173,33 +1190,37 @@ TestOpenPbrLayersReflectionOverTransmissionMix()
     const auto* layer =
         root ? std::get_if<Bsdf::LayerData>(&root->data) : nullptr;
     if (!layer) {
-        printf("    Expected layered OpenPBR root with transmission\n");
+        printf("    Expected OpenPBR root layer for transparent interface\n");
+        return false;
+    }
+
+    const auto* top = c.bsdfTree.Get(layer->top);
+    const auto* interface =
+        top ? std::get_if<Bsdf::DielectricInterfaceData>(&top->data) : nullptr;
+    if (!interface) {
+        printf("    Expected combined dielectric interface as layer top\n");
+        return false;
+    }
+
+    if (!Test_IsClose(interface->reflectionWeight, 1.0f, 1e-4f) ||
+        !Test_IsClose(interface->transmissionWeight, 0.7f, 1e-4f)) {
+        printf("    Unexpected combined interface weights\n");
+        return false;
+    }
+
+    const auto* transmissionOnly = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Transmission;
+        });
+    if (transmissionOnly) {
+        printf("    Thick OpenPBR should not build transmission-only dielectric\n");
         return false;
     }
 
     const auto* base = c.bsdfTree.Get(layer->base);
-    const auto* mix = base ? std::get_if<Bsdf::MixData>(&base->data) : nullptr;
-    if (!mix) {
-        printf("    Expected transmission mixed into dielectric substrate\n");
-        return false;
-    }
-
-    const auto* bg = c.bsdfTree.Get(mix->bg);
-    const auto* fg = c.bsdfTree.Get(mix->fg);
-    if (!bg || !fg) {
-        printf("    Missing transmission mix children\n");
-        return false;
-    }
-
-    if (!std::holds_alternative<Bsdf::OrenNayarDiffuseData>(bg->data)) {
-        printf("    Expected diffuse node as transmission background\n");
-        return false;
-    }
-
-    const auto* transmission = std::get_if<Bsdf::DielectricData>(&fg->data);
-    if (!transmission ||
-        transmission->scatterMode != Bsdf::ScatterMode::Transmission) {
-        printf("    Expected transmission dielectric in substrate mix\n");
+    if (!base || !std::holds_alternative<Bsdf::MultiplyData>(base->data)) {
+        printf("    Expected opaque substrate to be weighted below interface\n");
         return false;
     }
 
@@ -1314,24 +1335,18 @@ TestOpenPbrDispersionParametersReachBsdf()
     params["transmission_dispersion_abbe_number"] = Value(20.0f);
 
     const SurfaceClosure c = EvalOpenPbr(params);
-    const auto* transmission = FindNodeIf<Bsdf::DielectricData>(
+    const auto* interface = FindNodeIf<Bsdf::DielectricInterfaceData>(
         c.bsdfTree,
-        [](const Bsdf::DielectricData& data) {
-            return data.scatterMode == Bsdf::ScatterMode::Transmission;
-        });
-    const auto* reflection = FindNodeIf<Bsdf::DielectricData>(
-        c.bsdfTree,
-        [](const Bsdf::DielectricData& data) {
-            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        [](const Bsdf::DielectricInterfaceData& data) {
+            return data.transmissionWeight > 0.0f;
         });
 
-    if (!transmission || !reflection) {
-        printf("    Expected OpenPBR dielectric nodes for dispersion\n");
+    if (!interface) {
+        printf("    Expected OpenPBR dielectric interface for dispersion\n");
         return false;
     }
 
-    return Test_IsClose(transmission->dispersionAbbe, 40.0f, 1e-4f) &&
-           Test_IsClose(reflection->dispersionAbbe, 40.0f, 1e-4f) &&
+    return Test_IsClose(interface->dispersionAbbe, 40.0f, 1e-4f) &&
            c.HasDispersion();
 }
 
@@ -2045,8 +2060,8 @@ Test_RegisterMaterialTests()
     _REG(TestAdobeOpenPbrEvalPdfSurfaceMatchesSeparateCalls);
     _REG(TestAdobeOpenPbrPureSubsurfaceUsesRandomWalkPayload);
     _REG(TestOpenPbrRegularVolumeDoesNotDoubleTintTransmission);
-    _REG(TestOpenPbrLayersReflectionOverTransmissionMix);
-    _REG(TestOpenPbrThinWalledUsesUnitIorTransmission);
+    _REG(TestOpenPbrUsesCombinedInterfaceForThickTransmission);
+    _REG(TestOpenPbrThinWalledUsesCombinedInterface);
     _REG(TestOpenPbrCoatDarkeningReachesBaseSubstrate);
     _REG(TestOpenPbrCoatColorAttenuatesSubstrate);
     _REG(TestOpenPbrThinFilmParametersReachBsdf);
