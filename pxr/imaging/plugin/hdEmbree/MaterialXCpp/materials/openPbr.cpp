@@ -69,6 +69,8 @@ static const SlotName _kLegacyTangent("tangent");
 
 namespace {
 
+constexpr float _kMinMicrofacetAlpha = 1.0e-6f;
+
 float
 _Clamp01(float x)
 {
@@ -84,7 +86,7 @@ _ClampRoughness(float roughness)
 float
 _ClampAlpha(float alpha)
 {
-    return std::clamp(alpha, 1.0e-5f, 1.0f);
+    return std::clamp(alpha, _kMinMicrofacetAlpha, 1.0f);
 }
 
 Vec3f

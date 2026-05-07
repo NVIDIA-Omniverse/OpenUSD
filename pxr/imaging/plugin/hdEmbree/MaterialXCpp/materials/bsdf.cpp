@@ -24,6 +24,9 @@ namespace mxcpp {
 namespace {
 
 constexpr float _kEpsilon = 1e-7f;
+constexpr float _kMinMicrofacetAlpha = 1.0e-6f;
+constexpr float _kEffectivelySmoothMicrofacetAlpha = 1.0e-3f;
+constexpr float _kTurquinMicrofacetMsMinAlpha = 0.04f * 0.04f;
 constexpr int _kThinFilmAiryIterations = 2;
 constexpr int _kGgxEnergyCosThetaCount = 16;
 constexpr int _kGgxEnergyAlphaCount = 16;
@@ -269,15 +272,15 @@ inline Vec2f
 _ClampAlpha(const Vec2f& alpha)
 {
     return Vec2f(
-        std::clamp(alpha[0], 1.0e-5f, 1.0f),
-        std::clamp(alpha[1], 1.0e-5f, 1.0f));
+        std::clamp(alpha[0], _kMinMicrofacetAlpha, 1.0f),
+        std::clamp(alpha[1], _kMinMicrofacetAlpha, 1.0f));
 }
 
 inline float
 _AverageAlphaForEnergy(const Vec2f& alpha)
 {
-    const float clampedX = std::clamp(alpha[0], 1.0e-5f, 1.0f);
-    const float clampedY = std::clamp(alpha[1], 1.0e-5f, 1.0f);
+    const float clampedX = std::clamp(alpha[0], _kMinMicrofacetAlpha, 1.0f);
+    const float clampedY = std::clamp(alpha[1], _kMinMicrofacetAlpha, 1.0f);
     return std::sqrt(clampedX * clampedY);
 }
 
@@ -290,8 +293,8 @@ _AverageAlphaAsRoughness(const Vec2f& alpha)
 inline float
 _BsdlLayerRoughnessFromAlpha(const Vec2f& alpha)
 {
-    const float alphaX = std::clamp(alpha[0], 1.0e-5f, 1.0f);
-    const float alphaY = std::clamp(alpha[1], 1.0e-5f, 1.0f);
+    const float alphaX = std::clamp(alpha[0], _kMinMicrofacetAlpha, 1.0f);
+    const float alphaY = std::clamp(alpha[1], _kMinMicrofacetAlpha, 1.0f);
     return std::sqrt((std::max(alphaX, alphaY) +
                       std::min(alphaX, alphaY)) * 0.5f);
 }
@@ -305,8 +308,11 @@ _IsEffectivelyIsotropic(const Vec2f& roughness)
 inline bool
 _IsEffectivelyDeltaAlpha(const Vec2f& alpha)
 {
-    constexpr float kDeltaAlphaThreshold = 1.1e-5f;
-    return std::max(alpha[0], alpha[1]) <= kDeltaAlphaThreshold;
+    // Match pbrt-v4's TrowbridgeReitzDistribution::EffectivelySmooth().
+    // Below this alpha, finite GGX is numerically valid but produces severe
+    // near-mirror indirect-light variance in a unidirectional path tracer.
+    return std::max(alpha[0], alpha[1]) <
+        _kEffectivelySmoothMicrofacetAlpha;
 }
 
 inline Vec3f
@@ -401,9 +407,18 @@ _ConductorF0(const Vec3f& ior, const Vec3f& extinction)
 inline float
 _GGX_D(float alpha, float NdotH)
 {
-    float a2 = alpha * alpha;
-    float denom = NdotH * NdotH * (a2 - 1.0f) + 1.0f;
-    return a2 / (kPi * denom * denom + _kEpsilon);
+    const float clampedAlpha =
+        std::clamp(alpha, _kMinMicrofacetAlpha, 1.0f);
+    const float clampedNdotH = std::clamp(NdotH, 0.0f, 1.0f);
+    const float a2 = clampedAlpha * clampedAlpha;
+    const float nDotH2 = clampedNdotH * clampedNdotH;
+    // Avoid cancellation in NdotH^2 * (a2 - 1) + 1 for mirror-like lobes.
+    const float denom = (1.0f - nDotH2) + a2 * nDotH2;
+    const float denom2 = denom * denom;
+    if (!std::isfinite(denom2) || denom2 <= 0.0f) {
+        return 0.0f;
+    }
+    return a2 / (kPi * denom2);
 }
 
 inline float
@@ -699,7 +714,7 @@ _GGX_D_Anisotropic(const Vec2f& alpha, const Vec3f& wmLocal)
          sinPhi2 / (alpha[1] * alpha[1]));
     const float denom = kPi * alpha[0] * alpha[1] * cosTheta4 *
         (1.0f + e) * (1.0f + e);
-    return (denom > _kEpsilon) ? 1.0f / denom : 0.0f;
+    return (std::isfinite(denom) && denom > 0.0f) ? 1.0f / denom : 0.0f;
 }
 
 inline float
@@ -844,7 +859,8 @@ _TurquinMicrofacetMsScale(
     float cosThetaO,
     const Vec3f& fresnel)
 {
-    if (!_IsGgxMicrofacetMultipleScatteringEnabled()) {
+    if (!_IsGgxMicrofacetMultipleScatteringEnabled() ||
+        alphaRoughness < _kTurquinMicrofacetMsMinAlpha) {
         return Vec3f(1.0f);
     }
 
@@ -865,7 +881,8 @@ _TurquinDirectionalReflectance(
     float cosThetaO,
     const Vec3f& fresnel)
 {
-    if (!_IsGgxMicrofacetMultipleScatteringEnabled()) {
+    if (!_IsGgxMicrofacetMultipleScatteringEnabled() ||
+        alphaRoughness < _kTurquinMicrofacetMsMinAlpha) {
         return _SaturateVec(fresnel);
     }
 
@@ -1509,7 +1526,8 @@ _EvalMicrofacetReflectionIsotropic(
     const Vec3f& wi,
     const Vec3f& wo)
 {
-    const float clampedAlpha = std::clamp(alpha, 1.0e-5f, 1.0f);
+    const float clampedAlpha =
+        std::clamp(alpha, _kMinMicrofacetAlpha, 1.0f);
     const float NdotL = std::max(Dot(N, wi), 0.0f);
     const float NdotV = std::max(Dot(N, wo), _kEpsilon);
     if (NdotL <= 0.0f || NdotV <= 0.0f) {
@@ -1667,26 +1685,39 @@ _ScaleDiscreteSpecularSample(
 }
 
 inline Bsdf::BsdfSample
-_SampleDeltaDielectricReflection(
-    const Bsdf::DielectricData& data,
-    float effectiveIor,
+_SampleDeltaReflection(
+    const Vec3f& reflectance,
+    float weight,
     const Vec3f& shadingN,
     const Vec3f& wo)
 {
     Vec3f wi = 2.0f * Dot(shadingN, wo) * shadingN - wo;
     wi.normalize();
 
-    const float cosTheta =
-        std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
     Bsdf::BsdfSample sample{
         wi,
-        _DielectricReflectionFresnel(data, cosTheta, effectiveIor) *
-            data.weight,
+        _SafeVec(reflectance * weight),
         1.0f,
         true
     };
     sample.eta = 1.0f;
     return sample;
+}
+
+inline Bsdf::BsdfSample
+_SampleDeltaDielectricReflection(
+    const Bsdf::DielectricData& data,
+    float effectiveIor,
+    const Vec3f& shadingN,
+    const Vec3f& wo)
+{
+    const float cosTheta =
+        std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+    return _SampleDeltaReflection(
+        _DielectricReflectionFresnel(data, cosTheta, effectiveIor),
+        data.weight,
+        shadingN,
+        wo);
 }
 
 inline Bsdf::BsdfSample
@@ -1708,6 +1739,36 @@ _SampleDeltaDielectricTransmission(
             _DielectricReflectionFresnelUntinted(
                 data, fresnelCos, effectiveIor)));
     return sample;
+}
+
+inline Bsdf::BsdfSample
+_SampleDeltaConductorReflection(
+    const Bsdf::ConductorData& data,
+    const Vec3f& shadingN,
+    const Vec3f& wo)
+{
+    const float cosTheta =
+        std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+    return _SampleDeltaReflection(
+        _ConductorReflectionFresnel(data, cosTheta),
+        data.weight,
+        shadingN,
+        wo);
+}
+
+inline Bsdf::BsdfSample
+_SampleDeltaGeneralizedSchlickReflection(
+    const Bsdf::GeneralizedSchlickData& data,
+    const Vec3f& shadingN,
+    const Vec3f& wo)
+{
+    const float cosTheta =
+        std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+    return _SampleDeltaReflection(
+        _GeneralizedSchlickReflectionFresnel(data, cosTheta),
+        data.weight,
+        shadingN,
+        wo);
 }
 
 Vec3f
@@ -1969,6 +2030,9 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
             const float effectiveIor =
                 _ResolveDielectricIor(data, heroWavelengthNm);
+            if (_IsEffectivelyDeltaAlpha(data.roughness)) {
+                return Vec3f(0.0f);
+            }
             if (sameSide &&
                 data.scatterMode != Bsdf::ScatterMode::Transmission) {
                 const Vec3f fresnel = _DielectricReflectionFresnel(
@@ -1977,7 +2041,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     effectiveIor);
                 if (_IsEffectivelyIsotropic(data.roughness)) {
                     result += _EvalMicrofacetReflectionIsotropic(
-                        std::clamp(data.roughness[0], 1.0e-5f, 1.0f),
+                        std::clamp(
+                            data.roughness[0], _kMinMicrofacetAlpha, 1.0f),
                         fresnel,
                         data.weight,
                         shadingN,
@@ -2019,12 +2084,16 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             if (Dot(N, wi) <= 0.0f || data.weight <= 0.0f) {
                 return Vec3f(0.0f);
             }
+            if (_IsEffectivelyDeltaAlpha(data.roughness)) {
+                return Vec3f(0.0f);
+            }
             const Vec3f fresnel = _ConductorReflectionFresnel(
                 data,
                 _ReflectionFresnelCosTheta(wi, wo));
             if (_IsEffectivelyIsotropic(data.roughness)) {
                 return _EvalMicrofacetReflectionIsotropic(
-                    std::clamp(data.roughness[0], 1.0e-5f, 1.0f),
+                    std::clamp(
+                        data.roughness[0], _kMinMicrofacetAlpha, 1.0f),
                     fresnel,
                     data.weight,
                     N,
@@ -2043,6 +2112,9 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             Vec3f result(0.0f);
             bool sameSide = _IsSameSide(N, wi, wo);
             Vec3f shadingN = _FaceForwardNormal(N, wo);
+            if (_IsEffectivelyDeltaAlpha(data.roughness)) {
+                return Vec3f(0.0f);
+            }
             if (sameSide &&
                 data.scatterMode != Bsdf::ScatterMode::Transmission) {
                 const Vec3f fresnel = _GeneralizedSchlickReflectionFresnel(
@@ -2050,7 +2122,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     _ReflectionFresnelCosTheta(wi, wo));
                 if (_IsEffectivelyIsotropic(data.roughness)) {
                     result += _EvalMicrofacetReflectionIsotropic(
-                        std::clamp(data.roughness[0], 1.0e-5f, 1.0f),
+                        std::clamp(
+                            data.roughness[0], _kMinMicrofacetAlpha, 1.0f),
                         fresnel,
                         data.weight,
                         shadingN,
@@ -2377,6 +2450,9 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
             const float effectiveIor =
                 _ResolveDielectricIor(data, heroWavelengthNm);
+            if (_IsEffectivelyDeltaAlpha(data.roughness)) {
+                return 0.0f;
+            }
             if (sameSide &&
                 data.scatterMode != Bsdf::ScatterMode::Transmission) {
                 if (_IsEffectivelyIsotropic(data.roughness)) {
@@ -2404,6 +2480,9 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             }
             return 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
+            if (_IsEffectivelyDeltaAlpha(data.roughness)) {
+                return 0.0f;
+            }
             return (Dot(N, wi) > 0.0f)
                 ? (_IsEffectivelyIsotropic(data.roughness)
                     ? Bsdf::PdfGGXSpecular(
@@ -2421,6 +2500,9 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
             bool sameSide = _IsSameSide(N, wi, wo);
             Vec3f shadingN = _FaceForwardNormal(N, wo);
+            if (_IsEffectivelyDeltaAlpha(data.roughness)) {
+                return 0.0f;
+            }
             if (sameSide &&
                 data.scatterMode != Bsdf::ScatterMode::Transmission) {
                 if (_IsEffectivelyIsotropic(data.roughness)) {
@@ -2679,6 +2761,9 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     tree, nodeId, N, wo, sample, heroWavelengthNm);
             }
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
+            if (_IsEffectivelyDeltaAlpha(data.roughness)) {
+                return _SampleDeltaConductorReflection(data, N, wo);
+            }
             if (_IsEffectivelyIsotropic(data.roughness)) {
                 auto sample = Bsdf::SampleGGXSpecular(
                     _AverageAlphaAsRoughness(data.roughness),
@@ -2702,6 +2787,8 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 tree, nodeId, N, wo, sample, heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
             const float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
+            const bool hasDeltaRoughness =
+                _IsEffectivelyDeltaAlpha(data.roughness);
             float fresnelProb = _Clamp01(_Luminance(
                 _GeneralizedSchlickReflectionFresnel(data, NdotV)));
             Vec3f shadingN = _FaceForwardNormal(N, wo);
@@ -2709,6 +2796,17 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 float avgF0 = _Clamp01(_Luminance(_SaturateVec(data.color0)));
                 float sqrtF0 = std::sqrt(std::max(avgF0, 0.01f));
                 float ior = (1.0f + sqrtF0) / (1.0f - sqrtF0);
+                if (hasDeltaRoughness) {
+                    auto deltaSample = _SampleDeltaTransmission(
+                        ior, Vec3f(1.0f), data.weight, N, wo);
+                    deltaSample.f = CompMul(
+                        deltaSample.f,
+                        _TransmissionScale(
+                            _SchlickFresnelScalar(ior, NdotV),
+                            _GeneralizedSchlickReflectionFresnel(
+                                data, NdotV)));
+                    return deltaSample;
+                }
                 auto sample = Bsdf::SampleGGXTransmission(
                     _AverageAlphaAsRoughness(data.roughness),
                     ior,
@@ -2737,6 +2835,19 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 float avgF0 = _Clamp01(_Luminance(_SaturateVec(data.color0)));
                 float sqrtF0 = std::sqrt(std::max(avgF0, 0.01f));
                 float ior = (1.0f + sqrtF0) / (1.0f - sqrtF0);
+                if (hasDeltaRoughness) {
+                    auto deltaSample = _SampleDeltaTransmission(
+                        ior, Vec3f(1.0f), data.weight, N, wo);
+                    deltaSample.f = CompMul(
+                        deltaSample.f,
+                        _TransmissionScale(
+                            _SchlickFresnelScalar(ior, NdotV),
+                            _GeneralizedSchlickReflectionFresnel(
+                                data, NdotV)));
+                    return _ScaleDiscreteSpecularSample(
+                        deltaSample,
+                        1.0f - fresnelProb);
+                }
                 auto sample = Bsdf::SampleGGXTransmission(
                     _AverageAlphaAsRoughness(data.roughness),
                     ior,
@@ -2759,6 +2870,15 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 sample.f *= data.weight;
                 return _FinalizeSubtreeSample(
                     tree, nodeId, N, wo, sample, heroWavelengthNm);
+            }
+            if (hasDeltaRoughness) {
+                auto sample =
+                    _SampleDeltaGeneralizedSchlickReflection(data, shadingN, wo);
+                if (data.scatterMode ==
+                    Bsdf::ScatterMode::ReflectionTransmission) {
+                    return _ScaleDiscreteSpecularSample(sample, fresnelProb);
+                }
+                return sample;
             }
             if (_IsEffectivelyIsotropic(data.roughness)) {
                 auto sample = Bsdf::SampleGGXSpecular(

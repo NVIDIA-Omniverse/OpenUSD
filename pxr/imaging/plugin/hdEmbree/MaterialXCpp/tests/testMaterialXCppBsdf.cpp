@@ -731,6 +731,44 @@ TestGGXSpecularPeak()
 }
 
 static bool
+TestGGXSpecularLowRoughnessPeakPreserved()
+{
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.2f, 0.9797959f, 0.0f).normalized();
+    const Vec3f wiMirror = Vec3f(-0.2f, 0.9797959f, 0.0f).normalized();
+    const Vec3f specColor(1.0f);
+
+    const float broadRoughness = 0.05f;
+    const float sharpRoughness = 0.01f;
+    const Vec3f broadEval = Bsdf::EvalGGXSpecular(
+        broadRoughness, 1.5f, specColor, N, wiMirror, wo);
+    const Vec3f sharpEval = Bsdf::EvalGGXSpecular(
+        sharpRoughness, 1.5f, specColor, N, wiMirror, wo);
+    const float broadPdf = Bsdf::PdfGGXSpecular(
+        broadRoughness, N, wiMirror, wo);
+    const float sharpPdf = Bsdf::PdfGGXSpecular(
+        sharpRoughness, N, wiMirror, wo);
+
+    const float broadMag = broadEval.length();
+    const float sharpMag = sharpEval.length();
+    if (!(sharpMag > broadMag * 10.0f)) {
+        printf(
+            "    Low roughness GGX peak collapsed: roughness=%f eval=%f, "
+            "roughness=%f eval=%f\n",
+            sharpRoughness, sharpMag, broadRoughness, broadMag);
+        return false;
+    }
+    if (!(sharpPdf > broadPdf * 10.0f)) {
+        printf(
+            "    Low roughness GGX pdf peak collapsed: roughness=%f pdf=%f, "
+            "roughness=%f pdf=%f\n",
+            sharpRoughness, sharpPdf, broadRoughness, broadPdf);
+        return false;
+    }
+    return true;
+}
+
+static bool
 TestTreeDielectricReflectionMatchesStandaloneGgx()
 {
     SurfaceClosure c;
@@ -1240,7 +1278,7 @@ TestSampleGGXSpecularLowRoughnessBoundedThroughput()
     const Vec3f N(0.0f, 1.0f, 0.0f);
     const Vec3f wo = Vec3f(0.2f, 0.9797959f, 0.0f).normalized();
     const Vec3f F0(1.0f);
-    const float kRoughness = 0.001f;
+    const float kRoughnessValues[] = {0.001f, 0.01f, 0.02f, 0.04f};
     const float kSamples[][2] = {
         {0.1f, 0.2f},
         {0.3f, 0.7f},
@@ -1248,22 +1286,36 @@ TestSampleGGXSpecularLowRoughnessBoundedThroughput()
         {0.85f, 0.15f},
     };
 
-    for (const auto& sampleUV : kSamples) {
-        const auto sample = Bsdf::SampleGGXSpecular(
-            kRoughness, 1.5f, F0, N, wo, sampleUV[0], sampleUV[1]);
-        if (sample.pdf <= 0.0f) {
-            printf("    Expected valid low-roughness GGX sample\n");
-            return false;
-        }
+    for (const float roughness : kRoughnessValues) {
+        for (const auto& sampleUV : kSamples) {
+            const auto sample = Bsdf::SampleGGXSpecular(
+                roughness, 1.5f, F0, N, wo, sampleUV[0], sampleUV[1]);
+            if (sample.pdf <= 0.0f) {
+                printf("    Expected valid low-roughness GGX sample\n");
+                return false;
+            }
 
-        const float cosTheta = std::abs(Dot(N, sample.wi));
-        const Vec3f throughput = sample.f * (cosTheta / sample.pdf);
-        for (int i = 0; i < 3; ++i) {
-            if (!std::isfinite(throughput[i]) || throughput[i] > 1.05f) {
+            const float cosTheta = std::abs(Dot(N, sample.wi));
+            const Vec3f throughput = sample.f * (cosTheta / sample.pdf);
+            for (int i = 0; i < 3; ++i) {
+                if (!std::isfinite(throughput[i]) || throughput[i] > 1.05f) {
+                    printf(
+                        "    Low-roughness GGX throughput blew up: "
+                        "roughness=%f sample=(%f,%f) channel=%d value=%f\n",
+                        roughness,
+                        sampleUV[0], sampleUV[1], i, throughput[i]);
+                    return false;
+                }
+            }
+
+            const float pdf = Bsdf::PdfGGXSpecular(
+                roughness, N, sample.wi, wo);
+            const float ratio = sample.pdf / std::max(pdf, 1.0e-20f);
+            if (pdf <= 0.0f || ratio < 0.8f || ratio > 1.2f) {
                 printf(
-                    "    Low-roughness GGX throughput blew up: "
-                    "sample=(%f,%f) channel=%d value=%f\n",
-                    sampleUV[0], sampleUV[1], i, throughput[i]);
+                    "    Low-roughness GGX pdf mismatch: roughness=%f "
+                    "samplePdf=%f pdf=%f\n",
+                    roughness, sample.pdf, pdf);
                 return false;
             }
         }
@@ -1338,7 +1390,7 @@ TestZeroRoughnessDielectricSamplesDelta()
     dielectric.weight = 1.0f;
     dielectric.tint = Vec3f(1.0f);
     dielectric.ior = 1.5f;
-    dielectric.roughness = Vec2f(1.0e-5f, 1.0e-5f);
+    dielectric.roughness = Vec2f(0.0f, 0.0f);
     dielectric.scatterMode = Bsdf::ScatterMode::ReflectionTransmission;
     c.bsdfTree.root = c.bsdfTree.Add(dielectric);
 
@@ -1372,6 +1424,329 @@ TestZeroRoughnessDielectricSamplesDelta()
         printf("    Delta transmission should ignore microfacet random numbers\n");
         return false;
     }
+    return true;
+}
+
+static bool
+TestZeroRoughnessConductorSamplesDeltaAndSkipsDirectEval()
+{
+    SurfaceClosure c;
+    Bsdf::ConductorData conductor;
+    conductor.weight = 1.0f;
+    conductor.ior = Vec3f(0.8f, 0.5f, 0.25f);
+    conductor.extinction = Vec3f(2.5f, 2.0f, 1.5f);
+    conductor.roughness = Vec2f(0.0f, 0.0f);
+    c.bsdfTree.root = c.bsdfTree.Add(conductor);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.2f, 0.9797959f, 0.0f).normalized();
+    const Vec3f wiMirror = Vec3f(-0.2f, 0.9797959f, 0.0f).normalized();
+
+    const Vec3f directEval = Bsdf::EvalSurface(c, N, wiMirror, wo);
+    const float directPdf = Bsdf::PdfSurface(c, N, wiMirror, wo);
+    if (!Test_IsClose(directEval, Vec3f(0.0f), 1.0e-7f) ||
+        !Test_IsClose(directPdf, 0.0f, 1.0e-7f)) {
+        printf(
+            "    Delta conductor should not appear as finite direct lobe: "
+            "eval=(%f,%f,%f) pdf=%f\n",
+            directEval[0], directEval[1], directEval[2], directPdf);
+        return false;
+    }
+
+    const auto sample = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.4f);
+    if (!sample.isSpecular || sample.pdf <= 0.0f) {
+        printf("    Expected low-roughness conductor to sample delta\n");
+        return false;
+    }
+    if (!Test_IsClose(sample.wi, wiMirror, 1.0e-6f)) {
+        printf(
+            "    Delta conductor reflected direction mismatch: "
+            "(%f,%f,%f)\n",
+            sample.wi[0], sample.wi[1], sample.wi[2]);
+        return false;
+    }
+    if (!_IsFiniteNonNegative(sample.f) || sample.f.length() <= 0.0f) {
+        printf(
+            "    Delta conductor reflectance invalid: (%f,%f,%f)\n",
+            sample.f[0], sample.f[1], sample.f[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestEffectivelySmoothConductorAlphaSamplesDeltaAndSkipsDirectEval()
+{
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.2f, 0.9797959f, 0.0f).normalized();
+    const Vec3f wiMirror = Vec3f(-0.2f, 0.9797959f, 0.0f).normalized();
+    const float kSmoothAlphaValues[] = {
+        1.0e-6f,
+        1.0e-4f,
+        4.0e-4f,
+        9.0e-4f
+    };
+
+    for (const float alpha : kSmoothAlphaValues) {
+        SurfaceClosure c;
+        Bsdf::ConductorData conductor;
+        conductor.weight = 1.0f;
+        conductor.ior = Vec3f(0.8f, 0.5f, 0.25f);
+        conductor.extinction = Vec3f(2.5f, 2.0f, 1.5f);
+        conductor.roughness = Vec2f(alpha, alpha);
+        c.bsdfTree.root = c.bsdfTree.Add(conductor);
+
+        const Vec3f directEval = Bsdf::EvalSurface(c, N, wiMirror, wo);
+        const float directPdf = Bsdf::PdfSurface(c, N, wiMirror, wo);
+        if (!Test_IsClose(directEval, Vec3f(0.0f), 1.0e-7f) ||
+            !Test_IsClose(directPdf, 0.0f, 1.0e-7f)) {
+            printf(
+                "    Effectively smooth conductor should skip finite eval: "
+                "alpha=%g eval=(%f,%f,%f) pdf=%f\n",
+                alpha,
+                directEval[0], directEval[1], directEval[2],
+                directPdf);
+            return false;
+        }
+
+        const auto sample = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.4f);
+        if (!sample.isSpecular || sample.pdf <= 0.0f ||
+            !Test_IsClose(sample.wi, wiMirror, 1.0e-6f) ||
+            !_IsFiniteNonNegative(sample.f) || sample.f.length() <= 0.0f) {
+            printf(
+                "    Effectively smooth conductor should sample delta: "
+                "alpha=%g specular=%d wi=(%f,%f,%f) f=(%f,%f,%f) pdf=%f\n",
+                alpha,
+                sample.isSpecular ? 1 : 0,
+                sample.wi[0], sample.wi[1], sample.wi[2],
+                sample.f[0], sample.f[1], sample.f[2],
+                sample.pdf);
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool
+TestSharpConductorAlphaRemainsFiniteGlossy()
+{
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.2f, 0.9797959f, 0.0f).normalized();
+    const Vec3f wiMirror = Vec3f(-0.2f, 0.9797959f, 0.0f).normalized();
+    const float kAlphaValues[] = {
+        1.0e-3f,
+        1.6e-3f,
+        2.5e-3f
+    };
+
+    for (const float alpha : kAlphaValues) {
+        SurfaceClosure c;
+        Bsdf::ConductorData conductor;
+        conductor.weight = 1.0f;
+        conductor.ior = Vec3f(0.8f, 0.5f, 0.25f);
+        conductor.extinction = Vec3f(2.5f, 2.0f, 1.5f);
+        conductor.roughness = Vec2f(alpha, alpha);
+        c.bsdfTree.root = c.bsdfTree.Add(conductor);
+
+        const Vec3f directEval = Bsdf::EvalSurface(c, N, wiMirror, wo);
+        const float directPdf = Bsdf::PdfSurface(c, N, wiMirror, wo);
+        if (directEval.length() <= 0.0f ||
+            directPdf <= 0.0f ||
+            !_IsFiniteNonNegative(directEval)) {
+            printf(
+                "    Sharp conductor should remain a finite glossy lobe: "
+                "alpha=%g eval=(%f,%f,%f) pdf=%f\n",
+                alpha,
+                directEval[0], directEval[1], directEval[2],
+                directPdf);
+            return false;
+        }
+
+        const auto sample = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.4f);
+        const float pdf = Bsdf::PdfSurface(c, N, sample.wi, wo);
+        const float ratio = sample.pdf / std::max(pdf, 1.0e-20f);
+        if (sample.isSpecular || sample.pdf <= 0.0f || pdf <= 0.0f ||
+            ratio < 0.8f || ratio > 1.2f) {
+            printf(
+                "    Sharp conductor sample invalid: alpha=%g specular=%d "
+                "samplePdf=%f pdf=%f\n",
+                alpha,
+                sample.isSpecular ? 1 : 0,
+                sample.pdf,
+                pdf);
+            return false;
+        }
+
+        const float cosTheta = std::max(Dot(N, sample.wi), 0.0f);
+        const Vec3f throughput = sample.f * (cosTheta / sample.pdf);
+        if (!_IsFiniteNonNegative(sample.f) ||
+            !_IsFiniteNonNegative(throughput)) {
+            printf(
+                "    Sharp conductor sample non-finite: alpha=%g "
+                "f=(%f,%f,%f) throughput=(%f,%f,%f)\n",
+                alpha,
+                sample.f[0], sample.f[1], sample.f[2],
+                throughput[0], throughput[1], throughput[2]);
+            return false;
+        }
+        for (int i = 0; i < 3; ++i) {
+            if (throughput[i] > 1.25f) {
+                printf(
+                    "    Sharp conductor throughput too high: alpha=%g "
+                    "channel=%d throughput=%f\n",
+                    alpha,
+                    i,
+                    throughput[i]);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static bool
+TestSharpConductorEvalPdfRatioBoundedForLightSamples()
+{
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const float kAlphaValues[] = {
+        1.0e-3f,
+        1.6e-3f,
+        2.5e-3f
+    };
+    const float kWoCosValues[] = {
+        0.05f,
+        0.2f,
+        0.5f,
+        0.9f,
+        0.999f
+    };
+    const float kLightPdfValues[] = {
+        0.02f,
+        0.08f,
+        1.0f,
+        10.0f,
+        100.0f
+    };
+
+    for (const float alpha : kAlphaValues) {
+        SurfaceClosure c;
+        Bsdf::ConductorData conductor;
+        conductor.weight = 1.0f;
+        conductor.ior = Vec3f(0.8f, 0.5f, 0.25f);
+        conductor.extinction = Vec3f(2.5f, 2.0f, 1.5f);
+        conductor.roughness = Vec2f(alpha, alpha);
+        c.bsdfTree.root = c.bsdfTree.Add(conductor);
+
+        for (const float woCosTheta : kWoCosValues) {
+            const float woSinTheta =
+                std::sqrt(std::max(0.0f, 1.0f - woCosTheta * woCosTheta));
+            const Vec3f wo(woSinTheta, woCosTheta, 0.0f);
+
+            for (int y = 0; y < 64; ++y) {
+                const float cosTheta =
+                    (static_cast<float>(y) + 0.5f) / 64.0f;
+                const float sinTheta =
+                    std::sqrt(std::max(0.0f, 1.0f - cosTheta * cosTheta));
+                for (int x = 0; x < 128; ++x) {
+                    const float phi =
+                        _kFurnaceTwoPi *
+                        (static_cast<float>(x) + 0.5f) / 128.0f;
+                    const Vec3f wi(
+                        sinTheta * std::cos(phi),
+                        cosTheta,
+                        sinTheta * std::sin(phi));
+                    const Vec3f f = Bsdf::EvalSurface(c, N, wi, wo);
+                    const float pdf = Bsdf::PdfSurface(c, N, wi, wo);
+                    if (f.length() <= 0.0f) {
+                        continue;
+                    }
+                    if (pdf <= 0.0f) {
+                        printf(
+                            "    Sharp conductor eval has zero pdf: "
+                            "alpha=%g wo=(%f,%f,%f) wi=(%f,%f,%f) "
+                            "f=(%f,%f,%f) pdf=%f\n",
+                            alpha,
+                            wo[0], wo[1], wo[2],
+                            wi[0], wi[1], wi[2],
+                            f[0], f[1], f[2],
+                            pdf);
+                        return false;
+                    }
+
+                    const Vec3f ratio = f * (cosTheta / pdf);
+                    if (!_IsFiniteNonNegative(ratio)) {
+                        printf(
+                            "    Sharp conductor Eval/Pdf ratio non-finite: "
+                            "alpha=%g wo=(%f,%f,%f) wi=(%f,%f,%f) "
+                            "pdf=%f ratio=(%f,%f,%f)\n",
+                            alpha,
+                            wo[0], wo[1], wo[2],
+                            wi[0], wi[1], wi[2],
+                            pdf,
+                            ratio[0], ratio[1], ratio[2]);
+                        return false;
+                    }
+                    for (int i = 0; i < 3; ++i) {
+                        if (ratio[i] > 1.25f) {
+                            printf(
+                                "    Sharp conductor Eval/Pdf ratio too high: "
+                                "alpha=%g channel=%d wo=(%f,%f,%f) "
+                                "wi=(%f,%f,%f) f=(%f,%f,%f) pdf=%f "
+                                "ratio=%f\n",
+                                alpha,
+                                i,
+                                wo[0], wo[1], wo[2],
+                                wi[0], wi[1], wi[2],
+                                f[0], f[1], f[2],
+                                pdf,
+                                ratio[i]);
+                            return false;
+                        }
+                    }
+
+                    for (const float lightPdf : kLightPdfValues) {
+                        const float misW =
+                            Bsdf::PowerHeuristic(lightPdf, pdf);
+                        const Vec3f direct = f * (cosTheta / lightPdf) * misW;
+                        if (!_IsFiniteNonNegative(direct)) {
+                            printf(
+                                "    Sharp conductor direct MIS non-finite: "
+                                "alpha=%g lightPdf=%f wo=(%f,%f,%f) "
+                                "wi=(%f,%f,%f) f=(%f,%f,%f) pdf=%f "
+                                "direct=(%f,%f,%f)\n",
+                                alpha,
+                                lightPdf,
+                                wo[0], wo[1], wo[2],
+                                wi[0], wi[1], wi[2],
+                                f[0], f[1], f[2],
+                                pdf,
+                                direct[0], direct[1], direct[2]);
+                            return false;
+                        }
+                        for (int i = 0; i < 3; ++i) {
+                            if (direct[i] > 0.75f) {
+                                printf(
+                                    "    Sharp conductor direct MIS too high: "
+                                    "alpha=%g lightPdf=%f channel=%d "
+                                    "wo=(%f,%f,%f) wi=(%f,%f,%f) "
+                                    "f=(%f,%f,%f) pdf=%f direct=%f\n",
+                                    alpha,
+                                    lightPdf,
+                                    i,
+                                    wo[0], wo[1], wo[2],
+                                    wi[0], wi[1], wi[2],
+                                    f[0], f[1], f[2],
+                                    pdf,
+                                    direct[i]);
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     return true;
 }
 
@@ -2470,6 +2845,7 @@ Test_RegisterBsdfTests()
     _REG(TestGGXDirectionalMissingEnergyLutBounds);
     _REG(TestGGXTurquinWhiteFurnaceCompensatesMissingEnergy);
     _REG(TestGGXSpecularPeak);
+    _REG(TestGGXSpecularLowRoughnessPeakPreserved);
     _REG(TestTreeDielectricReflectionMatchesStandaloneGgx);
     _REG(TestDispersionCauchyIorMonotonic);
     _REG(TestDispersionChangesTransmissionSampling);
@@ -2499,6 +2875,10 @@ Test_RegisterBsdfTests()
     _REG(TestSampleSurfacePdfConsistency);
     _REG(TestTreeTransmissionPreservesWeight);
     _REG(TestZeroRoughnessDielectricSamplesDelta);
+    _REG(TestZeroRoughnessConductorSamplesDeltaAndSkipsDirectEval);
+    _REG(TestEffectivelySmoothConductorAlphaSamplesDeltaAndSkipsDirectEval);
+    _REG(TestSharpConductorAlphaRemainsFiniteGlossy);
+    _REG(TestSharpConductorEvalPdfRatioBoundedForLightSamples);
     _REG(TestTreeTransmissionPreservesWeightFromInterior);
     _REG(TestEvalSurfaceTransmissionFromInterior);
     _REG(TestTreeAddTransmissionPreservesWeight);

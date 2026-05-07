@@ -196,12 +196,12 @@ _ClampFireflyContribution(GfVec3f contribution, float threshold)
 }
 
 inline float
-_GetOneSampleMisLightPdf(float lightPdf, int sampleCount, bool applyCount)
+_GetMultiSampleMisLightPdf(float lightPdf, int sampleCount)
 {
     if (lightPdf <= 0.0f) {
         return 0.0f;
     }
-    return applyCount ? lightPdf * static_cast<float>(sampleCount) : lightPdf;
+    return lightPdf * static_cast<float>(std::max(1, sampleCount));
 }
 
 constexpr float _reflectionOnlyEps = 1.0e-6f;
@@ -3260,13 +3260,15 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                     if (!std::isfinite(bsdfValue[i])) bsdfValue[i] = 0.0f;
                 }
 
-                // MIS weight: one-sample MIS with N light samples.
-                // The effective light PDF for this multi-sample estimator
-                // is lightPdf (per-sample PDF stays the same; the 1/N
-                // averaging is handled outside).
+                // MIS weight for the multi-sample estimator. The contribution
+                // itself is averaged by 1/N outside this loop, but Veach's
+                // multi-sample MIS weights use n_i * p_i for each strategy.
                 float lightPdf = (ls.invPdfW > 0.0f)
                     ? 1.0f / ls.invPdfW : 0.0f;
-                float misW = mxcpp::Bsdf::PowerHeuristic(lightPdf, bsdfPdf);
+                const float effectiveLightPdf =
+                    _GetMultiSampleMisLightPdf(lightPdf, N);
+                float misW =
+                    mxcpp::Bsdf::PowerHeuristic(effectiveLightPdf, bsdfPdf);
 
                 if (hero.active) {
                     const float spectralLi = _RgbToSpectralValue(ls.Li, hero);
@@ -3406,10 +3408,9 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
             float misW = 1.0f;
             if (ls.invPdfW > 0.0f) {
                 const float lightPdf = 1.0f / ls.invPdfW;
-                const float effectiveLightPdf = _GetOneSampleMisLightPdf(
+                const float effectiveLightPdf = _GetMultiSampleMisLightPdf(
                     lightPdf,
-                    N,
-                    true);
+                    N);
                 if (effectiveLightPdf > 0.0f) {
                     misW = mxcpp::Bsdf::PowerHeuristic(
                         effectiveLightPdf,
@@ -3486,10 +3487,9 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
         if (state->lastBsdfPdf > 0.0f &&
             input.finiteLightHit.invPdfW > 0.0f) {
             const float lightPdf = 1.0f / input.finiteLightHit.invPdfW;
-            const float effectiveLightPdf = _GetOneSampleMisLightPdf(
+            const float effectiveLightPdf = _GetMultiSampleMisLightPdf(
                 lightPdf,
-                _lightSamplesPerHit,
-                state->lastScatterWasMedium);
+                _lightSamplesPerHit);
             if (effectiveLightPdf > 0.0f) {
                 lightContrib *= mxcpp::Bsdf::PowerHeuristic(
                     state->lastBsdfPdf,
@@ -3882,10 +3882,9 @@ HdEmbreeRenderer::_TracePath(
             GfVec3f lightContrib = finiteLightHit.Li;
             if (lastBsdfPdf > 0.0f && finiteLightHit.invPdfW > 0.0f) {
                 const float lightPdf = 1.0f / finiteLightHit.invPdfW;
-                const float effectiveLightPdf = _GetOneSampleMisLightPdf(
+                const float effectiveLightPdf = _GetMultiSampleMisLightPdf(
                     lightPdf,
-                    _lightSamplesPerHit,
-                    lastScatterWasMedium);
+                    _lightSamplesPerHit);
                 if (effectiveLightPdf > 0.0f) {
                     lightContrib *= mxcpp::Bsdf::PowerHeuristic(
                         lastBsdfPdf,
@@ -3934,10 +3933,9 @@ HdEmbreeRenderer::_TracePath(
                     // MIS weight for BSDF sampling strategy hitting dome.
                     float domePdf = (ls.invPdfW > 0.0f)
                         ? 1.0f / ls.invPdfW : 0.0f;
-                    domePdf = _GetOneSampleMisLightPdf(
+                    domePdf = _GetMultiSampleMisLightPdf(
                         domePdf,
-                        _lightSamplesPerHit,
-                        lastScatterWasMedium);
+                        _lightSamplesPerHit);
                     float misW = mxcpp::Bsdf::PowerHeuristic(
                         lastBsdfPdf, domePdf);
                     domeContrib *= misW;

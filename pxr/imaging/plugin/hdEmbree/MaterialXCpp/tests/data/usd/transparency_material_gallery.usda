@@ -1,0 +1,406 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1.0
+    renderSettingsPrimPath = "/RenderSettings"
+    upAxis = "Y"
+    doc = """Transmission validation gallery for hdEmbree.
+
+Layout mirrors sss_randomwalk_gallery.usda, but uses high-resolution
+Sphere_Subdiv instances and transmissive material settings:
+  - MaterialX standard_surface thin_walled / thick transmission
+  - MaterialX open_pbr_surface geometry_thin_walled / thick transmission
+  - Native UsdPreviewSurface opaque references
+
+Opacity is fixed at 1.0.  UsdPreviewSurface has no standard transmission or
+thin_walled inputs, so those spheres are retained as opaque material-family
+references.  A checker backdrop behind the spheres makes pass-through
+visibility easy to inspect."""
+)
+
+def RenderSettings "RenderSettings"
+{
+    int hdEmbree:lightSamplesPerHit = 1
+    int hdEmbree:maxBounces = 16
+    token hdEmbree:samplerSequence = "openqmc_sobolbn"
+    rel products = [</RenderProduct>]
+}
+
+def RenderProduct "RenderProduct"
+{
+    rel orderedVars = [</RenderProduct/Color>]
+
+    def RenderVar "Color"
+    {
+        token dataType = "color4f"
+        string sourceName = "color"
+        token sourceType = "raw"
+    }
+}
+
+def Xform "World"
+{
+    def Camera "MainCamera"
+    {
+        float focalLength = 34
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        float2 clippingRange = (0.1, 1000)
+        double3 xformOp:translate = (0, 2.15, 13.8)
+        float3 xformOp:rotateXYZ = (-7, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+    }
+
+    def Mesh "GroundPlane" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [
+            (-10.5, 0, -5.8), (10.5, 0, -5.8),
+            (10.5, 0, 5.4), (-10.5, 0, 5.4)
+        ]
+        normal3f[] normals = [
+            (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)
+        ] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [
+            (0, 0), (1, 0), (1, 1), (0, 1)
+        ] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </World/Materials/GroundDiffuseMat>
+    }
+
+    def Mesh "CheckerBackdrop" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [
+            (-8.8, 0.15, -2.15), (8.8, 0.15, -2.15),
+            (8.8, 3.6, -2.15), (-8.8, 3.6, -2.15)
+        ]
+        normal3f[] normals = [
+            (0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)
+        ] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [
+            (0, 0), (8, 0), (8, 2), (0, 2)
+        ] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        rel material:binding = </World/Materials/BackdropCheckerMat>
+    }
+
+    def Xform "SphereStandardSurfaceThinWalled" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-5.25, 0.72, 0)
+        float3 xformOp:scale = (1.45, 1.45, 1.45)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/StandardSurfaceThinWalledMat>
+    }
+
+    def Xform "SphereStandardSurfaceThick" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-3.15, 0.72, 0)
+        float3 xformOp:scale = (1.45, 1.45, 1.45)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/StandardSurfaceThickMat>
+    }
+
+    def Xform "SphereOpenPbrThinWalled" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (-1.05, 0.72, 0)
+        float3 xformOp:scale = (1.45, 1.45, 1.45)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/OpenPbrThinWalledMat>
+    }
+
+    def Xform "SphereOpenPbrThick" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (1.05, 0.72, 0)
+        float3 xformOp:scale = (1.45, 1.45, 1.45)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/OpenPbrThickMat>
+    }
+
+    def Xform "SphereUsdPreviewSurfaceReferenceA" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (3.15, 0.72, 0)
+        float3 xformOp:scale = (1.45, 1.45, 1.45)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/UsdPreviewSurfaceReferenceAMat>
+    }
+
+    def Xform "SphereUsdPreviewSurfaceReferenceB" (
+        prepend references = @./meshes/Sphere_Subdiv.usda@
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double3 xformOp:translate = (5.25, 0.72, 0)
+        float3 xformOp:scale = (1.45, 1.45, 1.45)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/UsdPreviewSurfaceReferenceBMat>
+    }
+
+    def Scope "Materials"
+    {
+        def Material "StandardSurfaceThinWalledMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/StandardSurfaceThinWalledMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                color3f inputs:base_color = (1.0, 1.0, 1.0)
+                float inputs:diffuse_roughness = 0.0
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.02
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                float inputs:transmission = 1.0
+                color3f inputs:transmission_color = (0.72, 0.9, 1.0)
+                float inputs:transmission_depth = 0.0
+                color3f inputs:transmission_scatter = (0.0, 0.0, 0.0)
+                float inputs:transmission_scatter_anisotropy = 0.0
+                bool inputs:thin_walled = true
+                float inputs:subsurface = 0.0
+                color3f inputs:opacity = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+
+        def Material "StandardSurfaceThickMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/StandardSurfaceThickMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                color3f inputs:base_color = (1.0, 1.0, 1.0)
+                float inputs:diffuse_roughness = 0.0
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.02
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                float inputs:transmission = 1.0
+                color3f inputs:transmission_color = (0.94, 0.82, 0.68)
+                float inputs:transmission_depth = 0.65
+                color3f inputs:transmission_scatter = (0.0, 0.0, 0.0)
+                float inputs:transmission_scatter_anisotropy = 0.0
+                bool inputs:thin_walled = false
+                float inputs:subsurface = 0.0
+                color3f inputs:opacity = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+
+        def Material "OpenPbrThinWalledMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/OpenPbrThinWalledMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 0.0
+                color3f inputs:base_color = (1.0, 1.0, 1.0)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.02
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+                float inputs:transmission_weight = 1.0
+                color3f inputs:transmission_color = (0.72, 1.0, 0.86)
+                float inputs:transmission_depth = 0.0
+                color3f inputs:transmission_scatter = (0.0, 0.0, 0.0)
+                float inputs:transmission_scatter_anisotropy = 0.0
+                float inputs:subsurface_weight = 0.0
+                float inputs:geometry_opacity = 1.0
+                bool inputs:geometry_thin_walled = true
+                token outputs:out
+            }
+        }
+
+        def Material "OpenPbrThickMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/OpenPbrThickMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 0.0
+                color3f inputs:base_color = (1.0, 1.0, 1.0)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.02
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+                float inputs:transmission_weight = 1.0
+                color3f inputs:transmission_color = (0.86, 0.94, 1.0)
+                float inputs:transmission_depth = 0.65
+                color3f inputs:transmission_scatter = (0.0, 0.0, 0.0)
+                float inputs:transmission_scatter_anisotropy = 0.0
+                float inputs:subsurface_weight = 0.0
+                float inputs:geometry_opacity = 1.0
+                bool inputs:geometry_thin_walled = false
+                token outputs:out
+            }
+        }
+
+        def Material "UsdPreviewSurfaceReferenceAMat"
+        {
+            token outputs:surface.connect = </World/Materials/UsdPreviewSurfaceReferenceAMat/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (1.0, 0.48, 0.16)
+                float inputs:roughness = 0.04
+                float inputs:metallic = 0.0
+                float inputs:ior = 1.5
+                float inputs:opacity = 0.25
+                token inputs:opacityMode = "presence"
+                token outputs:surface
+            }
+        }
+
+        def Material "UsdPreviewSurfaceReferenceBMat"
+        {
+            token outputs:surface.connect = </World/Materials/UsdPreviewSurfaceReferenceBMat/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (1.0, 0.72, 0.24)
+                float inputs:roughness = 0.02
+                float inputs:metallic = 0.0
+                float inputs:ior = 1.5
+                float inputs:opacity = 0.0
+                token inputs:opacityMode = "transparent"
+                token outputs:surface
+            }
+        }
+
+        def Material "BackdropCheckerMat"
+        {
+            token outputs:surface.connect = </World/Materials/BackdropCheckerMat/Preview.outputs:surface>
+
+            def Shader "ReadSt"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "Texture"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @../images/checkermap.png@
+                float2 inputs:st.connect = </World/Materials/BackdropCheckerMat/ReadSt.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                token inputs:sourceColorSpace = "sRGB"
+                float3 outputs:rgb
+            }
+
+            def Shader "Preview"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </World/Materials/BackdropCheckerMat/Texture.outputs:rgb>
+                float inputs:roughness = 0.7
+                float inputs:metallic = 0.0
+                token outputs:surface
+            }
+        }
+
+        def Material "GroundDiffuseMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/GroundDiffuseMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.2, 0.2, 0.2)
+                float inputs:diffuse_roughness = 0.0
+                float inputs:specular = 0.0
+                float inputs:specular_roughness = 0.2
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                float inputs:transmission = 0.0
+                float inputs:subsurface = 0.0
+                color3f inputs:opacity = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+    }
+
+    def DomeLight "Environment"
+    {
+        asset inputs:texture:file = @../images/StinsonBeach.hdr@
+        color3f inputs:color = (1.0, 1.0, 1.0)
+        float inputs:intensity = 1.5
+    }
+
+    def SphereLight "KeyLight"
+    {
+        float inputs:intensity = 45
+        color3f inputs:color = (1.0, 0.9, 0.82)
+        float inputs:radius = 1.0
+        double3 xformOp:translate = (5.5, 4.4, 5.5)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    # def SphereLight "RimLight"
+    # {
+    #     float inputs:intensity = 35
+    #     color3f inputs:color = (0.62, 0.78, 1.0)
+    #     float inputs:radius = 1.3
+    #     double3 xformOp:translate = (-5.5, 2.8, -4.8)
+    #     token[] xformOpOrder = ["xformOp:translate"]
+    # }
+}

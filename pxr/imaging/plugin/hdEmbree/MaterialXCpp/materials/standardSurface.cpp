@@ -62,6 +62,8 @@ static const SlotName _kTangent("tangent");
 
 namespace {
 
+constexpr float _kMinMicrofacetAlpha = 1.0e-6f;
+
 float
 _Clamp01(float x)
 {
@@ -138,7 +140,10 @@ _ComputeAnisotropicRoughness(float roughness, float anisotropy)
 {
     const float clampedRoughness = _ClampRoughness(roughness);
     const float alphaRoughness =
-        std::clamp(clampedRoughness * clampedRoughness, 1.0e-5f, 1.0f);
+        std::clamp(
+            clampedRoughness * clampedRoughness,
+            _kMinMicrofacetAlpha,
+            1.0f);
     const float clampedAnisotropy = std::clamp(anisotropy, 0.0f, 0.98f);
     if (clampedAnisotropy <= 0.0f) {
         return Vec2f(alphaRoughness, alphaRoughness);
@@ -147,7 +152,7 @@ _ComputeAnisotropicRoughness(float roughness, float anisotropy)
     const float aspect = std::sqrt(1.0f - clampedAnisotropy);
     return Vec2f(
         std::min(alphaRoughness / aspect, 1.0f),
-        std::clamp(alphaRoughness * aspect, 1.0e-5f, 1.0f));
+        std::clamp(alphaRoughness * aspect, _kMinMicrofacetAlpha, 1.0f));
 }
 
 struct _ArtisticIorData

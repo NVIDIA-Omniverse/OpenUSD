@@ -18,7 +18,7 @@ namespace mxcpp {
 inline float
 _RegularizeAlphaRoughness(float alphaRoughness)
 {
-    const float clampedAlpha = std::clamp(alphaRoughness, 1.0e-5f, 1.0f);
+    const float clampedAlpha = std::clamp(alphaRoughness, 1.0e-6f, 1.0f);
     const float perceptualRoughness = std::sqrt(clampedAlpha);
     if (perceptualRoughness >= 0.3f) {
         return clampedAlpha;

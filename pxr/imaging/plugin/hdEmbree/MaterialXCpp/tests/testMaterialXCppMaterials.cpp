@@ -74,6 +74,17 @@ ExpectedAdobeOpenPbrSubsurfaceAlbedo(
     return result;
 }
 
+static bool
+IsFiniteNonNegative(const Vec3f& value)
+{
+    for (int i = 0; i < 3; ++i) {
+        if (!std::isfinite(value[i]) || value[i] < -1.0e-5f) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Standard Surface
 // ---------------------------------------------------------------------------
@@ -110,6 +121,141 @@ TestStandardSurfaceMetallic()
     params["metalness"] = Value(1.0f);
     SurfaceClosure c = EvalStandardSurface(params);
     return Test_IsClose(c.metallic, 1.0f);
+}
+
+static bool
+TestStandardSurfaceGoldMetallicSharpRoughnessStaysStable()
+{
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.2f, 0.9797959f, 0.0f).normalized();
+    const Vec3f wiMirror = Vec3f(-0.2f, 0.9797959f, 0.0f).normalized();
+    const float roughnessValues[] = {0.0f, 0.01f, 0.02f, 0.03f, 0.04f};
+
+    for (const float roughness : roughnessValues) {
+        ParamMap params;
+        params["base"] = Value(1.0f);
+        params["base_color"] = Value(Vec3f(1.0f, 0.72f, 0.26f));
+        params["metalness"] = Value(1.0f);
+        params["specular"] = Value(1.0f);
+        params["specular_color"] = Value(Vec3f(1.0f));
+        params["specular_roughness"] = Value(roughness);
+        params["coat"] = Value(0.0f);
+
+        const SurfaceClosure c = EvalStandardSurface(params);
+        const auto* conductor = FindNodeIf<Bsdf::ConductorData>(
+            c.bsdfTree,
+            [](const Bsdf::ConductorData& data) {
+                return data.weight > 0.0f;
+            });
+        if (!conductor) {
+            printf("    Expected Standard Surface metallic conductor node\n");
+            return false;
+        }
+
+        const float clampedRoughness =
+            std::clamp(roughness, 0.001f, 1.0f);
+        const float expectedAlpha =
+            std::clamp(clampedRoughness * clampedRoughness, 1.0e-6f, 1.0f);
+        if (!Test_IsClose(conductor->roughness[0], expectedAlpha, 1.0e-8f) ||
+            !Test_IsClose(conductor->roughness[1], expectedAlpha, 1.0e-8f)) {
+            printf(
+                "    Expected roughness %f to map to alpha %g, got "
+                "(%f,%f)\n",
+                roughness,
+                expectedAlpha,
+                conductor->roughness[0],
+                conductor->roughness[1]);
+            return false;
+        }
+
+        const Vec3f directEval = Bsdf::EvalSurface(c, N, wiMirror, wo);
+        const float directPdf = Bsdf::PdfSurface(c, N, wiMirror, wo);
+        const bool effectivelySmooth = expectedAlpha < 1.0e-3f;
+        if (effectivelySmooth) {
+            if (!Test_IsClose(directEval, Vec3f(0.0f), 1.0e-7f) ||
+                !Test_IsClose(directPdf, 0.0f, 1.0e-7f)) {
+                printf(
+                    "    Smooth Standard Surface metal should skip finite "
+                    "direct eval: roughness=%f eval=(%f,%f,%f) pdf=%f\n",
+                    roughness,
+                    directEval[0], directEval[1], directEval[2],
+                    directPdf);
+                return false;
+            }
+
+            const auto sample =
+                Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.4f);
+            if (!sample.isSpecular || sample.pdf <= 0.0f ||
+                !Test_IsClose(sample.wi, wiMirror, 1.0e-6f) ||
+                !IsFiniteNonNegative(sample.f) ||
+                sample.f.length() <= 0.0f) {
+                printf(
+                    "    Smooth Standard Surface metal should sample delta: "
+                    "roughness=%f specular=%d wi=(%f,%f,%f) "
+                    "f=(%f,%f,%f) pdf=%f\n",
+                    roughness,
+                    sample.isSpecular ? 1 : 0,
+                    sample.wi[0], sample.wi[1], sample.wi[2],
+                    sample.f[0], sample.f[1], sample.f[2],
+                    sample.pdf);
+                return false;
+            }
+            continue;
+        }
+
+        if (directEval.length() <= 0.0f ||
+            directPdf <= 0.0f ||
+            !IsFiniteNonNegative(directEval)) {
+            printf(
+                "    Sharp Standard Surface metal should remain finite: "
+                "roughness=%f eval=(%f,%f,%f) pdf=%f\n",
+                roughness,
+                directEval[0], directEval[1], directEval[2],
+                directPdf);
+            return false;
+        }
+
+        const auto sample = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.4f);
+        const float pdf = Bsdf::PdfSurface(c, N, sample.wi, wo);
+        const float ratio = sample.pdf / std::max(pdf, 1.0e-20f);
+        if (sample.isSpecular || sample.pdf <= 0.0f || pdf <= 0.0f ||
+            ratio < 0.8f || ratio > 1.2f) {
+            printf(
+                "    Sharp Standard Surface metal sample invalid: "
+                "roughness=%f specular=%d samplePdf=%f pdf=%f\n",
+                roughness,
+                sample.isSpecular ? 1 : 0,
+                sample.pdf,
+                pdf);
+            return false;
+        }
+
+        const float cosTheta = std::max(sample.wi[1], 0.0f);
+        const Vec3f throughput = sample.f * (cosTheta / sample.pdf);
+        if (!IsFiniteNonNegative(sample.f) ||
+            !IsFiniteNonNegative(throughput)) {
+            printf(
+                "    Sharp Standard Surface metal sample non-finite: "
+                "roughness=%f f=(%f,%f,%f) throughput=(%f,%f,%f)\n",
+                roughness,
+                sample.f[0], sample.f[1], sample.f[2],
+                throughput[0], throughput[1], throughput[2]);
+            return false;
+        }
+        for (int i = 0; i < 3; ++i) {
+            if (throughput[i] > 1.25f) {
+                printf(
+                    "    Sharp Standard Surface metal throughput too high: "
+                    "roughness=%f channel=%d throughput=%f\n",
+                    roughness,
+                    i,
+                    throughput[i]);
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 static bool
@@ -434,7 +580,7 @@ TestStandardSurfaceThinFilmUsesNanometerUnits()
     nanometerParams["metalness"] = Value(0.0f);
     nanometerParams["specular"] = Value(1.0f);
     nanometerParams["specular_color"] = Value(Vec3f(1.0f));
-    nanometerParams["specular_roughness"] = Value(0.02f);
+    nanometerParams["specular_roughness"] = Value(0.04f);
     nanometerParams["specular_IOR"] = Value(2.5f);
     nanometerParams["thin_film_thickness"] = Value(550.0f);
     nanometerParams["thin_film_IOR"] = Value(1.5f);
@@ -445,7 +591,7 @@ TestStandardSurfaceThinFilmUsesNanometerUnits()
     subNanometerParams["metalness"] = Value(0.0f);
     subNanometerParams["specular"] = Value(1.0f);
     subNanometerParams["specular_color"] = Value(Vec3f(1.0f));
-    subNanometerParams["specular_roughness"] = Value(0.02f);
+    subNanometerParams["specular_roughness"] = Value(0.04f);
     subNanometerParams["specular_IOR"] = Value(2.5f);
     subNanometerParams["thin_film_thickness"] = Value(0.55f);
     subNanometerParams["thin_film_IOR"] = Value(1.5f);
@@ -1877,6 +2023,7 @@ Test_RegisterMaterialTests()
 {
     _REG(TestStandardSurfaceDefaults);
     _REG(TestStandardSurfaceMetallic);
+    _REG(TestStandardSurfaceGoldMetallicSharpRoughnessStaysStable);
     _REG(TestStandardSurfaceCustomParams);
     _REG(TestStandardSurfaceThinFilmParametersReachBsdf);
     _REG(TestStandardSurfaceDispersionParametersReachBsdf);
