@@ -962,6 +962,8 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _showAdaptiveHeatmap(HdEmbreeDefaultShowAdaptiveHeatmap)
     , _usePerChannelVariance(HdEmbreeDefaultUsePerChannelVariance)
     , _fireflyClampThreshold(HdEmbreeDefaultFireflyClampThreshold)
+    , _enableCaustics(HdEmbreeDefaultEnableCaustics)
+    , _causticsClampThreshold(HdEmbreeDefaultCausticsClampThreshold)
     , _enableGgxMicrofacetMultipleScattering(true)
     , _dielectricLayerThroughputMode(
         _tokensDielectricLayerThroughputModeBsdl)
@@ -1085,6 +1087,18 @@ void
 HdEmbreeRenderer::SetFireflyClampThreshold(float threshold)
 {
     _fireflyClampThreshold = threshold;
+}
+
+void
+HdEmbreeRenderer::SetEnableCaustics(bool enable)
+{
+    _enableCaustics = enable;
+}
+
+void
+HdEmbreeRenderer::SetCausticsClampThreshold(float threshold)
+{
+    _causticsClampThreshold = threshold;
 }
 
 void
@@ -3576,7 +3590,11 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
         return _IsNearlyBlack(rgbThroughput(), _minLuminanceCutoff);
     };
 
-    const auto clampRadiance = [&](GfVec3f const& contribution) {
+    const auto clampRadiance = [&](GfVec3f contribution) {
+        if (state->currentPathIsCaustic) {
+            contribution = _ClampFireflyContribution(
+                contribution, _causticsClampThreshold);
+        }
         return _ClampFireflyContribution(
             contribution, _fireflyClampThreshold);
     };
@@ -3872,6 +3890,7 @@ HdEmbreeRenderer::_TracePath(
     GfVec3f lastLightSamplingNormal(0.0f);
     bool isFirstBounce = true;
     bool anyNonSpecularBounces = false;
+    bool currentPathIsCaustic = false;
     bool useSyntheticLambertian = false;
     HdEmbreeSssOutput syntheticLambertianExit;
     HdEmbreeMediumState currentMedium;
@@ -3882,7 +3901,11 @@ HdEmbreeRenderer::_TracePath(
     GfVec3f lastDpdx(0.0f), lastDpdy(0.0f);
     float lastDudx = 0, lastDvdx = 0, lastDudy = 0, lastDvdy = 0;
 
-    const auto addRadiance = [&](GfVec3f const& contribution) {
+    const auto addRadiance = [&](GfVec3f contribution) {
+        if (currentPathIsCaustic) {
+            contribution = _ClampFireflyContribution(
+                contribution, _causticsClampThreshold);
+        }
         radiance += _ClampFireflyContribution(
             contribution, _fireflyClampThreshold);
     };
@@ -3949,6 +3972,7 @@ HdEmbreeRenderer::_TracePath(
             volumeState.lastBsdfPdf = lastBsdfPdf;
             volumeState.lastScatterWasMedium = lastScatterWasMedium;
             volumeState.anyNonSpecularBounces = anyNonSpecularBounces;
+            volumeState.currentPathIsCaustic = currentPathIsCaustic;
             volumeState.isFirstBounce = isFirstBounce;
 
             const _VolumeTransmissionResult volumeResult =
@@ -3967,6 +3991,7 @@ HdEmbreeRenderer::_TracePath(
             lastBsdfPdf = volumeState.lastBsdfPdf;
             lastScatterWasMedium = volumeState.lastScatterWasMedium;
             anyNonSpecularBounces = volumeState.anyNonSpecularBounces;
+            currentPathIsCaustic = volumeState.currentPathIsCaustic;
             isFirstBounce = volumeState.isFirstBounce;
 
             if (volumeResult == _VolumeTransmissionResult::Terminate) {
@@ -4220,7 +4245,7 @@ HdEmbreeRenderer::_TracePath(
         // --- Path regularization ---
         // After the first non-specular bounce, widen narrow specular lobes
         // to reduce fireflies from sharp BSDFs on indirect paths.
-        if (hasClosure && anyNonSpecularBounces) {
+        if (hasClosure && anyNonSpecularBounces && _enableCaustics) {
             closure.Regularize();
         }
 
@@ -4522,6 +4547,19 @@ HdEmbreeRenderer::_TracePath(
         // --- BSDF sampling for next direction ---
         if (!hasClosure || !hasBsdfSample || bs.isSubsurface) break;
 
+        const GfVec3f wi = _ToGf(bs.wi);
+        const float woDotNg = GfDot(wo, geometricNormal);
+        const float wiDotNg = GfDot(wi, geometricNormal);
+        const bool crossesBoundary =
+            (woDotNg > 0.0f && wiDotNg < 0.0f) ||
+            (woDotNg < 0.0f && wiDotNg > 0.0f);
+        const bool sampledCausticEvent =
+            anyNonSpecularBounces && (bs.isSpecular || crossesBoundary);
+        if (sampledCausticEvent && !_enableCaustics) {
+            break;
+        }
+        currentPathIsCaustic = currentPathIsCaustic || sampledCausticEvent;
+
         if (hero.active) {
             float bsdfContrib = 0.0f;
             if (bs.isSpecular) {
@@ -4569,13 +4607,6 @@ HdEmbreeRenderer::_TracePath(
             anyNonSpecularBounces = true;
         }
         isFirstBounce = false;
-
-        const GfVec3f wi = _ToGf(bs.wi);
-        const float woDotNg = GfDot(wo, geometricNormal);
-        const float wiDotNg = GfDot(wi, geometricNormal);
-        const bool crossesBoundary =
-            (woDotNg > 0.0f && wiDotNg < 0.0f) ||
-            (woDotNg < 0.0f && wiDotNg > 0.0f);
         if (crossesBoundary) {
             // Initial implementation keeps only one medium active at a time;
             // nested dielectric stacks are deferred to a later task.

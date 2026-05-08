@@ -38,6 +38,8 @@ class HdEmbreeRenderParam;
     (showAdaptiveHeatmap)               \
     (usePerChannelVariance)             \
     (fireflyClampThreshold)             \
+    (enableCaustics)                    \
+    (causticsClampThreshold)            \
     (materialRenderContext)             \
     (dielectricLayerThroughputMode)     \
     (useAdobeOpenPBR)

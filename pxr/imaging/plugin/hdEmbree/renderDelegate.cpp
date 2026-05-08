@@ -137,7 +137,7 @@ void
 HdEmbreeRenderDelegate::_Initialize()
 {
     // Initialize the settings and settings descriptors.
-    _settingDescriptors.resize(21);
+    _settingDescriptors.resize(23);
     _settingDescriptors[0] = { "Enable Scene Colors",
         HdEmbreeRenderSettingsTokens->enableSceneColors,
         VtValue(HdEmbreeConfig::GetInstance().useFaceColors) };
@@ -191,16 +191,22 @@ HdEmbreeRenderDelegate::_Initialize()
     _settingDescriptors[16] = { "Firefly Clamp Threshold",
         HdEmbreeRenderSettingsTokens->fireflyClampThreshold,
         VtValue(HdEmbreeDefaultFireflyClampThreshold) };
-    _settingDescriptors[17] = { "Enable GGX Microfacet Multiple Scattering",
+    _settingDescriptors[17] = { "Enable Caustics",
+        HdEmbreeRenderSettingsTokens->enableCaustics,
+        VtValue(HdEmbreeDefaultEnableCaustics) };
+    _settingDescriptors[18] = { "Caustics Clamp Threshold",
+        HdEmbreeRenderSettingsTokens->causticsClampThreshold,
+        VtValue(HdEmbreeDefaultCausticsClampThreshold) };
+    _settingDescriptors[19] = { "Enable GGX Microfacet Multiple Scattering",
         _enableGgxMicrofacetMultipleScatteringToken,
         VtValue(true) };
-    _settingDescriptors[18] = { "Material Render Context",
+    _settingDescriptors[20] = { "Material Render Context",
         HdEmbreeRenderSettingsTokens->materialRenderContext,
         VtValue(_materialRenderContextMtlxString) };
-    _settingDescriptors[19] = { "Use Adobe OpenPBR",
+    _settingDescriptors[21] = { "Use Adobe OpenPBR",
         HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
         VtValue(false) };
-    _settingDescriptors[20] = { "Dielectric Layer Throughput Mode",
+    _settingDescriptors[22] = { "Dielectric Layer Throughput Mode",
         HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
         VtValue(_dielectricLayerThroughputModeBsdlToken) };
     _PopulateDefaultSettings(_settingDescriptors);

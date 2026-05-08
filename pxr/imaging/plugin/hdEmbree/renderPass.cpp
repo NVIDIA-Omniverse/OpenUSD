@@ -342,6 +342,14 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<float>(
                 HdEmbreeRenderSettingsTokens->fireflyClampThreshold,
                 HdEmbreeDefaultFireflyClampThreshold));
+        _renderer->SetEnableCaustics(
+            renderDelegate->GetRenderSetting<bool>(
+                HdEmbreeRenderSettingsTokens->enableCaustics,
+                HdEmbreeDefaultEnableCaustics));
+        _renderer->SetCausticsClampThreshold(
+            renderDelegate->GetRenderSetting<float>(
+                HdEmbreeRenderSettingsTokens->causticsClampThreshold,
+                HdEmbreeDefaultCausticsClampThreshold));
         static const TfToken enableGgxMicrofacetMultipleScatteringToken(
             "enableGgxMicrofacetMultipleScattering", TfToken::Immortal);
         _renderer->SetEnableGgxMicrofacetMultipleScattering(

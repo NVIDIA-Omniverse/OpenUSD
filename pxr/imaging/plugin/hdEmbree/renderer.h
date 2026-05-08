@@ -182,6 +182,10 @@ public:
     /// Values <= 0 disable clamping.
     void SetFireflyClampThreshold(float threshold);
 
+    /// Set caustic path handling.
+    void SetEnableCaustics(bool enable);
+    void SetCausticsClampThreshold(float threshold);
+
     /// Set whether GGX reflection uses microfacet multiple scattering.
     void SetEnableGgxMicrofacetMultipleScattering(bool enable);
 
@@ -339,6 +343,7 @@ private:
         float lastBsdfPdf = 0.0f;
         bool lastScatterWasMedium = false;
         bool anyNonSpecularBounces = false;
+        bool currentPathIsCaustic = false;
         bool isFirstBounce = false;
     };
 
@@ -530,6 +535,11 @@ private:
 
     // Firefly clamping threshold (max sample luminance). <= 0 disables.
     float _fireflyClampThreshold;
+
+    // Caustic path handling. When enabled, indirect caustic paths are
+    // regularized and optionally clamped; when disabled, they are suppressed.
+    bool _enableCaustics;
+    float _causticsClampThreshold;
 
     // Whether GGX reflection uses microfacet multiple scattering compensation.
     bool _enableGgxMicrofacetMultipleScattering;

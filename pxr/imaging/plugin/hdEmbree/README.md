@@ -23,6 +23,9 @@ The following settings can be configured via `renderSettings` (Hydra render dele
 | Light Samples Per Hit | `lightSamplesPerHit` | `int` | `8` | `HDEMBREE_LIGHT_SAMPLES_PER_HIT` |
 | Stratify Light Samples | `stratifyLightSamples` | `bool` | `true` | `HDEMBREE_STRATIFY_LIGHT_SAMPLES` |
 | Use Per-Channel Variance | `usePerChannelVariance` | `bool` | `false` | — |
+| Firefly Clamp Threshold | `fireflyClampThreshold` | `float` | `20.0` | — |
+| Enable Caustics | `enableCaustics` | `bool` | `true` | — |
+| Caustics Clamp Threshold | `causticsClampThreshold` | `float` | `5.0` | — |
 
 In addition, the following Hydra built-in setting is forwarded:
 
@@ -78,6 +81,11 @@ When enabled, light samples are stratified across the light surface, providing m
 
 ### Use Per-Channel Variance (`usePerChannelVariance`)
 Controls the convergence metric for adaptive sampling. When `false` (default), luminance-based relative variance (`varOfMean / luminance²`) is used — channels are weighted by perceptual brightness, which can cause dark or red-heavy surfaces to require more samples. When `true`, per-channel relative variance (`varOfMean[c] / mean[c]`) is used instead (similar to pbrt-v4), treating R, G, B independently so that surface color does not bias convergence speed.
+
+### Caustics (`enableCaustics`, `causticsClampThreshold`)
+When `enableCaustics` is `true` (default), hdEmbree keeps indirect caustic paths but regularizes sharp lobes after the first non-specular bounce. Contributions on paths that have entered this caustic class are clamped by `causticsClampThreshold`; set the threshold to `0` or below to disable this extra caustic-only clamp.
+
+When `enableCaustics` is `false`, hdEmbree suppresses caustic-class paths by terminating BSDF samples that become specular or cross a dielectric boundary after a non-specular bounce. This removes high-variance reflective/refractive caustics such as bright floor sparkles under glass objects, at the cost of omitting those caustic contributions.
 
 ### Random Number Seed (`randomNumberSeed`)
 A value of `-1` (default) seeds the RNG non-deterministically. Any other value, combined with `PXR_WORK_THREAD_LIMIT=1`, produces deterministic/repeatable results.
