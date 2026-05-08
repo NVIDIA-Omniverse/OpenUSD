@@ -16,6 +16,8 @@
 #include "pxr/imaging/hd/resourceRegistry.h"
 #include "pxr/imaging/hd/tokens.h"
 
+#include "pxr/base/tf/diagnostic.h"
+
 #include "pxr/imaging/plugin/hdEmbree/mesh.h"
 #include "pxr/imaging/plugin/hdEmbree/material.h"
 //XXX: Add other Rprim types later
@@ -23,6 +25,8 @@
 //XXX: Add other Sprim types later
 #include "pxr/imaging/hd/bprim.h"
 //XXX: Add bprim types
+
+#include <string>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -33,6 +37,25 @@ static const TfToken _enableGgxMicrofacetMultipleScatteringToken(
     "enableGgxMicrofacetMultipleScattering", TfToken::Immortal);
 static const TfToken _dielectricLayerThroughputModeBsdlToken(
     "bsdl", TfToken::Immortal);
+static const TfToken _materialRenderContextMtlxToken(
+    "mtlx", TfToken::Immortal);
+static const TfToken _materialRenderContextDefaultToken(
+    "default", TfToken::Immortal);
+static const std::string _materialRenderContextMtlxString("mtlx");
+
+static std::string
+_GetMaterialRenderContextSetting(const HdRenderDelegate& renderDelegate)
+{
+    const VtValue value = renderDelegate.GetRenderSetting(
+        HdEmbreeRenderSettingsTokens->materialRenderContext);
+    if (value.IsHolding<std::string>()) {
+        return value.UncheckedGet<std::string>();
+    }
+    if (value.IsHolding<TfToken>()) {
+        return value.UncheckedGet<TfToken>().GetString();
+    }
+    return _materialRenderContextMtlxString;
+}
 
 const TfTokenVector HdEmbreeRenderDelegate::SUPPORTED_RPRIM_TYPES =
 {
@@ -114,7 +137,7 @@ void
 HdEmbreeRenderDelegate::_Initialize()
 {
     // Initialize the settings and settings descriptors.
-    _settingDescriptors.resize(20);
+    _settingDescriptors.resize(21);
     _settingDescriptors[0] = { "Enable Scene Colors",
         HdEmbreeRenderSettingsTokens->enableSceneColors,
         VtValue(HdEmbreeConfig::GetInstance().useFaceColors) };
@@ -171,10 +194,13 @@ HdEmbreeRenderDelegate::_Initialize()
     _settingDescriptors[17] = { "Enable GGX Microfacet Multiple Scattering",
         _enableGgxMicrofacetMultipleScatteringToken,
         VtValue(true) };
-    _settingDescriptors[18] = { "Use Adobe OpenPBR",
+    _settingDescriptors[18] = { "Material Render Context",
+        HdEmbreeRenderSettingsTokens->materialRenderContext,
+        VtValue(_materialRenderContextMtlxString) };
+    _settingDescriptors[19] = { "Use Adobe OpenPBR",
         HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
         VtValue(false) };
-    _settingDescriptors[19] = { "Dielectric Layer Throughput Mode",
+    _settingDescriptors[20] = { "Dielectric Layer Throughput Mode",
         HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
         VtValue(_dielectricLayerThroughputModeBsdlToken) };
     _PopulateDefaultSettings(_settingDescriptors);
@@ -254,6 +280,24 @@ HdRenderSettingDescriptorList
 HdEmbreeRenderDelegate::GetRenderSettingDescriptors() const
 {
     return _settingDescriptors;
+}
+
+TfTokenVector
+HdEmbreeRenderDelegate::GetMaterialRenderContexts() const
+{
+    const std::string context = _GetMaterialRenderContextSetting(*this);
+
+    if (context == _materialRenderContextMtlxToken.GetString()) {
+        return {_materialRenderContextMtlxToken, TfToken()};
+    }
+    if (context == _materialRenderContextDefaultToken.GetString()) {
+        return {TfToken(), _materialRenderContextMtlxToken};
+    }
+
+    TF_WARN("hdEmbree material render context '%s' is unknown; falling back "
+            "to 'mtlx' with 'default' as the secondary context.",
+            context.c_str());
+    return {_materialRenderContextMtlxToken, TfToken()};
 }
 
 HdRenderParam*

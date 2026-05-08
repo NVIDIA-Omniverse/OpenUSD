@@ -38,6 +38,7 @@ class HdEmbreeRenderParam;
     (showAdaptiveHeatmap)               \
     (usePerChannelVariance)             \
     (fireflyClampThreshold)             \
+    (materialRenderContext)             \
     (dielectricLayerThroughputMode)     \
     (useAdobeOpenPBR)
 
@@ -229,9 +230,7 @@ public:
         return HdTokens->full;
     }
 
-    TfTokenVector GetMaterialRenderContexts() const override {
-        return {TfToken(), TfToken("mtlx")};
-    }
+    TfTokenVector GetMaterialRenderContexts() const override;
 
     /// This function returns the default AOV descriptor for a given named AOV.
     /// This mechanism lets the renderer decide things like what format

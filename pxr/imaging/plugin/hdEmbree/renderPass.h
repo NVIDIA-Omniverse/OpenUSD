@@ -19,6 +19,7 @@
 #include "pxr/base/gf/rect2i.h"
 
 #include <atomic>
+#include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -84,6 +85,9 @@ private:
 
     // The last settings version we rendered with.
     int _lastSettingsVersion;
+
+    // The last material render-context priority order seen by this pass.
+    TfTokenVector _lastMaterialRenderContexts;
 
     // The last application frame/time forwarded to MaterialX shading.
     double _lastFrame;

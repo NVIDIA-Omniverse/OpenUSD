@@ -5,8 +5,10 @@ import fnmatch
 from pxr.Usdviewq.qt import QtWidgets, QtCore, QtGui
 from pxr import UsdShade, Sdf, Gf, Sdr
 
-# Render contexts to probe when resolving the surface shader.
-_RENDER_CONTEXTS = ("", "mtlx")
+# Material contexts exposed in the editor.  "default" is USD's universal
+# render context, authored as outputs:surface.
+_MATERIAL_CONTEXTS = (("mtlx", "mtlx"), ("default", ""))
+_DEFAULT_MATERIAL_CONTEXT = "mtlx"
 
 # Slider-friendly ranges for well-known float inputs.
 _FLOAT_RANGES = {
@@ -190,9 +192,16 @@ class MaterialEditorWindow(QtWidgets.QWidget):
 
         # toolbar
         toolbar = QtWidgets.QHBoxLayout()
-        self._followCB = QtWidgets.QCheckBox("Follow Selection")
-        self._followCB.setChecked(True)
-        toolbar.addWidget(self._followCB)
+        toolbar.addWidget(QtWidgets.QLabel("Material Context:"))
+        self._contextCombo = QtWidgets.QComboBox()
+        self._contextCombo.setMinimumWidth(96)
+        self._contextCombo.view().setMinimumWidth(96)
+        for label, context in _MATERIAL_CONTEXTS:
+            self._contextCombo.addItem(label, context)
+        self._contextCombo.setCurrentIndex(0)
+        self._contextCombo.currentIndexChanged.connect(
+            self._onMaterialContextChanged)
+        toolbar.addWidget(self._contextCombo)
         toolbar.addStretch()
         toolbar.addWidget(QtWidgets.QLabel("Edit Target:"))
         self._targetCombo = QtWidgets.QComboBox()
@@ -248,11 +257,17 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         splitter.setStretchFactor(1, 1)
         root.addWidget(splitter)
 
+        statusRow = QtWidgets.QHBoxLayout()
+        statusRow.setContentsMargins(0, 0, 0, 0)
         self._status = QtWidgets.QLabel("Ready")
         self._status.setFixedHeight(18)
         self._status.setStyleSheet(
             "color: gray; font-size: 11px; padding: 0 2px;")
-        root.addWidget(self._status)
+        statusRow.addWidget(self._status, 1)
+        self._followCB = QtWidgets.QCheckBox("Follow Selection")
+        self._followCB.setChecked(True)
+        statusRow.addWidget(self._followCB)
+        root.addLayout(statusRow)
 
     def _newFormWidget(self):
         self._formContainer = QtWidgets.QWidget()
@@ -269,20 +284,48 @@ class MaterialEditorWindow(QtWidgets.QWidget):
     # ---- material list ----------------------------------------------------
 
     def _refreshMaterials(self):
+        currentPath = (
+            str(self._currentMaterial.GetPath())
+            if self._currentMaterial and self._currentMaterial.GetPrim()
+            else None)
+        context = self._getSelectedMaterialContext()
+        contextLabel = _getMaterialContextLabel(context)
+
+        self._matList.blockSignals(True)
         self._matList.clear()
         stage = self._api.stage
         if not stage:
+            self._matList.blockSignals(False)
             return
         count = 0
         for prim in stage.Traverse():
-            if UsdShade.Material(prim):
+            material = UsdShade.Material(prim)
+            if material and _findSurfaceShader(material, context):
                 item = QtWidgets.QListWidgetItem(str(prim.GetPath()))
                 item.setData(QtCore.Qt.UserRole, str(prim.GetPath()))
                 self._matList.addItem(item)
                 count += 1
+        self._matList.blockSignals(False)
+
         self._fitMaterialListWidth()
         self._scheduleLayoutFit()
-        self._setStatus(f"{count} material(s) found")
+        if currentPath and self._selectMaterialByPath(currentPath):
+            return
+        if currentPath:
+            self._showMaterial(None)
+        self._setStatus(f"{count} {contextLabel} material(s) found")
+
+    def _getSelectedMaterialContext(self):
+        if not hasattr(self, "_contextCombo"):
+            return _DEFAULT_MATERIAL_CONTEXT
+        context = self._contextCombo.itemData(self._contextCombo.currentIndex())
+        if context is None:
+            return _DEFAULT_MATERIAL_CONTEXT
+        return str(context)
+
+    def _onMaterialContextChanged(self, _index):
+        self._shaderStack.clear()
+        self._refreshMaterials()
 
     def _computeMaterialListWidth(self):
         if self._matList.count() == 0:
@@ -398,7 +441,12 @@ class MaterialEditorWindow(QtWidgets.QWidget):
         except Exception:
             return
         if bound and bound[0]:
-            self._selectMaterialByPath(str(bound[0].GetPath()))
+            if not self._selectMaterialByPath(str(bound[0].GetPath())):
+                contextLabel = _getMaterialContextLabel(
+                    self._getSelectedMaterialContext())
+                self._setStatus(
+                    "Bound material has no "
+                    f"{contextLabel} surface shader")
 
     # ---- shader navigation ------------------------------------------------
 
@@ -412,9 +460,11 @@ class MaterialEditorWindow(QtWidgets.QWidget):
             self._newFormWidget()
             return
 
-        shader = _findSurfaceShader(material)
+        context = self._getSelectedMaterialContext()
+        shader = _findSurfaceShader(material, context)
         if not shader:
-            self._headerLabel.setText("No surface shader found")
+            self._headerLabel.setText(
+                f"No {_getMaterialContextLabel(context)} surface shader found")
             self._backBtn.hide()
             self._newFormWidget()
             return
@@ -1081,9 +1131,23 @@ class MaterialEditorWindow(QtWidgets.QWidget):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _findSurfaceShader(material):
-    for ctx in _RENDER_CONTEXTS:
-        shader, _, _ = material.ComputeSurfaceSource(ctx)
+def _getMaterialContextLabel(context):
+    return "default" if context == "" else str(context)
+
+
+def _findSurfaceShader(material, context):
+    output = material.GetSurfaceOutput(context)
+    if not output:
+        return None
+
+    try:
+        attrs = UsdShade.Utils.GetValueProducingAttributes(
+            output, True)
+    except Exception:
+        attrs = []
+
+    for attr in attrs:
+        shader = UsdShade.Shader(attr.GetPrim())
         if shader.GetPrim().IsValid():
             return shader
     return None

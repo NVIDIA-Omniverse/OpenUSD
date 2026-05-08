@@ -5,8 +5,10 @@
 // https://openusd.org/license.
 //
 #include "pxr/imaging/hd/renderPassState.h"
+#include "pxr/imaging/hd/material.h"
 #include "pxr/imaging/hd/renderSettingsSchema.h"
 #include "pxr/imaging/hd/sceneGlobalsSchema.h"
+#include "pxr/imaging/hd/tokens.h"
 #include "pxr/imaging/hd/utils.h"
 #include "pxr/imaging/plugin/hdEmbree/config.h"
 #include "pxr/imaging/plugin/hdEmbree/renderDelegate.h"
@@ -28,6 +30,7 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _sceneVersion(sceneVersion)
     , _lastSceneVersion(0)
     , _lastSettingsVersion(0)
+    , _lastMaterialRenderContexts()
     , _lastFrame(0.0)
     , _lastTime(0.0)
     , _viewMatrix(1.0f) // == identity
@@ -119,6 +122,22 @@ _GetSceneFrameAndTime(const HdSceneIndexBaseRefPtr &si,
     *time = currentFrame / timeCodesPerSecond;
 }
 
+static void
+_MarkMaterialNetworksDirty(HdRenderIndex *index)
+{
+    if (!index || !index->IsSprimTypeSupported(HdPrimTypeTokens->material)) {
+        return;
+    }
+
+    for (const SdfPath &path :
+             index->GetSprimSubtree(
+                 HdPrimTypeTokens->material,
+                 SdfPath::AbsoluteRootPath())) {
+        index->GetChangeTracker().MarkSprimDirty(
+            path, HdMaterial::DirtyResource);
+    }
+}
+
 void
 HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                              TfTokenVector const &renderTags)
@@ -202,6 +221,16 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     if (_lastSettingsVersion != currentSettingsVersion) {
         _renderThread->StopRender();
         _lastSettingsVersion = currentSettingsVersion;
+
+        bool materialRenderContextsChanged = false;
+        const TfTokenVector materialRenderContexts =
+            renderDelegate->GetMaterialRenderContexts();
+        if (_lastMaterialRenderContexts.empty()) {
+            _lastMaterialRenderContexts = materialRenderContexts;
+        } else if (_lastMaterialRenderContexts != materialRenderContexts) {
+            _lastMaterialRenderContexts = materialRenderContexts;
+            materialRenderContextsChanged = true;
+        }
 
         _renderer->SetSamplesToConvergence(
             renderDelegate->GetRenderSetting<int>(
@@ -329,6 +358,11 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
                 false));
+
+        if (materialRenderContextsChanged) {
+            _MarkMaterialNetworksDirty(GetRenderIndex());
+            return;
+        }
 
         needStartRender = true;
     }
