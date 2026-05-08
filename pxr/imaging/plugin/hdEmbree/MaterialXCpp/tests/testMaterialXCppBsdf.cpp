@@ -1968,6 +1968,40 @@ TestDeltaDielectricInterfaceTransmissionSamplesSingleFresnel()
 }
 
 static bool
+TestDeltaDielectricInterfaceTirDoesNotAmplifyThroughput()
+{
+    SurfaceClosure c;
+    Bsdf::DielectricInterfaceData interface;
+    interface.reflectionWeight = 1.0f;
+    interface.reflectionTint = Vec3f(1.0f);
+    interface.transmissionWeight = 1.0f;
+    interface.transmissionTint = Vec3f(1.0f);
+    interface.ior = 1.5f;
+    interface.roughness = Vec2f(0.0f, 0.0f);
+    c.bsdfTree.root = c.bsdfTree.Add(interface);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.8f, -0.6f, 0.0f).normalized();
+    const auto sample = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.99f);
+    if (sample.pdf <= 0.0f || !sample.isSpecular) {
+        printf("    Expected valid delta TIR sample\n");
+        return false;
+    }
+    if (Dot(sample.wi, N) >= 0.0f) {
+        printf("    TIR should stay on the incident side of the interface\n");
+        return false;
+    }
+    if (!Test_IsClose(sample.f, Vec3f(1.0f), 1.0e-5f)) {
+        printf(
+            "    TIR should not be divided by transmission probability: "
+            "f=(%f,%f,%f)\n",
+            sample.f[0], sample.f[1], sample.f[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
 TestThinWalledDielectricInterfaceSamplePdfConsistency()
 {
     SurfaceClosure c;
@@ -3082,6 +3116,7 @@ Test_RegisterBsdfTests()
     _REG(TestDielectricInterfaceLayerDoesNotDoubleAttenuateTransmission);
     _REG(TestDielectricInterfaceSamplePdfConsistency);
     _REG(TestDeltaDielectricInterfaceTransmissionSamplesSingleFresnel);
+    _REG(TestDeltaDielectricInterfaceTirDoesNotAmplifyThroughput);
     _REG(TestThinWalledDielectricInterfaceSamplePdfConsistency);
     _REG(TestDeltaThinWalledDielectricInterfaceTransmitsStraightThrough);
     _REG(TestSampleGGXTransmissionHemisphere);

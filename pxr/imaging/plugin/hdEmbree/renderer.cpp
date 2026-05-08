@@ -302,6 +302,93 @@ _IsReflectionOnlyClosure(mxcpp::SurfaceClosure const& closure)
            _IsEffectivelyZero(closure.subsurfaceWeight);
 }
 
+bool
+_HasTransmissionNode(
+    mxcpp::Bsdf::ClosureTree const& tree,
+    mxcpp::Bsdf::NodeId nodeId)
+{
+    const mxcpp::Bsdf::Node* const node = tree.Get(nodeId);
+    if (!node) {
+        return false;
+    }
+
+    return std::visit(
+        [&](auto const& data) -> bool {
+            using T = std::decay_t<decltype(data)>;
+            if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::DielectricData>) {
+                return !_IsEffectivelyZero(data.weight) &&
+                       data.scatterMode !=
+                           mxcpp::Bsdf::ScatterMode::Reflection;
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::DielectricInterfaceData>) {
+                return !_IsEffectivelyZero(data.transmissionWeight);
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::GeneralizedSchlickData>) {
+                return !_IsEffectivelyZero(data.weight) &&
+                       data.scatterMode !=
+                           mxcpp::Bsdf::ScatterMode::Reflection;
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::AdobeOpenPbrData>) {
+                return !_IsEffectivelyZero(data.transmissionWeight);
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::MixData>) {
+                if (_IsEffectivelyZero(data.mix)) {
+                    return _HasTransmissionNode(tree, data.bg);
+                }
+                if (_IsEffectivelyOpaque(data.mix)) {
+                    return _HasTransmissionNode(tree, data.fg);
+                }
+                return _HasTransmissionNode(tree, data.fg) ||
+                       _HasTransmissionNode(tree, data.bg);
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::LayerData>) {
+                return _HasTransmissionNode(tree, data.top) ||
+                       _HasTransmissionNode(tree, data.base);
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::AddData>) {
+                return _HasTransmissionNode(tree, data.in1) ||
+                       _HasTransmissionNode(tree, data.in2);
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::MultiplyData>) {
+                return _HasTransmissionNode(tree, data.input);
+            } else {
+                return false;
+            }
+        },
+        node->data);
+}
+
+bool
+_HasTransmissionClosure(mxcpp::SurfaceClosure const& closure)
+{
+    if (closure.HasBsdfTree()) {
+        return _HasTransmissionNode(closure.bsdfTree, closure.bsdfTree.root);
+    }
+
+    return !_IsEffectivelyZero(closure.transmission);
+}
+
+GfVec3f
+_GetBsdfNormal(
+    mxcpp::SurfaceClosure const& closure,
+    GfVec3f const& faceForwardedNormal,
+    GfVec3f const& geometricNormal,
+    GfVec3f const& wo)
+{
+    if (!_HasTransmissionClosure(closure)) {
+        return faceForwardedNormal;
+    }
+
+    // Reflection and diffuse lobes want the shading normal face-forwarded to
+    // wo, but thick transmission needs the interface side. Re-flip only for
+    // transmissive closures when the ray is on the geometric back side, so
+    // exit hits refract from the interior medium into the exterior medium.
+    return GfDot(geometricNormal, wo) < 0.0f
+        ? -faceForwardedNormal
+        : faceForwardedNormal;
+}
+
 inline mxcpp::Mat4f
 _ToMx(const GfMatrix4d& m)
 {
@@ -2795,7 +2882,16 @@ HdEmbreeRenderer::_Visibility(
 
         float surfaceVisibility = hasClosure ? (1.0f - closure.opacity) : 0.0f;
         if (hasClosure) {
-            surfaceVisibility = std::max(surfaceVisibility, closure.transmission);
+            const bool exitsCurrentMedium =
+                shadowMedium.active && hitMesh == shadowMedium.ownerMesh;
+            // Thick transmissive interfaces refract direct light instead of
+            // letting it continue along this straight shadow ray. Until
+            // caustics are supported, only thin-walled transmission and the
+            // current medium's exit boundary contribute straight visibility.
+            if (closure.thinWalled || exitsCurrentMedium) {
+                surfaceVisibility =
+                    std::max(surfaceVisibility, closure.transmission);
+            }
         }
         visibility *= surfaceVisibility;
 
@@ -4161,11 +4257,15 @@ HdEmbreeRenderer::_TracePath(
             spectralThroughput = _RgbToSpectralValue(throughput, hero);
         }
 
+        const GfVec3f bsdfNormal = hasClosure
+            ? _GetBsdfNormal(closure, normal, geometricNormal, wo)
+            : normal;
+
         mxcpp::AdobeOpenPbrPreparedSurface adobeOpenPbrSurface;
         if (hasClosure) {
             adobeOpenPbrSurface = mxcpp::PrepareAdobeOpenPbrSurface(
                 closure,
-                _ToMx(normal),
+                _ToMx(bsdfNormal),
                 _ToMx(wo));
         }
 
@@ -4184,7 +4284,7 @@ HdEmbreeRenderer::_TracePath(
                     bsdfSample[2]);
             } else {
                 bs = mxcpp::Bsdf::SampleSurface(
-                    closure, _ToMx(normal), _ToMx(wo),
+                    closure, _ToMx(bsdfNormal), _ToMx(wo),
                     bsdfSample[0], bsdfSample[1], bsdfSample[2],
                     hero.wavelengthNm);
             }
@@ -4375,7 +4475,7 @@ HdEmbreeRenderer::_TracePath(
         if (hasClosure) {
             direct = _ComputeDirectLightingMIS(
                 hitPos,
-                normal,
+                bsdfNormal,
                 geometricNormal,
                 wo,
                 bounceDomain.Fork(HdEmbreeSampleDomainKey::DirectLighting),
@@ -4429,7 +4529,7 @@ HdEmbreeRenderer::_TracePath(
                     bs.f, hero.wavelengthNm);
             } else {
                 const float cosTheta =
-                    std::abs(GfDot(normal, _ToGf(bs.wi)));
+                    std::abs(GfDot(bsdfNormal, _ToGf(bs.wi)));
                 bsdfContrib = mxcpp::Spectral::RgbToSpectralValue(
                     bs.f, hero.wavelengthNm) * cosTheta / bs.pdf;
             }
@@ -4446,7 +4546,7 @@ HdEmbreeRenderer::_TracePath(
                 // or pdf division needed.
                 bsdfContrib = _ToGf(bs.f);
             } else {
-                float cosTheta = std::abs(GfDot(normal, _ToGf(bs.wi)));
+                float cosTheta = std::abs(GfDot(bsdfNormal, _ToGf(bs.wi)));
                 bsdfContrib = _ToGf(bs.f) * cosTheta / bs.pdf;
             }
 

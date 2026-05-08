@@ -1756,6 +1756,36 @@ _EvalTranslucent(const Vec3f& color, float weight, const Vec3f& N,
 }
 
 Bsdf::BsdfSample
+_SampleDeltaTotalInternalReflection(
+    float weight,
+    const Vec3f& N,
+    const Vec3f& wo)
+{
+    const Vec3f n = Dot(N, wo) >= 0.0f ? N : -N;
+    Vec3f wi = 2.0f * Dot(n, wo) * n - wo;
+    wi.normalize();
+    Bsdf::BsdfSample sample{wi, Vec3f(weight), 1.0f, true};
+    sample.eta = 1.0f;
+    return sample;
+}
+
+inline bool
+_WouldTotalInternalReflect(
+    float ior,
+    const Vec3f& N,
+    const Vec3f& wo)
+{
+    float cosI = Dot(N, wo);
+    float eta = 1.0f / std::max(ior, _kEpsilon);
+    if (cosI < 0.0f) {
+        eta = std::max(ior, _kEpsilon);
+        cosI = -cosI;
+    }
+
+    return eta * eta * (1.0f - cosI * cosI) >= 1.0f;
+}
+
+Bsdf::BsdfSample
 _SampleDeltaTransmission(
     float ior,
     const Vec3f& tint,
@@ -1776,11 +1806,7 @@ _SampleDeltaTransmission(
 
     float sin2T = eta * eta * (1.0f - cosI * cosI);
     if (sin2T >= 1.0f) {
-        Vec3f wi = 2.0f * Dot(n, wo) * n - wo;
-        wi.normalize();
-        Bsdf::BsdfSample sample{wi, Vec3f(weight), 1.0f, true};
-        sample.eta = 1.0f;
-        return sample;
+        return _SampleDeltaTotalInternalReflection(weight, N, wo);
     }
 
     float cosT = std::sqrt(1.0f - sin2T);
@@ -3045,6 +3071,12 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 _ResolveDielectricIor(data, heroWavelengthNm);
             const bool hasDeltaRoughness =
                 _IsEffectivelyDeltaAlpha(data.roughness);
+            if (hasDeltaRoughness &&
+                data.scatterMode != Bsdf::ScatterMode::Reflection &&
+                _WouldTotalInternalReflect(effectiveIor, N, wo)) {
+                return _SampleDeltaTotalInternalReflection(
+                    data.weight, N, wo);
+            }
             float fresnelProb = _Clamp01(_Luminance(
                 _DielectricReflectionFresnelUntinted(
                     data, NdotV, effectiveIor)));
@@ -3167,6 +3199,15 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
 
             const bool hasDeltaRoughness =
                 _IsEffectivelyDeltaAlpha(data.roughness);
+            if (hasDeltaRoughness &&
+                !data.thinWalled &&
+                _WouldTotalInternalReflect(effectiveIor, N, wo)) {
+                const float tirWeight = std::max(
+                    _Clamp01(data.reflectionWeight),
+                    _Clamp01(data.transmissionWeight));
+                return _SampleDeltaTotalInternalReflection(
+                    tirWeight, N, wo);
+            }
             if (uChoice < selection.reflection) {
                 if (selection.reflection <= 0.0f) {
                     return Bsdf::BsdfSample{
@@ -3302,6 +3343,11 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 float avgF0 = _Clamp01(_Luminance(_SaturateVec(data.color0)));
                 float sqrtF0 = std::sqrt(std::max(avgF0, 0.01f));
                 float ior = (1.0f + sqrtF0) / (1.0f - sqrtF0);
+                if (hasDeltaRoughness &&
+                    _WouldTotalInternalReflect(ior, N, wo)) {
+                    return _SampleDeltaTotalInternalReflection(
+                        data.weight, N, wo);
+                }
                 if (hasDeltaRoughness) {
                     auto deltaSample = _SampleDeltaTransmission(
                         ior, Vec3f(1.0f), data.weight, N, wo);
@@ -3341,6 +3387,11 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 float avgF0 = _Clamp01(_Luminance(_SaturateVec(data.color0)));
                 float sqrtF0 = std::sqrt(std::max(avgF0, 0.01f));
                 float ior = (1.0f + sqrtF0) / (1.0f - sqrtF0);
+                if (hasDeltaRoughness &&
+                    _WouldTotalInternalReflect(ior, N, wo)) {
+                    return _SampleDeltaTotalInternalReflection(
+                        data.weight, N, wo);
+                }
                 if (hasDeltaRoughness) {
                     auto deltaSample = _SampleDeltaTransmission(
                         ior, Vec3f(1.0f), data.weight, N, wo);
