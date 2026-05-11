@@ -1,0 +1,456 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1.0
+    renderSettingsPrimPath = "/RenderSettings"
+    upAxis = "Y"
+    doc = """hdEmbree caustics-off policy regression scene.
+
+This scene intentionally keeps several caustics-adjacent cases in one camera
+view so enableCaustics=true/false can be compared before changing path policy:
+  - thick transmissive slab over a diffuse receiver
+  - thin-walled transmissive card over a diffuse receiver
+  - smooth glass sphere reflecting finite lights
+  - rough glass sphere under finite lights
+  - absorbing-only thick glass cube with interior transmittance
+  - low dome light for reflection-only miss paths
+"""
+)
+
+def RenderSettings "RenderSettings"
+{
+    int hdEmbree:convergedSamplesPerPixel = 128
+    int hdEmbree:randomNumberSeed = 414
+    int hdEmbree:maxBounces = 16
+    int hdEmbree:minBouncesBeforeRR = 4
+    int hdEmbree:lightSamplesPerHit = 8
+    bool hdEmbree:enableAdaptiveSampling = false
+    bool hdEmbree:stratifyLightSamples = true
+    bool hdEmbree:enableCaustics = true
+    float hdEmbree:causticsClampThreshold = 5.0
+    token hdEmbree:samplerSequence = "openqmc_sobolbn"
+    rel products = [</RenderProduct>]
+}
+
+def RenderProduct "RenderProduct"
+{
+    rel orderedVars = [</RenderProduct/Color>]
+
+    def RenderVar "Color"
+    {
+        token dataType = "color4f"
+        string sourceName = "color"
+        token sourceType = "raw"
+    }
+}
+
+def Xform "World"
+{
+    def Camera "Camera"
+    {
+        float focalLength = 32
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        float2 clippingRange = (0.1, 1000)
+        double3 xformOp:translate = (0, 3.25, 11.25)
+        float3 xformOp:rotateXYZ = (-13.5, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+    }
+
+    def Mesh "GroundPlane" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [
+            (-6.2, 0, -2.6), (6.2, 0, -2.6),
+            (6.2, 0, 3.2), (-6.2, 0, 3.2)
+        ]
+        normal3f[] normals = [
+            (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)
+        ] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+        bool doubleSided = true
+        rel material:binding = </World/Materials/GroundDiffuseMat>
+    }
+
+    def Mesh "BackWall" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [
+            (-6.2, 0, -2.55), (-6.2, 3.8, -2.55),
+            (6.2, 3.8, -2.55), (6.2, 0, -2.55)
+        ]
+        normal3f[] normals = [
+            (0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)
+        ] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+        bool doubleSided = true
+        rel material:binding = </World/Materials/BackdropMat>
+    }
+
+    def Mesh "ThickSlabReceiver" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [
+            (-5.25, 0.002, -0.95), (-3.55, 0.002, -0.95),
+            (-3.55, 0.002, 0.75), (-5.25, 0.002, 0.75)
+        ]
+        normal3f[] normals = [
+            (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)
+        ] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+        bool doubleSided = true
+        rel material:binding = </World/Materials/ReceiverWarmMat>
+    }
+
+    def Cube "ThickGlassSlab" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double size = 1
+        double3 xformOp:translate = (-4.4, 0.18, -0.1)
+        float3 xformOp:scale = (1.75, 0.16, 1.15)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Materials/ThickGlassMat>
+    }
+
+    def Mesh "ThinCardReceiver" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [
+            (-3.05, 0.002, -0.95), (-1.35, 0.002, -0.95),
+            (-1.35, 0.002, 0.75), (-3.05, 0.002, 0.75)
+        ]
+        normal3f[] normals = [
+            (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)
+        ] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+        bool doubleSided = true
+        rel material:binding = </World/Materials/ReceiverCoolMat>
+    }
+
+    def Mesh "ThinWalledCard" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [
+            (-2.95, 0.72, -0.85), (-1.45, 0.72, -0.85),
+            (-1.45, 0.72, 0.65), (-2.95, 0.72, 0.65)
+        ]
+        normal3f[] normals = [
+            (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)
+        ] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+        bool doubleSided = true
+        rel material:binding = </World/Materials/ThinCardMat>
+    }
+
+    def Sphere "SmoothGlassSphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.68
+        double3 xformOp:translate = (-0.25, 0.68, 0.0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/SmoothGlassMat>
+    }
+
+    def Sphere "RoughGlassSphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.68
+        double3 xformOp:translate = (1.95, 0.68, 0.0)
+        token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Materials/RoughGlassMat>
+    }
+
+    def Cube "AbsorbingGlassCube" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double size = 1
+        double3 xformOp:translate = (4.25, 0.62, 0.0)
+        float3 xformOp:scale = (1.05, 1.05, 1.05)
+        float xformOp:rotateY = 22
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateY", "xformOp:scale"]
+        rel material:binding = </World/Materials/AbsorbingGlassMat>
+    }
+
+    def Scope "Materials"
+    {
+        def Material "GroundDiffuseMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/GroundDiffuseMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.34, 0.34, 0.32)
+                float inputs:diffuse_roughness = 0.25
+                float inputs:specular = 0.0
+                float inputs:transmission = 0.0
+                color3f inputs:opacity = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+
+        def Material "ReceiverWarmMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/ReceiverWarmMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.62, 0.46, 0.31)
+                float inputs:diffuse_roughness = 0.1
+                float inputs:specular = 0.0
+                float inputs:transmission = 0.0
+                color3f inputs:opacity = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+
+        def Material "ReceiverCoolMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/ReceiverCoolMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.32, 0.50, 0.58)
+                float inputs:diffuse_roughness = 0.1
+                float inputs:specular = 0.0
+                float inputs:transmission = 0.0
+                color3f inputs:opacity = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+
+        def Material "BackdropMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/BackdropMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 1.0
+                color3f inputs:base_color = (0.18, 0.22, 0.28)
+                float inputs:diffuse_roughness = 0.4
+                float inputs:specular = 0.0
+                float inputs:transmission = 0.0
+                color3f inputs:opacity = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+
+        def Material "ThickGlassMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/ThickGlassMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                color3f inputs:base_color = (1.0, 1.0, 1.0)
+                float inputs:diffuse_roughness = 0.0
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.0
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                float inputs:transmission = 1.0
+                color3f inputs:transmission_color = (0.94, 0.84, 0.62)
+                float inputs:transmission_depth = 0.65
+                color3f inputs:transmission_scatter = (0.0, 0.0, 0.0)
+                float inputs:transmission_scatter_anisotropy = 0.0
+                bool inputs:thin_walled = false
+                float inputs:subsurface = 0.0
+                color3f inputs:opacity = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+
+        def Material "ThinCardMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/ThinCardMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.0
+                color3f inputs:base_color = (1.0, 1.0, 1.0)
+                float inputs:diffuse_roughness = 0.0
+                float inputs:specular = 1.0
+                float inputs:specular_roughness = 0.02
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_IOR = 1.5
+                float inputs:metalness = 0.0
+                float inputs:transmission = 1.0
+                color3f inputs:transmission_color = (0.45, 0.83, 1.0)
+                float inputs:transmission_depth = 0.0
+                color3f inputs:transmission_scatter = (0.0, 0.0, 0.0)
+                float inputs:transmission_scatter_anisotropy = 0.0
+                bool inputs:thin_walled = true
+                float inputs:subsurface = 0.0
+                color3f inputs:opacity = (1.0, 1.0, 1.0)
+                token outputs:out
+            }
+        }
+
+        def Material "SmoothGlassMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/SmoothGlassMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 0.0
+                color3f inputs:base_color = (1.0, 1.0, 1.0)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.0
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+                float inputs:transmission_weight = 1.0
+                color3f inputs:transmission_color = (0.92, 0.96, 1.0)
+                float inputs:transmission_depth = 0.0
+                color3f inputs:transmission_scatter = (0.0, 0.0, 0.0)
+                float inputs:transmission_scatter_anisotropy = 0.0
+                float inputs:subsurface_weight = 0.0
+                float inputs:geometry_opacity = 1.0
+                bool inputs:geometry_thin_walled = false
+                token outputs:out
+            }
+        }
+
+        def Material "RoughGlassMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/RoughGlassMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 0.0
+                color3f inputs:base_color = (1.0, 1.0, 1.0)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.24
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+                float inputs:transmission_weight = 0.75
+                color3f inputs:transmission_color = (0.86, 0.94, 1.0)
+                float inputs:transmission_depth = 0.0
+                color3f inputs:transmission_scatter = (0.0, 0.0, 0.0)
+                float inputs:transmission_scatter_anisotropy = 0.0
+                float inputs:subsurface_weight = 0.0
+                float inputs:geometry_opacity = 1.0
+                bool inputs:geometry_thin_walled = false
+                token outputs:out
+            }
+        }
+
+        def Material "AbsorbingGlassMat" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Materials/AbsorbingGlassMat/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "ND_open_pbr_surface_surfaceshader"
+                float inputs:base_weight = 0.0
+                color3f inputs:base_color = (1.0, 1.0, 1.0)
+                float inputs:base_metalness = 0.0
+                float inputs:specular_weight = 1.0
+                float inputs:specular_roughness = 0.02
+                color3f inputs:specular_color = (1.0, 1.0, 1.0)
+                float inputs:specular_ior = 1.5
+                float inputs:transmission_weight = 1.0
+                color3f inputs:transmission_color = (1.0, 0.55, 0.28)
+                float inputs:transmission_depth = 0.35
+                color3f inputs:transmission_scatter = (0.0, 0.0, 0.0)
+                float inputs:transmission_scatter_anisotropy = 0.0
+                float inputs:subsurface_weight = 0.0
+                float inputs:geometry_opacity = 1.0
+                bool inputs:geometry_thin_walled = false
+                token outputs:out
+            }
+        }
+    }
+
+    def SphereLight "KeyLight"
+    {
+        float inputs:intensity = 90
+        color3f inputs:color = (1.0, 0.93, 0.82)
+        float inputs:radius = 1.0
+        double3 xformOp:translate = (-0.4, 5.4, 4.2)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def SphereLight "CameraSideHighlight"
+    {
+        float inputs:intensity = 32
+        color3f inputs:color = (0.86, 0.93, 1.0)
+        float inputs:radius = 0.45
+        double3 xformOp:translate = (0.0, 3.6, 8.2)
+        token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def DomeLight "Environment"
+    {
+        color3f inputs:color = (0.50, 0.62, 0.82)
+        float inputs:intensity = 0.12
+    }
+}

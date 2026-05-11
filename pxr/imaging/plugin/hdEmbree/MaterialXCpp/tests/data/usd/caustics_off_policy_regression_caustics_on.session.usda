@@ -1,0 +1,9 @@
+#usda 1.0
+(
+    doc = "Session layer for caustics-off policy baseline: enableCaustics=true."
+)
+
+over "RenderSettings"
+{
+    bool hdEmbree:enableCaustics = true
+}
