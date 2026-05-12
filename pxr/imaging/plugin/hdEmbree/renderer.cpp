@@ -1021,7 +1021,6 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _lightSamplesPerHit(HdEmbreeDefaultLightSamplesPerHit)
     , _stratifyLightSamples(HdEmbreeDefaultStratifyLightSamples)
     , _showAdaptiveHeatmap(HdEmbreeDefaultShowAdaptiveHeatmap)
-    , _usePerChannelVariance(HdEmbreeDefaultUsePerChannelVariance)
     , _fireflyClampThreshold(HdEmbreeDefaultFireflyClampThreshold)
     , _enableCaustics(HdEmbreeDefaultEnableCaustics)
     , _causticsClampThreshold(HdEmbreeDefaultCausticsClampThreshold)
@@ -1137,12 +1136,6 @@ void
 HdEmbreeRenderer::SetShowAdaptiveHeatmap(bool show)
 {
     _showAdaptiveHeatmap = show;
-}
-
-void
-HdEmbreeRenderer::SetUsePerChannelVariance(bool use)
-{
-    _usePerChannelVariance = use;
 }
 
 void
@@ -1653,7 +1646,6 @@ HdEmbreeRenderer::_BuildAovDispatchTable()
     _aovWriters.clear();
     _needColor = _enableAdaptiveSampling;
     _colorClearValue = GfVec4f(0.0f);
-    _varianceFn = nullptr;
 
     // Find color clear value and set _needColor.
     for (size_t i = 0; i < _aovNames.size(); ++i) {
@@ -1662,13 +1654,6 @@ HdEmbreeRenderer::_BuildAovDispatchTable()
             _colorClearValue = _GetClearColor(_aovBindings[i].clearValue);
             break;
         }
-    }
-
-    // Set variance function.
-    if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
-        _varianceFn = _usePerChannelVariance
-            ? &_UpdateVariancePerChannel
-            : &_UpdateVarianceLuminance;
     }
 
     // Build writer table.
@@ -2418,41 +2403,37 @@ HdEmbreeRenderer::_WriteAdaptiveHeatmap(
 // Variance update functions
 // ---------------------------------------------------------------------------
 
-/* static */
-void
-HdEmbreeRenderer::_UpdateVariancePerChannel(
-    HdEmbreeRenderer* self,
-    unsigned int x, unsigned int y,
-    GfVec3f const& rgb)
+namespace
 {
-    const size_t idx = y * self->_width + x;
-    uint32_t count = ++self->_pixelSampleCount[idx];
-    GfVec3f delta = rgb - self->_pixelMean[idx];
-    self->_pixelMean[idx] += delta / static_cast<float>(count);
-    GfVec3f delta2 = rgb - self->_pixelMean[idx];
-    self->_pixelM2[idx] += GfCompMult(delta, delta2);
 
-    if (count >= static_cast<uint32_t>(self->_minSamplesBeforeAdaptive)) {
-        float fCount = static_cast<float>(count);
-        GfVec3f varOfMean = self->_pixelM2[idx] / (fCount * fCount);
-        const GfVec3f &mean = self->_pixelMean[idx];
-        constexpr float kMinValue = 0.001f;
-        float relVar[3];
-        for (int c = 0; c < 3; ++c) {
-            relVar[c] = (std::abs(mean[c]) > kMinValue)
-                ? varOfMean[c] / std::abs(mean[c])
-                : varOfMean[c];
-        }
-        float maxVar = std::max({relVar[0], relVar[1], relVar[2]});
-        if (maxVar <= self->_adaptiveThreshold) {
-            self->_pixelConverged[idx] = true;
+constexpr float _kAdaptiveAbsoluteStdError = 0.001f;
+constexpr float _kAdaptiveAbsoluteVarianceOfMean =
+    _kAdaptiveAbsoluteStdError * _kAdaptiveAbsoluteStdError;
+
+bool
+_IsPerChannelVarianceConverged(
+    GfVec3f const& varOfMean,
+    GfVec3f const& mean,
+    float relativeVarianceThreshold)
+{
+    const float threshold = std::max(0.0f, relativeVarianceThreshold);
+    for (int c = 0; c < 3; ++c) {
+        const float meanMagnitude = std::abs(mean[c]);
+        const float varianceLimit =
+            _kAdaptiveAbsoluteVarianceOfMean
+            + threshold * meanMagnitude * meanMagnitude;
+        if (varOfMean[c] > varianceLimit) {
+            return false;
         }
     }
+    return true;
 }
+
+} // anonymous namespace
 
 /* static */
 void
-HdEmbreeRenderer::_UpdateVarianceLuminance(
+HdEmbreeRenderer::_UpdateVariance(
     HdEmbreeRenderer* self,
     unsigned int x, unsigned int y,
     GfVec3f const& rgb)
@@ -2468,22 +2449,8 @@ HdEmbreeRenderer::_UpdateVarianceLuminance(
         float fCount = static_cast<float>(count);
         GfVec3f varOfMean = self->_pixelM2[idx] / (fCount * fCount);
         const GfVec3f &mean = self->_pixelMean[idx];
-        constexpr float kMinValue = 0.001f;
-        float luminance = 0.2126f * mean[0]
-                        + 0.7152f * mean[1]
-                        + 0.0722f * mean[2];
-        float maxVar;
-        if (luminance > kMinValue) {
-            float invL2 = 1.0f / (luminance * luminance);
-            maxVar = std::max({varOfMean[0] * invL2,
-                               varOfMean[1] * invL2,
-                               varOfMean[2] * invL2});
-        } else {
-            maxVar = std::max({varOfMean[0],
-                               varOfMean[1],
-                               varOfMean[2]});
-        }
-        if (maxVar <= self->_adaptiveThreshold) {
+        if (_IsPerChannelVarianceConverged(
+                varOfMean, mean, self->_adaptiveThreshold)) {
             self->_pixelConverged[idx] = true;
         }
     }
@@ -2514,9 +2481,9 @@ HdEmbreeRenderer::_TraceRay(unsigned int x, unsigned int y,
         colorSample = _ComputeColor(rayHit, rayDiff, sampler, _colorClearValue);
     }
 
-    if (_varianceFn) {
+    if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
         GfVec3f rgb(colorSample[0], colorSample[1], colorSample[2]);
-        _varianceFn(this, x, y, rgb);
+        _UpdateVariance(this, x, y, rgb);
     }
 
     for (const auto& writer : _aovWriters) {

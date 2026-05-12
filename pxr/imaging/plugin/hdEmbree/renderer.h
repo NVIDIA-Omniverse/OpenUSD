@@ -175,9 +175,6 @@ public:
     /// Set whether to show the adaptive sampling heatmap.
     void SetShowAdaptiveHeatmap(bool show);
 
-    /// Set whether to use per-channel relative variance (vs luminance-based).
-    void SetUsePerChannelVariance(bool use);
-
     /// Set the firefly clamping threshold (max sample luminance).
     /// Values <= 0 disable clamping.
     void SetFireflyClampThreshold(float threshold);
@@ -421,10 +418,6 @@ private:
                                  RTCRayHit const&,
                                  GfVec4f const&,
                                  unsigned int, unsigned int);
-    using _VarianceFn = void (*)(HdEmbreeRenderer*,
-                                 unsigned int, unsigned int,
-                                 GfVec3f const&);
-
     struct _AovWriter {
         HdEmbreeRenderBuffer* buffer = nullptr;
         _AovWriteFn writeFn = nullptr;
@@ -463,12 +456,9 @@ private:
 
     static GfVec4f _HeatmapColor(float t);
 
-    static void _UpdateVariancePerChannel(HdEmbreeRenderer*,
-                                          unsigned int, unsigned int,
-                                          GfVec3f const&);
-    static void _UpdateVarianceLuminance(HdEmbreeRenderer*,
-                                         unsigned int, unsigned int,
-                                         GfVec3f const&);
+    static void _UpdateVariance(HdEmbreeRenderer*,
+                                unsigned int, unsigned int,
+                                GfVec3f const&);
 
     // The bound aovs for this renderer.
     HdRenderPassAovBindingVector _aovBindings;
@@ -532,9 +522,6 @@ private:
     // Whether to visualize adaptive sampling as a heatmap.
     bool _showAdaptiveHeatmap;
 
-    // Whether to use per-channel relative variance for convergence.
-    bool _usePerChannelVariance;
-
     // Firefly clamping threshold (max sample luminance). <= 0 disables.
     float _fireflyClampThreshold;
 
@@ -589,7 +576,6 @@ private:
     bool _needColor = false;
     GfVec4f _colorClearValue;
     std::vector<_AovWriter> _aovWriters;
-    _VarianceFn _varianceFn = nullptr;
 };
 
 PXR_NAMESPACE_CLOSE_SCOPE

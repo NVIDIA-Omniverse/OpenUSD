@@ -36,7 +36,6 @@ class HdEmbreeRenderParam;
     (lightSamplesPerHit)                \
     (stratifyLightSamples)              \
     (showAdaptiveHeatmap)               \
-    (usePerChannelVariance)             \
     (fireflyClampThreshold)             \
     (enableCaustics)                    \
     (causticsClampThreshold)            \

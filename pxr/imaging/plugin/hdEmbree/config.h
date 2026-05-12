@@ -31,7 +31,6 @@ constexpr int HdEmbreeDefaultMinSamplesBeforeAdaptive = 64;
 constexpr int HdEmbreeDefaultLightSamplesPerHit = 8;
 constexpr bool HdEmbreeDefaultStratifyLightSamples = true;
 constexpr bool HdEmbreeDefaultShowAdaptiveHeatmap = false;
-constexpr bool HdEmbreeDefaultUsePerChannelVariance = false;
 constexpr float HdEmbreeDefaultFireflyClampThreshold = 20.0f;
 constexpr bool HdEmbreeDefaultEnableCaustics = true;
 constexpr float HdEmbreeDefaultCausticsClampThreshold = 5.0f;

@@ -360,10 +360,6 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->showAdaptiveHeatmap,
                 HdEmbreeDefaultShowAdaptiveHeatmap));
-        _renderer->SetUsePerChannelVariance(
-            renderDelegate->GetRenderSetting<bool>(
-                HdEmbreeRenderSettingsTokens->usePerChannelVariance,
-                HdEmbreeDefaultUsePerChannelVariance));
         _renderer->SetFireflyClampThreshold(
             renderDelegate->GetRenderSetting<float>(
                 HdEmbreeRenderSettingsTokens->fireflyClampThreshold,

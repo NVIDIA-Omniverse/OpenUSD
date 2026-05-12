@@ -22,7 +22,6 @@ The following settings can be configured via `renderSettings` (Hydra render dele
 | Min Bounces Before Russian Roulette | `minBouncesBeforeRR` | `int` | `2` | — |
 | Light Samples Per Hit | `lightSamplesPerHit` | `int` | `8` | `HDEMBREE_LIGHT_SAMPLES_PER_HIT` |
 | Stratify Light Samples | `stratifyLightSamples` | `bool` | `true` | `HDEMBREE_STRATIFY_LIGHT_SAMPLES` |
-| Use Per-Channel Variance | `usePerChannelVariance` | `bool` | `false` | — |
 | Firefly Clamp Threshold | `fireflyClampThreshold` | `float` | `20.0` | — |
 | Enable Caustics | `enableCaustics` | `bool` | `true` | — |
 | Caustics Clamp Threshold | `causticsClampThreshold` | `float` | `5.0` | — |
@@ -69,7 +68,14 @@ domains to `newDomain*()` and draw the requested dimensions with one
 same domain framework with deterministic seed mixing.
 
 ### Adaptive Sampling (`enableAdaptiveSampling`, `adaptiveThreshold`, `minSamplesBeforeAdaptive`)
-When enabled, per-pixel variance is tracked using Welford's online algorithm. Pixels whose variance falls below `adaptiveThreshold` after at least `minSamplesBeforeAdaptive` samples are marked as converged and skipped in subsequent passes. The default minimum sample count is intentionally conservative enough to avoid stopping too early on rare bright events such as sharp finite-light reflections, while still preserving useful speedups for scenes with non-uniform complexity.
+When enabled, per-pixel variance is tracked using Welford's online algorithm. Pixels whose variance metric falls below `adaptiveThreshold` after at least `minSamplesBeforeAdaptive` samples are marked as converged and skipped in subsequent passes. The default minimum sample count is intentionally conservative enough to avoid stopping too early on rare bright events such as sharp finite-light reflections, while still preserving useful speedups for scenes with non-uniform complexity.
+Each RGB channel is tested independently with a mixed absolute/relative variance-of-the-mean limit:
+
+```text
+varOfMean[c] <= absFloor + adaptiveThreshold * mean[c]^2
+```
+
+The absolute floor keeps near-black pixels from being judged only by relative error; the relative term makes `adaptiveThreshold=0.01` roughly mean that a channel has reached a 10% standard error of its mean. This avoids the hue bias of the legacy luminance metric, where red or blue surfaces can require more samples only because their luminance coefficients are small.
 
 ### Path Tracing Depth (`maxBounces`, `minBouncesBeforeRR`)
 `maxBounces` controls the maximum number of indirect light bounces (default `16`). Higher values capture more global illumination but increase render time. An SSS closure (entry + random walk + exit) counts as a single bounce, matching a plain diffuse surface hit. `minBouncesBeforeRR` sets the minimum number of bounces before Russian Roulette path termination kicks in (default `2`). Paths shorter than this threshold are never randomly terminated, ensuring basic indirect illumination is always captured.
@@ -79,9 +85,6 @@ Number of shadow/light samples taken per hit point per light source. Higher valu
 
 ### Stratify Light Samples (`stratifyLightSamples`)
 When enabled, light samples are stratified across the light surface, providing more uniform coverage and reducing variance compared to purely random sampling.
-
-### Use Per-Channel Variance (`usePerChannelVariance`)
-Controls the convergence metric for adaptive sampling. When `false` (default), luminance-based relative variance (`varOfMean / luminance²`) is used — channels are weighted by perceptual brightness, which can cause dark or red-heavy surfaces to require more samples. When `true`, per-channel relative variance (`varOfMean[c] / mean[c]`) is used instead (similar to pbrt-v4), treating R, G, B independently so that surface color does not bias convergence speed.
 
 ### Caustics (`enableCaustics`, `causticsClampThreshold`)
 When `enableCaustics` is `true` (default), hdEmbree keeps indirect caustic paths but regularizes sharp lobes after the first non-specular bounce. Contributions on paths that have entered this caustic class are clamped by `causticsClampThreshold`; set the threshold to `0` or below to disable this extra caustic-only clamp.
