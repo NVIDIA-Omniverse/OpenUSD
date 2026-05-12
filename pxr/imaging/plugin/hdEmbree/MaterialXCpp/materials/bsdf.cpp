@@ -3052,6 +3052,7 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 _CosineHemispherePdf(wiLocal[2]),
                 false
             };
+            sample.isDiffuseLike = true;
             return _FinalizeSubtreeSample(
                 tree, nodeId, N, wo, sample, heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::SubsurfaceData>) {
@@ -3062,6 +3063,7 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 false
             };
             sample.isSubsurface = true;
+            sample.isDiffuseLike = true;
             return sample;
         } else if constexpr (std::is_same_v<T, Bsdf::DielectricData>) {
             const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
@@ -3775,7 +3777,9 @@ Bsdf::SampleLambertian(
     Vec3f wiLocal = _SampleCosineHemisphere(u1, u2);
     Vec3f wi = frame.ToWorld(wiLocal);
     float pdf = _CosineHemispherePdf(wiLocal[2]);
-    return BsdfSample{wi, baseColor * kInvPi, pdf, false};
+    BsdfSample sample{wi, baseColor * kInvPi, pdf, false};
+    sample.isDiffuseLike = true;
+    return sample;
 }
 
 float

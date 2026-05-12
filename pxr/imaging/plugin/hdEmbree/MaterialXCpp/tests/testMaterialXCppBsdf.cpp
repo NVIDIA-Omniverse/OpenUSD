@@ -1383,6 +1383,53 @@ TestTreeTransmissionPreservesWeight()
 }
 
 static bool
+TestBsdfSampleDiffuseLikeClassification()
+{
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.2f, 0.9797959f, 0.0f).normalized();
+
+    SurfaceClosure diffuseClosure;
+    Bsdf::BurleyDiffuseData diffuse;
+    diffuse.weight = 1.0f;
+    diffuse.color = Vec3f(0.8f, 0.7f, 0.6f);
+    diffuseClosure.bsdfTree.root = diffuseClosure.bsdfTree.Add(diffuse);
+
+    const auto diffuseSample =
+        Bsdf::SampleSurface(diffuseClosure, N, wo, 0.3f, 0.7f, 0.5f);
+    if (diffuseSample.pdf <= 0.0f || !diffuseSample.isDiffuseLike) {
+        printf("    Expected diffuse sample to be diffuse-like\n");
+        return false;
+    }
+
+    SurfaceClosure roughGlassClosure;
+    Bsdf::DielectricData roughTransmission;
+    roughTransmission.weight = 1.0f;
+    roughTransmission.tint = Vec3f(1.0f);
+    roughTransmission.ior = 1.5f;
+    roughTransmission.roughness = Vec2f(0.05f, 0.05f);
+    roughTransmission.scatterMode = Bsdf::ScatterMode::Transmission;
+    roughGlassClosure.bsdfTree.root =
+        roughGlassClosure.bsdfTree.Add(roughTransmission);
+
+    const auto glassSample =
+        Bsdf::SampleSurface(roughGlassClosure, N, wo, 0.3f, 0.7f, 0.5f);
+    if (glassSample.pdf <= 0.0f || glassSample.isSpecular) {
+        printf("    Expected rough dielectric transmission to be finite\n");
+        return false;
+    }
+    if (glassSample.isDiffuseLike) {
+        printf("    Rough dielectric transmission should not be diffuse-like\n");
+        return false;
+    }
+    if (Dot(N, glassSample.wi) >= 0.0f) {
+        printf("    Rough dielectric transmission should cross the boundary\n");
+        return false;
+    }
+
+    return true;
+}
+
+static bool
 TestZeroRoughnessDielectricSamplesDelta()
 {
     SurfaceClosure c;
@@ -3105,6 +3152,7 @@ Test_RegisterBsdfTests()
     _REG(TestSampleGGXSpecularLowRoughnessBoundedThroughput);
     _REG(TestSampleSurfacePdfConsistency);
     _REG(TestTreeTransmissionPreservesWeight);
+    _REG(TestBsdfSampleDiffuseLikeClassification);
     _REG(TestZeroRoughnessDielectricSamplesDelta);
     _REG(TestZeroRoughnessConductorSamplesDeltaAndSkipsDirectEval);
     _REG(TestEffectivelySmoothConductorAlphaSamplesDeltaAndSkipsDirectEval);

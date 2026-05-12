@@ -101,6 +101,11 @@ namespace Bsdf
         bool    isSpecular;
         bool    isSubsurface = false;
         bool    hasSubsurfaceEntryDirection = false;
+        // True for diffuse / translucent / subsurface-like scattering that
+        // makes a later sharp specular or boundary-crossing event part of the
+        // caustic-class path heuristic. Glossy dielectric traversal is not
+        // diffuse-like even when it has a finite PDF.
+        bool    isDiffuseLike = false;
         float   eta = 1.0f;     // IOR ratio (incident/transmitted), for refraction differential propagation
     };
 

@@ -344,6 +344,7 @@ private:
         float lastBsdfPdf = 0.0f;
         bool lastScatterWasMedium = false;
         bool anyNonSpecularBounces = false;
+        bool hasDiffuseLikeAncestor = false;
         bool currentPathIsCaustic = false;
         bool isFirstBounce = false;
     };

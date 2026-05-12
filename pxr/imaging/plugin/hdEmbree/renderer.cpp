@@ -2969,15 +2969,18 @@ HdEmbreeRenderer::_Visibility(
             straightTransparentOwner && hitMesh == straightTransparentOwner;
         GfVec3f surfaceVisibility(0.0f);
         if (hasClosure) {
-            if (_approxTransparentShadows) {
+            const bool useStraightTransmission =
+                closure.thinWalled || _approxTransparentShadows;
+            if (useStraightTransmission) {
                 GfVec3f transmissionVisibility(0.0f);
                 if (closure.thinWalled ||
-                    exitsCurrentMedium ||
-                    exitsStraightTransparent ||
-                    closure.transmission > 0.0f) {
-                    // This is a biased transparent-shadow approximation:
-                    // the ray continues straight, but interface Fresnel,
-                    // tint, and any active interior medium attenuate it.
+                    (_approxTransparentShadows &&
+                     (exitsCurrentMedium ||
+                      exitsStraightTransparent ||
+                      closure.transmission > 0.0f))) {
+                    // Thin-walled materials have no refractive path to bend.
+                    // Thick transparent surfaces use this straight-through
+                    // approximation only when the render setting enables it.
                     const bool includeSurfaceTint =
                         closure.thinWalled ||
                         (!closure.hasInteriorMedium &&
@@ -2991,7 +2994,7 @@ HdEmbreeRenderer::_Visibility(
                         closure, transmissionVisibility);
             } else {
                 float scalarVisibility = 1.0f - _Clamp01(closure.opacity);
-                if (closure.thinWalled || exitsCurrentMedium) {
+                if (exitsCurrentMedium) {
                     scalarVisibility = std::max(
                         scalarVisibility,
                         _Clamp01(closure.transmission));
@@ -3907,6 +3910,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
             state->lastBsdfPdf = phasePdf;
             state->lastScatterWasMedium = true;
             state->anyNonSpecularBounces = true;
+            state->hasDiffuseLikeAncestor = true;
             state->isFirstBounce = false;
             return _VolumeTransmissionResult::ContinueRay;
         }
@@ -3986,6 +3990,10 @@ HdEmbreeRenderer::_TracePath(
     GfVec3f lastLightSamplingNormal(0.0f);
     bool isFirstBounce = true;
     bool anyNonSpecularBounces = false;
+    // Tracks the stricter caustic-class ancestor used by enableCaustics=false.
+    // Rough glossy dielectric traversal is finite-PDF but not diffuse-like;
+    // otherwise camera-visible rough glass can be killed at its own exit face.
+    bool hasDiffuseLikeAncestor = false;
     bool currentPathIsCaustic = false;
     bool useSyntheticLambertian = false;
     HdEmbreeSssOutput syntheticLambertianExit;
@@ -4068,6 +4076,7 @@ HdEmbreeRenderer::_TracePath(
             volumeState.lastBsdfPdf = lastBsdfPdf;
             volumeState.lastScatterWasMedium = lastScatterWasMedium;
             volumeState.anyNonSpecularBounces = anyNonSpecularBounces;
+            volumeState.hasDiffuseLikeAncestor = hasDiffuseLikeAncestor;
             volumeState.currentPathIsCaustic = currentPathIsCaustic;
             volumeState.isFirstBounce = isFirstBounce;
 
@@ -4087,6 +4096,7 @@ HdEmbreeRenderer::_TracePath(
             lastBsdfPdf = volumeState.lastBsdfPdf;
             lastScatterWasMedium = volumeState.lastScatterWasMedium;
             anyNonSpecularBounces = volumeState.anyNonSpecularBounces;
+            hasDiffuseLikeAncestor = volumeState.hasDiffuseLikeAncestor;
             currentPathIsCaustic = volumeState.currentPathIsCaustic;
             isFirstBounce = volumeState.isFirstBounce;
 
@@ -4338,12 +4348,15 @@ HdEmbreeRenderer::_TracePath(
             }
         }
 
-        // --- Path regularization ---
-        // After the first non-specular bounce, widen narrow specular lobes
-        // to reduce fireflies from sharp BSDFs on indirect paths.
-        if (hasClosure && anyNonSpecularBounces && _enableCaustics) {
-            closure.Regularize();
-        }
+        // Disabled for now: this regularization changes thick-glass caustic
+        // color too much by widening the refractive lobe on indirect paths.
+        //
+        // // --- Path regularization ---
+        // // After the first non-specular bounce, widen narrow specular lobes
+        // // to reduce fireflies from sharp BSDFs on indirect paths.
+        // if (hasClosure && anyNonSpecularBounces && _enableCaustics) {
+        //     closure.Regularize();
+        // }
 
         // --- Stochastic opacity pass-through ---
         if (hasClosure && closure.presence < 1.0f) {
@@ -4557,6 +4570,7 @@ HdEmbreeRenderer::_TracePath(
             lastBsdfPdf = 0.0f;
             lastScatterWasMedium = false;
             anyNonSpecularBounces = true;
+            hasDiffuseLikeAncestor = true;
             isFirstBounce = false;
             syntheticLambertianExit = sssOut;
             useSyntheticLambertian = true;
@@ -4650,7 +4664,7 @@ HdEmbreeRenderer::_TracePath(
             (woDotNg > 0.0f && wiDotNg < 0.0f) ||
             (woDotNg < 0.0f && wiDotNg > 0.0f);
         const bool sampledCausticEvent =
-            anyNonSpecularBounces && (bs.isSpecular || crossesBoundary);
+            hasDiffuseLikeAncestor && (bs.isSpecular || crossesBoundary);
         if (sampledCausticEvent && !_enableCaustics) {
             break;
         }
@@ -4701,6 +4715,9 @@ HdEmbreeRenderer::_TracePath(
         lastLightSamplingNormal = normal;
         if (!bs.isSpecular) {
             anyNonSpecularBounces = true;
+        }
+        if (bs.isDiffuseLike) {
+            hasDiffuseLikeAncestor = true;
         }
         isFirstBounce = false;
         if (crossesBoundary) {

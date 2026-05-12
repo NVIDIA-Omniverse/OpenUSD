@@ -388,6 +388,25 @@ def Xform "World"
         float inputs:intensity = 1.5
     }
 
+    # def DomeLight "DomeLight" (
+    #     prepend apiSchemas = ["ShapingAPI"]
+    # )
+    # {
+    #     float inputs:intensity = 1
+    #     float inputs:shaping:cone:angle = 180
+    #     float inputs:shaping:cone:softness
+    #     float inputs:shaping:focus
+    #     color3f inputs:shaping:focusTint
+    #     asset inputs:shaping:ies:file
+    #     asset inputs:texture:file = @/home/masuo/Dev/data/exr/meadow_2_4k.exr@
+    #     token inputs:texture:format = "latlong"
+    #     custom int omni:rtx:usdluxVersion = 2505
+    #     double3 xformOp:rotateXYZ = (0, 270, 0)
+    #     double3 xformOp:scale = (1, 1, 1)
+    #     double3 xformOp:translate = (0, 0, 0)
+    #     uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+    # }
+
     def SphereLight "KeyLight"
     {
         float inputs:intensity = 45

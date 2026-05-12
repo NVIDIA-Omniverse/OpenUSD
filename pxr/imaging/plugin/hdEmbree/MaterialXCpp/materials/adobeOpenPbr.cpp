@@ -488,6 +488,8 @@ _SamplePreparedAdobeOpenPbrSurfaceRaw(
         pdf,
         isSpecular
     };
+    result.sample.isDiffuseLike =
+        (sampledType & OpenPBR_BsdfLobeTypeDiffuse) != 0;
     result.throughputWeight = weightSum;
     result.sampledType = sampledType;
     result.valid = true;
@@ -517,6 +519,7 @@ _MakeSubsurfaceMarker(float weight)
     sample.isSubsurface = sample.f[0] > 0.0f ||
                           sample.f[1] > 0.0f ||
                           sample.f[2] > 0.0f;
+    sample.isDiffuseLike = sample.isSubsurface;
     return sample;
 }
 
@@ -892,6 +895,7 @@ SamplePreparedAdobeOpenPbrSurface(
         };
         sample.isSubsurface = true;
         sample.hasSubsurfaceEntryDirection = true;
+        sample.isDiffuseLike = true;
         return sample;
     }
 
