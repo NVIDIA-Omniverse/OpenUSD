@@ -17,7 +17,7 @@ The following settings can be configured via `renderSettings` (Hydra render dele
 | Sampler Sequence | `samplerSequence` | `token` | effective default: `openqmc_sobolbn` with OpenQMC, otherwise `sobol` | `HDEMBREE_USE_SOBOL` (default selection only) |
 | Enable Adaptive Sampling | `enableAdaptiveSampling` | `bool` | `true` | `HDEMBREE_ENABLE_ADAPTIVE_SAMPLING` |
 | Adaptive Threshold | `adaptiveThreshold` | `float` | `0.01` | — |
-| Min Samples Before Adaptive | `minSamplesBeforeAdaptive` | `int` | `16` | — |
+| Min Samples Before Adaptive | `minSamplesBeforeAdaptive` | `int` | `64` | — |
 | Max Bounces | `maxBounces` | `int` | `16` | — |
 | Min Bounces Before Russian Roulette | `minBouncesBeforeRR` | `int` | `2` | — |
 | Light Samples Per Hit | `lightSamplesPerHit` | `int` | `8` | `HDEMBREE_LIGHT_SAMPLES_PER_HIT` |
@@ -69,7 +69,7 @@ domains to `newDomain*()` and draw the requested dimensions with one
 same domain framework with deterministic seed mixing.
 
 ### Adaptive Sampling (`enableAdaptiveSampling`, `adaptiveThreshold`, `minSamplesBeforeAdaptive`)
-When enabled, per-pixel variance is tracked using Welford's online algorithm. Pixels whose variance falls below `adaptiveThreshold` after at least `minSamplesBeforeAdaptive` samples are marked as converged and skipped in subsequent passes. This can yield significant speedups (2-4x) for scenes with non-uniform complexity.
+When enabled, per-pixel variance is tracked using Welford's online algorithm. Pixels whose variance falls below `adaptiveThreshold` after at least `minSamplesBeforeAdaptive` samples are marked as converged and skipped in subsequent passes. The default minimum sample count is intentionally conservative enough to avoid stopping too early on rare bright events such as sharp finite-light reflections, while still preserving useful speedups for scenes with non-uniform complexity.
 
 ### Path Tracing Depth (`maxBounces`, `minBouncesBeforeRR`)
 `maxBounces` controls the maximum number of indirect light bounces (default `16`). Higher values capture more global illumination but increase render time. An SSS closure (entry + random walk + exit) counts as a single bounce, matching a plain diffuse surface hit. `minBouncesBeforeRR` sets the minimum number of bounces before Russian Roulette path termination kicks in (default `2`). Paths shorter than this threshold are never randomly terminated, ensuring basic indirect illumination is always captured.
