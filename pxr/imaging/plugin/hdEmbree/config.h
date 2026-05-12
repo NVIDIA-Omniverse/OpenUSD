@@ -35,6 +35,7 @@ constexpr bool HdEmbreeDefaultUsePerChannelVariance = false;
 constexpr float HdEmbreeDefaultFireflyClampThreshold = 20.0f;
 constexpr bool HdEmbreeDefaultEnableCaustics = true;
 constexpr float HdEmbreeDefaultCausticsClampThreshold = 5.0f;
+constexpr bool HdEmbreeDefaultApproxTransparentShadows = true;
 
 /// \class HdEmbreeConfig
 ///

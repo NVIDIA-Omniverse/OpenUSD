@@ -40,6 +40,7 @@ class HdEmbreeRenderParam;
     (fireflyClampThreshold)             \
     (enableCaustics)                    \
     (causticsClampThreshold)            \
+    (approxTransparentShadows)          \
     (materialRenderContext)             \
     (dielectricLayerThroughputMode)     \
     (useAdobeOpenPBR)

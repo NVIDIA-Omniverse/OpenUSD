@@ -17,6 +17,7 @@
 
 #include "pxr/base/gf/matrix4d.h"
 #include "pxr/base/gf/rect2i.h"
+#include "pxr/usd/sdf/path.h"
 
 #include <atomic>
 #include <vector>
@@ -85,6 +86,12 @@ private:
 
     // The last settings version we rendered with.
     int _lastSettingsVersion;
+
+    // Tracks the RenderSettings prim values that were bridged into the
+    // render delegate settings map.
+    SdfPath _lastRenderSettingsPrimPath;
+    bool _hasAppliedRenderSettingsPrim;
+    unsigned int _lastRenderSettingsBridgeVersion;
 
     // The last material render-context priority order seen by this pass.
     TfTokenVector _lastMaterialRenderContexts;

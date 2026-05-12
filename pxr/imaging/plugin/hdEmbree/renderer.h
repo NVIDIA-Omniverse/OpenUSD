@@ -185,6 +185,7 @@ public:
     /// Set caustic path handling.
     void SetEnableCaustics(bool enable);
     void SetCausticsClampThreshold(float threshold);
+    void SetApproxTransparentShadows(bool enable);
 
     /// Set whether GGX reflection uses microfacet multiple scattering.
     void SetEnableGgxMicrofacetMultipleScattering(bool enable);
@@ -540,6 +541,9 @@ private:
     // regularized and optionally clamped; when disabled, they are suppressed.
     bool _enableCaustics;
     float _causticsClampThreshold;
+
+    // Biased straight-through shadow visibility for transparent surfaces.
+    bool _approxTransparentShadows;
 
     // Whether GGX reflection uses microfacet multiple scattering compensation.
     bool _enableGgxMicrofacetMultipleScattering;

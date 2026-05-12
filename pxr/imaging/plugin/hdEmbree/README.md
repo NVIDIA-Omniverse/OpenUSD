@@ -26,6 +26,7 @@ The following settings can be configured via `renderSettings` (Hydra render dele
 | Firefly Clamp Threshold | `fireflyClampThreshold` | `float` | `20.0` | — |
 | Enable Caustics | `enableCaustics` | `bool` | `true` | — |
 | Caustics Clamp Threshold | `causticsClampThreshold` | `float` | `5.0` | — |
+| Approximate Transparent Shadows | `approxTransparentShadows` | `bool` | `true` | — |
 
 In addition, the following Hydra built-in setting is forwarded:
 
@@ -86,6 +87,13 @@ Controls the convergence metric for adaptive sampling. When `false` (default), l
 When `enableCaustics` is `true` (default), hdEmbree keeps indirect caustic paths but regularizes sharp lobes after the first non-specular bounce. Contributions on paths that have entered this caustic class are clamped by `causticsClampThreshold`; set the threshold to `0` or below to disable this extra caustic-only clamp.
 
 When `enableCaustics` is `false`, hdEmbree suppresses caustic-class paths by terminating BSDF samples that become specular or cross a dielectric boundary after a non-specular bounce. This removes high-variance reflective/refractive caustics such as bright floor sparkles under glass objects, at the cost of omitting those caustic contributions.
+
+### Transparent Shadows (`approxTransparentShadows`)
+When `approxTransparentShadows` is `true` (default), shadow rays through transmissive surfaces continue along the original straight line instead of being refracted. This is a biased direct-shadow approximation, not a Snell-refraction caustic solver. It keeps direct lighting usable under thin-walled transparent cards and thick glass when caustic-class paths are suppressed.
+
+The approximation applies RGB attenuation from surface opacity, dielectric Fresnel transmission, transmission tint, and active interior-medium transmittance. For regular thick transmission with an interior medium, the surface tint is skipped so `transmission_color` is not applied once by the surface and again by Beer or Adobe OpenPBR volume transmittance.
+
+Set `approxTransparentShadows` to `false` to use the older conservative shadow behavior: thin-walled transmission and current-medium exits are treated as scalar visibility, while thick transparent entry boundaries block the straight shadow ray.
 
 ### Random Number Seed (`randomNumberSeed`)
 A value of `-1` (default) seeds the RNG non-deterministically. Any other value, combined with `PXR_WORK_THREAD_LIMIT=1`, produces deterministic/repeatable results.

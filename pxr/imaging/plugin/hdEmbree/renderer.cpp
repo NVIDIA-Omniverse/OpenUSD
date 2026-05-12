@@ -218,6 +218,67 @@ _IsEffectivelyOpaque(float value)
     return value >= 1.0f - _reflectionOnlyEps;
 }
 
+inline float
+_Clamp01(float value)
+{
+    return std::clamp(value, 0.0f, 1.0f);
+}
+
+inline GfVec3f
+_Clamp01(GfVec3f const& value)
+{
+    return GfVec3f(
+        _Clamp01(value[0]),
+        _Clamp01(value[1]),
+        _Clamp01(value[2]));
+}
+
+inline float
+_SchlickDielectricFresnel(float ior, float cosTheta)
+{
+    const float safeIor = std::max(ior, 1.0f);
+    const float f0Base = (safeIor - 1.0f) / (safeIor + 1.0f);
+    const float f0 = f0Base * f0Base;
+    const float oneMinusCos = 1.0f - _Clamp01(cosTheta);
+    const float oneMinusCos2 = oneMinusCos * oneMinusCos;
+    return _Clamp01(f0 + (1.0f - f0) *
+        oneMinusCos2 * oneMinusCos2 * oneMinusCos);
+}
+
+GfVec3f
+_TransparentShadowTransmission(
+    mxcpp::SurfaceClosure const& closure,
+    GfVec3f const& direction,
+    GfVec3f const& hitNormal,
+    bool includeSurfaceTint)
+{
+    const float transmission = _Clamp01(closure.transmission);
+    if (transmission <= 0.0f) {
+        return GfVec3f(0.0f);
+    }
+
+    const float cosTheta = _Clamp01(std::abs(GfDot(direction, hitNormal)));
+    const float fresnel =
+        _SchlickDielectricFresnel(closure.specularIor, cosTheta);
+    GfVec3f attenuation(transmission * (1.0f - fresnel));
+    if (includeSurfaceTint) {
+        attenuation = GfCompMult(
+            attenuation,
+            _Clamp01(_ToGf(closure.transmissionColor)));
+    }
+    return _Clamp01(attenuation);
+}
+
+GfVec3f
+_CombineOpacityAndTransmissionVisibility(
+    mxcpp::SurfaceClosure const& closure,
+    GfVec3f const& transmissionVisibility)
+{
+    const float opacity = _Clamp01(closure.opacity);
+    const GfVec3f opacityVisibility(1.0f - opacity);
+    return _Clamp01(opacityVisibility + transmissionVisibility * opacity);
+}
+
 bool
 _IsReflectionOnlyNode(
     mxcpp::Bsdf::ClosureTree const& tree,
@@ -964,6 +1025,7 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _fireflyClampThreshold(HdEmbreeDefaultFireflyClampThreshold)
     , _enableCaustics(HdEmbreeDefaultEnableCaustics)
     , _causticsClampThreshold(HdEmbreeDefaultCausticsClampThreshold)
+    , _approxTransparentShadows(HdEmbreeDefaultApproxTransparentShadows)
     , _enableGgxMicrofacetMultipleScattering(true)
     , _dielectricLayerThroughputMode(
         _tokensDielectricLayerThroughputModeBsdl)
@@ -1099,6 +1161,12 @@ void
 HdEmbreeRenderer::SetCausticsClampThreshold(float threshold)
 {
     _causticsClampThreshold = threshold;
+}
+
+void
+HdEmbreeRenderer::SetApproxTransparentShadows(bool enable)
+{
+    _approxTransparentShadows = enable;
 }
 
 void
@@ -2848,6 +2916,7 @@ HdEmbreeRenderer::_Visibility(
 
     GfVec3f visibility(1.0f);
     HdEmbreeMediumState shadowMedium = mediumState;
+    HdEmbreeMesh* straightTransparentOwner = nullptr;
     GfVec3f rayOrigin = _OffsetRayOrigin(position, normal, direction, kRayBias);
     float remaining = dist;
 
@@ -2894,20 +2963,43 @@ HdEmbreeRenderer::_Visibility(
         const bool hasClosure = _TryEvalSurfaceClosureAtHit(
             rayHit, &closure, &hitNormal, &hitMesh);
 
-        float surfaceVisibility = hasClosure ? (1.0f - closure.opacity) : 0.0f;
+        const bool exitsCurrentMedium =
+            shadowMedium.active && hitMesh == shadowMedium.ownerMesh;
+        const bool exitsStraightTransparent =
+            straightTransparentOwner && hitMesh == straightTransparentOwner;
+        GfVec3f surfaceVisibility(0.0f);
         if (hasClosure) {
-            const bool exitsCurrentMedium =
-                shadowMedium.active && hitMesh == shadowMedium.ownerMesh;
-            // Thick transmissive interfaces refract direct light instead of
-            // letting it continue along this straight shadow ray. Until
-            // caustics are supported, only thin-walled transmission and the
-            // current medium's exit boundary contribute straight visibility.
-            if (closure.thinWalled || exitsCurrentMedium) {
+            if (_approxTransparentShadows) {
+                GfVec3f transmissionVisibility(0.0f);
+                if (closure.thinWalled ||
+                    exitsCurrentMedium ||
+                    exitsStraightTransparent ||
+                    closure.transmission > 0.0f) {
+                    // This is a biased transparent-shadow approximation:
+                    // the ray continues straight, but interface Fresnel,
+                    // tint, and any active interior medium attenuate it.
+                    const bool includeSurfaceTint =
+                        closure.thinWalled ||
+                        (!closure.hasInteriorMedium &&
+                         !exitsCurrentMedium &&
+                         !exitsStraightTransparent);
+                    transmissionVisibility = _TransparentShadowTransmission(
+                        closure, direction, hitNormal, includeSurfaceTint);
+                }
                 surfaceVisibility =
-                    std::max(surfaceVisibility, closure.transmission);
+                    _CombineOpacityAndTransmissionVisibility(
+                        closure, transmissionVisibility);
+            } else {
+                float scalarVisibility = 1.0f - _Clamp01(closure.opacity);
+                if (closure.thinWalled || exitsCurrentMedium) {
+                    scalarVisibility = std::max(
+                        scalarVisibility,
+                        _Clamp01(closure.transmission));
+                }
+                surfaceVisibility = GfVec3f(_Clamp01(scalarVisibility));
             }
         }
-        visibility *= surfaceVisibility;
+        visibility = GfCompMult(visibility, surfaceVisibility);
 
         if (_IsNearlyBlack(visibility, kVisThreshold)) {
             return GfVec3f(0.0f);
@@ -2918,17 +3010,21 @@ HdEmbreeRenderer::_Visibility(
             return visibility;
         }
 
-        if (shadowMedium.active && hitMesh == shadowMedium.ownerMesh) {
+        if (exitsCurrentMedium) {
             shadowMedium = HdEmbreeMediumState();
-        } else if (!shadowMedium.active &&
-                   hasClosure &&
-                   closure.hasInteriorMedium &&
-                   closure.transmission > 0.0f &&
-                   hitMesh &&
+        } else if (exitsStraightTransparent) {
+            straightTransparentOwner = nullptr;
+        } else if (_approxTransparentShadows && !shadowMedium.active &&
+                   hasClosure && !closure.thinWalled &&
+                   closure.transmission > 0.0f && hitMesh &&
                    GfDot(direction, hitNormal) < 0.0f) {
-            shadowMedium.active = true;
-            shadowMedium.medium = closure.interiorMedium;
-            shadowMedium.ownerMesh = hitMesh;
+            if (closure.hasInteriorMedium) {
+                shadowMedium.active = true;
+                shadowMedium.medium = closure.interiorMedium;
+                shadowMedium.ownerMesh = hitMesh;
+            } else {
+                straightTransparentOwner = hitMesh;
+            }
         }
 
         GfVec3f hitPos = GfVec3f(

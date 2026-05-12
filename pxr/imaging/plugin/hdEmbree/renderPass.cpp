@@ -30,6 +30,9 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _sceneVersion(sceneVersion)
     , _lastSceneVersion(0)
     , _lastSettingsVersion(0)
+    , _lastRenderSettingsPrimPath()
+    , _hasAppliedRenderSettingsPrim(false)
+    , _lastRenderSettingsBridgeVersion(0)
     , _lastMaterialRenderContexts()
     , _lastFrame(0.0)
     , _lastTime(0.0)
@@ -153,48 +156,71 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         _lastSceneVersion = currentSceneVersion;
 
         // Apply namespacedSettings from the active RenderSettings prim to
-        // the delegate.  This bridges the gap between USD RenderSettings
+        // the delegate. This bridges the gap between USD RenderSettings
         // prims and hdEmbree's render delegate settings map.
-        // Only run when the scene changes (stage load / prim sync) so that
-        // interactive GUI changes are not overwritten every frame.
+        //
+        // usdview edits render delegate settings directly through the UI. If
+        // an unrelated scene edit dirties the scene after such an edit, do
+        // not re-apply authored RenderSettings values and clobber the UI
+        // override.
         HdRenderIndex *index = GetRenderIndex();
         HdSceneIndexBaseRefPtr si = index->GetTerminalSceneIndex();
         SdfPath rsPath;
         if (HdUtils::HasActiveRenderSettingsPrim(si, &rsPath)) {
-            HdSceneIndexPrim prim = si->GetPrim(rsPath);
-            HdRenderSettingsSchema rsSchema =
-                HdRenderSettingsSchema::GetFromParent(prim.dataSource);
-            if (rsSchema.IsDefined()) {
-                HdSampledDataSourceContainerSchema nsSettings =
-                    rsSchema.GetNamespacedSettings();
-                if (nsSettings.GetContainer()) {
-                    TfTokenVector names =
-                        nsSettings.GetContainer()->GetNames();
-                    HdRenderDelegate *delegate =
-                        index->GetRenderDelegate();
-                    // The "hdEmbree:" namespace prefix to strip from keys.
-                    static const std::string nsPrefix("hdEmbree:");
-                    for (const TfToken &name : names) {
-                        // Only process settings in our namespace.
-                        const std::string &nameStr = name.GetString();
-                        if (nameStr.substr(0, nsPrefix.size()) != nsPrefix){
-                            continue;
-                        }
-                        // Strip the namespace prefix to get the
-                        // render delegate setting token.
-                        TfToken settingName(
-                            nameStr.substr(nsPrefix.size()));
-                        if (auto ds =
-                                nsSettings.GetContainer()->Get(name)) {
-                            if (auto sampled =
-                                    HdSampledDataSource::Cast(ds)) {
-                                delegate->SetRenderSetting(
-                                    settingName, sampled->GetValue(0));
+            HdRenderDelegate *delegate = index->GetRenderDelegate();
+            const bool activeRenderSettingsPrimChanged =
+                !_hasAppliedRenderSettingsPrim ||
+                rsPath != _lastRenderSettingsPrimPath;
+            const bool delegateSettingsUnchangedSinceBridge =
+                delegate->GetRenderSettingsVersion() ==
+                _lastRenderSettingsBridgeVersion;
+
+            if (activeRenderSettingsPrimChanged ||
+                delegateSettingsUnchangedSinceBridge) {
+                HdSceneIndexPrim prim = si->GetPrim(rsPath);
+                HdRenderSettingsSchema rsSchema =
+                    HdRenderSettingsSchema::GetFromParent(prim.dataSource);
+                if (rsSchema.IsDefined()) {
+                    HdSampledDataSourceContainerSchema nsSettings =
+                        rsSchema.GetNamespacedSettings();
+                    if (nsSettings.GetContainer()) {
+                        TfTokenVector names =
+                            nsSettings.GetContainer()->GetNames();
+                        // The "hdEmbree:" namespace prefix to strip from
+                        // keys.
+                        static const std::string nsPrefix("hdEmbree:");
+                        for (const TfToken &name : names) {
+                            // Only process settings in our namespace.
+                            const std::string &nameStr = name.GetString();
+                            if (nameStr.substr(0, nsPrefix.size()) !=
+                                nsPrefix) {
+                                continue;
+                            }
+                            // Strip the namespace prefix to get the
+                            // render delegate setting token.
+                            TfToken settingName(
+                                nameStr.substr(nsPrefix.size()));
+                            if (auto ds =
+                                    nsSettings.GetContainer()->Get(name)) {
+                                if (auto sampled =
+                                        HdSampledDataSource::Cast(ds)) {
+                                    delegate->SetRenderSetting(
+                                        settingName, sampled->GetValue(0));
+                                }
                             }
                         }
                     }
                 }
+                _lastRenderSettingsPrimPath = rsPath;
+                _hasAppliedRenderSettingsPrim = true;
+                _lastRenderSettingsBridgeVersion =
+                    delegate->GetRenderSettingsVersion();
             }
+        } else {
+            _lastRenderSettingsPrimPath = SdfPath();
+            _hasAppliedRenderSettingsPrim = false;
+            _lastRenderSettingsBridgeVersion =
+                index->GetRenderDelegate()->GetRenderSettingsVersion();
         }
     }
 
@@ -350,6 +376,10 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<float>(
                 HdEmbreeRenderSettingsTokens->causticsClampThreshold,
                 HdEmbreeDefaultCausticsClampThreshold));
+        _renderer->SetApproxTransparentShadows(
+            renderDelegate->GetRenderSetting<bool>(
+                HdEmbreeRenderSettingsTokens->approxTransparentShadows,
+                HdEmbreeDefaultApproxTransparentShadows));
         static const TfToken enableGgxMicrofacetMultipleScatteringToken(
             "enableGgxMicrofacetMultipleScattering", TfToken::Immortal);
         _renderer->SetEnableGgxMicrofacetMultipleScattering(
