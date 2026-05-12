@@ -17,6 +17,7 @@
 #include <atomic>
 #include <cmath>
 #include <limits>
+#include <utility>
 #include <variant>
 
 namespace mxcpp {
@@ -2177,6 +2178,194 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             float u1, float u2, float uChoice,
             float heroWavelengthNm);
 
+float
+_PerceptualRoughnessToAlpha(float roughness)
+{
+    const float clamped = std::clamp(roughness, _kMinMicrofacetAlpha, 1.0f);
+    return clamped * clamped;
+}
+
+bool
+_IsEffectivelySmoothPerceptualRoughness(float roughness)
+{
+    return _PerceptualRoughnessToAlpha(roughness) <
+           _kEffectivelySmoothMicrofacetAlpha;
+}
+
+void
+_ClearLegacyBsdfSummary(SurfaceClosure* closure)
+{
+    closure->baseColor = Vec3f(0.0f);
+    closure->metallic = 0.0f;
+    closure->specular = 0.0f;
+    closure->specularColor = Vec3f(0.0f);
+    closure->transmission = 0.0f;
+    closure->transmissionColor = Vec3f(0.0f);
+    closure->coat = 0.0f;
+    closure->sheen = 0.0f;
+    closure->subsurfaceWeight = 0.0f;
+}
+
+class _CausticClassPruner
+{
+public:
+    explicit _CausticClassPruner(const Bsdf::ClosureTree& source)
+        : _source(source)
+    {
+    }
+
+    Bsdf::ClosureTree Run()
+    {
+        _result.root = _PruneNode(_source.root);
+        if (!_result.IsValid(_result.root)) {
+            _result.Clear();
+        }
+        return std::move(_result);
+    }
+
+private:
+    Bsdf::NodeId _PruneNode(Bsdf::NodeId nodeId)
+    {
+        const Bsdf::Node* node = _source.Get(nodeId);
+        if (!node) {
+            return Bsdf::InvalidNodeId;
+        }
+
+        return std::visit([&](const auto& data) -> Bsdf::NodeId {
+            using T = std::decay_t<decltype(data)>;
+            if constexpr (std::is_same_v<T, Bsdf::OrenNayarDiffuseData> ||
+                          std::is_same_v<T, Bsdf::BurleyDiffuseData> ||
+                          std::is_same_v<T, Bsdf::TranslucentData> ||
+                          std::is_same_v<T, Bsdf::SubsurfaceData> ||
+                          std::is_same_v<T, Bsdf::SheenData> ||
+                          std::is_same_v<T, Bsdf::UnsupportedData>) {
+                return _result.Add(data);
+            } else if constexpr (std::is_same_v<T, Bsdf::DielectricData>) {
+                if (_IsEffectivelyDeltaAlpha(data.roughness) ||
+                    data.scatterMode == Bsdf::ScatterMode::Transmission) {
+                    return Bsdf::InvalidNodeId;
+                }
+                Bsdf::DielectricData pruned = data;
+                if (pruned.scatterMode ==
+                    Bsdf::ScatterMode::ReflectionTransmission) {
+                    pruned.scatterMode = Bsdf::ScatterMode::Reflection;
+                }
+                return _result.Add(pruned);
+            } else if constexpr (
+                std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
+                if (_IsEffectivelyDeltaAlpha(data.roughness)) {
+                    return Bsdf::InvalidNodeId;
+                }
+                Bsdf::DielectricInterfaceData pruned = data;
+                pruned.transmissionWeight = 0.0f;
+                if (pruned.reflectionWeight <= _kEpsilon) {
+                    return Bsdf::InvalidNodeId;
+                }
+                return _result.Add(pruned);
+            } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
+                if (_IsEffectivelyDeltaAlpha(data.roughness)) {
+                    return Bsdf::InvalidNodeId;
+                }
+                return _result.Add(data);
+            } else if constexpr (
+                std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
+                if (_IsEffectivelyDeltaAlpha(data.roughness) ||
+                    data.scatterMode == Bsdf::ScatterMode::Transmission) {
+                    return Bsdf::InvalidNodeId;
+                }
+                Bsdf::GeneralizedSchlickData pruned = data;
+                if (pruned.scatterMode ==
+                    Bsdf::ScatterMode::ReflectionTransmission) {
+                    pruned.scatterMode = Bsdf::ScatterMode::Reflection;
+                }
+                return _result.Add(pruned);
+            } else if constexpr (std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
+                Bsdf::AdobeOpenPbrData pruned = data;
+                pruned.transmissionWeight = 0.0f;
+                if (_IsEffectivelySmoothPerceptualRoughness(
+                        pruned.specularRoughness)) {
+                    pruned.specularWeight = 0.0f;
+                }
+                if (_IsEffectivelySmoothPerceptualRoughness(
+                        pruned.coatRoughness)) {
+                    pruned.coatWeight = 0.0f;
+                }
+                return _result.Add(pruned);
+            } else if constexpr (std::is_same_v<T, Bsdf::MixData>) {
+                const float mix = _Clamp01(data.mix);
+                const Bsdf::NodeId bg = _PruneNode(data.bg);
+                const Bsdf::NodeId fg = _PruneNode(data.fg);
+                if (_IsValid(bg) && _IsValid(fg)) {
+                    Bsdf::MixData pruned = data;
+                    pruned.bg = bg;
+                    pruned.fg = fg;
+                    pruned.mix = mix;
+                    return _result.Add(pruned);
+                }
+                if (_IsValid(bg)) {
+                    return _ScaleNode(bg, 1.0f - mix);
+                }
+                if (_IsValid(fg)) {
+                    return _ScaleNode(fg, mix);
+                }
+                return Bsdf::InvalidNodeId;
+            } else if constexpr (std::is_same_v<T, Bsdf::LayerData>) {
+                const Bsdf::NodeId top = _PruneNode(data.top);
+                const Bsdf::NodeId base = _PruneNode(data.base);
+                if (_IsValid(top) && _IsValid(base)) {
+                    Bsdf::LayerData pruned;
+                    pruned.top = top;
+                    pruned.base = base;
+                    return _result.Add(pruned);
+                }
+                return _IsValid(top) ? top : base;
+            } else if constexpr (std::is_same_v<T, Bsdf::AddData>) {
+                const Bsdf::NodeId in1 = _PruneNode(data.in1);
+                const Bsdf::NodeId in2 = _PruneNode(data.in2);
+                if (_IsValid(in1) && _IsValid(in2)) {
+                    Bsdf::AddData pruned;
+                    pruned.in1 = in1;
+                    pruned.in2 = in2;
+                    return _result.Add(pruned);
+                }
+                return _IsValid(in1) ? in1 : in2;
+            } else if constexpr (std::is_same_v<T, Bsdf::MultiplyData>) {
+                const Bsdf::NodeId input = _PruneNode(data.input);
+                if (!_IsValid(input) || _Luminance(data.weight) <= _kEpsilon) {
+                    return Bsdf::InvalidNodeId;
+                }
+                Bsdf::MultiplyData pruned = data;
+                pruned.input = input;
+                return _result.Add(pruned);
+            } else {
+                return Bsdf::InvalidNodeId;
+            }
+        }, node->data);
+    }
+
+    bool _IsValid(Bsdf::NodeId nodeId) const
+    {
+        return _result.IsValid(nodeId);
+    }
+
+    Bsdf::NodeId _ScaleNode(Bsdf::NodeId nodeId, float weight)
+    {
+        if (!_IsValid(nodeId) || weight <= _kEpsilon) {
+            return Bsdf::InvalidNodeId;
+        }
+        if (weight >= 1.0f - _kEpsilon) {
+            return nodeId;
+        }
+        Bsdf::MultiplyData multiply;
+        multiply.input = nodeId;
+        multiply.weight = Vec3f(weight);
+        return _result.Add(multiply);
+    }
+
+    const Bsdf::ClosureTree& _source;
+    Bsdf::ClosureTree _result;
+};
+
 Vec3f
 _EvalLayerBaseThroughput(const Bsdf::ClosureTree& tree,
                          Bsdf::NodeId topNodeId,
@@ -4030,6 +4219,30 @@ Bsdf::PdfSurface(
             heroWavelengthNm);
     }
     return _PdfLegacySurface(closure, N, wi, wo);
+}
+
+SurfaceClosure
+Bsdf::PruneCausticClassLobes(const SurfaceClosure& closure)
+{
+    SurfaceClosure pruned = closure;
+    if (closure.HasBsdfTree()) {
+        _CausticClassPruner pruner(closure.bsdfTree);
+        pruned.bsdfTree = pruner.Run();
+        if (!pruned.HasBsdfTree()) {
+            _ClearLegacyBsdfSummary(&pruned);
+        }
+        return pruned;
+    }
+
+    pruned.transmission = 0.0f;
+    if (_IsEffectivelySmoothPerceptualRoughness(pruned.roughness)) {
+        pruned.specular = 0.0f;
+        pruned.specularColor = Vec3f(0.0f);
+    }
+    if (_IsEffectivelySmoothPerceptualRoughness(pruned.coatRoughness)) {
+        pruned.coat = 0.0f;
+    }
+    return pruned;
 }
 
 namespace {

@@ -4380,7 +4380,25 @@ HdEmbreeRenderer::_TracePath(
             closure.presence = 1.0f;
         }
 
-        if (hasClosure && closure.HasDispersion() && !hero.active) {
+        mxcpp::SurfaceClosure causticPrunedClosure;
+        const mxcpp::SurfaceClosure* bsdfClosure =
+            hasClosure ? &closure : nullptr;
+        bool hasBsdfClosure = hasClosure;
+        if (hasClosure && hasDiffuseLikeAncestor && !_enableCaustics) {
+            causticPrunedClosure =
+                mxcpp::Bsdf::PruneCausticClassLobes(closure);
+            // A tree-based material can prune down to no remaining BSDF
+            // lobes. Keep the material closure for emission/opacity state,
+            // but do not fall back to the legacy summary BSDF in that case.
+            if (closure.HasBsdfTree() && !causticPrunedClosure.HasBsdfTree()) {
+                bsdfClosure = nullptr;
+                hasBsdfClosure = false;
+            } else {
+                bsdfClosure = &causticPrunedClosure;
+            }
+        }
+
+        if (hasBsdfClosure && bsdfClosure->HasDispersion() && !hero.active) {
             hero.active = true;
             hero.wavelengthNm =
                 mxcpp::Spectral::SampleHeroWavelength(
@@ -4396,16 +4414,16 @@ HdEmbreeRenderer::_TracePath(
             : normal;
 
         mxcpp::AdobeOpenPbrPreparedSurface adobeOpenPbrSurface;
-        if (hasClosure) {
+        if (hasBsdfClosure) {
             adobeOpenPbrSurface = mxcpp::PrepareAdobeOpenPbrSurface(
-                closure,
+                *bsdfClosure,
                 _ToMx(bsdfNormal),
                 _ToMx(wo));
         }
 
         mxcpp::Bsdf::BsdfSample bs;
         bool hasBsdfSample = false;
-        if (hasClosure && bounce < _maxBounces) {
+        if (hasBsdfClosure && bounce < _maxBounces) {
             const GfVec3f bsdfSample =
                 bounceDomain
                     .Fork(HdEmbreeSampleDomainKey::BsdfSample)
@@ -4418,17 +4436,17 @@ HdEmbreeRenderer::_TracePath(
                     bsdfSample[2]);
             } else {
                 bs = mxcpp::Bsdf::SampleSurface(
-                    closure, _ToMx(bsdfNormal), _ToMx(wo),
+                    *bsdfClosure, _ToMx(bsdfNormal), _ToMx(wo),
                     bsdfSample[0], bsdfSample[1], bsdfSample[2],
                     hero.wavelengthNm);
             }
             hasBsdfSample = bs.isSubsurface || bs.pdf > 0.0f;
         }
 
-        if (hasClosure &&
+        if (hasBsdfClosure &&
             hasBsdfSample &&
             bs.isSubsurface &&
-            closure.HasSubsurfaceScattering() &&
+            bsdfClosure->HasSubsurfaceScattering() &&
             mesh) {
 
             // Entry direction from BSDF (GGX VNDF refraction via specular
@@ -4450,7 +4468,7 @@ HdEmbreeRenderer::_TracePath(
                         .Fork(HdEmbreeSampleDomainKey::SssEntryDirection)
                         .Draw2D();
                 if (!mxcpp::Bsdf::SampleSubsurfaceEntry(
-                        closure, _ToMx(normal), _ToMx(wo),
+                        *bsdfClosure, _ToMx(normal), _ToMx(wo),
                         entrySample[0], entrySample[1], entryDirMx)) {
                     break;
                 }
@@ -4499,24 +4517,24 @@ HdEmbreeRenderer::_TracePath(
             sssIn.entryPos = hitPos;
             sssIn.entryGeomNormal = normal;
             sssIn.entryDir = entryDir;
-            sssIn.albedo = _ToGf(closure.subsurfaceColor);
-            sssIn.radius = GfCompMult(_ToGf(closure.subsurfaceRadius),
-                                      _ToGf(closure.subsurfaceRadiusScale));
+            sssIn.albedo = _ToGf(bsdfClosure->subsurfaceColor);
+            sssIn.radius = GfCompMult(_ToGf(bsdfClosure->subsurfaceRadius),
+                                      _ToGf(bsdfClosure->subsurfaceRadiusScale));
             sssIn.anisotropy =
-                std::clamp(closure.subsurfaceAnisotropy, -0.99f, 0.99f);
-            if (closure.hasPrecomputedSubsurfaceMedium &&
-                !closure.precomputedSubsurfaceMedium.IsVacuum()) {
+                std::clamp(bsdfClosure->subsurfaceAnisotropy, -0.99f, 0.99f);
+            if (bsdfClosure->hasPrecomputedSubsurfaceMedium &&
+                !bsdfClosure->precomputedSubsurfaceMedium.IsVacuum()) {
                 sssIn.usePrecomputedCoefficients = true;
                 sssIn.precomputedSigmaA =
-                    _ToGf(closure.precomputedSubsurfaceMedium.sigmaA);
+                    _ToGf(bsdfClosure->precomputedSubsurfaceMedium.sigmaA);
                 sssIn.precomputedSigmaS =
-                    _ToGf(closure.precomputedSubsurfaceMedium.sigmaS);
+                    _ToGf(bsdfClosure->precomputedSubsurfaceMedium.sigmaS);
                 sssIn.anisotropy = std::clamp(
-                    closure.precomputedSubsurfaceMedium.anisotropy,
+                    bsdfClosure->precomputedSubsurfaceMedium.anisotropy,
                     -0.99f,
                     0.99f);
             }
-            sssIn.ior = std::max(closure.specularIor, 1.0f);
+            sssIn.ior = std::max(bsdfClosure->specularIor, 1.0f);
             sssIn.ownerInstanceId = rayHit.hit.instID[0];
             sssIn.ownerGeomId = rayHit.hit.geomID;
             sssIn.ownerScene = instanceContext->rootScene;
@@ -4607,7 +4625,7 @@ HdEmbreeRenderer::_TracePath(
 
         // --- Direct lighting (NEE) with MIS ---
         GfVec3f direct(0.0f);
-        if (hasClosure) {
+        if (hasBsdfClosure) {
             direct = _ComputeDirectLightingMIS(
                 hitPos,
                 bsdfNormal,
@@ -4615,13 +4633,13 @@ HdEmbreeRenderer::_TracePath(
                 wo,
                 bounceDomain.Fork(HdEmbreeSampleDomainKey::DirectLighting),
                 doubleSided,
-                &closure,
+                bsdfClosure,
                 currentMedium,
                 hero.active,
                 hero.wavelengthNm,
                 hero.pdf,
                 adobeOpenPbrSurface.valid ? &adobeOpenPbrSurface : nullptr);
-        } else {
+        } else if (!hasClosure) {
             GfVec3f matColor = _enableSceneColors
                 ? _ToGf(ctx.displayColor) : GfVec3f(0.5f);
             mxcpp::SurfaceClosure fallback;
@@ -4655,7 +4673,7 @@ HdEmbreeRenderer::_TracePath(
         if (bounce >= _maxBounces) break;
 
         // --- BSDF sampling for next direction ---
-        if (!hasClosure || !hasBsdfSample || bs.isSubsurface) break;
+        if (!hasBsdfClosure || !hasBsdfSample || bs.isSubsurface) break;
 
         const GfVec3f wi = _ToGf(bs.wi);
         const float woDotNg = GfDot(wo, geometricNormal);
@@ -4665,6 +4683,10 @@ HdEmbreeRenderer::_TracePath(
             (woDotNg < 0.0f && wiDotNg > 0.0f);
         const bool sampledCausticEvent =
             hasDiffuseLikeAncestor && (bs.isSpecular || crossesBoundary);
+        // Closure pruning above should keep these events out of the sampling
+        // distribution when caustics are disabled. Keep this guard for cases
+        // that are only visible after sampling, such as normal-map boundary
+        // changes, backend-specific lobe labels, or future medium variants.
         if (sampledCausticEvent && !_enableCaustics) {
             break;
         }

@@ -179,6 +179,16 @@ namespace Bsdf
         const Vec3f& wo,
         float heroWavelengthNm = 0.0f);
 
+    /// Return a copy of `closure` with lobes that would be discarded by the
+    /// caustic-class path heuristic removed from the BSDF tree.
+    ///
+    /// This is intended for enableCaustics=false after a diffuse-like
+    /// ancestor. It removes transmission/boundary-crossing lobes and delta
+    /// reflection lobes while keeping diffuse, translucent, sheen, subsurface,
+    /// and rough reflection response available for sampling and NEE.
+    SurfaceClosure PruneCausticClassLobes(
+        const SurfaceClosure& closure);
+
     /// Sample a direction entering a subsurface medium using the surface's
     /// specular dielectric parameters (roughness + IOR).
     ///

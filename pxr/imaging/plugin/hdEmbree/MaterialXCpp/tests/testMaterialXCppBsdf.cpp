@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <functional>
+#include <variant>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -2128,6 +2129,214 @@ TestDeltaThinWalledDielectricInterfaceTransmitsStraightThrough()
 }
 
 static bool
+TestPruneCausticClassLobesRemovesDeltaReflectionFromAdd()
+{
+    Bsdf::ClosureTree tree;
+
+    Bsdf::OrenNayarDiffuseData diffuse;
+    diffuse.weight = 1.0f;
+    diffuse.color = Vec3f(0.8f);
+
+    Bsdf::ConductorData mirror;
+    mirror.weight = 1.0f;
+    mirror.roughness = Vec2f(0.0f, 0.0f);
+
+    Bsdf::AddData add;
+    add.in1 = tree.Add(diffuse);
+    add.in2 = tree.Add(mirror);
+    tree.root = tree.Add(add);
+
+    SurfaceClosure closure;
+    closure.bsdfTree = tree;
+    const SurfaceClosure pruned = Bsdf::PruneCausticClassLobes(closure);
+    if (!pruned.HasBsdfTree()) {
+        printf("    Pruned add closure unexpectedly became empty\n");
+        return false;
+    }
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo(0.0f, 1.0f, 0.0f);
+    const auto sample = Bsdf::SampleSurface(pruned, N, wo, 0.3f, 0.7f, 0.99f);
+    if (sample.pdf <= 0.0f || sample.isSpecular || !sample.isDiffuseLike) {
+        printf(
+            "    Expected remaining diffuse sample after pruning: "
+            "pdf=%f specular=%d diffuseLike=%d\n",
+            sample.pdf,
+            sample.isSpecular,
+            sample.isDiffuseLike);
+        return false;
+    }
+
+    return true;
+}
+
+static bool
+TestPruneCausticClassLobesRemovesInterfaceTransmission()
+{
+    SurfaceClosure closure;
+    Bsdf::DielectricInterfaceData interface;
+    interface.reflectionWeight = 1.0f;
+    interface.reflectionTint = Vec3f(1.0f);
+    interface.transmissionWeight = 1.0f;
+    interface.transmissionTint = Vec3f(0.7f, 0.9f, 1.0f);
+    interface.ior = 1.5f;
+    interface.roughness = Vec2f(0.25f, 0.25f);
+    closure.bsdfTree.root = closure.bsdfTree.Add(interface);
+
+    const SurfaceClosure pruned = Bsdf::PruneCausticClassLobes(closure);
+    if (!pruned.HasBsdfTree()) {
+        printf("    Rough interface reflection should remain after pruning\n");
+        return false;
+    }
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = Vec3f(0.2f, 0.98f, 0.0f).normalized();
+    const Vec3f wiReflect = Vec3f(-0.1f, 0.995f, 0.0f).normalized();
+    const Vec3f wiTransmit = Vec3f(-0.1f, -0.995f, 0.0f).normalized();
+
+    const Vec3f reflectEval = Bsdf::EvalSurface(pruned, N, wiReflect, wo);
+    const Vec3f transmitEval = Bsdf::EvalSurface(pruned, N, wiTransmit, wo);
+    if (reflectEval.length() <= 0.0f || transmitEval.length() > 1.0e-6f) {
+        printf(
+            "    Pruned interface eval mismatch: reflect=(%f,%f,%f) "
+            "transmit=(%f,%f,%f)\n",
+            reflectEval[0], reflectEval[1], reflectEval[2],
+            transmitEval[0], transmitEval[1], transmitEval[2]);
+        return false;
+    }
+
+    const auto sample = Bsdf::SampleSurface(
+        pruned, N, wo, 0.3f, 0.7f, 0.99f);
+    if (sample.pdf <= 0.0f || sample.isSpecular || Dot(sample.wi, N) <= 0.0f) {
+        printf(
+            "    Expected rough reflection sample after interface pruning: "
+            "pdf=%f specular=%d wi=(%f,%f,%f)\n",
+            sample.pdf,
+            sample.isSpecular,
+            sample.wi[0], sample.wi[1], sample.wi[2]);
+        return false;
+    }
+
+    return true;
+}
+
+static bool
+TestPruneCausticClassLobesEmptyTreeDoesNotUseLegacyFallback()
+{
+    SurfaceClosure closure;
+    closure.baseColor = Vec3f(0.9f, 0.2f, 0.1f);
+    closure.specular = 1.0f;
+    closure.transmission = 1.0f;
+
+    Bsdf::ConductorData mirror;
+    mirror.weight = 1.0f;
+    mirror.roughness = Vec2f(0.0f, 0.0f);
+    closure.bsdfTree.root = closure.bsdfTree.Add(mirror);
+
+    const SurfaceClosure pruned = Bsdf::PruneCausticClassLobes(closure);
+    if (pruned.HasBsdfTree()) {
+        printf("    Smooth mirror tree should be fully pruned\n");
+        return false;
+    }
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo(0.0f, 1.0f, 0.0f);
+    const Vec3f wi = Vec3f(0.25f, 0.9682458f, 0.0f).normalized();
+    const Vec3f eval = Bsdf::EvalSurface(pruned, N, wi, wo);
+    const auto sample = Bsdf::SampleSurface(pruned, N, wo, 0.3f, 0.7f, 0.2f);
+    if (eval.length() > 1.0e-6f || sample.pdf > 0.0f) {
+        printf(
+            "    Empty pruned tree fell back to legacy BSDF: "
+            "eval=(%f,%f,%f) pdf=%f\n",
+            eval[0], eval[1], eval[2], sample.pdf);
+        return false;
+    }
+
+    return true;
+}
+
+static bool
+TestPruneCausticClassLobesPreservesMixWeight()
+{
+    Bsdf::ClosureTree tree;
+
+    Bsdf::OrenNayarDiffuseData diffuse;
+    diffuse.weight = 1.0f;
+    diffuse.color = Vec3f(0.6f, 0.7f, 0.8f);
+
+    Bsdf::ConductorData mirror;
+    mirror.weight = 1.0f;
+    mirror.roughness = Vec2f(0.0f, 0.0f);
+
+    Bsdf::MixData mix;
+    mix.bg = tree.Add(diffuse);
+    mix.fg = tree.Add(mirror);
+    mix.mix = 0.75f;
+    tree.root = tree.Add(mix);
+
+    SurfaceClosure closure;
+    closure.bsdfTree = tree;
+    const SurfaceClosure pruned = Bsdf::PruneCausticClassLobes(closure);
+
+    SurfaceClosure diffuseOnly;
+    diffuseOnly.bsdfTree.root = diffuseOnly.bsdfTree.Add(diffuse);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo(0.0f, 1.0f, 0.0f);
+    const Vec3f wi = Vec3f(0.25f, 0.9682458f, 0.0f).normalized();
+
+    const Vec3f expected = Bsdf::EvalSurface(diffuseOnly, N, wi, wo) * 0.25f;
+    const Vec3f actual = Bsdf::EvalSurface(pruned, N, wi, wo);
+    if (!Test_IsClose(actual, expected, 1.0e-5f)) {
+        printf(
+            "    Pruned mix did not preserve surviving branch weight: "
+            "actual=(%f,%f,%f) expected=(%f,%f,%f)\n",
+            actual[0], actual[1], actual[2],
+            expected[0], expected[1], expected[2]);
+        return false;
+    }
+
+    return true;
+}
+
+static bool
+TestPruneCausticClassLobesPrunesAdobeTransmissionAndSmoothSpecular()
+{
+    Bsdf::AdobeOpenPbrData data;
+    data.baseWeight = 0.0f;
+    data.specularWeight = 1.0f;
+    data.specularRoughness = 0.0f;
+    data.coatWeight = 1.0f;
+    data.coatRoughness = 0.0f;
+    data.transmissionWeight = 1.0f;
+
+    SurfaceClosure closure;
+    closure.bsdfTree.root = closure.bsdfTree.Add(data);
+
+    const SurfaceClosure pruned = Bsdf::PruneCausticClassLobes(closure);
+    const Bsdf::Node* root = pruned.bsdfTree.Get(pruned.bsdfTree.root);
+    const auto* prunedData = root
+        ? std::get_if<Bsdf::AdobeOpenPbrData>(&root->data)
+        : nullptr;
+    if (!prunedData) {
+        printf("    Expected pruned Adobe OpenPBR backend node\n");
+        return false;
+    }
+    if (prunedData->transmissionWeight != 0.0f ||
+        prunedData->specularWeight != 0.0f ||
+        prunedData->coatWeight != 0.0f) {
+        printf(
+            "    Adobe pruning mismatch: transmission=%f specular=%f coat=%f\n",
+            prunedData->transmissionWeight,
+            prunedData->specularWeight,
+            prunedData->coatWeight);
+        return false;
+    }
+
+    return true;
+}
+
+static bool
 TestSampleGGXTransmissionHemisphere()
 {
     Vec3f N(0, 1, 0);
@@ -3167,6 +3376,11 @@ Test_RegisterBsdfTests()
     _REG(TestDeltaDielectricInterfaceTirDoesNotAmplifyThroughput);
     _REG(TestThinWalledDielectricInterfaceSamplePdfConsistency);
     _REG(TestDeltaThinWalledDielectricInterfaceTransmitsStraightThrough);
+    _REG(TestPruneCausticClassLobesRemovesDeltaReflectionFromAdd);
+    _REG(TestPruneCausticClassLobesRemovesInterfaceTransmission);
+    _REG(TestPruneCausticClassLobesEmptyTreeDoesNotUseLegacyFallback);
+    _REG(TestPruneCausticClassLobesPreservesMixWeight);
+    _REG(TestPruneCausticClassLobesPrunesAdobeTransmissionAndSmoothSpecular);
     _REG(TestSampleGGXTransmissionHemisphere);
     _REG(TestSampleGGXTransmissionPdfConsistency);
     _REG(TestRoughTransmissionSpreads);
