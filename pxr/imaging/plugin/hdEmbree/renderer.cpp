@@ -1010,28 +1010,41 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _inverseViewMatrix(1.0f) // == identity
     , _inverseProjMatrix(1.0f) // == identity
     , _scene(nullptr)
-    , _samplesToConvergence(0)
-    , _ambientOcclusionSamples(0)
-    , _enableSceneColors(false)
-    , _domeLightCameraVisibility(true)
-    , _enableLighting(false)
-    , _maxBounces(HdEmbreeDefaultMaxBounces)
-    , _minBouncesBeforeRR(HdEmbreeDefaultMinBouncesBeforeRR)
-    , _samplerSequence(HdEmbreeGetDefaultSamplerSequence(true))
-    , _enableAdaptiveSampling(HdEmbreeDefaultEnableAdaptiveSampling)
-    , _adaptiveThreshold(HdEmbreeDefaultAdaptiveThreshold)
-    , _minSamplesBeforeAdaptive(HdEmbreeDefaultMinSamplesBeforeAdaptive)
-    , _lightSamplesPerHit(HdEmbreeDefaultLightSamplesPerHit)
-    , _stratifyLightSamples(HdEmbreeDefaultStratifyLightSamples)
-    , _showAdaptiveHeatmap(HdEmbreeDefaultShowAdaptiveHeatmap)
-    , _fireflyClampThreshold(HdEmbreeDefaultFireflyClampThreshold)
-    , _enableCaustics(HdEmbreeDefaultEnableCaustics)
-    , _causticsClampThreshold(HdEmbreeDefaultCausticsClampThreshold)
-    , _approxTransparentShadows(HdEmbreeDefaultApproxTransparentShadows)
-    , _enableGgxMicrofacetMultipleScattering(true)
+    , _samplesToConvergence(
+        HdEmbreeConfig::GetInstance().samplesToConvergence)
+    , _ambientOcclusionSamples(
+        HdEmbreeConfig::GetInstance().enableAmbientOcclusion
+            ? HdEmbreeConfig::GetInstance().ambientOcclusionSamples
+            : 0)
+    , _enableSceneColors(HdEmbreeConfig::GetInstance().enableSceneColors)
+    , _domeLightCameraVisibility(
+        HdEmbreeConfig::GetInstance().domeLightCameraVisibility)
+    , _enableLighting(HdEmbreeConfig::GetInstance().enableLighting)
+    , _maxBounces(HdEmbreeConfig::GetInstance().maxBounces)
+    , _minBouncesBeforeRR(HdEmbreeConfig::GetInstance().minBouncesBeforeRR)
+    , _samplerSequence(HdEmbreeGetSamplerSequenceFromToken(
+        TfToken(HdEmbreeConfig::GetInstance().samplerSequence)))
+    , _enableAdaptiveSampling(
+        HdEmbreeConfig::GetInstance().enableAdaptiveSampling)
+    , _adaptiveThreshold(HdEmbreeConfig::GetInstance().adaptiveThreshold)
+    , _minSamplesBeforeAdaptive(
+        HdEmbreeConfig::GetInstance().minSamplesBeforeAdaptive)
+    , _lightSamplesPerHit(HdEmbreeConfig::GetInstance().lightSamplesPerHit)
+    , _stratifyLightSamples(
+        HdEmbreeConfig::GetInstance().stratifyLightSamples)
+    , _showAdaptiveHeatmap(HdEmbreeConfig::GetInstance().showAdaptiveHeatmap)
+    , _fireflyClampThreshold(
+        HdEmbreeConfig::GetInstance().fireflyClampThreshold)
+    , _enableCaustics(HdEmbreeConfig::GetInstance().enableCaustics)
+    , _causticsClampThreshold(
+        HdEmbreeConfig::GetInstance().causticsClampThreshold)
+    , _approxTransparentShadows(
+        HdEmbreeConfig::GetInstance().approxTransparentShadows)
+    , _enableGgxMicrofacetMultipleScattering(
+        HdEmbreeConfig::GetInstance().enableGgxMicrofacetMultipleScattering)
     , _dielectricLayerThroughputMode(
-        _tokensDielectricLayerThroughputModeBsdl)
-    , _useAdobeOpenPBR(false)
+        TfToken(HdEmbreeConfig::GetInstance().dielectricLayerThroughputMode))
+    , _useAdobeOpenPBR(HdEmbreeConfig::GetInstance().useAdobeOpenPBR)
     , _textureSystem(std::make_unique<HdEmbreeOiioTextureSystem>())
     , _sceneFrame(0.0f)
     , _sceneTime(0.0f)
@@ -1091,12 +1104,6 @@ void
 HdEmbreeRenderer::SetMinBouncesBeforeRR(int minBounces)
 {
     _minBouncesBeforeRR = minBounces;
-}
-
-void
-HdEmbreeRenderer::SetUseSobol(bool useSobol)
-{
-    _samplerSequence = HdEmbreeGetDefaultSamplerSequence(useSobol);
 }
 
 void

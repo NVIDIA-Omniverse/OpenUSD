@@ -4,34 +4,35 @@ When hdEmbree is built with `PXR_ENABLE_OPENQMC_SUPPORT=ON`, the plugin also
 links against OpenQMC. The `build_usd.py --embree` path installs OpenQMC
 `v0.7.1` automatically and enables this CMake option for the final USD build.
 
-The following settings can be configured via `renderSettings` (Hydra render delegate settings API) and/or environment variables.
+The following settings can be configured via `renderSettings` (Hydra render delegate settings API) and/or environment variables. Precedence is:
+built-in default < environment variable < USD `renderSettings` prim < Hydra renderer setting UI.
 
 | UI Name | Token | Type | Default | Environment Variable |
 |---------|-------|------|---------|---------------------|
-| Enable Scene Colors | `enableSceneColors` | `bool` | `true` | `HDEMBREE_USE_FACE_COLORS` |
-| Enable Scene Lighting | `enableLighting` | `bool` | `true` | `HDEMBREE_USE_LIGHTING` |
-| Enable Ambient Occlusion | `enableAmbientOcclusion` | `bool` | `false` | `HDEMBREE_AMBIENT_OCCLUSION_SAMPLES` |
+| Enable Scene Colors | `enableSceneColors` | `bool` | `true` | `HDEMBREE_ENABLE_SCENE_COLORS` |
+| Enable Scene Lighting | `enableLighting` | `bool` | `true` | `HDEMBREE_ENABLE_LIGHTING` |
+| Enable Ambient Occlusion | `enableAmbientOcclusion` | `bool` | `false` | `HDEMBREE_ENABLE_AMBIENT_OCCLUSION` |
 | Ambient Occlusion Samples | `ambientOcclusionSamples` | `int` | `0` | `HDEMBREE_AMBIENT_OCCLUSION_SAMPLES` |
 | Samples To Convergence | `convergedSamplesPerPixel` | `int` | `256` | `HDEMBREE_SAMPLES_TO_CONVERGENCE` |
 | Random Number Seed | `randomNumberSeed` | `int` | `-1` | `HDEMBREE_RANDOM_NUMBER_SEED` |
-| Sampler Sequence | `samplerSequence` | `token` | effective default: `openqmc_sobolbn` with OpenQMC, otherwise `sobol` | `HDEMBREE_USE_SOBOL` (default selection only) |
+| Sampler Sequence | `samplerSequence` | `string` | effective default: `openqmc_sobolbn` with OpenQMC, otherwise `sobol` | `HDEMBREE_SAMPLER_SEQUENCE` |
+| Dome Light Camera Visibility | `domeLightCameraVisibility` | `bool` | `true` | `HDEMBREE_DOME_LIGHT_CAMERA_VISIBILITY` |
 | Enable Adaptive Sampling | `enableAdaptiveSampling` | `bool` | `true` | `HDEMBREE_ENABLE_ADAPTIVE_SAMPLING` |
-| Adaptive Threshold | `adaptiveThreshold` | `float` | `0.01` | — |
-| Min Samples Before Adaptive | `minSamplesBeforeAdaptive` | `int` | `64` | — |
-| Max Bounces | `maxBounces` | `int` | `16` | — |
-| Min Bounces Before Russian Roulette | `minBouncesBeforeRR` | `int` | `2` | — |
+| Adaptive Threshold | `adaptiveThreshold` | `float` | `0.01` | `HDEMBREE_ADAPTIVE_THRESHOLD` |
+| Min Samples Before Adaptive | `minSamplesBeforeAdaptive` | `int` | `64` | `HDEMBREE_MIN_SAMPLES_BEFORE_ADAPTIVE` |
+| Max Bounces | `maxBounces` | `int` | `16` | `HDEMBREE_MAX_BOUNCES` |
+| Min Bounces Before Russian Roulette | `minBouncesBeforeRR` | `int` | `2` | `HDEMBREE_MIN_BOUNCES_BEFORE_RR` |
 | Light Samples Per Hit | `lightSamplesPerHit` | `int` | `1` | `HDEMBREE_LIGHT_SAMPLES_PER_HIT` |
 | Stratify Light Samples | `stratifyLightSamples` | `bool` | `true` | `HDEMBREE_STRATIFY_LIGHT_SAMPLES` |
-| Firefly Clamp Threshold | `fireflyClampThreshold` | `float` | `20.0` | — |
-| Enable Caustics | `enableCaustics` | `bool` | `false` | — |
-| Caustics Clamp Threshold | `causticsClampThreshold` | `float` | `5.0` | — |
-| Approximate Transparent Shadows | `approxTransparentShadows` | `bool` | `true` | — |
-
-In addition, the following Hydra built-in setting is forwarded:
-
-| Token | Type | Default | Notes |
-|-------|------|---------|-------|
-| `domeLightCameraVisibility` | `bool` | `true` | From `HdRenderSettingsTokens`; controls whether dome lights are directly visible to camera rays |
+| Show Adaptive Heatmap | `showAdaptiveHeatmap` | `bool` | `false` | `HDEMBREE_SHOW_ADAPTIVE_HEATMAP` |
+| Firefly Clamp Threshold | `fireflyClampThreshold` | `float` | `20.0` | `HDEMBREE_FIREFLY_CLAMP_THRESHOLD` |
+| Enable Caustics | `enableCaustics` | `bool` | `false` | `HDEMBREE_ENABLE_CAUSTICS` |
+| Caustics Clamp Threshold | `causticsClampThreshold` | `float` | `5.0` | `HDEMBREE_CAUSTICS_CLAMP_THRESHOLD` |
+| Approximate Transparent Shadows | `approxTransparentShadows` | `bool` | `true` | `HDEMBREE_APPROX_TRANSPARENT_SHADOWS` |
+| Enable GGX Microfacet Multiple Scattering | `enableGgxMicrofacetMultipleScattering` | `bool` | `true` | `HDEMBREE_ENABLE_GGX_MICROFACET_MULTIPLE_SCATTERING` |
+| Material Render Context | `materialRenderContext` | `string` | `mtlx` | `HDEMBREE_MATERIAL_RENDER_CONTEXT` |
+| Use Adobe OpenPBR | `useAdobeOpenPBR` | `bool` | `false` | `HDEMBREE_USE_ADOBE_OPENPBR` |
+| Dielectric Layer Throughput Mode | `dielectricLayerThroughputMode` | `string` | `bsdl` | `HDEMBREE_DIELECTRIC_LAYER_THROUGHPUT_MODE` |
 
 ## Setting Descriptions
 
@@ -39,7 +40,7 @@ In addition, the following Hydra built-in setting is forwarded:
 When enabled, the renderer evaluates direct lighting from scene lights (UsdLux-compliant area lights) using MIS-based path tracing. When disabled, falls back to ambient occlusion if that is enabled.
 
 ### Enable Ambient Occlusion (`enableAmbientOcclusion` / `ambientOcclusionSamples`)
-When scene lighting is disabled, ambient occlusion can be used instead. The number of AO rays per camera ray is controlled by `ambientOcclusionSamples`. Set to `0` to disable.
+When scene lighting is disabled, ambient occlusion can be used instead. The number of AO rays per camera ray is controlled by `ambientOcclusionSamples`. For compatibility with existing launches, `HDEMBREE_AMBIENT_OCCLUSION_SAMPLES` greater than `0` also enables ambient occlusion at startup. Set both `enableAmbientOcclusion` to `false` and `ambientOcclusionSamples` to `0` to disable.
 
 ### Sampler Sequence (`samplerSequence`)
 Selects the per-pixel sampler implementation. Supported values are:
@@ -53,11 +54,11 @@ Selects the per-pixel sampler implementation. Supported values are:
 - `openqmc_lattice`
 - `openqmc_latticebn`
 
-If `samplerSequence` is not authored, hdEmbree chooses `openqmc_sobolbn`
-when OpenQMC support is compiled in and `HDEMBREE_USE_SOBOL` remains enabled.
-Builds without OpenQMC support choose `sobol`; setting `HDEMBREE_USE_SOBOL=0`
-chooses `random`. If an `openqmc_*` sequence is requested without OpenQMC
-support compiled in, hdEmbree falls back to `sobol` and emits a warning.
+If `samplerSequence` is not authored and `HDEMBREE_SAMPLER_SEQUENCE` is empty,
+hdEmbree chooses `openqmc_sobolbn` when OpenQMC support is compiled in. Builds
+without OpenQMC support choose `sobol`. If an `openqmc_*` sequence is requested
+without OpenQMC support compiled in, hdEmbree falls back to `sobol` and emits a
+warning.
 
 Internally, sampling is domain-aware rather than a single mutable 1D stream.
 Each sampling decision, such as camera jitter, BSDF sampling, direct-light

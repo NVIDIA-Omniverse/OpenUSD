@@ -61,12 +61,6 @@ TestDomainKeyValuesAreStable()
 bool
 TestDefaultSamplerSequence()
 {
-    if (HdEmbreeGetDefaultSamplerSequence(false) !=
-        HdEmbreeSamplerSequence::Random) {
-        std::printf("    disabled Sobol default did not choose random\n");
-        return false;
-    }
-
 #if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
     const HdEmbreeSamplerSequence expected =
         HdEmbreeSamplerSequence::OpenQMCSobolBN;
@@ -74,8 +68,8 @@ TestDefaultSamplerSequence()
     const HdEmbreeSamplerSequence expected = HdEmbreeSamplerSequence::Sobol;
 #endif
 
-    if (HdEmbreeGetDefaultSamplerSequence(true) != expected) {
-        std::printf("    enabled Sobol default chose the wrong sequence\n");
+    if (HdEmbreeGetDefaultSamplerSequence() != expected) {
+        std::printf("    default sampler sequence was unexpected\n");
         return false;
     }
 

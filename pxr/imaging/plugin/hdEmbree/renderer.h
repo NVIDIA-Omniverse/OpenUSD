@@ -157,9 +157,6 @@ public:
     void SetMaxBounces(int maxBounces);
     void SetMinBouncesBeforeRR(int minBounces);
 
-    /// Legacy compatibility shim for selecting sobol vs random.
-    void SetUseSobol(bool useSobol);
-
     /// Set the sampler sequence used for per-pixel sample generation.
     void SetSamplerSequence(HdEmbreeSamplerSequence sequence);
 

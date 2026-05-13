@@ -35,13 +35,10 @@ TF_DEFINE_PUBLIC_TOKENS(HdEmbreeAovTokens, HDEMBREE_AOV_TOKENS);
 
 static const TfToken _enableGgxMicrofacetMultipleScatteringToken(
     "enableGgxMicrofacetMultipleScattering", TfToken::Immortal);
-static const TfToken _dielectricLayerThroughputModeBsdlToken(
-    "bsdl", TfToken::Immortal);
 static const TfToken _materialRenderContextMtlxToken(
     "mtlx", TfToken::Immortal);
 static const TfToken _materialRenderContextDefaultToken(
     "default", TfToken::Immortal);
-static const std::string _materialRenderContextMtlxString("mtlx");
 
 static std::string
 _GetMaterialRenderContextSetting(const HdRenderDelegate& renderDelegate)
@@ -54,7 +51,7 @@ _GetMaterialRenderContextSetting(const HdRenderDelegate& renderDelegate)
     if (value.IsHolding<TfToken>()) {
         return value.UncheckedGet<TfToken>().GetString();
     }
-    return _materialRenderContextMtlxString;
+    return HdEmbreeConfig::GetInstance().materialRenderContext;
 }
 
 const TfTokenVector HdEmbreeRenderDelegate::SUPPORTED_RPRIM_TYPES =
@@ -137,78 +134,81 @@ void
 HdEmbreeRenderDelegate::_Initialize()
 {
     // Initialize the settings and settings descriptors.
-    _settingDescriptors.resize(23);
-    _settingDescriptors[0] = { "Enable Scene Colors",
-        HdEmbreeRenderSettingsTokens->enableSceneColors,
-        VtValue(HdEmbreeConfig::GetInstance().useFaceColors) };
-    _settingDescriptors[1] = { "Enable Ambient Occlusion",
-        HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
-        VtValue(HdEmbreeConfig::GetInstance().ambientOcclusionSamples > 0) };
-    _settingDescriptors[2] = { "Enable Scene Lighting",
-        HdEmbreeRenderSettingsTokens->enableLighting,
-        VtValue(HdEmbreeConfig::GetInstance().useLighting) };
-    _settingDescriptors[3] = { "Ambient Occlusion Samples",
-        HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
-        VtValue(int(HdEmbreeConfig::GetInstance().ambientOcclusionSamples)) };
-    _settingDescriptors[4] = { "Samples To Convergence",
-        HdRenderSettingsTokens->convergedSamplesPerPixel,
-        VtValue(int(HdEmbreeConfig::GetInstance().samplesToConvergence)) };
-    _settingDescriptors[5] = { "Random Number Seed",
-        HdEmbreeRenderSettingsTokens->randomNumberSeed,
-        VtValue(HdEmbreeConfig::GetInstance().randomNumberSeed) };
-    _settingDescriptors[6] = { "Sampler Sequence",
-        HdEmbreeRenderSettingsTokens->samplerSequence,
-        VtValue(HdEmbreeGetSamplerSequenceToken(
-            HdEmbreeGetDefaultSamplerSequence(
-                HdEmbreeConfig::GetInstance().useSobol))) };
-    _settingDescriptors[7] = { "Enable Adaptive Sampling",
-        HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
-        VtValue(HdEmbreeConfig::GetInstance().enableAdaptiveSampling) };
-    _settingDescriptors[8] = { "Adaptive Threshold",
-        HdEmbreeRenderSettingsTokens->adaptiveThreshold,
-        VtValue(HdEmbreeConfig::GetInstance().adaptiveThreshold) };
-    _settingDescriptors[9] = { "Min Samples Before Adaptive",
-        HdEmbreeRenderSettingsTokens->minSamplesBeforeAdaptive,
-        VtValue(HdEmbreeConfig::GetInstance().minSamplesBeforeAdaptive) };
-    _settingDescriptors[10] = { "Max Bounces",
-        HdEmbreeRenderSettingsTokens->maxBounces,
-        VtValue(int(HdEmbreeDefaultMaxBounces)) };
-    _settingDescriptors[11] = { "Min Bounces Before Russian Roulette",
-        HdEmbreeRenderSettingsTokens->minBouncesBeforeRR,
-        VtValue(int(HdEmbreeDefaultMinBouncesBeforeRR)) };
-    _settingDescriptors[12] = { "Light Samples Per Hit",
-        HdEmbreeRenderSettingsTokens->lightSamplesPerHit,
-        VtValue(int(HdEmbreeConfig::GetInstance().lightSamplesPerHit)) };
-    _settingDescriptors[13] = { "Stratify Light Samples",
-        HdEmbreeRenderSettingsTokens->stratifyLightSamples,
-        VtValue(HdEmbreeConfig::GetInstance().stratifyLightSamples) };
-    _settingDescriptors[14] = { "Show Adaptive Heatmap",
-        HdEmbreeRenderSettingsTokens->showAdaptiveHeatmap,
-        VtValue(HdEmbreeDefaultShowAdaptiveHeatmap) };
-    _settingDescriptors[15] = { "Firefly Clamp Threshold",
-        HdEmbreeRenderSettingsTokens->fireflyClampThreshold,
-        VtValue(HdEmbreeDefaultFireflyClampThreshold) };
-    _settingDescriptors[16] = { "Enable Caustics",
-        HdEmbreeRenderSettingsTokens->enableCaustics,
-        VtValue(HdEmbreeDefaultEnableCaustics) };
-    _settingDescriptors[17] = { "Caustics Clamp Threshold",
-        HdEmbreeRenderSettingsTokens->causticsClampThreshold,
-        VtValue(HdEmbreeDefaultCausticsClampThreshold) };
-    _settingDescriptors[18] = { "Approximate Transparent Shadows",
-        HdEmbreeRenderSettingsTokens->approxTransparentShadows,
-        VtValue(HdEmbreeDefaultApproxTransparentShadows) };
-    _settingDescriptors[19] = { "Enable GGX Microfacet Multiple Scattering",
-        _enableGgxMicrofacetMultipleScatteringToken,
-        VtValue(true) };
-    _settingDescriptors[20] = { "Material Render Context",
-        HdEmbreeRenderSettingsTokens->materialRenderContext,
-        VtValue(_materialRenderContextMtlxString) };
-    _settingDescriptors[21] = { "Use Adobe OpenPBR",
-        HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
-        VtValue(false) };
-    _settingDescriptors[22] = { "Dielectric Layer Throughput Mode",
-        HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
-        VtValue(_dielectricLayerThroughputModeBsdlToken) };
+    const HdEmbreeConfig &config = HdEmbreeConfig::GetInstance();
+    _settingDescriptors = {
+        { "Enable Scene Colors",
+            HdEmbreeRenderSettingsTokens->enableSceneColors,
+            VtValue(config.enableSceneColors) },
+        { "Enable Ambient Occlusion",
+            HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
+            VtValue(config.enableAmbientOcclusion) },
+        { "Enable Scene Lighting",
+            HdEmbreeRenderSettingsTokens->enableLighting,
+            VtValue(config.enableLighting) },
+        { "Ambient Occlusion Samples",
+            HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
+            VtValue(int(config.ambientOcclusionSamples)) },
+        { "Samples To Convergence",
+            HdRenderSettingsTokens->convergedSamplesPerPixel,
+            VtValue(int(config.samplesToConvergence)) },
+        { "Random Number Seed",
+            HdEmbreeRenderSettingsTokens->randomNumberSeed,
+            VtValue(config.randomNumberSeed) },
+        { "Sampler Sequence",
+            HdEmbreeRenderSettingsTokens->samplerSequence,
+            VtValue(config.samplerSequence) },
+        { "Dome Light Camera Visibility",
+            HdRenderSettingsTokens->domeLightCameraVisibility,
+            VtValue(config.domeLightCameraVisibility) },
+        { "Enable Adaptive Sampling",
+            HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
+            VtValue(config.enableAdaptiveSampling) },
+        { "Adaptive Threshold",
+            HdEmbreeRenderSettingsTokens->adaptiveThreshold,
+            VtValue(config.adaptiveThreshold) },
+        { "Min Samples Before Adaptive",
+            HdEmbreeRenderSettingsTokens->minSamplesBeforeAdaptive,
+            VtValue(config.minSamplesBeforeAdaptive) },
+        { "Max Bounces",
+            HdEmbreeRenderSettingsTokens->maxBounces,
+            VtValue(config.maxBounces) },
+        { "Min Bounces Before Russian Roulette",
+            HdEmbreeRenderSettingsTokens->minBouncesBeforeRR,
+            VtValue(config.minBouncesBeforeRR) },
+        { "Light Samples Per Hit",
+            HdEmbreeRenderSettingsTokens->lightSamplesPerHit,
+            VtValue(config.lightSamplesPerHit) },
+        { "Stratify Light Samples",
+            HdEmbreeRenderSettingsTokens->stratifyLightSamples,
+            VtValue(config.stratifyLightSamples) },
+        { "Show Adaptive Heatmap",
+            HdEmbreeRenderSettingsTokens->showAdaptiveHeatmap,
+            VtValue(config.showAdaptiveHeatmap) },
+        { "Firefly Clamp Threshold",
+            HdEmbreeRenderSettingsTokens->fireflyClampThreshold,
+            VtValue(config.fireflyClampThreshold) },
+        { "Enable Caustics",
+            HdEmbreeRenderSettingsTokens->enableCaustics,
+            VtValue(config.enableCaustics) },
+        { "Caustics Clamp Threshold",
+            HdEmbreeRenderSettingsTokens->causticsClampThreshold,
+            VtValue(config.causticsClampThreshold) },
+        { "Approximate Transparent Shadows",
+            HdEmbreeRenderSettingsTokens->approxTransparentShadows,
+            VtValue(config.approxTransparentShadows) },
+        { "Enable GGX Microfacet Multiple Scattering",
+            _enableGgxMicrofacetMultipleScatteringToken,
+            VtValue(config.enableGgxMicrofacetMultipleScattering) },
+        { "Material Render Context",
+            HdEmbreeRenderSettingsTokens->materialRenderContext,
+            VtValue(config.materialRenderContext) },
+        { "Use Adobe OpenPBR",
+            HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
+            VtValue(config.useAdobeOpenPBR) },
+        { "Dielectric Layer Throughput Mode",
+            HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
+            VtValue(config.dielectricLayerThroughputMode) },
+    };
     _PopulateDefaultSettings(_settingDescriptors);
 
     // Initialize the embree library handle (_rtcDevice).

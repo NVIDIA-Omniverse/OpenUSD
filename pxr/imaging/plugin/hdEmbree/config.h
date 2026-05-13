@@ -10,6 +10,8 @@
 #include "pxr/pxr.h"
 #include "pxr/base/tf/singleton.h"
 
+#include <string>
+
 PXR_NAMESPACE_OPEN_SCOPE
 
 // NOTE: types here restricted to bool/int/string, as also used for
@@ -17,14 +19,16 @@ PXR_NAMESPACE_OPEN_SCOPE
 constexpr int HdEmbreeDefaultSamplesToConvergence = 256;
 constexpr int HdEmbreeDefaultTileSize = 8;
 constexpr int HdEmbreeDefaultAmbientOcclusionSamples = 0;
+constexpr bool HdEmbreeDefaultEnableAmbientOcclusion =
+    HdEmbreeDefaultAmbientOcclusionSamples > 0;
 constexpr bool HdEmbreeDefaultJitterCamera = true;
-constexpr bool HdEmbreeDefaultUseFaceColors = true;
+constexpr bool HdEmbreeDefaultEnableSceneColors = true;
 constexpr int HdEmbreeDefaultCameraLightIntensity = 300;
 constexpr int HdEmbreeDefaultRandomNumberSeed = -1;
-constexpr bool HdEmbreeDefaultUseLighting = true;
+constexpr bool HdEmbreeDefaultEnableLighting = true;
 constexpr int HdEmbreeDefaultMaxBounces = 16;
 constexpr int HdEmbreeDefaultMinBouncesBeforeRR = 2;
-constexpr bool HdEmbreeDefaultUseSobol = true;
+constexpr bool HdEmbreeDefaultDomeLightCameraVisibility = true;
 constexpr bool HdEmbreeDefaultEnableAdaptiveSampling = true;
 constexpr float HdEmbreeDefaultAdaptiveThreshold = 0.01f;
 constexpr int HdEmbreeDefaultMinSamplesBeforeAdaptive = 64;
@@ -35,6 +39,10 @@ constexpr float HdEmbreeDefaultFireflyClampThreshold = 20.0f;
 constexpr bool HdEmbreeDefaultEnableCaustics = false;
 constexpr float HdEmbreeDefaultCausticsClampThreshold = 5.0f;
 constexpr bool HdEmbreeDefaultApproxTransparentShadows = true;
+constexpr bool HdEmbreeDefaultEnableGgxMicrofacetMultipleScattering = true;
+constexpr char HdEmbreeDefaultMaterialRenderContext[] = "mtlx";
+constexpr bool HdEmbreeDefaultUseAdobeOpenPBR = false;
+constexpr char HdEmbreeDefaultDielectricLayerThroughputMode[] = "bsdl";
 
 /// \class HdEmbreeConfig
 ///
@@ -73,6 +81,12 @@ public:
     /// Override with *HDEMBREE_AMBIENT_OCCLUSION_SAMPLES*.
     unsigned int ambientOcclusionSamples = HdEmbreeDefaultAmbientOcclusionSamples;
 
+    /// Should the renderpass use ambient occlusion when scene lighting is
+    /// disabled?
+    ///
+    /// Override with *HDEMBREE_ENABLE_AMBIENT_OCCLUSION*.
+    bool enableAmbientOcclusion = HdEmbreeDefaultEnableAmbientOcclusion;
+
     /// Should the renderpass jitter camera rays for antialiasing?
     ///
     /// Override with *HDEMBREE_JITTER_CAMERA*. The case-insensitive strings
@@ -83,10 +97,8 @@ public:
     /// Should the renderpass use the color primvar, or flat white colors?
     /// (Flat white shows off ambient occlusion better).
     ///
-    /// Override with *HDEMBREE_USE_FACE_COLORS*.  The case-insensitive strings
-    /// "true", "yes", "on", and "1" are considered true; an empty value uses
-    /// the default, and all other values are false.
-    bool useFaceColors = HdEmbreeDefaultUseFaceColors;
+    /// Override with *HDEMBREE_ENABLE_SCENE_COLORS*.
+    bool enableSceneColors = HdEmbreeDefaultEnableSceneColors;
 
     /// What should the intensity of the camera light be, specified as a
     /// percent of <1, 1, 1>.  For example, 300 would be <3, 3, 3>.
@@ -108,14 +120,18 @@ public:
     /// enabled, the renderer will choose scene lights rather than ambient
     /// occlusion.
     ///
-    /// Override with *HDEMBREE_USE_LIGHTING*.
-    bool useLighting = HdEmbreeDefaultUseLighting;
+    /// Override with *HDEMBREE_ENABLE_LIGHTING*.
+    bool enableLighting = HdEmbreeDefaultEnableLighting;
 
-    /// Should we use the Sobol quasi-random sampler? When false, a simple
-    /// hash-based pseudo-random sampler is used instead.
+    /// Sampler sequence token name. If *HDEMBREE_SAMPLER_SEQUENCE* is empty,
+    /// this is derived from the build's OpenQMC support.
+    std::string samplerSequence;
+
+    /// Whether dome lights are directly visible to camera rays.
     ///
-    /// Override with *HDEMBREE_USE_SOBOL*.
-    bool useSobol = HdEmbreeDefaultUseSobol;
+    /// Override with *HDEMBREE_DOME_LIGHT_CAMERA_VISIBILITY*.
+    bool domeLightCameraVisibility =
+        HdEmbreeDefaultDomeLightCameraVisibility;
 
     /// Should we use adaptive sampling to skip converged pixels?
     ///
@@ -141,6 +157,65 @@ public:
     ///
     /// Override with *HDEMBREE_STRATIFY_LIGHT_SAMPLES*.
     bool stratifyLightSamples = HdEmbreeDefaultStratifyLightSamples;
+
+    /// Maximum number of indirect light bounces.
+    ///
+    /// Override with *HDEMBREE_MAX_BOUNCES*.
+    int maxBounces = HdEmbreeDefaultMaxBounces;
+
+    /// Minimum number of bounces before Russian Roulette termination.
+    ///
+    /// Override with *HDEMBREE_MIN_BOUNCES_BEFORE_RR*.
+    int minBouncesBeforeRR = HdEmbreeDefaultMinBouncesBeforeRR;
+
+    /// Visualize adaptive sampling convergence as a heatmap.
+    ///
+    /// Override with *HDEMBREE_SHOW_ADAPTIVE_HEATMAP*.
+    bool showAdaptiveHeatmap = HdEmbreeDefaultShowAdaptiveHeatmap;
+
+    /// Clamp threshold for bright non-caustic path contributions.
+    ///
+    /// Override with *HDEMBREE_FIREFLY_CLAMP_THRESHOLD*.
+    float fireflyClampThreshold = HdEmbreeDefaultFireflyClampThreshold;
+
+    /// Whether indirect caustic paths are enabled.
+    ///
+    /// Override with *HDEMBREE_ENABLE_CAUSTICS*.
+    bool enableCaustics = HdEmbreeDefaultEnableCaustics;
+
+    /// Clamp threshold for caustic path contributions.
+    ///
+    /// Override with *HDEMBREE_CAUSTICS_CLAMP_THRESHOLD*.
+    float causticsClampThreshold = HdEmbreeDefaultCausticsClampThreshold;
+
+    /// Whether transparent shadows are approximated.
+    ///
+    /// Override with *HDEMBREE_APPROX_TRANSPARENT_SHADOWS*.
+    bool approxTransparentShadows =
+        HdEmbreeDefaultApproxTransparentShadows;
+
+    /// Whether rough dielectric GGX uses multiple scattering compensation.
+    ///
+    /// Override with *HDEMBREE_ENABLE_GGX_MICROFACET_MULTIPLE_SCATTERING*.
+    bool enableGgxMicrofacetMultipleScattering =
+        HdEmbreeDefaultEnableGgxMicrofacetMultipleScattering;
+
+    /// Material render context priority.
+    ///
+    /// Override with *HDEMBREE_MATERIAL_RENDER_CONTEXT*.
+    std::string materialRenderContext =
+        HdEmbreeDefaultMaterialRenderContext;
+
+    /// Whether the Adobe OpenPBR BSDF is used for OpenPBR Surface.
+    ///
+    /// Override with *HDEMBREE_USE_ADOBE_OPENPBR*.
+    bool useAdobeOpenPBR = HdEmbreeDefaultUseAdobeOpenPBR;
+
+    /// Throughput implementation for dielectric layer evaluation.
+    ///
+    /// Override with *HDEMBREE_DIELECTRIC_LAYER_THROUGHPUT_MODE*.
+    std::string dielectricLayerThroughputMode =
+        HdEmbreeDefaultDielectricLayerThroughputMode;
 
 private:
     // The constructor initializes the config variables with their

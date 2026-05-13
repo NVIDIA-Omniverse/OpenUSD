@@ -437,12 +437,8 @@ HdEmbreeSamplerSequenceIsSupported(HdEmbreeSamplerSequence sequence)
 }
 
 inline HdEmbreeSamplerSequence
-HdEmbreeGetDefaultSamplerSequence(bool useSobol)
+HdEmbreeGetDefaultSamplerSequence()
 {
-    if (!useSobol) {
-        return HdEmbreeSamplerSequence::Random;
-    }
-
 #if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
     return HdEmbreeSamplerSequence::OpenQMCSobolBN;
 #else

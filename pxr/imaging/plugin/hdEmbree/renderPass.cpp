@@ -16,8 +16,25 @@
 #include "pxr/base/tf/diagnostic.h"
 
 #include <cmath>
+#include <string>
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+static TfToken
+_GetTokenRenderSetting(
+    HdRenderDelegate const *renderDelegate,
+    TfToken const &key,
+    TfToken const &defaultValue)
+{
+    const VtValue value = renderDelegate->GetRenderSetting(key);
+    if (value.IsHolding<TfToken>()) {
+        return value.UncheckedGet<TfToken>();
+    }
+    if (value.IsHolding<std::string>()) {
+        return TfToken(value.UncheckedGet<std::string>());
+    }
+    return defaultValue;
+}
 
 HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
                                        HdRprimCollection const &collection,
@@ -258,13 +275,17 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             materialRenderContextsChanged = true;
         }
 
+        const HdEmbreeConfig &config = HdEmbreeConfig::GetInstance();
+
         _renderer->SetSamplesToConvergence(
             renderDelegate->GetRenderSetting<int>(
-                HdRenderSettingsTokens->convergedSamplesPerPixel, 1));
+                HdRenderSettingsTokens->convergedSamplesPerPixel,
+                config.samplesToConvergence));
 
         bool enableLighting =
             renderDelegate->GetRenderSetting<bool>(
-                HdEmbreeRenderSettingsTokens->enableLighting, false);
+                HdEmbreeRenderSettingsTokens->enableLighting,
+                config.enableLighting);
         if (enableLighting) {
             _renderer->SetEnableLighting(true);
             _renderer->SetAmbientOcclusionSamples(0);
@@ -273,12 +294,12 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             bool enableAmbientOcclusion =
                 renderDelegate->GetRenderSetting<bool>(
                     HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
-                    false);
+                    config.enableAmbientOcclusion);
             if (enableAmbientOcclusion) {
                 _renderer->SetAmbientOcclusionSamples(
                     renderDelegate->GetRenderSetting<int>(
                         HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
-                        0));
+                        config.ambientOcclusionSamples));
             } else {
                 _renderer->SetAmbientOcclusionSamples(0);
             }
@@ -286,25 +307,34 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
         _renderer->SetDomeLightCameraVisibility(
             renderDelegate->GetRenderSetting<bool>(
-                HdRenderSettingsTokens->domeLightCameraVisibility, true));
+                HdRenderSettingsTokens->domeLightCameraVisibility,
+                config.domeLightCameraVisibility));
 
         _renderer->SetEnableSceneColors(
             renderDelegate->GetRenderSetting<bool>(
-                HdEmbreeRenderSettingsTokens->enableSceneColors, true));
+                HdEmbreeRenderSettingsTokens->enableSceneColors,
+                config.enableSceneColors));
 
         _renderer->SetRandomNumberSeed(
-            renderDelegate->GetRenderSetting<unsigned int>(
-                HdEmbreeRenderSettingsTokens->randomNumberSeed, (unsigned int)-1));
+            renderDelegate->GetRenderSetting<int>(
+                HdEmbreeRenderSettingsTokens->randomNumberSeed,
+                config.randomNumberSeed));
 
-        const HdEmbreeSamplerSequence defaultSamplerSequence =
-            HdEmbreeGetDefaultSamplerSequence(
-                HdEmbreeConfig::GetInstance().useSobol);
-        const TfToken defaultSamplerSequenceToken =
+        HdEmbreeSamplerSequence defaultSamplerSequence =
+            HdEmbreeGetSamplerSequenceFromToken(TfToken(config.samplerSequence));
+        TfToken defaultSamplerSequenceToken =
             HdEmbreeGetSamplerSequenceToken(defaultSamplerSequence);
-        TfToken samplerSequenceToken =
-            renderDelegate->GetRenderSetting<TfToken>(
-                HdEmbreeRenderSettingsTokens->samplerSequence,
-                defaultSamplerSequenceToken);
+        if (defaultSamplerSequenceToken != TfToken(config.samplerSequence) ||
+            !HdEmbreeSamplerSequenceIsSupported(defaultSamplerSequence)) {
+            defaultSamplerSequence =
+                HdEmbreeGetDefaultSamplerSequence();
+            defaultSamplerSequenceToken =
+                HdEmbreeGetSamplerSequenceToken(defaultSamplerSequence);
+        }
+        TfToken samplerSequenceToken = _GetTokenRenderSetting(
+            renderDelegate,
+            HdEmbreeRenderSettingsTokens->samplerSequence,
+            defaultSamplerSequenceToken);
         HdEmbreeSamplerSequence samplerSequence =
             HdEmbreeGetSamplerSequenceFromToken(samplerSequenceToken);
         if (HdEmbreeGetSamplerSequenceToken(samplerSequence) !=
@@ -317,7 +347,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         }
         if (!HdEmbreeSamplerSequenceIsSupported(samplerSequence)) {
             const HdEmbreeSamplerSequence fallbackSamplerSequence =
-                HdEmbreeGetDefaultSamplerSequence(true);
+                HdEmbreeGetDefaultSamplerSequence();
             const TfToken fallbackSamplerSequenceToken =
                 HdEmbreeGetSamplerSequenceToken(fallbackSamplerSequence);
             TF_WARN("hdEmbree sampler sequence '%s' requires OpenQMC support; "
@@ -331,67 +361,66 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         _renderer->SetEnableAdaptiveSampling(
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
-                HdEmbreeConfig::GetInstance().enableAdaptiveSampling));
+                config.enableAdaptiveSampling));
         _renderer->SetAdaptiveThreshold(
             renderDelegate->GetRenderSetting<float>(
                 HdEmbreeRenderSettingsTokens->adaptiveThreshold,
-                HdEmbreeConfig::GetInstance().adaptiveThreshold));
+                config.adaptiveThreshold));
         _renderer->SetMinSamplesBeforeAdaptive(
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->minSamplesBeforeAdaptive,
-                HdEmbreeConfig::GetInstance().minSamplesBeforeAdaptive));
+                config.minSamplesBeforeAdaptive));
         _renderer->SetMaxBounces(
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->maxBounces,
-                HdEmbreeDefaultMaxBounces));
+                config.maxBounces));
         _renderer->SetMinBouncesBeforeRR(
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->minBouncesBeforeRR,
-                HdEmbreeDefaultMinBouncesBeforeRR));
+                config.minBouncesBeforeRR));
         _renderer->SetLightSamplesPerHit(
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->lightSamplesPerHit,
-                HdEmbreeConfig::GetInstance().lightSamplesPerHit));
+                config.lightSamplesPerHit));
         _renderer->SetStratifyLightSamples(
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->stratifyLightSamples,
-                HdEmbreeConfig::GetInstance().stratifyLightSamples));
+                config.stratifyLightSamples));
         _renderer->SetShowAdaptiveHeatmap(
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->showAdaptiveHeatmap,
-                HdEmbreeDefaultShowAdaptiveHeatmap));
+                config.showAdaptiveHeatmap));
         _renderer->SetFireflyClampThreshold(
             renderDelegate->GetRenderSetting<float>(
                 HdEmbreeRenderSettingsTokens->fireflyClampThreshold,
-                HdEmbreeDefaultFireflyClampThreshold));
+                config.fireflyClampThreshold));
         _renderer->SetEnableCaustics(
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->enableCaustics,
-                HdEmbreeDefaultEnableCaustics));
+                config.enableCaustics));
         _renderer->SetCausticsClampThreshold(
             renderDelegate->GetRenderSetting<float>(
                 HdEmbreeRenderSettingsTokens->causticsClampThreshold,
-                HdEmbreeDefaultCausticsClampThreshold));
+                config.causticsClampThreshold));
         _renderer->SetApproxTransparentShadows(
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->approxTransparentShadows,
-                HdEmbreeDefaultApproxTransparentShadows));
+                config.approxTransparentShadows));
         static const TfToken enableGgxMicrofacetMultipleScatteringToken(
             "enableGgxMicrofacetMultipleScattering", TfToken::Immortal);
         _renderer->SetEnableGgxMicrofacetMultipleScattering(
             renderDelegate->GetRenderSetting<bool>(
                 enableGgxMicrofacetMultipleScatteringToken,
-                true));
-        static const TfToken dielectricLayerThroughputModeBsdlToken(
-            "bsdl", TfToken::Immortal);
+                config.enableGgxMicrofacetMultipleScattering));
         _renderer->SetDielectricLayerThroughputMode(
-            renderDelegate->GetRenderSetting<TfToken>(
+            _GetTokenRenderSetting(
+                renderDelegate,
                 HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
-                dielectricLayerThroughputModeBsdlToken));
+                TfToken(config.dielectricLayerThroughputMode)));
         _renderer->SetUseAdobeOpenPBR(
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
-                false));
+                config.useAdobeOpenPBR));
 
         if (materialRenderContextsChanged) {
             _MarkMaterialNetworksDirty(GetRenderIndex());
