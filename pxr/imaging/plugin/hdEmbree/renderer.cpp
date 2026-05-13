@@ -3068,7 +3068,11 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
 {
     if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
         if (_domes.empty() || !_enableLighting || !_domeLightCameraVisibility) {
-            return clearColor;
+            return GfVec4f(
+                clearColor[0],
+                clearColor[1],
+                clearColor[2],
+                1.0f);
         }
 
         // if we missed all geometry in the scene, evaluate the infinite lights
@@ -3203,17 +3207,7 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
     output[0] = std::max(0.0f, lightingColor[0]);
     output[1] = std::max(0.0f, lightingColor[1]);
     output[2] = std::max(0.0f, lightingColor[2]);
-    float outputAlpha = hasMaterialClosure ? _Clamp01(closure.opacity) : 1.0f;
-    if (hasMaterialClosure && _Clamp01(closure.presence) <= 0.0f) {
-        const GfVec3f origin(rayHit.ray.org_x, rayHit.ray.org_y,
-                             rayHit.ray.org_z);
-        const GfVec3f dir = GfVec3f(
-            rayHit.ray.dir_x,
-            rayHit.ray.dir_y,
-            rayHit.ray.dir_z).GetNormalized();
-        outputAlpha = _TraceCameraAlpha(origin, dir, clearColor);
-    }
-    output[3] = outputAlpha;
+    output[3] = 1.0f;
     return output;
 }
 
@@ -4841,53 +4835,6 @@ HdEmbreeRenderer::_TracePath(
     }
 
     return radiance;
-}
-
-float
-HdEmbreeRenderer::_TraceCameraAlpha(
-    GfVec3f const& origin,
-    GfVec3f const& dir,
-    GfVec4f const& clearColor) const
-{
-    constexpr int kMaxPresencePassThroughHits = 16;
-    constexpr float kRayBias = 1e-4f;
-
-    GfVec3f rayOrigin = origin;
-    const GfVec3f rayDir = dir.GetNormalized();
-
-    for (int i = 0; i < kMaxPresencePassThroughHits; ++i) {
-        RTCRayHit rayHit;
-        rayHit.ray.flags = 0;
-        _PopulateRayHit(
-            &rayHit,
-            rayOrigin,
-            rayDir,
-            i == 0 ? 0.0f : kRayBias,
-            std::numeric_limits<float>::max(),
-            HdEmbree_RayMask::Camera);
-        rtcIntersect1(_scene, &rayHit);
-
-        if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
-            return (!_domes.empty() && _enableLighting &&
-                    _domeLightCameraVisibility)
-                ? 1.0f
-                : _Clamp01(clearColor[3]);
-        }
-
-        mxcpp::SurfaceClosure closure;
-        if (!_TryEvalSurfaceClosureAtHit(rayHit, &closure)) {
-            return 1.0f;
-        }
-
-        if (_Clamp01(closure.presence) > 0.0f) {
-            return _Clamp01(closure.opacity);
-        }
-
-        const GfVec3f hitPos = _CalculateHitPosition(rayHit);
-        rayOrigin = hitPos + rayDir * kRayBias;
-    }
-
-    return 1.0f;
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE
