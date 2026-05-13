@@ -270,13 +270,16 @@ _TransparentShadowTransmission(
 }
 
 GfVec3f
-_CombineOpacityAndTransmissionVisibility(
+_CombinePresenceAndTransmissionVisibility(
     mxcpp::SurfaceClosure const& closure,
     GfVec3f const& transmissionVisibility)
 {
-    const float opacity = _Clamp01(closure.opacity);
-    const GfVec3f opacityVisibility(1.0f - opacity);
-    return _Clamp01(opacityVisibility + transmissionVisibility * opacity);
+    // `presence` is geometric coverage. `opacity` can be an alpha/transmission
+    // control (e.g. UsdPreviewSurface transparent mode), so using it here would
+    // bypass the transmissive shadow response for fully transparent glass.
+    const float presence = _Clamp01(closure.presence);
+    const GfVec3f passthroughVisibility(1.0f - presence);
+    return _Clamp01(passthroughVisibility + transmissionVisibility * presence);
 }
 
 bool
@@ -2957,7 +2960,7 @@ HdEmbreeRenderer::_Visibility(
                         closure, direction, hitNormal, includeSurfaceTint);
                 }
                 surfaceVisibility =
-                    _CombineOpacityAndTransmissionVisibility(
+                    _CombinePresenceAndTransmissionVisibility(
                         closure, transmissionVisibility);
             } else {
                 float scalarVisibility = 1.0f - _Clamp01(closure.opacity);
@@ -3200,7 +3203,17 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
     output[0] = std::max(0.0f, lightingColor[0]);
     output[1] = std::max(0.0f, lightingColor[1]);
     output[2] = std::max(0.0f, lightingColor[2]);
-    output[3] = hasMaterialClosure ? closure.opacity : 1.0f;
+    float outputAlpha = hasMaterialClosure ? _Clamp01(closure.opacity) : 1.0f;
+    if (hasMaterialClosure && _Clamp01(closure.presence) <= 0.0f) {
+        const GfVec3f origin(rayHit.ray.org_x, rayHit.ray.org_y,
+                             rayHit.ray.org_z);
+        const GfVec3f dir = GfVec3f(
+            rayHit.ray.dir_x,
+            rayHit.ray.dir_y,
+            rayHit.ray.dir_z).GetNormalized();
+        outputAlpha = _TraceCameraAlpha(origin, dir, clearColor);
+    }
+    output[3] = outputAlpha;
     return output;
 }
 
@@ -4327,19 +4340,30 @@ HdEmbreeRenderer::_TracePath(
 
         // --- Stochastic opacity pass-through ---
         if (hasClosure && closure.presence < 1.0f) {
-            if (bounceDomain
-                    .Fork(HdEmbreeSampleDomainKey::Presence)
-                    .Draw1D() > closure.presence) {
-                float advance = rayHit.ray.tfar + 1e-4f;
+            const auto advancePastHit = [&]() {
+                const float advance = rayHit.ray.tfar + 1e-4f;
                 rayOrigin = hitPos + rayDir * 1e-4f;
                 if (currentRayDiff.hasDifferentials) {
                     currentRayDiff.rxOrigin += rayDir * advance;
                     currentRayDiff.ryOrigin += rayDir * advance;
                 }
+                // Null presence pass-through is not a scattering event. Keep
+                // MIS / first-bounce state from the previous real interaction.
                 --bounce;
-                isFirstBounce = false;
-                lastBsdfPdf = 0.0f;
-                lastScatterWasMedium = false;
+            };
+
+            const float presence = _Clamp01(closure.presence);
+            if (presence <= 0.0f) {
+                advancePastHit();
+                continue;
+            }
+            // Treat presence as the probability of interaction. The strict
+            // u < presence test keeps endpoint-zero sampler values from
+            // interacting when the surface is fully absent.
+            if (bounceDomain
+                    .Fork(HdEmbreeSampleDomainKey::Presence)
+                    .Draw1D() >= presence) {
+                advancePastHit();
                 continue;
             }
             // We chose to interact; clear the stochastic presence term so
@@ -4817,6 +4841,53 @@ HdEmbreeRenderer::_TracePath(
     }
 
     return radiance;
+}
+
+float
+HdEmbreeRenderer::_TraceCameraAlpha(
+    GfVec3f const& origin,
+    GfVec3f const& dir,
+    GfVec4f const& clearColor) const
+{
+    constexpr int kMaxPresencePassThroughHits = 16;
+    constexpr float kRayBias = 1e-4f;
+
+    GfVec3f rayOrigin = origin;
+    const GfVec3f rayDir = dir.GetNormalized();
+
+    for (int i = 0; i < kMaxPresencePassThroughHits; ++i) {
+        RTCRayHit rayHit;
+        rayHit.ray.flags = 0;
+        _PopulateRayHit(
+            &rayHit,
+            rayOrigin,
+            rayDir,
+            i == 0 ? 0.0f : kRayBias,
+            std::numeric_limits<float>::max(),
+            HdEmbree_RayMask::Camera);
+        rtcIntersect1(_scene, &rayHit);
+
+        if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
+            return (!_domes.empty() && _enableLighting &&
+                    _domeLightCameraVisibility)
+                ? 1.0f
+                : _Clamp01(clearColor[3]);
+        }
+
+        mxcpp::SurfaceClosure closure;
+        if (!_TryEvalSurfaceClosureAtHit(rayHit, &closure)) {
+            return 1.0f;
+        }
+
+        if (_Clamp01(closure.presence) > 0.0f) {
+            return _Clamp01(closure.opacity);
+        }
+
+        const GfVec3f hitPos = _CalculateHitPosition(rayHit);
+        rayOrigin = hitPos + rayDir * kRayBias;
+    }
+
+    return 1.0f;
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

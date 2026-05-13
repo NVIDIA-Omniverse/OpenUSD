@@ -359,6 +359,11 @@ private:
         HdEmbreeRayDifferential const& rayDiff,
         HdEmbreeSampleDomain const& domain) const;
 
+    float _TraceCameraAlpha(
+        GfVec3f const& origin,
+        GfVec3f const& dir,
+        GfVec4f const& clearColor) const;
+
     // Return the visibility from `position` along `direction`
     GfVec3f _Visibility(GfVec3f const& position,
                         GfVec3f const& normal,
