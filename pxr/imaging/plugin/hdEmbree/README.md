@@ -20,10 +20,10 @@ The following settings can be configured via `renderSettings` (Hydra render dele
 | Min Samples Before Adaptive | `minSamplesBeforeAdaptive` | `int` | `64` | — |
 | Max Bounces | `maxBounces` | `int` | `16` | — |
 | Min Bounces Before Russian Roulette | `minBouncesBeforeRR` | `int` | `2` | — |
-| Light Samples Per Hit | `lightSamplesPerHit` | `int` | `8` | `HDEMBREE_LIGHT_SAMPLES_PER_HIT` |
+| Light Samples Per Hit | `lightSamplesPerHit` | `int` | `1` | `HDEMBREE_LIGHT_SAMPLES_PER_HIT` |
 | Stratify Light Samples | `stratifyLightSamples` | `bool` | `true` | `HDEMBREE_STRATIFY_LIGHT_SAMPLES` |
 | Firefly Clamp Threshold | `fireflyClampThreshold` | `float` | `20.0` | — |
-| Enable Caustics | `enableCaustics` | `bool` | `true` | — |
+| Enable Caustics | `enableCaustics` | `bool` | `false` | — |
 | Caustics Clamp Threshold | `causticsClampThreshold` | `float` | `5.0` | — |
 | Approximate Transparent Shadows | `approxTransparentShadows` | `bool` | `true` | — |
 
@@ -87,9 +87,9 @@ Number of shadow/light samples taken per hit point per light source. Higher valu
 When enabled, light samples are stratified across the light surface, providing more uniform coverage and reducing variance compared to purely random sampling.
 
 ### Caustics (`enableCaustics`, `causticsClampThreshold`)
-When `enableCaustics` is `true` (default), hdEmbree keeps indirect caustic paths but regularizes sharp lobes after the first non-specular bounce. Contributions on paths that have entered this caustic class are clamped by `causticsClampThreshold`; set the threshold to `0` or below to disable this extra caustic-only clamp.
+When `enableCaustics` is `true`, hdEmbree keeps indirect caustic paths but regularizes sharp lobes after the first non-specular bounce. Contributions on paths that have entered this caustic class are clamped by `causticsClampThreshold`; set the threshold to `0` or below to disable this extra caustic-only clamp.
 
-When `enableCaustics` is `false`, hdEmbree treats specular or dielectric-boundary events after a diffuse-like surface, subsurface, or medium scatter as a caustic-class heuristic rather than a strict full-path caustics proof. It prunes those lobes from BSDF continuation sampling and direct-light BSDF evaluation when the native closure tree exposes them, then keeps a post-sample guard for backend-specific or geometry-dependent cases that can only be classified after sampling. Glossy dielectric traversal seen directly by the camera is not treated as a diffuse caustic ancestor merely because it has a finite PDF. This removes high-variance reflective/refractive caustics such as bright floor sparkles under glass objects, at the cost of omitting those caustic contributions.
+When `enableCaustics` is `false` (default), hdEmbree treats specular or dielectric-boundary events after a diffuse-like surface, subsurface, or medium scatter as a caustic-class heuristic rather than a strict full-path caustics proof. It prunes those lobes from BSDF continuation sampling and direct-light BSDF evaluation when the native closure tree exposes them, then keeps a post-sample guard for backend-specific or geometry-dependent cases that can only be classified after sampling. Glossy dielectric traversal seen directly by the camera is not treated as a diffuse caustic ancestor merely because it has a finite PDF. This removes high-variance reflective/refractive caustics such as bright floor sparkles under glass objects, at the cost of omitting those caustic contributions.
 
 ### Transparent Shadows (`approxTransparentShadows`)
 Thin-walled transmissive surfaces always use straight RGB shadow attenuation because there is no thickness or refractive path to solve. For thick transmissive surfaces, when `approxTransparentShadows` is `true` (default), shadow rays continue along the original straight line instead of being refracted. This thick-surface behavior is a biased direct-shadow approximation, not a Snell-refraction caustic solver. It keeps direct lighting usable under thick glass when caustic-class paths are suppressed.

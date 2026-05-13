@@ -28,11 +28,11 @@ constexpr bool HdEmbreeDefaultUseSobol = true;
 constexpr bool HdEmbreeDefaultEnableAdaptiveSampling = true;
 constexpr float HdEmbreeDefaultAdaptiveThreshold = 0.01f;
 constexpr int HdEmbreeDefaultMinSamplesBeforeAdaptive = 64;
-constexpr int HdEmbreeDefaultLightSamplesPerHit = 8;
+constexpr int HdEmbreeDefaultLightSamplesPerHit = 1;
 constexpr bool HdEmbreeDefaultStratifyLightSamples = true;
 constexpr bool HdEmbreeDefaultShowAdaptiveHeatmap = false;
 constexpr float HdEmbreeDefaultFireflyClampThreshold = 20.0f;
-constexpr bool HdEmbreeDefaultEnableCaustics = true;
+constexpr bool HdEmbreeDefaultEnableCaustics = false;
 constexpr float HdEmbreeDefaultCausticsClampThreshold = 5.0f;
 constexpr bool HdEmbreeDefaultApproxTransparentShadows = true;
 
