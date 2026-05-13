@@ -15,7 +15,7 @@ without ground-plane visibility or sub-white diffuse albedo."""
 def RenderSettings "RenderSettings"
 {
     bool hdEmbree:enableGgxMicrofacetMultipleScattering = true
-    int hdEmbree:lightSamplesPerHit = 32
+    int hdEmbree:lightSamplesPerHit = 1
     token hdEmbree:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }

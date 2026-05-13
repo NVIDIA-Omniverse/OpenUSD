@@ -20,7 +20,7 @@ The dome light uses StinsonBeach.hdr as the environment map."""
 
 def RenderSettings "RenderSettings"
 {
-    int hdEmbree:lightSamplesPerHit = 32
+    int hdEmbree:lightSamplesPerHit = 1
     token hdEmbree:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }

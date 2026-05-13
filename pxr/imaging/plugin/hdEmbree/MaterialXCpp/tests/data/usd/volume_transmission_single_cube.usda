@@ -13,7 +13,7 @@ and a diagonal high camera."""
 
 def RenderSettings "RenderSettings"
 {
-    int hdEmbree:lightSamplesPerHit = 16
+    int hdEmbree:lightSamplesPerHit = 1
     token hdEmbree:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }

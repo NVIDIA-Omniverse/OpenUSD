@@ -23,7 +23,7 @@ def RenderSettings "RenderSettings"
     int hdEmbree:randomNumberSeed = 414
     int hdEmbree:maxBounces = 16
     int hdEmbree:minBouncesBeforeRR = 4
-    int hdEmbree:lightSamplesPerHit = 8
+    int hdEmbree:lightSamplesPerHit = 1
     bool hdEmbree:enableAdaptiveSampling = false
     bool hdEmbree:stratifyLightSamples = true
     bool hdEmbree:enableCaustics = true

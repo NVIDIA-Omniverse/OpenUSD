@@ -13,7 +13,7 @@ native EON diffuse against the Adobe OpenPBR backend."""
 
 def RenderSettings "RenderSettings"
 {
-    int hdEmbree:lightSamplesPerHit = 32
+    int hdEmbree:lightSamplesPerHit = 1
     token hdEmbree:samplerSequence = "openqmc_sobolbn"
     bool hdEmbree:useAdobeOpenPBR = false
     rel products = [</RenderProduct>]
