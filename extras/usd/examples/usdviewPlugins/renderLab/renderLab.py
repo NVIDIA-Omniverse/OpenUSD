@@ -1,8 +1,12 @@
 """RenderLab usdview plugin main window."""
 
+import importlib
+import sys
+
 from pxr.Usdviewq.qt import QtCore, QtWidgets
 
 from .cameraEditor import CameraEditor
+from . import domeLightManipulator
 from .lightEditor import LightEditor
 from .materialEditor import MaterialEditor
 from .renderSettingsEditor import RenderSettingsEditor
@@ -19,6 +23,17 @@ QTabBar::tab:selected {
 """
 _REFRESH_BUTTON_WIDTH = 24
 _REFRESH_BUTTON_HEIGHT = 24
+_SECTION_BY_TAB_INDEX = ("render", "camera", "material")
+_RELOAD_MODULES = (
+    "renderLab.parameterWidgets",
+    "renderLab.renderSettingsMetadata",
+    "renderLab.renderSettingsEditor",
+    "renderLab.cameraEditor",
+    "renderLab.domeLightManipulator",
+    "renderLab.lightEditor",
+    "renderLab.materialEditor",
+    "renderLab.renderLab",
+)
 
 
 class _CenteredEqualTabBar(QtWidgets.QTabBar):
@@ -152,8 +167,34 @@ def _clearWindow():
     _window = None
 
 
-def _openRenderLab(usdviewApi, section=None):
+def _currentSection():
+    if _window is None:
+        return None
+    try:
+        index = _window._tabBar.currentIndex()
+    except RuntimeError:
+        return None
+    if 0 <= index < len(_SECTION_BY_TAB_INDEX):
+        return _SECTION_BY_TAB_INDEX[index]
+    return None
+
+
+def _currentLightPath():
+    if _window is None:
+        return None
+    try:
+        return _window._lightEditor._currentPath
+    except RuntimeError:
+        return None
+    except AttributeError:
+        return None
+
+
+def _openRenderLab(usdviewApi, section=None, replaceManipulator=False):
     global _window
+    domeLightManipulator.SetPreferredDomeLightPathGetter(_currentLightPath)
+    domeLightManipulator.Install(usdviewApi, replace=replaceManipulator)
+
     if _window is not None:
         try:
             if _window.isVisible():
@@ -191,3 +232,28 @@ def OpenLightTools(usdviewApi):
 
 def OpenMaterialTools(usdviewApi):
     _openRenderLab(usdviewApi, "material")
+
+
+def ReloadRenderLab(usdviewApi):
+    section = _currentSection()
+    if section is None:
+        section = "render"
+
+    window = _window
+    if window is not None:
+        try:
+            window.close()
+        except RuntimeError:
+            pass
+        _clearWindow()
+
+    for moduleName in _RELOAD_MODULES:
+        module = sys.modules.get(moduleName)
+        if module is not None:
+            importlib.reload(module)
+
+    reloadedModule = sys.modules.get(__name__)
+    if reloadedModule is None:
+        reloadedModule = importlib.import_module(__name__)
+    reloadedModule._openRenderLab(
+        usdviewApi, section, replaceManipulator=True)

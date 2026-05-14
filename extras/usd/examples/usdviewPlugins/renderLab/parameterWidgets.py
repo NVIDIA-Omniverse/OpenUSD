@@ -314,6 +314,26 @@ class Vec3Control(Vec2Control):
         self._buildSpins(layout, 3, value, valueRange, step, decimals, spinWidth)
 
 
+class Vec4Control(Vec2Control):
+
+    def __init__(
+            self,
+            value=None,
+            valueRange=(-1e6, 1e6),
+            step=0.01,
+            decimals=4,
+            spinWidth=None,
+            alignRight=False,
+            parent=None):
+        QtWidgets.QWidget.__init__(self, parent)
+        self._spins = []
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        if alignRight:
+            layout.addStretch(1)
+        self._buildSpins(layout, 4, value, valueRange, step, decimals, spinWidth)
+
+
 class Color3Control(QtWidgets.QWidget):
 
     valueChanged = QtCore.Signal(object)

@@ -35,7 +35,7 @@ _GROUP_HEADER_STYLE = (
     " color: #999999;"
     " background-color: #2d2d2d;"
     " padding: 3px 6px;"
-    " margin-top: 5px;"
+    " margin-top: 0px;"
     " text-align: left;"
     "}"
     "QToolButton:hover { background-color: #333; border-color: #777; }")
@@ -46,10 +46,11 @@ _MIN_EDITOR_CONTROL_WIDTH = 260
 _MIN_MATERIAL_LIST_WIDTH = 120
 _MAX_MATERIAL_LIST_WIDTH = 520
 _MIN_WINDOW_WIDTH = 720
+_EDITOR_PANE_WIDTH = 730
 _FLOAT_SPINBOX_WIDTH = 104
+_CONTEXT_COMBO_HEIGHT = 20
 _WINDOW_CHROME_WIDTH = 48
 _GROUP_CONTENT_LEFT_MARGIN = 12
-_SEPARATOR_STYLE = "background-color: #999999; border: 0;"
 _HEADER_LABEL_STYLE = "font-weight: bold; color: #999999;"
 
 _BASIC_COLOR_COLS = 8
@@ -169,18 +170,30 @@ class MaterialEditor(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
 
         root = QtWidgets.QVBoxLayout(self)
-        root.setContentsMargins(20, 6, 6, 0)
-        root.setSpacing(12)
+        root.setContentsMargins(8, 6, 6, 0)
+        root.setSpacing(0)
         self._inputLabelWidth = self._computeInputLabelWidth(
             [_LABEL_WIDTH_REFERENCE])
 
+        # splitter: material list | input editor
+        self._splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter = self._splitter
+
+        left = QtWidgets.QWidget()
+        left.setFixedWidth(_EDITOR_PANE_WIDTH)
+        leftLay = QtWidgets.QVBoxLayout(left)
+        leftLay.setContentsMargins(0, 0, 4, 0)
+        leftLay.setSpacing(0)
+
         # toolbar
         toolbar = QtWidgets.QHBoxLayout()
-        contextLabel = QtWidgets.QLabel("Material Context:")
+        toolbar.setContentsMargins(_GROUP_CONTENT_LEFT_MARGIN, 0, 0, 0)
+        contextLabel = QtWidgets.QLabel("Material Context: ")
         contextLabel.setStyleSheet(_HEADER_LABEL_STYLE)
         toolbar.addWidget(contextLabel)
         self._contextCombo = QtWidgets.QComboBox()
         self._contextCombo.setMinimumWidth(96)
+        self._contextCombo.setFixedHeight(_CONTEXT_COMBO_HEIGHT)
         self._contextCombo.view().setMinimumWidth(96)
         for label, context in _MATERIAL_CONTEXTS:
             self._contextCombo.addItem(label, context)
@@ -189,53 +202,45 @@ class MaterialEditor(QtWidgets.QWidget):
             self._onMaterialContextChanged)
         toolbar.addWidget(self._contextCombo)
         toolbar.addStretch()
-        root.addLayout(toolbar)
-
-        # splitter: material list | input editor
-        self._splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        splitter = self._splitter
-
-        self._matList = QtWidgets.QListWidget()
-        self._matList.currentItemChanged.connect(self._onMaterialClicked)
-        splitter.addWidget(self._matList)
-
-        right = QtWidgets.QWidget()
-        rightLay = QtWidgets.QVBoxLayout(right)
-        rightLay.setContentsMargins(4, 0, 0, 0)
+        leftLay.addLayout(toolbar)
 
         # header: back button + shader label (with context menu)
-        headerRow = QtWidgets.QHBoxLayout()
+        self._headerRow = QtWidgets.QHBoxLayout()
+        self._headerRow.setContentsMargins(_GROUP_CONTENT_LEFT_MARGIN, 0, 0, 0)
         self._backBtn = QtWidgets.QPushButton(" Back")
         self._backBtn.setIcon(
             self.style().standardIcon(QtWidgets.QStyle.SP_ArrowLeft))
         self._backBtn.setFixedHeight(24)
         self._backBtn.clicked.connect(self._navigateBack)
         self._backBtn.hide()
-        headerRow.addWidget(self._backBtn)
+        self._headerRow.addWidget(self._backBtn)
         self._headerLabel = QtWidgets.QLabel("Select a material")
         self._headerLabel.setWordWrap(True)
+        self._headerLabel.setAlignment(
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self._headerLabel.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self._headerLabel.customContextMenuRequested.connect(
             self._showHeaderContextMenu)
-        headerRow.addWidget(self._headerLabel, 1)
-        rightLay.addLayout(headerRow)
-
-        sep = QtWidgets.QFrame()
-        sep.setFrameShape(QtWidgets.QFrame.NoFrame)
-        sep.setFixedHeight(1)
-        sep.setStyleSheet(_SEPARATOR_STYLE)
-        rightLay.addWidget(sep)
+        self._headerRow.addWidget(self._headerLabel, 1)
+        leftLay.addLayout(self._headerRow)
+        leftLay.addSpacing(5)
 
         self._scroll = QtWidgets.QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
         self._newFormWidget()
-        rightLay.addWidget(self._scroll)
+        self._syncHeaderRightMargin()
+        leftLay.addWidget(self._scroll)
 
-        splitter.addWidget(right)
-        splitter.setSizes([220, 500])
-        splitter.setStretchFactor(1, 1)
-        root.addWidget(splitter)
+        splitter.addWidget(left)
+
+        listPane = QtWidgets.QWidget()
+        listLayout = QtWidgets.QVBoxLayout(listPane)
+        listLayout.setContentsMargins(4, 0, 0, 0)
+
+        self._matList = QtWidgets.QListWidget()
+        self._matList.currentItemChanged.connect(self._onMaterialClicked)
+        listLayout.addWidget(self._matList, 1)
 
         statusRow = QtWidgets.QHBoxLayout()
         statusRow.setContentsMargins(0, 0, 0, 0)
@@ -243,7 +248,12 @@ class MaterialEditor(QtWidgets.QWidget):
         self._followCB.setChecked(True)
         statusRow.addWidget(self._followCB)
         statusRow.addStretch(1)
-        root.addLayout(statusRow)
+        listLayout.addLayout(statusRow)
+
+        splitter.addWidget(listPane)
+        splitter.setSizes([_EDITOR_PANE_WIDTH, 220])
+        splitter.setStretchFactor(0, 1)
+        root.addWidget(splitter)
 
     def _newFormWidget(self):
         self._formContainer = QtWidgets.QWidget()
@@ -251,11 +261,28 @@ class MaterialEditor(QtWidgets.QWidget):
         self._formLayout.setFieldGrowthPolicy(
             QtWidgets.QFormLayout.ExpandingFieldsGrow
         )
+        self._formLayout.setContentsMargins(11, 0, 11, 11)
         self._scroll.setWidget(self._formContainer)
         self._inputWidgets = []
         self._inputRows = {}
         self._inputFieldWidgets = {}
         self._inputLayouts = {}
+        self._syncHeaderRightMargin()
+
+    def _syncHeaderRightMargin(self):
+        if not hasattr(self, "_headerRow"):
+            return
+
+        rightMargin = 0
+        if hasattr(self, "_formLayout") and self._formLayout is not None:
+            rightMargin += self._formLayout.contentsMargins().right()
+        if hasattr(self, "_scroll") and self._scroll is not None:
+            scrollBar = self._scroll.verticalScrollBar()
+            if scrollBar and scrollBar.isVisible():
+                rightMargin += scrollBar.sizeHint().width()
+
+        self._headerRow.setContentsMargins(
+            _GROUP_CONTENT_LEFT_MARGIN, 0, rightMargin, 0)
 
     # ---- material list ----------------------------------------------------
 
@@ -358,7 +385,7 @@ class MaterialEditor(QtWidgets.QWidget):
 
         desiredWindowWidth = (
             materialListWidth
-            + self._computePreferredEditorWidth()
+            + _EDITOR_PANE_WIDTH
             + self._splitter.handleWidth()
             + extraWidth)
         desiredWindowWidth = max(_MIN_WINDOW_WIDTH, desiredWindowWidth)
@@ -369,9 +396,7 @@ class MaterialEditor(QtWidgets.QWidget):
     def _fitMaterialListWidth(self):
         hint = self._computeMaterialListWidth()
         self._ensurePreferredWindowWidth(hint)
-        total = self._splitter.width() or self.width()
-        self._splitter.setSizes(
-            [hint, max(self._computePreferredEditorWidth(), total - hint)])
+        self._splitter.setSizes([_EDITOR_PANE_WIDTH, hint])
 
     def _scheduleLayoutFit(self):
         if self._fitScheduled:
@@ -382,6 +407,8 @@ class MaterialEditor(QtWidgets.QWidget):
     def _applyScheduledLayoutFit(self):
         self._fitScheduled = False
         self._fitMaterialListWidth()
+        self._syncHeaderRightMargin()
+        QtCore.QTimer.singleShot(0, self._syncHeaderRightMargin)
 
     def _onMaterialClicked(self, current, _previous):
         if not current:
@@ -686,10 +713,13 @@ class MaterialEditor(QtWidgets.QWidget):
                 for s in self._shaderStack)
             self._headerLabel.setText(
                 f"<span style='color:#888;'>{crumbs}</span><br>"
-                f"Shader: <b>{shaderId}</b>")
+                f"<span style='color:#999999;'>Shader:</span> "
+                f"<b>{shaderId}</b>")
         else:
             self._backBtn.hide()
-            self._headerLabel.setText(f"Shader: <b>{shaderId}</b>")
+            self._headerLabel.setText(
+                f"<span style='color:#999999;'>Shader:</span> "
+                f"<b>{shaderId}</b>")
 
     # ---- labels with context menu -----------------------------------------
 

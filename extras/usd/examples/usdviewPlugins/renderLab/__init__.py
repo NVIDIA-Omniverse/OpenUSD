@@ -5,48 +5,26 @@ from pxr.Usdviewq.plugin import PluginContainer
 class RenderLabContainer(PluginContainer):
 
     def registerPlugins(self, plugRegistry, plugCtx):
+        from . import domeLightManipulator
         renderLab = self.deferredImport(".renderLab")
+
+        domeLightManipulator.Install(plugCtx)
 
         self._openOverview = plugRegistry.registerCommandPlugin(
             "RenderLabContainer.openOverview",
             "Open RenderLab",
             renderLab.OpenOverview,
             "Open the RenderLab overview window.")
-        self._openRenderSettings = plugRegistry.registerCommandPlugin(
-            "RenderLabContainer.openRenderSettings",
-            "Render Settings",
-            renderLab.OpenRenderSettings,
-            "Open RenderLab render settings.")
-        self._openCameraTools = plugRegistry.registerCommandPlugin(
-            "RenderLabContainer.openCameraTools",
-            "Camera Tools",
-            renderLab.OpenCameraTools,
-            "Open RenderLab camera controls.")
-        self._openLightTools = plugRegistry.registerCommandPlugin(
-            "RenderLabContainer.openLightTools",
-            "Light Tools",
-            renderLab.OpenLightTools,
-            "Open RenderLab light controls.")
-        self._openMaterialTools = plugRegistry.registerCommandPlugin(
-            "RenderLabContainer.openMaterialTools",
-            "Material Tools",
-            renderLab.OpenMaterialTools,
-            "Open RenderLab material controls.")
+        self._reloadRenderLab = plugRegistry.registerCommandPlugin(
+            "RenderLabContainer.reloadRenderLab",
+            "Reload RenderLab",
+            renderLab.ReloadRenderLab,
+            "Reload RenderLab Python modules and reopen the window.")
 
     def configureView(self, plugRegistry, plugUIBuilder):
         menu = plugUIBuilder.findOrCreateMenu("RenderLab")
         menu.addItem(self._openOverview)
-        menu.addSeparator()
-        menu.addItem(self._openRenderSettings)
-
-        lightsMenu = menu.findOrCreateSubmenu("Lights")
-        lightsMenu.addItem(self._openLightTools)
-
-        camerasMenu = menu.findOrCreateSubmenu("Cameras")
-        camerasMenu.addItem(self._openCameraTools)
-
-        materialsMenu = menu.findOrCreateSubmenu("Materials")
-        materialsMenu.addItem(self._openMaterialTools)
+        menu.addItem(self._reloadRenderLab, "Ctrl+Alt+R")
 
 
 Tf.Type.Define(RenderLabContainer)

@@ -13,10 +13,24 @@ from .parameterWidgets import (
 
 
 _FLOAT_SPINBOX_WIDTH = 104
+_LABEL_WIDTH_REFERENCE = "transmission_dispersion_abbe_number"
 _LABEL_WIDTH_PADDING = 16
-_PANE_LEFT_MARGIN = 20
+_PANE_LEFT_MARGIN = 8
+_EDITOR_PANE_WIDTH = 730
 _PANE_TITLE_STYLE = "font-weight: bold; color: #999999;"
-_SEPARATOR_STYLE = "background-color: #999999; border: 0;"
+_GROUP_HEADER_STYLE = (
+    "QToolButton {"
+    " font-weight: bold;"
+    " border: none;"
+    " border-radius: 3px;"
+    " color: #999999;"
+    " background-color: #2d2d2d;"
+    " padding: 3px 6px;"
+    " margin-top: 0px;"
+    " text-align: left;"
+    "}"
+    "QToolButton:hover { background-color: #333; border-color: #777; }")
+_GROUP_CONTENT_LEFT_MARGIN = 12
 _BASE_LIGHT_LABELS = (
     "Intensity",
     "Exposure",
@@ -62,47 +76,56 @@ class LightEditor(QtWidgets.QWidget):
         self._updating = False
         self._controlHeight = None
         self._labelWidth = 0
+        self._groupLayouts = {}
 
         root = QtWidgets.QVBoxLayout(self)
         root.setContentsMargins(_PANE_LEFT_MARGIN, 8, 8, 8)
         root.setSpacing(15)
 
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        left = QtWidgets.QWidget()
+        left.setFixedWidth(_EDITOR_PANE_WIDTH)
+        leftLayout = QtWidgets.QVBoxLayout(left)
+        leftLayout.setContentsMargins(0, 0, 4, 0)
+        leftLayout.setSpacing(0)
+
         titleRow = QtWidgets.QHBoxLayout()
-        titleRow.setContentsMargins(0, 0, 0, 0)
+        titleRow.setContentsMargins(_GROUP_CONTENT_LEFT_MARGIN, 0, 0, 0)
         titleLabel = QtWidgets.QLabel("Lights")
         titleLabel.setStyleSheet(_PANE_TITLE_STYLE)
+        titleLabel.setContentsMargins(0, 15, 0, 0)
         titleRow.addWidget(titleLabel, 1)
-        root.addLayout(titleRow)
+        leftLayout.addLayout(titleRow)
 
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        self._lightList = QtWidgets.QListWidget()
-        self._lightList.currentItemChanged.connect(self._onLightChanged)
-        splitter.addWidget(self._lightList)
-
-        right = QtWidgets.QWidget()
-        rightLayout = QtWidgets.QVBoxLayout(right)
-        rightLayout.setContentsMargins(4, 0, 0, 0)
-
-        headerRow = QtWidgets.QHBoxLayout()
+        self._headerRow = QtWidgets.QHBoxLayout()
+        self._headerRow.setContentsMargins(
+            _GROUP_CONTENT_LEFT_MARGIN, 0, 0, 0)
         self._headerLabel = QtWidgets.QLabel("Select a light")
         self._headerLabel.setWordWrap(True)
-        headerRow.addWidget(self._headerLabel, 1)
-        rightLayout.addLayout(headerRow)
-
-        separator = QtWidgets.QFrame()
-        separator.setFrameShape(QtWidgets.QFrame.NoFrame)
-        separator.setFixedHeight(1)
-        separator.setStyleSheet(_SEPARATOR_STYLE)
-        rightLayout.addWidget(separator)
+        self._headerLabel.setAlignment(
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self._headerRow.addWidget(self._headerLabel, 1)
+        leftLayout.addLayout(self._headerRow)
+        leftLayout.addSpacing(5)
 
         self._scroll = QtWidgets.QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        rightLayout.addWidget(self._scroll)
+        leftLayout.addWidget(self._scroll)
 
-        splitter.addWidget(right)
-        splitter.setSizes([260, 560])
-        splitter.setStretchFactor(1, 1)
+        splitter.addWidget(left)
+
+        listPane = QtWidgets.QWidget()
+        listLayout = QtWidgets.QVBoxLayout(listPane)
+        listLayout.setContentsMargins(4, 0, 0, 0)
+
+        self._lightList = QtWidgets.QListWidget()
+        self._lightList.currentItemChanged.connect(self._onLightChanged)
+        listLayout.addWidget(self._lightList, 1)
+        splitter.addWidget(listPane)
+
+        splitter.setSizes([_EDITOR_PANE_WIDTH, 260])
+        splitter.setStretchFactor(0, 1)
         root.addWidget(splitter, 1)
 
         self._newForm()
@@ -154,7 +177,9 @@ class LightEditor(QtWidgets.QWidget):
             return
 
         light = UsdLux.LightAPI(prim)
-        self._headerLabel.setText("Type: <b>{}</b>".format(prim.GetTypeName()))
+        self._headerLabel.setText(
+            "<span style='color:#999999;'>Type:</span> "
+            "<b>{}</b>".format(prim.GetTypeName()))
         self._labelWidth = self._computeLabelWidth(self._labelsForPrim(prim))
 
         self._addFloatAttr(
@@ -164,7 +189,8 @@ class LightEditor(QtWidgets.QWidget):
             1.0,
             0.0,
             100000000.0,
-            1.0)
+            1.0,
+            light.GetIntensityAttr().GetDisplayGroup() or "Basic")
         self._addFloatAttr(
             "Exposure",
             light.GetExposureAttr,
@@ -172,22 +198,26 @@ class LightEditor(QtWidgets.QWidget):
             0.0,
             -32.0,
             32.0,
-            0.1)
+            0.1,
+            light.GetExposureAttr().GetDisplayGroup() or "Basic")
         self._addColorAttr(
             "Color",
             light.GetColorAttr,
             light.CreateColorAttr,
-            Gf.Vec3f(1.0, 1.0, 1.0))
+            Gf.Vec3f(1.0, 1.0, 1.0),
+            light.GetColorAttr().GetDisplayGroup() or "Basic")
         self._addBoolAttr(
             "Normalize",
             light.GetNormalizeAttr,
             light.CreateNormalizeAttr,
-            False)
+            False,
+            light.GetNormalizeAttr().GetDisplayGroup() or "Advanced")
         self._addBoolAttr(
             "Color Temperature",
             light.GetEnableColorTemperatureAttr,
             light.CreateEnableColorTemperatureAttr,
-            False)
+            False,
+            light.GetEnableColorTemperatureAttr().GetDisplayGroup() or "Basic")
         self._addFloatAttr(
             "Temperature",
             light.GetColorTemperatureAttr,
@@ -195,9 +225,12 @@ class LightEditor(QtWidgets.QWidget):
             6500.0,
             1000.0,
             20000.0,
-            100.0)
+            100.0,
+            light.GetColorTemperatureAttr().GetDisplayGroup() or "Basic")
 
         self._addTypeSpecificRows(prim)
+        self._syncHeaderRightMargin()
+        QtCore.QTimer.singleShot(0, self._syncHeaderRightMargin)
 
     def _addTypeSpecificRows(self, prim):
         sphere = _schemaObject(prim, "SphereLight")
@@ -209,7 +242,8 @@ class LightEditor(QtWidgets.QWidget):
                 1.0,
                 0.0,
                 1000000.0,
-                0.1)
+                0.1,
+                sphere.GetRadiusAttr().GetDisplayGroup() or "Geometry")
 
         disk = _schemaObject(prim, "DiskLight")
         if disk:
@@ -220,7 +254,8 @@ class LightEditor(QtWidgets.QWidget):
                 1.0,
                 0.0,
                 1000000.0,
-                0.1)
+                0.1,
+                disk.GetRadiusAttr().GetDisplayGroup() or "Geometry")
 
         cylinder = _schemaObject(prim, "CylinderLight")
         if cylinder:
@@ -231,7 +266,8 @@ class LightEditor(QtWidgets.QWidget):
                 1.0,
                 0.0,
                 1000000.0,
-                0.1)
+                0.1,
+                cylinder.GetRadiusAttr().GetDisplayGroup() or "Geometry")
             self._addFloatAttr(
                 "Length",
                 cylinder.GetLengthAttr,
@@ -239,7 +275,8 @@ class LightEditor(QtWidgets.QWidget):
                 1.0,
                 0.0,
                 1000000.0,
-                0.1)
+                0.1,
+                cylinder.GetLengthAttr().GetDisplayGroup() or "Geometry")
 
         rect = _schemaObject(prim, "RectLight")
         portal = _schemaObject(prim, "PortalLight")
@@ -252,7 +289,8 @@ class LightEditor(QtWidgets.QWidget):
                 1.0,
                 0.0,
                 1000000.0,
-                0.1)
+                0.1,
+                rectLike.GetWidthAttr().GetDisplayGroup() or "Geometry")
             self._addFloatAttr(
                 "Height",
                 rectLike.GetHeightAttr,
@@ -260,7 +298,8 @@ class LightEditor(QtWidgets.QWidget):
                 1.0,
                 0.0,
                 1000000.0,
-                0.1)
+                0.1,
+                rectLike.GetHeightAttr().GetDisplayGroup() or "Geometry")
 
         distant = _schemaObject(prim, "DistantLight")
         if distant:
@@ -271,7 +310,8 @@ class LightEditor(QtWidgets.QWidget):
                 0.53,
                 0.0,
                 180.0,
-                0.1)
+                0.1,
+                distant.GetAngleAttr().GetDisplayGroup() or "Basic")
 
     def _newForm(self):
         self._formContainer = QtWidgets.QWidget()
@@ -279,13 +319,31 @@ class LightEditor(QtWidgets.QWidget):
         self._formLayout.setFieldGrowthPolicy(
             QtWidgets.QFormLayout.ExpandingFieldsGrow)
         self._formLayout.setLabelAlignment(QtCore.Qt.AlignLeft)
+        self._formLayout.setContentsMargins(11, 0, 11, 11)
         self._formLayout.setHorizontalSpacing(12)
         self._formLayout.setVerticalSpacing(5)
+        self._groupLayouts = {}
         self._scroll.setWidget(self._formContainer)
+        self._syncHeaderRightMargin()
+
+    def _syncHeaderRightMargin(self):
+        if not hasattr(self, "_headerRow"):
+            return
+
+        rightMargin = 0
+        if hasattr(self, "_formLayout") and self._formLayout is not None:
+            rightMargin += self._formLayout.contentsMargins().right()
+        if hasattr(self, "_scroll") and self._scroll is not None:
+            scrollBar = self._scroll.verticalScrollBar()
+            if scrollBar and scrollBar.isVisible():
+                rightMargin += scrollBar.sizeHint().width()
+
+        self._headerRow.setContentsMargins(
+            _GROUP_CONTENT_LEFT_MARGIN, 0, rightMargin, 0)
 
     def _addFloatAttr(
             self, label, getAttrFn, createAttrFn, defaultValue, minimum,
-            maximum, step):
+            maximum, step, group):
         value = getAttrFn().Get()
         control = FloatControl(
             value=float(defaultValue if value is None else value),
@@ -294,10 +352,10 @@ class LightEditor(QtWidgets.QWidget):
             step=step,
             decimals=4,
             spinWidth=_FLOAT_SPINBOX_WIDTH,
-            alignRight=True,
-            showSlider=False)
+            showSlider=False,
+            alignRight=True)
         originalValue = control.value()
-        row = self._addParameterRow(label, control)
+        row = self._addParameterRow(label, control, group)
         row.resetRequested.connect(
             lambda c=control, v=originalValue, r=row:
                 self._resetAttr(createAttrFn, c, v, r, label))
@@ -305,11 +363,11 @@ class LightEditor(QtWidgets.QWidget):
             lambda value, r=row, v=originalValue:
                 self._setAttrValue(createAttrFn, float(value), label, r, v))
 
-    def _addBoolAttr(self, label, getAttrFn, createAttrFn, defaultValue):
+    def _addBoolAttr(self, label, getAttrFn, createAttrFn, defaultValue, group):
         value = getAttrFn().Get()
         originalValue = bool(defaultValue if value is None else value)
         checkBox = BoolControl(value=originalValue)
-        row = self._addParameterRow(label, checkBox)
+        row = self._addParameterRow(label, checkBox, group)
         row.resetRequested.connect(
             lambda c=checkBox, v=originalValue, r=row:
                 self._resetAttr(createAttrFn, c, v, r, label))
@@ -317,7 +375,7 @@ class LightEditor(QtWidgets.QWidget):
             lambda checked, r=row, v=originalValue:
                 self._setAttrValue(createAttrFn, checked, label, r, v))
 
-    def _addColorAttr(self, label, getAttrFn, createAttrFn, defaultValue):
+    def _addColorAttr(self, label, getAttrFn, createAttrFn, defaultValue, group):
         value = getAttrFn().Get()
         if value is None:
             value = defaultValue
@@ -330,7 +388,7 @@ class LightEditor(QtWidgets.QWidget):
             dialogParent=self,
             dialogTitle=label)
         originalValue = tuple(control.value())
-        row = self._addParameterRow(label, control)
+        row = self._addParameterRow(label, control, group)
         row.resetRequested.connect(
             lambda c=control, v=originalValue, r=row:
                 self._resetAttr(
@@ -371,7 +429,50 @@ class LightEditor(QtWidgets.QWidget):
             self._updating = False
             print("RenderLab Light error: {}".format(err))
 
-    def _addParameterRow(self, label, widget):
+    def _addCollapsibleGroup(self, category):
+        button = QtWidgets.QToolButton()
+        button.setText(category)
+        button.setCheckable(True)
+        button.setChecked(True)
+        button.setArrowType(QtCore.Qt.DownArrow)
+        button.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        button.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Fixed)
+        button.setStyleSheet(_GROUP_HEADER_STYLE)
+
+        content = QtWidgets.QWidget()
+        layout = QtWidgets.QFormLayout(content)
+        layout.setFieldGrowthPolicy(
+            QtWidgets.QFormLayout.ExpandingFieldsGrow)
+        layout.setLabelAlignment(QtCore.Qt.AlignLeft)
+        layout.setContentsMargins(_GROUP_CONTENT_LEFT_MARGIN, 2, 0, 6)
+        layout.setHorizontalSpacing(12)
+        layout.setVerticalSpacing(5)
+
+        def toggled(checked):
+            content.setVisible(checked)
+            button.setArrowType(
+                QtCore.Qt.DownArrow if checked else QtCore.Qt.RightArrow)
+            self._formContainer.adjustSize()
+            self._syncHeaderRightMargin()
+            QtCore.QTimer.singleShot(0, self._syncHeaderRightMargin)
+
+        button.toggled.connect(toggled)
+        self._formLayout.addRow(button)
+        self._formLayout.addRow(content)
+        self._groupLayouts[category] = layout
+        return layout
+
+    def _layoutForGroup(self, category):
+        if not category:
+            category = "Other"
+        layout = self._groupLayouts.get(category)
+        if layout is None:
+            layout = self._addCollapsibleGroup(category)
+        return layout
+
+    def _addParameterRow(self, label, widget, group):
         row = ParameterRow(
             label,
             widget,
@@ -381,7 +482,7 @@ class LightEditor(QtWidgets.QWidget):
         self._applyControlHeight(widget)
         row.labelWidget.setMinimumHeight(widget.minimumHeight())
         row.labelWidget.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        self._formLayout.addRow(row.labelWidget, widget)
+        self._layoutForGroup(group).addRow(row.labelWidget, widget)
         return row
 
     def _controlHeightHint(self):
@@ -397,13 +498,14 @@ class LightEditor(QtWidgets.QWidget):
         widget.setMaximumHeight(height)
 
     def _computeLabelWidth(self, labels):
+        referenceLabels = list(labels) + [_LABEL_WIDTH_REFERENCE]
         normalMetrics = QtGui.QFontMetrics(self.font())
         italicFont = QtGui.QFont(self.font())
         italicFont.setItalic(True)
         italicMetrics = QtGui.QFontMetrics(italicFont)
         return max(
-            max(normalMetrics.horizontalAdvance(label) for label in labels),
-            max(italicMetrics.horizontalAdvance(label) for label in labels)
+            max(normalMetrics.horizontalAdvance(label) for label in referenceLabels),
+            max(italicMetrics.horizontalAdvance(label) for label in referenceLabels)
         ) + _LABEL_WIDTH_PADDING
 
     def _labelsForPrim(self, prim):

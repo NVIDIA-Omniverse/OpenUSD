@@ -20,6 +20,7 @@ _FLOAT_SPINBOX_WIDTH = _CONTROL_WIDTH
 _INT_SPINBOX_WIDTH = _CONTROL_WIDTH
 _STRING_WIDTH = 260
 _COMBO_BOX_WIDTH = _CONTROL_WIDTH
+_EDITOR_PANE_WIDTH = 730
 _GROUP_HEADER_STYLE = (
     "QToolButton {"
     " font-weight: bold;"
@@ -28,11 +29,12 @@ _GROUP_HEADER_STYLE = (
     " color: #999999;"
     " background-color: #2d2d2d;"
     " padding: 3px 6px;"
-    " margin-top: 2px;"
+    " margin-top: 0px;"
     " text-align: left;"
     "}"
     "QToolButton:hover { background-color: #333; border-color: #777; }")
 _GROUP_CONTENT_LEFT_MARGIN = 12
+_LABEL_WIDTH_REFERENCE = "transmission_dispersion_abbe_number"
 _LABEL_WIDTH_PADDING = 16
 _RENDERER_LABEL_STYLE = "font-weight: bold; color: #999999;"
 
@@ -52,7 +54,13 @@ class RenderSettingsEditor(QtWidgets.QWidget):
 
         root = QtWidgets.QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(4)
+        root.setSpacing(0)
+
+        pane = QtWidgets.QWidget()
+        pane.setFixedWidth(_EDITOR_PANE_WIDTH)
+        paneLayout = QtWidgets.QVBoxLayout(pane)
+        paneLayout.setContentsMargins(0, 0, 4, 0)
+        paneLayout.setSpacing(0)
 
         toolbar = QtWidgets.QHBoxLayout()
         toolbar.setContentsMargins(_GROUP_CONTENT_LEFT_MARGIN, 0, 0, 0)
@@ -61,18 +69,28 @@ class RenderSettingsEditor(QtWidgets.QWidget):
             QtCore.Qt.TextSelectableByMouse)
         self._rendererLabel.setStyleSheet(_RENDERER_LABEL_STYLE)
         toolbar.addWidget(self._rendererLabel, 1)
-        root.addLayout(toolbar)
+        paneLayout.addLayout(toolbar)
+
+        headerSpacerRow = QtWidgets.QHBoxLayout()
+        headerSpacerRow.setContentsMargins(_GROUP_CONTENT_LEFT_MARGIN, 0, 0, 0)
+        headerSpacerLabel = QtWidgets.QLabel(" ")
+        headerSpacerLabel.setWordWrap(True)
+        headerSpacerRow.addWidget(headerSpacerLabel, 1)
+        paneLayout.addLayout(headerSpacerRow)
+        paneLayout.addSpacing(5)
 
         self._scroll = QtWidgets.QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        root.addWidget(self._scroll, 1)
+        paneLayout.addWidget(self._scroll, 1)
+        root.addWidget(pane, 1, QtCore.Qt.AlignLeft)
 
         self._formContainer = QtWidgets.QWidget()
         self._form = QtWidgets.QFormLayout(self._formContainer)
         self._form.setFieldGrowthPolicy(
-            QtWidgets.QFormLayout.FieldsStayAtSizeHint)
+            QtWidgets.QFormLayout.ExpandingFieldsGrow)
         self._form.setLabelAlignment(QtCore.Qt.AlignLeft)
+        self._form.setContentsMargins(11, 0, 11, 11)
         self._scroll.setWidget(self._formContainer)
 
         self._pollTimer = QtCore.QTimer(self)
@@ -173,7 +191,7 @@ class RenderSettingsEditor(QtWidgets.QWidget):
         content = QtWidgets.QWidget()
         layout = QtWidgets.QFormLayout(content)
         layout.setFieldGrowthPolicy(
-            QtWidgets.QFormLayout.FieldsStayAtSizeHint)
+            QtWidgets.QFormLayout.ExpandingFieldsGrow)
         layout.setLabelAlignment(QtCore.Qt.AlignLeft)
         layout.setContentsMargins(_GROUP_CONTENT_LEFT_MARGIN, 2, 0, 6)
         layout.setHorizontalSpacing(12)
@@ -191,13 +209,14 @@ class RenderSettingsEditor(QtWidgets.QWidget):
         return layout
 
     def _computeSettingLabelWidth(self, names):
+        referenceNames = list(names) + [_LABEL_WIDTH_REFERENCE]
         normalMetrics = QtGui.QFontMetrics(self.font())
         italicFont = QtGui.QFont(self.font())
         italicFont.setItalic(True)
         italicMetrics = QtGui.QFontMetrics(italicFont)
         return max(
-            max(normalMetrics.horizontalAdvance(name) for name in names),
-            max(italicMetrics.horizontalAdvance(name) for name in names)
+            max(normalMetrics.horizontalAdvance(name) for name in referenceNames),
+            max(italicMetrics.horizontalAdvance(name) for name in referenceNames)
         ) + _LABEL_WIDTH_PADDING
 
     def _addSetting(self, setting, settingMetadata, layout):
@@ -254,7 +273,7 @@ class RenderSettingsEditor(QtWidgets.QWidget):
                 valueRange=_INT_RANGE,
                 spinWidth=_INT_SPINBOX_WIDTH)
             widget.setSizePolicy(
-                QtWidgets.QSizePolicy.Fixed,
+                QtWidgets.QSizePolicy.Expanding,
                 QtWidgets.QSizePolicy.Fixed)
             widget.valueChanged.connect(
                 lambda nextValue, s=setting, w=widget:
@@ -269,9 +288,10 @@ class RenderSettingsEditor(QtWidgets.QWidget):
                 step=0.01,
                 decimals=6,
                 spinWidth=_FLOAT_SPINBOX_WIDTH,
-                showSlider=False)
+                showSlider=False,
+                alignRight=True)
             widget.setSizePolicy(
-                QtWidgets.QSizePolicy.Fixed,
+                QtWidgets.QSizePolicy.Expanding,
                 QtWidgets.QSizePolicy.Fixed)
             widget.valueChanged.connect(
                 lambda nextValue, s=setting, w=widget:
@@ -283,7 +303,9 @@ class RenderSettingsEditor(QtWidgets.QWidget):
             if allowedTokens:
                 widget = QtWidgets.QComboBox()
                 widget.setMinimumWidth(_COMBO_BOX_WIDTH)
-                widget.setMaximumWidth(_COMBO_BOX_WIDTH)
+                widget.setSizePolicy(
+                    QtWidgets.QSizePolicy.Expanding,
+                    QtWidgets.QSizePolicy.Fixed)
                 valueText = str(value)
                 tokenTexts = [str(token) for token in allowedTokens]
                 if valueText and valueText not in tokenTexts:
@@ -299,7 +321,9 @@ class RenderSettingsEditor(QtWidgets.QWidget):
 
             widget = QtWidgets.QLineEdit(str(value))
             widget.setMinimumWidth(_STRING_WIDTH)
-            widget.setMaximumWidth(_STRING_WIDTH)
+            widget.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding,
+                QtWidgets.QSizePolicy.Fixed)
             widget.editingFinished.connect(
                 lambda s=setting, w=widget:
                     self._setSetting(s, w.text(), w))
