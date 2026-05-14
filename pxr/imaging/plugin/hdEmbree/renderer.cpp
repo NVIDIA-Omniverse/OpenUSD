@@ -39,6 +39,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <iterator>
 #include <limits>
 #include <stdint.h>
 #include <thread>
@@ -1261,9 +1262,41 @@ HdEmbreeRenderer::AddLight(
     HdEmbree_Light* light)
 {
     ScopedLock lightsWriteLock(_lightsWriteMutex);
-    _lightMap[lightPath] = light;
 
-    if (light->IsDome()) {
+    auto eraseDomeEntries = [this](HdEmbree_Light* lightToRemove) {
+        if (!lightToRemove) {
+            return;
+        }
+        _domes.erase(std::remove(_domes.begin(), _domes.end(), lightToRemove),
+                     _domes.end());
+    };
+
+    auto it = _lightMap.find(lightPath);
+    if (it != _lightMap.end() && it->second == light) {
+        if (!light || !light->IsDome()) {
+            return;
+        }
+
+        const auto firstDome =
+            std::find(_domes.begin(), _domes.end(), light);
+        if (firstDome != _domes.end() &&
+            std::find(std::next(firstDome), _domes.end(), light) ==
+                _domes.end()) {
+            return;
+        }
+
+        eraseDomeEntries(light);
+    } else {
+        if (it != _lightMap.end()) {
+            eraseDomeEntries(it->second);
+            it->second = light;
+        } else {
+            _lightMap.emplace(lightPath, light);
+        }
+        eraseDomeEntries(light);
+    }
+
+    if (light && light->IsDome()) {
         _domes.push_back(light);
     }
 }

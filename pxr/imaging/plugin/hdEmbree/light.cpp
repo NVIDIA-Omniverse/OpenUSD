@@ -365,144 +365,150 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
     embreeRenderParam->AcquireSceneForEdit();
 
     SdfPath const& id = GetId();
+    const HdDirtyBits bits = *dirtyBits;
 
-    // Get _lightData's transform. We'll only consider the first time sample for now
-    HdTimeSampleArray<GfMatrix4d, 1> xformSamples;
-    sceneDelegate->SampleTransform(id, &xformSamples);
-    _lightData.xformLightToWorld = GfMatrix4f(xformSamples.values[0]);
-    _lightData.xformWorldToLight = _lightData.xformLightToWorld.GetInverse();
-    _lightData.normalXformLightToWorld =
-        _lightData.xformWorldToLight.ExtractRotationMatrix().GetTranspose();
-
-    // Store luminance parameters
-    _lightData.intensity = sceneDelegate->GetLightParamValue(
-        id, HdLightTokens->intensity).GetWithDefault(1.0f);
-    _lightData.diffuse = sceneDelegate->GetLightParamValue(
-        id, HdLightTokens->diffuse).GetWithDefault(1.0f);
-    _lightData.exposure = sceneDelegate->GetLightParamValue(
-        id, HdLightTokens->exposure).GetWithDefault(0.0f);
-    _lightData.color = sceneDelegate->GetLightParamValue(
-        id, HdLightTokens->color).GetWithDefault(GfVec3f{1.0f, 1.0f, 1.0f});
-    _lightData.normalize = sceneDelegate->GetLightParamValue(
-        id, HdLightTokens->normalize).GetWithDefault(false);
-    _lightData.colorTemperature = sceneDelegate->GetLightParamValue(
-        id, HdLightTokens->colorTemperature).GetWithDefault(6500.0f);
-    _lightData.enableColorTemperature = sceneDelegate->GetLightParamValue(
-        id, HdLightTokens->enableColorTemperature).GetWithDefault(false);
-
-    // Get visibility
-    _lightData.visible = sceneDelegate->GetVisible(id);
-
-    // Switch on the _lightData type and pull the relevant attributes from the scene
-    // delegate
-    std::visit([this, &id, &sceneDelegate](auto& typedLight) {
-        using T = std::decay_t<decltype(typedLight)>;
-        if constexpr (std::is_same_v<T, HdEmbree_Cylinder>) {
-            typedLight = HdEmbree_Cylinder{
-                sceneDelegate->GetLightParamValue(id, HdLightTokens->radius)
-                    .GetWithDefault(0.5f),
-                sceneDelegate->GetLightParamValue(id, HdLightTokens->length)
-                    .GetWithDefault(1.0f),
-            };
-        } else if constexpr (std::is_same_v<T, HdEmbree_Disk>) {
-            typedLight = HdEmbree_Disk{
-                sceneDelegate->GetLightParamValue(id, HdLightTokens->radius)
-                    .GetWithDefault(0.5f),
-            };
-        } else if constexpr (std::is_same_v<T, HdEmbree_Dome>) {
-            typedLight = HdEmbree_Dome{};
-            _SyncLightTexture(id, _lightData, sceneDelegate);
-        } else if constexpr (std::is_same_v<T, HdEmbree_Rect>) {
-            typedLight = HdEmbree_Rect{
-                sceneDelegate->GetLightParamValue(id, HdLightTokens->width)
-                    .Get<float>(),
-                sceneDelegate->GetLightParamValue(id, HdLightTokens->height)
-                    .Get<float>(),
-            };
-            _SyncLightTexture(id, _lightData, sceneDelegate);
-        } else if constexpr (std::is_same_v<T, HdEmbree_Sphere>) {
-            typedLight = HdEmbree_Sphere{
-                sceneDelegate->GetLightParamValue(id, HdLightTokens->radius)
-                    .GetWithDefault(0.5f),
-            };
-        } else if constexpr (std::is_same_v<T, HdEmbree_Distant>) {
-            typedLight = HdEmbree_Distant{
-                float(GfDegreesToRadians(
-                    sceneDelegate->GetLightParamValue(id, HdLightTokens->angle)
-                        .GetWithDefault(0.53f) / 2.0f)),
-            };
-        } else if constexpr (std::is_same_v<T, HdEmbree_UnknownLight>) {
-            // Do nothing...
-        } else {
-            // We should never get to this branch, as all possible variants
-            // should be handled above, but as of summer 2025 gcc isn't clever
-            // enough to prune the static assert if the if-statement is
-            // exhaustive.  As a workaround, we static assert on sizeof(T),
-            // so that the assert only fires for concrete types we fail to
-            // handle.
-            static_assert(sizeof(T) == 0,
-                    "non-exhaustive _LightVariant visitor");
-        }
-    }, _lightData.lightVariant);
-
-    if (const auto value = sceneDelegate->GetLightParamValue(
-            id, HdLightTokens->shapingFocus);
-        value.IsHolding<float>()) {
-        _lightData.shaping.focus = value.UncheckedGet<float>();
+    if (bits & HdLight::DirtyTransform) {
+        // We'll only consider the first time sample for now.
+        HdTimeSampleArray<GfMatrix4d, 1> xformSamples;
+        sceneDelegate->SampleTransform(id, &xformSamples);
+        _lightData.xformLightToWorld = GfMatrix4f(xformSamples.values[0]);
+        _lightData.xformWorldToLight =
+            _lightData.xformLightToWorld.GetInverse();
+        _lightData.normalXformLightToWorld =
+            _lightData.xformWorldToLight.ExtractRotationMatrix().GetTranspose();
     }
 
-    if (const auto value = sceneDelegate->GetLightParamValue(
-            id, HdLightTokens->shapingFocusTint);
-        value.IsHolding<GfVec3f>()) {
-        _lightData.shaping.focusTint = value.UncheckedGet<GfVec3f>();
-    }
+    if (bits & (HdLight::DirtyParams | HdLight::DirtyResource)) {
+        // Store luminance parameters
+        _lightData.intensity = sceneDelegate->GetLightParamValue(
+            id, HdLightTokens->intensity).GetWithDefault(1.0f);
+        _lightData.diffuse = sceneDelegate->GetLightParamValue(
+            id, HdLightTokens->diffuse).GetWithDefault(1.0f);
+        _lightData.exposure = sceneDelegate->GetLightParamValue(
+            id, HdLightTokens->exposure).GetWithDefault(0.0f);
+        _lightData.color = sceneDelegate->GetLightParamValue(
+            id, HdLightTokens->color).GetWithDefault(GfVec3f{1.0f, 1.0f, 1.0f});
+        _lightData.normalize = sceneDelegate->GetLightParamValue(
+            id, HdLightTokens->normalize).GetWithDefault(false);
+        _lightData.colorTemperature = sceneDelegate->GetLightParamValue(
+            id, HdLightTokens->colorTemperature).GetWithDefault(6500.0f);
+        _lightData.enableColorTemperature = sceneDelegate->GetLightParamValue(
+            id, HdLightTokens->enableColorTemperature).GetWithDefault(false);
 
-    if (const auto value = sceneDelegate->GetLightParamValue(
-            id, HdLightTokens->shapingConeAngle);
-        value.IsHolding<float>()) {
-        _lightData.shaping.coneAngle = value.UncheckedGet<float>();
-    }
+        // Get visibility
+        _lightData.visible = sceneDelegate->GetVisible(id);
 
-    if (const auto value = sceneDelegate->GetLightParamValue(
-            id, HdLightTokens->shapingConeSoftness);
-        value.IsHolding<float>()) {
-        _lightData.shaping.coneSoftness = value.UncheckedGet<float>();
-    }
-
-    if (const auto value = sceneDelegate->GetLightParamValue(
-            id, HdLightTokens->shapingIesFile);
-        value.IsHolding<SdfAssetPath>()) {
-        SdfAssetPath iesAssetPath = value.UncheckedGet<SdfAssetPath>();
-        std::string iesPath = iesAssetPath.GetResolvedPath();
-        if (iesPath.empty()) {
-            iesPath = iesAssetPath.GetAssetPath();
-        }
-
-        if (!iesPath.empty()) {
-            std::ifstream in(iesPath);
-            if (!in.is_open()) {
-                TF_WARN("could not open ies file %s", iesPath.c_str());
+        // Switch on the _lightData type and pull the relevant attributes from
+        // the scene delegate.
+        std::visit([this, &id, &sceneDelegate](auto& typedLight) {
+            using T = std::decay_t<decltype(typedLight)>;
+            if constexpr (std::is_same_v<T, HdEmbree_Cylinder>) {
+                typedLight = HdEmbree_Cylinder{
+                    sceneDelegate->GetLightParamValue(id, HdLightTokens->radius)
+                        .GetWithDefault(0.5f),
+                    sceneDelegate->GetLightParamValue(id, HdLightTokens->length)
+                        .GetWithDefault(1.0f),
+                };
+            } else if constexpr (std::is_same_v<T, HdEmbree_Disk>) {
+                typedLight = HdEmbree_Disk{
+                    sceneDelegate->GetLightParamValue(id, HdLightTokens->radius)
+                        .GetWithDefault(0.5f),
+                };
+            } else if constexpr (std::is_same_v<T, HdEmbree_Dome>) {
+                typedLight = HdEmbree_Dome{};
+                _SyncLightTexture(id, _lightData, sceneDelegate);
+            } else if constexpr (std::is_same_v<T, HdEmbree_Rect>) {
+                typedLight = HdEmbree_Rect{
+                    sceneDelegate->GetLightParamValue(id, HdLightTokens->width)
+                        .Get<float>(),
+                    sceneDelegate->GetLightParamValue(id, HdLightTokens->height)
+                        .Get<float>(),
+                };
+                _SyncLightTexture(id, _lightData, sceneDelegate);
+            } else if constexpr (std::is_same_v<T, HdEmbree_Sphere>) {
+                typedLight = HdEmbree_Sphere{
+                    sceneDelegate->GetLightParamValue(id, HdLightTokens->radius)
+                        .GetWithDefault(0.5f),
+                };
+            } else if constexpr (std::is_same_v<T, HdEmbree_Distant>) {
+                typedLight = HdEmbree_Distant{
+                    float(GfDegreesToRadians(
+                        sceneDelegate->GetLightParamValue(id, HdLightTokens->angle)
+                            .GetWithDefault(0.53f) / 2.0f)),
+                };
+            } else if constexpr (std::is_same_v<T, HdEmbree_UnknownLight>) {
+                // Do nothing...
             } else {
-                std::stringstream buffer;
-                buffer << in.rdbuf();
+                // We should never get to this branch, as all possible variants
+                // should be handled above, but as of summer 2025 gcc isn't
+                // clever enough to prune the static assert if the if-statement
+                // is exhaustive. As a workaround, we static assert on sizeof(T),
+                // so that the assert only fires for concrete types we fail to
+                // handle.
+                static_assert(sizeof(T) == 0,
+                        "non-exhaustive _LightVariant visitor");
+            }
+        }, _lightData.lightVariant);
 
-                if (_lightData.shaping.ies.iesFile.load(buffer.str())) {
-                    TF_WARN("could not load ies file %s", iesPath.c_str());
+        if (const auto value = sceneDelegate->GetLightParamValue(
+                id, HdLightTokens->shapingFocus);
+            value.IsHolding<float>()) {
+            _lightData.shaping.focus = value.UncheckedGet<float>();
+        }
+
+        if (const auto value = sceneDelegate->GetLightParamValue(
+                id, HdLightTokens->shapingFocusTint);
+            value.IsHolding<GfVec3f>()) {
+            _lightData.shaping.focusTint = value.UncheckedGet<GfVec3f>();
+        }
+
+        if (const auto value = sceneDelegate->GetLightParamValue(
+                id, HdLightTokens->shapingConeAngle);
+            value.IsHolding<float>()) {
+            _lightData.shaping.coneAngle = value.UncheckedGet<float>();
+        }
+
+        if (const auto value = sceneDelegate->GetLightParamValue(
+                id, HdLightTokens->shapingConeSoftness);
+            value.IsHolding<float>()) {
+            _lightData.shaping.coneSoftness = value.UncheckedGet<float>();
+        }
+
+        if (const auto value = sceneDelegate->GetLightParamValue(
+                id, HdLightTokens->shapingIesFile);
+            value.IsHolding<SdfAssetPath>()) {
+            SdfAssetPath iesAssetPath = value.UncheckedGet<SdfAssetPath>();
+            std::string iesPath = iesAssetPath.GetResolvedPath();
+            if (iesPath.empty()) {
+                iesPath = iesAssetPath.GetAssetPath();
+            }
+
+            if (!iesPath.empty()) {
+                std::ifstream in(iesPath);
+                if (!in.is_open()) {
+                    TF_WARN("could not open ies file %s", iesPath.c_str());
+                } else {
+                    std::stringstream buffer;
+                    buffer << in.rdbuf();
+
+                    if (!_lightData.shaping.ies.iesFile.load(buffer.str())) {
+                        TF_WARN("could not load ies file %s", iesPath.c_str());
+                    }
                 }
             }
         }
-    }
 
-    if (const auto value = sceneDelegate->GetLightParamValue(
-            id, HdLightTokens->shapingIesNormalize);
-        value.IsHolding<bool>()) {
-        _lightData.shaping.ies.normalize = value.UncheckedGet<bool>();
-    }
+        if (const auto value = sceneDelegate->GetLightParamValue(
+                id, HdLightTokens->shapingIesNormalize);
+            value.IsHolding<bool>()) {
+            _lightData.shaping.ies.normalize = value.UncheckedGet<bool>();
+        }
 
-    if (const auto value = sceneDelegate->GetLightParamValue(
-            id, HdLightTokens->shapingIesAngleScale);
-        value.IsHolding<float>()) {
-        _lightData.shaping.ies.angleScale = value.UncheckedGet<float>();
+        if (const auto value = sceneDelegate->GetLightParamValue(
+                id, HdLightTokens->shapingIesAngleScale);
+            value.IsHolding<float>()) {
+            _lightData.shaping.ies.angleScale = value.UncheckedGet<float>();
+        }
     }
 
     HdEmbreeRenderer *renderer = embreeRenderParam->GetRenderer();
