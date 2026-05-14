@@ -11,6 +11,7 @@
 #include "pxr/imaging/hd/tokens.h"
 #include "pxr/imaging/hd/utils.h"
 #include "pxr/imaging/plugin/hdEmbree/config.h"
+#include "pxr/imaging/plugin/hdEmbree/material.h"
 #include "pxr/imaging/plugin/hdEmbree/renderDelegate.h"
 #include "pxr/imaging/plugin/hdEmbree/renderPass.h"
 #include "pxr/base/tf/diagnostic.h"
@@ -143,18 +144,22 @@ _GetSceneFrameAndTime(const HdSceneIndexBaseRefPtr &si,
 }
 
 static void
-_MarkMaterialNetworksDirty(HdRenderIndex *index)
+_ResyncMaterialNetworksForRenderContextChange(HdRenderIndex *index)
 {
     if (!index || !index->IsSprimTypeSupported(HdPrimTypeTokens->material)) {
         return;
     }
 
+    HdRenderParam *renderParam = index->GetRenderDelegate()->GetRenderParam();
     for (const SdfPath &path :
              index->GetSprimSubtree(
                  HdPrimTypeTokens->material,
                  SdfPath::AbsoluteRootPath())) {
-        index->GetChangeTracker().MarkSprimDirty(
-            path, HdMaterial::DirtyResource);
+        HdEmbreeMaterial *material = dynamic_cast<HdEmbreeMaterial *>(
+            index->GetSprim(HdPrimTypeTokens->material, path));
+        if (material) {
+            material->ResyncForRenderContextChange(renderParam);
+        }
     }
 }
 
@@ -423,8 +428,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                 config.useAdobeOpenPBR));
 
         if (materialRenderContextsChanged) {
-            _MarkMaterialNetworksDirty(GetRenderIndex());
-            return;
+            _ResyncMaterialNetworksForRenderContextChange(GetRenderIndex());
         }
 
         needStartRender = true;

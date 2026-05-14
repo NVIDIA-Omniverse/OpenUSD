@@ -32,10 +32,16 @@ public:
 
     HdDirtyBits GetInitialDirtyBitsMask() const override;
 
+    /// Recompile the material after the render context priority changed.
+    void ResyncForRenderContextChange(HdRenderParam *renderParam);
+
     /// Return the compiled evaluation graph, or nullptr if unavailable.
     mxcpp::EvalGraph* GetEvalGraph() const { return _evalGraph.get(); }
 
 private:
+    // Non-owning; cached from the last Hydra Sync for direct recompile when
+    // render-setting context priority changes outside normal dirty tracking.
+    HdSceneDelegate *_sceneDelegate = nullptr;
     std::unique_ptr<mxcpp::EvalGraph> _evalGraph;
 };
 

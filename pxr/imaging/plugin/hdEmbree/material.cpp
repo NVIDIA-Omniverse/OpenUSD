@@ -33,6 +33,8 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
 {
     HD_TRACE_FUNCTION();
 
+    _sceneDelegate = sceneDelegate;
+
     if (!(*dirtyBits & HdMaterial::AllDirty)) {
         *dirtyBits = HdMaterial::Clean;
         return;
@@ -97,6 +99,17 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
     }
 
     *dirtyBits = HdMaterial::Clean;
+}
+
+void
+HdEmbreeMaterial::ResyncForRenderContextChange(HdRenderParam *renderParam)
+{
+    if (!_sceneDelegate) {
+        return;
+    }
+
+    HdDirtyBits dirtyBits = HdMaterial::DirtyResource;
+    Sync(_sceneDelegate, renderParam, &dirtyBits);
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE
