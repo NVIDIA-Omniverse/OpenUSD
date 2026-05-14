@@ -1,0 +1,16 @@
+{
+    "Plugins": [
+        {
+            "Type": "python",
+            "Name": "renderLab",
+            "Info": {
+                "Types": {
+                    "renderLab.RenderLabContainer": {
+                        "bases": ["pxr.Usdviewq.plugin.PluginContainer"],
+                        "displayName": "RenderLab"
+                    }
+                }
+            }
+        }
+    ]
+}

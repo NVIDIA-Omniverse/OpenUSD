@@ -12,11 +12,17 @@ if [[ $# -gt 0 && -d "$1" ]]; then
 fi
 
 plugin_dir="${repo_root}/extras/usd/examples/usdviewPlugins"
+plugin_paths=(
+    "${install_root}/lib/usd"
+    "${install_root}/plugin/usd"
+    "${plugin_dir}/materialEditor"
+    "${plugin_dir}/renderLab"
+)
 
 export PATH="${install_root}/bin${PATH:+:${PATH}}"
 export PYTHONPATH="${plugin_dir}:${install_root}/lib/python${PYTHONPATH:+:${PYTHONPATH}}"
 export LD_LIBRARY_PATH="${install_root}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
-export PXR_PLUGINPATH_NAME="${install_root}/lib/usd:${install_root}/plugin/usd:${plugin_dir}/materialEditor${PXR_PLUGINPATH_NAME:+:${PXR_PLUGINPATH_NAME}}"
+export PXR_PLUGINPATH_NAME="$(IFS=:; echo "${plugin_paths[*]}")${PXR_PLUGINPATH_NAME:+:${PXR_PLUGINPATH_NAME}}"
 
 if [[ $# -eq 0 ]]; then
     echo "Usage: $(basename "$0") [install_dir] <usd-command> [args...]" >&2
