@@ -3,6 +3,25 @@
 from pxr.Usdviewq.qt import QtCore, QtGui, QtWidgets
 
 
+_SLIDER_HANDLE_WIDTH = 7
+_SLIDER_HANDLE_HEIGHT = 16
+_SLIDER_HANDLE_RADIUS = 2
+_SLIDER_HANDLE_COLOR = QtGui.QColor("#999999")
+_SLIDER_HANDLE_HOVER_COLOR = QtGui.QColor("#d0d0d0")
+_SLIDER_HANDLE_BORDER_COLOR = QtGui.QColor("#202020")
+
+_CHECKBOX_STYLE = """
+QCheckBox::indicator:unchecked {
+    background: rgb(74, 74, 74);
+}
+
+QCheckBox::indicator:unchecked:hover {
+    background: rgb(82, 82, 82);
+    border: 1px solid rgb(163, 135, 78);
+}
+"""
+
+
 def valuesEqual(left, right):
     if right is None:
         return False
@@ -30,8 +49,57 @@ def valuesEqual(left, right):
 
 class NoWheelSlider(QtWidgets.QSlider):
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setMinimumHeight(max(self.minimumHeight(), _SLIDER_HANDLE_HEIGHT + 2))
+
+    def paintEvent(self, event):
+        if self.orientation() != QtCore.Qt.Horizontal:
+            super().paintEvent(event)
+            return
+
+        painter = QtGui.QPainter(self)
+        option = QtWidgets.QStyleOptionSlider()
+        self.initStyleOption(option)
+        option.subControls = QtWidgets.QStyle.SC_SliderGroove
+        self.style().drawComplexControl(
+            QtWidgets.QStyle.CC_Slider, option, painter, self)
+
+        handleRect = self._handleRect()
+        handleColor = (
+            _SLIDER_HANDLE_HOVER_COLOR
+            if self.isEnabled() and self.underMouse()
+            else _SLIDER_HANDLE_COLOR)
+        painter.setPen(QtGui.QPen(_SLIDER_HANDLE_BORDER_COLOR))
+        painter.setBrush(QtGui.QBrush(handleColor))
+        painter.drawRoundedRect(
+            handleRect,
+            _SLIDER_HANDLE_RADIUS,
+            _SLIDER_HANDLE_RADIUS)
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self.update()
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self.update()
+
     def wheelEvent(self, event):
         event.ignore()
+
+    def _handleRect(self):
+        option = QtWidgets.QStyleOptionSlider()
+        self.initStyleOption(option)
+        styleRect = self.style().subControlRect(
+            QtWidgets.QStyle.CC_Slider,
+            option,
+            QtWidgets.QStyle.SC_SliderHandle,
+            self)
+        x = styleRect.left()
+        y = styleRect.center().y() - (_SLIDER_HANDLE_HEIGHT // 2)
+        return QtCore.QRect(
+            x, y, _SLIDER_HANDLE_WIDTH, _SLIDER_HANDLE_HEIGHT)
 
 
 class NoWheelDoubleSpinBox(QtWidgets.QDoubleSpinBox):
@@ -45,6 +113,12 @@ class NoWheelDoubleSpinBox(QtWidgets.QDoubleSpinBox):
 
 
 class NoWheelSpinBox(QtWidgets.QSpinBox):
+
+    def wheelEvent(self, event):
+        event.ignore()
+
+
+class NoWheelComboBox(QtWidgets.QComboBox):
 
     def wheelEvent(self, event):
         event.ignore()
@@ -182,6 +256,7 @@ class BoolControl(QtWidgets.QCheckBox):
 
     def __init__(self, value=None, parent=None):
         super().__init__(parent)
+        self.setStyleSheet(_CHECKBOX_STYLE)
         if value is not None:
             self.setChecked(bool(value))
 

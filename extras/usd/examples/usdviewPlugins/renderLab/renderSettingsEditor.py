@@ -7,6 +7,7 @@ from .parameterWidgets import (
     BoolControl,
     FloatControl,
     IntControl,
+    NoWheelComboBox,
     ParameterRow,
     valuesEqual,
 )
@@ -16,8 +17,9 @@ from . import renderSettingsMetadata
 _INT_RANGE = (-2 ** 31, 2 ** 31 - 1)
 _FLOAT_RANGE = (-2 ** 31, 2 ** 31 - 1)
 _CONTROL_WIDTH = 150
-_FLOAT_SPINBOX_WIDTH = _CONTROL_WIDTH
-_INT_SPINBOX_WIDTH = _CONTROL_WIDTH
+_SPINBOX_WIDTH = 104
+_FLOAT_SPINBOX_WIDTH = _SPINBOX_WIDTH
+_INT_SPINBOX_WIDTH = _SPINBOX_WIDTH
 _STRING_WIDTH = 260
 _COMBO_BOX_WIDTH = _CONTROL_WIDTH
 _EDITOR_PANE_WIDTH = 730
@@ -301,7 +303,7 @@ class RenderSettingsEditor(QtWidgets.QWidget):
         if settingType == UsdImagingGL.RendererSettingType.STRING:
             allowedTokens = settingMetadata.get("allowedTokens")
             if allowedTokens:
-                widget = QtWidgets.QComboBox()
+                widget = NoWheelComboBox()
                 widget.setMinimumWidth(_COMBO_BOX_WIDTH)
                 widget.setSizePolicy(
                     QtWidgets.QSizePolicy.Expanding,

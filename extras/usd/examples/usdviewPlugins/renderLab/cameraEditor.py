@@ -5,6 +5,7 @@ from pxr.Usdviewq.qt import QtCore, QtGui, QtWidgets
 
 from .parameterWidgets import (
     FloatControl,
+    NoWheelComboBox,
     ParameterRow,
     Vec2Control,
     Vec4Control,
@@ -466,7 +467,7 @@ class CameraEditor(QtWidgets.QWidget):
 
     def _addTokenAttr(
             self, label, getAttrFn, createAttrFn, defaultValue, values, layout):
-        combo = QtWidgets.QComboBox()
+        combo = NoWheelComboBox()
         combo.setMinimumWidth(_COMBO_BOX_WIDTH)
         combo.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding,

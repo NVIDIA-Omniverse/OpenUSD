@@ -10,6 +10,7 @@ from .parameterWidgets import (
     Color3Control,
     FloatControl,
     IntControl,
+    NoWheelComboBox,
     ParameterRow,
     Vec3Control,
 )
@@ -191,7 +192,7 @@ class MaterialEditor(QtWidgets.QWidget):
         contextLabel = QtWidgets.QLabel("Material Context: ")
         contextLabel.setStyleSheet(_HEADER_LABEL_STYLE)
         toolbar.addWidget(contextLabel)
-        self._contextCombo = QtWidgets.QComboBox()
+        self._contextCombo = NoWheelComboBox()
         self._contextCombo.setMinimumWidth(96)
         self._contextCombo.setFixedHeight(_CONTEXT_COMBO_HEIGHT)
         self._contextCombo.view().setMinimumWidth(96)
