@@ -621,6 +621,182 @@ _InvalidLightSample()
     };
 }
 
+GfVec3f
+_EvalLightBasic(HdEmbree_LightData const& light);
+
+bool
+_GetDistantLightDirection(
+    HdEmbree_LightData const& light,
+    GfVec3f* outDirection)
+{
+    if (!outDirection) {
+        return false;
+    }
+
+    const GfVec3f direction =
+        light.xformLightToWorld.TransformDir(GfVec3f::ZAxis());
+    if (!_IsFinite(direction) || direction.GetLengthSq() <= 0.0f) {
+        return false;
+    }
+
+    *outDirection = direction.GetNormalized();
+    return true;
+}
+
+float
+_DistantHalfAngleRadians(HdEmbree_Distant const& distant)
+{
+    const float angle = std::isfinite(distant.angle)
+        ? GfClamp(distant.angle, 0.0f, 360.0f)
+        : 0.0f;
+    const float halfAngle =
+        0.5f * static_cast<float>(GfDegreesToRadians(angle));
+    return GfClamp(
+        halfAngle,
+        0.0f,
+        _pi<float>);
+}
+
+float
+_DistantConeSolidAngle(float thetaMax)
+{
+    if (thetaMax <= 0.0f) {
+        return 0.0f;
+    }
+    return 2.0f * _pi<float> *
+        (1.0f - std::cos(GfClamp(thetaMax, 0.0f, _pi<float>)));
+}
+
+float
+_DistantNormalizeSizeFactor(float thetaMax)
+{
+    if (thetaMax <= 0.0f) {
+        return 1.0f;
+    }
+
+    const float sinTheta = std::sin(GfClamp(thetaMax, 0.0f, _pi<float>));
+    const float sinTheta2 = sinTheta * sinTheta;
+    if (thetaMax <= 0.5f * _pi<float>) {
+        return sinTheta2 * _pi<float>;
+    }
+    return (2.0f - sinTheta2) * _pi<float>;
+}
+
+GfVec3f
+_EvalDistantLightRadiance(
+    HdEmbree_LightData const& light,
+    HdEmbree_Distant const& distant)
+{
+    GfVec3f Li = _EvalLightBasic(light);
+    if (light.normalize) {
+        const float sizeFactor =
+            _DistantNormalizeSizeFactor(_DistantHalfAngleRadians(distant));
+        if (sizeFactor > 0.0f) {
+            Li /= sizeFactor;
+        }
+    }
+    return Li;
+}
+
+HdEmbreeLightSampler::LightSample
+_EvaluateDistantLightDirection(
+    HdEmbree_LightData const& light,
+    HdEmbree_Distant const& distant,
+    GfVec3f const& direction)
+{
+    if (!_IsFinite(direction) || direction.GetLengthSq() <= 0.0f) {
+        return _InvalidLightSample();
+    }
+
+    GfVec3f axis;
+    if (!_GetDistantLightDirection(light, &axis)) {
+        return _InvalidLightSample();
+    }
+
+    const float thetaMax = _DistantHalfAngleRadians(distant);
+    const GfVec3f wi = direction.GetNormalized();
+    const float cosTheta = GfDot(wi, axis);
+    const GfVec3f Li = _EvalDistantLightRadiance(light, distant);
+
+    if (thetaMax <= 0.0f) {
+        constexpr float directionEps = 1.0e-5f;
+        if (cosTheta < 1.0f - directionEps) {
+            return _InvalidLightSample();
+        }
+        return HdEmbreeLightSampler::LightSample {
+            Li,
+            axis,
+            std::numeric_limits<float>::max(),
+            1.0f,
+            true,
+            true
+        };
+    }
+
+    const float solidAngle = _DistantConeSolidAngle(thetaMax);
+    const float cosThetaMax = std::cos(thetaMax);
+    constexpr float coneEps = 1.0e-6f;
+    if (solidAngle <= 0.0f || cosTheta < cosThetaMax - coneEps) {
+        return _InvalidLightSample();
+    }
+
+    return HdEmbreeLightSampler::LightSample {
+        Li,
+        wi,
+        std::numeric_limits<float>::max(),
+        solidAngle,
+        true,
+        false
+    };
+}
+
+HdEmbreeLightSampler::LightSample
+_EvalDistantLight(
+    HdEmbree_LightData const& light,
+    HdEmbree_Distant const& distant,
+    float u1,
+    float u2)
+{
+    GfVec3f axis;
+    if (!_GetDistantLightDirection(light, &axis)) {
+        return _InvalidLightSample();
+    }
+
+    const float thetaMax = _DistantHalfAngleRadians(distant);
+    if (thetaMax <= 0.0f) {
+        return _EvaluateDistantLightDirection(light, distant, axis);
+    }
+
+    const float solidAngle = _DistantConeSolidAngle(thetaMax);
+    if (solidAngle <= 0.0f) {
+        return _InvalidLightSample();
+    }
+
+    GfVec3f tangent;
+    GfVec3f bitangent;
+    GfBuildOrthonormalFrame(axis, &tangent, &bitangent);
+
+    const float cosThetaMax = std::cos(thetaMax);
+    const float cosTheta =
+        1.0f - _ClampUnit(u1) * (1.0f - cosThetaMax);
+    const float sinTheta =
+        std::sqrt(std::max(0.0f, 1.0f - _Sqr(cosTheta)));
+    const float phi = 2.0f * _pi<float> * _ClampUnit(u2);
+    const GfVec3f wi =
+        (tangent * (sinTheta * std::cos(phi)) +
+         bitangent * (sinTheta * std::sin(phi)) +
+         axis * cosTheta).GetNormalized();
+
+    return HdEmbreeLightSampler::LightSample {
+        _EvalDistantLightRadiance(light, distant),
+        wi,
+        std::numeric_limits<float>::max(),
+        solidAngle,
+        true,
+        false
+    };
+}
+
 HdEmbreeLightSampler::LightSample
 _EvaluateDomeLightDirection(
     HdEmbree_LightData const& light,
@@ -1032,6 +1208,10 @@ _EvaluateLightDirection(
                    std::get_if<HdEmbree_Cylinder>(&light.lightVariant)) {
         hit = _IntersectCylinderLight(
             light, *cylinder, position, normalizedDirection, &shapeSample);
+    } else if (auto const* distant =
+                   std::get_if<HdEmbree_Distant>(&light.lightVariant)) {
+        return _EvaluateDistantLightDirection(
+            light, *distant, normalizedDirection);
     } else if (std::holds_alternative<HdEmbree_Dome>(light.lightVariant)) {
         return _EvaluateDomeLightDirection(light, normalizedDirection);
     }
@@ -1150,51 +1330,6 @@ _EvalDomeLight(HdEmbree_LightData const& light, GfVec3f const& normal,
     return _EvaluateDomeLightDirection(light, worldDirection);
 }
 
-HdEmbreeLightSampler::LightSample
-_EvalDistantLight(HdEmbree_LightData const& light, GfVec3f const& position,
-                  float u1, float u2)
-{
-    auto const& distant = std::get<HdEmbree_Distant>(light.lightVariant);
-
-    GfVec3f Le = _EvalLightBasic(light);
-
-    if (distant.halfAngleRadians > 0.0f)
-    {
-        if (light.normalize)
-        {
-            float sinTheta = sinf(distant.halfAngleRadians);
-            Le /= _Sqr(sinTheta) * _pi<float>;
-        }
-
-        // There's an implicit double-negation of the wI direction here
-        GfVec3f localDir = pxr_pbrt::SampleUniformCone(GfVec2f(u1, u2),
-            distant.halfAngleRadians);
-        GfVec3f wI = light.xformLightToWorld.TransformDir(localDir);
-        wI.Normalize();
-
-        return HdEmbreeLightSampler::LightSample {
-            Le,
-            wI,
-            std::numeric_limits<float>::max(),
-            pxr_pbrt::InvUniformConePDF(distant.halfAngleRadians)
-        };
-    }
-    else
-    {
-        // delta case, infinite pdf
-        GfVec3f wI = light.xformLightToWorld.TransformDir(
-            GfVec3f(0.0f, 0.0f, 1.0f));
-        wI.Normalize();
-
-        return HdEmbreeLightSampler::LightSample {
-            Le,
-            wI,
-            std::numeric_limits<float>::max(),
-            1.0f,
-        };
-    }
-}
-
 } // namespace ""
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -1297,7 +1432,7 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
 
 HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
         HdEmbree_Distant const& distant) {
-    return _EvalDistantLight(_lightData, _hitPosition, _u1, _u2);
+    return _EvalDistantLight(_lightData, distant, _u1, _u2);
 }
 
 HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(

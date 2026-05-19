@@ -380,8 +380,12 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
 
     if (bits & (HdLight::DirtyParams | HdLight::DirtyResource)) {
         // Store luminance parameters
+        const bool isDistant =
+            std::holds_alternative<HdEmbree_Distant>(
+                _lightData.lightVariant);
         _lightData.intensity = sceneDelegate->GetLightParamValue(
-            id, HdLightTokens->intensity).GetWithDefault(1.0f);
+            id, HdLightTokens->intensity).GetWithDefault(
+                isDistant ? 50000.0f : 1.0f);
         _lightData.diffuse = sceneDelegate->GetLightParamValue(
             id, HdLightTokens->diffuse).GetWithDefault(1.0f);
         _lightData.exposure = sceneDelegate->GetLightParamValue(
@@ -414,6 +418,11 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
                     sceneDelegate->GetLightParamValue(id, HdLightTokens->radius)
                         .GetWithDefault(0.5f),
                 };
+            } else if constexpr (std::is_same_v<T, HdEmbree_Distant>) {
+                typedLight = HdEmbree_Distant{
+                    sceneDelegate->GetLightParamValue(id, HdLightTokens->angle)
+                        .GetWithDefault(0.53f),
+                };
             } else if constexpr (std::is_same_v<T, HdEmbree_Dome>) {
                 typedLight = HdEmbree_Dome{};
                 _SyncLightTexture(id, _lightData, sceneDelegate);
@@ -429,12 +438,6 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
                 typedLight = HdEmbree_Sphere{
                     sceneDelegate->GetLightParamValue(id, HdLightTokens->radius)
                         .GetWithDefault(0.5f),
-                };
-            } else if constexpr (std::is_same_v<T, HdEmbree_Distant>) {
-                typedLight = HdEmbree_Distant{
-                    float(GfDegreesToRadians(
-                        sceneDelegate->GetLightParamValue(id, HdLightTokens->angle)
-                            .GetWithDefault(0.53f) / 2.0f)),
                 };
             } else if constexpr (std::is_same_v<T, HdEmbree_UnknownLight>) {
                 // Do nothing...

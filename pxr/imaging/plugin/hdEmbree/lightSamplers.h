@@ -29,6 +29,7 @@ public:
         float dist;
         float invPdfW;
         bool valid;
+        bool delta = false;
     };
 
     static LightSample GetLightSample(

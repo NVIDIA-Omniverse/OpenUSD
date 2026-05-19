@@ -3220,7 +3220,7 @@ HdEmbreeRenderer::_FindNearestFiniteLightHit(
     HdEmbreeLightSampler::LightSample closestSample{};
 
     for (auto const& it : _lightMap) {
-        if (!it.second || it.second->IsDome()) {
+        if (!it.second || !it.second->IsFiniteLight()) {
             continue;
         }
 
@@ -3639,12 +3639,15 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 // MIS weight for the multi-sample estimator. The contribution
                 // itself is averaged by 1/N outside this loop, but Veach's
                 // multi-sample MIS weights use n_i * p_i for each strategy.
-                float lightPdf = (ls.invPdfW > 0.0f)
-                    ? 1.0f / ls.invPdfW : 0.0f;
-                const float effectiveLightPdf =
-                    _GetMultiSampleMisLightPdf(lightPdf, N);
-                float misW =
-                    mxcpp::Bsdf::PowerHeuristic(effectiveLightPdf, bsdfPdf);
+                float misW = 1.0f;
+                if (!ls.delta) {
+                    float lightPdf = (ls.invPdfW > 0.0f)
+                        ? 1.0f / ls.invPdfW : 0.0f;
+                    const float effectiveLightPdf =
+                        _GetMultiSampleMisLightPdf(lightPdf, N);
+                    misW = mxcpp::Bsdf::PowerHeuristic(
+                        effectiveLightPdf, bsdfPdf);
+                }
 
                 if (hero.active) {
                     const float spectralLi = _RgbToSpectralValue(ls.Li, hero);
@@ -3782,7 +3785,7 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
             }
 
             float misW = 1.0f;
-            if (ls.invPdfW > 0.0f) {
+            if (!ls.delta && ls.invPdfW > 0.0f) {
                 const float lightPdf = 1.0f / ls.invPdfW;
                 const float effectiveLightPdf = _GetMultiSampleMisLightPdf(
                     lightPdf,

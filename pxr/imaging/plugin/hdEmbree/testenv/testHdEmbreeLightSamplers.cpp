@@ -100,6 +100,20 @@ _MakeSphereLight(const GfVec3f& center, float radius)
     return light;
 }
 
+HdEmbree_LightData
+_MakeDistantLight(float angle)
+{
+    HdEmbree_LightData light;
+    light.xformLightToWorld = GfMatrix4f(1.0f);
+    light.xformWorldToLight = GfMatrix4f(1.0f);
+    light.normalXformLightToWorld = GfMatrix3f(1.0f);
+    light.color = GfVec3f(1.0f);
+    light.intensity = 1.0f;
+    light.diffuse = 1.0f;
+    light.lightVariant = HdEmbree_Distant{angle};
+    return light;
+}
+
 bool
 TestDomeDistributionBuildsCdfs()
 {
@@ -401,6 +415,117 @@ TestSphereSampleMatchesDirectionalEvaluation()
 }
 
 bool
+TestDistantDeltaSamplesLocalPositiveZ()
+{
+    const HdEmbree_LightData light = _MakeDistantLight(0.0f);
+
+    const auto sampled = HdEmbreeLightSampler::GetLightSample(
+        light,
+        GfVec3f(0.0f),
+        GfVec3f::ZAxis(),
+        0.37f,
+        0.91f);
+    if (!sampled.valid || !sampled.delta) {
+        std::printf("    expected valid delta distant light sample\n");
+        return false;
+    }
+    if (!_IsClose(sampled.wI, GfVec3f::ZAxis(), 1e-6f)) {
+        std::printf("    expected local +Z sample direction, got (%f, %f, %f)\n",
+                    sampled.wI[0], sampled.wI[1], sampled.wI[2]);
+        return false;
+    }
+    if (!_IsClose(sampled.invPdfW, 1.0f, 1e-6f)) {
+        std::printf("    expected unit delta inverse pdf, got %f\n",
+                    sampled.invPdfW);
+        return false;
+    }
+
+    const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
+        light, GfVec3f(0.0f), GfVec3f::ZAxis());
+    const auto opposite = HdEmbreeLightSampler::EvaluateLightDirection(
+        light, GfVec3f(0.0f), -GfVec3f::ZAxis());
+    if (!evaluated.valid || !evaluated.delta || opposite.valid) {
+        std::printf("    expected only the +Z delta direction to evaluate\n");
+        return false;
+    }
+
+    return true;
+}
+
+bool
+TestDistantConeSampleMatchesDirectionalEvaluation()
+{
+    const HdEmbree_LightData light = _MakeDistantLight(60.0f);
+    const float thetaMax = 0.5f * 60.0f *
+        static_cast<float>(M_PI) / 180.0f;
+    const float expectedInvPdfW =
+        2.0f * static_cast<float>(M_PI) * (1.0f - std::cos(thetaMax));
+
+    const std::vector<GfVec2f> samples = {
+        GfVec2f(0.0f, 0.0f),
+        GfVec2f(0.25f, 0.5f),
+        GfVec2f(0.8f, 0.9f),
+    };
+
+    for (const GfVec2f& u : samples) {
+        const auto sampled = HdEmbreeLightSampler::GetLightSample(
+            light, GfVec3f(0.0f), GfVec3f::ZAxis(), u[0], u[1]);
+        const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
+            light, GfVec3f(0.0f), sampled.wI);
+
+        if (!sampled.valid || sampled.delta || !evaluated.valid ||
+            evaluated.delta) {
+            std::printf("    expected valid non-delta distant cone samples\n");
+            return false;
+        }
+        if (!_IsClose(sampled.Li, evaluated.Li, 1e-5f)) {
+            std::printf("    sampled/evaluated distant Li mismatch\n");
+            return false;
+        }
+        if (!_IsClose(sampled.invPdfW, expectedInvPdfW, 1e-5f) ||
+            !_IsClose(evaluated.invPdfW, expectedInvPdfW, 1e-5f)) {
+            std::printf(
+                "    distant invPdf mismatch: sampled=%f evaluated=%f expected=%f\n",
+                sampled.invPdfW,
+                evaluated.invPdfW,
+                expectedInvPdfW);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool
+TestDistantNormalizeUsesUsdLuxSizeFactor()
+{
+    HdEmbree_LightData light = _MakeDistantLight(60.0f);
+    light.normalize = true;
+    light.intensity = 10.0f;
+
+    const auto sampled = HdEmbreeLightSampler::GetLightSample(
+        light, GfVec3f(0.0f), GfVec3f::ZAxis(), 0.5f, 0.25f);
+
+    const float thetaMax = 0.5f * 60.0f *
+        static_cast<float>(M_PI) / 180.0f;
+    const float sinTheta = std::sin(thetaMax);
+    const float sizeFactor =
+        sinTheta * sinTheta * static_cast<float>(M_PI);
+    const GfVec3f expected(10.0f / sizeFactor);
+    if (!sampled.valid || !_IsClose(sampled.Li, expected, 1e-5f)) {
+        std::printf(
+            "    expected normalized distant Li %f, got (%f, %f, %f)\n",
+            expected[0],
+            sampled.Li[0],
+            sampled.Li[1],
+            sampled.Li[2]);
+        return false;
+    }
+
+    return true;
+}
+
+bool
 TestDomePdfApproximatelyNormalizes()
 {
     const HdEmbree_LightData light = _MakeDomeLight(
@@ -463,6 +588,12 @@ main(int /*argc*/, char** /*argv*/)
               &TestDomePdfApproximatelyNormalizes);
     _Register("SphereSampleMatchesDirectionalEvaluation",
               &TestSphereSampleMatchesDirectionalEvaluation);
+    _Register("DistantDeltaSamplesLocalPositiveZ",
+              &TestDistantDeltaSamplesLocalPositiveZ);
+    _Register("DistantConeSampleMatchesDirectionalEvaluation",
+              &TestDistantConeSampleMatchesDirectionalEvaluation);
+    _Register("DistantNormalizeUsesUsdLuxSizeFactor",
+              &TestDistantNormalizeUsesUsdLuxSizeFactor);
 
     for (const auto& entry : _Tests()) {
         ++_totalTests;

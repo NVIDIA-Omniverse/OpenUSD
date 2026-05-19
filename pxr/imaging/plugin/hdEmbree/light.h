@@ -39,8 +39,6 @@ PXR_NAMESPACE_OPEN_SCOPE
 ///   - inputs:color
 ///   - inputs:enableColorTemperature
 ///   - inputs:colorTemperature
-/// - DistantLight
-///   - inputs:angle
 /// - DiskLight
 ///   - inputs:radius
 /// - RectLight
@@ -54,6 +52,8 @@ PXR_NAMESPACE_OPEN_SCOPE
 ///   - inputs:length
 /// - DomeLight
 ///   - inputs:texture:file
+/// - DistantLight
+///   - inputs:angle
 /// - ShapingAPI
 ///   - inputs:shaping:focus
 ///   - inputs:shaping:focusTint
@@ -120,7 +120,7 @@ struct HdEmbree_Disk
 
 struct HdEmbree_Distant
 {
-    float halfAngleRadians;
+    float angle = 0.53f;
 };
 
 // Needed for HdEmbree_LightVariant
@@ -223,6 +223,17 @@ public:
 
     bool IsDome() const {
         return std::holds_alternative<HdEmbree_Dome>(_lightData.lightVariant);
+    }
+
+    bool IsFiniteLight() const {
+        return std::holds_alternative<HdEmbree_Cylinder>(
+                   _lightData.lightVariant) ||
+               std::holds_alternative<HdEmbree_Disk>(
+                   _lightData.lightVariant) ||
+               std::holds_alternative<HdEmbree_Rect>(
+                   _lightData.lightVariant) ||
+               std::holds_alternative<HdEmbree_Sphere>(
+                   _lightData.lightVariant);
     }
 
 private:
