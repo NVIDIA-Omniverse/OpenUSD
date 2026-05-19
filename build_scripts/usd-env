@@ -15,7 +15,6 @@ plugin_dir="${repo_root}/extras/usd/examples/usdviewPlugins"
 plugin_paths=(
     "${install_root}/lib/usd"
     "${install_root}/plugin/usd"
-    "${plugin_dir}/materialEditor"
     "${plugin_dir}/renderLab"
 )
 
