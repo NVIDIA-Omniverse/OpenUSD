@@ -6,6 +6,7 @@ import sys
 from pxr.Usdviewq.qt import QtCore, QtWidgets
 
 from .cameraEditor import CameraEditor
+from . import cameraManipulator
 from . import domeLightManipulator
 from .lightEditor import LightEditor
 from .materialEditor import MaterialEditor
@@ -28,6 +29,7 @@ _RELOAD_MODULES = (
     "renderLab.parameterWidgets",
     "renderLab.renderSettingsMetadata",
     "renderLab.renderSettingsEditor",
+    "renderLab.cameraManipulator",
     "renderLab.cameraEditor",
     "renderLab.domeLightManipulator",
     "renderLab.lightEditor",
@@ -190,8 +192,33 @@ def _currentLightPath():
         return None
 
 
+def _currentCameraPath():
+    if _window is None:
+        return None
+    try:
+        return _window._cameraEditor.currentPath()
+    except RuntimeError:
+        return None
+    except AttributeError:
+        return None
+
+
+def _cameraManipulatorEnabled():
+    if _window is None:
+        return False
+    try:
+        return _window._cameraEditor.cameraManipulatorEnabled()
+    except RuntimeError:
+        return False
+    except AttributeError:
+        return False
+
+
 def _openRenderLab(usdviewApi, section=None, replaceManipulator=False):
     global _window
+    cameraManipulator.SetPreferredCameraPathGetter(_currentCameraPath)
+    cameraManipulator.SetEnabledGetter(_cameraManipulatorEnabled)
+    cameraManipulator.Install(usdviewApi, replace=replaceManipulator)
     domeLightManipulator.SetPreferredDomeLightPathGetter(_currentLightPath)
     domeLightManipulator.Install(usdviewApi, replace=replaceManipulator)
 

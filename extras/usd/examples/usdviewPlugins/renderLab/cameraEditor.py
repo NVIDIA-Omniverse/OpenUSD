@@ -190,17 +190,24 @@ class CameraEditor(QtWidgets.QWidget):
         titleRow.addWidget(titleLabel, 1)
         leftLayout.addLayout(titleRow)
 
-        headerSpacerRow = QtWidgets.QHBoxLayout()
-        headerSpacerRow.setContentsMargins(_GROUP_CONTENT_LEFT_MARGIN, 0, 0, 0)
-        headerSpacerLabel = QtWidgets.QLabel(" ")
-        headerSpacerLabel.setWordWrap(True)
-        headerSpacerRow.addWidget(headerSpacerLabel, 1)
-        leftLayout.addLayout(headerSpacerRow)
+        self._headerRow = QtWidgets.QHBoxLayout()
+        self._headerRow.setContentsMargins(
+            _GROUP_CONTENT_LEFT_MARGIN, 0, 0, 0)
+        self._cameraManipulatorCheck = QtWidgets.QCheckBox("Interactive")
+        self._cameraManipulatorCheck.setToolTip(
+            "Alt-drag in the viewport edits the selected camera.")
+        self._cameraManipulatorCheck.toggled.connect(
+            self._onCameraManipulatorToggled)
+        self._headerRow.addStretch(1)
+        self._headerRow.addWidget(self._cameraManipulatorCheck)
+        leftLayout.addLayout(self._headerRow)
         leftLayout.addSpacing(5)
 
         self._scroll = QtWidgets.QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self._scroll.verticalScrollBar().rangeChanged.connect(
+            lambda _minimum, _maximum: self._syncHeaderRightMargin())
         leftLayout.addWidget(self._scroll, 1)
         splitter.addWidget(left)
 
@@ -278,6 +285,8 @@ class CameraEditor(QtWidgets.QWidget):
         stage = self._api.stage
         prim = stage.GetPrimAtPath(Sdf.Path(self._currentPath)) if stage else None
         self._showCamera(prim)
+        if self.cameraManipulatorEnabled():
+            self._activateInteractiveCamera()
 
     def _showCamera(self, prim):
         self._newForm()
@@ -442,6 +451,29 @@ class CameraEditor(QtWidgets.QWidget):
         self._labelWidth = self._computeLabelWidth(_CAMERA_LABELS)
         self._groupLayouts = {}
         self._scroll.setWidget(self._formContainer)
+        self._syncHeaderRightMargin()
+        QtCore.QTimer.singleShot(0, self._syncHeaderRightMargin)
+
+    def _syncHeaderRightMargin(self):
+        if not hasattr(self, "_headerRow"):
+            return
+
+        rightMargin = 0
+        if hasattr(self, "_formLayout") and self._formLayout is not None:
+            rightMargin += self._formLayout.contentsMargins().right()
+        if hasattr(self, "_scroll") and self._scroll is not None:
+            scrollBar = self._scroll.verticalScrollBar()
+            if scrollBar and (
+                    scrollBar.isVisible() or
+                    scrollBar.maximum() > scrollBar.minimum()):
+                rightMargin += scrollBar.sizeHint().width()
+
+        self._headerRow.setContentsMargins(
+            _GROUP_CONTENT_LEFT_MARGIN, 0, rightMargin, 0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._syncHeaderRightMargin()
 
     def _addFloatAttr(
             self, label, getAttrFn, createAttrFn, defaultValue, minimum, maximum,
@@ -692,6 +724,32 @@ class CameraEditor(QtWidgets.QWidget):
             return
         self._api.dataModel.viewSettings.cameraPrim = prim
         self._api.UpdateViewport()
+
+    def currentPath(self):
+        return self._currentPath
+
+    def cameraManipulatorEnabled(self):
+        return self._cameraManipulatorCheck.isChecked()
+
+    def _onCameraManipulatorToggled(self, enabled):
+        if enabled and not self._currentPrim():
+            self._cameraManipulatorCheck.setChecked(False)
+            return
+        if enabled:
+            self._activateInteractiveCamera()
+            try:
+                self._api.PrintStatus(
+                    "RenderLab: camera interactive editing enabled")
+            except Exception:
+                pass
+
+    def _activateInteractiveCamera(self):
+        manipulator = getattr(self._api, "_renderLabCameraManipulator", None)
+        if manipulator is not None:
+            adoptCurrentView = getattr(manipulator, "AdoptCurrentView", None)
+            if adoptCurrentView is not None and adoptCurrentView(self._currentPath):
+                return
+        self._useAsViewCamera()
 
     def _currentPrim(self):
         if not self._currentPath or not self._api.stage:
