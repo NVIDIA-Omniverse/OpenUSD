@@ -4,6 +4,7 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
+#include "pxr/imaging/hd/camera.h"
 #include "pxr/imaging/hd/renderPassState.h"
 #include "pxr/imaging/hd/material.h"
 #include "pxr/imaging/hd/renderSettingsSchema.h"
@@ -56,6 +57,7 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _lastTime(0.0)
     , _viewMatrix(1.0f) // == identity
     , _projMatrix(1.0f) // == identity
+    , _cameraExposureScale(1.0f)
     , _aovBindings()
     , _colorBuffer(SdfPath::EmptyPath())
     , _depthBuffer(SdfPath::EmptyPath())
@@ -103,6 +105,16 @@ _GetDataWindow(HdRenderPassStateSharedPtr const& renderPassState)
         const GfVec4f vp = renderPassState->GetViewport();
         return GfRect2i(GfVec2i(0), int(vp[2]), int(vp[3]));        
     }
+}
+
+static float
+_GetCameraExposureScale(HdRenderPassStateSharedPtr const& renderPassState)
+{
+    HdCamera const * const camera = renderPassState->GetCamera();
+    if (camera && renderPassState->GetEnableExposureCompensation()) {
+        return camera->GetLinearExposureScale();
+    }
+    return 1.0f;
 }
 
 static void
@@ -437,12 +449,16 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     // Determine whether we need to update the renderer camera.
     const GfMatrix4d view = renderPassState->GetWorldToViewMatrix();
     const GfMatrix4d proj = renderPassState->GetProjectionMatrix();
-    if (_viewMatrix != view || _projMatrix != proj) {
+    const float cameraExposureScale = _GetCameraExposureScale(renderPassState);
+    if (_viewMatrix != view || _projMatrix != proj ||
+        _cameraExposureScale != cameraExposureScale) {
         _viewMatrix = view;
         _projMatrix = proj;
+        _cameraExposureScale = cameraExposureScale;
 
         _renderThread->StopRender();
         _renderer->SetCamera(_viewMatrix, _projMatrix);
+        _renderer->SetCameraExposureScale(_cameraExposureScale);
         _renderer->ResetAccumulation();
         needStartRender = true;
     }

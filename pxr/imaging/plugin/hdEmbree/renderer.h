@@ -103,6 +103,9 @@ public:
     ///   \param projMatrix The camera's view-to-NDC projection matrix.
     void SetCamera(const GfMatrix4d& viewMatrix, const GfMatrix4d& projMatrix);
 
+    /// Set the linear exposure scale applied to color output.
+    void SetCameraExposureScale(float cameraExposureScale);
+
     /// Set the application frame/time values exposed to MaterialX shading.
     void SetSceneFrameAndTime(float frame, float time);
 
@@ -483,6 +486,8 @@ private:
     GfMatrix4d _inverseViewMatrix;
     // The inverse projection matrix: NDC space to camera space.
     GfMatrix4d _inverseProjMatrix;
+    // Linear exposure scale from the active camera.
+    float _cameraExposureScale;
 
     // Our handle to the embree scene.
     RTCScene _scene;

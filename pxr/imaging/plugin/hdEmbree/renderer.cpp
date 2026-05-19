@@ -1010,6 +1010,7 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _projMatrix(1.0f) // == identity
     , _inverseViewMatrix(1.0f) // == identity
     , _inverseProjMatrix(1.0f) // == identity
+    , _cameraExposureScale(1.0f)
     , _scene(nullptr)
     , _samplesToConvergence(
         HdEmbreeConfig::GetInstance().samplesToConvergence)
@@ -1233,6 +1234,12 @@ HdEmbreeRenderer::SetCamera(const GfMatrix4d& viewMatrix,
     _projMatrix = projMatrix;
     _inverseViewMatrix = viewMatrix.GetInverse();
     _inverseProjMatrix = projMatrix.GetInverse();
+}
+
+void
+HdEmbreeRenderer::SetCameraExposureScale(float cameraExposureScale)
+{
+    _cameraExposureScale = cameraExposureScale;
 }
 
 void
@@ -2328,11 +2335,15 @@ HdEmbreeRenderer::_HeatmapColor(float t)
 /* static */
 void
 HdEmbreeRenderer::_WriteColor(
-    HdEmbreeRenderer*, _AovWriter const& w,
+    HdEmbreeRenderer* self, _AovWriter const& w,
     RTCRayHit const&, GfVec4f const& color,
     unsigned int x, unsigned int y)
 {
-    w.buffer->Write(GfVec3i(x, y, 1), 4, color.data());
+    GfVec4f exposedColor = color;
+    exposedColor[0] *= self->_cameraExposureScale;
+    exposedColor[1] *= self->_cameraExposureScale;
+    exposedColor[2] *= self->_cameraExposureScale;
+    w.buffer->Write(GfVec3i(x, y, 1), 4, exposedColor.data());
 }
 
 /* static */

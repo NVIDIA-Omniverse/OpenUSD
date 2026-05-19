@@ -109,6 +109,8 @@ private:
     // The projection matrix: camera space to NDC space (with
     // respect to the data window).
     GfMatrix4d _projMatrix;
+    // The linear camera exposure scale applied to color output.
+    float _cameraExposureScale;
 
     // The list of aov buffers this renderpass should write to.
     HdRenderPassAovBindingVector _aovBindings;
