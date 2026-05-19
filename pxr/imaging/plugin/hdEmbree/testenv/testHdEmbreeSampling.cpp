@@ -45,6 +45,11 @@ TestDomainKeyValuesAreStable()
         return false;
     }
     if (HdEmbreeSampleDomainKeyValue(
+            HdEmbreeSampleDomainKey::CameraLens) != 0x0011u) {
+        std::printf("    CameraLens key changed\n");
+        return false;
+    }
+    if (HdEmbreeSampleDomainKeyValue(
             HdEmbreeSampleDomainKey::PathBounce) != 0x0100u) {
         std::printf("    PathBounce key changed\n");
         return false;
@@ -94,7 +99,9 @@ TestSobolDomainsAreDeterministicAndSeparated()
 
     const GfVec2f direct =
         root.Fork(HdEmbreeSampleDomainKey::DirectLightSample).Draw2D();
-    if (!_Different(cameraA, direct)) {
+    const GfVec2f lens =
+        root.Fork(HdEmbreeSampleDomainKey::CameraLens).Draw2D();
+    if (!_Different(cameraA, direct) || !_Different(cameraA, lens)) {
         std::printf("    Sobol domains shared the same 2D sample\n");
         return false;
     }
@@ -173,8 +180,12 @@ TestOpenQmcDomainsAreDeterministicAndSeparated()
         root.Fork(HdEmbreeSampleDomainKey::CameraJitter).Draw2D();
     const GfVec2f direct =
         root.Fork(HdEmbreeSampleDomainKey::DirectLightSample).Draw2D();
+    const GfVec2f lens =
+        root.Fork(HdEmbreeSampleDomainKey::CameraLens).Draw2D();
 
-    if (!_Same(cameraA, cameraB) || !_Different(cameraA, direct)) {
+    if (!_Same(cameraA, cameraB) ||
+        !_Different(cameraA, direct) ||
+        !_Different(cameraA, lens)) {
         std::printf("    OpenQMC fork domains were not stable/separated\n");
         return false;
     }

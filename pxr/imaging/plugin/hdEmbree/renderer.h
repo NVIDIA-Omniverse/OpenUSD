@@ -61,6 +61,23 @@ struct HdEmbreeRayDifferential {
     GfVec3f rxDirection, ryDirection;  // offset ray directions
 };
 
+/// Physical depth-of-field state for the active camera.
+struct HdEmbreeCameraDepthOfField {
+    float fStop = 0.0f;
+    float focusDistance = 0.0f;
+    float focalLength = 0.0f;
+
+    bool operator==(HdEmbreeCameraDepthOfField const& other) const {
+        return fStop == other.fStop &&
+               focusDistance == other.focusDistance &&
+               focalLength == other.focalLength;
+    }
+
+    bool operator!=(HdEmbreeCameraDepthOfField const& other) const {
+        return !(*this == other);
+    }
+};
+
 struct HdEmbreeMediumState {
     bool active = false;
     mxcpp::MediumProperties medium;
@@ -105,6 +122,10 @@ public:
 
     /// Set the linear exposure scale applied to color output.
     void SetCameraExposureScale(float cameraExposureScale);
+
+    /// Set the active camera's physical depth-of-field state.
+    void SetCameraDepthOfField(
+        HdEmbreeCameraDepthOfField const& cameraDepthOfField);
 
     /// Set the application frame/time values exposed to MaterialX shading.
     void SetSceneFrameAndTime(float frame, float time);
@@ -488,6 +509,8 @@ private:
     GfMatrix4d _inverseProjMatrix;
     // Linear exposure scale from the active camera.
     float _cameraExposureScale;
+    // Physical depth-of-field state from the active camera.
+    HdEmbreeCameraDepthOfField _cameraDepthOfField;
 
     // Our handle to the embree scene.
     RTCScene _scene;

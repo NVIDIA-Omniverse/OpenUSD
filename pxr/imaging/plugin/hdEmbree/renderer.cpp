@@ -105,6 +105,91 @@ static const TfToken _tokensDielectricLayerThroughputModeBsdl(
 static const TfToken _tokensDielectricLayerThroughputModeMaterialXGlsl(
     "materialxGlsl", TfToken::Immortal);
 
+static bool
+_IsFinite(GfVec3f const& value)
+{
+    return std::isfinite(value[0]) &&
+           std::isfinite(value[1]) &&
+           std::isfinite(value[2]);
+}
+
+static bool
+_IsCameraDepthOfFieldEnabled(HdEmbreeCameraDepthOfField const& dof,
+                             bool isOrthographic)
+{
+    return !isOrthographic &&
+           std::isfinite(dof.fStop) &&
+           std::isfinite(dof.focusDistance) &&
+           std::isfinite(dof.focalLength) &&
+           dof.fStop > 0.0f &&
+           dof.focusDistance > 0.0f &&
+           dof.focalLength > 0.0f;
+}
+
+static float
+_GetLensRadius(HdEmbreeCameraDepthOfField const& dof)
+{
+    return dof.focalLength / (2.0f * dof.fStop);
+}
+
+static GfVec2f
+_SampleUniformDiskConcentric(GfVec2f const& sample)
+{
+    const float x = 2.0f * sample[0] - 1.0f;
+    const float y = 2.0f * sample[1] - 1.0f;
+
+    if (x == 0.0f && y == 0.0f) {
+        return GfVec2f(0.0f);
+    }
+
+    float r;
+    float theta;
+    if (std::abs(x) > std::abs(y)) {
+        r = x;
+        theta = (_pi<float> / 4.0f) * (y / x);
+    } else {
+        r = y;
+        theta = (_pi<float> / 2.0f) -
+                (_pi<float> / 4.0f) * (x / y);
+    }
+
+    return GfVec2f(r * std::cos(theta), r * std::sin(theta));
+}
+
+static bool
+_ApplyCameraDepthOfField(HdEmbreeCameraDepthOfField const& dof,
+                         GfVec2f const& lensPoint,
+                         GfVec3f *origin,
+                         GfVec3f *dir)
+{
+    constexpr float eps = 1.0e-7f;
+
+    if (!origin || !dir || !_IsFinite(*origin) || !_IsFinite(*dir)) {
+        return false;
+    }
+
+    const float dz = (*dir)[2];
+    if (!std::isfinite(dz) || std::abs(dz) < eps) {
+        return false;
+    }
+
+    const float focusT = -dof.focusDistance / dz;
+    if (!std::isfinite(focusT) || focusT <= 0.0f) {
+        return false;
+    }
+
+    const GfVec3f focusPoint = *origin + (*dir) * focusT;
+    const GfVec3f lensOrigin(lensPoint[0], lensPoint[1], 0.0f);
+    const GfVec3f dofDir = focusPoint - lensOrigin;
+    if (!_IsFinite(dofDir) || dofDir.GetLengthSq() <= eps * eps) {
+        return false;
+    }
+
+    *origin = lensOrigin;
+    *dir = dofDir;
+    return true;
+}
+
 // -------------------------------------------------------------------------
 // General Ray Utilities
 // -------------------------------------------------------------------------
@@ -1011,6 +1096,7 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _inverseViewMatrix(1.0f) // == identity
     , _inverseProjMatrix(1.0f) // == identity
     , _cameraExposureScale(1.0f)
+    , _cameraDepthOfField()
     , _scene(nullptr)
     , _samplesToConvergence(
         HdEmbreeConfig::GetInstance().samplesToConvergence)
@@ -1240,6 +1326,13 @@ void
 HdEmbreeRenderer::SetCameraExposureScale(float cameraExposureScale)
 {
     _cameraExposureScale = cameraExposureScale;
+}
+
+void
+HdEmbreeRenderer::SetCameraDepthOfField(
+    HdEmbreeCameraDepthOfField const& cameraDepthOfField)
+{
+    _cameraDepthOfField = cameraDepthOfField;
 }
 
 void
@@ -2107,26 +2200,49 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
                     -1.0f);
                 const GfVec3f nearPlaneTrace(_inverseProjMatrix.Transform(ndc));
 
-                GfVec3f origin;
-                GfVec3f dir;
-
                 const bool isOrthographic = round(_projMatrix[3][3]) == 1.0;
+                GfVec3f originCamera;
+                GfVec3f dirCamera;
                 if (isOrthographic) {
                     // During orthographic projection: trace parallel rays
                     // from the near plane trace.
-                    origin = nearPlaneTrace;
-                    dir = GfVec3f(0.0f, 0.0f, -1.0f);
+                    originCamera = nearPlaneTrace;
+                    dirCamera = GfVec3f(0.0f, 0.0f, -1.0f);
                 } else {
                     // Otherwise, assume this is a perspective projection;
                     // project from the camera origin through the
                     // near plane trace.
-                    origin = GfVec3f(0.0f, 0.0f, 0.0f);
-                    dir = nearPlaneTrace;
+                    originCamera = GfVec3f(0.0f, 0.0f, 0.0f);
+                    dirCamera = nearPlaneTrace;
                 }
+
+                const bool cameraDofEnabled =
+                    _IsCameraDepthOfFieldEnabled(
+                        _cameraDepthOfField, isOrthographic);
+                GfVec2f lensPoint(0.0f);
+                bool appliedCameraDof = false;
+                if (cameraDofEnabled) {
+                    const GfVec2f lensSample =
+                        sampler.RootDomain()
+                            .Fork(HdEmbreeSampleDomainKey::CameraLens)
+                            .Draw2D();
+                    const GfVec2f lensDisk =
+                        _SampleUniformDiskConcentric(lensSample);
+                    const float lensRadius =
+                        _GetLensRadius(_cameraDepthOfField);
+                    lensPoint = GfVec2f(
+                        lensDisk[0] * lensRadius,
+                        lensDisk[1] * lensRadius);
+                    appliedCameraDof = _ApplyCameraDepthOfField(
+                        _cameraDepthOfField, lensPoint,
+                        &originCamera, &dirCamera);
+                }
+
                 // Transform camera rays to world space.
-                origin = GfVec3f(_inverseViewMatrix.Transform(origin));
-                dir = GfVec3f(
-                    _inverseViewMatrix.TransformDir(dir)).GetNormalized();
+                GfVec3f origin =
+                    GfVec3f(_inverseViewMatrix.Transform(originCamera));
+                GfVec3f dir = GfVec3f(
+                    _inverseViewMatrix.TransformDir(dirCamera)).GetNormalized();
 
                 // --- Ray differential ---
                 HdEmbreeRayDifferential rayDiff;
@@ -2144,27 +2260,50 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
                     const GfVec3f nearDy(
                         _inverseProjMatrix.Transform(ndcDy));
 
+                    GfVec3f originDxCamera;
+                    GfVec3f originDyCamera;
+                    GfVec3f dirDxCamera;
+                    GfVec3f dirDyCamera;
                     if (isOrthographic) {
-                        rayDiff.rxOrigin = GfVec3f(
-                            _inverseViewMatrix.Transform(nearDx));
-                        rayDiff.ryOrigin = GfVec3f(
-                            _inverseViewMatrix.Transform(nearDy));
-                        rayDiff.rxDirection = dir;
-                        rayDiff.ryDirection = dir;
+                        originDxCamera = nearDx;
+                        originDyCamera = nearDy;
+                        dirDxCamera = dirCamera;
+                        dirDyCamera = dirCamera;
                     } else {
-                        rayDiff.rxOrigin = origin;
-                        rayDiff.ryOrigin = origin;
+                        originDxCamera = GfVec3f(0.0f);
+                        originDyCamera = GfVec3f(0.0f);
+                        dirDxCamera = nearDx;
+                        dirDyCamera = nearDy;
+                    }
+
+                    bool rayDiffValid = true;
+                    if (appliedCameraDof) {
+                        rayDiffValid =
+                            _ApplyCameraDepthOfField(
+                                _cameraDepthOfField, lensPoint,
+                                &originDxCamera, &dirDxCamera) &&
+                            _ApplyCameraDepthOfField(
+                                _cameraDepthOfField, lensPoint,
+                                &originDyCamera, &dirDyCamera);
+                    }
+
+                    if (rayDiffValid) {
+                        rayDiff.rxOrigin = GfVec3f(
+                            _inverseViewMatrix.Transform(originDxCamera));
+                        rayDiff.ryOrigin = GfVec3f(
+                            _inverseViewMatrix.Transform(originDyCamera));
                         rayDiff.rxDirection = GfVec3f(
-                            _inverseViewMatrix.TransformDir(nearDx))
+                            _inverseViewMatrix.TransformDir(dirDxCamera))
                             .GetNormalized();
                         rayDiff.ryDirection = GfVec3f(
-                            _inverseViewMatrix.TransformDir(nearDy))
+                            _inverseViewMatrix.TransformDir(dirDyCamera))
                             .GetNormalized();
+                        rayDiff.hasDifferentials = true;
                     }
-                    rayDiff.hasDifferentials = true;
 
                     // Scale by 1/sqrt(spp) to match sampling rate.
-                    if (_samplesToConvergence > 1) {
+                    if (rayDiff.hasDifferentials &&
+                        _samplesToConvergence > 1) {
                         float scale = 1.0f / std::sqrt(
                             static_cast<float>(_samplesToConvergence));
                         if (isOrthographic) {

@@ -111,6 +111,8 @@ private:
     GfMatrix4d _projMatrix;
     // The linear camera exposure scale applied to color output.
     float _cameraExposureScale;
+    // The active camera's physical depth-of-field state.
+    HdEmbreeCameraDepthOfField _cameraDepthOfField;
 
     // The list of aov buffers this renderpass should write to.
     HdRenderPassAovBindingVector _aovBindings;

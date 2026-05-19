@@ -454,6 +454,7 @@ enum class HdEmbreeSampleDomainKey : uint32_t
 {
     Pixel = 0x0001u,
     CameraJitter = 0x0010u,
+    CameraLens = 0x0011u,
     AmbientOcclusion = 0x001fu,
     AmbientOcclusionSample = 0x0020u,
     AmbientOcclusionShuffle = 0x0021u,

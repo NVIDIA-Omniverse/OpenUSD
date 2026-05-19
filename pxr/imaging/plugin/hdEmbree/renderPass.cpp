@@ -58,6 +58,7 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _viewMatrix(1.0f) // == identity
     , _projMatrix(1.0f) // == identity
     , _cameraExposureScale(1.0f)
+    , _cameraDepthOfField()
     , _aovBindings()
     , _colorBuffer(SdfPath::EmptyPath())
     , _depthBuffer(SdfPath::EmptyPath())
@@ -115,6 +116,27 @@ _GetCameraExposureScale(HdRenderPassStateSharedPtr const& renderPassState)
         return camera->GetLinearExposureScale();
     }
     return 1.0f;
+}
+
+static float
+_FiniteOrZero(float value)
+{
+    return std::isfinite(value) ? value : 0.0f;
+}
+
+static HdEmbreeCameraDepthOfField
+_GetCameraDepthOfField(HdRenderPassStateSharedPtr const& renderPassState)
+{
+    HdCamera const * const camera = renderPassState->GetCamera();
+    if (!camera) {
+        return HdEmbreeCameraDepthOfField();
+    }
+
+    HdEmbreeCameraDepthOfField result;
+    result.fStop = _FiniteOrZero(camera->GetFStop());
+    result.focusDistance = _FiniteOrZero(camera->GetFocusDistance());
+    result.focalLength = _FiniteOrZero(camera->GetFocalLength());
+    return result;
 }
 
 static void
@@ -450,15 +472,20 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     const GfMatrix4d view = renderPassState->GetWorldToViewMatrix();
     const GfMatrix4d proj = renderPassState->GetProjectionMatrix();
     const float cameraExposureScale = _GetCameraExposureScale(renderPassState);
+    const HdEmbreeCameraDepthOfField cameraDepthOfField =
+        _GetCameraDepthOfField(renderPassState);
     if (_viewMatrix != view || _projMatrix != proj ||
-        _cameraExposureScale != cameraExposureScale) {
+        _cameraExposureScale != cameraExposureScale ||
+        _cameraDepthOfField != cameraDepthOfField) {
         _viewMatrix = view;
         _projMatrix = proj;
         _cameraExposureScale = cameraExposureScale;
+        _cameraDepthOfField = cameraDepthOfField;
 
         _renderThread->StopRender();
         _renderer->SetCamera(_viewMatrix, _projMatrix);
         _renderer->SetCameraExposureScale(_cameraExposureScale);
+        _renderer->SetCameraDepthOfField(_cameraDepthOfField);
         _renderer->ResetAccumulation();
         needStartRender = true;
     }
