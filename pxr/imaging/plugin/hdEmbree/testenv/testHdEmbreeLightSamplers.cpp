@@ -101,6 +101,32 @@ _MakeSphereLight(const GfVec3f& center, float radius)
 }
 
 HdEmbree_LightData
+_MakeRectLight(const GfVec3f& center, float width, float height)
+{
+    HdEmbree_LightData light;
+    light.xformLightToWorld = GfMatrix4f(1.0f);
+    light.xformLightToWorld.SetTranslate(center);
+    light.xformWorldToLight = light.xformLightToWorld.GetInverse();
+    light.normalXformLightToWorld = GfMatrix3f(1.0f);
+    light.color = GfVec3f(1.0f);
+    light.lightVariant = HdEmbree_Rect{width, height};
+    return light;
+}
+
+HdEmbree_LightData
+_MakeDiskLight(const GfVec3f& center, float radius)
+{
+    HdEmbree_LightData light;
+    light.xformLightToWorld = GfMatrix4f(1.0f);
+    light.xformLightToWorld.SetTranslate(center);
+    light.xformWorldToLight = light.xformLightToWorld.GetInverse();
+    light.normalXformLightToWorld = GfMatrix3f(1.0f);
+    light.color = GfVec3f(1.0f);
+    light.lightVariant = HdEmbree_Disk{radius};
+    return light;
+}
+
+HdEmbree_LightData
 _MakeDistantLight(float angle)
 {
     HdEmbree_LightData light;
@@ -415,6 +441,234 @@ TestSphereSampleMatchesDirectionalEvaluation()
 }
 
 bool
+TestDirectionalShapingDistributionPdfNormalizes()
+{
+    HdEmbree_Shaping shaping;
+    shaping.coneAngle = 35.0f;
+    shaping.coneSoftness = 0.25f;
+    shaping.focus = 3.0f;
+    HdEmbreeBuildDirectionalShapingDistribution(&shaping);
+
+    if (!shaping.directionalDistribution.IsValid()) {
+        std::printf("    expected valid directional shaping distribution\n");
+        return false;
+    }
+
+    constexpr float cellSolidAngle =
+        4.0f * static_cast<float>(M_PI) /
+        static_cast<float>(
+            HdEmbree_DirectionalShapingDistribution::NumCells);
+    float integral = 0.0f;
+    for (const float pdfW : shaping.directionalDistribution.cellPdfW) {
+        integral += pdfW * cellSolidAngle;
+    }
+    if (!_IsClose(integral, 1.0f, 1e-4f)) {
+        std::printf("    directional shaping PDF integral mismatch: %f\n",
+                    integral);
+        return false;
+    }
+
+    if (shaping.directionalDistribution.principalDirection[2] <= 0.8f) {
+        std::printf("    expected principal direction near local +Z\n");
+        return false;
+    }
+
+    return true;
+}
+
+bool
+TestIesDirectionalDistributionBuildsAndSamples()
+{
+    static const char* const iesText =
+        "IESNA:LM-63-1995\n"
+        "TILT=NONE\n"
+        "1 1000 1 3 1 1 1 1 1 1 1 1 1\n"
+        "0 90 180\n"
+        "0\n"
+        "100 10 0\n";
+
+    HdEmbree_Shaping shaping;
+    if (!shaping.ies.iesFile.load(iesText)) {
+        std::printf("    could not load synthetic IES profile\n");
+        return false;
+    }
+    HdEmbreeBuildDirectionalShapingDistribution(&shaping);
+    if (!shaping.directionalDistribution.IsValid()) {
+        std::printf("    expected valid IES directional distribution\n");
+        return false;
+    }
+    if (shaping.directionalDistribution.peakWeight <=
+        shaping.directionalDistribution.averageWeight) {
+        std::printf("    expected IES peak to exceed average weight\n");
+        return false;
+    }
+
+    const HdEmbree_DirectionalShapingSample sample =
+        HdEmbreeSampleDirectionalShaping(shaping, 0.25f, 0.75f);
+    if (!sample.valid || sample.pdfW <= 0.0f) {
+        std::printf("    expected valid IES directional sample\n");
+        return false;
+    }
+
+    const float evaluatedPdf =
+        HdEmbreeDirectionalShapingPdf(shaping, sample.localDirection);
+    if (!_IsClose(sample.pdfW, evaluatedPdf, 1e-5f)) {
+        std::printf("    sampled/evaluated IES pdf mismatch: %f vs %f\n",
+                    sample.pdfW,
+                    evaluatedPdf);
+        return false;
+    }
+
+    return true;
+}
+
+bool
+TestRectShapingAwareSampleMatchesDirectionalEvaluation()
+{
+    HdEmbree_LightData light =
+        _MakeRectLight(GfVec3f(0.0f, 0.0f, 4.0f), 100.0f, 100.0f);
+    light.shaping.coneAngle = 25.0f;
+    light.shaping.coneSoftness = 0.1f;
+    HdEmbreeBuildDirectionalShapingDistribution(&light.shaping);
+
+    const GfVec3f position(0.0f);
+    const GfVec3f normal = GfVec3f::ZAxis();
+    const std::vector<GfVec2f> samples = {
+        GfVec2f(0.25f, 0.35f), // finite area strategy
+        GfVec2f(0.75f, 0.65f), // directional shaping strategy
+    };
+
+    for (const GfVec2f& u : samples) {
+        const auto sampled = HdEmbreeLightSampler::GetLightSample(
+            light, position, normal, u[0], u[1]);
+        if (!sampled.valid) {
+            std::printf("    expected valid rect light sample\n");
+            return false;
+        }
+
+        const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
+            light, position, sampled.wI);
+        if (!evaluated.valid) {
+            std::printf("    expected rect sample direction to evaluate\n");
+            return false;
+        }
+        if (!_IsClose(sampled.Li, evaluated.Li, 1e-5f)) {
+            std::printf("    sampled/evaluated rect Li mismatch\n");
+            return false;
+        }
+        if (!_IsClose(sampled.invPdfW, evaluated.invPdfW, 1e-4f)) {
+            std::printf(
+                "    sampled/evaluated rect invPdf mismatch: %f vs %f\n",
+                sampled.invPdfW,
+                evaluated.invPdfW);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool
+TestRectFocusDirectionalSampleFoldsToEmissionHemisphere()
+{
+    HdEmbree_LightData light =
+        _MakeRectLight(GfVec3f(0.0f, 0.0f, 4.0f), 100.0f, 100.0f);
+    light.shaping.focus = 4.0f;
+    HdEmbreeBuildDirectionalShapingDistribution(&light.shaping);
+
+    float samplerU1 = 0.0f;
+    bool foundBackHemisphereProposal = false;
+    for (float shapingU1 : {0.55f, 0.65f, 0.75f, 0.85f, 0.95f}) {
+        const HdEmbree_DirectionalShapingSample proposal =
+            HdEmbreeSampleDirectionalShaping(light.shaping, shapingU1, 0.37f);
+        if (proposal.valid && proposal.localDirection[2] < 0.0f) {
+            samplerU1 = 0.5f + 0.5f * shapingU1;
+            foundBackHemisphereProposal = true;
+            break;
+        }
+    }
+
+    if (!foundBackHemisphereProposal) {
+        std::printf("    expected to find a focus proposal behind local +Z\n");
+        return false;
+    }
+
+    const GfVec3f position(0.0f);
+    const auto sampled = HdEmbreeLightSampler::GetLightSample(
+        light, position, GfVec3f::ZAxis(), samplerU1, 0.37f);
+    if (!sampled.valid || sampled.wI[2] <= 0.0f) {
+        std::printf("    expected folded rect focus sample to hit +Z side\n");
+        return false;
+    }
+
+    const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
+        light, position, sampled.wI);
+    if (!evaluated.valid) {
+        std::printf("    expected folded rect focus direction to evaluate\n");
+        return false;
+    }
+    if (!_IsClose(sampled.Li, evaluated.Li, 1e-5f)) {
+        std::printf("    sampled/evaluated folded rect Li mismatch\n");
+        return false;
+    }
+    if (!_IsClose(sampled.invPdfW, evaluated.invPdfW, 1e-4f)) {
+        std::printf(
+            "    sampled/evaluated folded rect invPdf mismatch: %f vs %f\n",
+            sampled.invPdfW,
+            evaluated.invPdfW);
+        return false;
+    }
+
+    return true;
+}
+
+bool
+TestDiskShapingAwareSampleMatchesDirectionalEvaluation()
+{
+    HdEmbree_LightData light =
+        _MakeDiskLight(GfVec3f(0.0f, 0.0f, 4.0f), 50.0f);
+    light.shaping.coneAngle = 25.0f;
+    light.shaping.coneSoftness = 0.1f;
+    HdEmbreeBuildDirectionalShapingDistribution(&light.shaping);
+
+    const GfVec3f position(0.0f);
+    const GfVec3f normal = GfVec3f::ZAxis();
+    const std::vector<GfVec2f> samples = {
+        GfVec2f(0.25f, 0.35f),
+        GfVec2f(0.75f, 0.65f),
+    };
+
+    for (const GfVec2f& u : samples) {
+        const auto sampled = HdEmbreeLightSampler::GetLightSample(
+            light, position, normal, u[0], u[1]);
+        if (!sampled.valid) {
+            std::printf("    expected valid disk light sample\n");
+            return false;
+        }
+
+        const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
+            light, position, sampled.wI);
+        if (!evaluated.valid) {
+            std::printf("    expected disk sample direction to evaluate\n");
+            return false;
+        }
+        if (!_IsClose(sampled.Li, evaluated.Li, 1e-5f)) {
+            std::printf("    sampled/evaluated disk Li mismatch\n");
+            return false;
+        }
+        if (!_IsClose(sampled.invPdfW, evaluated.invPdfW, 1e-4f)) {
+            std::printf(
+                "    sampled/evaluated disk invPdf mismatch: %f vs %f\n",
+                sampled.invPdfW,
+                evaluated.invPdfW);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool
 TestDistantDeltaSamplesLocalPositiveZ()
 {
     const HdEmbree_LightData light = _MakeDistantLight(0.0f);
@@ -586,6 +840,16 @@ main(int /*argc*/, char** /*argv*/)
               &TestDomeReflectionHemisphereSampleMatchesDirectionalEvaluation);
     _Register("DomePdfApproximatelyNormalizes",
               &TestDomePdfApproximatelyNormalizes);
+    _Register("DirectionalShapingDistributionPdfNormalizes",
+              &TestDirectionalShapingDistributionPdfNormalizes);
+    _Register("IesDirectionalDistributionBuildsAndSamples",
+              &TestIesDirectionalDistributionBuildsAndSamples);
+    _Register("RectShapingAwareSampleMatchesDirectionalEvaluation",
+              &TestRectShapingAwareSampleMatchesDirectionalEvaluation);
+    _Register("RectFocusDirectionalSampleFoldsToEmissionHemisphere",
+              &TestRectFocusDirectionalSampleFoldsToEmissionHemisphere);
+    _Register("DiskShapingAwareSampleMatchesDirectionalEvaluation",
+              &TestDiskShapingAwareSampleMatchesDirectionalEvaluation);
     _Register("SphereSampleMatchesDirectionalEvaluation",
               &TestSphereSampleMatchesDirectionalEvaluation);
     _Register("DistantDeltaSamplesLocalPositiveZ",

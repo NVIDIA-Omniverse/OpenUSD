@@ -1,0 +1,490 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1.0
+    renderSettingsPrimPath = "/RenderSettings"
+    upAxis = "Y"
+    doc = """IES wall-light gallery for hdEmbree.
+
+Six DiskLights use the local IES profiles in ../ies.
+The lights are mounted near the receiver wall and aimed downward so differences
+in beam spread and photometric shaping are easy to compare on the wall/floor."""
+)
+
+def RenderSettings "RenderSettings"
+{
+    int hdEmbree:lightSamplesPerHit = 8
+    int hdEmbree:maxBounces = 2
+    token hdEmbree:samplerSequence = "openqmc_sobolbn"
+    rel products = [</RenderProduct>]
+}
+
+def RenderProduct "RenderProduct"
+{
+    token productType = "raster"
+    token productName = "ies_profile_gallery.png"
+    rel orderedVars = [</RenderProduct/Color>]
+
+    def RenderVar "Color"
+    {
+        token dataType = "color4f"
+        string sourceName = "color"
+        string sourceType = "raw"
+    }
+}
+
+def Xform "World"
+{
+    def Camera "Camera"
+    {
+        float focalLength = 30
+        float horizontalAperture = 36
+        float verticalAperture = 18
+        float2 clippingRange = (0.1, 1000)
+        double3 xformOp:translate = (0, 2.35, 12.5)
+        float3 xformOp:rotateXYZ = (-7.5, 0, 0)
+        token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+    }
+
+    def Scope "Materials"
+    {
+        def Material "ReceiverWhite"
+        {
+            token outputs:surface.connect = </World/Materials/ReceiverWhite/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.72, 0.72, 0.68)
+                float inputs:roughness = 0.7
+                float inputs:metallic = 0.0
+                token outputs:surface
+            }
+        }
+
+        def Material "MatteFloor"
+        {
+            token outputs:surface.connect = </World/Materials/MatteFloor/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.42, 0.43, 0.43)
+                float inputs:roughness = 0.85
+                float inputs:metallic = 0.0
+                token outputs:surface
+            }
+        }
+
+        def Material "DividerDark"
+        {
+            token outputs:surface.connect = </World/Materials/DividerDark/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.035, 0.038, 0.04)
+                float inputs:roughness = 0.8
+                float inputs:metallic = 0.0
+                token outputs:surface
+            }
+        }
+
+        def Material "FixtureMetal"
+        {
+            token outputs:surface.connect = </World/Materials/FixtureMetal/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.45, 0.44, 0.42)
+                float inputs:roughness = 0.28
+                float inputs:metallic = 1.0
+                token outputs:surface
+            }
+        }
+    }
+
+    def Mesh "ReceiverWall" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [
+            (-9, 0, -4), (-9, 5.4, -4),
+            (9, 5.4, -4), (9, 0, -4)
+        ]
+        normal3f[] normals = [
+            (0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)
+        ] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+        bool doubleSided = true
+        rel material:binding = </World/Materials/ReceiverWhite>
+    }
+
+    def Mesh "Floor" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [
+            (-9, 0, -4), (9, 0, -4),
+            (9, 0, 4), (-9, 0, 4)
+        ]
+        normal3f[] normals = [
+            (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)
+        ] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+        bool doubleSided = true
+        rel material:binding = </World/Materials/MatteFloor>
+    }
+
+    def Mesh "CeilingBaffle" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [
+            (-9, 5.4, -4), (-9, 5.4, 2.4),
+            (9, 5.4, 2.4), (9, 5.4, -4)
+        ]
+        normal3f[] normals = [
+            (0, -1, 0), (0, -1, 0), (0, -1, 0), (0, -1, 0)
+        ] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+        bool doubleSided = true
+        rel material:binding = </World/Materials/DividerDark>
+    }
+
+    def Scope "PanelDividers"
+    {
+        def Mesh "Divider_m6" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            point3f[] points = [(-6.04, 0, -3.985), (-6.04, 5.4, -3.985), (-5.96, 5.4, -3.985), (-5.96, 0, -3.985)]
+            normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (interpolation = "vertex")
+            uniform token subdivisionScheme = "none"
+            bool doubleSided = true
+            rel material:binding = </World/Materials/DividerDark>
+        }
+
+        def Mesh "Divider_m3" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            point3f[] points = [(-3.04, 0, -3.985), (-3.04, 5.4, -3.985), (-2.96, 5.4, -3.985), (-2.96, 0, -3.985)]
+            normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (interpolation = "vertex")
+            uniform token subdivisionScheme = "none"
+            bool doubleSided = true
+            rel material:binding = </World/Materials/DividerDark>
+        }
+
+        def Mesh "Divider_0" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            point3f[] points = [(-0.04, 0, -3.985), (-0.04, 5.4, -3.985), (0.04, 5.4, -3.985), (0.04, 0, -3.985)]
+            normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (interpolation = "vertex")
+            uniform token subdivisionScheme = "none"
+            bool doubleSided = true
+            rel material:binding = </World/Materials/DividerDark>
+        }
+
+        def Mesh "Divider_p3" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            point3f[] points = [(2.96, 0, -3.985), (2.96, 5.4, -3.985), (3.04, 5.4, -3.985), (3.04, 0, -3.985)]
+            normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (interpolation = "vertex")
+            uniform token subdivisionScheme = "none"
+            bool doubleSided = true
+            rel material:binding = </World/Materials/DividerDark>
+        }
+
+        def Mesh "Divider_p6" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            point3f[] points = [(5.96, 0, -3.985), (5.96, 5.4, -3.985), (6.04, 5.4, -3.985), (6.04, 0, -3.985)]
+            normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (interpolation = "vertex")
+            uniform token subdivisionScheme = "none"
+            bool doubleSided = true
+            rel material:binding = </World/Materials/DividerDark>
+        }
+    }
+
+    def Scope "Receivers"
+    {
+        def Sphere "BR30_Sphere" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double radius = 0.34
+            double3 xformOp:translate = (-7.5, 0.34, -2.75)
+            token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </World/Materials/ReceiverWhite>
+        }
+
+        def Sphere "Candle35_Sphere" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double radius = 0.34
+            double3 xformOp:translate = (-4.5, 0.34, -2.75)
+            token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </World/Materials/ReceiverWhite>
+        }
+
+        def Sphere "Candle5_Sphere" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double radius = 0.34
+            double3 xformOp:translate = (-1.5, 0.34, -2.75)
+            token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </World/Materials/ReceiverWhite>
+        }
+
+        def Sphere "PAR38_Sphere" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double radius = 0.34
+            double3 xformOp:translate = (1.5, 0.34, -2.75)
+            token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </World/Materials/ReceiverWhite>
+        }
+
+        def Sphere "TForceHB_Sphere" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double radius = 0.34
+            double3 xformOp:translate = (4.5, 0.34, -2.75)
+            token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </World/Materials/ReceiverWhite>
+        }
+
+        def Sphere "TForceLS_Sphere" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double radius = 0.34
+            double3 xformOp:translate = (7.5, 0.34, -2.75)
+            token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </World/Materials/ReceiverWhite>
+        }
+    }
+
+    def Scope "FixtureDisks"
+    {
+        def Cylinder "BR30_Fixture" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double radius = 0.26
+            double height = 0.08
+            double3 xformOp:translate = (-7.5, 4.45, -3.82)
+            float3 xformOp:rotateXYZ = (90, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+            rel material:binding = </World/Materials/FixtureMetal>
+        }
+
+        def Cylinder "Candle35_Fixture" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double radius = 0.22
+            double height = 0.08
+            double3 xformOp:translate = (-4.5, 4.45, -3.82)
+            float3 xformOp:rotateXYZ = (90, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+            rel material:binding = </World/Materials/FixtureMetal>
+        }
+
+        def Cylinder "Candle5_Fixture" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double radius = 0.22
+            double height = 0.08
+            double3 xformOp:translate = (-1.5, 4.45, -3.82)
+            float3 xformOp:rotateXYZ = (90, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+            rel material:binding = </World/Materials/FixtureMetal>
+        }
+
+        def Cylinder "PAR38_Fixture" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double radius = 0.28
+            double height = 0.08
+            double3 xformOp:translate = (1.5, 4.45, -3.82)
+            float3 xformOp:rotateXYZ = (90, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+            rel material:binding = </World/Materials/FixtureMetal>
+        }
+
+        def Cylinder "TForceHB_Fixture" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double radius = 0.24
+            double height = 0.08
+            double3 xformOp:translate = (4.5, 4.45, -3.82)
+            float3 xformOp:rotateXYZ = (90, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+            rel material:binding = </World/Materials/FixtureMetal>
+        }
+
+        def Cylinder "TForceLS_Fixture" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double radius = 0.24
+            double height = 0.08
+            double3 xformOp:translate = (7.5, 4.45, -3.82)
+            float3 xformOp:rotateXYZ = (90, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+            rel material:binding = </World/Materials/FixtureMetal>
+        }
+    }
+
+    def Scope "IESLights"
+    {
+        def DiskLight "BR30_2700K" (
+            prepend apiSchemas = ["ShapingAPI"]
+        )
+        {
+            float inputs:radius = 0.18
+            float inputs:intensity = 5
+            bool inputs:normalize = true
+            bool inputs:enableColorTemperature = true
+            float inputs:colorTemperature = 2700
+            float inputs:shaping:cone:angle = 80
+            float inputs:shaping:cone:softness = 0.35
+            asset inputs:shaping:ies:file = @../ies/LEDBulbs_BR30_120V_19-120W_1200lm_2700K_E26_D-IES.ies@
+            float inputs:shaping:ies:angleScale = 1
+            bool inputs:shaping:ies:normalize = true
+            double3 xformOp:translate = (-7.5, 4.28, -3.38)
+            float3 xformOp:rotateXYZ = (-90, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+
+        def DiskLight "Candle_3p5W_Warm" (
+            prepend apiSchemas = ["ShapingAPI"]
+        )
+        {
+            float inputs:radius = 0.16
+            float inputs:intensity = 5
+            bool inputs:normalize = true
+            bool inputs:enableColorTemperature = true
+            float inputs:colorTemperature = 2400
+            float inputs:shaping:cone:angle = 92
+            float inputs:shaping:cone:softness = 0.45
+            asset inputs:shaping:ies:file = @../ies/LEDcandle_CLAF_3,5W_BA11_E26_922_927_CL-IES.IES@
+            float inputs:shaping:ies:angleScale = 1
+            bool inputs:shaping:ies:normalize = true
+            double3 xformOp:translate = (-4.5, 4.28, -3.38)
+            float3 xformOp:rotateXYZ = (-90, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+
+        def DiskLight "Candle_5W_Cool" (
+            prepend apiSchemas = ["ShapingAPI"]
+        )
+        {
+            float inputs:radius = 0.16
+            float inputs:intensity = 5
+            bool inputs:normalize = true
+            bool inputs:enableColorTemperature = true
+            float inputs:colorTemperature = 5000
+            float inputs:shaping:cone:angle = 92
+            float inputs:shaping:cone:softness = 0.45
+            asset inputs:shaping:ies:file = @../ies/LEDcandle_CLAF_5W_BA11_E26_950_CL-IES.IES@
+            float inputs:shaping:ies:angleScale = 1
+            bool inputs:shaping:ies:normalize = true
+            double3 xformOp:translate = (-1.5, 4.28, -3.38)
+            float3 xformOp:rotateXYZ = (-90, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+
+        def DiskLight "PAR38_40D_Spot" (
+            prepend apiSchemas = ["ShapingAPI"]
+        )
+        {
+            float inputs:radius = 0.18
+            float inputs:intensity = 5
+            bool inputs:normalize = true
+            bool inputs:enableColorTemperature = true
+            float inputs:colorTemperature = 3000
+            float inputs:shaping:cone:angle = 48
+            float inputs:shaping:cone:softness = 0.12
+            asset inputs:shaping:ies:file = @../ies/LEDspots-EXP-NAM-14W-PAR38-E26-930-40D-IES.IES@
+            float inputs:shaping:ies:angleScale = 0.85
+            bool inputs:shaping:ies:normalize = true
+            double3 xformOp:translate = (1.5, 4.28, -3.38)
+            float3 xformOp:rotateXYZ = (-90, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+
+        def DiskLight "TForce_HB_120D" (
+            prepend apiSchemas = ["ShapingAPI"]
+        )
+        {
+            float inputs:radius = 0.2
+            float inputs:intensity = 5
+            bool inputs:normalize = true
+            bool inputs:enableColorTemperature = true
+            float inputs:colorTemperature = 5000
+            float inputs:shaping:cone:angle = 115
+            float inputs:shaping:cone:softness = 0.55
+            asset inputs:shaping:ies:file = @../ies/LEDTForce_HB_145W_Others_EX39_850_120D-IES.IES@
+            float inputs:shaping:ies:angleScale = 1
+            bool inputs:shaping:ies:normalize = true
+            double3 xformOp:translate = (4.5, 4.28, -3.38)
+            float3 xformOp:rotateXYZ = (-90, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+
+        def DiskLight "TForce_LS_Corncob" (
+            prepend apiSchemas = ["ShapingAPI"]
+        )
+        {
+            float inputs:radius = 0.2
+            float inputs:intensity = 5
+            bool inputs:normalize = true
+            bool inputs:enableColorTemperature = true
+            float inputs:colorTemperature = 4000
+            float inputs:shaping:cone:angle = 115
+            float inputs:shaping:cone:softness = 0.55
+            asset inputs:shaping:ies:file = @../ies/LEDTForce_LS_EX39_36W_Corncob_EX39_840-IES.IES@
+            float inputs:shaping:ies:angleScale = 1
+            bool inputs:shaping:ies:normalize = true
+            double3 xformOp:translate = (7.5, 4.28, -3.38)
+            float3 xformOp:rotateXYZ = (-90, 0, 0)
+            token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+    }
+}

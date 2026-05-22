@@ -9,7 +9,6 @@
 #include "pxr/base/gf/color.h"
 #include "pxr/base/gf/colorSpace.h"
 
-#include "pxr/base/gf/range1f.h"
 #include "pxr/base/gf/vec2f.h"
 #include "pxr/base/gf/vec3f.h"
 
@@ -34,47 +33,11 @@ _Sqr(float x)
     return x*x;
 }
 
-// The latitudinal polar coordinate of v, in the range [0, pi].
-inline float
-_Theta(GfVec3f const& v)
-{
-    return acosf(GfClamp(v[2], -1.0f, 1.0f));
-}
-
-// The longitudinal polar coordinate of v, in the range [0, 2*pi).
-inline float
-_Phi(GfVec3f const& v)
-{
-    const float p = atan2f(v[1], v[0]);
-    return p < 0.0f ? (p + 2.0f * _pi<float>) : p;
-}
-
 // Dot product, but set to 0 if less than 0 - ie, 0 for backward-facing rays
 inline float
 _DotZeroClip(GfVec3f const& a, GfVec3f const& b)
 {
     return std::max(0.0f, GfDot(a, b));
-}
-
-float
-_Smoothstep(float t, GfRange1f range)
-{
-    const float length = range.GetSize();
-    if (length == 0) {
-        if (t <= range.GetMin()) {
-            // Note that in the case of t == range.GetMin(), we have a
-            // degenerate case where there's no clear answer what the "right"
-            // thing to do is.
-
-            // I arbitrarily chose 0.0 to return in this case, so at least we
-            // have consistent / well defined behavior; could have also done 1.0
-            // or 0.5...
-            return 0.0;
-        }
-        return 1.0;
-    }
-    t = GfClamp((t - range.GetMin())/length, 0.0f, 1.0f);
-    return t * t * (3.0f - 2.0f * t);
 }
 
 float
@@ -817,26 +780,6 @@ _IntersectSphereLight(
     GfVec3f const& direction,
     _ShapeSample* outSample);
 
-float
-_EvalIES(HdEmbree_LightData const& light, GfVec3f const& wI)
-{
-    HdEmbree_IES const& ies = light.shaping.ies;
-    if (!ies.iesFile.valid()) {
-        // Either none specified or there was an error loading. In either case,
-        // just ignore.
-        return 1.0f;
-    }
-
-    // emission direction in light space
-    GfVec3f wE = light.xformWorldToLight.TransformDir(wI).GetNormalized();
-
-    float theta = _Theta(wE);
-    float phi = _Phi(wE);
-    float norm = ies.normalize ? ies.iesFile.power() : 1.0f;
-
-    return ies.iesFile.eval(theta, phi, ies.angleScale) / norm;
-}
-
 GfVec3f
 _EvalLightBasic(HdEmbree_LightData const& light)
 {
@@ -849,6 +792,128 @@ _EvalLightBasic(HdEmbree_LightData const& light)
             _BlackbodyTemperatureAsRgb(light.colorTemperature));
     }
     return Le;
+}
+
+// TODO: This fixed split is a temporary baseline for finite lights.  When
+// MeshLight/arbitrary-emitter sampling is added, replace this with a shared
+// emitter sampler that can build a receiver-dependent product proposal, e.g.
+// p_area(x) * shaping(x -> shadingPoint), with consistent sample/evaluate PDFs.
+constexpr float _ShapingAwareFiniteDirectionalProposalWeight = 0.5f;
+constexpr float _ShapingAwareFiniteAreaProposalWeight =
+    1.0f - _ShapingAwareFiniteDirectionalProposalWeight;
+
+float
+_PdfWFromInvPdfW(float invPdfW)
+{
+    return (invPdfW > 0.0f && std::isfinite(invPdfW))
+        ? (1.0f / invPdfW)
+        : 0.0f;
+}
+
+float
+_WorldToLocalDirectionPdfScale(
+    HdEmbree_LightData const& light,
+    GfVec3f const& worldDirection,
+    GfVec3f* localDirection)
+{
+    if (!localDirection ||
+        worldDirection.GetLengthSq() <= 0.0f ||
+        !_IsFinite(worldDirection)) {
+        return 0.0f;
+    }
+
+    const GfVec3f worldWi = worldDirection.GetNormalized();
+    const GfVec3f localUnnormalized =
+        light.xformWorldToLight.TransformDir(worldWi);
+    const float localLength = localUnnormalized.GetLength();
+    if (localLength <= 0.0f || !std::isfinite(localLength)) {
+        return 0.0f;
+    }
+
+    const GfVec3f bx =
+        light.xformWorldToLight.TransformDir(GfVec3f::XAxis());
+    const GfVec3f by =
+        light.xformWorldToLight.TransformDir(GfVec3f::YAxis());
+    const GfVec3f bz =
+        light.xformWorldToLight.TransformDir(GfVec3f::ZAxis());
+    const float detWorldToLight = std::abs(GfDot(bx, GfCross(by, bz)));
+    if (detWorldToLight <= 0.0f || !std::isfinite(detWorldToLight)) {
+        return 0.0f;
+    }
+
+    *localDirection = localUnnormalized / localLength;
+    return detWorldToLight / (localLength * localLength * localLength);
+}
+
+float
+_DirectionalShapingPdfW(
+    HdEmbree_LightData const& light,
+    GfVec3f const& worldDirection,
+    bool foldToFrontHemisphere)
+{
+    if (!light.shaping.directionalDistribution.IsValid() ||
+        worldDirection.GetLengthSq() <= 0.0f ||
+        !_IsFinite(worldDirection)) {
+        return 0.0f;
+    }
+
+    GfVec3f localDirection;
+    const float pdfScale = _WorldToLocalDirectionPdfScale(
+        light, worldDirection, &localDirection);
+    if (pdfScale <= 0.0f) {
+        return 0.0f;
+    }
+    float localPdf =
+        HdEmbreeDirectionalShapingPdf(light.shaping, localDirection);
+    if (foldToFrontHemisphere) {
+        if (localDirection[2] < 0.0f) {
+            return 0.0f;
+        }
+        const GfVec3f mirrored(
+            localDirection[0],
+            localDirection[1],
+            -localDirection[2]);
+        localPdf += HdEmbreeDirectionalShapingPdf(light.shaping, mirrored);
+    }
+    return localPdf * pdfScale;
+}
+
+float
+_ShapingAwareFinitePdfW(
+    HdEmbree_LightData const& light,
+    float areaInvPdfW,
+    GfVec3f const& worldDirection,
+    bool foldToFrontHemisphere)
+{
+    const float areaPdfW = _PdfWFromInvPdfW(areaInvPdfW);
+    if (!light.shaping.directionalDistribution.IsValid()) {
+        return areaPdfW;
+    }
+
+    // The finite emitter remains the source of truth.  The extra directional
+    // proposal only changes how we sample the same emitter, so both proposals
+    // are folded into the solid-angle PDF used by direct lighting and emitter
+    // hit MIS.
+    const float shapingPdfW = _DirectionalShapingPdfW(
+        light, worldDirection, foldToFrontHemisphere);
+    return _ShapingAwareFiniteAreaProposalWeight * areaPdfW +
+           _ShapingAwareFiniteDirectionalProposalWeight * shapingPdfW;
+}
+
+void
+_ApplyShapingAwareFinitePdf(
+    HdEmbree_LightData const& light,
+    HdEmbreeLightSampler::LightSample* sample,
+    bool foldToFrontHemisphere)
+{
+    if (!sample || !sample->valid || sample->delta) {
+        return;
+    }
+
+    const float pdfW = _ShapingAwareFinitePdfW(
+        light, sample->invPdfW, sample->wI, foldToFrontHemisphere);
+    sample->invPdfW = (pdfW > 0.0f) ? (1.0f / pdfW) : 0.0f;
+    sample->valid = sample->valid && sample->invPdfW > 0.0f;
 }
 
 HdEmbreeLightSampler::LightSample
@@ -866,9 +931,6 @@ _EvalAreaLight(HdEmbree_LightData const& light, _ShapeSample const& ss,
     wI /= dist;
     const float cosThetaOffNormal = _DotZeroClip(-wI, ss.nWorld);
     float invPdfW = cosThetaOffNormal / _Sqr(dist) * ss.invPdfA;
-    GfVec3f lightNegZ = -light.xformLightToWorld.GetRow3(2).GetNormalized();
-    const float cosThetaOffZ = GfDot(-wI, lightNegZ);
-
     // Combine the brightness parameters to get initial emission luminance
     // (nits)
     GfVec3f Le = cosThetaOffNormal > 0.0f ?
@@ -888,22 +950,10 @@ _EvalAreaLight(HdEmbree_LightData const& light, _ShapeSample const& ss,
         Le /= ss.invPdfA;
     }
 
-    // Apply focus shaping
-    if (light.shaping.focus > 0.0f) {
-        const float ff = powf(GfAbs(cosThetaOffZ), light.shaping.focus);
-        const GfVec3f focusTint = GfLerp(ff, light.shaping.focusTint,
-                                         GfVec3f(1.0f));
-        Le = GfCompMult(Le, focusTint);
-    }
-
-    // Apply cone shaping
-    const float thetaCone = GfDegreesToRadians(light.shaping.coneAngle);
-    const float thetaSoft = GfLerp(light.shaping.coneSoftness, thetaCone, 0.0f);
-    const float thetaOffZ = acosf(cosThetaOffZ);
-    Le *= 1.0f - _Smoothstep(thetaOffZ, GfRange1f(thetaSoft, thetaCone));
-
-    // Apply IES
-    Le *= _EvalIES(light, wI);
+    const GfVec3f localWi =
+        light.xformWorldToLight.TransformDir(wI).GetNormalized();
+    Le = GfCompMult(
+        Le, HdEmbreeEvaluateDirectionalShaping(light.shaping, localWi));
 
     return HdEmbreeLightSampler::LightSample {
         Le,
@@ -1182,9 +1232,12 @@ _EvaluateLightDirection(
     _ShapeSample shapeSample;
     bool hit = false;
 
+    bool useShapingAwareFinitePdf = false;
+
     if (auto const* rect = std::get_if<HdEmbree_Rect>(&light.lightVariant)) {
         hit = _IntersectRectLight(light, *rect, position, normalizedDirection,
                                   &shapeSample);
+        useShapingAwareFinitePdf = true;
     } else if (auto const* sphere =
                    std::get_if<HdEmbree_Sphere>(&light.lightVariant)) {
         hit = _IntersectSphereLight(
@@ -1204,6 +1257,7 @@ _EvaluateLightDirection(
                    std::get_if<HdEmbree_Disk>(&light.lightVariant)) {
         hit = _IntersectDiskLight(
             light, *disk, position, normalizedDirection, &shapeSample);
+        useShapingAwareFinitePdf = true;
     } else if (auto const* cylinder =
                    std::get_if<HdEmbree_Cylinder>(&light.lightVariant)) {
         hit = _IntersectCylinderLight(
@@ -1220,7 +1274,78 @@ _EvaluateLightDirection(
         return _InvalidLightSample();
     }
 
-    return _EvalAreaLight(light, shapeSample, position);
+    HdEmbreeLightSampler::LightSample sample =
+        _EvalAreaLight(light, shapeSample, position);
+    if (useShapingAwareFinitePdf) {
+        _ApplyShapingAwareFinitePdf(light, &sample, true);
+    }
+    return sample;
+}
+
+HdEmbreeLightSampler::LightSample
+_SampleRectDirectionalShaping(
+    HdEmbree_LightData const& light,
+    HdEmbree_Rect const& rect,
+    GfVec3f const& position,
+    float u1,
+    float u2)
+{
+    const HdEmbree_DirectionalShapingSample directionalSample =
+        HdEmbreeSampleDirectionalShaping(light.shaping, u1, u2);
+    if (!directionalSample.valid) {
+        return _InvalidLightSample();
+    }
+
+    GfVec3f localDirection = directionalSample.localDirection;
+    if (localDirection[2] < 0.0f) {
+        localDirection[2] = -localDirection[2];
+    }
+
+    const GfVec3f worldDirection =
+        light.xformLightToWorld.TransformDir(localDirection).GetNormalized();
+    _ShapeSample shapeSample;
+    if (!_IntersectRectLight(light, rect, position, worldDirection,
+                             &shapeSample)) {
+        return _InvalidLightSample();
+    }
+
+    HdEmbreeLightSampler::LightSample sample =
+        _EvalAreaLight(light, shapeSample, position);
+    _ApplyShapingAwareFinitePdf(light, &sample, true);
+    return sample;
+}
+
+HdEmbreeLightSampler::LightSample
+_SampleDiskDirectionalShaping(
+    HdEmbree_LightData const& light,
+    HdEmbree_Disk const& disk,
+    GfVec3f const& position,
+    float u1,
+    float u2)
+{
+    const HdEmbree_DirectionalShapingSample directionalSample =
+        HdEmbreeSampleDirectionalShaping(light.shaping, u1, u2);
+    if (!directionalSample.valid) {
+        return _InvalidLightSample();
+    }
+
+    GfVec3f localDirection = directionalSample.localDirection;
+    if (localDirection[2] < 0.0f) {
+        localDirection[2] = -localDirection[2];
+    }
+
+    const GfVec3f worldDirection =
+        light.xformLightToWorld.TransformDir(localDirection).GetNormalized();
+    _ShapeSample shapeSample;
+    if (!_IntersectDiskLight(light, disk, position, worldDirection,
+                             &shapeSample)) {
+        return _InvalidLightSample();
+    }
+
+    HdEmbreeLightSampler::LightSample sample =
+        _EvalAreaLight(light, shapeSample, position);
+    _ApplyShapingAwareFinitePdf(light, &sample, true);
+    return sample;
 }
 
 HdEmbreeLightSampler::LightSample
@@ -1391,14 +1516,34 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
 
 HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
         HdEmbree_Rect const& rect) {
+    const bool useShapingAwareSampling =
+        _lightData.shaping.directionalDistribution.IsValid();
+    if (useShapingAwareSampling &&
+        _u1 >= _ShapingAwareFiniteAreaProposalWeight) {
+        return _SampleRectDirectionalShaping(
+            _lightData,
+            rect,
+            _hitPosition,
+            (_u1 - _ShapingAwareFiniteAreaProposalWeight) /
+                _ShapingAwareFiniteDirectionalProposalWeight,
+            _u2);
+    }
+
     _ShapeSample shapeSample = _SampleRect(
             _lightData.xformLightToWorld,
             _lightData.normalXformLightToWorld,
             rect.width,
             rect.height,
-            _u1,
+            useShapingAwareSampling
+                ? (_u1 / _ShapingAwareFiniteAreaProposalWeight)
+                : _u1,
             _u2);
-    return _EvalAreaLight(_lightData, shapeSample, _hitPosition);
+    HdEmbreeLightSampler::LightSample sample =
+        _EvalAreaLight(_lightData, shapeSample, _hitPosition);
+    if (useShapingAwareSampling) {
+        _ApplyShapingAwareFinitePdf(_lightData, &sample, true);
+    }
+    return sample;
 }
 
 HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
@@ -1421,13 +1566,33 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
 
 HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
         HdEmbree_Disk const& disk) {
+    const bool useShapingAwareSampling =
+        _lightData.shaping.directionalDistribution.IsValid();
+    if (useShapingAwareSampling &&
+        _u1 >= _ShapingAwareFiniteAreaProposalWeight) {
+        return _SampleDiskDirectionalShaping(
+            _lightData,
+            disk,
+            _hitPosition,
+            (_u1 - _ShapingAwareFiniteAreaProposalWeight) /
+                _ShapingAwareFiniteDirectionalProposalWeight,
+            _u2);
+    }
+
     _ShapeSample shapeSample = _SampleDisk(
             _lightData.xformLightToWorld,
             _lightData.normalXformLightToWorld,
             disk.radius,
-            _u1,
+            useShapingAwareSampling
+                ? (_u1 / _ShapingAwareFiniteAreaProposalWeight)
+                : _u1,
             _u2);
-    return _EvalAreaLight(_lightData, shapeSample, _hitPosition);
+    HdEmbreeLightSampler::LightSample sample =
+        _EvalAreaLight(_lightData, shapeSample, _hitPosition);
+    if (useShapingAwareSampling) {
+        _ApplyShapingAwareFinitePdf(_lightData, &sample, true);
+    }
+    return sample;
 }
 
 HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(

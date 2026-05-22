@@ -172,14 +172,64 @@ struct HdEmbree_IES
     float angleScale = 0.0f;
 };
 
+struct HdEmbree_DirectionalShapingDistribution
+{
+    static constexpr int NumPhi = 64;
+    static constexpr int NumTheta = 32;
+    static constexpr int NumCells = NumPhi * NumTheta;
+
+    std::vector<float> cdf;
+    std::vector<float> cellPdfW;
+    float weightSum = 0.0f;
+    float averageWeight = 1.0f;
+    float peakWeight = 1.0f;
+    float totalSolidAngleWeightedIntensity = 0.0f;
+    GfVec3f principalDirection = GfVec3f(0.0f, 0.0f, 1.0f);
+
+    bool IsValid() const
+    {
+        return cdf.size() == static_cast<size_t>(NumCells + 1) &&
+               cellPdfW.size() == static_cast<size_t>(NumCells) &&
+               weightSum > 0.0f;
+    }
+};
+
+struct HdEmbree_DirectionalShapingSample
+{
+    GfVec3f localDirection = GfVec3f(0.0f, 0.0f, 1.0f);
+    float pdfW = 0.0f;
+    float importance = 0.0f;
+    bool valid = false;
+};
+
 struct HdEmbree_Shaping
 {
-    GfVec3f focusTint;
+    GfVec3f focusTint = GfVec3f(0.0f);
     float focus = 0.0f;
     float coneAngle = 180.0f;
     float coneSoftness = 0.0f;
     HdEmbree_IES ies;
+    HdEmbree_DirectionalShapingDistribution directionalDistribution;
 };
+
+GfVec3f HdEmbreeEvaluateDirectionalShaping(
+    HdEmbree_Shaping const& shaping,
+    GfVec3f const& localDirection);
+
+float HdEmbreeDirectionalShapingImportance(
+    HdEmbree_Shaping const& shaping,
+    GfVec3f const& localDirection);
+
+void HdEmbreeBuildDirectionalShapingDistribution(HdEmbree_Shaping* shaping);
+
+HdEmbree_DirectionalShapingSample HdEmbreeSampleDirectionalShaping(
+    HdEmbree_Shaping const& shaping,
+    float u1,
+    float u2);
+
+float HdEmbreeDirectionalShapingPdf(
+    HdEmbree_Shaping const& shaping,
+    GfVec3f const& localDirection);
 
 struct HdEmbree_LightData
 {

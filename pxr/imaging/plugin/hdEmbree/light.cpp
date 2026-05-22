@@ -13,6 +13,7 @@
 
 #include "pxr/base/gf/color.h"
 #include "pxr/base/gf/colorSpace.h"
+#include "pxr/base/gf/math.h"
 #include "pxr/imaging/hd/sceneDelegate.h"
 #include "pxr/imaging/hio/image.h"
 
@@ -34,6 +35,46 @@ constexpr float _pi = static_cast<float>(M_PI);
 const GfColorSpace _xyzColorSpace(GfColorSpaceNames->LinearCIEXYZD65);
 const TfToken _colorSpaceMetadataKey("oiio:ColorSpace");
 const TfToken _alternateColorSpaceMetadataKey("ColorSpace");
+
+float
+_LinearRec709Luminance(GfVec3f const& color)
+{
+    return color[0] * 0.2126f + color[1] * 0.7152f + color[2] * 0.0722f;
+}
+
+float
+_Smoothstep(float t, float edge0, float edge1)
+{
+    const float length = edge1 - edge0;
+    if (length == 0.0f) {
+        return (t <= edge0) ? 0.0f : 1.0f;
+    }
+
+    t = GfClamp((t - edge0) / length, 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+float
+_Theta(GfVec3f const& v)
+{
+    return std::acos(GfClamp(v[2], -1.0f, 1.0f));
+}
+
+float
+_Phi(GfVec3f const& v)
+{
+    const float p = std::atan2(v[1], v[0]);
+    return p < 0.0f ? (p + 2.0f * _pi) : p;
+}
+
+bool
+_HasAuthoredDirectionalShaping(HdEmbree_Shaping const& shaping)
+{
+    return shaping.focus > 0.0f ||
+           shaping.coneAngle < 180.0f ||
+           shaping.coneSoftness != 0.0f ||
+           shaping.ies.iesFile.valid();
+}
 
 std::string
 _NormalizeColorSpaceName(const std::string& name)
@@ -229,6 +270,231 @@ _SyncLightTexture(const SdfPath& id, HdEmbree_LightData& light,
 } // anonymous namespace
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+GfVec3f
+HdEmbreeEvaluateDirectionalShaping(
+    HdEmbree_Shaping const& shaping,
+    GfVec3f const& localDirection)
+{
+    if (localDirection.GetLengthSq() <= 0.0f ||
+        !std::isfinite(localDirection[0]) ||
+        !std::isfinite(localDirection[1]) ||
+        !std::isfinite(localDirection[2])) {
+        return GfVec3f(0.0f);
+    }
+
+    const GfVec3f wI = localDirection.GetNormalized();
+    const float cosThetaOffZ = GfClamp(wI[2], -1.0f, 1.0f);
+    GfVec3f shapingWeight(1.0f);
+
+    if (shaping.focus > 0.0f) {
+        const float ff = std::pow(
+            std::abs(cosThetaOffZ), shaping.focus);
+        const GfVec3f focusTint = GfLerp(
+            ff, shaping.focusTint, GfVec3f(1.0f));
+        shapingWeight = GfCompMult(shapingWeight, focusTint);
+    }
+
+    const float thetaCone = GfDegreesToRadians(shaping.coneAngle);
+    const float thetaSoft =
+        GfLerp(shaping.coneSoftness, thetaCone, 0.0f);
+    const float thetaOffZ = std::acos(cosThetaOffZ);
+    shapingWeight *= 1.0f - _Smoothstep(thetaOffZ, thetaSoft, thetaCone);
+
+    HdEmbree_IES const& ies = shaping.ies;
+    if (ies.iesFile.valid()) {
+        const float norm = ies.normalize ? ies.iesFile.power() : 1.0f;
+        const float iesWeight = (norm > 0.0f)
+            ? ies.iesFile.eval(_Theta(wI), _Phi(wI), ies.angleScale) / norm
+            : 0.0f;
+        shapingWeight *= iesWeight;
+    }
+
+    return shapingWeight;
+}
+
+float
+HdEmbreeDirectionalShapingImportance(
+    HdEmbree_Shaping const& shaping,
+    GfVec3f const& localDirection)
+{
+    const GfVec3f shapingWeight =
+        HdEmbreeEvaluateDirectionalShaping(shaping, localDirection);
+    return std::max(0.0f, _LinearRec709Luminance(shapingWeight));
+}
+
+void
+HdEmbreeBuildDirectionalShapingDistribution(HdEmbree_Shaping* shaping)
+{
+    if (!shaping) {
+        return;
+    }
+
+    HdEmbree_DirectionalShapingDistribution& distribution =
+        shaping->directionalDistribution;
+    distribution = HdEmbree_DirectionalShapingDistribution();
+
+    if (!_HasAuthoredDirectionalShaping(*shaping)) {
+        return;
+    }
+
+    constexpr int numPhi = HdEmbree_DirectionalShapingDistribution::NumPhi;
+    constexpr int numTheta = HdEmbree_DirectionalShapingDistribution::NumTheta;
+    constexpr int numCells = HdEmbree_DirectionalShapingDistribution::NumCells;
+    constexpr float cellSolidAngle = 4.0f * _pi / static_cast<float>(numCells);
+
+    std::vector<float> cellWeights(
+        static_cast<size_t>(numCells), 0.0f);
+    distribution.cellPdfW.assign(static_cast<size_t>(numCells), 0.0f);
+    distribution.cdf.assign(static_cast<size_t>(numCells + 1), 0.0f);
+
+    GfVec3f principal(0.0f);
+    float weightSum = 0.0f;
+    float peakWeight = 0.0f;
+
+    for (int v = 0; v < numTheta; ++v) {
+        const float z0 = 1.0f - 2.0f *
+            static_cast<float>(v) / static_cast<float>(numTheta);
+        const float z1 = 1.0f - 2.0f *
+            static_cast<float>(v + 1) / static_cast<float>(numTheta);
+        const float z = 0.5f * (z0 + z1);
+        const float r = std::sqrt(std::max(0.0f, 1.0f - z * z));
+
+        for (int h = 0; h < numPhi; ++h) {
+            const float phi = 2.0f * _pi *
+                (static_cast<float>(h) + 0.5f) / static_cast<float>(numPhi);
+            const GfVec3f localDirection(
+                r * std::cos(phi),
+                r * std::sin(phi),
+                z);
+            const float importance =
+                HdEmbreeDirectionalShapingImportance(
+                    *shaping, localDirection);
+            const float weight = importance * cellSolidAngle;
+            const int idx = v * numPhi + h;
+            cellWeights[static_cast<size_t>(idx)] = weight;
+            weightSum += weight;
+            peakWeight = std::max(peakWeight, importance);
+            principal += localDirection * weight;
+        }
+    }
+
+    if (weightSum <= 0.0f || !std::isfinite(weightSum)) {
+        distribution = HdEmbree_DirectionalShapingDistribution();
+        return;
+    }
+
+    float cumulative = 0.0f;
+    distribution.cdf[0] = 0.0f;
+    for (int idx = 0; idx < numCells; ++idx) {
+        cumulative += cellWeights[static_cast<size_t>(idx)] / weightSum;
+        distribution.cdf[static_cast<size_t>(idx + 1)] = cumulative;
+        distribution.cellPdfW[static_cast<size_t>(idx)] =
+            cellWeights[static_cast<size_t>(idx)] /
+            (weightSum * cellSolidAngle);
+    }
+    distribution.cdf.back() = 1.0f;
+    distribution.weightSum = weightSum;
+    distribution.totalSolidAngleWeightedIntensity = weightSum;
+    distribution.averageWeight = weightSum / (4.0f * _pi);
+    distribution.peakWeight = peakWeight;
+    if (principal.GetLengthSq() > 0.0f && std::isfinite(principal[0]) &&
+        std::isfinite(principal[1]) && std::isfinite(principal[2])) {
+        distribution.principalDirection = principal.GetNormalized();
+    }
+}
+
+HdEmbree_DirectionalShapingSample
+HdEmbreeSampleDirectionalShaping(
+    HdEmbree_Shaping const& shaping,
+    float u1,
+    float u2)
+{
+    HdEmbree_DirectionalShapingSample result;
+    HdEmbree_DirectionalShapingDistribution const& distribution =
+        shaping.directionalDistribution;
+    if (!distribution.IsValid()) {
+        return result;
+    }
+
+    constexpr int numPhi = HdEmbree_DirectionalShapingDistribution::NumPhi;
+    constexpr int numTheta = HdEmbree_DirectionalShapingDistribution::NumTheta;
+    constexpr int numCells = HdEmbree_DirectionalShapingDistribution::NumCells;
+
+    const float sample = GfClamp(
+        u1, 0.0f, std::nextafter(1.0f, 0.0f));
+    const auto cdfBegin = distribution.cdf.begin();
+    const auto cdfIt = std::upper_bound(
+        cdfBegin + 1, distribution.cdf.end(), sample);
+    const int idx = std::clamp(
+        static_cast<int>(cdfIt - (cdfBegin + 1)),
+        0,
+        numCells - 1);
+
+    const float cdf0 = distribution.cdf[static_cast<size_t>(idx)];
+    const float cdf1 = distribution.cdf[static_cast<size_t>(idx + 1)];
+    const float cellU = (cdf1 > cdf0)
+        ? ((sample - cdf0) / (cdf1 - cdf0))
+        : 0.0f;
+
+    const int v = idx / numPhi;
+    const int h = idx - v * numPhi;
+    const float z0 = 1.0f - 2.0f *
+        static_cast<float>(v) / static_cast<float>(numTheta);
+    const float z1 = 1.0f - 2.0f *
+        static_cast<float>(v + 1) / static_cast<float>(numTheta);
+    const float z = GfLerp(cellU, z0, z1);
+    const float r = std::sqrt(std::max(0.0f, 1.0f - z * z));
+    const float phi = 2.0f * _pi *
+        (static_cast<float>(h) +
+         GfClamp(u2, 0.0f, std::nextafter(1.0f, 0.0f))) /
+        static_cast<float>(numPhi);
+
+    result.localDirection = GfVec3f(
+        r * std::cos(phi),
+        r * std::sin(phi),
+        z);
+    result.pdfW = distribution.cellPdfW[static_cast<size_t>(idx)];
+    result.importance =
+        HdEmbreeDirectionalShapingImportance(shaping, result.localDirection);
+    result.valid = result.pdfW > 0.0f && std::isfinite(result.pdfW);
+    return result;
+}
+
+float
+HdEmbreeDirectionalShapingPdf(
+    HdEmbree_Shaping const& shaping,
+    GfVec3f const& localDirection)
+{
+    HdEmbree_DirectionalShapingDistribution const& distribution =
+        shaping.directionalDistribution;
+    if (!distribution.IsValid() ||
+        localDirection.GetLengthSq() <= 0.0f ||
+        !std::isfinite(localDirection[0]) ||
+        !std::isfinite(localDirection[1]) ||
+        !std::isfinite(localDirection[2])) {
+        return 0.0f;
+    }
+
+    constexpr int numPhi = HdEmbree_DirectionalShapingDistribution::NumPhi;
+    constexpr int numTheta = HdEmbree_DirectionalShapingDistribution::NumTheta;
+    const GfVec3f wI = localDirection.GetNormalized();
+    const float z = GfClamp(
+        wI[2], -1.0f, std::nextafter(1.0f, 0.0f));
+    const float phi = _Phi(wI);
+    const int v = std::clamp(
+        static_cast<int>(
+            0.5f * (1.0f - z) * static_cast<float>(numTheta)),
+        0,
+        numTheta - 1);
+    const int h = std::clamp(
+        static_cast<int>(
+            phi * static_cast<float>(numPhi) / (2.0f * _pi)),
+        0,
+        numPhi - 1);
+    const int idx = v * numPhi + h;
+    return distribution.cellPdfW[static_cast<size_t>(idx)];
+}
 
 void
 HdEmbreeBuildDomeLightSamplingDistribution(HdEmbree_LightTexture* texture)
@@ -512,6 +778,8 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
             value.IsHolding<float>()) {
             _lightData.shaping.ies.angleScale = value.UncheckedGet<float>();
         }
+
+        HdEmbreeBuildDirectionalShapingDistribution(&_lightData.shaping);
     }
 
     HdEmbreeRenderer *renderer = embreeRenderParam->GetRenderer();
