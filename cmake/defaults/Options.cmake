@@ -26,8 +26,6 @@ option(PXR_BUILD_ALEMBIC_PLUGIN "Build the Alembic plugin for USD" OFF)
 option(PXR_BUILD_DRACO_PLUGIN "Build the Draco plugin for USD" OFF)
 option(PXR_BUILD_PRMAN_PLUGIN "Build the PRMan imaging plugin" OFF)
 option(PXR_ENABLE_MATERIALX_SUPPORT "Enable MaterialX support" OFF)
-option(PXR_ENABLE_OPENQMC_SUPPORT
-       "Enable OpenQMC support for the Embree imaging plugin" OFF)
 option(PXR_ENABLE_ADOBE_OPENPBR_SUPPORT
        "Enable Adobe OpenPBR support for the Embree imaging plugin" OFF)
 option(PXR_BUILD_DOCUMENTATION "Generate doxygen documentation" OFF)
@@ -249,15 +247,6 @@ if (${PXR_BUILD_EMBREE_PLUGIN})
             "Setting PXR_BUILD_EMBREE_PLUGIN=OFF because "
             "PXR_BUILD_GPU_SUPPORT=OFF")
         set(PXR_BUILD_EMBREE_PLUGIN "OFF" CACHE BOOL "" FORCE)
-    endif()
-endif()
-
-if (${PXR_ENABLE_OPENQMC_SUPPORT})
-    if (NOT ${PXR_BUILD_EMBREE_PLUGIN})
-        message(STATUS
-            "Setting PXR_ENABLE_OPENQMC_SUPPORT=OFF because "
-            "PXR_BUILD_EMBREE_PLUGIN=OFF")
-        set(PXR_ENABLE_OPENQMC_SUPPORT "OFF" CACHE BOOL "" FORCE)
     endif()
 endif()
 

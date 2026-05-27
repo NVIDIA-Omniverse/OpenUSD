@@ -1,8 +1,8 @@
 # HdEmbree Render Settings
 
-When hdEmbree is built with `PXR_ENABLE_OPENQMC_SUPPORT=ON`, the plugin also
-links against OpenQMC. The `build_usd.py --embree` path installs OpenQMC
-`v0.7.1` automatically and enables this CMake option for the final USD build.
+hdEmbree uses OpenQMC for all renderer sampling. The `build_usd.py --embree`
+path installs OpenQMC `v0.7.1` automatically, and the hdEmbree CMake target
+requires `OpenQMC::OpenQMC`.
 
 The following settings can be configured via `renderSettings` (Hydra render delegate settings API) and/or environment variables. Precedence is:
 built-in default < environment variable < USD `renderSettings` prim < Hydra renderer setting UI.
@@ -15,7 +15,7 @@ built-in default < environment variable < USD `renderSettings` prim < Hydra rend
 | Ambient Occlusion Samples | `ambientOcclusionSamples` | `int` | `0` | `HDEMBREE_AMBIENT_OCCLUSION_SAMPLES` |
 | Samples To Convergence | `convergedSamplesPerPixel` | `int` | `256` | `HDEMBREE_SAMPLES_TO_CONVERGENCE` |
 | Random Number Seed | `randomNumberSeed` | `int` | `-1` | `HDEMBREE_RANDOM_NUMBER_SEED` |
-| Sampler Sequence | `samplerSequence` | `string` | effective default: `openqmc_sobolbn` with OpenQMC, otherwise `sobol` | `HDEMBREE_SAMPLER_SEQUENCE` |
+| Sampler Sequence | `samplerSequence` | `string` | `openqmc_sobolbn` | `HDEMBREE_SAMPLER_SEQUENCE` |
 | Dome Light Camera Visibility | `domeLightCameraVisibility` | `bool` | `true` | `HDEMBREE_DOME_LIGHT_CAMERA_VISIBILITY` |
 | Enable Adaptive Sampling | `enableAdaptiveSampling` | `bool` | `true` | `HDEMBREE_ENABLE_ADAPTIVE_SAMPLING` |
 | Adaptive Threshold | `adaptiveThreshold` | `float` | `0.01` | `HDEMBREE_ADAPTIVE_THRESHOLD` |
@@ -45,8 +45,6 @@ When scene lighting is disabled, ambient occlusion can be used instead. The numb
 ### Sampler Sequence (`samplerSequence`)
 Selects the per-pixel sampler implementation. Supported values are:
 
-- `sobol`
-- `random`
 - `openqmc_sobol`
 - `openqmc_sobolbn`
 - `openqmc_pmj`
@@ -55,18 +53,15 @@ Selects the per-pixel sampler implementation. Supported values are:
 - `openqmc_latticebn`
 
 If `samplerSequence` is not authored and `HDEMBREE_SAMPLER_SEQUENCE` is empty,
-hdEmbree chooses `openqmc_sobolbn` when OpenQMC support is compiled in. Builds
-without OpenQMC support choose `sobol`. If an `openqmc_*` sequence is requested
-without OpenQMC support compiled in, hdEmbree falls back to `sobol` and emits a
-warning.
+hdEmbree chooses `openqmc_sobolbn`. Unknown sampler tokens fall back to that
+default and emit a warning.
 
 Internally, sampling is domain-aware rather than a single mutable 1D stream.
 Each sampling decision, such as camera jitter, BSDF sampling, direct-light
 samples, medium free-flight, and SSS random-walk bounces, derives a stable
-sample domain from a fixed integer key. OpenQMC-backed sequences map those
-domains to `newDomain*()` and draw the requested dimensions with one
-`drawSample<N>()` call; the built-in `sobol` and `random` sequences use the
-same domain framework with deterministic seed mixing.
+sample domain from a fixed integer key. OpenQMC sequences map those domains to
+`newDomain*()` and draw the requested dimensions with one `drawSample<N>()`
+call.
 
 ### Adaptive Sampling (`enableAdaptiveSampling`, `adaptiveThreshold`, `minSamplesBeforeAdaptive`)
 When enabled, per-pixel variance is tracked using Welford's online algorithm. Pixels whose variance metric falls below `adaptiveThreshold` after at least `minSamplesBeforeAdaptive` samples are marked as converged and skipped in subsequent passes. The default minimum sample count is intentionally conservative enough to avoid stopping too early on rare bright events such as sharp finite-light reflections, while still preserving useful speedups for scenes with non-uniform complexity.
@@ -100,7 +95,7 @@ The approximation applies RGB attenuation from surface opacity, dielectric Fresn
 Set `approxTransparentShadows` to `false` to keep the conservative thick-surface behavior: current-medium exits are treated as scalar visibility, while thick transparent entry boundaries block the straight shadow ray. Thin-walled transmissive surfaces still use straight RGB attenuation.
 
 ### Random Number Seed (`randomNumberSeed`)
-A value of `-1` (default) seeds the RNG non-deterministically. Any other value, combined with `PXR_WORK_THREAD_LIMIT=1`, produces deterministic/repeatable results.
+A value of `-1` (default) chooses a non-deterministic OpenQMC frame seed for each render. Any other value produces deterministic/repeatable sampler sequences.
 
 ## Custom AOVs
 

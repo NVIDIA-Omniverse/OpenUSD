@@ -363,8 +363,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             HdEmbreeGetSamplerSequenceFromToken(TfToken(config.samplerSequence));
         TfToken defaultSamplerSequenceToken =
             HdEmbreeGetSamplerSequenceToken(defaultSamplerSequence);
-        if (defaultSamplerSequenceToken != TfToken(config.samplerSequence) ||
-            !HdEmbreeSamplerSequenceIsSupported(defaultSamplerSequence)) {
+        if (defaultSamplerSequenceToken != TfToken(config.samplerSequence)) {
             defaultSamplerSequence =
                 HdEmbreeGetDefaultSamplerSequence();
             defaultSamplerSequenceToken =
@@ -383,17 +382,6 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                     samplerSequenceToken.GetText(),
                     defaultSamplerSequenceToken.GetText());
             samplerSequence = defaultSamplerSequence;
-        }
-        if (!HdEmbreeSamplerSequenceIsSupported(samplerSequence)) {
-            const HdEmbreeSamplerSequence fallbackSamplerSequence =
-                HdEmbreeGetDefaultSamplerSequence();
-            const TfToken fallbackSamplerSequenceToken =
-                HdEmbreeGetSamplerSequenceToken(fallbackSamplerSequence);
-            TF_WARN("hdEmbree sampler sequence '%s' requires OpenQMC support; "
-                    "falling back to '%s'.",
-                    samplerSequenceToken.GetText(),
-                    fallbackSamplerSequenceToken.GetText());
-            samplerSequence = fallbackSamplerSequence;
         }
         _renderer->SetSamplerSequence(samplerSequence);
 

@@ -37,6 +37,17 @@ _Different(GfVec3f const& a, GfVec3f const& b)
 }
 
 bool
+_InUnitInterval(GfVec4f const& sample)
+{
+    for (int i = 0; i < 4; ++i) {
+        if (sample[i] < 0.0f || sample[i] >= 1.0f) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool
 TestDomainKeyValuesAreStable()
 {
     if (HdEmbreeSampleDomainKeyValue(
@@ -66,14 +77,8 @@ TestDomainKeyValuesAreStable()
 bool
 TestDefaultSamplerSequence()
 {
-#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
-    const HdEmbreeSamplerSequence expected =
-        HdEmbreeSamplerSequence::OpenQMCSobolBN;
-#else
-    const HdEmbreeSamplerSequence expected = HdEmbreeSamplerSequence::Sobol;
-#endif
-
-    if (HdEmbreeGetDefaultSamplerSequence() != expected) {
+    if (HdEmbreeGetDefaultSamplerSequence() !=
+        HdEmbreeSamplerSequence::OpenQMCSobolBN) {
         std::printf("    default sampler sequence was unexpected\n");
         return false;
     }
@@ -82,84 +87,29 @@ TestDefaultSamplerSequence()
 }
 
 bool
-TestSobolDomainsAreDeterministicAndSeparated()
+TestSamplerSequenceTokens()
 {
-    HdEmbreeSampler sampler(
-        1234u, 8u, 16u, 7u, HdEmbreeSamplerSequence::Sobol);
-    const HdEmbreeSampleDomain root = sampler.RootDomain();
+    const HdEmbreeSamplerSequence sequences[] = {
+        HdEmbreeSamplerSequence::OpenQMCSobol,
+        HdEmbreeSamplerSequence::OpenQMCSobolBN,
+        HdEmbreeSamplerSequence::OpenQMCPMJ,
+        HdEmbreeSamplerSequence::OpenQMCPMJBN,
+        HdEmbreeSamplerSequence::OpenQMCLattice,
+        HdEmbreeSamplerSequence::OpenQMCLatticeBN,
+    };
 
-    const GfVec2f cameraA =
-        root.Fork(HdEmbreeSampleDomainKey::CameraJitter).Draw2D();
-    const GfVec2f cameraB =
-        root.Fork(HdEmbreeSampleDomainKey::CameraJitter).Draw2D();
-    if (!_Same(cameraA, cameraB)) {
-        std::printf("    same Sobol domain did not reproduce values\n");
-        return false;
+    for (HdEmbreeSamplerSequence sequence : sequences) {
+        const TfToken token = HdEmbreeGetSamplerSequenceToken(sequence);
+        if (HdEmbreeGetSamplerSequenceFromToken(token) != sequence) {
+            std::printf("    sampler sequence token did not round-trip: %s\n",
+                        token.GetText());
+            return false;
+        }
     }
 
-    const GfVec2f direct =
-        root.Fork(HdEmbreeSampleDomainKey::DirectLightSample).Draw2D();
-    const GfVec2f lens =
-        root.Fork(HdEmbreeSampleDomainKey::CameraLens).Draw2D();
-    if (!_Different(cameraA, direct) || !_Different(cameraA, lens)) {
-        std::printf("    Sobol domains shared the same 2D sample\n");
-        return false;
-    }
-
-    return true;
-}
-
-bool
-TestSobolSplitAndChainAreStable()
-{
-    HdEmbreeSampler sampler(
-        4321u, 4u, 5u, 3u, HdEmbreeSamplerSequence::Sobol);
-    const HdEmbreeSampleDomain root = sampler.RootDomain();
-
-    const GfVec2f splitA =
-        root.Split(HdEmbreeSampleDomainKey::DirectLightSample, 4, 1).Draw2D();
-    const GfVec2f splitB =
-        root.Split(HdEmbreeSampleDomainKey::DirectLightSample, 4, 1).Draw2D();
-    const GfVec2f splitC =
-        root.Split(HdEmbreeSampleDomainKey::DirectLightSample, 4, 2).Draw2D();
-    if (!_Same(splitA, splitB) || !_Different(splitA, splitC)) {
-        std::printf("    Sobol split domain was not stable by index\n");
-        return false;
-    }
-
-    const GfVec3f bounce0 =
-        root.Chain(HdEmbreeSampleDomainKey::PathBounce, 0)
-            .Fork(HdEmbreeSampleDomainKey::BsdfSample)
-            .Draw3D();
-    const GfVec3f bounce1 =
-        root.Chain(HdEmbreeSampleDomainKey::PathBounce, 1)
-            .Fork(HdEmbreeSampleDomainKey::BsdfSample)
-            .Draw3D();
-    if (!_Different(bounce0, bounce1)) {
-        std::printf("    Sobol chained bounce domains matched\n");
-        return false;
-    }
-
-    return true;
-}
-
-bool
-TestRandomDomainsAreDeterministic()
-{
-    HdEmbreeSampler sampler(
-        5678u, 11u, 13u, 2u, HdEmbreeSamplerSequence::Random);
-    const HdEmbreeSampleDomain root = sampler.RootDomain();
-
-    const float rrA =
-        root.Chain(HdEmbreeSampleDomainKey::PathBounce, 2)
-            .Fork(HdEmbreeSampleDomainKey::RussianRoulette)
-            .Draw1D();
-    const float rrB =
-        root.Chain(HdEmbreeSampleDomainKey::PathBounce, 2)
-            .Fork(HdEmbreeSampleDomainKey::RussianRoulette)
-            .Draw1D();
-    if (rrA != rrB) {
-        std::printf("    random domain did not reproduce values\n");
+    if (HdEmbreeGetSamplerSequenceFromToken(TfToken("unknown")) !=
+        HdEmbreeGetDefaultSamplerSequence()) {
+        std::printf("    unknown token did not map to default\n");
         return false;
     }
 
@@ -169,7 +119,6 @@ TestRandomDomainsAreDeterministic()
 bool
 TestOpenQmcDomainsAreDeterministicAndSeparated()
 {
-#if defined(PXR_HDEMBREE_ENABLE_OPENQMC)
     HdEmbreeSampler sampler(
         1234u, 8u, 16u, 7u, HdEmbreeSamplerSequence::OpenQMCSobolBN);
     const HdEmbreeSampleDomain root = sampler.RootDomain();
@@ -190,6 +139,16 @@ TestOpenQmcDomainsAreDeterministicAndSeparated()
         return false;
     }
 
+    return true;
+}
+
+bool
+TestOpenQmcSplitAndChainAreStable()
+{
+    HdEmbreeSampler sampler(
+        4321u, 4u, 5u, 3u, HdEmbreeSamplerSequence::OpenQMCSobolBN);
+    const HdEmbreeSampleDomain root = sampler.RootDomain();
+
     const GfVec2f splitA =
         root.Split(HdEmbreeSampleDomainKey::DirectLightSample, 4, 1).Draw2D();
     const GfVec2f splitB =
@@ -200,7 +159,47 @@ TestOpenQmcDomainsAreDeterministicAndSeparated()
         std::printf("    OpenQMC split domain was not stable by index\n");
         return false;
     }
-#endif
+
+    const GfVec3f bounce0 =
+        root.Chain(HdEmbreeSampleDomainKey::PathBounce, 0)
+            .Fork(HdEmbreeSampleDomainKey::BsdfSample)
+            .Draw3D();
+    const GfVec3f bounce1 =
+        root.Chain(HdEmbreeSampleDomainKey::PathBounce, 1)
+            .Fork(HdEmbreeSampleDomainKey::BsdfSample)
+            .Draw3D();
+    if (!_Different(bounce0, bounce1)) {
+        std::printf("    OpenQMC chained bounce domains matched\n");
+        return false;
+    }
+
+    return true;
+}
+
+bool
+TestAllOpenQmcSequencesDrawSamples()
+{
+    const HdEmbreeSamplerSequence sequences[] = {
+        HdEmbreeSamplerSequence::OpenQMCSobol,
+        HdEmbreeSamplerSequence::OpenQMCSobolBN,
+        HdEmbreeSamplerSequence::OpenQMCPMJ,
+        HdEmbreeSamplerSequence::OpenQMCPMJBN,
+        HdEmbreeSamplerSequence::OpenQMCLattice,
+        HdEmbreeSamplerSequence::OpenQMCLatticeBN,
+    };
+
+    for (HdEmbreeSamplerSequence sequence : sequences) {
+        HdEmbreeSampler sampler(2468u, 2u, 3u, 4u, sequence);
+        const GfVec4f sample =
+            sampler.RootDomain()
+                .Fork(HdEmbreeSampleDomainKey::CameraJitter)
+                .Draw4D();
+        if (!_InUnitInterval(sample)) {
+            std::printf("    OpenQMC sequence produced out-of-range sample: %s\n",
+                        HdEmbreeGetSamplerSequenceToken(sequence).GetText());
+            return false;
+        }
+    }
 
     return true;
 }
@@ -220,14 +219,14 @@ main()
          &TestDomainKeyValuesAreStable},
         {"Sampling.TestDefaultSamplerSequence",
          &TestDefaultSamplerSequence},
-        {"Sampling.TestSobolDomainsAreDeterministicAndSeparated",
-         &TestSobolDomainsAreDeterministicAndSeparated},
-        {"Sampling.TestSobolSplitAndChainAreStable",
-         &TestSobolSplitAndChainAreStable},
-        {"Sampling.TestRandomDomainsAreDeterministic",
-         &TestRandomDomainsAreDeterministic},
+        {"Sampling.TestSamplerSequenceTokens",
+         &TestSamplerSequenceTokens},
         {"Sampling.TestOpenQmcDomainsAreDeterministicAndSeparated",
          &TestOpenQmcDomainsAreDeterministicAndSeparated},
+        {"Sampling.TestOpenQmcSplitAndChainAreStable",
+         &TestOpenQmcSplitAndChainAreStable},
+        {"Sampling.TestAllOpenQmcSequencesDrawSamples",
+         &TestAllOpenQmcSequencesDrawSamples},
     };
 
     int failed = 0;

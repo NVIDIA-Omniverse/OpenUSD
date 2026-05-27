@@ -106,11 +106,8 @@ public:
     /// Override with *HDEMBREE_CAMERA_LIGHT_INTENSITY*.
     float cameraLightIntensity = HdEmbreeDefaultCameraLightIntensity;
 
-    /// Seed to give to the random number generator. A value of anything other
-    /// than -1, combined with setting PXR_WORK_THREAD_LIMIT=1, should give
-    /// deterministic / repeatable results. A value of -1 (the default) will
-    /// allow the implementation to set a value that varies from invocation to
-    /// invocation and thread to thread.
+    /// OpenQMC frame seed. A value of -1 (the default) chooses a
+    /// non-deterministic seed for each render.
     ///
     /// Override with *HDEMBREE_RANDOM_NUMBER_SEED*.
     int randomNumberSeed = HdEmbreeDefaultRandomNumberSeed;
@@ -124,7 +121,7 @@ public:
     bool enableLighting = HdEmbreeDefaultEnableLighting;
 
     /// Sampler sequence token name. If *HDEMBREE_SAMPLER_SEQUENCE* is empty,
-    /// this is derived from the build's OpenQMC support.
+    /// this defaults to openqmc_sobolbn.
     std::string samplerSequence;
 
     /// Whether dome lights are directly visible to camera rays.

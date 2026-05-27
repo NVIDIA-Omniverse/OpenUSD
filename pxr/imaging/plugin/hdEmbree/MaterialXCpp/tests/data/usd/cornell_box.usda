@@ -18,7 +18,7 @@ def RenderSettings "RenderSettings"
     # int hdEmbree:lightSamplesPerHit = 1
     # bool hdEmbree:stratifyLightSamples = "false"
     # int hdEmbree:minSamplesBeforeAdaptive = 64
-    token hdEmbree:samplerSequence = "sobol"
+    token hdEmbree:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }
 

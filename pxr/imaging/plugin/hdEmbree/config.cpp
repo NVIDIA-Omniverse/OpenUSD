@@ -62,11 +62,8 @@ TF_DEFINE_ENV_SETTING(
 TF_DEFINE_ENV_SETTING(
     HDEMBREE_RANDOM_NUMBER_SEED,
     HdEmbreeDefaultRandomNumberSeed,
-    "Seed to give to the random number generator. A value of anything other"
-        " than -1, combined with setting PXR_WORK_THREAD_LIMIT=1, should"
-        " give deterministic / repeatable results. A value of -1 (the"
-        " default) will allow the implementation to set a value that varies"
-        " from invocation to invocation and thread to thread.");
+    "OpenQMC frame seed. A value of -1 (the default) chooses a"
+        " non-deterministic seed for each render.");
 
 TF_DEFINE_ENV_SETTING(
     HDEMBREE_ENABLE_LIGHTING,
@@ -76,8 +73,7 @@ TF_DEFINE_ENV_SETTING(
 TF_DEFINE_ENV_SETTING(
     HDEMBREE_SAMPLER_SEQUENCE,
     "",
-    "Sampler sequence token name. If empty, the default is derived from"
-    " OpenQMC support.");
+    "Sampler sequence token name. If empty, defaults to openqmc_sobolbn.");
 
 TF_DEFINE_ENV_SETTING(
     HDEMBREE_DOME_LIGHT_CAMERA_VISIBILITY,

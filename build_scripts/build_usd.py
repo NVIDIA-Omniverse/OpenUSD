@@ -1930,11 +1930,6 @@ def InstallUSD(context, force, buildArgs):
             else:
                 extraArgs.append('-DPXR_BUILD_EMBREE_PLUGIN=OFF')
 
-            if context.buildOpenQMC:
-                extraArgs.append('-DPXR_ENABLE_OPENQMC_SUPPORT=ON')
-            else:
-                extraArgs.append('-DPXR_ENABLE_OPENQMC_SUPPORT=OFF')
-
             if context.buildAdobeOpenPBR:
                 extraArgs.append('-DPXR_ENABLE_ADOBE_OPENPBR_SUPPORT=ON')
             else:
@@ -2607,7 +2602,6 @@ class InstallContext:
 
         # - Imaging plugins
         self.buildEmbree = self.buildImaging and args.build_embree
-        self.buildOpenQMC = self.buildEmbree
         self.buildAdobeOpenPBR = self.buildEmbree
         self.buildPrman = self.buildImaging and args.build_prman
         self.prmanLocation = (os.path.abspath(args.prman_location)
@@ -2944,7 +2938,6 @@ summaryMsg += """\
       OpenImageIO support:      {buildOIIO} 
       OpenColorIO support:      {buildOCIO} 
       Embree support:           {buildEmbree}
-        OpenQMC support:        {buildOpenQMC}
         Adobe OpenPBR support:  {buildAdobeOpenPBR}
       PRMan support:            {buildPrman}
       Vulkan support:           {enableVulkan}
@@ -3026,7 +3019,6 @@ summaryMsg = summaryMsg.format(
     buildOIIO=("On" if context.buildOIIO else "Off"),
     buildOCIO=("On" if context.buildOCIO else "Off"),
     buildEmbree=("On" if context.buildEmbree else "Off"),
-    buildOpenQMC=("On" if context.buildOpenQMC else "Off"),
     buildAdobeOpenPBR=("On" if context.buildAdobeOpenPBR else "Off"),
     buildPrman=("On" if context.buildPrman else "Off"),
     buildUsdImaging=("On" if context.buildUsdImaging else "Off"),

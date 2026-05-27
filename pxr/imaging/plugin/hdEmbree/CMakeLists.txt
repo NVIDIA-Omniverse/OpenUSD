@@ -45,9 +45,7 @@ if (PXR_BUILD_OPENIMAGEIO_PLUGIN)
     )
 endif()
 
-if (PXR_ENABLE_OPENQMC_SUPPORT)
-    list(APPEND _hdEmbree_libraries OpenQMC::OpenQMC)
-endif()
+list(APPEND _hdEmbree_libraries OpenQMC::OpenQMC)
 
 if (PXR_ENABLE_ADOBE_OPENPBR_SUPPORT)
     list(APPEND _hdEmbree_libraries
@@ -229,14 +227,9 @@ pxr_build_test(testMaterialXCpp
         MaterialXCpp/nodes/colorTransformNodes.cpp
 )
 
-if (PXR_ENABLE_OPENQMC_SUPPORT)
-    target_compile_definitions(hdEmbree PRIVATE PXR_HDEMBREE_ENABLE_OPENQMC=1)
-    if (TARGET testHdEmbreeSampling)
-        target_compile_definitions(testHdEmbreeSampling
-            PRIVATE PXR_HDEMBREE_ENABLE_OPENQMC=1)
-        target_link_libraries(testHdEmbreeSampling
-            PRIVATE OpenQMC::OpenQMC)
-    endif()
+if (TARGET testHdEmbreeSampling)
+    target_link_libraries(testHdEmbreeSampling
+        PRIVATE OpenQMC::OpenQMC)
 endif()
 
 if (PXR_ENABLE_ADOBE_OPENPBR_SUPPORT)

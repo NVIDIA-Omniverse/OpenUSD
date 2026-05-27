@@ -1851,11 +1851,8 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
 
     _renderStartTime = std::chrono::steady_clock::now();
 
-    // Compute baseSeed once per Render() call so that every pixel uses a
-    // consistent Owen scrambling seed across all samples.  Previously this
-    // was computed inside _RenderTiles using system_clock::now(), which meant
-    // each pass (and each thread chunk) got a different seed, destroying the
-    // low-discrepancy property of the Sobol sequence.
+    // Compute the OpenQMC frame seed once per Render() call so every tile and
+    // pass in this render uses the same sequence randomization.
     uint32_t baseSeed;
     if (_randomNumberSeed == -1) {
         baseSeed = static_cast<uint32_t>(
@@ -2170,11 +2167,9 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
                     continue;
                 }
 
-                // Create a per-pixel sampler (Sobol or pseudo-random).
-                uint32_t pixelSeed = static_cast<uint32_t>(
-                    TfHash::Combine(baseSeed, x, y));
+                // Create a per-pixel OpenQMC sampler.
                 HdEmbreeSampler sampler(
-                    pixelSeed,
+                    baseSeed,
                     x,
                     y,
                     sampleNum,

@@ -34,8 +34,6 @@ _RENDERERS = {
                 "category": "Sampling",
                 "order": 30,
                 "allowedTokens": [
-                    "sobol",
-                    "random",
                     "openqmc_sobol",
                     "openqmc_sobolbn",
                     "openqmc_pmj",

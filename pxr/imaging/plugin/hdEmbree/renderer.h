@@ -167,10 +167,10 @@ public:
     ///                            everything as white.
     void SetEnableSceneColors(bool enableSceneColors);
 
-    /// Sets a number to seed the random number generator with.
-    ///   \param randomNumberSeed If -1, then the random number generator
-    ///                           is seeded in a non-deterministic way;
-    ///                           otherwise, it is seeded with this value.
+    /// Sets the OpenQMC frame seed.
+    ///   \param randomNumberSeed If -1, then the frame seed is chosen in a
+    ///                           non-deterministic way; otherwise, it is
+    ///                           seeded with this value.
     void SetRandomNumberSeed(int randomNumberSeed);
 
     /// Sets whether to enable direct lighting (disables ambient occlusion).
@@ -523,7 +523,7 @@ private:
     bool _enableSceneColors;
     // Should we sample dome lights on ray miss?
     bool _domeLightCameraVisibility;
-    // If other than -1, use this to seed the random number generator with.
+    // If other than -1, use this as the OpenQMC frame seed.
     int _randomNumberSeed;
     // Should we enable direct lighting from the scene?
     bool _enableLighting;
