@@ -8,6 +8,7 @@
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_H
 
 #include "pxr/base/gf/vec3f.h"
+#include "pxr/base/gf/vec3i.h"
 #include "pxr/base/gf/matrix3f.h"
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/tf/token.h"
@@ -22,6 +23,8 @@
 #include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+class HdEmbreeRenderer;
 
 /// Reference implementation of USD Lux support, for the hdEmbree renderer.
 ///
@@ -62,6 +65,8 @@ PXR_NAMESPACE_OPEN_SCOPE
 ///   - inputs:shaping:ies:file
 ///   - inputs:shaping:ies:angleScale
 ///   - inputs:shaping:ies:normalize
+/// - hdEmbree renderer-specific attributes:
+///   - visibleInPrimaryRay
 /// - Respects double-sidedness of meshes
 ///
 /// Currently Unsupported Features / Limitations:
@@ -93,7 +98,6 @@ PXR_NAMESPACE_OPEN_SCOPE
 ///     - inputs:treatAsLine
 ///   - DomeLight:
 ///     - inputs:texture:format (always assumed to be "latlong")
-/// - No support for direct-camera visibility
 /// - No support for motion blur (currently, if motion blur is enabled, all
 ///   samples taken at the first time sample, ie, when the shutter opens).
 /// - No support for instanced lights
@@ -103,7 +107,6 @@ PXR_NAMESPACE_OPEN_SCOPE
 ///   set to blank), no update is registered, and the ies file will continue to
 ///   be used
 
-class HdEmbreeRenderer;
 
 struct HdEmbree_UnknownLight
 {};
@@ -246,6 +249,7 @@ struct HdEmbree_LightData
     HdEmbree_LightVariant lightVariant;
     bool normalize = false;
     bool visible = true;
+    bool visibleInPrimaryRay = false;
     HdEmbree_Shaping shaping;
 };
 
@@ -287,7 +291,16 @@ public:
     }
 
 private:
+    void _UpdateVisibleGeometry(
+        RTCScene scene, RTCDevice device, HdEmbreeRenderer* renderer);
+    void _ReleaseVisibleGeometry(
+        RTCScene scene, HdEmbreeRenderer* renderer);
+
     HdEmbree_LightData _lightData;
+    RTCGeometry _rtcVisibleGeometry = nullptr;
+    unsigned int _rtcVisibleGeometryId = RTC_INVALID_GEOMETRY_ID;
+    std::vector<GfVec3f> _rtcVisiblePoints;
+    std::vector<GfVec3i> _rtcVisibleTriangles;
 };
 
 

@@ -35,6 +35,8 @@ constexpr float _pi = static_cast<float>(M_PI);
 const GfColorSpace _xyzColorSpace(GfColorSpaceNames->LinearCIEXYZD65);
 const TfToken _colorSpaceMetadataKey("oiio:ColorSpace");
 const TfToken _alternateColorSpaceMetadataKey("ColorSpace");
+const TfToken _visibleInPrimaryRayToken(
+    "visibleInPrimaryRay", TfToken::Immortal);
 
 float
 _LinearRec709Luminance(GfVec3f const& color)
@@ -247,6 +249,210 @@ _LoadLightTexture(std::string const& path)
     }
     TF_WARN("Could not read image %s", path.c_str());
     return { std::vector<GfVec3f>(), 0, 0 };
+}
+
+bool
+_IsFinitePoint(GfVec3f const& p)
+{
+    return std::isfinite(p[0]) && std::isfinite(p[1]) && std::isfinite(p[2]);
+}
+
+bool
+_IsPositiveFinite(float v)
+{
+    return std::isfinite(v) && v > 0.0f;
+}
+
+void
+_AppendPoint(
+    HdEmbree_LightData const& light,
+    GfVec3f const& localPoint,
+    std::vector<GfVec3f>* points)
+{
+    points->push_back(light.xformLightToWorld.Transform(localPoint));
+}
+
+void
+_AppendRectVisibleGeometry(
+    HdEmbree_LightData const& light,
+    HdEmbree_Rect const& rect,
+    std::vector<GfVec3f>* points,
+    std::vector<GfVec3i>* triangles)
+{
+    if (!_IsPositiveFinite(rect.width) || !_IsPositiveFinite(rect.height)) {
+        return;
+    }
+
+    const int base = static_cast<int>(points->size());
+    const float halfWidth = 0.5f * rect.width;
+    const float halfHeight = 0.5f * rect.height;
+    _AppendPoint(light, GfVec3f(-halfWidth, -halfHeight, 0.0f), points);
+    _AppendPoint(light, GfVec3f( halfWidth, -halfHeight, 0.0f), points);
+    _AppendPoint(light, GfVec3f( halfWidth,  halfHeight, 0.0f), points);
+    _AppendPoint(light, GfVec3f(-halfWidth,  halfHeight, 0.0f), points);
+
+    // RectLight emits toward local -Z. Keep triangle winding consistent with
+    // that normal, though Embree still intersects both sides for visibility.
+    triangles->push_back(GfVec3i(base + 0, base + 2, base + 1));
+    triangles->push_back(GfVec3i(base + 0, base + 3, base + 2));
+}
+
+void
+_AppendDiskVisibleGeometry(
+    HdEmbree_LightData const& light,
+    HdEmbree_Disk const& disk,
+    std::vector<GfVec3f>* points,
+    std::vector<GfVec3i>* triangles)
+{
+    if (!_IsPositiveFinite(disk.radius)) {
+        return;
+    }
+
+    constexpr int segments = 48;
+    const int base = static_cast<int>(points->size());
+    _AppendPoint(light, GfVec3f(0.0f), points);
+    for (int i = 0; i < segments; ++i) {
+        const float phi = 2.0f * _pi * static_cast<float>(i) /
+            static_cast<float>(segments);
+        _AppendPoint(
+            light,
+            GfVec3f(
+                disk.radius * std::cos(phi),
+                disk.radius * std::sin(phi),
+                0.0f),
+            points);
+    }
+    for (int i = 0; i < segments; ++i) {
+        const int current = base + 1 + i;
+        const int next = base + 1 + ((i + 1) % segments);
+        triangles->push_back(GfVec3i(base, next, current));
+    }
+}
+
+void
+_AppendSphereVisibleGeometry(
+    HdEmbree_LightData const& light,
+    HdEmbree_Sphere const& sphere,
+    std::vector<GfVec3f>* points,
+    std::vector<GfVec3i>* triangles)
+{
+    if (!_IsPositiveFinite(sphere.radius)) {
+        return;
+    }
+
+    constexpr int segments = 32;
+    constexpr int rings = 16;
+    const int base = static_cast<int>(points->size());
+    _AppendPoint(light, GfVec3f(0.0f, 0.0f, sphere.radius), points);
+    for (int ring = 1; ring < rings; ++ring) {
+        const float theta = _pi * static_cast<float>(ring) /
+            static_cast<float>(rings);
+        const float sinTheta = std::sin(theta);
+        const float cosTheta = std::cos(theta);
+        for (int i = 0; i < segments; ++i) {
+            const float phi = 2.0f * _pi * static_cast<float>(i) /
+                static_cast<float>(segments);
+            _AppendPoint(
+                light,
+                GfVec3f(
+                    sphere.radius * sinTheta * std::cos(phi),
+                    sphere.radius * sinTheta * std::sin(phi),
+                    sphere.radius * cosTheta),
+                points);
+        }
+    }
+    const int bottom = static_cast<int>(points->size());
+    _AppendPoint(light, GfVec3f(0.0f, 0.0f, -sphere.radius), points);
+
+    for (int i = 0; i < segments; ++i) {
+        const int next = (i + 1) % segments;
+        triangles->push_back(GfVec3i(base, base + 1 + i, base + 1 + next));
+    }
+    for (int ring = 0; ring < rings - 2; ++ring) {
+        const int row = base + 1 + ring * segments;
+        const int nextRow = row + segments;
+        for (int i = 0; i < segments; ++i) {
+            const int next = (i + 1) % segments;
+            triangles->push_back(GfVec3i(row + i, nextRow + i, nextRow + next));
+            triangles->push_back(GfVec3i(row + i, nextRow + next, row + next));
+        }
+    }
+    const int lastRow = base + 1 + (rings - 2) * segments;
+    for (int i = 0; i < segments; ++i) {
+        const int next = (i + 1) % segments;
+        triangles->push_back(GfVec3i(bottom, lastRow + next, lastRow + i));
+    }
+}
+
+void
+_AppendCylinderVisibleGeometry(
+    HdEmbree_LightData const& light,
+    HdEmbree_Cylinder const& cylinder,
+    std::vector<GfVec3f>* points,
+    std::vector<GfVec3i>* triangles)
+{
+    if (!_IsPositiveFinite(cylinder.radius) ||
+        !_IsPositiveFinite(cylinder.length)) {
+        return;
+    }
+
+    constexpr int segments = 48;
+    const int base = static_cast<int>(points->size());
+    const float halfLength = 0.5f * cylinder.length;
+    for (int i = 0; i < segments; ++i) {
+        const float phi = 2.0f * _pi * static_cast<float>(i) /
+            static_cast<float>(segments);
+        const float y = cylinder.radius * std::cos(phi);
+        const float z = cylinder.radius * std::sin(phi);
+        _AppendPoint(light, GfVec3f(-halfLength, y, z), points);
+        _AppendPoint(light, GfVec3f( halfLength, y, z), points);
+    }
+    for (int i = 0; i < segments; ++i) {
+        const int next = (i + 1) % segments;
+        const int a = base + 2 * i;
+        const int b = base + 2 * i + 1;
+        const int c = base + 2 * next + 1;
+        const int d = base + 2 * next;
+        triangles->push_back(GfVec3i(a, b, c));
+        triangles->push_back(GfVec3i(a, c, d));
+    }
+}
+
+bool
+_BuildVisibleLightGeometry(
+    HdEmbree_LightData const& light,
+    std::vector<GfVec3f>* points,
+    std::vector<GfVec3i>* triangles)
+{
+    points->clear();
+    triangles->clear();
+
+    std::visit([&](auto const& typedLight) {
+        using T = std::decay_t<decltype(typedLight)>;
+        if constexpr (std::is_same_v<T, HdEmbree_Rect>) {
+            _AppendRectVisibleGeometry(light, typedLight, points, triangles);
+        } else if constexpr (std::is_same_v<T, HdEmbree_Disk>) {
+            _AppendDiskVisibleGeometry(light, typedLight, points, triangles);
+        } else if constexpr (std::is_same_v<T, HdEmbree_Sphere>) {
+            _AppendSphereVisibleGeometry(light, typedLight, points, triangles);
+        } else if constexpr (std::is_same_v<T, HdEmbree_Cylinder>) {
+            _AppendCylinderVisibleGeometry(light, typedLight, points, triangles);
+        }
+    }, light.lightVariant);
+
+    if (points->empty() || triangles->empty()) {
+        points->clear();
+        triangles->clear();
+        return false;
+    }
+    for (GfVec3f const& point : *points) {
+        if (!_IsFinitePoint(point)) {
+            points->clear();
+            triangles->clear();
+            return false;
+        }
+    }
+    return true;
 }
 
 void
@@ -617,6 +823,84 @@ HdEmbree_Light::HdEmbree_Light(SdfPath const& id, TfToken const& lightType)
 
 HdEmbree_Light::~HdEmbree_Light() = default;
 
+
+void
+HdEmbree_Light::_ReleaseVisibleGeometry(
+    RTCScene scene, HdEmbreeRenderer* renderer)
+{
+    if (!_rtcVisibleGeometry) {
+        _rtcVisibleGeometryId = RTC_INVALID_GEOMETRY_ID;
+        _rtcVisiblePoints.clear();
+        _rtcVisibleTriangles.clear();
+        return;
+    }
+
+    if (renderer) {
+        renderer->RemoveLightGeometry(_rtcVisibleGeometryId, this);
+    }
+    if (scene && _rtcVisibleGeometryId != RTC_INVALID_GEOMETRY_ID) {
+        rtcDetachGeometry(scene, _rtcVisibleGeometryId);
+    }
+    rtcReleaseGeometry(_rtcVisibleGeometry);
+    _rtcVisibleGeometry = nullptr;
+    _rtcVisibleGeometryId = RTC_INVALID_GEOMETRY_ID;
+    _rtcVisiblePoints.clear();
+    _rtcVisibleTriangles.clear();
+}
+
+void
+HdEmbree_Light::_UpdateVisibleGeometry(
+    RTCScene scene, RTCDevice device, HdEmbreeRenderer* renderer)
+{
+    if (!scene || !device || !renderer || !_lightData.visible ||
+        !_lightData.visibleInPrimaryRay || !IsFiniteLight()) {
+        _ReleaseVisibleGeometry(scene, renderer);
+        return;
+    }
+
+    std::vector<GfVec3f> points;
+    std::vector<GfVec3i> triangles;
+    if (!_BuildVisibleLightGeometry(_lightData, &points, &triangles)) {
+        _ReleaseVisibleGeometry(scene, renderer);
+        return;
+    }
+
+    const bool needsNewGeometry = !_rtcVisibleGeometry;
+    if (needsNewGeometry) {
+        _rtcVisibleGeometry = rtcNewGeometry(device, RTC_GEOMETRY_TYPE_TRIANGLE);
+        rtcSetGeometryBuildQuality(_rtcVisibleGeometry, RTC_BUILD_QUALITY_REFIT);
+        rtcSetGeometryTimeStepCount(_rtcVisibleGeometry, 1);
+        rtcSetGeometryMask(_rtcVisibleGeometry, HdEmbree_RayMask::All);
+        _rtcVisibleGeometryId = rtcAttachGeometry(scene, _rtcVisibleGeometry);
+        renderer->AddLightGeometry(_rtcVisibleGeometryId, this);
+    }
+
+    _rtcVisiblePoints = std::move(points);
+    _rtcVisibleTriangles = std::move(triangles);
+
+    rtcSetSharedGeometryBuffer(
+        _rtcVisibleGeometry,
+        RTC_BUFFER_TYPE_VERTEX,
+        0,
+        RTC_FORMAT_FLOAT3,
+        _rtcVisiblePoints.data(),
+        0,
+        sizeof(GfVec3f),
+        _rtcVisiblePoints.size());
+    rtcSetSharedGeometryBuffer(
+        _rtcVisibleGeometry,
+        RTC_BUFFER_TYPE_INDEX,
+        0,
+        RTC_FORMAT_UINT3,
+        _rtcVisibleTriangles.data(),
+        0,
+        sizeof(GfVec3i),
+        _rtcVisibleTriangles.size());
+
+    rtcEnableGeometry(_rtcVisibleGeometry);
+    rtcCommitGeometry(_rtcVisibleGeometry);
+}
+
 void
 HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
                          HdRenderParam *renderParam, HdDirtyBits *dirtyBits)
@@ -627,8 +911,9 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
     HdEmbreeRenderParam *embreeRenderParam =
         static_cast<HdEmbreeRenderParam*>(renderParam);
 
-    // calling this bumps the scene version and causes a re-render
-    embreeRenderParam->AcquireSceneForEdit();
+    // Calling this bumps the scene version and causes a re-render.
+    RTCScene scene = embreeRenderParam->AcquireSceneForEdit();
+    RTCDevice device = embreeRenderParam->GetEmbreeDevice();
 
     SdfPath const& id = GetId();
     const HdDirtyBits bits = *dirtyBits;
@@ -667,6 +952,8 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
 
         // Get visibility
         _lightData.visible = sceneDelegate->GetVisible(id);
+        _lightData.visibleInPrimaryRay = sceneDelegate->GetLightParamValue(
+            id, _visibleInPrimaryRayToken).GetWithDefault(false);
 
         // Switch on the _lightData type and pull the relevant attributes from
         // the scene delegate.
@@ -783,6 +1070,7 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
     }
 
     HdEmbreeRenderer *renderer = embreeRenderParam->GetRenderer();
+    _UpdateVisibleGeometry(scene, device, renderer);
     renderer->AddLight(id, this);
 
     *dirtyBits &= ~HdLight::AllDirty;
@@ -799,8 +1087,11 @@ HdEmbree_Light::Finalize(HdRenderParam *renderParam)
 {
     auto* embreeParam = static_cast<HdEmbreeRenderParam*>(renderParam);
 
-    // Remove from renderer's light map
+    RTCScene scene = embreeParam->AcquireSceneForEdit();
     HdEmbreeRenderer *renderer = embreeParam->GetRenderer();
+    _ReleaseVisibleGeometry(scene, renderer);
+
+    // Remove from renderer's light map.
     renderer->RemoveLight(GetId(), this);
 }
 

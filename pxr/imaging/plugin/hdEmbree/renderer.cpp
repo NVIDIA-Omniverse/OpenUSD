@@ -1411,6 +1411,35 @@ HdEmbreeRenderer::RemoveLight(SdfPath const& lightPath, HdEmbree_Light* light)
                  _domes.end());
 }
 
+void
+HdEmbreeRenderer::AddLightGeometry(
+    unsigned int geometryId,
+    HdEmbree_Light* light)
+{
+    if (geometryId == RTC_INVALID_GEOMETRY_ID || !light) {
+        return;
+    }
+
+    ScopedLock lightsWriteLock(_lightsWriteMutex);
+    _lightGeometryMap[geometryId] = light;
+}
+
+void
+HdEmbreeRenderer::RemoveLightGeometry(
+    unsigned int geometryId,
+    HdEmbree_Light* light)
+{
+    if (geometryId == RTC_INVALID_GEOMETRY_ID) {
+        return;
+    }
+
+    ScopedLock lightsWriteLock(_lightsWriteMutex);
+    auto it = _lightGeometryMap.find(geometryId);
+    if (it != _lightGeometryMap.end() && (!light || it->second == light)) {
+        _lightGeometryMap.erase(it);
+    }
+}
+
 bool
 HdEmbreeRenderer::_ValidateAovBindings()
 {
@@ -2383,6 +2412,9 @@ _PopulateRayHit(
     // Fill in defaults for the hit
     rayHit->hit.primID = RTC_INVALID_GEOMETRY_ID;
     rayHit->hit.geomID = RTC_INVALID_GEOMETRY_ID;
+    for (unsigned int i = 0; i < RTC_MAX_INSTANCE_LEVEL_COUNT; ++i) {
+        rayHit->hit.instID[i] = RTC_INVALID_GEOMETRY_ID;
+    }
 }
 
 static bool
@@ -2688,6 +2720,9 @@ HdEmbreeRenderer::_ComputeId(RTCRayHit const& rayHit, TfToken const& idType,
     if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
         return false;
     }
+    if (_GetLightGeometryHit(rayHit)) {
+        return false;
+    }
 
     // Get the instance and prototype context structures for the hit prim.
     // We don't use embree's multi-level instancing; we
@@ -2751,6 +2786,9 @@ HdEmbreeRenderer::_ComputeNormal(RTCRayHit const& rayHit,
     if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
         return false;
     }
+    if (_GetLightGeometryHit(rayHit)) {
+        return false;
+    }
 
     // We don't use embree's multi-level instancing; we
     // flatten everything in hydra. So instID[0] should always be correct.
@@ -2785,6 +2823,9 @@ HdEmbreeRenderer::_ComputePrimvar(RTCRayHit const& rayHit,
                                   GfVec3f *value)
 {
     if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
+        return false;
+    }
+    if (_GetLightGeometryHit(rayHit)) {
         return false;
     }
 
@@ -3005,6 +3046,11 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
     GfVec3f* outGeometricNormal,
     HdEmbreeMesh** outMesh) const
 {
+    if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID ||
+        _GetLightGeometryHit(rayHit)) {
+        return false;
+    }
+
     const HdEmbreeInstanceContext *instanceContext =
         static_cast<HdEmbreeInstanceContext*>(
             rtcGetGeometryUserData(
@@ -3100,6 +3146,10 @@ HdEmbreeRenderer::_Visibility(
                     evalShadowTransmittance(remaining));
             }
             return visibility;
+        }
+
+        if (_GetLightGeometryHit(rayHit)) {
+            return GfVec3f(0.0f);
         }
 
         const float hitDist = std::min(rayHit.ray.tfar, remaining);
@@ -3245,6 +3295,49 @@ HdEmbreeRenderer::_FindNearestFiniteLightHit(
     return found;
 }
 
+HdEmbree_Light*
+HdEmbreeRenderer::_GetLightGeometryHit(RTCRayHit const& rayHit) const
+{
+    if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID ||
+        rayHit.hit.instID[0] != RTC_INVALID_GEOMETRY_ID) {
+        return nullptr;
+    }
+
+    ScopedLock lightsWriteLock(_lightsWriteMutex);
+    auto it = _lightGeometryMap.find(rayHit.hit.geomID);
+    return it == _lightGeometryMap.end() ? nullptr : it->second;
+}
+
+bool
+HdEmbreeRenderer::_EvaluateLightGeometryHit(
+    RTCRayHit const& rayHit,
+    GfVec3f const& position,
+    GfVec3f const& direction,
+    HdEmbreeLightSampler::LightSample* outSample) const
+{
+    HdEmbree_Light* light = _GetLightGeometryHit(rayHit);
+    if (!light || !outSample) {
+        return false;
+    }
+
+    HdEmbreeLightSampler::LightSample sample =
+        HdEmbreeLightSampler::EvaluateLightDirection(
+            light->LightData(), position, direction);
+    if (!sample.valid) {
+        sample.Li = GfVec3f(0.0f);
+        sample.wI = direction;
+        sample.dist = rayHit.ray.tfar;
+        sample.invPdfW = 0.0f;
+        sample.valid = true;
+        sample.delta = false;
+    } else {
+        sample.dist = rayHit.ray.tfar;
+    }
+
+    *outSample = sample;
+    return true;
+}
+
 GfVec4f
 HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
                                 HdEmbreeRayDifferential const& rayDiff,
@@ -3279,6 +3372,20 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
             domeColor += GfVec4f(ls.Li[0], ls.Li[1], ls.Li[2], 0);
         }
         return domeColor;
+    }
+
+    const GfVec3f origin(
+        rayHit.ray.org_x, rayHit.ray.org_y, rayHit.ray.org_z);
+    const GfVec3f dir = GfVec3f(
+        rayHit.ray.dir_x, rayHit.ray.dir_y, rayHit.ray.dir_z).GetNormalized();
+    HdEmbreeLightSampler::LightSample lightHit{};
+    if (_EvaluateLightGeometryHit(rayHit, origin, dir, &lightHit)) {
+        const GfVec3f Li = _enableLighting ? lightHit.Li : GfVec3f(0.0f);
+        return GfVec4f(
+            std::max(0.0f, Li[0]),
+            std::max(0.0f, Li[1]),
+            std::max(0.0f, Li[2]),
+            1.0f);
     }
 
     // Get the instance and prototype context structures for the hit prim.
@@ -4197,19 +4304,26 @@ HdEmbreeRenderer::_TracePath(
             rtcIntersect1(_scene, &rayHit);
         }
 
+        HdEmbreeLightSampler::LightSample finiteLightHit{};
+        const bool hitLightGeometry =
+            !syntheticLambertianHit &&
+            _EvaluateLightGeometryHit(
+                rayHit, rayOrigin, rayDir, &finiteLightHit);
         const float surfaceDist =
-            rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID
+            rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID && !hitLightGeometry
                 ? rayHit.ray.tfar
                 : std::numeric_limits<float>::infinity();
-        HdEmbreeLightSampler::LightSample finiteLightHit{};
-        const bool hasFiniteLightHit =
+        const bool hasAnalyticFiniteLightHit =
             !syntheticLambertianHit &&
+            !hitLightGeometry &&
             !isFirstBounce &&
             _FindNearestFiniteLightHit(
                 rayOrigin,
                 rayDir,
                 surfaceDist,
                 &finiteLightHit);
+        const bool hasFiniteLightHit =
+            hitLightGeometry || hasAnalyticFiniteLightHit;
         const float finiteLightDist =
             hasFiniteLightHit
                 ? finiteLightHit.dist

@@ -140,6 +140,12 @@ public:
     /// Remove a light
     void RemoveLight(SdfPath const& lightPath, HdEmbree_Light* light);
 
+    /// Register top-level Embree geometry that represents a finite light.
+    void AddLightGeometry(unsigned int geometryId, HdEmbree_Light* light);
+
+    /// Unregister top-level Embree geometry that represents a finite light.
+    void RemoveLightGeometry(unsigned int geometryId, HdEmbree_Light* light);
+
     /// Get the aov bindings being used for rendering.
     ///   \return the current aov bindings.
     HdRenderPassAovBindingVector const& GetAovBindings() const {
@@ -394,6 +400,13 @@ private:
         float maxDist,
         HdEmbreeLightSampler::LightSample* outSample) const;
 
+    HdEmbree_Light* _GetLightGeometryHit(RTCRayHit const& rayHit) const;
+    bool _EvaluateLightGeometryHit(
+        RTCRayHit const& rayHit,
+        GfVec3f const& position,
+        GfVec3f const& direction,
+        HdEmbreeLightSampler::LightSample* outSample) const;
+
     // Should the ray continue based on the possibly intersected prim's visibility settings?
     bool _RayShouldContinue(RTCRayHit const& rayHit) const;
 
@@ -593,8 +606,9 @@ private:
     std::chrono::steady_clock::time_point _renderStartTime;
 
     // Lights
-    mutable WriteMutex _lightsWriteMutex; // protects the 2 below
+    mutable WriteMutex _lightsWriteMutex; // protects the light containers below
     std::map<SdfPath, HdEmbree_Light*> _lightMap;
+    std::map<unsigned int, HdEmbree_Light*> _lightGeometryMap;
     std::vector<HdEmbree_Light*> _domes;
 
     // Pre-resolved per-frame state (built in _PreRenderSetup).
