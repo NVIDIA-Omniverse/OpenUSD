@@ -1,6 +1,6 @@
 [workspace]
 name = "openusd"
-platforms = ["linux-64"]
+platforms = ["linux-64", "win-64"]
 channels = ["https://conda.anaconda.org/anderslanglands", "conda-forge"]
 channel-priority = "strict"
 
@@ -29,7 +29,7 @@ configure = { cmd = [
 '''set -e
 export CXXFLAGS="${CXXFLAGS} -fno-visibility-inlines-hidden"
 export DEBUG_CXXFLAGS="${DEBUG_CXXFLAGS} -fno-visibility-inlines-hidden"
-cmake -B build -G Ninja \
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
 -DPXR_PY_UNDEFINED_DYNAMIC_LOOKUP=OFF \
 -DPXR_OIIO_PLUGIN_ENABLED=TRUE \
 -DPXR_BUILD_EMBREE_PLUGIN=TRUE \
@@ -45,4 +45,14 @@ cmake --build build --target install
 python -c "import os, pathlib, sysconfig; p = pathlib.Path(sysconfig.get_path('purelib'), 'openusd-pxr.pth'); p.parent.mkdir(parents=True, exist_ok=True); p.write_text(os.path.join(os.environ['CONDA_PREFIX'], 'lib', 'python') + '\n')"
 ''', depends-on = ["configure"] }
 
-usdview = { cmd = "usdview --complexity high --renderer Embree", depends-on = ["build"] }
+usdview = { cmd = "usdview --complexity high --renderer Embree" }
+
+[target.win-64.dependencies]
+tbb-devel = "*"
+
+[target.win-64.tasks]
+configure = { cmd = '''"$CONDA_PREFIX/Library/bin/cmake.exe" -B build -G Ninja -DPXR_PY_UNDEFINED_DYNAMIC_LOOKUP=OFF -DPXR_OIIO_PLUGIN_ENABLED=TRUE -DPXR_BUILD_EMBREE_PLUGIN=TRUE -DPXR_BUILD_OPENIMAGEIO_PLUGIN=TRUE -DPXR_ENABLE_OPENQMC_SUPPORT=TRUE -DPXR_HDEMBREE_ENABLE_OPENQMC=2 -DPXR_ENABLE_PRECOMPILED_HEADERS=OFF -DCMAKE_SUPPRESS_REGENERATION=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="/utf-8" -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX"''' }
+
+build = { cmd = '''"$CONDA_PREFIX/Library/bin/cmake.exe" --build build --target install && "$CONDA_PREFIX/python.exe" -c "import os, pathlib, sysconfig; prefix = os.environ['CONDA_PREFIX']; p = pathlib.Path(sysconfig.get_path('purelib'), 'openusd-pxr.pth'); p.parent.mkdir(parents=True, exist_ok=True); dll_line = 'import os; os._openusd_dll_dirs=[os.add_dll_directory(os.path.join(os.environ[' + repr('CONDA_PREFIX') + '], path)) for path in ' + repr(('Lib', 'Library/bin')) + ' if os.path.isdir(os.path.join(os.environ[' + repr('CONDA_PREFIX') + '], path))]\n'; p.write_text(dll_line + os.path.join(prefix, 'lib', 'python') + '\n')"''', depends-on = ["configure"] }
+
+usdview = { cmd = "usdview --complexity high --renderer Embree" }
