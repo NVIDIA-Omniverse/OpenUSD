@@ -19,11 +19,11 @@ namespace mxcpp {
 namespace {
 
 static constexpr float _kFloatEps = 1e-6f;
-static constexpr float _kHexSqrt3 = std::sqrt(3.0f);
-static constexpr float _kHexSqrt3Times2 = 2.0f * _kHexSqrt3;
-static constexpr float _kHexSkewX = -1.0f / _kHexSqrt3;
-static constexpr float _kHexSkewY = 2.0f / _kHexSqrt3;
-static constexpr float _kHexInvSkewY = _kHexSqrt3 / 2.0f;
+static constexpr float _kHexSqrt3 = 1.7320508075688772935f;
+static constexpr float _kHexSqrt3Times2 = 3.4641016151377545871f;
+static constexpr float _kHexSkewX = -0.57735026918962576451f;
+static constexpr float _kHexSkewY = 1.1547005383792515290f;
+static constexpr float _kHexInvSkewY = 0.86602540378443864676f;
 
 static const SlotName _kFile("file");
 static const SlotName _kFileColorSpace("colorSpace:file");

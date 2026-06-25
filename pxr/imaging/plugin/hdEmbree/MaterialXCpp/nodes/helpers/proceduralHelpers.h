@@ -24,7 +24,7 @@ namespace mxcpp {
 namespace {
 
 // Convert gradient length to a symmetric half-width for smoothstep AA.
-constexpr float kInvSqrt2 = 1.0f / std::sqrt(2.0f);
+constexpr float kInvSqrt2 = 0.70710678118654752440f;
 
 inline float
 AAStep(float threshold, float value, float dx, float dy)
