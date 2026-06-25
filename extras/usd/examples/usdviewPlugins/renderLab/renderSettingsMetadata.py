@@ -22,15 +22,15 @@ _RENDERERS = {
             _DEFAULT_CATEGORY,
         ],
         "settings": {
-            "convergedSamplesPerPixel": {
+            "ty:convergedSamplesPerPixel": {
                 "category": "Sampling",
                 "order": 10,
             },
-            "randomNumberSeed": {
+            "ty:randomNumberSeed": {
                 "category": "Sampling",
                 "order": 20,
             },
-            "samplerSequence": {
+            "ty:samplerSequence": {
                 "category": "Sampling",
                 "order": 30,
                 "allowedTokens": [
@@ -42,55 +42,55 @@ _RENDERERS = {
                     "openqmc_latticebn",
                 ],
             },
-            "enableAdaptiveSampling": {
+            "ty:enableAdaptiveSampling": {
                 "category": "Sampling",
                 "order": 40,
             },
-            "adaptiveThreshold": {
+            "ty:adaptiveThreshold": {
                 "category": "Sampling",
                 "order": 50,
             },
-            "minSamplesBeforeAdaptive": {
+            "ty:minSamplesBeforeAdaptive": {
                 "category": "Sampling",
                 "order": 60,
             },
-            "maxBounces": {
+            "ty:maxBounces": {
                 "category": "Path Tracing",
                 "order": 10,
             },
-            "minBouncesBeforeRR": {
+            "ty:minBouncesBeforeRR": {
                 "category": "Path Tracing",
                 "order": 20,
             },
-            "lightSamplesPerHit": {
+            "ty:lightSamplesPerHit": {
                 "category": "Path Tracing",
                 "order": 30,
             },
-            "stratifyLightSamples": {
+            "ty:stratifyLightSamples": {
                 "category": "Path Tracing",
                 "order": 40,
             },
-            "enableCaustics": {
+            "ty:enableCaustics": {
                 "category": "Path Tracing",
                 "order": 50,
             },
-            "approxTransparentShadows": {
+            "ty:approxTransparentShadows": {
                 "category": "Path Tracing",
                 "order": 55,
             },
-            "fireflyClampThreshold": {
+            "ty:fireflyClampThreshold": {
                 "category": "Path Tracing",
                 "order": 60,
             },
-            "causticsClampThreshold": {
+            "ty:causticsClampThreshold": {
                 "category": "Path Tracing",
                 "order": 70,
             },
-            "enableGgxMicrofacetMultipleScattering": {
+            "ty:enableGgxMicrofacetMultipleScattering": {
                 "category": "Materials",
                 "order": 10,
             },
-            "materialRenderContext": {
+            "ty:materialRenderContext": {
                 "category": "Materials",
                 "order": 20,
                 "allowedTokens": [
@@ -98,11 +98,11 @@ _RENDERERS = {
                     "default",
                 ],
             },
-            "useAdobeOpenPBR": {
+            "ty:useAdobeOpenPBR": {
                 "category": "Materials",
                 "order": 30,
             },
-            "dielectricLayerThroughputMode": {
+            "ty:dielectricLayerThroughputMode": {
                 "category": "Materials",
                 "order": 40,
                 "allowedTokens": [
@@ -110,27 +110,31 @@ _RENDERERS = {
                     "materialxGlsl",
                 ],
             },
-            "showAdaptiveHeatmap": {
+            "ty:showAdaptiveHeatmap": {
                 "category": "Diagnostics",
                 "order": 10,
             },
-            "enableSceneColors": {
+            "ty:enableSceneColors": {
                 "category": "Scene",
                 "order": 10,
             },
-            "enableLighting": {
+            "ty:enableLighting": {
                 "category": "Scene",
                 "order": 20,
             },
-            "domeLightCameraVisibility": {
+            "ty:domeLightCameraVisibility": {
                 "category": "Scene",
                 "order": 30,
             },
-            "enableAmbientOcclusion": {
+            "ty:enableExposureCompensation": {
+                "category": "Scene",
+                "order": 40,
+            },
+            "ty:enableAmbientOcclusion": {
                 "category": "Ambient Occlusion",
                 "order": 10,
             },
-            "ambientOcclusionSamples": {
+            "ty:ambientOcclusionSamples": {
                 "category": "Ambient Occlusion",
                 "order": 20,
             },

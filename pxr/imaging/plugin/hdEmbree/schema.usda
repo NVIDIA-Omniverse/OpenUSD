@@ -1,0 +1,137 @@
+#usda 1.0
+(
+    "Typhoon render settings schema"
+    subLayers = [
+        @usdRender/schema.usda@
+    ]
+)
+
+over "GLOBAL" (
+    customData = {
+        string libraryName = "hdEmbree"
+        bool skipCodeGeneration = true
+    }
+)
+{
+}
+
+class "TyphoonRenderSettingsAPI" (
+    inherits = </APISchemaBase>
+    doc = """Render settings for the Typhoon render delegate."""
+    customData = {
+        token apiSchemaType = "singleApply"
+        token[] apiSchemaAutoApplyTo = ["RenderSettings"]
+        token[] apiSchemaCanOnlyApplyTo = ["RenderSettings"]
+    }
+)
+{
+    uniform bool ty:enableSceneColors = true (
+        doc = """Use authored scene colors instead of flat white surface colors."""
+    )
+
+    uniform bool ty:enableAmbientOcclusion = false (
+        doc = """Use ambient occlusion when scene lighting is disabled."""
+    )
+
+    uniform bool ty:enableLighting = true (
+        doc = """Evaluate scene lights."""
+    )
+
+    uniform int ty:ambientOcclusionSamples = 0 (
+        doc = """Ambient occlusion rays generated per camera ray."""
+    )
+
+    uniform int ty:convergedSamplesPerPixel = 256 (
+        doc = """Samples per pixel before rendering is considered converged."""
+    )
+
+    uniform int ty:randomNumberSeed = -1 (
+        doc = """OpenQMC frame seed. A value of -1 chooses a non-deterministic seed."""
+    )
+
+    uniform token ty:samplerSequence = "openqmc_sobolbn" (
+        allowedTokens = [
+            "openqmc_sobol",
+            "openqmc_sobolbn",
+            "openqmc_pmj",
+            "openqmc_pmjbn",
+            "openqmc_lattice",
+            "openqmc_latticebn"
+        ]
+        doc = """Sampler sequence used for domain-aware renderer sampling."""
+    )
+
+    uniform bool ty:domeLightCameraVisibility = true (
+        doc = """Make dome lights directly visible to camera rays."""
+    )
+
+    uniform bool ty:enableExposureCompensation = true (
+        doc = """Apply camera exposure compensation."""
+    )
+
+    uniform bool ty:enableAdaptiveSampling = true (
+        doc = """Use adaptive sampling to skip converged pixels."""
+    )
+
+    uniform float ty:adaptiveThreshold = 0.01 (
+        doc = """Variance threshold below which a pixel is considered converged."""
+    )
+
+    uniform int ty:minSamplesBeforeAdaptive = 64 (
+        doc = """Minimum samples per pixel before adaptive convergence checks begin."""
+    )
+
+    uniform int ty:maxBounces = 16 (
+        doc = """Maximum number of indirect light bounces."""
+    )
+
+    uniform int ty:minBouncesBeforeRR = 2 (
+        doc = """Minimum number of bounces before Russian Roulette path termination."""
+    )
+
+    uniform int ty:lightSamplesPerHit = 1 (
+        doc = """Number of light samples per hit point per light."""
+    )
+
+    uniform bool ty:stratifyLightSamples = true (
+        doc = """Stratify light samples across the light surface."""
+    )
+
+    uniform bool ty:showAdaptiveHeatmap = false (
+        doc = """Visualize adaptive sampling convergence as a heatmap."""
+    )
+
+    uniform float ty:fireflyClampThreshold = 20.0 (
+        doc = """Clamp threshold for bright non-caustic path contributions."""
+    )
+
+    uniform bool ty:enableCaustics = false (
+        doc = """Enable indirect caustic paths."""
+    )
+
+    uniform float ty:causticsClampThreshold = 5.0 (
+        doc = """Clamp threshold for caustic path contributions."""
+    )
+
+    uniform bool ty:approxTransparentShadows = true (
+        doc = """Approximate transparent shadows."""
+    )
+
+    uniform bool ty:enableGgxMicrofacetMultipleScattering = true (
+        doc = """Use multiple scattering compensation for rough dielectric GGX."""
+    )
+
+    uniform token ty:materialRenderContext = "mtlx" (
+        allowedTokens = ["mtlx", "default"]
+        doc = """Material render context priority."""
+    )
+
+    uniform bool ty:useAdobeOpenPBR = false (
+        doc = """Use the Adobe OpenPBR BSDF for OpenPBR Surface."""
+    )
+
+    uniform token ty:dielectricLayerThroughputMode = "bsdl" (
+        allowedTokens = ["bsdl", "materialxGlsl"]
+        doc = """Rough dielectric top-layer throughput estimate mode."""
+    )
+}

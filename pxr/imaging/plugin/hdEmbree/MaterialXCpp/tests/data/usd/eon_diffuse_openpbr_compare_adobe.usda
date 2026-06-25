@@ -11,5 +11,5 @@
 
 over "RenderSettings"
 {
-    bool hdEmbree:useAdobeOpenPBR = true
+    bool ty:useAdobeOpenPBR = true
 }

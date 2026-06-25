@@ -13,9 +13,9 @@ in beam spread and photometric shaping are easy to compare on the wall/floor."""
 
 def RenderSettings "RenderSettings"
 {
-    int hdEmbree:lightSamplesPerHit = 8
-    int hdEmbree:maxBounces = 2
-    token hdEmbree:samplerSequence = "openqmc_sobolbn"
+    int ty:lightSamplesPerHit = 8
+    int ty:maxBounces = 2
+    token ty:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }
 

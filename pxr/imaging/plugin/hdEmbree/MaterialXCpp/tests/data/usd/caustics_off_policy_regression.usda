@@ -19,16 +19,16 @@ view so enableCaustics=true/false can be compared before changing path policy:
 
 def RenderSettings "RenderSettings"
 {
-    int hdEmbree:convergedSamplesPerPixel = 128
-    int hdEmbree:randomNumberSeed = 414
-    int hdEmbree:maxBounces = 16
-    int hdEmbree:minBouncesBeforeRR = 4
-    int hdEmbree:lightSamplesPerHit = 1
-    bool hdEmbree:enableAdaptiveSampling = false
-    bool hdEmbree:stratifyLightSamples = true
-    bool hdEmbree:enableCaustics = true
-    float hdEmbree:causticsClampThreshold = 5.0
-    token hdEmbree:samplerSequence = "openqmc_sobolbn"
+    int ty:convergedSamplesPerPixel = 128
+    int ty:randomNumberSeed = 414
+    int ty:maxBounces = 16
+    int ty:minBouncesBeforeRR = 4
+    int ty:lightSamplesPerHit = 1
+    bool ty:enableAdaptiveSampling = false
+    bool ty:stratifyLightSamples = true
+    bool ty:enableCaustics = true
+    float ty:causticsClampThreshold = 5.0
+    token ty:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }
 

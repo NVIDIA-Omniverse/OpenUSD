@@ -7,15 +7,15 @@
     doc = """OpenPBR diffuse-only EON comparison scene.
 
 The three spheres use specular_weight = 0 and base_diffuse_roughness values
-0.0, 0.5, and 1.0.  Render with hdEmbree:useAdobeOpenPBR=false/true to compare
+0.0, 0.5, and 1.0.  Render with ty:useAdobeOpenPBR=false/true to compare
 native EON diffuse against the Adobe OpenPBR backend."""
 )
 
 def RenderSettings "RenderSettings"
 {
-    int hdEmbree:lightSamplesPerHit = 1
-    token hdEmbree:samplerSequence = "openqmc_sobolbn"
-    bool hdEmbree:useAdobeOpenPBR = false
+    int ty:lightSamplesPerHit = 1
+    token ty:samplerSequence = "openqmc_sobolbn"
+    bool ty:useAdobeOpenPBR = false
     rel products = [</RenderProduct>]
 }
 

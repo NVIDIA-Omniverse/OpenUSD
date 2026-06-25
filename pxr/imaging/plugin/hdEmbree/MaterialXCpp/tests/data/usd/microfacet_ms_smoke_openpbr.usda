@@ -9,7 +9,7 @@
 
 This layer keeps the original camera, lights, mesh layout, and material
 bindings, but overrides the material shaders to
-ND_open_pbr_surface_surfaceshader so hdEmbree:useAdobeOpenPBR can switch
+ND_open_pbr_surface_surfaceshader so ty:useAdobeOpenPBR can switch
 between the native and Adobe OpenPBR backends."""
 )
 
@@ -20,7 +20,7 @@ over "RenderProduct"
 
 over "RenderSettings"
 {
-    token hdEmbree:dielectricLayerThroughputMode = "bsdl"
+    token ty:dielectricLayerThroughputMode = "bsdl"
 }
 
 over "World"

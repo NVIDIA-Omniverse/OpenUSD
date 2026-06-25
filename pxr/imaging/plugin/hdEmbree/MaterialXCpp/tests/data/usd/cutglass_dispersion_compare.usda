@@ -18,7 +18,7 @@ dispersion so that chromatic splitting is easy to compare.
 
 def RenderSettings "RenderSettings"
 {
-    int hdEmbree:maxBounces = 64
+    int ty:maxBounces = 64
 }
 
 def Xform "World"

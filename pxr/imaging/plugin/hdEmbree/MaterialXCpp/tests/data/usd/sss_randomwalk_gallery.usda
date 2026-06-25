@@ -21,8 +21,8 @@ a cool rim light to make back-scattering easier to read."""
 
 def RenderSettings "RenderSettings"
 {
-    int hdEmbree:lightSamplesPerHit = 1
-    token hdEmbree:samplerSequence = "openqmc_sobolbn"
+    int ty:lightSamplesPerHit = 1
+    token ty:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }
 

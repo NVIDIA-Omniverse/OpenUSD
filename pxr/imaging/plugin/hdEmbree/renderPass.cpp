@@ -38,6 +38,86 @@ _GetTokenRenderSetting(
     return defaultValue;
 }
 
+using _RenderSettingsMap =
+    TfHashMap<TfToken, VtValue, TfToken::HashFunctor>;
+
+static void
+_AddNamespacedRenderSettings(
+    HdSampledDataSourceContainerSchema const &namespacedSettings,
+    std::string const &prefix,
+    _RenderSettingsMap *renderSettings)
+{
+    HdContainerDataSourceHandle container = namespacedSettings.GetContainer();
+    if (!container) {
+        return;
+    }
+
+    for (const TfToken &name : container->GetNames()) {
+        const std::string nameString = name.GetString();
+        if (nameString.compare(0, prefix.size(), prefix) != 0) {
+            continue;
+        }
+
+        if (auto ds = container->Get(name)) {
+            if (auto sampled = HdSampledDataSource::Cast(ds)) {
+                VtValue value = sampled->GetValue(0);
+                if (!value.IsEmpty()) {
+                    (*renderSettings)[name] = value;
+                }
+            }
+        }
+    }
+}
+
+static _RenderSettingsMap
+_GetNamespacedRenderSettings(HdRenderSettingsSchema const &rsSchema)
+{
+    _RenderSettingsMap renderSettings;
+    if (!rsSchema.IsDefined()) {
+        return renderSettings;
+    }
+
+    HdSampledDataSourceContainerSchema namespacedSettings =
+        rsSchema.GetNamespacedSettings();
+    _AddNamespacedRenderSettings(
+        namespacedSettings, "ty:", &renderSettings);
+    return renderSettings;
+}
+
+static bool
+_RenderSettingsEqual(
+    _RenderSettingsMap const &a,
+    _RenderSettingsMap const &b)
+{
+    if (a.size() != b.size()) {
+        return false;
+    }
+
+    for (const auto &entry : a) {
+        const auto it = b.find(entry.first);
+        if (it == b.end() || it->second != entry.second) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool
+_GetRenderSettingDefault(
+    HdRenderDelegate const *delegate,
+    TfToken const &key,
+    VtValue *value)
+{
+    for (HdRenderSettingDescriptor const &descriptor :
+             delegate->GetRenderSettingDescriptors()) {
+        if (descriptor.key == key) {
+            *value = descriptor.defaultValue;
+            return true;
+        }
+    }
+    return false;
+}
+
 HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
                                        HdRprimCollection const &collection,
                                        HdRenderThread *renderThread,
@@ -51,7 +131,7 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _lastSettingsVersion(0)
     , _lastRenderSettingsPrimPath()
     , _hasAppliedRenderSettingsPrim(false)
-    , _lastRenderSettingsBridgeVersion(0)
+    , _lastBridgedRenderSettings()
     , _lastMaterialRenderContexts()
     , _lastFrame(0.0)
     , _lastTime(0.0)
@@ -109,10 +189,16 @@ _GetDataWindow(HdRenderPassStateSharedPtr const& renderPassState)
 }
 
 static float
-_GetCameraExposureScale(HdRenderPassStateSharedPtr const& renderPassState)
+_GetCameraExposureScale(
+    HdRenderPassStateSharedPtr const& renderPassState,
+    HdRenderDelegate const *renderDelegate)
 {
     HdCamera const * const camera = renderPassState->GetCamera();
-    if (camera && renderPassState->GetEnableExposureCompensation()) {
+    const bool enableExposureCompensation =
+        renderDelegate->GetRenderSetting<bool>(
+            HdEmbreeRenderSettingsTokens->enableExposureCompensation,
+            renderPassState->GetEnableExposureCompensation());
+    if (camera && enableExposureCompensation) {
         return camera->GetLinearExposureScale();
     }
     return 1.0f;
@@ -197,6 +283,97 @@ _ResyncMaterialNetworksForRenderContextChange(HdRenderIndex *index)
     }
 }
 
+bool
+HdEmbreeRenderPass::_UpdateRenderSettingsFromActiveRenderSettingsPrim()
+{
+    HdRenderIndex *index = GetRenderIndex();
+    HdRenderDelegate *delegate = index->GetRenderDelegate();
+    HdSceneIndexBaseRefPtr si = index->GetTerminalSceneIndex();
+
+    SdfPath rsPath;
+    const bool hasActiveRenderSettingsPrim =
+        HdUtils::HasActiveRenderSettingsPrim(si, &rsPath);
+
+    _RenderSettingsMap currentRenderSettings;
+    if (hasActiveRenderSettingsPrim) {
+        HdSceneIndexPrim prim = si->GetPrim(rsPath);
+        currentRenderSettings = _GetNamespacedRenderSettings(
+            HdRenderSettingsSchema::GetFromParent(prim.dataSource));
+    }
+
+    const bool activeRenderSettingsPrimChanged =
+        hasActiveRenderSettingsPrim != _hasAppliedRenderSettingsPrim ||
+        (hasActiveRenderSettingsPrim &&
+         rsPath != _lastRenderSettingsPrimPath);
+    const bool renderSettingsChanged =
+        !_RenderSettingsEqual(
+            currentRenderSettings, _lastBridgedRenderSettings);
+
+    if (!activeRenderSettingsPrimChanged && !renderSettingsChanged) {
+        return false;
+    }
+
+    const unsigned int oldVersion = delegate->GetRenderSettingsVersion();
+    _RenderSettingsMap newBridgedRenderSettings;
+
+    for (const auto &previous : _lastBridgedRenderSettings) {
+        const TfToken &key = previous.first;
+        const auto currentIt = currentRenderSettings.find(key);
+        const VtValue delegateValue = delegate->GetRenderSetting(key);
+        const bool bridgeOwnsKey = delegateValue == previous.second;
+
+        if (currentIt == currentRenderSettings.end()) {
+            if (bridgeOwnsKey) {
+                VtValue defaultValue;
+                if (_GetRenderSettingDefault(delegate, key, &defaultValue)) {
+                    delegate->SetRenderSetting(key, defaultValue);
+                } else {
+                    delegate->SetRenderSetting(key, VtValue());
+                }
+            }
+            continue;
+        }
+
+        if (bridgeOwnsKey) {
+            delegate->SetRenderSetting(key, currentIt->second);
+            newBridgedRenderSettings[key] = currentIt->second;
+        } else if (delegateValue == currentIt->second) {
+            newBridgedRenderSettings[key] = currentIt->second;
+        }
+    }
+
+    for (const auto &current : currentRenderSettings) {
+        const TfToken &key = current.first;
+        if (_lastBridgedRenderSettings.find(key) !=
+            _lastBridgedRenderSettings.end()) {
+            continue;
+        }
+
+        const VtValue delegateValue = delegate->GetRenderSetting(key);
+        if (delegateValue == current.second) {
+            newBridgedRenderSettings[key] = current.second;
+            continue;
+        }
+
+        VtValue defaultValue;
+        const bool hasDefaultValue =
+            _GetRenderSettingDefault(delegate, key, &defaultValue);
+        if (delegateValue.IsEmpty() ||
+            !hasDefaultValue ||
+            delegateValue == defaultValue) {
+            delegate->SetRenderSetting(key, current.second);
+            newBridgedRenderSettings[key] = current.second;
+        }
+    }
+
+    _lastRenderSettingsPrimPath =
+        hasActiveRenderSettingsPrim ? rsPath : SdfPath();
+    _hasAppliedRenderSettingsPrim = hasActiveRenderSettingsPrim;
+    _lastBridgedRenderSettings.swap(newBridgedRenderSettings);
+
+    return delegate->GetRenderSettingsVersion() != oldVersion;
+}
+
 void
 HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                              TfTokenVector const &renderTags)
@@ -206,78 +383,14 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
     // Determine whether the scene has changed since the last time we rendered.
     bool needStartRender = false;
+    if (_UpdateRenderSettingsFromActiveRenderSettingsPrim()) {
+        needStartRender = true;
+    }
+
     int currentSceneVersion = _sceneVersion->load();
     if (_lastSceneVersion != currentSceneVersion) {
         needStartRender = true;
         _lastSceneVersion = currentSceneVersion;
-
-        // Apply namespacedSettings from the active RenderSettings prim to
-        // the delegate. This bridges the gap between USD RenderSettings
-        // prims and hdEmbree's render delegate settings map.
-        //
-        // usdview edits render delegate settings directly through the UI. If
-        // an unrelated scene edit dirties the scene after such an edit, do
-        // not re-apply authored RenderSettings values and clobber the UI
-        // override.
-        HdRenderIndex *index = GetRenderIndex();
-        HdSceneIndexBaseRefPtr si = index->GetTerminalSceneIndex();
-        SdfPath rsPath;
-        if (HdUtils::HasActiveRenderSettingsPrim(si, &rsPath)) {
-            HdRenderDelegate *delegate = index->GetRenderDelegate();
-            const bool activeRenderSettingsPrimChanged =
-                !_hasAppliedRenderSettingsPrim ||
-                rsPath != _lastRenderSettingsPrimPath;
-            const bool delegateSettingsUnchangedSinceBridge =
-                delegate->GetRenderSettingsVersion() ==
-                _lastRenderSettingsBridgeVersion;
-
-            if (activeRenderSettingsPrimChanged ||
-                delegateSettingsUnchangedSinceBridge) {
-                HdSceneIndexPrim prim = si->GetPrim(rsPath);
-                HdRenderSettingsSchema rsSchema =
-                    HdRenderSettingsSchema::GetFromParent(prim.dataSource);
-                if (rsSchema.IsDefined()) {
-                    HdSampledDataSourceContainerSchema nsSettings =
-                        rsSchema.GetNamespacedSettings();
-                    if (nsSettings.GetContainer()) {
-                        TfTokenVector names =
-                            nsSettings.GetContainer()->GetNames();
-                        // The "hdEmbree:" namespace prefix to strip from
-                        // keys.
-                        static const std::string nsPrefix("hdEmbree:");
-                        for (const TfToken &name : names) {
-                            // Only process settings in our namespace.
-                            const std::string &nameStr = name.GetString();
-                            if (nameStr.substr(0, nsPrefix.size()) !=
-                                nsPrefix) {
-                                continue;
-                            }
-                            // Strip the namespace prefix to get the
-                            // render delegate setting token.
-                            TfToken settingName(
-                                nameStr.substr(nsPrefix.size()));
-                            if (auto ds =
-                                    nsSettings.GetContainer()->Get(name)) {
-                                if (auto sampled =
-                                        HdSampledDataSource::Cast(ds)) {
-                                    delegate->SetRenderSetting(
-                                        settingName, sampled->GetValue(0));
-                                }
-                            }
-                        }
-                    }
-                }
-                _lastRenderSettingsPrimPath = rsPath;
-                _hasAppliedRenderSettingsPrim = true;
-                _lastRenderSettingsBridgeVersion =
-                    delegate->GetRenderSettingsVersion();
-            }
-        } else {
-            _lastRenderSettingsPrimPath = SdfPath();
-            _hasAppliedRenderSettingsPrim = false;
-            _lastRenderSettingsBridgeVersion =
-                index->GetRenderDelegate()->GetRenderSettingsVersion();
-        }
     }
 
     {
@@ -318,7 +431,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
         _renderer->SetSamplesToConvergence(
             renderDelegate->GetRenderSetting<int>(
-                HdRenderSettingsTokens->convergedSamplesPerPixel,
+                HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
                 config.samplesToConvergence));
 
         bool enableLighting =
@@ -346,7 +459,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
         _renderer->SetDomeLightCameraVisibility(
             renderDelegate->GetRenderSetting<bool>(
-                HdRenderSettingsTokens->domeLightCameraVisibility,
+                HdEmbreeRenderSettingsTokens->domeLightCameraVisibility,
                 config.domeLightCameraVisibility));
 
         _renderer->SetEnableSceneColors(
@@ -433,11 +546,10 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->approxTransparentShadows,
                 config.approxTransparentShadows));
-        static const TfToken enableGgxMicrofacetMultipleScatteringToken(
-            "enableGgxMicrofacetMultipleScattering", TfToken::Immortal);
         _renderer->SetEnableGgxMicrofacetMultipleScattering(
             renderDelegate->GetRenderSetting<bool>(
-                enableGgxMicrofacetMultipleScatteringToken,
+                HdEmbreeRenderSettingsTokens
+                    ->enableGgxMicrofacetMultipleScattering,
                 config.enableGgxMicrofacetMultipleScattering));
         _renderer->SetDielectricLayerThroughputMode(
             _GetTokenRenderSetting(
@@ -459,7 +571,8 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     // Determine whether we need to update the renderer camera.
     const GfMatrix4d view = renderPassState->GetWorldToViewMatrix();
     const GfMatrix4d proj = renderPassState->GetProjectionMatrix();
-    const float cameraExposureScale = _GetCameraExposureScale(renderPassState);
+    const float cameraExposureScale =
+        _GetCameraExposureScale(renderPassState, renderDelegate);
     const HdEmbreeCameraDepthOfField cameraDepthOfField =
         _GetCameraDepthOfField(renderPassState);
     if (_viewMatrix != view || _projMatrix != proj ||

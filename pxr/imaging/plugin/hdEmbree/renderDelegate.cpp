@@ -33,8 +33,6 @@ PXR_NAMESPACE_OPEN_SCOPE
 TF_DEFINE_PUBLIC_TOKENS(HdEmbreeRenderSettingsTokens, HDEMBREE_RENDER_SETTINGS_TOKENS);
 TF_DEFINE_PUBLIC_TOKENS(HdEmbreeAovTokens, HDEMBREE_AOV_TOKENS);
 
-static const TfToken _enableGgxMicrofacetMultipleScatteringToken(
-    "enableGgxMicrofacetMultipleScattering", TfToken::Immortal);
 static const TfToken _materialRenderContextMtlxToken(
     "mtlx", TfToken::Immortal);
 static const TfToken _materialRenderContextDefaultToken(
@@ -149,7 +147,7 @@ HdEmbreeRenderDelegate::_Initialize()
             HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
             VtValue(int(config.ambientOcclusionSamples)) },
         { "Samples To Convergence",
-            HdRenderSettingsTokens->convergedSamplesPerPixel,
+            HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
             VtValue(int(config.samplesToConvergence)) },
         { "Random Number Seed",
             HdEmbreeRenderSettingsTokens->randomNumberSeed,
@@ -158,10 +156,10 @@ HdEmbreeRenderDelegate::_Initialize()
             HdEmbreeRenderSettingsTokens->samplerSequence,
             VtValue(config.samplerSequence) },
         { "Dome Light Camera Visibility",
-            HdRenderSettingsTokens->domeLightCameraVisibility,
+            HdEmbreeRenderSettingsTokens->domeLightCameraVisibility,
             VtValue(config.domeLightCameraVisibility) },
         { "Enable Exposure Compensation",
-            HdRenderSettingsTokens->enableExposureCompensation,
+            HdEmbreeRenderSettingsTokens->enableExposureCompensation,
             VtValue(true) },
         { "Enable Adaptive Sampling",
             HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
@@ -200,7 +198,7 @@ HdEmbreeRenderDelegate::_Initialize()
             HdEmbreeRenderSettingsTokens->approxTransparentShadows,
             VtValue(config.approxTransparentShadows) },
         { "Enable GGX Microfacet Multiple Scattering",
-            _enableGgxMicrofacetMultipleScatteringToken,
+            HdEmbreeRenderSettingsTokens->enableGgxMicrofacetMultipleScattering,
             VtValue(config.enableGgxMicrofacetMultipleScattering) },
         { "Material Render Context",
             HdEmbreeRenderSettingsTokens->materialRenderContext,
@@ -289,6 +287,15 @@ HdRenderSettingDescriptorList
 HdEmbreeRenderDelegate::GetRenderSettingDescriptors() const
 {
     return _settingDescriptors;
+}
+
+TfTokenVector
+HdEmbreeRenderDelegate::GetRenderSettingsNamespaces() const
+{
+    static const TfTokenVector namespaces = {
+        TfToken("ty", TfToken::Immortal)
+    };
+    return namespaces;
 }
 
 TfTokenVector

@@ -12,9 +12,9 @@ random-walk SSS."""
 
 def RenderSettings "RenderSettings"
 {
-    int hdEmbree:lightSamplesPerHit = 1
-    token hdEmbree:samplerSequence = "openqmc_sobolbn"
-    bool hdEmbree:useAdobeOpenPBR = false
+    int ty:lightSamplesPerHit = 1
+    token ty:samplerSequence = "openqmc_sobolbn"
+    bool ty:useAdobeOpenPBR = false
     rel products = [</RenderProduct>]
 }
 

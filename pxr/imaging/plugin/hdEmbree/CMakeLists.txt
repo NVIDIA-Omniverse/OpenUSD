@@ -58,6 +58,8 @@ if (PXR_ENABLE_ADOBE_OPENPBR_SUPPORT)
 endif()
 
 pxr_plugin(hdEmbree
+    INCLUDE_SCHEMA_FILES
+
    LIBRARIES
         ${_hdEmbree_libraries}
 
@@ -166,6 +168,33 @@ pxr_build_test(testHdEmbreeSampling
         tf
     CPPFILES
         testenv/testHdEmbreeSampling.cpp
+)
+
+pxr_build_test(testHdEmbreeRenderSettings
+    LIBRARIES
+        arch
+        hd
+        hdEmbree
+        plug
+        tf
+        usd
+        usdRender
+    CPPFILES
+        testenv/testHdEmbreeRenderSettings.cpp
+)
+
+if (TARGET testHdEmbreeRenderSettings)
+    _pxr_init_rpath(_hdEmbreeRenderSettingsTestRpath "tests")
+    _pxr_add_rpath(_hdEmbreeRenderSettingsTestRpath "${CMAKE_INSTALL_PREFIX}/lib")
+    _pxr_add_rpath(_hdEmbreeRenderSettingsTestRpath "${CMAKE_INSTALL_PREFIX}/plugin/usd")
+    _pxr_install_rpath(_hdEmbreeRenderSettingsTestRpath testHdEmbreeRenderSettings)
+endif()
+
+pxr_register_test(testHdEmbreeRenderSettings
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdEmbreeRenderSettings"
+    ENV
+        ${PXR_PLUGINPATH_NAME}=${CMAKE_INSTALL_PREFIX}/plugin/usd
+    EXPECTED_RETURN_CODE 0
 )
 
 if (Imath_FOUND)

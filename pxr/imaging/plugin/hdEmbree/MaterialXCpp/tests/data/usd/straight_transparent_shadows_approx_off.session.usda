@@ -5,6 +5,6 @@
 
 over "RenderSettings"
 {
-    bool hdEmbree:enableCaustics = false
-    bool hdEmbree:approxTransparentShadows = false
+    bool ty:enableCaustics = false
+    bool ty:approxTransparentShadows = false
 }

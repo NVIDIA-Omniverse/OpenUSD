@@ -16,6 +16,9 @@
 #include "pxr/imaging/plugin/hdEmbree/renderBuffer.h"
 
 #include "pxr/base/gf/matrix4d.h"
+#include "pxr/base/tf/hashmap.h"
+#include "pxr/base/tf/token.h"
+#include "pxr/base/vt/value.h"
 #include "pxr/base/gf/rect2i.h"
 #include "pxr/usd/sdf/path.h"
 
@@ -72,6 +75,8 @@ protected:
     void _MarkCollectionDirty() override {}
 
 private:
+    bool _UpdateRenderSettingsFromActiveRenderSettingsPrim();
+
     // A handle to the render thread.
     HdRenderThread *_renderThread;
 
@@ -91,7 +96,8 @@ private:
     // render delegate settings map.
     SdfPath _lastRenderSettingsPrimPath;
     bool _hasAppliedRenderSettingsPrim;
-    unsigned int _lastRenderSettingsBridgeVersion;
+    TfHashMap<TfToken, VtValue, TfToken::HashFunctor>
+        _lastBridgedRenderSettings;
 
     // The last material render-context priority order seen by this pass.
     TfTokenVector _lastMaterialRenderContexts;

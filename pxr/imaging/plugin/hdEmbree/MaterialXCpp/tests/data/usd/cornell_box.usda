@@ -12,13 +12,13 @@ glossy/diffuse interaction."""
 def RenderSettings "RenderSettings"
 {
     # hdEmbree namespaced settings
-    # int hdEmbree:convergedSamplesPerPixel = 8 
-    # int hdEmbree:randomNumberSeed = 1
-    # int hdEmbree:maxBounces = 0
-    # int hdEmbree:lightSamplesPerHit = 1
-    # bool hdEmbree:stratifyLightSamples = "false"
-    # int hdEmbree:minSamplesBeforeAdaptive = 64
-    token hdEmbree:samplerSequence = "openqmc_sobolbn"
+    # int ty:convergedSamplesPerPixel = 8
+    # int ty:randomNumberSeed = 1
+    # int ty:maxBounces = 0
+    # int ty:lightSamplesPerHit = 1
+    # bool ty:stratifyLightSamples = "false"
+    # int ty:minSamplesBeforeAdaptive = 64
+    token ty:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }
 

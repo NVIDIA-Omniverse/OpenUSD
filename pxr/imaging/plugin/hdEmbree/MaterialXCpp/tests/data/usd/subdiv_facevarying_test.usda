@@ -11,7 +11,7 @@
 
 def RenderSettings "RenderSettings"
 {
-    token hdEmbree:samplerSequence = "openqmc_sobolbn"
+    token ty:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }
 

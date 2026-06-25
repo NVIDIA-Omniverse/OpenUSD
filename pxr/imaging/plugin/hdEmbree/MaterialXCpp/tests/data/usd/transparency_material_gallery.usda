@@ -20,11 +20,11 @@ visibility easy to inspect."""
 
 def RenderSettings "RenderSettings"
 {
-    int hdEmbree:lightSamplesPerHit = 1
-    int hdEmbree:maxBounces = 16
-    bool hdEmbree:enableCaustics = false
-    float hdEmbree:causticsClampThreshold = 5.0
-    token hdEmbree:samplerSequence = "openqmc_sobolbn"
+    int ty:lightSamplesPerHit = 1
+    int ty:maxBounces = 16
+    bool ty:enableCaustics = false
+    float ty:causticsClampThreshold = 5.0
+    token ty:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }
 

@@ -22,29 +22,31 @@ PXR_NAMESPACE_OPEN_SCOPE
 class HdEmbreeRenderParam;
 
 #define HDEMBREE_RENDER_SETTINGS_TOKENS \
-    (enableAmbientOcclusion)            \
-    (enableLighting)                    \
-    (enableSceneColors)                 \
-    (ambientOcclusionSamples)           \
-    (randomNumberSeed)                  \
-    (samplerSequence)                   \
-    (enableAdaptiveSampling)            \
-    (adaptiveThreshold)                 \
-    (minSamplesBeforeAdaptive)          \
-    (maxBounces)                        \
-    (minBouncesBeforeRR)                \
-    (lightSamplesPerHit)                \
-    (stratifyLightSamples)              \
-    (showAdaptiveHeatmap)               \
-    (fireflyClampThreshold)             \
-    (enableCaustics)                    \
-    (causticsClampThreshold)            \
-    (approxTransparentShadows)          \
-    (materialRenderContext)             \
-    (dielectricLayerThroughputMode)     \
-    (useAdobeOpenPBR)
-
-// Also: HdRenderSettingsTokens->convergedSamplesPerPixel
+    ((enableAmbientOcclusion, "ty:enableAmbientOcclusion")) \
+    ((enableLighting, "ty:enableLighting")) \
+    ((enableSceneColors, "ty:enableSceneColors")) \
+    ((ambientOcclusionSamples, "ty:ambientOcclusionSamples")) \
+    ((convergedSamplesPerPixel, "ty:convergedSamplesPerPixel")) \
+    ((randomNumberSeed, "ty:randomNumberSeed")) \
+    ((samplerSequence, "ty:samplerSequence")) \
+    ((domeLightCameraVisibility, "ty:domeLightCameraVisibility")) \
+    ((enableExposureCompensation, "ty:enableExposureCompensation")) \
+    ((enableAdaptiveSampling, "ty:enableAdaptiveSampling")) \
+    ((adaptiveThreshold, "ty:adaptiveThreshold")) \
+    ((minSamplesBeforeAdaptive, "ty:minSamplesBeforeAdaptive")) \
+    ((maxBounces, "ty:maxBounces")) \
+    ((minBouncesBeforeRR, "ty:minBouncesBeforeRR")) \
+    ((lightSamplesPerHit, "ty:lightSamplesPerHit")) \
+    ((stratifyLightSamples, "ty:stratifyLightSamples")) \
+    ((showAdaptiveHeatmap, "ty:showAdaptiveHeatmap")) \
+    ((fireflyClampThreshold, "ty:fireflyClampThreshold")) \
+    ((enableCaustics, "ty:enableCaustics")) \
+    ((causticsClampThreshold, "ty:causticsClampThreshold")) \
+    ((approxTransparentShadows, "ty:approxTransparentShadows")) \
+    ((enableGgxMicrofacetMultipleScattering, "ty:enableGgxMicrofacetMultipleScattering")) \
+    ((materialRenderContext, "ty:materialRenderContext")) \
+    ((dielectricLayerThroughputMode, "ty:dielectricLayerThroughputMode")) \
+    ((useAdobeOpenPBR, "ty:useAdobeOpenPBR"))
 
 TF_DECLARE_PUBLIC_TOKENS(HdEmbreeRenderSettingsTokens, HDEMBREE_RENDER_SETTINGS_TOKENS);
 
@@ -233,6 +235,8 @@ public:
     }
 
     TfTokenVector GetMaterialRenderContexts() const override;
+
+    TfTokenVector GetRenderSettingsNamespaces() const override;
 
     /// This function returns the default AOV descriptor for a given named AOV.
     /// This mechanism lets the renderer decide things like what format

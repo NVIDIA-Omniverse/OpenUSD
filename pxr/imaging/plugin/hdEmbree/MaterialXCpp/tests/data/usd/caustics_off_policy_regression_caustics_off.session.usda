@@ -5,5 +5,5 @@
 
 over "RenderSettings"
 {
-    bool hdEmbree:enableCaustics = false
+    bool ty:enableCaustics = false
 }
