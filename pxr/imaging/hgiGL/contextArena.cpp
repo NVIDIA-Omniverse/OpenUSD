@@ -194,7 +194,10 @@ _CreateDescriptorCacheItem(const _FramebufferDesc& desc)
 // Deletes the cache item and returns whether the associated framebuffer object
 // was deleted successfully.
 bool
-_DestroyDescriptorCacheItem(_DescriptorCacheItem* dci, void* cache)
+_DestroyDescriptorCacheItem(
+    _DescriptorCacheItem* dci,
+    void* cache,
+    bool reportInvalidFramebuffer = true)
 {
     TRACE_FUNCTION();
 
@@ -209,7 +212,7 @@ _DestroyDescriptorCacheItem(_DescriptorCacheItem* dci, void* cache)
             dci->framebuffer = 0;
             fboDeleted = true;
 
-        } else if (_IsErrorReportingEnabled()) {
+        } else if (reportInvalidFramebuffer && _IsErrorReportingEnabled()) {
             TF_CODING_ERROR("_DestroyDescriptorCacheItem: Found invalid "
                             "framebuffer %d in cache.\n", dci->framebuffer);
         }
@@ -370,7 +373,11 @@ HgiGLContextArena::_FramebufferCache::_Clear()
     const size_t numTotalEntries = _descriptorCache.size();
     size_t numClearedEntries = 0;
     for (_DescriptorCacheItem* dci : _descriptorCache) {
-        if (_DestroyDescriptorCacheItem(dci, (void*)this)) {
+        // During final teardown the GL context may already have released FBO
+        // object names, so an invalid FBO here is not necessarily misuse of
+        // the cache. Keep invalid-FBO reporting enabled for normal GC.
+        if (_DestroyDescriptorCacheItem(dci, (void*)this,
+                                        /*reportInvalidFramebuffer*/ false)) {
             numClearedEntries++;
         }
     }
