@@ -1,5 +1,6 @@
 set(DIRS
     usdrecord
+    usdrender
     usdview
     testusdview
 )
