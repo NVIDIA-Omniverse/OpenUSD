@@ -359,9 +359,6 @@ _RenderProductsGenerated(
         TfToken productName;
         product.GetProductNameAttr().Get(&productName);
         if (ArchOpenFile(productName.GetText(), "r")) {
-            TF_STATUS("Product '%s' generated from RenderProduct prim <%s> "
-                      "on RenderSettings <%s>", productName.GetText(),
-                      productPath.GetText(), renderSettingsPrimPath.GetText());
             productsGenerated |= true;
         } else {
             TF_WARN("Missing generated Product '%s' from RenderProduct prim "
