@@ -75,7 +75,9 @@ protected:
     void _MarkCollectionDirty() override {}
 
 private:
+    bool _HasConverged() const;
     bool _UpdateRenderSettingsFromActiveRenderSettingsPrim();
+    void _WriteActiveRenderProducts();
 
     // A handle to the render thread.
     HdRenderThread *_renderThread;
@@ -130,6 +132,9 @@ private:
 
     // Were the color/depth buffer converged the last time we blitted them?
     bool _converged;
+
+    // Whether render products have been written for the current render.
+    bool _renderProductsWritten;
 };
 
 PXR_NAMESPACE_CLOSE_SCOPE

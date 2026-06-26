@@ -7,18 +7,27 @@
 #include "pxr/imaging/hd/camera.h"
 #include "pxr/imaging/hd/renderPassState.h"
 #include "pxr/imaging/hd/material.h"
+#include "pxr/imaging/hd/renderProductSchema.h"
 #include "pxr/imaging/hd/renderSettingsSchema.h"
+#include "pxr/imaging/hd/renderVarSchema.h"
 #include "pxr/imaging/hd/sceneGlobalsSchema.h"
 #include "pxr/imaging/hd/tokens.h"
+#include "pxr/imaging/hd/types.h"
 #include "pxr/imaging/hd/utils.h"
+#include "pxr/imaging/hio/image.h"
 #include "pxr/imaging/plugin/hdEmbree/config.h"
 #include "pxr/imaging/plugin/hdEmbree/material.h"
 #include "pxr/imaging/plugin/hdEmbree/renderDelegate.h"
 #include "pxr/imaging/plugin/hdEmbree/renderPass.h"
+#include "pxr/base/gf/half.h"
 #include "pxr/base/tf/diagnostic.h"
+#include "pxr/base/tf/enum.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <string>
+#include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -118,6 +127,171 @@ _GetRenderSettingDefault(
     return false;
 }
 
+static bool
+_RenderVarRequestsColor(HdRenderVarSchema varSchema)
+{
+    TfToken sourceName;
+    if (auto handle = varSchema.GetSourceName()) {
+        sourceName = handle->GetTypedValue(0);
+    }
+
+    if (sourceName != HdAovTokens->color && sourceName != TfToken("Ci")) {
+        return false;
+    }
+
+    if (auto handle = varSchema.GetSourceType()) {
+        const TfToken sourceType = handle->GetTypedValue(0);
+        if (!sourceType.IsEmpty() && sourceType != TfToken("raw")) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool
+_RenderProductRequestsColor(HdRenderProductSchema productSchema)
+{
+    HdRenderVarVectorSchema varsSchema = productSchema.GetRenderVars();
+    if (!varsSchema || varsSchema.GetNumElements() == 0) {
+        return true;
+    }
+
+    for (size_t i = 0; i < varsSchema.GetNumElements(); ++i) {
+        if (HdRenderVarSchema varSchema = varsSchema.GetElement(i)) {
+            if (_RenderVarRequestsColor(varSchema)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+static HdRenderBuffer *
+_GetColorRenderBuffer(HdRenderPassAovBindingVector const &aovBindings,
+                      HdEmbreeRenderBuffer *fallback)
+{
+    for (HdRenderPassAovBinding const &binding : aovBindings) {
+        if (binding.aovName == HdAovTokens->color && binding.renderBuffer) {
+            return binding.renderBuffer;
+        }
+    }
+
+    if (aovBindings.empty() && fallback &&
+        fallback->GetWidth() > 0 && fallback->GetHeight() > 0) {
+        return fallback;
+    }
+
+    return nullptr;
+}
+
+static bool
+_ReadFloatComponent(HdFormat format, const uint8_t *src,
+                    size_t component, float *value)
+{
+    const size_t componentCount = HdGetComponentCount(format);
+    if (component >= componentCount) {
+        *value = component == 3 ? 1.0f : 0.0f;
+        return true;
+    }
+
+    const HdFormat componentFormat = HdGetComponentFormat(format);
+    if (componentFormat == HdFormatUNorm8) {
+        *value = reinterpret_cast<const uint8_t *>(src)[component] / 255.0f;
+        return true;
+    }
+    if (componentFormat == HdFormatSNorm8) {
+        *value = std::max(
+            reinterpret_cast<const int8_t *>(src)[component] / 127.0f,
+            -1.0f);
+        return true;
+    }
+    if (componentFormat == HdFormatFloat16) {
+        GfHalf half;
+        half.setBits(reinterpret_cast<const uint16_t *>(src)[component]);
+        *value = static_cast<float>(half);
+        return true;
+    }
+    if (componentFormat == HdFormatFloat32) {
+        *value = reinterpret_cast<const float *>(src)[component];
+        return true;
+    }
+
+    return false;
+}
+
+static bool
+_CopyRenderBufferToFloatRgba(HdRenderBuffer *renderBuffer,
+                             std::vector<float> *pixels)
+{
+    const HdFormat format = renderBuffer->GetFormat();
+    const size_t pixelSize = HdDataSizeOfFormat(format);
+    if (pixelSize == 0) {
+        TF_WARN("Cannot write RenderProduct from unsupported color buffer "
+                "format '%s'", TfEnum::GetName(format).c_str());
+        return false;
+    }
+
+    renderBuffer->Resolve();
+
+    const void *mapped = renderBuffer->Map();
+    if (!mapped) {
+        TF_WARN("Cannot write RenderProduct; failed to map color buffer");
+        return false;
+    }
+
+    const unsigned int width = renderBuffer->GetWidth();
+    const unsigned int height = renderBuffer->GetHeight();
+    pixels->assign(static_cast<size_t>(width) * height * 4, 0.0f);
+
+    const uint8_t *src = static_cast<const uint8_t *>(mapped);
+    bool success = true;
+    for (size_t pixel = 0; pixel < static_cast<size_t>(width) * height;
+         ++pixel) {
+        const uint8_t *srcPixel = src + pixel * pixelSize;
+        for (size_t component = 0; component < 4; ++component) {
+            float value = 0.0f;
+            if (!_ReadFloatComponent(
+                    format, srcPixel, component, &value)) {
+                TF_WARN("Cannot write RenderProduct from unsupported color "
+                        "buffer format '%s'", TfEnum::GetName(format).c_str());
+                success = false;
+                break;
+            }
+            (*pixels)[pixel * 4 + component] = value;
+        }
+        if (!success) {
+            break;
+        }
+    }
+
+    renderBuffer->Unmap();
+    return success;
+}
+
+static bool
+_WriteFloatRgbaImage(const std::string &filename,
+                     unsigned int width,
+                     unsigned int height,
+                     std::vector<float> *pixels)
+{
+    HioImage::StorageSpec storage;
+    storage.width = width;
+    storage.height = height;
+    storage.format = HioFormatFloat32Vec4;
+    storage.flipped = true;
+    storage.data = pixels->data();
+
+    const HioImageSharedPtr image = HioImage::OpenForWriting(filename);
+    if (!image || !image->Write(storage)) {
+        TF_WARN("Failed to write RenderProduct image '%s'", filename.c_str());
+        return false;
+    }
+
+    return true;
+}
+
 HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
                                        HdRprimCollection const &collection,
                                        HdRenderThread *renderThread,
@@ -143,6 +317,7 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _colorBuffer(SdfPath::EmptyPath())
     , _depthBuffer(SdfPath::EmptyPath())
     , _converged(false)
+    , _renderProductsWritten(false)
 {
 }
 
@@ -154,7 +329,7 @@ HdEmbreeRenderPass::~HdEmbreeRenderPass()
 }
 
 bool
-HdEmbreeRenderPass::IsConverged() const
+HdEmbreeRenderPass::_HasConverged() const
 {
     // If the aov binding array is empty, the render thread is rendering into
     // _colorBuffer and _depthBuffer.  _converged is set to their convergence
@@ -171,6 +346,20 @@ HdEmbreeRenderPass::IsConverged() const
         }
     }
     return true;
+}
+
+bool
+HdEmbreeRenderPass::IsConverged() const
+{
+    const bool converged = _HasConverged();
+    if (converged) {
+        HdEmbreeRenderPass *self = const_cast<HdEmbreeRenderPass *>(this);
+        if (!self->_renderProductsWritten) {
+            self->_WriteActiveRenderProducts();
+            self->_renderProductsWritten = true;
+        }
+    }
+    return converged;
 }
 
 static
@@ -280,6 +469,90 @@ _ResyncMaterialNetworksForRenderContextChange(HdRenderIndex *index)
         if (material) {
             material->ResyncForRenderContextChange(renderParam);
         }
+    }
+}
+
+void
+HdEmbreeRenderPass::_WriteActiveRenderProducts()
+{
+    HdRenderIndex *index = GetRenderIndex();
+    if (!index) {
+        return;
+    }
+
+    HdSceneIndexBaseRefPtr si = index->GetTerminalSceneIndex();
+    if (!si) {
+        return;
+    }
+
+    SdfPath rsPath;
+    if (!HdUtils::HasActiveRenderSettingsPrim(si, &rsPath)) {
+        return;
+    }
+
+    HdSceneIndexPrim prim = si->GetPrim(rsPath);
+    HdRenderSettingsSchema settingsSchema =
+        HdRenderSettingsSchema::GetFromParent(prim.dataSource);
+    HdRenderProductVectorSchema productsSchema =
+        settingsSchema.GetRenderProducts();
+    if (!productsSchema || productsSchema.GetNumElements() == 0) {
+        return;
+    }
+
+    HdRenderBuffer *colorBuffer =
+        _GetColorRenderBuffer(_aovBindings, &_colorBuffer);
+    if (!colorBuffer) {
+        TF_WARN("Cannot write RenderProduct images; no color AOV buffer "
+                "is available");
+        return;
+    }
+
+    std::vector<float> pixels;
+    if (!_CopyRenderBufferToFloatRgba(colorBuffer, &pixels)) {
+        return;
+    }
+
+    const unsigned int width = colorBuffer->GetWidth();
+    const unsigned int height = colorBuffer->GetHeight();
+    for (size_t i = 0; i < productsSchema.GetNumElements(); ++i) {
+        HdRenderProductSchema productSchema = productsSchema.GetElement(i);
+        if (!productSchema) {
+            continue;
+        }
+
+        SdfPath productPath;
+        if (auto handle = productSchema.GetPath()) {
+            productPath = handle->GetTypedValue(0);
+        }
+
+        if (auto handle = productSchema.GetType()) {
+            const TfToken productType = handle->GetTypedValue(0);
+            if (!productType.IsEmpty() && productType != TfToken("raster")) {
+                TF_WARN("Skipping unsupported RenderProduct <%s> of type '%s'",
+                        productPath.GetText(), productType.GetText());
+                continue;
+            }
+        }
+
+        if (!_RenderProductRequestsColor(productSchema)) {
+            TF_WARN("Skipping RenderProduct <%s>; hdEmbree currently writes "
+                    "only color/raw raster products",
+                    productPath.GetText());
+            continue;
+        }
+
+        TfToken productName;
+        if (auto handle = productSchema.GetName()) {
+            productName = handle->GetTypedValue(0);
+        }
+        if (productName.IsEmpty()) {
+            TF_WARN("Skipping RenderProduct <%s> without productName",
+                    productPath.GetText());
+            continue;
+        }
+
+        _WriteFloatRgbaImage(
+            productName.GetString(), width, height, &pixels);
     }
 }
 
@@ -664,6 +937,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     // Only start a new render if something in the scene has changed.
     if (needStartRender) {
         _converged = false;
+        _renderProductsWritten = false;
         _renderer->MarkAovBuffersUnconverged();
         _renderThread->StartRender();
     }
