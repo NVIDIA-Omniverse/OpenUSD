@@ -58,7 +58,7 @@ def _GetAuthoredRenderResolution(stage, renderSettingsPrimPath):
     return _GetAuthoredResolution(settings)
 
 
-def _GetRenderProductOutputPaths(stage, renderSettingsPrimPath):
+def _GetRenderProductOutputs(stage, renderSettingsPrimPath):
     if not renderSettingsPrimPath:
         return []
 
@@ -66,7 +66,7 @@ def _GetRenderProductOutputPaths(stage, renderSettingsPrimPath):
     if not settings:
         return []
 
-    outputPaths = []
+    outputs = []
     for productPath in settings.GetProductsRel().GetForwardedTargets():
         product = UsdRender.Product(stage.GetPrimAtPath(productPath))
         if not product:
@@ -78,7 +78,66 @@ def _GetRenderProductOutputPaths(stage, renderSettingsPrimPath):
 
         productName = productNameAttr.Get()
         if productName:
-            outputPaths.append(str(productName))
+            outputs.append((product, str(productName)))
+
+    return outputs
+
+
+def _EnsureDirectory(directoryPath, description):
+    try:
+        os.makedirs(directoryPath, exist_ok=True)
+    except OSError as e:
+        raise RuntimeError(
+            'Could not create {0} directory {1!r}: {2}'.format(
+                description, directoryPath, e))
+
+    if not os.path.isdir(directoryPath):
+        raise RuntimeError(
+            '{0} path {1!r} exists but is not a directory'.format(
+                description, directoryPath))
+
+
+def _PrepareOutputRoot(outputRoot):
+    if not outputRoot:
+        return None
+
+    outputRoot = os.path.abspath(os.path.expanduser(outputRoot))
+    _EnsureDirectory(outputRoot, 'outputRoot')
+    return outputRoot
+
+
+def _PrependOutputRoot(outputRoot, outputPath):
+    if not outputRoot:
+        return outputPath
+
+    return os.path.join(outputRoot, outputPath.lstrip('/\\'))
+
+
+def _ApplyOutputRootToRenderProducts(
+        stage, sessionLayer, renderProductOutputs, outputRoot):
+    outputPaths = [
+        _PrependOutputRoot(outputRoot, outputPath)
+        for _, outputPath in renderProductOutputs
+    ]
+
+    if not outputRoot:
+        return outputPaths
+
+    for outputPath in outputPaths:
+        outputDirectory = os.path.dirname(outputPath)
+        if outputDirectory:
+            _EnsureDirectory(outputDirectory, 'output')
+
+    previousEditTarget = stage.GetEditTarget()
+    stage.SetEditTarget(sessionLayer)
+    try:
+        for (product, _), outputPath in zip(renderProductOutputs, outputPaths):
+            if not product.GetProductNameAttr().Set(outputPath):
+                raise RuntimeError(
+                    'Could not author output path {0!r} on RenderProduct <{1}>'.
+                    format(outputPath, product.GetPath()))
+    finally:
+        stage.SetEditTarget(previousEditTarget)
 
     return outputPaths
 
@@ -266,6 +325,12 @@ def main() -> int:
             'Specify the RenderSettings prim to use. This overrides any '
             'renderSettingsPrimPath specified in stage metadata.'))
 
+    parser.add_argument('--outputRoot', action='store', type=str,
+        default=None, metavar='DIR',
+        help=(
+            'Directory to prepend to authored RenderProduct productName '
+            'output paths. The directory is created if it does not exist.'))
+
     parser.add_argument('--traceToFile', action='store',
         type=str, dest='traceToFile', default=None,
         help=(
@@ -294,6 +359,12 @@ def main() -> int:
 
     if args.imageWidth is not None:
         args.imageWidth = max(args.imageWidth, 1)
+
+    try:
+        outputRoot = _PrepareOutputRoot(args.outputRoot)
+    except RuntimeError as e:
+        _Err(str(e))
+        return 1
 
     purposes = args.purposes.replace(',', ' ').split()
 
@@ -383,11 +454,18 @@ def main() -> int:
         _Err('Unknown RenderSettings prim <{}>'.format(args.rsPrimPath))
         return 1
 
-    renderProductOutputPaths = _GetRenderProductOutputPaths(
+    renderProductOutputs = _GetRenderProductOutputs(
         usdStage, args.rsPrimPath)
-    if not renderProductOutputPaths:
+    if not renderProductOutputs:
         _Err('RenderSettings <{}> has no RenderProduct with an authored '
              'non-empty productName output path'.format(args.rsPrimPath))
+        return 1
+
+    try:
+        renderProductOutputPaths = _ApplyOutputRootToRenderProducts(
+            usdStage, sessionLayer, renderProductOutputs, outputRoot)
+    except RuntimeError as e:
+        _Err(str(e))
         return 1
 
     renderResolution = None
