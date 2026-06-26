@@ -47,6 +47,7 @@ python -c "import os, pathlib, sysconfig; p = pathlib.Path(sysconfig.get_path('p
 
 usdview = { cmd = "usdview --complexity high --renderer Embree" }
 usdrecord = { cmd = "usdrecord --complexity high --renderer Embree" }
+usdrender = { cmd = "usdrecord --complexity high --renderer Embree" }
 
 [target.win-64.dependencies]
 tbb-devel = "*"
@@ -58,3 +59,4 @@ build = { cmd = '''"$CONDA_PREFIX/Library/bin/cmake.exe" --build build --target 
 
 usdview = { cmd = "usdview --complexity high --renderer Embree" }
 usdrecord = { cmd = "usdrecord --complexity high --renderer Embree" }
+usdrender = { cmd = "usdrecord --complexity high --renderer Embree" }
