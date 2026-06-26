@@ -46,6 +46,7 @@ python -c "import os, pathlib, sysconfig; p = pathlib.Path(sysconfig.get_path('p
 ''', depends-on = ["configure"] }
 
 usdview = { cmd = "usdview --complexity high --renderer Embree" }
+usdrecord = { cmd = "usdrecord --complexity high --renderer Embree" }
 
 [target.win-64.dependencies]
 tbb-devel = "*"
@@ -56,3 +57,4 @@ configure = { cmd = '''"$CONDA_PREFIX/Library/bin/cmake.exe" -B build -G Ninja -
 build = { cmd = '''"$CONDA_PREFIX/Library/bin/cmake.exe" --build build --target install && "$CONDA_PREFIX/python.exe" -c "import os, pathlib, sysconfig; prefix = os.environ['CONDA_PREFIX']; p = pathlib.Path(sysconfig.get_path('purelib'), 'openusd-pxr.pth'); p.parent.mkdir(parents=True, exist_ok=True); dll_line = 'import os; os._openusd_dll_dirs=[os.add_dll_directory(os.path.join(os.environ[' + repr('CONDA_PREFIX') + '], path)) for path in ' + repr(('Lib', 'Library/bin')) + ' if os.path.isdir(os.path.join(os.environ[' + repr('CONDA_PREFIX') + '], path))]\n'; p.write_text(dll_line + os.path.join(prefix, 'lib', 'python') + '\n')"''', depends-on = ["configure"] }
 
 usdview = { cmd = "usdview --complexity high --renderer Embree" }
+usdrecord = { cmd = "usdrecord --complexity high --renderer Embree" }
