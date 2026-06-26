@@ -7,6 +7,7 @@
 #include "pxr/imaging/plugin/hdEmbree/renderDelegate.h"
 #include "pxr/imaging/plugin/hdEmbree/renderBuffer.h"
 
+#include "pxr/base/gf/vec2i.h"
 #include "pxr/imaging/hd/renderIndex.h"
 #include "pxr/imaging/hd/renderPass.h"
 #include "pxr/imaging/hd/renderPassState.h"
@@ -88,7 +89,8 @@ _TestRenderDelegateSettings()
 
     const TfTokenVector namespaces = delegate.GetRenderSettingsNamespaces();
     const TfTokenVector expectedNamespaces = {
-        TfToken("ty")
+        TfToken("ty"),
+        TfToken()
     };
     if (namespaces != expectedNamespaces) {
         std::printf("unexpected render settings namespaces\n");
@@ -105,7 +107,7 @@ _TestRenderDelegateSettings()
         HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
         HdEmbreeRenderSettingsTokens->randomNumberSeed,
         HdEmbreeRenderSettingsTokens->samplerSequence,
-        HdEmbreeRenderSettingsTokens->domeLightCameraVisibility,
+        HdRenderSettingsTokens->domeLightCameraVisibility,
         HdEmbreeRenderSettingsTokens->enableExposureCompensation,
         HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
         HdEmbreeRenderSettingsTokens->adaptiveThreshold,
@@ -139,17 +141,27 @@ _TestRenderDelegateSettings()
         }
     }
 
+    if (!delegate.GetRenderSetting(
+            TfToken("ty:domeLightCameraVisibility")).IsEmpty()) {
+        std::printf("old ty dome light render setting exists\n");
+        return false;
+    }
+
     for (HdRenderSettingDescriptor const& descriptor : descriptors) {
         const std::string key = descriptor.key.GetString();
-        if (key.compare(0, 3, "ty:") != 0) {
-            std::printf("non-ty render setting descriptor: %s\n",
+        if (delegate.GetRenderSetting(descriptor.key) !=
+            descriptor.defaultValue) {
+            std::printf("default setting missing for descriptor: %s\n",
                         descriptor.key.GetText());
             return false;
         }
 
-        if (delegate.GetRenderSetting(descriptor.key) !=
-            descriptor.defaultValue) {
-            std::printf("default setting missing for descriptor: %s\n",
+        if (descriptor.key == HdRenderSettingsTokens->domeLightCameraVisibility) {
+            continue;
+        }
+
+        if (key.compare(0, 3, "ty:") != 0) {
+            std::printf("non-ty render setting descriptor: %s\n",
                         descriptor.key.GetText());
             return false;
         }
@@ -189,10 +201,23 @@ _TestAuthoredNamespacedSettings()
     UsdRenderSettings settings =
         UsdRenderSettings::Define(stage, SdfPath("/RenderSettings"));
 
+    if (!settings.GetResolutionAttr().Set(GfVec2i(64, 64))) {
+        std::printf("failed to author built-in resolution\n");
+        return false;
+    }
+
     UsdAttribute maxBouncesAttr =
         settings.GetPrim().GetAttribute(TfToken("ty:maxBounces"));
     if (!maxBouncesAttr || !maxBouncesAttr.Set(8)) {
         std::printf("failed to author ty:maxBounces\n");
+        return false;
+    }
+
+    UsdAttribute domeVisibilityAttr = settings.GetPrim().CreateAttribute(
+        HdRenderSettingsTokens->domeLightCameraVisibility,
+        SdfValueTypeNames->Bool);
+    if (!domeVisibilityAttr || !domeVisibilityAttr.Set(false)) {
+        std::printf("failed to author domeLightCameraVisibility\n");
         return false;
     }
 
@@ -204,12 +229,48 @@ _TestAuthoredNamespacedSettings()
         return false;
     }
 
+    if (namespacedSettings.find("domeLightCameraVisibility") !=
+        namespacedSettings.end()) {
+        std::printf("ty namespace request included generic dome setting\n");
+        return false;
+    }
+
     for (const auto& entry : namespacedSettings) {
         if (entry.first.compare(0, 3, "ty:") != 0) {
             std::printf("non-ty authored render setting: %s\n",
                         entry.first.c_str());
             return false;
         }
+    }
+
+    const VtDictionary allCustomSettings =
+        UsdRenderComputeNamespacedSettings(
+            settings.GetPrim(), TfTokenVector());
+    if (!_HasSettingValue<int>(
+            allCustomSettings, "ty:maxBounces", 8) ||
+        !_HasSettingValue<bool>(
+            allCustomSettings, "domeLightCameraVisibility", false)) {
+        return false;
+    }
+
+    if (allCustomSettings.find("resolution") != allCustomSettings.end()) {
+        std::printf("all custom settings included built-in resolution\n");
+        return false;
+    }
+
+    const VtDictionary requestedSettings =
+        UsdRenderComputeNamespacedSettings(
+            settings.GetPrim(), {TfToken("ty"), TfToken()});
+    if (!_HasSettingValue<int>(
+            requestedSettings, "ty:maxBounces", 8) ||
+        !_HasSettingValue<bool>(
+            requestedSettings, "domeLightCameraVisibility", false)) {
+        return false;
+    }
+
+    if (requestedSettings.find("resolution") != requestedSettings.end()) {
+        std::printf("requested settings included built-in resolution\n");
+        return false;
     }
 
     return true;
@@ -228,11 +289,23 @@ _TestActiveRenderSettingsPrimBridge()
     const TfToken unprefixedMaxBounces(
         HdEmbreeRenderSettingsTokens->maxBounces.GetString().substr(3));
 
+    HdEmbreeRenderDelegate delegate;
+    const bool defaultDomeLightCameraVisibility =
+        delegate.GetRenderSetting<bool>(
+            HdRenderSettingsTokens->domeLightCameraVisibility, false);
+    const bool authoredDomeLightCameraVisibility =
+        !defaultDomeLightCameraVisibility;
+
     HdRenderSettingsSchema::Builder renderSettingsBuilder;
     renderSettingsBuilder.SetNamespacedSettings(
         HdRetainedContainerDataSource::New(
             HdEmbreeRenderSettingsTokens->maxBounces,
             HdRetainedSampledDataSource::New(VtValue(3)),
+            TfToken("ty:domeLightCameraVisibility"),
+            HdRetainedSampledDataSource::New(VtValue(true)),
+            HdRenderSettingsTokens->domeLightCameraVisibility,
+            HdRetainedSampledDataSource::New(
+                VtValue(authoredDomeLightCameraVisibility)),
             unprefixedMaxBounces,
             HdRetainedSampledDataSource::New(VtValue(99))));
 
@@ -247,7 +320,6 @@ _TestActiveRenderSettingsPrimBridge()
              renderSettingsBuilder.Build())}
     });
 
-    HdEmbreeRenderDelegate delegate;
     std::unique_ptr<HdRenderIndex> renderIndex(
         HdRenderIndex::New(&delegate, HdDriverVector(), sceneIndex));
     if (!renderIndex) {
@@ -290,6 +362,20 @@ _TestActiveRenderSettingsPrimBridge()
         return false;
     }
 
+    if (!delegate.GetRenderSetting(
+            TfToken("ty:domeLightCameraVisibility")).IsEmpty()) {
+        std::printf("active RenderSettings bridged old ty dome setting\n");
+        return false;
+    }
+
+    const bool domeLightCameraVisibility = delegate.GetRenderSetting<bool>(
+        HdRenderSettingsTokens->domeLightCameraVisibility,
+        defaultDomeLightCameraVisibility);
+    if (domeLightCameraVisibility != authoredDomeLightCameraVisibility) {
+        std::printf("active RenderSettings domeLightCameraVisibility was not bridged\n");
+        return false;
+    }
+
     return true;
 }
 
@@ -319,7 +405,6 @@ _TestTyphoonRenderSettingsAPI()
         TfToken("ty:convergedSamplesPerPixel"),
         TfToken("ty:randomNumberSeed"),
         TfToken("ty:samplerSequence"),
-        TfToken("ty:domeLightCameraVisibility"),
         TfToken("ty:enableExposureCompensation"),
         TfToken("ty:enableAdaptiveSampling"),
         TfToken("ty:adaptiveThreshold"),

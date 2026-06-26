@@ -61,10 +61,6 @@ class "TyphoonRenderSettingsAPI" (
         doc = """Sampler sequence used for domain-aware renderer sampling."""
     )
 
-    uniform bool ty:domeLightCameraVisibility = true (
-        doc = """Make dome lights directly visible to camera rays."""
-    )
-
     uniform bool ty:enableExposureCompensation = true (
         doc = """Apply camera exposure compensation."""
     )

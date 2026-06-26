@@ -29,7 +29,6 @@ class HdEmbreeRenderParam;
     ((convergedSamplesPerPixel, "ty:convergedSamplesPerPixel")) \
     ((randomNumberSeed, "ty:randomNumberSeed")) \
     ((samplerSequence, "ty:samplerSequence")) \
-    ((domeLightCameraVisibility, "ty:domeLightCameraVisibility")) \
     ((enableExposureCompensation, "ty:enableExposureCompensation")) \
     ((enableAdaptiveSampling, "ty:enableAdaptiveSampling")) \
     ((adaptiveThreshold, "ty:adaptiveThreshold")) \

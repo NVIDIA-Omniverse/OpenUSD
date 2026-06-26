@@ -156,7 +156,7 @@ HdEmbreeRenderDelegate::_Initialize()
             HdEmbreeRenderSettingsTokens->samplerSequence,
             VtValue(config.samplerSequence) },
         { "Dome Light Camera Visibility",
-            HdEmbreeRenderSettingsTokens->domeLightCameraVisibility,
+            HdRenderSettingsTokens->domeLightCameraVisibility,
             VtValue(config.domeLightCameraVisibility) },
         { "Enable Exposure Compensation",
             HdEmbreeRenderSettingsTokens->enableExposureCompensation,
@@ -293,7 +293,8 @@ TfTokenVector
 HdEmbreeRenderDelegate::GetRenderSettingsNamespaces() const
 {
     static const TfTokenVector namespaces = {
-        TfToken("ty", TfToken::Immortal)
+        TfToken("ty", TfToken::Immortal),
+        TfToken()
     };
     return namespaces;
 }

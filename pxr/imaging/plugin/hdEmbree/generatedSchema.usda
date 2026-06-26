@@ -40,11 +40,6 @@ class "TyphoonRenderSettingsAPI" (
             string userDocBrief = "Rough dielectric top-layer throughput estimate mode."
         }
     )
-    uniform bool ty:domeLightCameraVisibility = 1 (
-        customData = {
-            string userDocBrief = "Make dome lights directly visible to camera rays."
-        }
-    )
     uniform bool ty:enableAdaptiveSampling = 1 (
         customData = {
             string userDocBrief = "Use adaptive sampling to skip converged pixels."

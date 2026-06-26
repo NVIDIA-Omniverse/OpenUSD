@@ -67,12 +67,37 @@ _AddNamespacedRenderSettings(
             continue;
         }
 
+        if (name == TfToken("ty:domeLightCameraVisibility")) {
+            continue;
+        }
+
         if (auto ds = container->Get(name)) {
             if (auto sampled = HdSampledDataSource::Cast(ds)) {
                 VtValue value = sampled->GetValue(0);
                 if (!value.IsEmpty()) {
                     (*renderSettings)[name] = value;
                 }
+            }
+        }
+    }
+}
+
+static void
+_AddRenderSetting(
+    HdSampledDataSourceContainerSchema const &namespacedSettings,
+    TfToken const &key,
+    _RenderSettingsMap *renderSettings)
+{
+    HdContainerDataSourceHandle container = namespacedSettings.GetContainer();
+    if (!container) {
+        return;
+    }
+
+    if (auto ds = container->Get(key)) {
+        if (auto sampled = HdSampledDataSource::Cast(ds)) {
+            VtValue value = sampled->GetValue(0);
+            if (!value.IsEmpty()) {
+                (*renderSettings)[key] = value;
             }
         }
     }
@@ -90,6 +115,10 @@ _GetNamespacedRenderSettings(HdRenderSettingsSchema const &rsSchema)
         rsSchema.GetNamespacedSettings();
     _AddNamespacedRenderSettings(
         namespacedSettings, "ty:", &renderSettings);
+    _AddRenderSetting(
+        namespacedSettings,
+        HdRenderSettingsTokens->domeLightCameraVisibility,
+        &renderSettings);
     return renderSettings;
 }
 
@@ -732,7 +761,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
         _renderer->SetDomeLightCameraVisibility(
             renderDelegate->GetRenderSetting<bool>(
-                HdEmbreeRenderSettingsTokens->domeLightCameraVisibility,
+                HdRenderSettingsTokens->domeLightCameraVisibility,
                 config.domeLightCameraVisibility));
 
         _renderer->SetEnableSceneColors(

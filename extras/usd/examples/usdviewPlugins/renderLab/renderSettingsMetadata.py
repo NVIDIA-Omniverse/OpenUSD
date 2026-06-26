@@ -122,7 +122,7 @@ _RENDERERS = {
                 "category": "Scene",
                 "order": 20,
             },
-            "ty:domeLightCameraVisibility": {
+            "domeLightCameraVisibility": {
                 "category": "Scene",
                 "order": 30,
             },
