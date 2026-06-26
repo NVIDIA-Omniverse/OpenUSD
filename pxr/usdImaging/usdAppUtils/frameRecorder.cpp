@@ -59,6 +59,7 @@ UsdAppUtilsFrameRecorder::UsdAppUtilsFrameRecorder(
     _imagingEngine(_GetParams(
         HdDriver(), rendererPluginId, gpuEnabled, enableUsdDrawModes)),
     _imageWidth(960u),
+    _imageHeight(0u),
     _complexity(1.0f),
     _colorCorrectionMode(HdxColorCorrectionTokens->disabled),
     _purposes({UsdGeomTokens->default_, UsdGeomTokens->proxy}),
@@ -414,9 +415,11 @@ UsdAppUtilsFrameRecorder::Record(
     if (GfIsClose(aspectRatio, 0.0f, 1e-4)) {
         aspectRatio = 1.0f;
     }
-    const size_t imageHeight = std::max<size_t>(
-        static_cast<size_t>(static_cast<float>(_imageWidth) / aspectRatio),
-        1u);
+    const size_t imageHeight = _imageHeight > 0u
+        ? _imageHeight
+        : std::max<size_t>(
+            static_cast<size_t>(static_cast<float>(_imageWidth) / aspectRatio),
+            1u);
 
     _imagingEngine.SetRendererAov(HdAovTokens->color);
 
