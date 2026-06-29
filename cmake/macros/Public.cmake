@@ -189,9 +189,8 @@ function(pxr_cpp_bin BIN_NAME)
         ${cb_INCLUDE_DIRS}
     )
 
-    _pxr_init_rpath(rpath "${installDir}")
-    _pxr_add_rpath(rpath "${CMAKE_INSTALL_PREFIX}/lib")
-    _pxr_install_rpath(rpath ${BIN_NAME})
+    _pxr_set_install_rpath(${BIN_NAME} "${installDir}"
+        PATHS "${CMAKE_INSTALL_PREFIX}/lib")
 
     _pxr_target_link_libraries(${BIN_NAME}
         ${cb_LIBRARIES}
@@ -577,9 +576,8 @@ function(pxr_build_test_shared_lib LIBRARY_NAME)
 
     # Find libraries under the install prefix, which has the core USD
     # libraries.
-    _pxr_init_rpath(rpath "tests/lib")
-    _pxr_add_rpath(rpath "${CMAKE_INSTALL_PREFIX}/lib")
-    _pxr_install_rpath(rpath ${LIBRARY_NAME})
+    _pxr_set_install_rpath(${LIBRARY_NAME} "tests/lib"
+        PATHS "${CMAKE_INSTALL_PREFIX}/lib")
 
     if (NOT bt_SOURCE_DIR)
         set(bt_SOURCE_DIR testenv)
@@ -665,9 +663,8 @@ function(pxr_build_test TEST_NAME)
 
     # Find libraries under the install prefix, which has the core USD
     # libraries.
-    _pxr_init_rpath(rpath "tests")
-    _pxr_add_rpath(rpath "${CMAKE_INSTALL_PREFIX}/lib")
-    _pxr_install_rpath(rpath ${TEST_NAME})
+    _pxr_set_install_rpath(${TEST_NAME} "tests"
+        PATHS "${CMAKE_INSTALL_PREFIX}/lib")
 
     # XXX -- We shouldn't have to install to run tests.
     if(EMSCRIPTEN)
@@ -1291,10 +1288,10 @@ function(pxr_toplevel_epilogue)
                     ${PXR_THREAD_LIBS}
             )
 
-            _pxr_init_rpath(rpath "${libInstallPrefix}")
-            _pxr_add_rpath(rpath "${CMAKE_INSTALL_PREFIX}/${PXR_INSTALL_SUBDIR}/lib")
-            _pxr_add_rpath(rpath "${CMAKE_INSTALL_PREFIX}/lib")
-            _pxr_install_rpath(rpath usd_m)
+            _pxr_set_install_rpath(usd_m "${libInstallPrefix}"
+                PATHS
+                    "${CMAKE_INSTALL_PREFIX}/${PXR_INSTALL_SUBDIR}/lib"
+                    "${CMAKE_INSTALL_PREFIX}/lib")
         else()
             foreach(lib ${PXR_OBJECT_LIBS})
                 target_link_libraries(usd_m
@@ -1431,12 +1428,7 @@ function(pxr_set_rpaths_for_target TARGET)
     set(multiValueArgs RPATHS)
     cmake_parse_arguments(args "" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
-    _pxr_init_rpath(rpath ${args_ORIGIN})
-
-    foreach(path IN LISTS args_RPATHS)
-        _pxr_add_rpath(rpath ${path})
-    endforeach()
-
-    _pxr_install_rpath(rpath ${TARGET})
+    _pxr_set_install_rpath(${TARGET} "${args_ORIGIN}"
+        PATHS ${args_RPATHS})
 
 endfunction() # pxr_set_rpaths_for_target
