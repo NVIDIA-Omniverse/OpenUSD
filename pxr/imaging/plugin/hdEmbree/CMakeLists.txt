@@ -11,7 +11,10 @@ if (NOT ${PXR_BUILD_GPU_SUPPORT})
     return()
 endif()
 
+add_subdirectory(BSDL)
+
 set(_hdEmbree_libraries
+    BSDL::BSDL
     tf
     vt
     gf
@@ -172,6 +175,7 @@ else()
 endif()
 
 set(__MXCPP_TEST_LIBS
+    BSDL::BSDL
     ${__MXCPP_TEST_IMATH_LIBS}
     ${EMBREE_LIBRARY}
 )
