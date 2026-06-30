@@ -113,20 +113,75 @@ def _PrependOutputRoot(outputRoot, outputPath):
     return os.path.join(outputRoot, outputPath.lstrip('/\\'))
 
 
+def _DefaultFrameString(frame):
+    frame = float(frame)
+    if frame.is_integer():
+        return str(int(frame))
+    return format(frame, 'g')
+
+
+def _FrameFormatValue(frame):
+    frame = float(frame)
+    if frame.is_integer():
+        return int(frame)
+    return frame
+
+
+def _ExpandFramePlaceholders(outputPath, frame):
+    if frame is None or '{frame' not in outputPath:
+        return outputPath
+
+    result = []
+    cursor = 0
+    while True:
+        start = outputPath.find('{frame', cursor)
+        if start == -1:
+            result.append(outputPath[cursor:])
+            break
+
+        result.append(outputPath[cursor:start])
+        end = outputPath.find('}', start)
+        if end == -1:
+            raise RuntimeError(
+                'Output path {!r} has an unterminated frame placeholder'.format(
+                    outputPath))
+
+        field = outputPath[start + 1:end]
+        if field == 'frame':
+            result.append(_DefaultFrameString(frame))
+        elif field.startswith('frame:'):
+            spec = field[len('frame:'):]
+            try:
+                result.append(format(_FrameFormatValue(frame), spec))
+            except ValueError as e:
+                raise RuntimeError(
+                    'Output path {!r} has an invalid frame format {!r}: {}'.format(
+                        outputPath, spec, e))
+        else:
+            raise RuntimeError(
+                'Output path {!r} has unsupported frame placeholder {{{}}}'.format(
+                    outputPath, field))
+        cursor = end + 1
+
+    return ''.join(result)
+
+
 def _ApplyOutputRootToRenderProducts(
-        stage, sessionLayer, renderProductOutputs, outputRoot):
+        stage, sessionLayer, renderProductOutputs, outputRoot, frame=None):
     outputPaths = [
-        _PrependOutputRoot(outputRoot, outputPath)
+        _ExpandFramePlaceholders(_PrependOutputRoot(outputRoot, outputPath), frame)
         for _, outputPath in renderProductOutputs
     ]
 
-    if not outputRoot:
-        return outputPaths
+    if outputRoot:
+        for outputPath in outputPaths:
+            outputDirectory = os.path.dirname(outputPath)
+            if outputDirectory:
+                _EnsureDirectory(outputDirectory, 'output')
 
-    for outputPath in outputPaths:
-        outputDirectory = os.path.dirname(outputPath)
-        if outputDirectory:
-            _EnsureDirectory(outputDirectory, 'output')
+    if not outputRoot and outputPaths == [
+            outputPath for _, outputPath in renderProductOutputs]:
+        return outputPaths
 
     previousEditTarget = stage.GetEditTarget()
     stage.SetEditTarget(sessionLayer)
@@ -526,6 +581,14 @@ def main() -> int:
     _Msg('Renderer plugin: %s' % frameRecorder.GetCurrentRendererId())
 
     for timeCode in args.frames:
+        try:
+            renderProductOutputPaths = _ApplyOutputRootToRenderProducts(
+                usdStage, sessionLayer, renderProductOutputs, outputRoot,
+                frame=timeCode)
+        except RuntimeError as e:
+            _Err(str(e))
+            return 1
+
         _Msg('Recording time code: %f' % timeCode)
         try:
             frameRecorder.Record(
