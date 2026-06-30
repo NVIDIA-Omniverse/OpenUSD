@@ -265,8 +265,6 @@ DielectricLobe<BSDF_ROOT>::DielectricLobe(T* lobe, const BsdfGlobals& globals,
     Base::set_roughness(roughness);
 
     if (MAX_RGB(data.absorption) > 0 && dorefl && !dorefr) {
-        constexpr auto fast_exp = BSDL_CONFIG::Fast::expf;
-
         float cos_p = cosNO;
         // Take into account how the ray bends with the refraction to compute
         // the traveled distance through absorption.
@@ -277,7 +275,7 @@ DielectricLobe<BSDF_ROOT>::DielectricLobe(T* lobe, const BsdfGlobals& globals,
 
         const Power sigma_a = globals.wave(data.absorption);
         wo_absorption
-            = Power([&](int i) { return fast_exp(-sigma_a[i] * dist); },
+            = Power([&](int i) { return BSDL_CONFIG::Fast::expf(-sigma_a[i] * dist); },
                     globals.lambda_0);
     }
 }

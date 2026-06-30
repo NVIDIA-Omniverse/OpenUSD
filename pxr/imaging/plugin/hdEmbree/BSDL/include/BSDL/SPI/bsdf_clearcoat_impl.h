@@ -117,11 +117,9 @@ ClearCoatLobe<BSDF_ROOT>::ClearCoatLobe(T* lobe, const BsdfGlobals& globals,
                       1.0f);
         const float dist = 1 / std::max(cos_p, FLOAT_MIN);
 
-        constexpr auto fast_exp = BSDL_CONFIG::Fast::expf;
-
         const Power sigma_a = globals.wave(data.sigma_a);
         wo_absorption
-            = Power([&](int i) { return fast_exp(-sigma_a[i] * dist); },
+            = Power([&](int i) { return BSDL_CONFIG::Fast::expf(-sigma_a[i] * dist); },
                     globals.lambda_0);
     } else
         wo_absorption = Power(1, globals.lambda_0);

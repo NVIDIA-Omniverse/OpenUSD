@@ -303,12 +303,10 @@ ThinMicrofacet<Dist>::attenuation(Imath::V3f wo, Imath::V3f m, Power* refl,
     const float Rin = LERP(roughness, f.eval_inv(cosNR), f.avg_invf());
     // Attenuation for one segment or bounce inside the layer
     Power A = Power::UNIT();
-
-    constexpr auto fast_exp = BSDL_CONFIG::Fast::expf;
     if (d > 0) {
         A = Power(
             [&](int i) {
-                return sigma_t[i] > 0 ? fast_exp(-d * sigma_t[i]) : 1;
+                return sigma_t[i] > 0 ? BSDL_CONFIG::Fast::expf(-d * sigma_t[i]) : 1;
             },
             1);
     }
@@ -427,7 +425,6 @@ template<typename BSDF_ROOT>
 BSDL_INLINE_METHOD std::pair<Power, Power>
 ThinLayerLobe<BSDF_ROOT>::get_diff_trans() const
 {
-    constexpr auto fast_exp = BSDL_CONFIG::Fast::expf;
     // Start with average fresnel
     const float Tf = 1 - spec.fresnel().avgf(),
                 Tb = 1 - spec.fresnel().avg_invf();
@@ -440,7 +437,7 @@ ThinLayerLobe<BSDF_ROOT>::get_diff_trans() const
     // Diffuse and Translucent lobes for energy compensation
     const float avgd = spec.thickness * Thinlayer::AVG_INV_COS;
 
-    Power A([&](int i) { return fast_exp(-avgd * spec.sigma_t[i]); }, 1);
+    Power A([&](int i) { return BSDL_CONFIG::Fast::expf(-avgd * spec.sigma_t[i]); }, 1);
     // Sum up series for the tints
     Power diff_tint(
         [&](int i) { return Thinlayer::sum_refl_series(Rout, Tin, Rin, A[i]); },

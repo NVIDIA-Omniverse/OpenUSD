@@ -39,8 +39,6 @@ PhysicalHairLobe<BSDF_ROOT>::PhysicalHairLobe(T* lobe,
     // Compute hair coordinate system terms related to _wo_
     const float sinThetaO = CLAMP(globals.wo.dot(Base::frame.Z), -1.0f, 1.0f);
     const float cosThetaO = sqrtf(1 - SQR(sinThetaO));
-
-    constexpr auto fast_exp  = BSDL_CONFIG::Fast::expf;
     constexpr auto fast_asin = BSDL_CONFIG::Fast::asinf;
     gammaO                   = fast_asin(data.h);
 
@@ -57,7 +55,7 @@ PhysicalHairLobe<BSDF_ROOT>::PhysicalHairLobe(T* lobe,
     // Compute the transmittance _T_ of a single path through the cylinder
     float l          = 2 * cosGammaT / cosThetaT;
     Power absorption = globals.wave(data.absorption);
-    Power tau([&](int i) { return fast_exp(-absorption[i] * l); },
+    Power tau([&](int i) { return BSDL_CONFIG::Fast::expf(-absorption[i] * l); },
               globals.lambda_0);
 
     ap = Ap(cosThetaO, eta, data.h, tau, globals.lambda_0);
@@ -211,15 +209,13 @@ PhysicalHairLobe<BSDF_ROOT>::sample_impl(const Imath::V3f& wo,
 
     auto vs = variances(lrough, trough, arough, scattering, cosThetaO);
     std::array<float, P_MAX + 1> v = vs.first, s = vs.second;
-
-    constexpr auto fast_exp    = BSDL_CONFIG::Fast::expf;
     constexpr auto fast_log    = BSDL_CONFIG::Fast::logf;
     constexpr auto fast_cos    = BSDL_CONFIG::Fast::cosf;
     constexpr auto fast_sincos = BSDL_CONFIG::Fast::sincosf;
     // Sample $M_p$ to compute $\thetai$
     rnd.x = MAX(rnd.x, 1e-5f);
     float cosTheta
-        = 1 + v[p] * fast_log(rnd.x + (1 - rnd.x) * fast_exp(-2 / v[p]));
+        = 1 + v[p] * fast_log(rnd.x + (1 - rnd.x) * BSDL_CONFIG::Fast::expf(-2 / v[p]));
     float sinTheta  = sqrtf(MAX(1 - SQR(cosTheta), 0.0f));
     float cosPhi    = fast_cos(2 * PI * rnd.y);
     float sinThetaI = -cosTheta * sinThetaOp + sinTheta * cosPhi * cosThetaOp;
@@ -293,13 +289,12 @@ BSDL_INLINE_METHOD
                                            float arough, float scattering,
                                            float cosThetaO)
 {
-    constexpr auto fast_exp   = BSDL_CONFIG::Fast::expf;
     constexpr auto fast_log1p = BSDL_CONFIG::Fast::log1pf;
     std::array<float, P_MAX + 1> v, s;
     const float sigma_s = -fast_log1p(-scattering);
     // This is the amount of light that goes unscattered through the hair
     // medium. We use this to boost exit roughness and fake scattering.
-    const float unscattered = fast_exp(-sigma_s / cosThetaO);
+    const float unscattered = BSDL_CONFIG::Fast::expf(-sigma_s / cosThetaO);
     v[0] = RemapLongitudinalRoughness(lrough);  //   R lobe (primary spec)
     v[1] = 0.25f
            * RemapLongitudinalRoughness(
@@ -370,11 +365,10 @@ template<typename BSDF_ROOT>
 BSDL_INLINE_METHOD float
 PhysicalHairLobe<BSDF_ROOT>::bessi0_time_exp(float x, float exponent)
 {
-    constexpr auto fast_exp = BSDL_CONFIG::Fast::expf;
     float ax                = fabsf(x);
     if (ax < 3.75f) {
         float y = SQR(x / 3.75f);
-        return fast_exp(exponent)
+        return BSDL_CONFIG::Fast::expf(exponent)
                * (1.0f
                   + y
                         * (3.5156229f
@@ -389,7 +383,7 @@ PhysicalHairLobe<BSDF_ROOT>::bessi0_time_exp(float x, float exponent)
                                                                + y * 0.45813e-2f))))));
     } else {
         float y = 3.75f / ax;
-        return (fast_exp(ax + exponent) / sqrtf(ax))
+        return (BSDL_CONFIG::Fast::expf(ax + exponent) / sqrtf(ax))
                * (0.39894228f
                   + y
                         * (0.1328592e-1f
@@ -414,7 +408,6 @@ BSDL_INLINE_METHOD float
 PhysicalHairLobe<BSDF_ROOT>::Mp(float cosThetaI, float cosThetaO,
                                 float sinThetaI, float sinThetaO, float v)
 {
-    constexpr auto fast_exp = BSDL_CONFIG::Fast::expf;
     constexpr auto fast_log = BSDL_CONFIG::Fast::logf;
     constexpr auto fast_sinh = BSDL_CONFIG::Fast::sinhf;
 
@@ -422,7 +415,7 @@ PhysicalHairLobe<BSDF_ROOT>::Mp(float cosThetaI, float cosThetaO,
     float b = sinThetaI * sinThetaO / v;
     assert(!std::isnan(a));
     assert(!std::isnan(b));
-    float mp = v <= .1f ? fast_exp(log_bessi0(a) - b - 1 / v + 0.6931f
+    float mp = v <= .1f ? BSDL_CONFIG::Fast::expf(log_bessi0(a) - b - 1 / v + 0.6931f
                                    + fast_log(1 / (2 * v)))
                         : bessi0_time_exp(a, -b) / (fast_sinh(1 / v) * 2 * v);
     assert(mp == mp);
@@ -443,12 +436,10 @@ template<typename BSDF_ROOT>
 BSDL_INLINE_METHOD float
 PhysicalHairLobe<BSDF_ROOT>::TrimmedLogistic(float x, float s)
 {
-    constexpr auto fast_exp = BSDL_CONFIG::Fast::expf;
-
     assert(x >= -PI);
     assert(x <= PI);
-    const float t = std::min(fast_exp(PI / s), 1 / FLOAT_MIN);
-    const float y = std::max(fast_exp(-fabsf(x) / s), FLOAT_MIN);
+    const float t = std::min(BSDL_CONFIG::Fast::expf(PI / s), 1 / FLOAT_MIN);
+    const float y = std::max(BSDL_CONFIG::Fast::expf(-fabsf(x) / s), FLOAT_MIN);
     return (t + 1) * y / ((t - 1) * s * SQR(1 + y));
 }
 
@@ -471,10 +462,9 @@ template<typename BSDF_ROOT>
 BSDL_INLINE_METHOD float
 PhysicalHairLobe<BSDF_ROOT>::SampleTrimmedLogistic(float u, float s)
 {
-    constexpr auto fast_exp = BSDL_CONFIG::Fast::expf;
     constexpr auto fast_log = BSDL_CONFIG::Fast::logf;
 
-    const float t = std::min(fast_exp(PI / s), 1 / FLOAT_MIN);
+    const float t = std::min(BSDL_CONFIG::Fast::expf(PI / s), 1 / FLOAT_MIN);
     const float x = -s * fast_log((1 + t) / (u * (1 - t) + t) - 1);
     assert(!std::isnan(x));
     return CLAMP(x, -PI, PI);
@@ -548,8 +538,6 @@ HairDiffuseLobe<BSDF_ROOT>::HairDiffuseLobe(T* lobe, const BsdfGlobals& globals,
            globals.regularize_roughness(ecc2roughness(data.eccentricity)),
            globals.lambda_0, true)
 {
-    constexpr auto fast_exp = BSDL_CONFIG::Fast::expf;
-
     Base::sample_filter = globals.get_sample_filter(Base::frame.Z, false);
     const float R       = Base::roughness();
     eccentricity        = roughness2ecc(R, data.eccentricity);
@@ -564,7 +552,7 @@ HairDiffuseLobe<BSDF_ROOT>::HairDiffuseLobe(T* lobe, const BsdfGlobals& globals,
     const float d       = LERP(flatten, 1 / sin_t, 1.0f);
 
     Power abs = globals.wave(data.absorption);
-    color     = Power([&](int i) { return fast_exp(-abs[i] * d); },
+    color     = Power([&](int i) { return BSDL_CONFIG::Fast::expf(-abs[i] * d); },
                   globals.lambda_0);
 }
 
@@ -598,7 +586,6 @@ BSDL_INLINE_METHOD Sample
 HairDiffuseLobe<BSDF_ROOT>::sample_impl(const Imath::V3f& wo,
                                         const Imath::V3f& rnd) const
 {
-    constexpr auto fast_exp = BSDL_CONFIG::Fast::expf;
     constexpr auto fast_log = BSDL_CONFIG::Fast::logf;
     constexpr auto fast_cos = BSDL_CONFIG::Fast::cosf;
     constexpr auto fast_sincos = BSDL_CONFIG::Fast::sincosf;
@@ -610,7 +597,7 @@ HairDiffuseLobe<BSDF_ROOT>::sample_impl(const Imath::V3f& wo,
     const float v = PhysicalHairLobe<BSDF_ROOT>::RemapLongitudinalRoughness(
         ecc2longrough(eccentricity, anisotropy));
     const float x     = MAX(rnd.x, 1e-5f);
-    float sin_theta_m = 1 + v * fast_log(x + (1 - x) * fast_exp(-2 / v));
+    float sin_theta_m = 1 + v * fast_log(x + (1 - x) * BSDL_CONFIG::Fast::expf(-2 / v));
     float cos_theta_m = sqrtf(MAX(1 - SQR(sin_theta_m), 0.0f));
     float cos_p       = fast_cos(2 * PI * rnd.y);
     float cos_theta   = -sin_theta_m * cos_o + cos_theta_m * cos_p * sin_o;
@@ -685,7 +672,6 @@ HairSpecularLobe<BSDF_ROOT>::HairSpecularLobe(T* lobe,
            true)
     , trt(data.trt)
 {
-    constexpr auto fast_exp  = BSDL_CONFIG::Fast::expf;
     constexpr auto fast_sin  = BSDL_CONFIG::Fast::sinf;
     constexpr auto fast_asin = BSDL_CONFIG::Fast::asinf;
 
@@ -740,7 +726,7 @@ HairSpecularLobe<BSDF_ROOT>::HairSpecularLobe(T* lobe,
         float l             = LERP(flatten, 2 * cosGammaT / cosThetaT, 1.0f);
 
         Power absorption = globals.wave(data.absorption);
-        Power tau([&](int i) { return fast_exp(-absorption[i] * l); },
+        Power tau([&](int i) { return BSDL_CONFIG::Fast::expf(-absorption[i] * l); },
                   globals.lambda_0);
 
         // First fresnel atten comes from layering if R is present. This makes
@@ -798,7 +784,6 @@ HairSpecularLobe<BSDF_ROOT>::sample_impl(const Imath::V3f& wo,
 {
     constexpr auto fast_log    = BSDL_CONFIG::Fast::logf;
     constexpr auto fast_sincos = BSDL_CONFIG::Fast::sincosf;
-    constexpr auto fast_exp    = BSDL_CONFIG::Fast::expf;
     constexpr auto fast_cos    = BSDL_CONFIG::Fast::cosf;
 
     const float sinThetaO = CLAMP(wo.z, -1.0f, 1.0f);
@@ -817,7 +802,7 @@ HairSpecularLobe<BSDF_ROOT>::sample_impl(const Imath::V3f& wo,
     // Sample $M_p$ to compute $\thetai$
     rnd.x = std::max(rnd.x, 1e-5f);
     float cosTheta
-        = 1 + long_v * fast_log(rnd.x + (1 - rnd.x) * fast_exp(-2 / long_v));
+        = 1 + long_v * fast_log(rnd.x + (1 - rnd.x) * BSDL_CONFIG::Fast::expf(-2 / long_v));
     float sinTheta  = sqrtf(MAX(1 - SQR(cosTheta), 0.0f));
     float cosPhi    = fast_cos(2 * PI * rnd.y);
     float sinThetaI = -cosTheta * sinThetaOp + sinTheta * cosPhi * cosThetaOp;

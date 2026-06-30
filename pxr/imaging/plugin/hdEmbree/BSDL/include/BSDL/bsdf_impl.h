@@ -88,8 +88,6 @@ BSDL_INLINE_METHOD Power
 BsdfGlobals::Filter::eval(const T& lobe, const Imath::V3f& wo,
                           const Imath::V3f& Nf, const Imath::V3f& wi) const
 {
-    constexpr auto fast_exp = BSDL_CONFIG::Fast::expf;
-
     Power filter = Power(1, lambda_0);
     if (bump_alpha2 > 0.0f) {
         // This shadowing function is based in the GGX microfacet model
@@ -115,7 +113,7 @@ BsdfGlobals::Filter::eval(const T& lobe, const Imath::V3f& wo,
             = 1 / fabsf(lobe.frame.Z.dot(wi))
               + (legacy_absorption ? 1 / fabsf(lobe.frame.Z.dot(wo)) : 0);
         filter
-            *= Power([&](int i) { return fast_exp(-fabsf(sigma_t[i]) * dist); },
+            *= Power([&](int i) { return BSDL_CONFIG::Fast::expf(-fabsf(sigma_t[i]) * dist); },
                      lambda_0);
     }
     if (lambda_0 == 0) {
