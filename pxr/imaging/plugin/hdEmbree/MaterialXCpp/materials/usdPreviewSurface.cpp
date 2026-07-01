@@ -69,15 +69,17 @@ _Saturate(const Vec3f& value)
 }
 
 Vec3f
-_ExtinctionFromF0(const Vec3f& f0)
+_Lerp(const Vec3f& a, const Vec3f& b, float t)
 {
-    Vec3f extinction(0.0f);
-    for (int i = 0; i < 3; ++i) {
-        const float clamped = std::clamp(f0[i], 0.0f, 0.999f);
-        extinction[i] = 2.0f *
-            std::sqrt(clamped / std::max(1.0e-4f, 1.0f - clamped));
-    }
-    return extinction;
+    return a * (1.0f - t) + b * t;
+}
+
+float
+_DielectricF0FromIor(float ior)
+{
+    const float denom = std::max(std::abs(ior + 1.0f), 1.0e-6f);
+    float f0 = (1.0f - ior) / denom;
+    return f0 * f0;
 }
 
 Bsdf::NodeId
@@ -159,7 +161,8 @@ EvalUsdPreviewSurface(const ParamMap& params)
     c.roughness = Get<float>(params, _kRoughness, 0.5f);
     c.coat = Get<float>(params, _kClearcoat, 0.0f);
     c.coatRoughness = Get<float>(params, _kClearcoatRoughness, 0.01f);
-    c.coatIor = 1.5f;
+    c.specularIor = Get<float>(params, _kIor, 1.5f);
+    c.coatIor = c.specularIor;
 
     const float authoredOpacity =
         std::clamp(Get<float>(params, _kOpacity, 1.0f), 0.0f, 1.0f);
@@ -183,7 +186,6 @@ EvalUsdPreviewSurface(const ParamMap& params)
         c.transmission = 1.0f - authoredOpacity;
     }
 
-    c.specularIor = Get<float>(params, _kIor, 1.5f);
     c.normal = Get<Vec3f>(params, _kNormal, Vec3f(0.0f, 0.0f, 1.0f));
 
     c.transmissionColor = Vec3f(1.0f);
@@ -196,10 +198,10 @@ EvalUsdPreviewSurface(const ParamMap& params)
     const float diffuseWeight =
         _Clamp01((1.0f - c.metallic) * (1.0f - c.transmission));
     if (diffuseWeight > 0.0f) {
-        Bsdf::BurleyDiffuseData diffuse;
+        Bsdf::OrenNayarDiffuseData diffuse;
         diffuse.weight = diffuseWeight;
         diffuse.color = c.baseColor;
-        diffuse.roughness = c.roughness;
+        diffuse.roughness = 0.0f;
         root = _AppendAdd(&tree, root, tree.Add(diffuse));
     }
 
@@ -210,39 +212,26 @@ EvalUsdPreviewSurface(const ParamMap& params)
         Bsdf::GeneralizedSchlickData specular;
         specular.weight = 1.0f;
         specular.color0 = _Saturate(c.specularColor);
-        specular.color82 = specular.color0;
+        specular.color82 = Vec3f(1.0f);
         specular.color90 = Vec3f(1.0f);
         specular.exponent = 5.0f;
         specular.roughness = specularRoughness;
         specular.scatterMode = Bsdf::ScatterMode::Reflection;
         root = _AppendAdd(&tree, root, tree.Add(specular));
     } else {
-        Bsdf::DielectricData dielectric;
-        dielectric.weight = 1.0f;
-        dielectric.tint = Vec3f(1.0f);
-        dielectric.ior = std::max(c.specularIor, 1.0f);
-        dielectric.roughness = specularRoughness;
-        dielectric.scatterMode = Bsdf::ScatterMode::Reflection;
+        const float metallic = _Clamp01(c.metallic);
+        const Vec3f albedo = _Saturate(c.baseColor);
+        const Vec3f dielectricF0(_DielectricF0FromIor(c.specularIor));
 
-        Bsdf::ConductorData conductor;
-        conductor.weight = 1.0f;
-        conductor.ior = Vec3f(1.0f);
-        conductor.extinction = _ExtinctionFromF0(_Saturate(c.baseColor));
-        conductor.roughness = specularRoughness;
-
-        const Bsdf::NodeId dielectricId = tree.Add(dielectric);
-        const Bsdf::NodeId conductorId = tree.Add(conductor);
-        if (c.metallic <= 0.0f) {
-            root = _AppendAdd(&tree, root, dielectricId);
-        } else if (c.metallic >= 1.0f) {
-            root = _AppendAdd(&tree, root, conductorId);
-        } else {
-            Bsdf::MixData specMix;
-            specMix.bg = dielectricId;
-            specMix.fg = conductorId;
-            specMix.mix = _Clamp01(c.metallic);
-            root = _AppendAdd(&tree, root, tree.Add(specMix));
-        }
+        Bsdf::GeneralizedSchlickData specular;
+        specular.weight = 1.0f;
+        specular.color0 = _Lerp(dielectricF0, albedo, metallic);
+        specular.color82 = Vec3f(1.0f);
+        specular.color90 = _Lerp(Vec3f(1.0f), albedo, metallic);
+        specular.exponent = 5.0f;
+        specular.roughness = specularRoughness;
+        specular.scatterMode = Bsdf::ScatterMode::Reflection;
+        root = _AppendAdd(&tree, root, tree.Add(specular));
     }
 
     if (c.transmission > 0.0f) {

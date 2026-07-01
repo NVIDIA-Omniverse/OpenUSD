@@ -1961,11 +1961,162 @@ TestUsdPreviewSurfaceSpecularWorkflow()
     params["useSpecularWorkflow"] = Value(1);
     params["specularColor"] = Value(Vec3f(0.5f, 0.5f, 0.5f));
 
-    SurfaceClosure c = EvalUsdPreviewSurface(params);
-    if (!Test_IsClose(c.metallic, 0.0f)) return false;
-    if (!Test_IsClose(c.specularColor, Vec3f(0.5f), 1e-4f)) return false;
-    return true;
+    const SurfaceClosure c = EvalUsdPreviewSurface(params);
+    const auto* specular = FindNodeIf<Bsdf::GeneralizedSchlickData>(
+        c.bsdfTree,
+        [](const Bsdf::GeneralizedSchlickData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    return specular &&
+           Test_IsClose(c.metallic, 0.0f) &&
+           Test_IsClose(c.specularColor, Vec3f(0.5f), 1e-4f) &&
+           Test_IsClose(specular->color0, Vec3f(0.5f), 1e-4f) &&
+           Test_IsClose(specular->color82, Vec3f(1.0f), 1e-4f) &&
+           Test_IsClose(specular->color90, Vec3f(1.0f), 1e-4f);
 }
+
+static bool
+TestUsdPreviewSurfaceIorOneKeepsGrazingSpecular()
+{
+    ParamMap params;
+    params["useSpecularWorkflow"] = Value(0);
+    params["diffuseColor"] = Value(Vec3f(0.0f));
+    params["ior"] = Value(1.0f);
+    params["roughness"] = Value(0.5f);
+
+    const SurfaceClosure c = EvalUsdPreviewSurface(params);
+    const auto* specular = FindNodeIf<Bsdf::GeneralizedSchlickData>(
+        c.bsdfTree,
+        [](const Bsdf::GeneralizedSchlickData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    if (!specular) {
+        printf("    Failed to find UsdPreviewSurface specular node\n");
+        return false;
+    }
+    if (!Test_IsClose(specular->color0, Vec3f(0.0f), 1e-4f) ||
+        !Test_IsClose(specular->color82, Vec3f(1.0f), 1e-4f) ||
+        !Test_IsClose(specular->color90, Vec3f(1.0f), 1e-4f)) {
+        printf("    Expected ior=1 to produce F0=0 and white grazing terms\n");
+        return false;
+    }
+
+    const Vec3f N(0.0f, 0.0f, 1.0f);
+    Vec3f wo(1.0f, 0.0f, 0.1f);
+    Vec3f wi(-1.0f, 0.0f, 0.1f);
+    wo.normalize();
+    wi.normalize();
+    const Vec3f f = Bsdf::EvalSurface(c, N, wi, wo);
+    return IsFiniteNonNegative(f) &&
+           (f[0] + f[1] + f[2]) > 1.0e-5f;
+}
+
+static bool
+TestUsdPreviewSurfaceIorControlsDielectricF0()
+{
+    constexpr float ior = 1.2f;
+    const float expectedF0 = ((1.0f - ior) / (1.0f + ior)) *
+                             ((1.0f - ior) / (1.0f + ior));
+
+    ParamMap params;
+    params["useSpecularWorkflow"] = Value(0);
+    params["diffuseColor"] = Value(Vec3f(0.0f));
+    params["ior"] = Value(ior);
+
+    const SurfaceClosure c = EvalUsdPreviewSurface(params);
+    const auto* specular = FindNodeIf<Bsdf::GeneralizedSchlickData>(
+        c.bsdfTree,
+        [](const Bsdf::GeneralizedSchlickData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    return specular &&
+           Test_IsClose(specular->color0, Vec3f(expectedF0), 1e-5f) &&
+           Test_IsClose(specular->color82, Vec3f(1.0f), 1e-4f) &&
+           Test_IsClose(specular->color90, Vec3f(1.0f), 1e-4f);
+}
+
+static bool
+TestUsdPreviewSurfaceMetallicF90UsesAlbedo()
+{
+    const Vec3f albedo(0.8f, 0.2f, 0.1f);
+
+    ParamMap params;
+    params["useSpecularWorkflow"] = Value(0);
+    params["diffuseColor"] = Value(albedo);
+    params["metallic"] = Value(1.0f);
+
+    const SurfaceClosure c = EvalUsdPreviewSurface(params);
+    const auto* specular = FindNodeIf<Bsdf::GeneralizedSchlickData>(
+        c.bsdfTree,
+        [](const Bsdf::GeneralizedSchlickData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    return specular &&
+           Test_IsClose(specular->color0, albedo, 1e-4f) &&
+           Test_IsClose(specular->color82, Vec3f(1.0f), 1e-4f) &&
+           Test_IsClose(specular->color90, albedo, 1e-4f);
+}
+
+static bool
+TestUsdPreviewSurfaceMetallicInterpolatesF0AndF90()
+{
+    const Vec3f albedo(0.8f, 0.2f, 0.1f);
+    constexpr float metallic = 0.25f;
+    constexpr float ior = 1.5f;
+    const float dielectricF0 = ((1.0f - ior) / (1.0f + ior)) *
+                               ((1.0f - ior) / (1.0f + ior));
+    const Vec3f expectedF0 = Vec3f(dielectricF0) * (1.0f - metallic) +
+                             albedo * metallic;
+    const Vec3f expectedF90 = Vec3f(1.0f) * (1.0f - metallic) +
+                              albedo * metallic;
+
+    ParamMap params;
+    params["useSpecularWorkflow"] = Value(0);
+    params["diffuseColor"] = Value(albedo);
+    params["metallic"] = Value(metallic);
+    params["ior"] = Value(ior);
+
+    const SurfaceClosure c = EvalUsdPreviewSurface(params);
+    const auto* specular = FindNodeIf<Bsdf::GeneralizedSchlickData>(
+        c.bsdfTree,
+        [](const Bsdf::GeneralizedSchlickData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection;
+        });
+
+    return specular &&
+           Test_IsClose(specular->color0, expectedF0, 1e-5f) &&
+           Test_IsClose(specular->color82, Vec3f(1.0f), 1e-4f) &&
+           Test_IsClose(specular->color90, expectedF90, 1e-5f);
+}
+
+static bool
+TestUsdPreviewSurfaceIorReachesClearcoat()
+{
+    ParamMap params;
+    params["clearcoat"] = Value(1.0f);
+    params["clearcoatRoughness"] = Value(0.25f);
+    params["ior"] = Value(1.2f);
+
+    const SurfaceClosure c = EvalUsdPreviewSurface(params);
+    const auto* coat = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection &&
+                   data.weight > 0.0f;
+        });
+
+    const float expectedAlpha = 0.25f * 0.25f;
+    return coat && Test_IsClose(coat->ior, 1.2f, 1e-5f) &&
+           Test_IsClose(coat->tint, Vec3f(1.0f), 1e-5f) &&
+           Test_IsClose(coat->roughness[0], expectedAlpha, 1e-5f) &&
+           Test_IsClose(coat->roughness[1], expectedAlpha, 1e-5f) &&
+           Test_IsClose(c.coatIor, 1.2f, 1e-5f);
+}
+
 
 static bool
 TestUsdPreviewSurfaceOpacityThreshold()
@@ -2089,6 +2240,11 @@ Test_RegisterMaterialTests()
     _REG(TestUsdPreviewSurfaceDefaults);
     _REG(TestUsdPreviewSurfaceMetallicWorkflow);
     _REG(TestUsdPreviewSurfaceSpecularWorkflow);
+    _REG(TestUsdPreviewSurfaceIorOneKeepsGrazingSpecular);
+    _REG(TestUsdPreviewSurfaceIorControlsDielectricF0);
+    _REG(TestUsdPreviewSurfaceMetallicF90UsesAlbedo);
+    _REG(TestUsdPreviewSurfaceMetallicInterpolatesF0AndF90);
+    _REG(TestUsdPreviewSurfaceIorReachesClearcoat);
     _REG(TestUsdPreviewSurfaceOpacityThreshold);
     _REG(TestUsdPreviewSurfaceTransparentModeKeepsLightingResponse);
     _REG(TestUsdPreviewSurfacePresenceModeCutsLightingResponse);
