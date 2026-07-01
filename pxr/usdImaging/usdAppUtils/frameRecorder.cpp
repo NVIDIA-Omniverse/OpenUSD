@@ -64,6 +64,7 @@ UsdAppUtilsFrameRecorder::UsdAppUtilsFrameRecorder(
     _colorCorrectionMode(HdxColorCorrectionTokens->disabled),
     _purposes({UsdGeomTokens->default_, UsdGeomTokens->proxy}),
     _cameraLightEnabled(true),
+    _overrideDomeLightVisibility(false),
     _domeLightsVisible(false)
 {
     // Disable presentation to avoid the need to create an OpenGL context when
@@ -123,6 +124,7 @@ UsdAppUtilsFrameRecorder::SetCameraLightEnabled(bool cameraLightEnabled)
 void
 UsdAppUtilsFrameRecorder::SetDomeLightVisibility(bool domeLightsVisible)
 {
+    _overrideDomeLightVisibility = true;
     _domeLightsVisible = domeLightsVisible;
 }
 
@@ -453,9 +455,11 @@ UsdAppUtilsFrameRecorder::Record(
 
     _imagingEngine.SetLightingState(lights, material, SCENE_AMBIENT);
 
-    _imagingEngine.SetRendererSetting(
-        HdRenderSettingsTokens->domeLightCameraVisibility,
-        VtValue(_domeLightsVisible));
+    if (_overrideDomeLightVisibility) {
+        _imagingEngine.SetRendererSetting(
+            HdRenderSettingsTokens->domeLightCameraVisibility,
+            VtValue(_domeLightsVisible));
+    }
 
     UsdImagingGLRenderParams renderParams;
     renderParams.frame = timeCode;

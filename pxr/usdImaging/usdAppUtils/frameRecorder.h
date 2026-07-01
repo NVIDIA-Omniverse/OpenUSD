@@ -140,7 +140,8 @@ public:
     /// Sets the camera visibility of dome lights.
     ///
     /// When on, dome light textures will be drawn to the background as if
-    /// mapped onto a sphere infinitely far away.
+    /// mapped onto a sphere infinitely far away. If not called, dome light
+    /// visibility comes from scene description without an override.
     USDAPPUTILS_API
     void SetDomeLightVisibility(bool domeLightsVisible);
 
@@ -190,6 +191,7 @@ private:
     SdfPath _renderPassPrimPath;
     SdfPath _renderSettingsPrimPath;
     bool _cameraLightEnabled;
+    bool _overrideDomeLightVisibility;
     bool _domeLightsVisible;
 };
 

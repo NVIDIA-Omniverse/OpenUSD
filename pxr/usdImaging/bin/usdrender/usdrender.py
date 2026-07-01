@@ -361,13 +361,6 @@ def main() -> int:
             'the active RenderProduct or RenderSettings resolution when '
             'authored, falling back to 960 pixels wide.'))
 
-    parser.add_argument('--enableDomeLightVisibility', action='store_true',
-        dest='domeLightVisibility',
-        help=('Show the dome light background in the rendered output.  '
-            'If this option is not included and there is a dome light in '
-            'the stage, the IBL from it will be used for lighting but not '
-            'drawn into the background.'))
-
     parser.add_argument('--renderPassPrimPath', '-rp', action='store',
         type=str, dest='rpPrimPath',
         help=(
@@ -574,7 +567,6 @@ def main() -> int:
     frameRecorder.SetCameraLightEnabled(args.cameraLightEnabled)
     frameRecorder.SetColorCorrectionMode(args.colorCorrectionMode)
     frameRecorder.SetIncludedPurposes(purposes)
-    frameRecorder.SetDomeLightVisibility(args.domeLightVisibility)
     frameRecorder.SetPrimaryCameraPrimPath(usdCamera.GetPath())
 
     _Msg('Camera: %s' % usdCamera.GetPath().pathString)
