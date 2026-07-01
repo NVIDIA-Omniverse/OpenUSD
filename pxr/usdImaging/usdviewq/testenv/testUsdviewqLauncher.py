@@ -36,6 +36,7 @@ class ValidationOnlyLauncher(Launcher):
     def LaunchPreamble(self, arg_parse_result):
         """Do nothing. We don't want to launch the main application."""
 
+        self.arg_parse_result = arg_parse_result
         return (None, None)
 
     def LaunchProcess(self, arg_parse_result, app, appController):
@@ -87,6 +88,17 @@ class TestLauncher(unittest.TestCase):
         with self.assertRaises(InvalidUsdviewOption):
             ValidationOnlyLauncher().Run(
                 ["--clearsettings", "--defaultsettings"])
+
+    def test_disableCameraLightFlag(self):
+        """--disableCameraLight should only override lighting when set."""
+
+        launcher = ValidationOnlyLauncher()
+        launcher.Run()
+        self.assertIsNone(launcher.arg_parse_result.cameraLightEnabled)
+
+        launcher = ValidationOnlyLauncher()
+        launcher.Run(["--disableCameraLight"])
+        self.assertFalse(launcher.arg_parse_result.cameraLightEnabled)
 
 
 if __name__ == "__main__":

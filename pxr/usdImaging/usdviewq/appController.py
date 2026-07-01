@@ -391,6 +391,9 @@ class AppController(QtCore.QObject):
             self._openSettings(parserData.defaultSettings, parserData.config)
 
             self._dataModel = UsdviewDataModel(self._makeTimer, self._configManager.settings)
+            cameraLightEnabled = getattr(parserData, 'cameraLightEnabled', None)
+            if cameraLightEnabled is not None:
+                self._dataModel.viewSettings.ambientLightOnly = cameraLightEnabled
 
             # Setup Default bundled fonts (Roboto)
             self._setupCustomFont()

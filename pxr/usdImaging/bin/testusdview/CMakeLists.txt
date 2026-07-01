@@ -435,6 +435,18 @@ pxr_register_test(testUsdviewLights
     EXPECTED_RETURN_CODE 0
 )
 
+pxr_register_test(testUsdviewDisableCameraLight
+    PYTHON
+    COMMAND "${CMAKE_INSTALL_PREFIX}/bin/testusdview --disableCameraLight --testScript testUsdviewDisableCameraLight.py test.usda"
+    TESTENV testenv/testUsdviewLights
+    IMAGE_DIFF_COMPARE
+        noLights.png
+    FAIL 0.05
+    FAIL_PERCENT 0.03
+    PERCEPTUAL
+    EXPECTED_RETURN_CODE 0
+)
+
 pxr_register_test(testUsdviewLights_yup
     PYTHON
     COMMAND "${CMAKE_INSTALL_PREFIX}/bin/testusdview --testScript testUsdviewLightsYup.py testYup.usda"

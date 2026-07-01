@@ -172,6 +172,18 @@ class Launcher(object):
                             dest='defaultSettings',
                             help='Launch usdview with default settings')
 
+        # Note: The argument passed via the command line (disableCameraLight)
+        # is inverted from the variable in which it is stored
+        # (cameraLightEnabled). The default remains None so saved usdview
+        # settings continue to control startup lighting when this option is
+        # omitted.
+        parser.add_argument('--disableCameraLight', action='store_false',
+                            default=None,
+                            dest='cameraLightEnabled',
+                            help=(
+                                'Indicates if the default camera lights should '
+                                'not be used for rendering.'))
+
         parser.add_argument('--norender', action='store_true',
                             dest='noRender',
                             help='Display only hierarchy browser')
