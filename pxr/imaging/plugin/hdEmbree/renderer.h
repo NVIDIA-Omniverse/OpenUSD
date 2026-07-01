@@ -322,6 +322,7 @@ private:
         GfVec3f const& wo,
         HdEmbreeSampleDomain const& domain,
         bool doubleSided,
+        bool includeBsdfSamplingMis,
         mxcpp::SurfaceClosure const* closure,
         HdEmbreeMediumState const& mediumState = HdEmbreeMediumState(),
         bool spectralActive = false,
@@ -335,6 +336,7 @@ private:
         GfVec3f const& wo,
         HdEmbreeMediumState const& mediumState,
         HdEmbreeSampleDomain const& domain,
+        bool includePhaseSamplingMis,
         bool spectralActive = false,
         float heroWavelengthNm = 0.0f,
         float heroWavelengthPdf = 0.0f) const;

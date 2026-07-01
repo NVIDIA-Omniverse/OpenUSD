@@ -3614,6 +3614,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
     GfVec3f const& wo,
     HdEmbreeSampleDomain const& domain,
     bool /*doubleSided*/,
+    bool includeBsdfSamplingMis,
     mxcpp::SurfaceClosure const* closure,
     HdEmbreeMediumState const& mediumState,
     bool spectralActive,
@@ -3742,7 +3743,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 // itself is averaged by 1/N outside this loop, but Veach's
                 // multi-sample MIS weights use n_i * p_i for each strategy.
                 float misW = 1.0f;
-                if (!ls.delta) {
+                if (includeBsdfSamplingMis && !ls.delta) {
                     float lightPdf = (ls.invPdfW > 0.0f)
                         ? 1.0f / ls.invPdfW : 0.0f;
                     const float effectiveLightPdf =
@@ -3797,6 +3798,7 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
     GfVec3f const& wo,
     HdEmbreeMediumState const& mediumState,
     HdEmbreeSampleDomain const& domain,
+    bool includePhaseSamplingMis,
     bool spectralActive,
     float heroWavelengthNm,
     float heroWavelengthPdf) const
@@ -3887,7 +3889,7 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
             }
 
             float misW = 1.0f;
-            if (!ls.delta && ls.invPdfW > 0.0f) {
+            if (includePhaseSamplingMis && !ls.delta && ls.invPdfW > 0.0f) {
                 const float lightPdf = 1.0f / ls.invPdfW;
                 const float effectiveLightPdf = _GetMultiSampleMisLightPdf(
                     lightPdf,
@@ -4104,6 +4106,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
                 wo,
                 mediumState,
                 domain.Fork(HdEmbreeSampleDomainKey::MediumDirectLighting),
+                input.bounce < _maxBounces,
                 hero.active,
                 hero.wavelengthNm,
                 hero.pdf);
@@ -4920,6 +4923,7 @@ HdEmbreeRenderer::_TracePath(
                 wo,
                 bounceDomain.Fork(HdEmbreeSampleDomainKey::DirectLighting),
                 doubleSided,
+                bounce < _maxBounces,
                 bsdfClosure,
                 currentMedium,
                 hero.active,
@@ -4944,6 +4948,7 @@ HdEmbreeRenderer::_TracePath(
                 wo,
                 bounceDomain.Fork(HdEmbreeSampleDomainKey::DirectLighting),
                 doubleSided,
+                bounce < _maxBounces,
                 &fallback,
                 currentMedium,
                 hero.active,
