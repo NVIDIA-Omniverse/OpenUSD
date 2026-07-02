@@ -43,6 +43,13 @@ public:
     // evaluate the IES file for the given spherical coordinates
     float eval(float theta, float phi, float angleScale) const;
 
+    // vertical angles of the profile's sampling grid, in radians, before
+    // any angleScale remapping
+    const std::vector<float>& verticalAngles() const
+    {
+        return v_angles;
+    }
+
 protected:
     // Extra processing we do on-top of the "standard" process() from IESFile
     void pxr_extra_process();

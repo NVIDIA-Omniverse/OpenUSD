@@ -454,13 +454,20 @@ TestDirectionalShapingDistributionPdfNormalizes()
         return false;
     }
 
-    constexpr float cellSolidAngle =
-        4.0f * static_cast<float>(M_PI) /
-        static_cast<float>(
-            HdEmbree_DirectionalShapingDistribution::NumCells);
+    const HdEmbree_DirectionalShapingDistribution& distribution =
+        shaping.directionalDistribution;
+    constexpr int numPhi = HdEmbree_DirectionalShapingDistribution::NumPhi;
     float integral = 0.0f;
-    for (const float pdfW : shaping.directionalDistribution.cellPdfW) {
-        integral += pdfW * cellSolidAngle;
+    for (int v = 0; v < distribution.NumRows(); ++v) {
+        const float cellSolidAngle =
+            2.0f * static_cast<float>(M_PI) *
+            (distribution.rowCosThetaBounds[v] -
+             distribution.rowCosThetaBounds[v + 1]) /
+            static_cast<float>(numPhi);
+        for (int h = 0; h < numPhi; ++h) {
+            integral +=
+                distribution.cellPdfW[v * numPhi + h] * cellSolidAngle;
+        }
     }
     if (!_IsClose(integral, 1.0f, 1e-4f)) {
         std::printf("    directional shaping PDF integral mismatch: %f\n",
@@ -520,6 +527,264 @@ TestIesDirectionalDistributionBuildsAndSamples()
     }
 
     return true;
+}
+
+// Checks that every stratified directional sample is valid, lies within
+// the z range [zMin, zMax] (with slack), and that the sampled PDF matches
+// the PDF lookup for the sampled direction.
+bool
+_CheckDirectionalSamplesConfined(
+    const HdEmbree_Shaping& shaping,
+    float zMin,
+    float zMax,
+    const char* label)
+{
+    constexpr int numU1 = 16;
+    constexpr int numU2 = 16;
+    for (int i = 0; i < numU1; ++i) {
+        for (int j = 0; j < numU2; ++j) {
+            const float u1 = (i + 0.5f) / numU1;
+            const float u2 = (j + 0.5f) / numU2;
+            const HdEmbree_DirectionalShapingSample sample =
+                HdEmbreeSampleDirectionalShaping(shaping, u1, u2);
+            if (!sample.valid || sample.pdfW <= 0.0f) {
+                std::printf("    %s: expected valid sample at u1=%f u2=%f\n",
+                            label, u1, u2);
+                return false;
+            }
+            const float z = sample.localDirection[2];
+            if (z < zMin - 1e-4f || z > zMax + 1e-4f) {
+                std::printf("    %s: sample outside support: z=%f\n",
+                            label, z);
+                return false;
+            }
+            const float evaluatedPdf = HdEmbreeDirectionalShapingPdf(
+                shaping, sample.localDirection);
+            if (!_IsClose(sample.pdfW, evaluatedPdf,
+                          1e-4f * sample.pdfW)) {
+                std::printf("    %s: sampled/evaluated pdf mismatch: "
+                            "%f vs %f\n",
+                            label, sample.pdfW, evaluatedPdf);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// Integrates the public PDF lookup over the sphere with a Riemann sum on
+// an independent grid; the result must be ~1 for any valid distribution.
+bool
+_CheckDirectionalPdfIntegratesToOne(
+    const HdEmbree_Shaping& shaping,
+    const char* label)
+{
+    constexpr int numZ = 20000;
+    constexpr int numPhi = 16;
+    const float pi = static_cast<float>(M_PI);
+    double integral = 0.0;
+    for (int i = 0; i < numZ; ++i) {
+        const float z = 1.0f - 2.0f * (i + 0.5f) / numZ;
+        const float r = std::sqrt(std::max(0.0f, 1.0f - z * z));
+        for (int j = 0; j < numPhi; ++j) {
+            const float phi = 2.0f * pi * (j + 0.5f) / numPhi;
+            const GfVec3f direction(
+                r * std::cos(phi), r * std::sin(phi), z);
+            integral += HdEmbreeDirectionalShapingPdf(shaping, direction);
+        }
+    }
+    integral *= 4.0 * pi / (static_cast<double>(numZ) * numPhi);
+    if (std::fabs(integral - 1.0) > 0.02) {
+        std::printf("    %s: pdf integral mismatch: %f\n", label,
+                    static_cast<float>(integral));
+        return false;
+    }
+    return true;
+}
+
+bool
+TestNarrowConeDirectionalDistributionSamplesWithinCone()
+{
+    // A hard 10 degree cone is narrower than a base distribution cell, so
+    // the build must not lose it to discretization (weightSum == 0) and
+    // every directional sample must land inside the cone.
+    HdEmbree_Shaping shaping;
+    shaping.coneAngle = 10.0f;
+    shaping.coneSoftness = 0.0f;
+    HdEmbreeBuildDirectionalShapingDistribution(&shaping);
+
+    if (!shaping.directionalDistribution.IsValid()) {
+        std::printf("    expected valid distribution for 10 degree cone\n");
+        return false;
+    }
+
+    const float pi = static_cast<float>(M_PI);
+    const float cosCone = std::cos(10.0f * pi / 180.0f);
+    if (!_CheckDirectionalSamplesConfined(
+            shaping, cosCone, 1.0f, "hard cone")) {
+        return false;
+    }
+
+    // The PDF must be exactly zero outside the cone.
+    const float thetaOutside = 12.0f * pi / 180.0f;
+    const GfVec3f outsideDirection(
+        std::sin(thetaOutside), 0.0f, std::cos(thetaOutside));
+    const float outsidePdf =
+        HdEmbreeDirectionalShapingPdf(shaping, outsideDirection);
+    if (outsidePdf != 0.0f) {
+        std::printf("    expected zero pdf outside cone, got %f\n",
+                    outsidePdf);
+        return false;
+    }
+
+    if (!_CheckDirectionalPdfIntegratesToOne(shaping, "hard cone")) {
+        return false;
+    }
+
+    // A soft narrow cone must behave the same way; softness only narrows
+    // the full-intensity core, so the support stays within the cone angle.
+    HdEmbree_Shaping softShaping;
+    softShaping.coneAngle = 10.0f;
+    softShaping.coneSoftness = 0.8f;
+    HdEmbreeBuildDirectionalShapingDistribution(&softShaping);
+    if (!softShaping.directionalDistribution.IsValid()) {
+        std::printf("    expected valid distribution for soft cone\n");
+        return false;
+    }
+    if (!_CheckDirectionalSamplesConfined(
+            softShaping, cosCone, 1.0f, "soft cone")) {
+        return false;
+    }
+
+    // A degenerate zero-angle cone has no sampleable support; the build
+    // must fall back to an invalid distribution rather than produce NaNs.
+    HdEmbree_Shaping degenerateShaping;
+    degenerateShaping.coneAngle = 0.0f;
+    degenerateShaping.coneSoftness = 0.0f;
+    HdEmbreeBuildDirectionalShapingDistribution(&degenerateShaping);
+    if (degenerateShaping.directionalDistribution.IsValid()) {
+        std::printf("    expected invalid distribution for zero cone\n");
+        return false;
+    }
+
+    return true;
+}
+
+bool
+TestNarrowIesBeamDirectionalDistributionIsValid()
+{
+    // A 1 degree IES beam is far narrower than a base distribution cell
+    // and lies below the first quadrature sub-sample of the first base
+    // row, so only the profile-declared row boundaries can preserve it.
+    static const char* const iesText =
+        "IESNA:LM-63-1995\n"
+        "TILT=NONE\n"
+        "1 1000 1 3 1 1 1 1 1 1 1 1 1\n"
+        "0 1 180\n"
+        "0\n"
+        "1000 0 0\n";
+
+    HdEmbree_Shaping shaping;
+    if (!shaping.ies.iesFile.load(iesText)) {
+        std::printf("    could not load synthetic IES profile\n");
+        return false;
+    }
+    HdEmbreeBuildDirectionalShapingDistribution(&shaping);
+
+    if (!shaping.directionalDistribution.IsValid()) {
+        std::printf("    expected valid distribution for 1 degree beam\n");
+        return false;
+    }
+
+    const float pi = static_cast<float>(M_PI);
+    const float cosBeam = std::cos(1.0f * pi / 180.0f);
+    if (!_CheckDirectionalSamplesConfined(
+            shaping, cosBeam, 1.0f, "1 degree beam")) {
+        return false;
+    }
+
+    const float thetaOutside = 3.0f * pi / 180.0f;
+    const GfVec3f outsideDirection(
+        std::sin(thetaOutside), 0.0f, std::cos(thetaOutside));
+    const float outsidePdf =
+        HdEmbreeDirectionalShapingPdf(shaping, outsideDirection);
+    if (outsidePdf != 0.0f) {
+        std::printf("    expected zero pdf outside beam, got %f\n",
+                    outsidePdf);
+        return false;
+    }
+
+    return true;
+}
+
+bool
+TestIesAngleScaleCompressesBeamKnots()
+{
+    // angleScale > 0 rescales the profile toward theta == 0; a wide
+    // profile compressed to a sub-degree beam is only sampleable if the
+    // profile knots are remapped through the same transform the eval
+    // uses. The 40 degree edge maps to 0.8 degrees with angleScale 0.02,
+    // below the first quadrature sub-sample of the first base row.
+    static const char* const iesText =
+        "IESNA:LM-63-1995\n"
+        "TILT=NONE\n"
+        "1 1000 1 3 1 1 1 1 1 1 1 1 1\n"
+        "0 40 180\n"
+        "0\n"
+        "1000 0 0\n";
+
+    HdEmbree_Shaping shaping;
+    if (!shaping.ies.iesFile.load(iesText)) {
+        std::printf("    could not load synthetic IES profile\n");
+        return false;
+    }
+    shaping.ies.angleScale = 0.02f;
+    HdEmbreeBuildDirectionalShapingDistribution(&shaping);
+
+    if (!shaping.directionalDistribution.IsValid()) {
+        std::printf("    expected valid distribution for scaled beam\n");
+        return false;
+    }
+
+    const float pi = static_cast<float>(M_PI);
+    const float cosBeam = std::cos(0.8f * pi / 180.0f);
+    return _CheckDirectionalSamplesConfined(
+        shaping, cosBeam, 1.0f, "scaled beam");
+}
+
+bool
+TestIesNegativeAngleScaleAnchorsBeamAtTop()
+{
+    // angleScale < 0 rescales the profile anchored at theta == pi; the
+    // 0..40 degree profile beam lands in [179.1, 179.3] degrees with
+    // angleScale -0.005, between the last quadrature sub-sample of the
+    // bottom base row and the pole, so it again requires remapped knots.
+    static const char* const iesText =
+        "IESNA:LM-63-1995\n"
+        "TILT=NONE\n"
+        "1 1000 1 3 1 1 1 1 1 1 1 1 1\n"
+        "0 40 180\n"
+        "0\n"
+        "1000 0 0\n";
+
+    HdEmbree_Shaping shaping;
+    if (!shaping.ies.iesFile.load(iesText)) {
+        std::printf("    could not load synthetic IES profile\n");
+        return false;
+    }
+    shaping.ies.angleScale = -0.005f;
+    HdEmbreeBuildDirectionalShapingDistribution(&shaping);
+
+    if (!shaping.directionalDistribution.IsValid()) {
+        std::printf(
+            "    expected valid distribution for negative-scale beam\n");
+        return false;
+    }
+
+    const float pi = static_cast<float>(M_PI);
+    const float zBeamMax = std::cos(179.1f * pi / 180.0f);
+    return _CheckDirectionalSamplesConfined(
+        shaping, -1.0f, zBeamMax, "negative-scale beam");
 }
 
 bool
@@ -922,6 +1187,14 @@ main(int /*argc*/, char** /*argv*/)
               &TestDirectionalShapingDistributionPdfNormalizes);
     _Register("IesDirectionalDistributionBuildsAndSamples",
               &TestIesDirectionalDistributionBuildsAndSamples);
+    _Register("NarrowConeDirectionalDistributionSamplesWithinCone",
+              &TestNarrowConeDirectionalDistributionSamplesWithinCone);
+    _Register("NarrowIesBeamDirectionalDistributionIsValid",
+              &TestNarrowIesBeamDirectionalDistributionIsValid);
+    _Register("IesAngleScaleCompressesBeamKnots",
+              &TestIesAngleScaleCompressesBeamKnots);
+    _Register("IesNegativeAngleScaleAnchorsBeamAtTop",
+              &TestIesNegativeAngleScaleAnchorsBeamAtTop);
     _Register("RectShapingAwareSampleMatchesDirectionalEvaluation",
               &TestRectShapingAwareSampleMatchesDirectionalEvaluation);
     _Register("RectTextureOriginUsesLocalPositiveXY",

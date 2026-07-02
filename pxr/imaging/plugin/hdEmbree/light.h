@@ -178,9 +178,13 @@ struct HdEmbree_IES
 struct HdEmbree_DirectionalShapingDistribution
 {
     static constexpr int NumPhi = 64;
-    static constexpr int NumTheta = 32;
-    static constexpr int NumCells = NumPhi * NumTheta;
+    static constexpr int NumBaseTheta = 32;
 
+    // Theta row boundaries stored as cos(theta), strictly descending from 1
+    // to -1. Rows are the uniform base partition plus the exact angles where
+    // shaping features have structure (cone edges, IES vertical knots), so
+    // features narrower than a base row always span whole cells.
+    std::vector<float> rowCosThetaBounds;
     std::vector<float> cdf;
     std::vector<float> cellPdfW;
     float weightSum = 0.0f;
@@ -189,10 +193,20 @@ struct HdEmbree_DirectionalShapingDistribution
     float totalSolidAngleWeightedIntensity = 0.0f;
     GfVec3f principalDirection = GfVec3f(0.0f, 0.0f, 1.0f);
 
+    int NumRows() const
+    {
+        return rowCosThetaBounds.size() < 2
+            ? 0
+            : static_cast<int>(rowCosThetaBounds.size()) - 1;
+    }
+
     bool IsValid() const
     {
-        return cdf.size() == static_cast<size_t>(NumCells + 1) &&
-               cellPdfW.size() == static_cast<size_t>(NumCells) &&
+        const size_t numCells =
+            static_cast<size_t>(NumRows()) * static_cast<size_t>(NumPhi);
+        return numCells > 0 &&
+               cdf.size() == numCells + 1 &&
+               cellPdfW.size() == numCells &&
                weightSum > 0.0f;
     }
 };

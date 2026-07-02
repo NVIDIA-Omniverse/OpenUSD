@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <vector>
 
@@ -78,6 +79,20 @@ _HasAuthoredDirectionalShaping(HdEmbree_Shaping const& shaping)
            shaping.coneAngle < 180.0f ||
            shaping.coneSoftness != 0.0f ||
            shaping.ies.iesFile.valid();
+}
+
+// Map an IES profile vertical angle (radians) to the eval-space theta where
+// it lands after the angleScale remap in PxrIESFile::eval.
+float
+_IesKnotToEvalTheta(float angle, float angleScale)
+{
+    if (angleScale > 0.0f) {
+        return angle * angleScale;
+    }
+    if (angleScale < 0.0f) {
+        return _pi - angleScale * (angle - _pi);
+    }
+    return angle;
 }
 
 std::string
@@ -621,59 +636,151 @@ HdEmbreeBuildDirectionalShapingDistribution(HdEmbree_Shaping* shaping)
     }
 
     constexpr int numPhi = HdEmbree_DirectionalShapingDistribution::NumPhi;
-    constexpr int numTheta = HdEmbree_DirectionalShapingDistribution::NumTheta;
-    constexpr int numCells = HdEmbree_DirectionalShapingDistribution::NumCells;
-    constexpr float cellSolidAngle = 4.0f * _pi / static_cast<float>(numCells);
+    constexpr int numBaseTheta =
+        HdEmbree_DirectionalShapingDistribution::NumBaseTheta;
+
+    // Theta row boundaries: a uniform base partition augmented with the
+    // exact angles where each shaping feature has structure, so features
+    // narrower than a base row (small cone angles, narrow IES beams) span
+    // whole rows and cannot vanish when the cell weights are integrated.
+    std::vector<float> thetaBounds;
+    thetaBounds.reserve(static_cast<size_t>(numBaseTheta) + 3);
+    for (int v = 0; v <= numBaseTheta; ++v) {
+        thetaBounds.push_back(
+            _pi * static_cast<float>(v) / static_cast<float>(numBaseTheta));
+    }
+    if (shaping->coneAngle < 180.0f) {
+        const float thetaConeUnclamped = GfDegreesToRadians(shaping->coneAngle);
+        const float thetaCone = GfClamp(thetaConeUnclamped, 0.0f, _pi);
+        const float thetaSoft =
+            GfLerp(shaping->coneSoftness, thetaCone, 0.0f);
+        thetaBounds.push_back(thetaCone);
+        thetaBounds.push_back(thetaSoft);
+    }
+    if (shaping->ies.iesFile.valid()) {
+        for (const float angle : shaping->ies.iesFile.verticalAngles()) {
+            thetaBounds.push_back(GfClamp(
+                _IesKnotToEvalTheta(angle, shaping->ies.angleScale),
+                0.0f, _pi));
+        }
+    }
+    std::sort(thetaBounds.begin(), thetaBounds.end());
+
+    // Merge near-coincident boundaries to keep rows non-degenerate.
+    constexpr float thetaMergeEps = 1.0e-4f;
+    std::vector<float> rowTheta;
+    rowTheta.reserve(thetaBounds.size());
+    for (const float theta : thetaBounds) {
+        if (rowTheta.empty() || theta - rowTheta.back() > thetaMergeEps) {
+            rowTheta.push_back(theta);
+        }
+    }
+    rowTheta.front() = 0.0f;
+    rowTheta.back() = _pi;
+
+    const int numRows = static_cast<int>(rowTheta.size()) - 1;
+    const int numCells = numRows * numPhi;
+
+    distribution.rowCosThetaBounds.resize(static_cast<size_t>(numRows + 1));
+    for (int v = 0; v <= numRows; ++v) {
+        distribution.rowCosThetaBounds[static_cast<size_t>(v)] =
+            std::cos(rowTheta[static_cast<size_t>(v)]);
+    }
+    distribution.rowCosThetaBounds.front() = 1.0f;
+    distribution.rowCosThetaBounds.back() = -1.0f;
 
     std::vector<float> cellWeights(
         static_cast<size_t>(numCells), 0.0f);
     distribution.cellPdfW.assign(static_cast<size_t>(numCells), 0.0f);
     distribution.cdf.assign(static_cast<size_t>(numCells + 1), 0.0f);
 
+    // Integrate the importance over each cell with a midpoint rule rather
+    // than evaluating a single point, so partially covered cells keep a
+    // representative weight.
+    constexpr int numSubZ = 4;
+    constexpr int numSubPhi = 4;
+
     GfVec3f principal(0.0f);
     float weightSum = 0.0f;
     float peakWeight = 0.0f;
 
-    for (int v = 0; v < numTheta; ++v) {
-        const float z0 = 1.0f - 2.0f *
-            static_cast<float>(v) / static_cast<float>(numTheta);
-        const float z1 = 1.0f - 2.0f *
-            static_cast<float>(v + 1) / static_cast<float>(numTheta);
-        const float z = 0.5f * (z0 + z1);
-        const float r = std::sqrt(std::max(0.0f, 1.0f - z * z));
+    for (int v = 0; v < numRows; ++v) {
+        const float z0 = distribution.rowCosThetaBounds[static_cast<size_t>(v)];
+        const float z1 =
+            distribution.rowCosThetaBounds[static_cast<size_t>(v + 1)];
+        const float cellSolidAngle =
+            2.0f * _pi * (z0 - z1) / static_cast<float>(numPhi);
+        if (cellSolidAngle <= 0.0f) {
+            continue;
+        }
+        const float zCenter = 0.5f * (z0 + z1);
+        const float rCenter =
+            std::sqrt(std::max(0.0f, 1.0f - zCenter * zCenter));
 
         for (int h = 0; h < numPhi; ++h) {
-            const float phi = 2.0f * _pi *
-                (static_cast<float>(h) + 0.5f) / static_cast<float>(numPhi);
-            const GfVec3f localDirection(
-                r * std::cos(phi),
-                r * std::sin(phi),
-                z);
-            const float importance =
-                HdEmbreeDirectionalShapingImportance(
-                    *shaping, localDirection);
-            const float weight = importance * cellSolidAngle;
+            float importanceSum = 0.0f;
+            for (int sz = 0; sz < numSubZ; ++sz) {
+                const float z = GfLerp(
+                    (static_cast<float>(sz) + 0.5f) /
+                        static_cast<float>(numSubZ),
+                    z0, z1);
+                const float r = std::sqrt(std::max(0.0f, 1.0f - z * z));
+                for (int sp = 0; sp < numSubPhi; ++sp) {
+                    const float phi = 2.0f * _pi *
+                        (static_cast<float>(h) +
+                         (static_cast<float>(sp) + 0.5f) /
+                             static_cast<float>(numSubPhi)) /
+                        static_cast<float>(numPhi);
+                    const float importance =
+                        HdEmbreeDirectionalShapingImportance(
+                            *shaping,
+                            GfVec3f(r * std::cos(phi),
+                                    r * std::sin(phi),
+                                    z));
+                    importanceSum += importance;
+                    peakWeight = std::max(peakWeight, importance);
+                }
+            }
+            const float weight = importanceSum * cellSolidAngle /
+                static_cast<float>(numSubZ * numSubPhi);
             const int idx = v * numPhi + h;
             cellWeights[static_cast<size_t>(idx)] = weight;
             weightSum += weight;
-            peakWeight = std::max(peakWeight, importance);
-            principal += localDirection * weight;
+
+            const float phiCenter = 2.0f * _pi *
+                (static_cast<float>(h) + 0.5f) / static_cast<float>(numPhi);
+            principal += GfVec3f(rCenter * std::cos(phiCenter),
+                                 rCenter * std::sin(phiCenter),
+                                 zCenter) * weight;
         }
     }
 
     if (weightSum <= 0.0f || !std::isfinite(weightSum)) {
+        TF_DEBUG(HDEMBREE_LIGHT_CREATE).Msg(
+            "Directional shaping importance integrated to zero; "
+            "falling back to area sampling\n");
         distribution = HdEmbree_DirectionalShapingDistribution();
         return;
     }
 
     float cumulative = 0.0f;
     distribution.cdf[0] = 0.0f;
-    for (int idx = 0; idx < numCells; ++idx) {
-        cumulative += cellWeights[static_cast<size_t>(idx)] / weightSum;
-        distribution.cdf[static_cast<size_t>(idx + 1)] = cumulative;
-        distribution.cellPdfW[static_cast<size_t>(idx)] =
-            cellWeights[static_cast<size_t>(idx)] /
-            (weightSum * cellSolidAngle);
+    for (int v = 0; v < numRows; ++v) {
+        const float z0 = distribution.rowCosThetaBounds[static_cast<size_t>(v)];
+        const float z1 =
+            distribution.rowCosThetaBounds[static_cast<size_t>(v + 1)];
+        const float cellSolidAngle =
+            2.0f * _pi * (z0 - z1) / static_cast<float>(numPhi);
+        for (int h = 0; h < numPhi; ++h) {
+            const int idx = v * numPhi + h;
+            cumulative += cellWeights[static_cast<size_t>(idx)] / weightSum;
+            distribution.cdf[static_cast<size_t>(idx + 1)] = cumulative;
+            distribution.cellPdfW[static_cast<size_t>(idx)] =
+                (cellSolidAngle > 0.0f)
+                    ? cellWeights[static_cast<size_t>(idx)] /
+                          (weightSum * cellSolidAngle)
+                    : 0.0f;
+        }
     }
     distribution.cdf.back() = 1.0f;
     distribution.weightSum = weightSum;
@@ -700,8 +807,7 @@ HdEmbreeSampleDirectionalShaping(
     }
 
     constexpr int numPhi = HdEmbree_DirectionalShapingDistribution::NumPhi;
-    constexpr int numTheta = HdEmbree_DirectionalShapingDistribution::NumTheta;
-    constexpr int numCells = HdEmbree_DirectionalShapingDistribution::NumCells;
+    const int numCells = distribution.NumRows() * numPhi;
 
     const float sample = GfClamp(
         u1, 0.0f, std::nextafter(1.0f, 0.0f));
@@ -721,11 +827,24 @@ HdEmbreeSampleDirectionalShaping(
 
     const int v = idx / numPhi;
     const int h = idx - v * numPhi;
-    const float z0 = 1.0f - 2.0f *
-        static_cast<float>(v) / static_cast<float>(numTheta);
-    const float z1 = 1.0f - 2.0f *
-        static_cast<float>(v + 1) / static_cast<float>(numTheta);
-    const float z = GfLerp(cellU, z0, z1);
+    const float z0 = distribution.rowCosThetaBounds[static_cast<size_t>(v)];
+    const float z1 =
+        distribution.rowCosThetaBounds[static_cast<size_t>(v + 1)];
+    float z = GfLerp(cellU, z0, z1);
+    // Keep the sample strictly inside the row (bounds are descending, so
+    // z1 < z <= z0 nominally): rounding in the lerp or renormalization in
+    // the PDF lookup can otherwise re-bin a boundary sample into the
+    // neighboring row, decorrelating the sampled and evaluated PDFs. Three
+    // ulps cover the at-most-one-ulp renormalization drift.
+    float zLo = z1;
+    float zHi = z0;
+    for (int i = 0; i < 3; ++i) {
+        zLo = std::nextafter(zLo, z0);
+        zHi = std::nextafter(zHi, z1);
+    }
+    if (zLo <= zHi) {
+        z = GfClamp(z, zLo, zHi);
+    }
     const float r = std::sqrt(std::max(0.0f, 1.0f - z * z));
     const float phi = 2.0f * _pi *
         (static_cast<float>(h) +
@@ -736,7 +855,13 @@ HdEmbreeSampleDirectionalShaping(
         r * std::cos(phi),
         r * std::sin(phi),
         z);
-    result.pdfW = distribution.cellPdfW[static_cast<size_t>(idx)];
+    // Report the PDF through the same lookup MIS uses instead of reading
+    // cellPdfW[idx] directly: float rounding can land the sampled z exactly
+    // on a row boundary, where the lookup resolves to the neighboring row.
+    // Sharing one source of truth keeps sample and evaluation consistent
+    // (a sample that rounds into a zero-weight row is simply discarded).
+    result.pdfW =
+        HdEmbreeDirectionalShapingPdf(shaping, result.localDirection);
     result.importance =
         HdEmbreeDirectionalShapingImportance(shaping, result.localDirection);
     result.valid = result.pdfW > 0.0f && std::isfinite(result.pdfW);
@@ -759,16 +884,19 @@ HdEmbreeDirectionalShapingPdf(
     }
 
     constexpr int numPhi = HdEmbree_DirectionalShapingDistribution::NumPhi;
-    constexpr int numTheta = HdEmbree_DirectionalShapingDistribution::NumTheta;
+    const int numRows = distribution.NumRows();
     const GfVec3f wI = localDirection.GetNormalized();
-    const float z = GfClamp(
-        wI[2], -1.0f, std::nextafter(1.0f, 0.0f));
+    const float z = GfClamp(wI[2], -1.0f, 1.0f);
     const float phi = _Phi(wI);
+    // Row boundaries are descending in cos(theta); row v covers
+    // (bounds[v + 1], bounds[v]].
+    const auto& bounds = distribution.rowCosThetaBounds;
+    const auto rowIt = std::upper_bound(
+        bounds.begin(), bounds.end(), z, std::greater<float>());
     const int v = std::clamp(
-        static_cast<int>(
-            0.5f * (1.0f - z) * static_cast<float>(numTheta)),
+        static_cast<int>(rowIt - bounds.begin()) - 1,
         0,
-        numTheta - 1);
+        numRows - 1);
     const int h = std::clamp(
         static_cast<int>(
             phi * static_cast<float>(numPhi) / (2.0f * _pi)),
