@@ -42,15 +42,19 @@ function(ADD_BSDL_LIBRARY NAME)
     target_link_libraries(${NAME}_genluts
         PRIVATE ${NAME}_BOOTSTRAP Threads::Threads)
 
-    add_custom_target(${NAME}_generate_luts ALL
+    add_custom_command(
+        OUTPUT ${_bsdl_generated_lut_headers}
         COMMAND ${CMAKE_COMMAND} -E make_directory
                 "${_bsdl_generated_bsdl_dir}/SPI"
                 "${_bsdl_generated_bsdl_dir}/MTX"
         COMMAND $<TARGET_FILE:${NAME}_genluts> "${_bsdl_generated_bsdl_dir}"
         DEPENDS ${NAME}_genluts
-        BYPRODUCTS ${_bsdl_generated_lut_headers}
         USES_TERMINAL
+        VERBATIM
         COMMENT "Generating BSDL lookup tables")
+
+    add_custom_target(${NAME}_generate_luts ALL
+        DEPENDS ${_bsdl_generated_lut_headers})
 
     if(DEFINED bsdl_SPECTRAL_COLOR_SPACES)
         add_executable(${NAME}_jakobhanika_luts
