@@ -378,6 +378,28 @@ _SampleLightTexture(HdEmbree_LightTexture const& texture, float s, float t)
     return texture.pixels.at(y * texture.width + x);
 }
 
+GfVec3f
+_SampleRectLightTexture(HdEmbree_LightTexture const& texture,
+                        GfVec2f const& uv)
+{
+    if (texture.pixels.empty() || texture.width <= 0 || texture.height <= 0) {
+        return GfVec3f(0.0f);
+    }
+
+    const float s = 1.0f - uv[0];
+    const float t = 1.0f - uv[1];
+    const int x = std::clamp(
+        static_cast<int>(static_cast<float>(texture.width) * _ClampUnit(s)),
+        0,
+        texture.width - 1);
+    const int y = std::clamp(
+        static_cast<int>(static_cast<float>(texture.height) * _ClampUnit(t)),
+        0,
+        texture.height - 1);
+
+    return texture.pixels.at(y * texture.width + x);
+}
+
 _ShapeSample
 _SampleRect(GfMatrix4f const& xf, GfMatrix3f const& normalXform, float width,
             float height, float u1, float u2)
@@ -939,8 +961,12 @@ _EvalAreaLight(HdEmbree_LightData const& light, _ShapeSample const& ss,
 
     // Multiply by the texture, if there is one
     if (!light.texture.pixels.empty()) {
-        Le = GfCompMult(Le, _SampleLightTexture(light.texture, ss.uv[0],
-                                                1.0f - ss.uv[1]));
+        const GfVec3f textureColor =
+            std::holds_alternative<HdEmbree_Rect>(light.lightVariant)
+                ? _SampleRectLightTexture(light.texture, ss.uv)
+                : _SampleLightTexture(light.texture, ss.uv[0],
+                                      1.0f - ss.uv[1]);
+        Le = GfCompMult(Le, textureColor);
     }
 
     // If normalize is enabled, we need to divide the luminance by the surface

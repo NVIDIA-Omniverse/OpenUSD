@@ -14,7 +14,9 @@
 #include "pxr/base/gf/color.h"
 #include "pxr/base/gf/colorSpace.h"
 #include "pxr/base/gf/math.h"
+#include "pxr/imaging/hd/material.h"
 #include "pxr/imaging/hd/sceneDelegate.h"
+#include "pxr/imaging/hd/tokens.h"
 #include "pxr/imaging/hio/image.h"
 
 #include <embree4/rtcore_buffer.h>
@@ -455,20 +457,94 @@ _BuildVisibleLightGeometry(
     return true;
 }
 
+std::string
+_ResolveAssetPath(const SdfAssetPath& assetPath)
+{
+    std::string path = assetPath.GetResolvedPath();
+    if (path.empty()) {
+        path = assetPath.GetAssetPath();
+    }
+    return path;
+}
+
+std::string
+_GetTexturePathFromValue(const VtValue& value)
+{
+    if (value.IsHolding<SdfAssetPath>()) {
+        return _ResolveAssetPath(value.UncheckedGet<SdfAssetPath>());
+    }
+    return std::string();
+}
+
+std::string
+_GetTexturePathFromMaterialNode(const HdMaterialNode2& node)
+{
+    auto it = node.parameters.find(HdLightTokens->textureFile);
+    if (it == node.parameters.end()) {
+        return std::string();
+    }
+    return _GetTexturePathFromValue(it->second);
+}
+
+std::string
+_GetTexturePathFromMaterialNetwork(const HdMaterialNetwork2& network)
+{
+    const auto terminalIt = network.terminals.find(
+        HdMaterialTerminalTokens->light);
+    if (terminalIt != network.terminals.end()) {
+        const auto nodeIt = network.nodes.find(terminalIt->second.upstreamNode);
+        if (nodeIt != network.nodes.end()) {
+            if (std::string path =
+                    _GetTexturePathFromMaterialNode(nodeIt->second);
+                !path.empty()) {
+                return path;
+            }
+        }
+    }
+
+    for (const auto& nodeEntry : network.nodes) {
+        if (std::string path =
+                _GetTexturePathFromMaterialNode(nodeEntry.second);
+            !path.empty()) {
+            return path;
+        }
+    }
+
+    return std::string();
+}
+
+std::string
+_GetTexturePathFromMaterialResource(const SdfPath& id,
+                                    HdSceneDelegate *sceneDelegate)
+{
+    VtValue materialResource;
+    try {
+        materialResource = sceneDelegate->GetMaterialResource(id);
+    } catch (...) {
+        return std::string();
+    }
+
+    if (materialResource.IsHolding<HdMaterialNetwork2>()) {
+        return _GetTexturePathFromMaterialNetwork(
+            materialResource.UncheckedGet<HdMaterialNetwork2>());
+    }
+    if (materialResource.IsHolding<HdMaterialNetworkMap>()) {
+        return _GetTexturePathFromMaterialNetwork(
+            HdConvertToHdMaterialNetwork2(
+                materialResource.UncheckedGet<HdMaterialNetworkMap>()));
+    }
+
+    return std::string();
+}
+
 void
 _SyncLightTexture(const SdfPath& id, HdEmbree_LightData& light,
                   HdSceneDelegate *sceneDelegate)
 {
-    std::string path;
-    if (VtValue textureValue = sceneDelegate->GetLightParamValue(
-            id, HdLightTokens->textureFile);
-        textureValue.IsHolding<SdfAssetPath>()) {
-        SdfAssetPath texturePath =
-            textureValue.UncheckedGet<SdfAssetPath>();
-        path = texturePath.GetResolvedPath();
-        if (path.empty()) {
-            path = texturePath.GetAssetPath();
-        }
+    std::string path = _GetTexturePathFromValue(
+        sceneDelegate->GetLightParamValue(id, HdLightTokens->textureFile));
+    if (path.empty()) {
+        path = _GetTexturePathFromMaterialResource(id, sceneDelegate);
     }
     light.texture = _LoadLightTexture(path);
 }

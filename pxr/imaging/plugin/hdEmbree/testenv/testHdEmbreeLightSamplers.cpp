@@ -569,6 +569,84 @@ TestRectShapingAwareSampleMatchesDirectionalEvaluation()
 }
 
 bool
+TestRectTextureOriginUsesLocalPositiveXY()
+{
+    HdEmbree_LightData light =
+        _MakeRectLight(GfVec3f(0.0f, 0.0f, 4.0f), 2.0f, 2.0f);
+    light.texture.width = 2;
+    light.texture.height = 2;
+    light.texture.pixels = {
+        GfVec3f(1.0f, 0.0f, 0.0f),
+        GfVec3f(0.0f, 1.0f, 0.0f),
+        GfVec3f(0.0f, 0.0f, 1.0f),
+        GfVec3f(1.0f, 1.0f, 0.0f),
+    };
+
+    const GfVec3f position(0.0f);
+    const GfVec3f normal = GfVec3f::ZAxis();
+    const struct {
+        GfVec3f hitPoint;
+        GfVec2f sampleUv;
+        GfVec3f expectedLi;
+    } cases[] = {
+        {GfVec3f(0.5f, 0.5f, 4.0f),
+         GfVec2f(0.75f, 0.75f),
+         GfVec3f(1.0f, 0.0f, 0.0f)},
+        {GfVec3f(-0.5f, 0.5f, 4.0f),
+         GfVec2f(0.25f, 0.75f),
+         GfVec3f(0.0f, 1.0f, 0.0f)},
+        {GfVec3f(0.5f, -0.5f, 4.0f),
+         GfVec2f(0.75f, 0.25f),
+         GfVec3f(0.0f, 0.0f, 1.0f)},
+        {GfVec3f(-0.5f, -0.5f, 4.0f),
+         GfVec2f(0.25f, 0.25f),
+         GfVec3f(1.0f, 1.0f, 0.0f)},
+    };
+
+    for (const auto& testCase : cases) {
+        const GfVec3f direction =
+            (testCase.hitPoint - position).GetNormalized();
+        const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
+            light, position, direction);
+        if (!evaluated.valid) {
+            std::printf("    expected textured rect direction to evaluate\n");
+            return false;
+        }
+        if (!_IsClose(evaluated.Li, testCase.expectedLi, 1e-5f)) {
+            std::printf(
+                "    expected evaluated Li (%f, %f, %f), got (%f, %f, %f)\n",
+                testCase.expectedLi[0],
+                testCase.expectedLi[1],
+                testCase.expectedLi[2],
+                evaluated.Li[0],
+                evaluated.Li[1],
+                evaluated.Li[2]);
+            return false;
+        }
+
+        const auto sampled = HdEmbreeLightSampler::GetLightSample(
+            light, position, normal, testCase.sampleUv[0], testCase.sampleUv[1]);
+        if (!sampled.valid) {
+            std::printf("    expected textured rect sample to be valid\n");
+            return false;
+        }
+        if (!_IsClose(sampled.Li, testCase.expectedLi, 1e-5f)) {
+            std::printf(
+                "    expected sampled Li (%f, %f, %f), got (%f, %f, %f)\n",
+                testCase.expectedLi[0],
+                testCase.expectedLi[1],
+                testCase.expectedLi[2],
+                sampled.Li[0],
+                sampled.Li[1],
+                sampled.Li[2]);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool
 TestRectFocusDirectionalSampleFoldsToEmissionHemisphere()
 {
     HdEmbree_LightData light =
@@ -846,6 +924,8 @@ main(int /*argc*/, char** /*argv*/)
               &TestIesDirectionalDistributionBuildsAndSamples);
     _Register("RectShapingAwareSampleMatchesDirectionalEvaluation",
               &TestRectShapingAwareSampleMatchesDirectionalEvaluation);
+    _Register("RectTextureOriginUsesLocalPositiveXY",
+              &TestRectTextureOriginUsesLocalPositiveXY);
     _Register("RectFocusDirectionalSampleFoldsToEmissionHemisphere",
               &TestRectFocusDirectionalSampleFoldsToEmissionHemisphere);
     _Register("DiskShapingAwareSampleMatchesDirectionalEvaluation",
