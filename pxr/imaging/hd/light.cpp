@@ -430,6 +430,19 @@ _DistantMeasure(_PhysicalLightParams const& params)
 }
 
 double
+_DistantNormalizeMeasure(_PhysicalLightParams const& params)
+{
+    const double theta = _DistantHalfAngle(params);
+    if (theta <= 0.0) {
+        return 1.0;
+    }
+
+    const double sinTheta = std::sin(theta);
+    const double sin2 = sinTheta * sinTheta;
+    return _Pi * ((theta <= 0.5 * _Pi) ? sin2 : (2.0 - sin2));
+}
+
+double
 _LightMeasure(_PhysicalLightParams const& params)
 {
     if (params.lightType == HdSprimTypeTokens->rectLight) {
@@ -469,7 +482,18 @@ _AreaGeometricNormalizer(_PhysicalLightParams const& params)
 double
 _DistantGeometricNormalizer(_PhysicalLightParams const& params)
 {
-    return params.normalize ? 1.0 : _DistantMeasure(params);
+    const double physicalMeasure = _DistantMeasure(params);
+    if (!params.normalize) {
+        return physicalMeasure;
+    }
+
+    // A renderer applies the standard UsdLux distant-light normalization
+    // after this scale. Compensate here when the physical illuminance measure
+    // differs, which occurs for cones extending behind the receiving plane.
+    const double normalizeMeasure = _DistantNormalizeMeasure(params);
+    return normalizeMeasure > 0.0
+        ? physicalMeasure / normalizeMeasure
+        : 0.0;
 }
 
 double

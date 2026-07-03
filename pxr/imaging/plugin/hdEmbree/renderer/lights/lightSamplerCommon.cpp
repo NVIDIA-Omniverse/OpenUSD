@@ -111,6 +111,7 @@ ty::EvalLightBasic(
             _BlackbodyTemperatureAsRgb(
                 light.colorTemperature, renderColorSpace));
     }
+    radianceEmitted *= light.physicalScale;
     return radianceEmitted;
 }
 

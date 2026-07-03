@@ -411,6 +411,14 @@ pxr_build_test(testHdTypes
        testenv/testHdTypes.cpp
 )
 
+pxr_build_test(testHdPhysicalLight
+   LIBRARIES
+       hd
+
+   CPPFILES
+       testenv/testHdPhysicalLight.cpp
+)
+
 pxr_build_test(testHdCollectionExpressionEvaluator
     LIBRARIES
         hd
@@ -482,6 +490,10 @@ pxr_register_test(testHdTimeSampleArray
 
 pxr_register_test(testHdTypes
     COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdTypes"
+)
+
+pxr_register_test(testHdPhysicalLight
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdPhysicalLight"
 )
 
 pxr_register_test(testHdCollectionExpressionEvaluator

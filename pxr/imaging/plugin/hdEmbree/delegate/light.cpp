@@ -75,6 +75,30 @@ _HasAuthoredDirectionalShaping(ty::Shaping const& shaping)
            shaping.ies.iesFile.valid();
 }
 
+TfToken
+_GetLightType(ty::LightVariant const& lightVariant)
+{
+    if (std::holds_alternative<ty::CylinderLight>(lightVariant)) {
+        return HdSprimTypeTokens->cylinderLight;
+    }
+    if (std::holds_alternative<ty::DiskLight>(lightVariant)) {
+        return HdSprimTypeTokens->diskLight;
+    }
+    if (std::holds_alternative<ty::DistantLight>(lightVariant)) {
+        return HdSprimTypeTokens->distantLight;
+    }
+    if (std::holds_alternative<ty::DomeLight>(lightVariant)) {
+        return HdSprimTypeTokens->domeLight;
+    }
+    if (std::holds_alternative<ty::RectLight>(lightVariant)) {
+        return HdSprimTypeTokens->rectLight;
+    }
+    if (std::holds_alternative<ty::SphereLight>(lightVariant)) {
+        return HdSprimTypeTokens->sphereLight;
+    }
+    return TfToken();
+}
+
 // Map an IES profile vertical angle (radians) to the eval-space theta where
 // it lands after the angleScale remap in PxrIESFile::eval.
 float
@@ -1311,6 +1335,13 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
             id, HdTokens->lightLink).GetWithDefault(TfToken());
         _lightData.shadowLink = sceneDelegate->GetLightParamValue(
             id, HdTokens->shadowLink).GetWithDefault(TfToken());
+    }
+
+    if (bits & (HdLight::DirtyTransform |
+                HdLight::DirtyParams |
+                HdLight::DirtyResource)) {
+        _lightData.physicalScale = HdLight::ComputePhysicalScalingFactor(
+            sceneDelegate, id, _GetLightType(_lightData.lightVariant));
     }
 
     ty::Renderer *renderer = embreeRenderParam->GetRenderer();

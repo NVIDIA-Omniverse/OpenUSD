@@ -6,6 +6,7 @@
 //
 #include <delegate/light.h>
 #include <renderer/lights/lightSampler.h>
+#include <renderer/lights/lightSamplerCommon.h>
 
 #include "pxr/base/gf/color.h"
 #include "pxr/base/gf/colorSpace.h"
@@ -57,6 +58,26 @@ _IsClose(const GfVec3f& a, const GfVec3f& b, float eps = 1e-5f)
     return _IsClose(a[0], b[0], eps) &&
            _IsClose(a[1], b[1], eps) &&
            _IsClose(a[2], b[2], eps);
+}
+
+bool
+TestPhysicalScaleMultipliesEmission()
+{
+    ty::LightData light;
+    light.color = GfVec3f(1.0f);
+    light.intensity = 1.0f;
+    light.diffuse = 1.0f;
+    light.physicalScale = 3.0f;
+    const GfVec3f radiance =
+        ty::EvalLightBasic(light, ty::RenderColorSpace::Data);
+    if (!_IsClose(radiance, GfVec3f(3.0f))) {
+        std::printf(
+            "    expected physical scale to produce (3, 3, 3), got "
+            "(%f, %f, %f)\n",
+            radiance[0], radiance[1], radiance[2]);
+        return false;
+    }
+    return true;
 }
 
 GfVec3f
@@ -1300,6 +1321,8 @@ TestDomePdfApproximatelyNormalizes()
 int
 main(int /*argc*/, char** /*argv*/)
 {
+    _Register("PhysicalScaleMultipliesEmission",
+              &TestPhysicalScaleMultipliesEmission);
     _Register("DomeDistributionBuildsCdfs", &TestDomeDistributionBuildsCdfs);
     _Register("DomeTextureConvertsToRenderColorSpace",
               &TestDomeTextureConvertsToRenderColorSpace);

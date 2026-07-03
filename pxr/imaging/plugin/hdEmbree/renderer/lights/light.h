@@ -240,6 +240,8 @@ struct LightData
     float exposure = 0.0f;
     float colorTemperature = 6500.0f;
     bool enableColorTemperature = false;
+    /// Hydra-computed physical-light scale applied to emitted radiance.
+    float physicalScale = 1.0f;
     /// Concrete light shape and its local-space authored parameters.
     LightVariant lightVariant;
     /// Apply UsdLux emitted-power normalization for the selected shape.
