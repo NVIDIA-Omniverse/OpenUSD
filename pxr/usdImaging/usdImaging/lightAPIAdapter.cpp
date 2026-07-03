@@ -10,8 +10,10 @@
 
 #include "pxr/usdImaging/usdImaging/dataSourceMaterial.h"
 
+#include "pxr/usd/usdGeom/metrics.h"
 #include "pxr/usd/usdLux/lightAPI.h"
 
+#include "pxr/imaging/hd/light.h"
 #include "pxr/imaging/hd/lightSchema.h"
 #include "pxr/imaging/hd/materialSchema.h"
 #include "pxr/imaging/hd/retainedDataSource.h"
@@ -54,6 +56,10 @@ public:
         if (name == HdTokens->isLight) {
             return HdRetainedTypedSampledDataSource<bool>::New(true);
         }
+        if (name == HdLightTokens->metersPerUnit) {
+            return HdRetainedTypedSampledDataSource<double>::New(
+                UsdGeomGetStageMetersPerUnit(_lightApi.GetPrim().GetStage()));
+        }
         if (name == HdTokens->materialSyncMode) {
             if (UsdAttribute attr = _lightApi.GetMaterialSyncModeAttr()) {
                 TfToken v;
@@ -92,6 +98,7 @@ private:
         static const TfTokenVector names = {
             HdTokens->filters,
             HdTokens->isLight,
+            HdLightTokens->metersPerUnit,
             HdTokens->materialSyncMode,
         };
 
@@ -202,7 +209,9 @@ UsdImagingLightAPIAdapter::InvalidateImagingSubprim(
 
         if (!dirtiedLight && !dirtiedMaterial &&
             // This will capture other contents of light data source
-            TfStringStartsWith(propertyName.GetString(), "light:")) {
+            (TfStringStartsWith(propertyName.GetString(), "light:") ||
+             TfStringStartsWith(propertyName.GetString(), "photometric:") ||
+             TfStringStartsWith(propertyName.GetString(), "physical:"))) {
             dirtiedLight = true;
             result.insert(HdLightSchema::GetDefaultLocator());
         }

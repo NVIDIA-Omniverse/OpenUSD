@@ -36,6 +36,7 @@ PXR_NAMESPACE_OPEN_SCOPE
     (diffuse)                                               \
     (specular)                                              \
     (normalize)                                             \
+    (metersPerUnit)                                         \
     (hasShadow)                                             \
     ((shapingFocus, "shaping:focus"))                       \
     ((shapingFocusTint, "shaping:focusTint"))               \
@@ -44,6 +45,12 @@ PXR_NAMESPACE_OPEN_SCOPE
     ((shapingIesFile, "shaping:ies:file"))                  \
     ((shapingIesAngleScale, "shaping:ies:angleScale"))      \
     ((shapingIesNormalize, "shaping:ies:normalize"))        \
+    ((photometricPower, "photometric:power"))                \
+    ((photometricIlluminance, "photometric:illuminance"))    \
+    ((photometricIlluminanceDistance,                        \
+        "photometric:illuminance:distance"))                 \
+    ((physicalIlluminant, "physical:illuminant"))            \
+    ((physicalCustomIlluminant, "physical:customIlluminant")) \
     ((shadowEnable, "shadow:enable"))                       \
     ((shadowColor, "shadow:color"))                         \
     ((shadowDistance, "shadow:distance"))                   \
@@ -95,6 +102,62 @@ public:
 
     HD_API
     static std::string StringifyDirtyBits(HdDirtyBits dirtyBits);
+
+    /// Computes a scalar that converts the delegate's unnormalized emitted
+    /// radiance/luminance into the value required by the UsdLux physical
+    /// lighting APIs. If the light has no photometric parameters, this returns
+    /// 1.0.
+    HD_API
+    static float ComputePhysicalScalingFactor(
+        HdSceneDelegate* sceneDelegate,
+        SdfPath const& id,
+        TfToken const& lightType);
+
+    /// Returns the reciprocal of the evaluated emission luminance from the
+    /// standard light color/intensity/exposure/diffuse/color-temperature
+    /// inputs. If that luminance is zero, this returns 0.
+    HD_API
+    static float EmissionLuminanceFactor(
+        HdSceneDelegate* sceneDelegate,
+        SdfPath const& id,
+        TfToken const& lightType);
+
+    /// Returns the geometry factor used by photometric:power on area lights.
+    HD_API
+    static float AreaLightPowerFactor(
+        HdSceneDelegate* sceneDelegate,
+        SdfPath const& id,
+        TfToken const& lightType);
+
+    /// Returns the projected-solid-angle factor used by
+    /// photometric:illuminance on area lights.
+    HD_API
+    static float AreaLightIlluminanceFactor(
+        HdSceneDelegate* sceneDelegate,
+        SdfPath const& id,
+        TfToken const& lightType);
+
+    /// Returns the cone-size factor used by photometric:illuminance on distant
+    /// lights.
+    HD_API
+    static float DistantLightIlluminanceFactor(
+        HdSceneDelegate* sceneDelegate,
+        SdfPath const& id);
+
+    /// Returns the reciprocal upper-hemisphere illuminance factor for a dome
+    /// texture. Textureless domes use the constant-color value 1 / pi.
+    HD_API
+    static float DomeTextureIlluminanceFactor(
+        HdSceneDelegate* sceneDelegate,
+        SdfPath const& id);
+
+    /// Returns the IES profile power compensation factor. If there is no valid
+    /// IES profile, or the profile is already normalized by the delegate's IES
+    /// evaluator, this returns 1.0.
+    HD_API
+    static float IesPowerFactor(
+        HdSceneDelegate* sceneDelegate,
+        SdfPath const& id);
 
     /// Returns the identifier of the instancer (if any) for this Sprim. If this
     /// Sprim is not instanced, an empty SdfPath will be returned.

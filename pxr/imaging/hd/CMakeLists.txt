@@ -13,6 +13,7 @@ pxr_library(hd
         sdf
         cameraUtil
         hf
+        hio
         pxOsd
         sdr
         TBB::tbb
@@ -239,6 +240,7 @@ pxr_library(hd
 
     PRIVATE_CLASSES
         ${optionalPrivateClasses}
+        lightIesProfile
 
     RESOURCE_FILES
         plugInfo.json

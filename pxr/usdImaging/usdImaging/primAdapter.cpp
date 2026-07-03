@@ -18,6 +18,7 @@
 
 #include "pxr/usd/sdf/schema.h"
 #include "pxr/usd/usd/collectionAPI.h"
+#include "pxr/usd/usdGeom/metrics.h"
 #include "pxr/usd/usdGeom/primvarsAPI.h"
 #include "pxr/usd/usdLux/lightAPI.h"
 #include "pxr/usd/usdLux/lightFilter.h"
@@ -709,6 +710,15 @@ UsdImagingPrimAdapter::LookupLightParamAttribute(
             UsdLuxTokens->inputsShapingIesAngleScale },
         { HdLightTokens->shapingIesNormalize, 
             UsdLuxTokens->inputsShapingIesNormalize },
+        { HdLightTokens->photometricPower, UsdLuxTokens->photometricPower },
+        { HdLightTokens->photometricIlluminance,
+            UsdLuxTokens->photometricIlluminance },
+        { HdLightTokens->photometricIlluminanceDistance,
+            UsdLuxTokens->photometricIlluminanceDistance },
+        { HdLightTokens->physicalIlluminant,
+            UsdLuxTokens->physicalIlluminant },
+        { HdLightTokens->physicalCustomIlluminant,
+            UsdLuxTokens->physicalCustomIlluminant },
         { HdLightTokens->shadowEnable, UsdLuxTokens->inputsShadowEnable },
         { HdLightTokens->shadowColor, UsdLuxTokens->inputsShadowColor },
         { HdLightTokens->shadowDistance, UsdLuxTokens->inputsShadowDistance },
@@ -761,7 +771,9 @@ UsdImagingPrimAdapter::GetLightParamValue(
         return _GetUsdPrimAttribute(prim, paramName, time);
     }
 
-    if (paramName == HdTokens->lightLink) {
+    if (paramName == HdLightTokens->metersPerUnit) {
+        return VtValue(UsdGeomGetStageMetersPerUnit(prim.GetStage()));
+    } else if (paramName == HdTokens->lightLink) {
         UsdCollectionAPI lightLink = light.GetLightLinkCollectionAPI();
         return VtValue(collectionCache.GetIdForCollection(lightLink));
     } else if (paramName == HdTokens->filters) {
