@@ -53,6 +53,10 @@ struct UsdLuxTokensType {
     /// 
     /// Fallback value for UsdLuxDomeLight::GetTextureFormatAttr(), Fallback value for UsdLuxDomeLight_1::GetTextureFormatAttr()
     const TfToken automatic;
+    /// \brief "blackbody"
+    ///
+    /// Possible value for UsdLuxPhysicalLightIlluminantAPI::GetPhysicalIlluminantAttr()
+    const TfToken blackbody;
     /// \brief "collection:filterLink:includeRoot"
     /// 
     /// UsdLuxLightFilter
@@ -73,6 +77,10 @@ struct UsdLuxTokensType {
     /// 
     /// Possible value for UsdLuxLightListAPI::GetLightListCacheBehaviorAttr(), Possible value for UsdLuxListAPI::GetLightListCacheBehaviorAttr()
     const TfToken consumeAndHalt;
+    /// \brief "custom"
+    ///
+    /// Possible value for UsdLuxPhysicalLightIlluminantAPI::GetPhysicalIlluminantAttr()
+    const TfToken custom;
     /// \brief "cubeMapVerticalCross"
     /// 
     /// Possible value for UsdLuxDomeLight::GetTextureFormatAttr(), Possible value for UsdLuxDomeLight_1::GetTextureFormatAttr()
@@ -97,6 +105,10 @@ struct UsdLuxTokensType {
     /// 
     /// Possible value for UsdLuxLightAPI::GetMaterialSyncModeAttr()
     const TfToken independent;
+    /// \brief "illuminant D"
+    ///
+    /// Possible value for UsdLuxPhysicalLightIlluminantAPI::GetPhysicalIlluminantAttr()
+    const TfToken illuminantD;
     /// \brief "inputs:angle"
     /// 
     /// UsdLuxDistantLight
@@ -257,6 +269,26 @@ struct UsdLuxTokensType {
     /// 
     ///  This token represents the suffix for a UsdGeomXformOp used to orient a light with the stage's up axis. 
     const TfToken orientToStageUpAxis;
+    /// \brief "physical:customIlluminant"
+    ///
+    /// UsdLuxPhysicalLightIlluminantAPI
+    const TfToken physicalCustomIlluminant;
+    /// \brief "physical:illuminant"
+    ///
+    /// UsdLuxPhysicalLightIlluminantAPI
+    const TfToken physicalIlluminant;
+    /// \brief "photometric:illuminance"
+    ///
+    /// UsdLuxPhotometricAreaLightAPI, UsdLuxPhotometricDomeLightAPI, UsdLuxPhotometricDistantLightAPI
+    const TfToken photometricIlluminance;
+    /// \brief "photometric:illuminance:distance"
+    ///
+    /// UsdLuxPhotometricAreaLightAPI
+    const TfToken photometricIlluminanceDistance;
+    /// \brief "photometric:power"
+    ///
+    /// UsdLuxPhotometricAreaLightAPI
+    const TfToken photometricPower;
     /// \brief "poleAxis"
     /// 
     /// UsdLuxDomeLight_1
@@ -285,6 +317,10 @@ struct UsdLuxTokensType {
     /// 
     /// Fallback value for UsdLuxVolumeLightAPI schema attribute light:shaderId
     const TfToken VolumeLight;
+    /// \brief "white"
+    ///
+    /// Possible value for UsdLuxPhysicalLightIlluminantAPI::GetPhysicalIlluminantAttr()
+    const TfToken white;
     /// \brief "Y"
     /// 
     /// Possible value for UsdLuxDomeLight_1::GetPoleAxisAttr()
@@ -337,6 +373,22 @@ struct UsdLuxTokensType {
     /// 
     /// Schema identifer and family for UsdLuxListAPI
     const TfToken ListAPI;
+    /// \brief "PhysicalLightIlluminantAPI"
+    ///
+    /// Schema identifer and family for UsdLuxPhysicalLightIlluminantAPI
+    const TfToken PhysicalLightIlluminantAPI;
+    /// \brief "PhotometricAreaLightAPI"
+    ///
+    /// Schema identifer and family for UsdLuxPhotometricAreaLightAPI
+    const TfToken PhotometricAreaLightAPI;
+    /// \brief "PhotometricDomeLightAPI"
+    ///
+    /// Schema identifer and family for UsdLuxPhotometricDomeLightAPI
+    const TfToken PhotometricDomeLightAPI;
+    /// \brief "PhotometricDistantLightAPI"
+    ///
+    /// Schema identifer and family for UsdLuxPhotometricDistantLightAPI
+    const TfToken PhotometricDistantLightAPI;
     /// \brief "MeshLightAPI"
     /// 
     /// Schema identifer and family for UsdLuxMeshLightAPI

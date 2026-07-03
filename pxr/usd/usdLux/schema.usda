@@ -662,6 +662,123 @@ class "ListAPI" (
     )
 }
 
+class "PhysicalLightIlluminantAPI" (
+    inherits = </APISchemaBase>
+    doc = """Controls the illuminant spectrum used by physical light APIs."""
+    customData = {
+        token apiSchemaType = "singleApply"
+        token[] apiSchemaCanOnlyApplyTo = [
+            "RectLight",
+            "SphereLight",
+            "DiskLight",
+            "CylinderLight",
+            "DomeLight",
+            "DistantLight"
+        ]
+    }
+)
+{
+    token physical:illuminant = "white" (
+        displayName = "Illuminant"
+        allowedTokens = ["white", "blackbody", "illuminant D", "custom"]
+        doc = """The illuminant spectrum of the light in spectral radiance.
+
+        The default of "white" specifies that the spectrum matches the
+        whitepoint of the rendering color space. "blackbody" specifies a
+        blackbody spectrum at `inputs:colorTemperature`; "illuminant D"
+        specifies a CIE standard illuminant D spectrum at
+        `inputs:colorTemperature`; and "custom" specifies that the spectrum
+        in `physical:customIlluminant` should be used.
+        """
+    )
+
+    float2[] physical:customIlluminant = [] (
+        displayName = "Custom Illuminant"
+        doc = """An array of (nanometer, radiance) pairs specifying the
+        emission spectrum of the light.
+
+        The pairs must be ordered such that the wavelength values are
+        monotonically increasing. The wavelengths of the first and last pair in
+        the array define the bounds of the emission range; emission outside
+        that range is zero. The illuminant may be specified at arbitrary
+        intervals and may be resampled to a uniform grid by renderers.
+        """
+    )
+}
+
+class "PhotometricAreaLightAPI" (
+    inherits = </APISchemaBase>
+    prepend apiSchemas = ["PhysicalLightIlluminantAPI"]
+    doc = """Photometric controls for area lights."""
+    customData = {
+        token apiSchemaType = "singleApply"
+        token[] apiSchemaCanOnlyApplyTo = [
+            "RectLight",
+            "SphereLight",
+            "DiskLight",
+            "CylinderLight"
+        ]
+    }
+)
+{
+    float photometric:power = 1600 (
+        displayName = "Power"
+        doc = """Photometric power of the light in lumens."""
+    )
+
+    float photometric:illuminance = 0 (
+        displayName = "Illuminance"
+        doc = """Illuminance, in lux, received by a surface directly facing
+        the light at `photometric:illuminance:distance` meters. This attribute
+        only has effect when `photometric:illuminance:distance` is non-zero.
+        """
+    )
+
+    float photometric:illuminance:distance = 0 (
+        displayName = "Illuminance Distance"
+        doc = """When non-zero, the light's brightness will be such that a
+        surface directly facing the light at this distance, in meters, will
+        receive `photometric:illuminance` lux.
+        """
+    )
+}
+
+class "PhotometricDomeLightAPI" (
+    inherits = </APISchemaBase>
+    prepend apiSchemas = ["PhysicalLightIlluminantAPI"]
+    doc = """Photometric controls for dome lights."""
+    customData = {
+        token apiSchemaType = "singleApply"
+        token[] apiSchemaCanOnlyApplyTo = ["DomeLight"]
+    }
+)
+{
+    float photometric:illuminance = 10000 (
+        displayName = "Illuminance"
+        doc = """Illuminance, in lux, received by an upward-facing patch from
+        this light.
+        """
+    )
+}
+
+class "PhotometricDistantLightAPI" (
+    inherits = </APISchemaBase>
+    prepend apiSchemas = ["PhysicalLightIlluminantAPI"]
+    doc = """Photometric controls for distant lights."""
+    customData = {
+        token apiSchemaType = "singleApply"
+        token[] apiSchemaCanOnlyApplyTo = ["DistantLight"]
+    }
+)
+{
+    float photometric:illuminance = 10000 (
+        displayName = "Illuminance"
+        doc = """Illuminance, in lux, received by a patch facing
+        perpendicular to this light.
+        """
+    )
+}
+
 class "ShapingAPI" (
     inherits = </APISchemaBase>
     doc = """Controls for shaping a light's emission."""

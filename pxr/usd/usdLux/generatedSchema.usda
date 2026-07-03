@@ -181,6 +181,84 @@ be interpreted: consumeAndHalt, consumeAndContinue, or ignore."""
     )
 }
 
+class "PhysicalLightIlluminantAPI" (
+    customData = {
+        string userDocBrief = "Controls the illuminant spectrum used by physical light APIs."
+    }
+)
+{
+    token physical:illuminant = "white" (
+        allowedTokens = ["white", "blackbody", "illuminant D", "custom"]
+        customData = {
+            string userDocBrief = "The illuminant spectrum of the light in spectral radiance."
+        }
+        displayName = "Illuminant"
+    )
+    float2[] physical:customIlluminant = [] (
+        customData = {
+            string userDocBrief = "An array of (nanometer, radiance) pairs specifying the emission spectrum of the light."
+        }
+        displayName = "Custom Illuminant"
+    )
+}
+
+class "PhotometricAreaLightAPI" (
+    apiSchemas = ["PhysicalLightIlluminantAPI"]
+    customData = {
+        string userDocBrief = "Photometric controls for area lights."
+    }
+)
+{
+    float photometric:power = 1600 (
+        customData = {
+            string userDocBrief = "Photometric power of the light in lumens."
+        }
+        displayName = "Power"
+    )
+    float photometric:illuminance = 0 (
+        customData = {
+            string userDocBrief = "Illuminance, in lux, received by a surface directly facing the light at photometric:illuminance:distance meters. This attribute only has effect when photometric:illuminance:distance is non-zero."
+        }
+        displayName = "Illuminance"
+    )
+    float photometric:illuminance:distance = 0 (
+        customData = {
+            string userDocBrief = "When non-zero, the light's brightness will be such that a surface directly facing the light at this distance, in meters, will receive photometric:illuminance lux."
+        }
+        displayName = "Illuminance Distance"
+    )
+}
+
+class "PhotometricDomeLightAPI" (
+    apiSchemas = ["PhysicalLightIlluminantAPI"]
+    customData = {
+        string userDocBrief = "Photometric controls for dome lights."
+    }
+)
+{
+    float photometric:illuminance = 10000 (
+        customData = {
+            string userDocBrief = "Illuminance, in lux, received by an upward-facing patch from this light."
+        }
+        displayName = "Illuminance"
+    )
+}
+
+class "PhotometricDistantLightAPI" (
+    apiSchemas = ["PhysicalLightIlluminantAPI"]
+    customData = {
+        string userDocBrief = "Photometric controls for distant lights."
+    }
+)
+{
+    float photometric:illuminance = 10000 (
+        customData = {
+            string userDocBrief = "Illuminance, in lux, received by a patch facing perpendicular to this light."
+        }
+        displayName = "Illuminance"
+    )
+}
+
 class "ShapingAPI" (
     customData = {
         string userDocBrief = """Controls for shaping a light's emission, such

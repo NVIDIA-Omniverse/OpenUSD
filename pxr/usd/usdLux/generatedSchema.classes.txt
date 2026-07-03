@@ -12,6 +12,10 @@ lightAPI
 lightFilter
 lightListAPI
 listAPI
+physicalLightIlluminantAPI
+photometricAreaLightAPI
+photometricDomeLightAPI
+photometricDistantLightAPI
 meshLightAPI
 nonboundableLightBase
 pluginLight
@@ -37,6 +41,10 @@ wrapLightAPI.cpp
 wrapLightFilter.cpp
 wrapLightListAPI.cpp
 wrapListAPI.cpp
+wrapPhysicalLightIlluminantAPI.cpp
+wrapPhotometricAreaLightAPI.cpp
+wrapPhotometricDomeLightAPI.cpp
+wrapPhotometricDistantLightAPI.cpp
 wrapMeshLightAPI.cpp
 wrapNonboundableLightBase.cpp
 wrapPluginLight.cpp
