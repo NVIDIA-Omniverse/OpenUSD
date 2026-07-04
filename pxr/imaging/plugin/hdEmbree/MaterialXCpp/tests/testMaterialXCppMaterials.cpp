@@ -85,6 +85,63 @@ IsFiniteNonNegative(const Vec3f& value)
     return true;
 }
 
+static bool
+TestMaterialNormalSpaceContracts()
+{
+    ParamMap emptyParams;
+    if (EvalStandardSurface(emptyParams).normalSpace !=
+            SurfaceNormalSpace::None ||
+        EvalOpenPbr(emptyParams).normalSpace !=
+            SurfaceNormalSpace::None ||
+        EvalGltfPbr(emptyParams).normalSpace !=
+            SurfaceNormalSpace::None ||
+        EvalUsdPreviewSurface(emptyParams).normalSpace !=
+            SurfaceNormalSpace::None) {
+        return false;
+    }
+
+    ParamMap standardParams;
+    standardParams["normal"] = Value(Vec3f(0.0f, 1.0f, 0.0f));
+    ParamMap openPbrParams;
+    openPbrParams["geometry_normal"] = Value(Vec3f(0.0f, 1.0f, 0.0f));
+    ParamMap gltfParams;
+    gltfParams["normal"] = Value(Vec3f(0.0f, 1.0f, 0.0f));
+    ParamMap previewParams;
+    previewParams["normal"] = Value(Vec3f(0.0f, 1.0f, 0.0f));
+
+    ParamMap legacyOpenPbrParams;
+    legacyOpenPbrParams["normal"] = Value(Vec3f(0.0f, 1.0f, 0.0f));
+    ParamMap adobeParams;
+    adobeParams["geometry_normal"] = Value(Vec3f(0.0f, 1.0f, 0.0f));
+
+    const SurfaceClosure standardClosure =
+        EvalStandardSurface(standardParams);
+    const SurfaceClosure previewClosure =
+        EvalUsdPreviewSurface(previewParams);
+    Vec3f resolvedWorldNormal;
+    Vec3f resolvedTangentNormal;
+    const Vec3f tangent(1.0f, 0.0f, 0.0f);
+    const Vec3f bitangent(0.0f, 0.0f, 1.0f);
+    const Vec3f shadingNormal(0.0f, 1.0f, 0.0f);
+    if (!standardClosure.ResolveNormal(
+            tangent, bitangent, shadingNormal, &resolvedWorldNormal) ||
+        !previewClosure.ResolveNormal(
+            tangent, bitangent, shadingNormal, &resolvedTangentNormal)) {
+        return false;
+    }
+
+    return standardClosure.normalSpace == SurfaceNormalSpace::World &&
+           EvalOpenPbr(openPbrParams).normalSpace == SurfaceNormalSpace::World &&
+           EvalOpenPbr(legacyOpenPbrParams).normalSpace ==
+               SurfaceNormalSpace::World &&
+           EvalAdobeOpenPbr(adobeParams).normalSpace ==
+               SurfaceNormalSpace::World &&
+           EvalGltfPbr(gltfParams).normalSpace == SurfaceNormalSpace::World &&
+           previewClosure.normalSpace == SurfaceNormalSpace::Tangent &&
+           Test_IsClose(resolvedWorldNormal, shadingNormal, 1e-5f) &&
+           Test_IsClose(resolvedTangentNormal, bitangent, 1e-5f);
+}
+
 // ---------------------------------------------------------------------------
 // Standard Surface
 // ---------------------------------------------------------------------------
@@ -2187,6 +2244,7 @@ TestUsdPreviewSurfaceIgnoresOcclusion()
 void
 Test_RegisterMaterialTests()
 {
+    _REG(TestMaterialNormalSpaceContracts);
     _REG(TestStandardSurfaceDefaults);
     _REG(TestStandardSurfaceMetallic);
     _REG(TestStandardSurfaceGoldMetallicSharpRoughnessStaysStable);

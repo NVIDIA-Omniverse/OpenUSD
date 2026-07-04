@@ -350,6 +350,9 @@ EvalStandardSurface(const ParamMap& params)
     c.presence = c.opacity;
 
     c.normal = Get<Vec3f>(params, _kNormal, Vec3f(0.0f, 0.0f, 1.0f));
+    c.normalSpace = params.Find(_kNormal)
+        ? SurfaceNormalSpace::World
+        : SurfaceNormalSpace::None;
     const Vec3f tangent =
         Get<Vec3f>(params, _kTangent, Vec3f(1.0f, 0.0f, 0.0f));
     const bool hasCoatNormal = params.Find(_kCoatNormal) != nullptr;

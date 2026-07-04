@@ -187,6 +187,9 @@ EvalUsdPreviewSurface(const ParamMap& params)
     }
 
     c.normal = Get<Vec3f>(params, _kNormal, Vec3f(0.0f, 0.0f, 1.0f));
+    c.normalSpace = params.Find(_kNormal)
+        ? SurfaceNormalSpace::Tangent
+        : SurfaceNormalSpace::None;
 
     c.transmissionColor = Vec3f(1.0f);
     c.sheen = 0.0f;

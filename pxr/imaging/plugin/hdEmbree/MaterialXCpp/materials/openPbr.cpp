@@ -344,11 +344,16 @@ EvalOpenPbr(const ParamMap& params)
 
     c.thinWalled = Get<bool>(params, _kGeometryThinWalled, false);
     c.hasInteriorMedium = !c.thinWalled && !c.interiorMedium.IsVacuum();
+    const bool hasGeometryNormal =
+        params.Find(_kGeometryNormal) || params.Find(_kLegacyNormal);
     c.normal = _GetWithFallback<Vec3f>(
         params,
         _kGeometryNormal,
         _kLegacyNormal,
         Vec3f(0.0f, 0.0f, 1.0f));
+    c.normalSpace = hasGeometryNormal
+        ? SurfaceNormalSpace::World
+        : SurfaceNormalSpace::None;
     const Vec3f tangent = _GetWithFallback<Vec3f>(
         params,
         _kGeometryTangent,

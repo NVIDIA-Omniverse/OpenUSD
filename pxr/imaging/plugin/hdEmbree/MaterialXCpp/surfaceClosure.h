@@ -15,6 +15,13 @@
 
 namespace mxcpp {
 
+enum class SurfaceNormalSpace
+{
+    None,
+    Tangent,
+    World
+};
+
 inline float
 _RegularizeAlphaRoughness(float alphaRoughness)
 {
@@ -53,6 +60,7 @@ struct SurfaceClosure
     Vec3f sheenColor = Vec3f(1.0f);
     float sheenRoughness = 0.3f;
     Vec3f normal = Vec3f(0.0f, 0.0f, 1.0f);
+    SurfaceNormalSpace normalSpace = SurfaceNormalSpace::None;
     bool thinWalled = false;
     bool hasInteriorMedium = false;
     MediumProperties interiorMedium;
@@ -77,6 +85,37 @@ struct SurfaceClosure
 
     bool HasBsdfTree() const {
         return !bsdfTree.Empty();
+    }
+
+    bool ResolveNormal(const Vec3f& tangent,
+                       const Vec3f& bitangent,
+                       const Vec3f& shadingNormal,
+                       Vec3f* result) const {
+        if (!result || normalSpace == SurfaceNormalSpace::None) {
+            return false;
+        }
+
+        Vec3f resolved;
+        if (normalSpace == SurfaceNormalSpace::Tangent) {
+            resolved =
+                tangent * normal[0] +
+                bitangent * normal[1] +
+                shadingNormal * normal[2];
+        } else {
+            resolved = normal;
+        }
+
+        const float lengthSquared = resolved.length2();
+        if (!std::isfinite(resolved[0]) ||
+            !std::isfinite(resolved[1]) ||
+            !std::isfinite(resolved[2]) ||
+            !std::isfinite(lengthSquared) ||
+            lengthSquared < 1.0e-18f) {
+            return false;
+        }
+
+        *result = resolved.normalized();
+        return true;
     }
 
     bool HasDispersion() const {

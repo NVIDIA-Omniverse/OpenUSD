@@ -199,7 +199,7 @@ _EvalBump(const ParamMap& inputs, const ShadingContext& ctx,
 
     Vec3f worldNormal = Cross(dpdu, dpdv);
     if (Dot(worldNormal, worldNormal) < _kFloatEps * _kFloatEps) {
-        (*outputs)[_kOut] = Value(Vec3f(0.0f, 0.0f, 1.0f));
+        (*outputs)[_kOut] = Value(basisNormal);
         return;
     }
     worldNormal.normalize();
@@ -207,17 +207,7 @@ _EvalBump(const ParamMap& inputs, const ShadingContext& ctx,
         worldNormal = -worldNormal;
     }
 
-    Vec3f tangentSpaceNormal(
-        Dot(worldNormal, ctx.tangent),
-        Dot(worldNormal, ctx.bitangent),
-        Dot(worldNormal, ctx.normal));
-    if (Dot(tangentSpaceNormal, tangentSpaceNormal) <
-        _kFloatEps * _kFloatEps) {
-        (*outputs)[_kOut] = Value(Vec3f(0.0f, 0.0f, 1.0f));
-        return;
-    }
-    tangentSpaceNormal.normalize();
-    (*outputs)[_kOut] = Value(tangentSpaceNormal);
+    (*outputs)[_kOut] = Value(worldNormal);
 }
 
 // ---- Geometric property nodes --------------------------------------------

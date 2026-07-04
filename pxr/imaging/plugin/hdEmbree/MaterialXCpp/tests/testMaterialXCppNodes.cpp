@@ -1986,6 +1986,18 @@ static bool TestBumpDefaultBasis() {
     fn(in, ctx, &out);
 
     Vec3f expected = Vec3f(-1.0f, 0.0f, 1.0f).normalized();
+    if (!Test_IsClose(_GetVec3(out), expected, 1e-5f)) return false;
+
+    ctx.normal = Vec3f(0.0f, 1.0f, 0.0f);
+    ctx.tangent = Vec3f(1.0f, 0.0f, 0.0f);
+    ctx.bitangent = Vec3f(0.0f, 0.0f, -1.0f);
+    ctx.dPdu = ctx.tangent;
+    ctx.dPdv = ctx.bitangent;
+
+    out.Clear();
+    fn(in, ctx, &out);
+
+    expected = Vec3f(-1.0f, 1.0f, 0.0f).normalized();
     return Test_IsClose(_GetVec3(out), expected, 1e-5f);
 }
 

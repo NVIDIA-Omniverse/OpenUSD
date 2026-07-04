@@ -3462,12 +3462,18 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
         }
     }
 
-    // Apply material normal map (tangent-space -> world-space).
-    if (hasMaterialClosure &&
-        closure.normal != mxcpp::Vec3f(0.0f, 0.0f, 1.0f)) {
-        normal = (tangent   * closure.normal[0] +
-                  bitangent * closure.normal[1] +
-                  normal    * closure.normal[2]).GetNormalized();
+    if (hasMaterialClosure) {
+        mxcpp::Vec3f resolvedNormal;
+        if (closure.ResolveNormal(
+                _ToMx(tangent),
+                _ToMx(bitangent),
+                _ToMx(normal),
+                &resolvedNormal)) {
+            normal = _ToGf(resolvedNormal);
+            const GfVec3f wo = -GfVec3f(
+                rayHit.ray.dir_x, rayHit.ray.dir_y, rayHit.ray.dir_z);
+            if (GfDot(normal, wo) < 0.0f) normal = -normal;
+        }
     }
 
     GfVec3f lightingColor(0.0f);
@@ -4675,12 +4681,14 @@ HdEmbreeRenderer::_TracePath(
             syntheticLambertianExit = HdEmbreeSssOutput{};
         }
 
-        // Apply material normal map (tangent-space -> world-space).
+        mxcpp::Vec3f resolvedNormal;
         if (hasClosure &&
-            closure.normal != mxcpp::Vec3f(0.0f, 0.0f, 1.0f)) {
-            normal = (tangent   * closure.normal[0] +
-                      bitangent * closure.normal[1] +
-                      normal    * closure.normal[2]).GetNormalized();
+            closure.ResolveNormal(
+                _ToMx(tangent),
+                _ToMx(bitangent),
+                _ToMx(normal),
+                &resolvedNormal)) {
+            normal = _ToGf(resolvedNormal);
             // Re-orient toward the ray (face-forward, matches the geometric
             // normal treatment above).
             if (GfDot(normal, wo) < 0.0f) {

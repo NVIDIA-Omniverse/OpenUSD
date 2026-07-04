@@ -598,6 +598,10 @@ EvalAdobeOpenPbr(const ParamMap& params)
     closure.sheenColor = data.fuzzColor;
     closure.sheenRoughness = data.fuzzRoughness;
     closure.normal = data.geometryNormal;
+    closure.normalSpace =
+        (params.Find(_kGeometryNormal) || params.Find(_kLegacyNormal))
+        ? SurfaceNormalSpace::World
+        : SurfaceNormalSpace::None;
     closure.thinWalled = data.geometryThinWalled;
     closure.subsurfaceWeight = data.subsurfaceWeight;
     closure.subsurfaceColor = data.subsurfaceColor;

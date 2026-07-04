@@ -193,6 +193,9 @@ EvalGltfPbr(const ParamMap& params)
     c.coatIor = 1.5f;
     c.emissiveColor = emissive * emissiveStrength;
     c.normal = normal;
+    c.normalSpace = params.Find(_kNormal)
+        ? SurfaceNormalSpace::World
+        : SurfaceNormalSpace::None;
     c.thinWalled = thickness <= 0.0f;
 
     const _AlphaMode alphaMode = static_cast<_AlphaMode>(alphaModeValue);
