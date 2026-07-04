@@ -20,6 +20,11 @@ The current repo workflow is Pixi-based. The task definitions live in the root
   `pixi run configure`
 - Build and install into the Pixi environment:
   `pixi run build`
+- Configure an optimized profiling build with debug information and frame
+  pointers in the separate `build-profile` tree:
+  `pixi run configure-profile`
+- Build and install the profiling version of hdEmbree:
+  `pixi run build-profile`
 - Launch usdview with hdEmbree:
   `pixi run usdview <stage.usda>`
 - Render stage-authored products with hdEmbree:
@@ -38,6 +43,13 @@ The Linux `configure` task currently runs CMake with Ninja, Release mode, and:
 - `-DPXR_HDEMBREE_ENABLE_OPENQMC=2`
 - `-DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX`
 
+The Linux `configure-profile` task leaves the normal `build` tree untouched
+and configures `build-profile` with `RelWithDebInfo`, `-O3`, debug information,
+and frame pointers. `build-profile` installs only the hdEmbree subtree into the
+Pixi environment, replacing the active plugin while retaining the regular
+Release OpenUSD runtime. Run the normal `pixi run build` task to restore the
+Release plugin after profiling.
+
 The Windows Pixi task uses the same core Embree/OIIO/OpenQMC options, disables
 precompiled headers, suppresses CMake regeneration, adds `/utf-8`, and installs
 to `$CONDA_PREFIX`.
@@ -55,6 +67,102 @@ used:
 Relevant Pixi-managed dependencies include Python 3.11, Embree 4.4, OpenQMC
 0.7.1, OpenImageIO 2.5, OpenSubdiv, TBB, PySide6, PyOpenGL, CMake, Ninja, and
 compilers.
+
+## Profiling hdEmbree
+
+Use the profile build when investigating CPU performance:
+
+```sh
+pixi run configure-profile
+pixi run build-profile
+```
+
+The first build compiles a separate dependency closure and can take several
+minutes; later builds are incremental. To rebuild without rerunning the Pixi
+task dependency, use `pixi run --skip-deps build-profile`. Confirm that the
+installed plugin has line-level debug information before collecting a profile:
+
+```sh
+readelf -S .pixi/envs/default/plugin/usd/hdEmbree.so \
+    | rg 'debug_info|debug_line'
+```
+
+Linux `perf` must be allowed to sample the renderer. Check
+`kernel.perf_event_paranoid` if `perf` reports a permissions error. Obtain the
+exact command for one test without rendering it:
+
+```sh
+cd /home/anders/code/typhoon-tests
+pixi run pytest material-fidelity \
+    --typhoon-provider /home/anders/code/openusd-omniverse \
+    -k <case-name> --typhoon-dry-run -s
+```
+
+Profile the printed `usdrender` command directly instead of profiling pytest,
+FLIP comparison, and report generation. Set `HDEMBREE_RANDOM_NUMBER_SEED` to a
+fixed value. Keep resolution, sample count, bounce count, adaptive sampling,
+and other scene-authored render settings unchanged between measurements.
+Scene-authored `ty:` settings take precedence over environment-backed defaults.
+Run the profiling commands below from `/home/anders/code/openusd-omniverse` so
+the `$PWD/.pixi` path identifies the provider environment.
+
+Use at least five `perf stat` repetitions for before-and-after measurements:
+
+```sh
+pixi run --clean-env -x /usr/bin/env \
+    PATH="$PWD/.pixi/envs/default/bin:/usr/bin:/bin" \
+    HDEMBREE_RANDOM_NUMBER_SEED=1 \
+    /usr/bin/perf stat -r 5 -d -o /tmp/hdembree-stat.txt -- \
+    usdrender --complexity high --renderer Embree --disableCameraLight \
+    <stage.usda> --outputRoot /tmp/hdembree-profile-stat
+```
+
+Collect call stacks for the renderer and all worker threads with:
+
+```sh
+pixi run --clean-env -x /usr/bin/env \
+    PATH="$PWD/.pixi/envs/default/bin:/usr/bin:/bin" \
+    HDEMBREE_RANDOM_NUMBER_SEED=1 \
+    /usr/bin/perf record -o /tmp/hdembree.data \
+    -F 499 -e cycles:u -g --call-graph fp -- \
+    usdrender --complexity high --renderer Embree --disableCameraLight \
+    <stage.usda> --outputRoot /tmp/hdembree-profile-record
+
+perf report -i /tmp/hdembree.data
+```
+
+The profile build uses frame pointers so `--call-graph fp` has lower overhead
+than DWARF unwinding. Use a self-cost report to find leaf hotspots and an
+inclusive/children report to understand their calling paths. On hybrid Intel
+CPUs, inspect the `cpu_core` and `cpu_atom` event sections separately. Re-record
+the profile after every rebuild so `perf.data` has the same build ID as the
+installed `hdEmbree.so`.
+
+OpenUSD tracing complements statistical profiling by measuring coarse phases:
+
+```sh
+PXR_ENABLE_GLOBAL_TRACE=1 \
+HDEMBREE_RANDOM_NUMBER_SEED=1 \
+pixi run usdrender --disableCameraLight \
+    <stage.usda> --outputRoot /tmp/hdembree-profile-trace \
+    > /tmp/hdembree-trace.txt 2>&1
+```
+
+`HdEmbreeRenderer` traces pre-render setup, Embree scene commit, preview trace
+and resolve, full-resolution sample trace and resolve, convergence checks, and
+AOV finalization. Keep trace scopes outside per-ray, per-hit, and per-BSDF
+loops so instrumentation does not materially perturb the render.
+
+After changing performance-sensitive code, compare renderer-reported time and
+samples per second as well as end-to-end `perf stat` time. Run the focused
+image-fidelity case to detect correctness regressions before running broader
+suites. Use several workloads before generalizing a result: material-heavy,
+texture-heavy, many-light, and deep-path scenes should be represented. Record
+durable findings and baselines in `OPTIMIZATION.md`; `/tmp` profile artifacts
+are ephemeral.
+
+Run `pixi run build` when profiling is finished to restore the normal Release
+plugin in the active Pixi environment.
 
 ## Directory Map
 

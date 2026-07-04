@@ -39,11 +39,30 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
 -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX'''
 ] }
 
+configure-profile = { cmd = [
+    "bash",
+    "-lc",
+'''set -e
+export CXXFLAGS="${CXXFLAGS} -fno-visibility-inlines-hidden"
+export DEBUG_CXXFLAGS="${DEBUG_CXXFLAGS} -fno-visibility-inlines-hidden"
+cmake -B build-profile -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+-DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O3 -g -DNDEBUG -fno-omit-frame-pointer" \
+-DPXR_PY_UNDEFINED_DYNAMIC_LOOKUP=OFF \
+-DPXR_OIIO_PLUGIN_ENABLED=TRUE \
+-DPXR_BUILD_EMBREE_PLUGIN=TRUE \
+-DPXR_BUILD_OPENIMAGEIO_PLUGIN=TRUE \
+-DPXR_ENABLE_OPENQMC_SUPPORT=TRUE \
+-DPXR_HDEMBREE_ENABLE_OPENQMC=2 \
+-DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX'''
+] }
+
 build = { cmd = '''
 set -e
 cmake --build build --target install
 python -c "import os, pathlib, sysconfig; p = pathlib.Path(sysconfig.get_path('purelib'), 'openusd-pxr.pth'); p.parent.mkdir(parents=True, exist_ok=True); p.write_text(os.path.join(os.environ['CONDA_PREFIX'], 'lib', 'python') + '\n')"
 ''', depends-on = ["configure"] }
+
+build-profile = { cmd = "cmake --build build-profile --target pxr/imaging/plugin/hdEmbree/install", depends-on = ["configure-profile"] }
 
 usdview = { cmd = "usdview --complexity high --renderer Embree" }
 usdrecord = { cmd = "usdrecord --complexity high --renderer Embree" }

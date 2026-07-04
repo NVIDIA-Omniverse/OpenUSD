@@ -1747,14 +1747,19 @@ _IsContained(const GfRect2i& rect, int width, int height)
 void
 HdEmbreeRenderer::_PreRenderSetup()
 {
+    HD_TRACE_FUNCTION();
+
     _completedSamples.store(0);
     _sssCallCount.store(0);
     _sssSuccessCount.store(0);
     _sssWalkStepCount.store(0);
     _sssIntersectionCount.store(0);
 
-    // Commit any pending changes to the scene.
-    rtcCommitScene(_scene);
+    {
+        HD_TRACE_SCOPE("HdEmbreeRenderer::CommitScene");
+        // Commit any pending changes to the scene.
+        rtcCommitScene(_scene);
+    }
 
     if (!_ValidateAovBindings()) {
         // We aren't going to render anything. Just mark all AOVs as converged
@@ -1879,6 +1884,8 @@ HdEmbreeRenderer::_BuildAovDispatchTable()
 void
 HdEmbreeRenderer::Render(HdRenderThread *renderThread)
 {
+    HD_TRACE_FUNCTION();
+
 #if TBB_INTERFACE_VERSION_MAJOR < 12
     _ScopedThreadScheduler scheduler;
 #endif
@@ -1919,10 +1926,13 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
                 continue;
             }
 
-            WorkParallelForN(numTilesX * numTilesY,
-                std::bind(&HdEmbreeRenderer::_RenderTiles, this,
-                    renderThread, /*sampleNum=*/0, baseSeed, stride,
-                    std::placeholders::_1, std::placeholders::_2));
+            {
+                HD_TRACE_SCOPE("HdEmbreeRenderer::TracePreviewPass");
+                WorkParallelForN(numTilesX * numTilesY,
+                    std::bind(&HdEmbreeRenderer::_RenderTiles, this,
+                        renderThread, /*sampleNum=*/0, baseSeed, stride,
+                        std::placeholders::_1, std::placeholders::_2));
+            }
 
             if (renderThread->IsStopRequested()) {
                 break;
@@ -1931,6 +1941,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
             // Resolve sparse samples into the display buffer and
             // replicate each sampled pixel across its block.
             {
+                HD_TRACE_SCOPE("HdEmbreeRenderer::ResolvePreviewPass");
                 auto lock = renderThread->LockFramebuffer();
                 for (size_t a = 0; a < _aovBindings.size(); ++a) {
                     HdEmbreeRenderBuffer *rb =
@@ -1981,14 +1992,18 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
             break;
         }
 
-        WorkParallelForN(numTilesX * numTilesY,
-            std::bind(&HdEmbreeRenderer::_RenderTiles, this,
-                renderThread, i, baseSeed, /*stride=*/1u,
-                std::placeholders::_1, std::placeholders::_2));
+        {
+            HD_TRACE_SCOPE("HdEmbreeRenderer::TraceSamplePass");
+            WorkParallelForN(numTilesX * numTilesY,
+                std::bind(&HdEmbreeRenderer::_RenderTiles, this,
+                    renderThread, i, baseSeed, /*stride=*/1u,
+                    std::placeholders::_1, std::placeholders::_2));
+        }
 
         // Resolve intermediate results so the viewport shows progressive
         // refinement instead of staying blank until convergence.
         {
+            HD_TRACE_SCOPE("HdEmbreeRenderer::ResolveSamplePass");
             auto lock = renderThread->LockFramebuffer();
             for (size_t a = 0; a < _aovBindings.size(); ++a) {
                 HdEmbreeRenderBuffer *rb =
@@ -2022,6 +2037,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
 
         // If adaptive sampling is enabled, check if all pixels converged.
         if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
+            HD_TRACE_SCOPE("HdEmbreeRenderer::CheckConvergence");
             bool allConverged = true;
             for (size_t p = 0; p < _pixelConverged.size(); ++p) {
                 if (!_pixelConverged[p]) {
@@ -2047,11 +2063,14 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
     }
 
     // Mark the multisampled attachments as converged and unmap all buffers.
-    for (size_t i = 0; i < _aovBindings.size(); ++i) {
-        HdEmbreeRenderBuffer *rb = static_cast<HdEmbreeRenderBuffer*>(
-            _aovBindings[i].renderBuffer);
-        rb->Unmap();
-        rb->SetConverged(true);
+    {
+        HD_TRACE_SCOPE("HdEmbreeRenderer::FinalizeAovs");
+        for (size_t i = 0; i < _aovBindings.size(); ++i) {
+            HdEmbreeRenderBuffer *rb = static_cast<HdEmbreeRenderBuffer*>(
+                _aovBindings[i].renderBuffer);
+            rb->Unmap();
+            rb->SetConverged(true);
+        }
     }
 
     // Print render statistics only when rendering completed (not interrupted).
