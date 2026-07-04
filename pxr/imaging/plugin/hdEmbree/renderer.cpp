@@ -1128,6 +1128,7 @@ HdEmbreeRenderer::HdEmbreeRenderer()
         HdEmbreeConfig::GetInstance().causticsClampThreshold)
     , _approxTransparentShadows(
         HdEmbreeConfig::GetInstance().approxTransparentShadows)
+    , _disableShadows(HdEmbreeConfig::GetInstance().disableShadows)
     , _enableGgxMicrofacetMultipleScattering(
         HdEmbreeConfig::GetInstance().enableGgxMicrofacetMultipleScattering)
     , _dielectricLayerThroughputMode(
@@ -1185,7 +1186,7 @@ HdEmbreeRenderer::SetEnableLighting(bool enableLighting)
 void
 HdEmbreeRenderer::SetMaxBounces(int maxBounces)
 {
-    _maxBounces = maxBounces;
+    _maxBounces = std::max(0, maxBounces);
 }
 
 void
@@ -1258,6 +1259,12 @@ void
 HdEmbreeRenderer::SetApproxTransparentShadows(bool enable)
 {
     _approxTransparentShadows = enable;
+}
+
+void
+HdEmbreeRenderer::SetDisableShadows(bool disable)
+{
+    _disableShadows = disable;
 }
 
 void
@@ -3115,6 +3122,10 @@ HdEmbreeRenderer::_Visibility(
     constexpr float kVisThreshold = 1e-4f;
     constexpr float kRayBias = 1e-4f;
 
+    if (_disableShadows) {
+        return GfVec3f(1.0f);
+    }
+
     GfVec3f visibility(1.0f);
     HdEmbreeMediumState shadowMedium = mediumState;
     HdEmbreeMesh* straightTransparentOwner = nullptr;
@@ -4286,9 +4297,12 @@ HdEmbreeRenderer::_TracePath(
             contribution, _fireflyClampThreshold);
     };
 
+    const int maxBounces = std::max(0, _maxBounces);
+
     for (int bounce = 0, pathEvent = 0;
-         bounce <= _maxBounces;
+         bounce <= maxBounces + 1;
          ++bounce, ++pathEvent) {
+        const bool emitterOnlyBounce = bounce > maxBounces;
         const HdEmbreeSampleDomain bounceDomain =
             domain.Chain(HdEmbreeSampleDomainKey::PathBounce, pathEvent);
 
@@ -4303,7 +4317,9 @@ HdEmbreeRenderer::_TracePath(
             _PopulateRayHit(&rayHit, rayOrigin, rayDir,
                             isFirstBounce ? 0.0f : 1e-4f,
                             std::numeric_limits<float>::max(),
-                            HdEmbree_RayMask::Camera);
+                            emitterOnlyBounce
+                                ? HdEmbree_RayMask::Light
+                                : HdEmbree_RayMask::Camera);
             rtcIntersect1(_scene, &rayHit);
         }
 
@@ -4461,6 +4477,10 @@ HdEmbreeRenderer::_TracePath(
                     addRadiance(GfCompMult(throughput, domeContrib));
                 }
             }
+            break;
+        }
+
+        if (emitterOnlyBounce) {
             break;
         }
 
@@ -4713,7 +4733,7 @@ HdEmbreeRenderer::_TracePath(
 
         mxcpp::Bsdf::BsdfSample bs;
         bool hasBsdfSample = false;
-        if (hasBsdfClosure && bounce < _maxBounces) {
+        if (hasBsdfClosure && bounce <= maxBounces) {
             const GfVec3f bsdfSample =
                 bounceDomain
                     .Fork(HdEmbreeSampleDomainKey::BsdfSample)
@@ -4735,6 +4755,7 @@ HdEmbreeRenderer::_TracePath(
 
         if (hasBsdfClosure &&
             hasBsdfSample &&
+            bounce < maxBounces &&
             bs.isSubsurface &&
             bsdfClosure->HasSubsurfaceScattering() &&
             mesh) {
@@ -4923,7 +4944,7 @@ HdEmbreeRenderer::_TracePath(
                 wo,
                 bounceDomain.Fork(HdEmbreeSampleDomainKey::DirectLighting),
                 doubleSided,
-                bounce < _maxBounces,
+                bounce <= maxBounces,
                 bsdfClosure,
                 currentMedium,
                 hero.active,
@@ -4948,7 +4969,7 @@ HdEmbreeRenderer::_TracePath(
                 wo,
                 bounceDomain.Fork(HdEmbreeSampleDomainKey::DirectLighting),
                 doubleSided,
-                bounce < _maxBounces,
+                false,
                 &fallback,
                 currentMedium,
                 hero.active,
@@ -4961,8 +4982,15 @@ HdEmbreeRenderer::_TracePath(
             addRadiance(GfCompMult(throughput, direct));
         }
 
-        // --- Stop after last allowed bounce ---
-        if (bounce >= _maxBounces) break;
+        // --- Stop after last allowed surface bounce ---
+        const bool traceEmitterOnlySample =
+            bounce >= maxBounces &&
+            hasBsdfClosure &&
+            hasBsdfSample &&
+            !bs.isSubsurface;
+        if (bounce >= maxBounces && !traceEmitterOnlySample) {
+            break;
+        }
 
         // --- BSDF sampling for next direction ---
         if (!hasBsdfClosure || !hasBsdfSample || bs.isSubsurface) break;
@@ -5052,7 +5080,7 @@ HdEmbreeRenderer::_TracePath(
         }
 
         // --- Russian Roulette ---
-        if (bounce >= _minBouncesBeforeRR) {
+        if (!traceEmitterOnlySample && bounce >= _minBouncesBeforeRR) {
             float q = hero.active
                 ? std::max({
                     _SpectralScalarToRgb(spectralThroughput, hero)[0],

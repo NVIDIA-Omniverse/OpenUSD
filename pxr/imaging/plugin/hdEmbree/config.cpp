@@ -143,6 +143,11 @@ TF_DEFINE_ENV_SETTING(
     "Should HdEmbree approximate transparent shadows?");
 
 TF_DEFINE_ENV_SETTING(
+    HDEMBREE_DISABLE_SHADOWS,
+    HdEmbreeDefaultDisableShadows,
+    "Should HdEmbree skip shadow visibility rays?");
+
+TF_DEFINE_ENV_SETTING(
     HDEMBREE_ENABLE_GGX_MICROFACET_MULTIPLE_SCATTERING,
     HdEmbreeDefaultEnableGgxMicrofacetMultipleScattering,
     "Should rough dielectric GGX use multiple scattering compensation?");
@@ -216,6 +221,7 @@ HdEmbreeConfig::HdEmbreeConfig()
         _GetFloatEnvSetting(HDEMBREE_CAUSTICS_CLAMP_THRESHOLD);
     approxTransparentShadows =
         TfGetEnvSetting(HDEMBREE_APPROX_TRANSPARENT_SHADOWS);
+    disableShadows = TfGetEnvSetting(HDEMBREE_DISABLE_SHADOWS);
     enableGgxMicrofacetMultipleScattering =
         TfGetEnvSetting(
             HDEMBREE_ENABLE_GGX_MICROFACET_MULTIPLE_SCATTERING);
@@ -273,6 +279,8 @@ HdEmbreeConfig::HdEmbreeConfig()
             <<    causticsClampThreshold   << "\n"
             << "  approxTransparentShadows  = "
             <<    approxTransparentShadows << "\n"
+            << "  disableShadows            = "
+            <<    disableShadows           << "\n"
             << "  enableGgxMicrofacetMultipleScattering = "
             <<    enableGgxMicrofacetMultipleScattering << "\n"
             << "  materialRenderContext     = "

@@ -50,6 +50,9 @@ enum HdEmbree_RayMask : uint32_t {
 
     Camera = 1 << 0,
     Shadow = 1 << 1,
+    Light = 1 << 2,
+
+    Scene = Camera | Shadow,
 
     All = UINT_MAX,
 };
@@ -210,6 +213,7 @@ public:
     void SetEnableCaustics(bool enable);
     void SetCausticsClampThreshold(float threshold);
     void SetApproxTransparentShadows(bool enable);
+    void SetDisableShadows(bool disable);
 
     /// Set whether GGX reflection uses microfacet multiple scattering.
     void SetEnableGgxMicrofacetMultipleScattering(bool enable);
@@ -572,6 +576,9 @@ private:
 
     // Biased straight-through shadow visibility for transparent surfaces.
     bool _approxTransparentShadows;
+
+    // Whether shadow visibility rays are skipped.
+    bool _disableShadows;
 
     // Whether GGX reflection uses microfacet multiple scattering compensation.
     bool _enableGgxMicrofacetMultipleScattering;

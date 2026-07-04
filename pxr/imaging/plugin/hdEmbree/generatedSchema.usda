@@ -40,6 +40,11 @@ class "TyphoonRenderSettingsAPI" (
             string userDocBrief = "Rough dielectric top-layer throughput estimate mode."
         }
     )
+    uniform bool ty:disableShadows = 0 (
+        customData = {
+            string userDocBrief = "Disable shadow visibility rays."
+        }
+    )
     uniform bool ty:enableAdaptiveSampling = 1 (
         customData = {
             string userDocBrief = "Use adaptive sampling to skip converged pixels."

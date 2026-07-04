@@ -180,7 +180,7 @@ delegate-setting overrides.
 them into `HdEmbreeRenderer` through setters such as
 `SetSamplesToConvergence()`, `SetEnableLighting()`,
 `SetDomeLightCameraVisibility()`, `SetSamplerSequence()`,
-`SetMaxBounces()`, and material-context handling.
+`SetMaxBounces()`, `SetDisableShadows()`, and material-context handling.
 
 When adding or changing a render setting, update all relevant surfaces:
 

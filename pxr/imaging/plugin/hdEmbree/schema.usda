@@ -113,6 +113,10 @@ class "TyphoonRenderSettingsAPI" (
         doc = """Approximate transparent shadows."""
     )
 
+    uniform bool ty:disableShadows = false (
+        doc = """Disable shadow visibility rays."""
+    )
+
     uniform bool ty:enableGgxMicrofacetMultipleScattering = true (
         doc = """Use multiple scattering compensation for rough dielectric GGX."""
     )

@@ -30,6 +30,7 @@ built-in default < environment variable < USD `RenderSettings` prim < Hydra rend
 | Enable Caustics | `ty:enableCaustics` | `bool` | `false` | `HDEMBREE_ENABLE_CAUSTICS` |
 | Caustics Clamp Threshold | `ty:causticsClampThreshold` | `float` | `5.0` | `HDEMBREE_CAUSTICS_CLAMP_THRESHOLD` |
 | Approximate Transparent Shadows | `ty:approxTransparentShadows` | `bool` | `true` | `HDEMBREE_APPROX_TRANSPARENT_SHADOWS` |
+| Disable Shadows | `ty:disableShadows` | `bool` | `false` | `HDEMBREE_DISABLE_SHADOWS` |
 | Enable GGX Microfacet Multiple Scattering | `ty:enableGgxMicrofacetMultipleScattering` | `bool` | `true` | `HDEMBREE_ENABLE_GGX_MICROFACET_MULTIPLE_SCATTERING` |
 | Material Render Context | `ty:materialRenderContext` | `token` | `mtlx` | `HDEMBREE_MATERIAL_RENDER_CONTEXT` |
 | Use Adobe OpenPBR | `ty:useAdobeOpenPBR` | `bool` | `false` | `HDEMBREE_USE_ADOBE_OPENPBR` |
@@ -94,6 +95,9 @@ Thin-walled transmissive surfaces always use straight RGB shadow attenuation bec
 The approximation applies RGB attenuation from surface opacity, dielectric Fresnel transmission, transmission tint, and active interior-medium transmittance. For regular thick transmission with an interior medium, the surface tint is skipped so `transmission_color` is not applied once by the surface and again by Beer or Adobe OpenPBR volume transmittance.
 
 Set `ty:approxTransparentShadows` to `false` to keep the conservative thick-surface behavior: current-medium exits are treated as scalar visibility, while thick transparent entry boundaries block the straight shadow ray. Thin-walled transmissive surfaces still use straight RGB attenuation.
+
+### Disable Shadows (`ty:disableShadows`)
+When `ty:disableShadows` is `true`, shadow visibility rays return fully visible. Direct light sampling, emitted-light hits, dome evaluation, and camera visibility still run, so this removes occlusion along direct light paths without hiding lights or geometry from the camera. The default is `false`.
 
 ### Random Number Seed (`ty:randomNumberSeed`)
 A value of `-1` (default) chooses a non-deterministic OpenQMC frame seed for each render. Any other value produces deterministic/repeatable sampler sequences.

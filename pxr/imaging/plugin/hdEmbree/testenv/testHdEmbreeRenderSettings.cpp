@@ -121,6 +121,7 @@ _TestRenderDelegateSettings()
         HdEmbreeRenderSettingsTokens->enableCaustics,
         HdEmbreeRenderSettingsTokens->causticsClampThreshold,
         HdEmbreeRenderSettingsTokens->approxTransparentShadows,
+        HdEmbreeRenderSettingsTokens->disableShadows,
         HdEmbreeRenderSettingsTokens->enableGgxMicrofacetMultipleScattering,
         HdEmbreeRenderSettingsTokens->materialRenderContext,
         HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
@@ -213,6 +214,13 @@ _TestAuthoredNamespacedSettings()
         return false;
     }
 
+    UsdAttribute disableShadowsAttr =
+        settings.GetPrim().GetAttribute(TfToken("ty:disableShadows"));
+    if (!disableShadowsAttr || !disableShadowsAttr.Set(true)) {
+        std::printf("failed to author ty:disableShadows\n");
+        return false;
+    }
+
     UsdAttribute domeVisibilityAttr = settings.GetPrim().CreateAttribute(
         HdRenderSettingsTokens->domeLightCameraVisibility,
         SdfValueTypeNames->Bool);
@@ -225,7 +233,9 @@ _TestAuthoredNamespacedSettings()
         UsdRenderComputeNamespacedSettings(
             settings.GetPrim(), {TfToken("ty")});
     if (!_HasSettingValue<int>(
-            namespacedSettings, "ty:maxBounces", 8)) {
+            namespacedSettings, "ty:maxBounces", 8) ||
+        !_HasSettingValue<bool>(
+            namespacedSettings, "ty:disableShadows", true)) {
         return false;
     }
 
@@ -249,6 +259,8 @@ _TestAuthoredNamespacedSettings()
     if (!_HasSettingValue<int>(
             allCustomSettings, "ty:maxBounces", 8) ||
         !_HasSettingValue<bool>(
+            allCustomSettings, "ty:disableShadows", true) ||
+        !_HasSettingValue<bool>(
             allCustomSettings, "domeLightCameraVisibility", false)) {
         return false;
     }
@@ -263,6 +275,8 @@ _TestAuthoredNamespacedSettings()
             settings.GetPrim(), {TfToken("ty"), TfToken()});
     if (!_HasSettingValue<int>(
             requestedSettings, "ty:maxBounces", 8) ||
+        !_HasSettingValue<bool>(
+            requestedSettings, "ty:disableShadows", true) ||
         !_HasSettingValue<bool>(
             requestedSettings, "domeLightCameraVisibility", false)) {
         return false;
@@ -295,12 +309,19 @@ _TestActiveRenderSettingsPrimBridge()
             HdRenderSettingsTokens->domeLightCameraVisibility, false);
     const bool authoredDomeLightCameraVisibility =
         !defaultDomeLightCameraVisibility;
+    const bool defaultDisableShadows =
+        delegate.GetRenderSetting<bool>(
+            HdEmbreeRenderSettingsTokens->disableShadows, false);
+    const bool authoredDisableShadows = !defaultDisableShadows;
 
     HdRenderSettingsSchema::Builder renderSettingsBuilder;
     renderSettingsBuilder.SetNamespacedSettings(
         HdRetainedContainerDataSource::New(
             HdEmbreeRenderSettingsTokens->maxBounces,
             HdRetainedSampledDataSource::New(VtValue(3)),
+            HdEmbreeRenderSettingsTokens->disableShadows,
+            HdRetainedSampledDataSource::New(
+                VtValue(authoredDisableShadows)),
             TfToken("ty:domeLightCameraVisibility"),
             HdRetainedSampledDataSource::New(VtValue(true)),
             HdRenderSettingsTokens->domeLightCameraVisibility,
@@ -354,6 +375,13 @@ _TestActiveRenderSettingsPrimBridge()
     if (maxBounces != 3) {
         std::printf("active RenderSettings ty:maxBounces was not bridged: %d\n",
                     maxBounces);
+        return false;
+    }
+
+    const bool disableShadows = delegate.GetRenderSetting<bool>(
+        HdEmbreeRenderSettingsTokens->disableShadows, defaultDisableShadows);
+    if (disableShadows != authoredDisableShadows) {
+        std::printf("active RenderSettings ty:disableShadows was not bridged\n");
         return false;
     }
 
@@ -418,6 +446,7 @@ _TestTyphoonRenderSettingsAPI()
         TfToken("ty:enableCaustics"),
         TfToken("ty:causticsClampThreshold"),
         TfToken("ty:approxTransparentShadows"),
+        TfToken("ty:disableShadows"),
         TfToken("ty:enableGgxMicrofacetMultipleScattering"),
         TfToken("ty:materialRenderContext"),
         TfToken("ty:useAdobeOpenPBR"),
@@ -451,6 +480,14 @@ _TestTyphoonRenderSettingsAPI()
             .GetFallbackValue(&samplerFallback) ||
         samplerFallback != TfToken("openqmc_sobolbn")) {
         std::printf("unexpected samplerSequence fallback\n");
+        return false;
+    }
+
+    bool disableShadowsFallback = true;
+    if (!apiDef->GetAttributeDefinition(TfToken("ty:disableShadows"))
+            .GetFallbackValue(&disableShadowsFallback) ||
+        disableShadowsFallback != false) {
+        std::printf("unexpected disableShadows fallback\n");
         return false;
     }
 

@@ -539,6 +539,7 @@ HdEmbreeMesh::_CreateEmbreeSubdivMesh(RTCScene scene, RTCDevice device)
     // Uses a BVH refitting approach when changing only the vertex buffer.
     rtcSetGeometryBuildQuality(geom, RTC_BUILD_QUALITY_REFIT);
     rtcSetGeometryTimeStepCount(geom,1);
+    rtcSetGeometryMask(geom, HdEmbree_RayMask::Scene);
     _rtcMeshId = rtcAttachGeometry(scene,geom);
 
     // Fill the topology buffers.
@@ -707,6 +708,7 @@ HdEmbreeMesh::_CreateEmbreeTriangleMesh(RTCScene scene, RTCDevice device)
     // Uses a BVH refitting approach when changing only the vertex buffer.
     rtcSetGeometryBuildQuality(geom,RTC_BUILD_QUALITY_REFIT);
     rtcSetGeometryTimeStepCount(geom,1);
+    rtcSetGeometryMask(geom, HdEmbree_RayMask::Scene);
     _rtcMeshId = rtcAttachGeometry(scene,geom);
 
     if (_rtcMeshId == RTC_INVALID_GEOMETRY_ID) {
@@ -1549,6 +1551,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
             RTCGeometry geom = rtcNewGeometry (device, RTC_GEOMETRY_TYPE_INSTANCE);
             rtcSetGeometryInstancedScene(geom,_rtcMeshScene);
             rtcSetGeometryTimeStepCount(geom,1);
+            rtcSetGeometryMask(geom, HdEmbree_RayMask::Scene);
             _rtcInstanceIds[i] = rtcAttachGeometry(scene,geom);
 
             // Create the instance context.

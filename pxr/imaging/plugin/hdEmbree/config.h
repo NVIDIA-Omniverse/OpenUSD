@@ -39,6 +39,7 @@ constexpr float HdEmbreeDefaultFireflyClampThreshold = 20.0f;
 constexpr bool HdEmbreeDefaultEnableCaustics = false;
 constexpr float HdEmbreeDefaultCausticsClampThreshold = 5.0f;
 constexpr bool HdEmbreeDefaultApproxTransparentShadows = true;
+constexpr bool HdEmbreeDefaultDisableShadows = false;
 constexpr bool HdEmbreeDefaultEnableGgxMicrofacetMultipleScattering = true;
 constexpr char HdEmbreeDefaultMaterialRenderContext[] = "mtlx";
 constexpr bool HdEmbreeDefaultUseAdobeOpenPBR = false;
@@ -190,6 +191,11 @@ public:
     /// Override with *HDEMBREE_APPROX_TRANSPARENT_SHADOWS*.
     bool approxTransparentShadows =
         HdEmbreeDefaultApproxTransparentShadows;
+
+    /// Whether shadow visibility rays are disabled.
+    ///
+    /// Override with *HDEMBREE_DISABLE_SHADOWS*.
+    bool disableShadows = HdEmbreeDefaultDisableShadows;
 
     /// Whether rough dielectric GGX uses multiple scattering compensation.
     ///

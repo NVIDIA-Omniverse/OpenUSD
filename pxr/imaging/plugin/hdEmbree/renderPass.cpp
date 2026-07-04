@@ -966,6 +966,10 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->approxTransparentShadows,
                 config.approxTransparentShadows));
+        _renderer->SetDisableShadows(
+            renderDelegate->GetRenderSetting<bool>(
+                HdEmbreeRenderSettingsTokens->disableShadows,
+                config.disableShadows));
         _renderer->SetEnableGgxMicrofacetMultipleScattering(
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens
