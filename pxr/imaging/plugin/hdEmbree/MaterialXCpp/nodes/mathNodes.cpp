@@ -37,6 +37,8 @@ static const SlotName _kOffset("offset");
 static const SlotName _kOperationOrder("operationorder");
 static const SlotName _kFromspace("fromspace");
 static const SlotName _kTospace("tospace");
+static const SlotName _kRoughness("roughness");
+static const SlotName _kAnisotropy("anisotropy");
 
 // ---- Arithmetic templates ------------------------------------------------
 
@@ -745,6 +747,21 @@ _EvalTriangleWave(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(2.0f * std::fabs(v - std::floor(v + 0.5f)));
 }
 
+static void
+_EvalOpenPbrAnisotropy(const ParamMap& inputs, const ShadingContext&,
+                       NodeOutputMap* outputs)
+{
+    const float roughness = Get<float>(inputs, _kRoughness, 0.0f);
+    const float anisotropy = Get<float>(inputs, _kAnisotropy, 0.0f);
+    const float roughnessSquared = roughness * roughness;
+    const float oneMinusAnisotropy = 1.0f - anisotropy;
+    const float alphaX = roughnessSquared * std::sqrt(
+        2.0f /
+        (oneMinusAnisotropy * oneMinusAnisotropy + 1.0f));
+    const float alphaY = oneMinusAnisotropy * alphaX;
+    (*outputs)[_kOut] = Value(Vec2f(alphaX, alphaY));
+}
+
 // ---- Registration --------------------------------------------------------
 
 #define _REG(name, fn) reg.Register(name, fn)
@@ -913,6 +930,9 @@ RegisterMathNodes(NodeRegistry& reg)
 
     // trianglewave
     _REG("ND_trianglewave_float", &_EvalTriangleWave);
+
+    // OpenPBR
+    _REG("ND_open_pbr_anisotropy", &_EvalOpenPbrAnisotropy);
 
 }
 

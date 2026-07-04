@@ -356,6 +356,22 @@ static bool TestRemap() {
     return Test_IsClose(_GetFloat(out), 15.0f);
 }
 
+static bool TestOpenPbrAnisotropy() {
+    ParamMap in;
+    auto out = _Eval("ND_open_pbr_anisotropy", in);
+    if (!Test_IsClose(_GetVec2(out), Vec2f(0.0f))) return false;
+
+    in["roughness"] = Value(0.5f);
+    in["anisotropy"] = Value(0.0f);
+    out = _Eval("ND_open_pbr_anisotropy", in);
+    if (!Test_IsClose(_GetVec2(out), Vec2f(0.25f, 0.25f))) return false;
+
+    in["anisotropy"] = Value(0.5f);
+    out = _Eval("ND_open_pbr_anisotropy", in);
+    return Test_IsClose(
+        _GetVec2(out), Vec2f(0.31622777f, 0.15811388f));
+}
+
 // ---------------------------------------------------------------------------
 // Channel node tests
 // ---------------------------------------------------------------------------
@@ -2201,6 +2217,7 @@ Test_RegisterNodeTests()
     _REG(TestMix);
     _REG(TestSmoothstep);
     _REG(TestRemap);
+    _REG(TestOpenPbrAnisotropy);
     _REG(TestCombineSeparateRoundtrip);
     _REG(TestConvertColor4ToColor3);
     _REG(TestIfgreater);
