@@ -210,6 +210,47 @@ _EvalBump(const ParamMap& inputs, const ShadingContext& ctx,
     (*outputs)[_kOut] = Value(worldNormal);
 }
 
+static Vec3f
+_EvalNormalMap(const ParamMap& inputs,
+               const ShadingContext& ctx,
+               const Vec2f& scale)
+{
+    Vec3f value = Get<Vec3f>(
+        inputs, _kIn, Vec3f(0.5f, 0.5f, 1.0f));
+    if (Dot(value, value) == 0.0f) {
+        value = Vec3f(0.0f, 0.0f, 1.0f);
+    } else {
+        value = value * 2.0f - Vec3f(1.0f);
+    }
+
+    const Vec3f normal = Get<Vec3f>(inputs, _kNormal, ctx.normal);
+    const Vec3f tangent = Get<Vec3f>(inputs, _kTangent, ctx.tangent);
+    const Vec3f bitangent =
+        Get<Vec3f>(inputs, _kBitangent, ctx.bitangent);
+    Vec3f result =
+        tangent * value[0] * scale[0] +
+        bitangent * value[1] * scale[1] +
+        normal * value[2];
+    return result.normalized();
+}
+
+static void
+_EvalNormalMapFloat(const ParamMap& inputs, const ShadingContext& ctx,
+                    NodeOutputMap* outputs)
+{
+    const float scale = Get<float>(inputs, _kScale, 1.0f);
+    (*outputs)[_kOut] = Value(
+        _EvalNormalMap(inputs, ctx, Vec2f(scale)));
+}
+
+static void
+_EvalNormalMapVector2(const ParamMap& inputs, const ShadingContext& ctx,
+                      NodeOutputMap* outputs)
+{
+    const Vec2f scale = Get<Vec2f>(inputs, _kScale, Vec2f(1.0f));
+    (*outputs)[_kOut] = Value(_EvalNormalMap(inputs, ctx, scale));
+}
+
 // ---- Geometric property nodes --------------------------------------------
 
 template<typename T>
@@ -261,6 +302,8 @@ RegisterGeometricNodes(NodeRegistry& reg)
     _REG("ND_texcoord_vector2",  &_EvalTexcoord);
     _REG("ND_geomcolor_color3",  &_EvalGeomcolor);
     _REG("ND_bump_vector3", &_EvalBump);
+    _REG("ND_normalmap_float", &_EvalNormalMapFloat);
+    _REG("ND_normalmap_vector2", &_EvalNormalMapVector2);
 
     // geompropvalue (per-sample varying)
     _REG("ND_geompropvalue_integer", &_EvalGeomPropValue<int>);

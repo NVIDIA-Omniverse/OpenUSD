@@ -158,6 +158,20 @@ _EvalHeightFromTexcoordX(const void*,
 }
 
 static bool
+_EvalHeightFromTexcoordXSquared(const void*,
+                                int,
+                                SlotId,
+                                const ShadingContext& ctx,
+                                Value* out)
+{
+    if (out) {
+        const float u = ctx.texcoord[0];
+        *out = Value(u * u);
+    }
+    return true;
+}
+
+static bool
 _EvalViewdirFromTexcoord(const void*,
                          int,
                          SlotId,
@@ -1921,6 +1935,23 @@ static bool TestHeightToNormalDefaultTexcoord() {
 
     Vec3f expected = Vec3f(-1.0f / 16.0f, 0.0f, 1.0f).normalized();
     expected = expected * 0.5f + Vec3f(0.5f, 0.5f, 0.5f);
+    if (!Test_IsClose(_GetVec3(out), expected, 1e-5f)) return false;
+
+    ParamMap nonlinearIn;
+    nonlinearIn.Add(
+        AsSlotId("in"),
+        nullptr,
+        &_EvalHeightFromTexcoordXSquared,
+        nullptr,
+        -1,
+        InvalidSlotId);
+    ctx.dudx = 0.1f;
+    ctx.dvdy = 0.1f;
+    out.Clear();
+    fn(nonlinearIn, ctx, &out);
+
+    expected = Vec3f(-0.5f / 16.0f, 0.0f, 1.0f).normalized();
+    expected = expected * 0.5f + Vec3f(0.5f, 0.5f, 0.5f);
     return Test_IsClose(_GetVec3(out), expected, 1e-5f);
 }
 
@@ -1999,6 +2030,49 @@ static bool TestBumpDefaultBasis() {
 
     expected = Vec3f(-1.0f, 1.0f, 0.0f).normalized();
     return Test_IsClose(_GetVec3(out), expected, 1e-5f);
+}
+
+static bool TestNormalMapVariants() {
+    ShadingContext ctx;
+    ctx.normal = Vec3f(0.0f, 1.0f, 0.0f);
+    ctx.tangent = Vec3f(1.0f, 0.0f, 0.0f);
+    ctx.bitangent = Vec3f(0.0f, 0.0f, -1.0f);
+
+    ParamMap scalarInputs;
+    scalarInputs["in"] = Value(Vec3f(0.25f, 0.75f, 1.0f));
+    scalarInputs["scale"] = Value(0.5f);
+    const Vec3f authoredNormal(0.0f, 0.0f, 1.0f);
+    const Vec3f authoredTangent(0.0f, 1.0f, 0.0f);
+    const Vec3f authoredBitangent(-1.0f, 0.0f, 0.0f);
+    scalarInputs["normal"] = Value(authoredNormal);
+    scalarInputs["tangent"] = Value(authoredTangent);
+    scalarInputs["bitangent"] = Value(authoredBitangent);
+    NodeOutputMap out =
+        _EvalWithCtx("ND_normalmap_float", scalarInputs, ctx);
+    Vec3f expected =
+        (authoredTangent * -0.25f +
+         authoredBitangent * 0.25f +
+         authoredNormal).normalized();
+    if (!Test_IsClose(_GetVec3(out), expected, 1e-5f)) return false;
+
+    ParamMap vectorInputs;
+    vectorInputs["in"] = Value(Vec3f(1.0f));
+    vectorInputs["scale"] = Value(Vec2f(0.25f, 0.75f));
+    out = _EvalWithCtx("ND_normalmap_vector2", vectorInputs, ctx);
+    expected =
+        (ctx.tangent * 0.25f +
+         ctx.bitangent * 0.75f +
+         ctx.normal).normalized();
+    if (!Test_IsClose(_GetVec3(out), expected, 1e-5f)) return false;
+
+    ParamMap zeroInputs;
+    zeroInputs["in"] = Value(Vec3f(0.0f));
+    out = _EvalWithCtx("ND_normalmap_float", zeroInputs, ctx);
+    if (!Test_IsClose(_GetVec3(out), ctx.normal, 1e-5f)) return false;
+
+    ParamMap defaultInputs;
+    out = _EvalWithCtx("ND_normalmap_float", defaultInputs, ctx);
+    return Test_IsClose(_GetVec3(out), ctx.normal, 1e-5f);
 }
 
 // ---------------------------------------------------------------------------
@@ -2297,6 +2371,7 @@ Test_RegisterNodeTests()
     _REG(TestBlurPassThroughWarnsOnce);
     _REG(TestHeightToNormalDefaultTexcoord);
     _REG(TestBumpDefaultBasis);
+    _REG(TestNormalMapVariants);
     _REG(TestLuminance);
     _REG(TestColorTransformG22Rec709FallbackClamp);
     _REG(TestColorTransformSrgbTextureFallbackPiecewise);

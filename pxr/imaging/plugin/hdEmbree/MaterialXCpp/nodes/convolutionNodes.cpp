@@ -60,25 +60,26 @@ _ComputeHeightToNormalEncoded(const ParamMap& inputs,
                               const ShadingContext& ctx)
 {
     const float scale = Get<float>(inputs, _kScale, 1.0f);
-    const Vec2f texcoord =
-        EvaluateInput<Vec2f>(inputs, _kTexcoord, ctx, ctx.texcoord);
-
     const ShadingContext shiftedDx = OffsetContextDx(ctx);
     const ShadingContext shiftedDy = OffsetContextDy(ctx);
+    const ShadingContext shiftedMinusDx = OffsetContextDx(ctx, -1.0f);
+    const ShadingContext shiftedMinusDy = OffsetContextDy(ctx, -1.0f);
 
-    const float height =
-        EvaluateInput<float>(inputs, heightSlot, ctx, 0.0f);
     const float heightDx =
-        EvaluateInput<float>(inputs, heightSlot, shiftedDx, 0.0f) - height;
+        EvaluateInput<float>(inputs, heightSlot, shiftedDx, 0.0f) -
+        EvaluateInput<float>(inputs, heightSlot, shiftedMinusDx, 0.0f);
     const float heightDy =
-        EvaluateInput<float>(inputs, heightSlot, shiftedDy, 0.0f) - height;
+        EvaluateInput<float>(inputs, heightSlot, shiftedDy, 0.0f) -
+        EvaluateInput<float>(inputs, heightSlot, shiftedMinusDy, 0.0f);
 
     const Vec2f texcoordDx =
         EvaluateInput<Vec2f>(inputs, _kTexcoord, shiftedDx, shiftedDx.texcoord) -
-        texcoord;
+        EvaluateInput<Vec2f>(
+            inputs, _kTexcoord, shiftedMinusDx, shiftedMinusDx.texcoord);
     const Vec2f texcoordDy =
         EvaluateInput<Vec2f>(inputs, _kTexcoord, shiftedDy, shiftedDy.texcoord) -
-        texcoord;
+        EvaluateInput<Vec2f>(
+            inputs, _kTexcoord, shiftedMinusDy, shiftedMinusDy.texcoord);
 
     const Vec2f dHdS =
         Vec2f(heightDx, heightDy) * scale * _kSobelScaleFactor;

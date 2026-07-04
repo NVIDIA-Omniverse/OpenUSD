@@ -12,20 +12,20 @@
 namespace mxcpp {
 
 inline ShadingContext
-OffsetContextDx(const ShadingContext& ctx)
+OffsetContextDx(const ShadingContext& ctx, float scale = 1.0f)
 {
     ShadingContext shifted = ctx;
-    shifted.position += ctx.dPositiondx;
-    shifted.texcoord += Vec2f(ctx.dudx, ctx.dvdx);
+    shifted.position += ctx.dPositiondx * scale;
+    shifted.texcoord += Vec2f(ctx.dudx, ctx.dvdx) * scale;
     return shifted;
 }
 
 inline ShadingContext
-OffsetContextDy(const ShadingContext& ctx)
+OffsetContextDy(const ShadingContext& ctx, float scale = 1.0f)
 {
     ShadingContext shifted = ctx;
-    shifted.position += ctx.dPositiondy;
-    shifted.texcoord += Vec2f(ctx.dudy, ctx.dvdy);
+    shifted.position += ctx.dPositiondy * scale;
+    shifted.texcoord += Vec2f(ctx.dudy, ctx.dvdy) * scale;
     return shifted;
 }
 
