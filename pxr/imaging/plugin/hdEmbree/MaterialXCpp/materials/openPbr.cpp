@@ -372,8 +372,7 @@ EvalOpenPbr(const ParamMap& params)
     Bsdf::ClosureTree tree;
     Bsdf::NodeId opaqueBase = Bsdf::InvalidNodeId;
 
-    const float diffuseWeight = _Clamp01(
-        baseWeight * (1.0f - c.metallic));
+    const float diffuseWeight = _Clamp01(baseWeight);
     if (diffuseWeight > 0.0f) {
         Bsdf::OrenNayarDiffuseData diffuse;
         diffuse.weight = diffuseWeight;
@@ -402,8 +401,7 @@ EvalOpenPbr(const ParamMap& params)
     const float specularWeight = _Clamp01(c.specular);
     Bsdf::NodeId dielectricSubstrate = opaqueBase;
 
-    const float transmissionWeight =
-        _Clamp01(c.transmission * (1.0f - c.metallic));
+    const float transmissionWeight = _Clamp01(c.transmission);
     const bool useCombinedDielectricInterface =
         transmissionWeight > 0.0f;
     if (transmissionWeight > 0.0f) {
@@ -451,7 +449,7 @@ EvalOpenPbr(const ParamMap& params)
     }
 
     Bsdf::NodeId root = dielectricBase;
-    if (specularWeight > 0.0f && metalMix > 0.0f) {
+    if (metalMix > 0.0f) {
         Bsdf::GeneralizedSchlickData metal;
         metal.weight = specularWeight;
         metal.color0 = _Saturate(baseColor * baseWeight);
