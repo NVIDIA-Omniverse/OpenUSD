@@ -4430,8 +4430,49 @@ HdEmbreeRenderer::_TracePath(
             break;
         }
 
-        // --- Miss: dome light contribution ---
+        // --- Miss: infinite light contribution ---
         if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
+            for (auto const& it : _lightMap) {
+                if (!it.second) {
+                    continue;
+                }
+
+                auto const& light = it.second->LightData();
+                if (!light.visible ||
+                    !std::holds_alternative<HdEmbree_Distant>(
+                        light.lightVariant)) {
+                    continue;
+                }
+
+                const HdEmbreeLightSampler::LightSample ls =
+                    HdEmbreeLightSampler::EvaluateLightDirection(
+                        light, rayOrigin, rayDir);
+                if (!ls.valid) {
+                    continue;
+                }
+
+                GfVec3f distantContrib = ls.Li;
+                if (!isFirstBounce && lastBsdfPdf > 0.0f &&
+                    ls.invPdfW > 0.0f) {
+                    const float lightPdf = _GetMultiSampleMisLightPdf(
+                        1.0f / ls.invPdfW,
+                        _lightSamplesPerHit);
+                    distantContrib *= mxcpp::Bsdf::PowerHeuristic(
+                        lastBsdfPdf, lightPdf);
+                }
+
+                if (hero.active) {
+                    const float spectralDistant =
+                        _RgbToSpectralValue(distantContrib, hero);
+                    addRadiance(
+                        _SpectralValueToRgb(
+                            spectralThroughput * spectralDistant,
+                            hero));
+                } else {
+                    addRadiance(GfCompMult(throughput, distantContrib));
+                }
+            }
+
             for (auto* dome : _domes) {
                 if (!dome->LightData().visible) {
                     continue;
