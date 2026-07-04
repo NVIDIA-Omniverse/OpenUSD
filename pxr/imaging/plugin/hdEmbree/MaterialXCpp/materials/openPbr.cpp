@@ -120,6 +120,33 @@ _ComputeAnisotropicRoughness(float roughness, float anisotropy)
         _ClampAlpha(alphaY));
 }
 
+float
+_ComputeEffectiveSpecularIor(float specularIor,
+                             float specularWeight,
+                             float coatIor,
+                             float coatWeight)
+{
+    const float etaSpecular = std::max(specularIor, 1.0f);
+    const float etaCoat = std::max(coatIor, 1.0f);
+    const float specularToCoat = etaSpecular / etaCoat;
+    const float coatToSpecular = etaCoat / etaSpecular;
+    const float coatRelativeIor = std::max(specularToCoat, coatToSpecular);
+    const float clampedCoatWeight = _Clamp01(coatWeight);
+    const float eta = etaSpecular * (1.0f - clampedCoatWeight) +
+        coatRelativeIor * clampedCoatWeight;
+
+    const float epsilon = (eta - 1.0f) / (eta + 1.0f);
+    const float scaledF0 = std::clamp(
+        specularWeight * epsilon * epsilon,
+        0.0f,
+        0.99999f);
+    const float modulatedEpsilon = std::copysign(
+        std::sqrt(scaledF0),
+        eta - 1.0f);
+    return (1.0f + modulatedEpsilon) /
+        std::max(1.0f - modulatedEpsilon, 1.0e-6f);
+}
+
 Bsdf::NodeId
 _AppendLayer(Bsdf::ClosureTree* tree, Bsdf::NodeId top, Bsdf::NodeId base)
 {
@@ -404,6 +431,11 @@ EvalOpenPbr(const ParamMap& params)
 
     const float metalMix = _Clamp01(c.metallic);
     const float specularWeight = _Clamp01(c.specular);
+    const float effectiveSpecularIor = _ComputeEffectiveSpecularIor(
+        c.specularIor,
+        c.specular,
+        c.coatIor,
+        c.coat);
     Bsdf::NodeId dielectricSubstrate = opaqueBase;
 
     const float transmissionWeight = _Clamp01(c.transmission);
@@ -411,7 +443,7 @@ EvalOpenPbr(const ParamMap& params)
         transmissionWeight > 0.0f;
     if (transmissionWeight > 0.0f) {
         Bsdf::DielectricInterfaceData interface;
-        interface.reflectionWeight = specularWeight;
+        interface.reflectionWeight = 1.0f;
         interface.reflectionTint = _Saturate(c.specularColor);
         interface.transmissionWeight = transmissionWeight;
         // Regular OpenPBR volumes carry transmission_color through the
@@ -419,7 +451,7 @@ EvalOpenPbr(const ParamMap& params)
         interface.transmissionTint = c.hasInteriorMedium
             ? Vec3f(1.0f)
             : _Saturate(c.transmissionColor);
-        interface.ior = std::max(c.specularIor, 1.0f);
+        interface.ior = effectiveSpecularIor;
         interface.dispersionAbbe = effectiveDispersionAbbe;
         interface.roughness = specularRoughness;
         interface.tangent = tangent;
@@ -439,9 +471,9 @@ EvalOpenPbr(const ParamMap& params)
     Bsdf::NodeId dielectricBase = dielectricSubstrate;
     if (specularWeight > 0.0f && !useCombinedDielectricInterface) {
         Bsdf::DielectricData dielectric;
-        dielectric.weight = specularWeight;
+        dielectric.weight = 1.0f;
         dielectric.tint = _Saturate(c.specularColor);
-        dielectric.ior = std::max(c.specularIor, 1.0f);
+        dielectric.ior = effectiveSpecularIor;
         dielectric.dispersionAbbe = effectiveDispersionAbbe;
         dielectric.roughness = specularRoughness;
         dielectric.tangent = tangent;

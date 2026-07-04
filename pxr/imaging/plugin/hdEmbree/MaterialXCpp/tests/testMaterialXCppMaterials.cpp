@@ -948,6 +948,83 @@ TestOpenPbrBuildsLayeredDielectricBase()
 }
 
 static bool
+TestOpenPbrModulatesSubstrateIorForCoatAndSpecularWeight()
+{
+    {
+        ParamMap params;
+        params["specular_ior"] = Value(1.5f);
+        params["specular_weight"] = Value(0.25f);
+        params["coat_weight"] = Value(0.0f);
+
+        const SurfaceClosure c = EvalOpenPbr(params);
+        const auto* dielectric = FindNodeIf<Bsdf::DielectricData>(
+            c.bsdfTree,
+            [](const Bsdf::DielectricData& data) {
+                return data.scatterMode == Bsdf::ScatterMode::Reflection;
+            });
+        const float expectedIor = 1.2222222f;
+        if (!dielectric ||
+            !Test_IsClose(dielectric->ior, expectedIor, 1e-4f) ||
+            !Test_IsClose(dielectric->weight, 1.0f, 1e-4f)) {
+            printf("    OpenPBR specular weight did not modulate substrate IOR\n");
+            return false;
+        }
+    }
+
+    {
+        ParamMap params;
+        params["specular_ior"] = Value(1.5f);
+        params["specular_weight"] = Value(1.0f);
+        params["coat_ior"] = Value(1.6f);
+        params["coat_weight"] = Value(1.0f);
+
+        const SurfaceClosure c = EvalOpenPbr(params);
+        const auto* dielectric = FindNodeIf<Bsdf::DielectricData>(
+            c.bsdfTree,
+            [](const Bsdf::DielectricData& data) {
+                return data.scatterMode == Bsdf::ScatterMode::Reflection &&
+                       data.ior < 1.2f;
+            });
+        const float expectedIor = 1.6f / 1.5f;
+        if (!dielectric ||
+            !Test_IsClose(dielectric->ior, expectedIor, 1e-4f) ||
+            !Test_IsClose(dielectric->weight, 1.0f, 1e-4f)) {
+            printf("    OpenPBR coat did not use a relative substrate IOR\n");
+            return false;
+        }
+    }
+
+    {
+        ParamMap params;
+        params["specular_ior"] = Value(1.5f);
+        params["specular_weight"] = Value(0.25f);
+        params["coat_ior"] = Value(1.6f);
+        params["coat_weight"] = Value(1.0f);
+        params["transmission_weight"] = Value(0.5f);
+
+        const SurfaceClosure c = EvalOpenPbr(params);
+        const auto* interface = FindNodeIf<Bsdf::DielectricInterfaceData>(
+            c.bsdfTree,
+            [](const Bsdf::DielectricInterfaceData&) {
+                return true;
+            });
+        const float relativeIor = 1.6f / 1.5f;
+        const float epsilon = (relativeIor - 1.0f) / (relativeIor + 1.0f);
+        const float modulatedEpsilon = std::sqrt(0.25f * epsilon * epsilon);
+        const float expectedIor =
+            (1.0f + modulatedEpsilon) / (1.0f - modulatedEpsilon);
+        if (!interface ||
+            !Test_IsClose(interface->ior, expectedIor, 1e-4f) ||
+            !Test_IsClose(interface->reflectionWeight, 1.0f, 1e-4f)) {
+            printf("    OpenPBR combined interface used the wrong effective IOR\n");
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool
 TestOpenPbrMetalUsesF82TintSemantics()
 {
     const Vec3f baseColor(0.7f, 0.45f, 0.2f);
@@ -2263,6 +2340,7 @@ Test_RegisterMaterialTests()
     _REG(TestStandardSurfaceCoatNormalAndRotationReachBsdf);
     _REG(TestOpenPbrDefaults);
     _REG(TestOpenPbrBuildsLayeredDielectricBase);
+    _REG(TestOpenPbrModulatesSubstrateIorForCoatAndSpecularWeight);
     _REG(TestOpenPbrMetalUsesF82TintSemantics);
     _REG(TestOpenPbrTransmission);
     _REG(TestAdobeOpenPbrBuildsWholeBackendNode);
