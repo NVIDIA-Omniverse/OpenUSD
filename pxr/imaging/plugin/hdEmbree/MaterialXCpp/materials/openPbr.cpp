@@ -121,6 +121,23 @@ _ComputeAnisotropicRoughness(float roughness, float anisotropy)
 }
 
 float
+_ComputeEffectiveSpecularRoughness(float specularRoughness,
+                                   float coatRoughness,
+                                   float coatWeight)
+{
+    const float specularRoughness4 = std::pow(specularRoughness, 4.0f);
+    const float coatRoughness4 = std::pow(coatRoughness, 4.0f);
+    const float coatAffectedRoughness = std::pow(
+        std::min(
+            1.0f,
+            2.0f * coatRoughness4 + specularRoughness4),
+        0.25f);
+    const float clampedCoatWeight = _Clamp01(coatWeight);
+    return specularRoughness * (1.0f - clampedCoatWeight) +
+        coatAffectedRoughness * clampedCoatWeight;
+}
+
+float
 _ComputeEffectiveSpecularIor(float specularIor,
                              float specularWeight,
                              float coatIor,
@@ -294,8 +311,6 @@ EvalOpenPbr(const ParamMap& params)
             _kSpecularRoughnessAnisotropy,
             _kLegacySpecularAnisotropy,
             0.0f);
-    const Vec2f specularRoughness =
-        _ComputeAnisotropicRoughness(c.roughness, specularAnisotropy);
 
     c.transmission = Get<float>(params, _kTransmissionWeight, 0.0f);
     c.transmissionColor =
@@ -345,6 +360,15 @@ EvalOpenPbr(const ParamMap& params)
         _ComputeAnisotropicRoughness(c.coatRoughness, coatAnisotropy);
     c.coatIor = Get<float>(params, _kCoatIor, 1.6f);
     const float coatDarkening = Get<float>(params, _kCoatDarkening, 1.0f);
+    const float effectiveSpecularRoughness =
+        _ComputeEffectiveSpecularRoughness(
+            c.roughness,
+            c.coatRoughness,
+            c.coat);
+    const Vec2f specularRoughness =
+        _ComputeAnisotropicRoughness(
+            effectiveSpecularRoughness,
+            specularAnisotropy);
     const float thinFilmWeight = _Clamp01(
         Get<float>(params, _kThinFilmWeight, 0.0f));
     const float thinFilmThicknessNm = std::max(

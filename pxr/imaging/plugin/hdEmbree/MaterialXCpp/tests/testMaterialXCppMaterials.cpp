@@ -1025,6 +1025,79 @@ TestOpenPbrModulatesSubstrateIorForCoatAndSpecularWeight()
 }
 
 static bool
+TestOpenPbrCoatRoughensSubstrateSpecular()
+{
+    constexpr float specularRoughness = 0.18f;
+    constexpr float coatRoughness = 0.5f;
+    const float coatAffectedRoughness = std::pow(
+        std::min(
+            1.0f,
+            2.0f * std::pow(coatRoughness, 4.0f) +
+                std::pow(specularRoughness, 4.0f)),
+        0.25f);
+
+    const auto checkRoughness =
+        [&](float coatWeight, bool transmission) {
+            ParamMap params;
+            params["specular_roughness"] = Value(specularRoughness);
+            params["coat_weight"] = Value(coatWeight);
+            params["coat_roughness"] = Value(coatRoughness);
+            if (transmission) {
+                params["transmission_weight"] = Value(0.5f);
+            }
+
+            const SurfaceClosure c = EvalOpenPbr(params);
+            Vec2f actual(0.0f);
+            if (transmission) {
+                const auto* interface =
+                    FindNodeIf<Bsdf::DielectricInterfaceData>(
+                        c.bsdfTree,
+                        [](const Bsdf::DielectricInterfaceData&) {
+                            return true;
+                        });
+                if (!interface) {
+                    return false;
+                }
+                actual = interface->roughness;
+            } else {
+                const auto* dielectric = FindNodeIf<Bsdf::DielectricData>(
+                    c.bsdfTree,
+                    [](const Bsdf::DielectricData& data) {
+                        return data.scatterMode ==
+                                   Bsdf::ScatterMode::Reflection &&
+                               data.ior < 1.5f;
+                    });
+                if (!dielectric) {
+                    return false;
+                }
+                actual = dielectric->roughness;
+            }
+
+            const float effectiveRoughness =
+                specularRoughness * (1.0f - coatWeight) +
+                coatAffectedRoughness * coatWeight;
+            const float expectedAlpha =
+                effectiveRoughness * effectiveRoughness;
+            return Test_IsClose(actual[0], expectedAlpha, 1e-4f) &&
+                   Test_IsClose(actual[1], expectedAlpha, 1e-4f);
+        };
+
+    if (!checkRoughness(1.0f, false)) {
+        printf("    Full OpenPBR coat did not roughen substrate specular\n");
+        return false;
+    }
+    if (!checkRoughness(0.5f, false)) {
+        printf("    Partial OpenPBR coat did not blend substrate roughness\n");
+        return false;
+    }
+    if (!checkRoughness(1.0f, true)) {
+        printf("    OpenPBR transmission interface missed coat roughening\n");
+        return false;
+    }
+    return true;
+}
+
+static bool
 TestOpenPbrMetalUsesF82TintSemantics()
 {
     const Vec3f baseColor(0.7f, 0.45f, 0.2f);
@@ -2341,6 +2414,7 @@ Test_RegisterMaterialTests()
     _REG(TestOpenPbrDefaults);
     _REG(TestOpenPbrBuildsLayeredDielectricBase);
     _REG(TestOpenPbrModulatesSubstrateIorForCoatAndSpecularWeight);
+    _REG(TestOpenPbrCoatRoughensSubstrateSpecular);
     _REG(TestOpenPbrMetalUsesF82TintSemantics);
     _REG(TestOpenPbrTransmission);
     _REG(TestAdobeOpenPbrBuildsWholeBackendNode);
