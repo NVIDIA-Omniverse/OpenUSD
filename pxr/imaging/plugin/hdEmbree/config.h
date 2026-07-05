@@ -107,8 +107,8 @@ public:
     /// Override with *HDEMBREE_CAMERA_LIGHT_INTENSITY*.
     float cameraLightIntensity = HdEmbreeDefaultCameraLightIntensity;
 
-    /// OpenQMC frame seed. A value of -1 (the default) chooses a
-    /// non-deterministic seed for each render.
+    /// OpenQMC frame seed. A value of -1 (the default) uses the current
+    /// scene frame.
     ///
     /// Override with *HDEMBREE_RANDOM_NUMBER_SEED*.
     int randomNumberSeed = HdEmbreeDefaultRandomNumberSeed;

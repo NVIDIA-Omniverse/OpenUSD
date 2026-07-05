@@ -46,7 +46,7 @@ class "TyphoonRenderSettingsAPI" (
     )
 
     uniform int ty:randomNumberSeed = -1 (
-        doc = """OpenQMC frame seed. A value of -1 chooses a non-deterministic seed."""
+        doc = """OpenQMC frame seed. A value of -1 uses the current scene frame."""
     )
 
     uniform token ty:samplerSequence = "openqmc_sobolbn" (

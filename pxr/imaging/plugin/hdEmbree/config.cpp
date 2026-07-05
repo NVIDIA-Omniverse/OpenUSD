@@ -62,8 +62,8 @@ TF_DEFINE_ENV_SETTING(
 TF_DEFINE_ENV_SETTING(
     HDEMBREE_RANDOM_NUMBER_SEED,
     HdEmbreeDefaultRandomNumberSeed,
-    "OpenQMC frame seed. A value of -1 (the default) chooses a"
-        " non-deterministic seed for each render.");
+    "OpenQMC frame seed. A value of -1 (the default) uses the current"
+        " scene frame.");
 
 TF_DEFINE_ENV_SETTING(
     HDEMBREE_ENABLE_LIGHTING,

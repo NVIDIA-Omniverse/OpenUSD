@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include <cstdint>
 #include <type_traits>
 #include <variant>
@@ -85,6 +86,18 @@ HdEmbreeGetSamplerSequenceFromToken(TfToken const& token)
         return HdEmbreeSamplerSequence::OpenQMCLatticeBN;
     }
     return HdEmbreeGetDefaultSamplerSequence();
+}
+
+inline uint32_t
+HdEmbreeResolveFrameSeed(int configuredSeed, float sceneFrame)
+{
+    if (configuredSeed != -1) {
+        return static_cast<uint32_t>(configuredSeed);
+    }
+    static_assert(sizeof(sceneFrame) == sizeof(uint32_t));
+    uint32_t frameSeed;
+    std::memcpy(&frameSeed, &sceneFrame, sizeof(frameSeed));
+    return frameSeed;
 }
 
 // ---------------------------------------------------------------------------

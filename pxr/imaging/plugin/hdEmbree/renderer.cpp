@@ -1894,15 +1894,10 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
 
     _renderStartTime = std::chrono::steady_clock::now();
 
-    // Compute the OpenQMC frame seed once per Render() call so every tile and
-    // pass in this render uses the same sequence randomization.
-    uint32_t baseSeed;
-    if (_randomNumberSeed == -1) {
-        baseSeed = static_cast<uint32_t>(
-            std::chrono::system_clock::now().time_since_epoch().count());
-    } else {
-        baseSeed = static_cast<uint32_t>(_randomNumberSeed);
-    }
+    // Compute the OpenQMC frame seed once per Render() call. An explicit
+    // render setting or environment seed overrides the scene frame.
+    const uint32_t baseSeed =
+        HdEmbreeResolveFrameSeed(_randomNumberSeed, _sceneFrame);
 
     const unsigned int tileSize = HdEmbreeConfig::GetInstance().tileSize;
     const unsigned int numTilesX =

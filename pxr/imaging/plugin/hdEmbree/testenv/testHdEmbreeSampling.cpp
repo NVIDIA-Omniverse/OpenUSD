@@ -117,6 +117,21 @@ TestSamplerSequenceTokens()
 }
 
 bool
+TestFrameSeedUsesSceneFrameUnlessOverridden()
+{
+    if (HdEmbreeResolveFrameSeed(-1, 24.0f) != 0x41c00000u ||
+        HdEmbreeResolveFrameSeed(-1, 24.5f) != 0x41c40000u) {
+        std::printf("    default seed did not preserve scene frame bits\n");
+        return false;
+    }
+    if (HdEmbreeResolveFrameSeed(91, 24.0f) != 91u) {
+        std::printf("    configured seed did not override the scene frame\n");
+        return false;
+    }
+    return true;
+}
+
+bool
 TestOpenQmcDomainsAreDeterministicAndSeparated()
 {
     HdEmbreeSampler sampler(
@@ -221,6 +236,8 @@ main()
          &TestDefaultSamplerSequence},
         {"Sampling.TestSamplerSequenceTokens",
          &TestSamplerSequenceTokens},
+        {"Sampling.TestFrameSeedUsesSceneFrameUnlessOverridden",
+         &TestFrameSeedUsesSceneFrameUnlessOverridden},
         {"Sampling.TestOpenQmcDomainsAreDeterministicAndSeparated",
          &TestOpenQmcDomainsAreDeterministicAndSeparated},
         {"Sampling.TestOpenQmcSplitAndChainAreStable",

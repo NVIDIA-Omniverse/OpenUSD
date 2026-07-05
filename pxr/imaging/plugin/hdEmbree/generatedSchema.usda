@@ -113,7 +113,7 @@ class "TyphoonRenderSettingsAPI" (
     )
     uniform int ty:randomNumberSeed = -1 (
         customData = {
-            string userDocBrief = "OpenQMC frame seed."
+            string userDocBrief = "OpenQMC frame seed. A value of -1 uses the current scene frame."
         }
     )
     uniform token ty:samplerSequence = "openqmc_sobolbn" (

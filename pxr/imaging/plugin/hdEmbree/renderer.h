@@ -177,9 +177,8 @@ public:
     void SetEnableSceneColors(bool enableSceneColors);
 
     /// Sets the OpenQMC frame seed.
-    ///   \param randomNumberSeed If -1, then the frame seed is chosen in a
-    ///                           non-deterministic way; otherwise, it is
-    ///                           seeded with this value.
+    ///   \param randomNumberSeed If -1, use the current scene frame;
+    ///                           otherwise, use this value.
     void SetRandomNumberSeed(int randomNumberSeed);
 
     /// Sets whether to enable direct lighting (disables ambient occlusion).
