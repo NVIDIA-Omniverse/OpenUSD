@@ -1944,6 +1944,120 @@ TestDielectricInterfaceLayerDoesNotDoubleAttenuateTransmission()
 }
 
 static bool
+TestOpenPbrInterfaceRoughTransmissionUsesBsdlEnergyCompensation()
+{
+    Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    constexpr float perceptualRoughness = 0.3f;
+    constexpr float alphaRoughness =
+        perceptualRoughness * perceptualRoughness;
+    constexpr float ior = 1.5f;
+    constexpr float expectedFrontScale = 1.07993165f;
+    constexpr float expectedBackScale = 1.01935121f;
+
+    for (const bool backfacing : {false, true}) {
+        SurfaceClosure closure;
+        Bsdf::DielectricInterfaceData interface;
+        interface.reflectionWeight = 1.0f;
+        interface.reflectionTint = Vec3f(1.0f);
+        interface.transmissionWeight = 1.0f;
+        interface.transmissionTint = Vec3f(1.0f);
+        interface.ior = ior;
+        interface.roughness = Vec2f(alphaRoughness, alphaRoughness);
+        closure.bsdfTree.root = closure.bsdfTree.Add(interface);
+
+        Vec3f wo = _DirectionFromCosThetaYUp(backfacing ? 0.8f : 0.1f);
+        if (backfacing) {
+            wo = -wo;
+        }
+        const auto sample =
+            Bsdf::SampleSurface(closure, N, wo, 0.3f, 0.7f, 0.99f);
+        if (sample.pdf <= 0.0f || sample.isSpecular) {
+            printf(
+                "    Expected valid rough OpenPBR transmission sample "
+                "(backfacing=%d)\n",
+                backfacing);
+            return false;
+        }
+
+        const Vec3f evaluated =
+            Bsdf::EvalSurface(closure, N, sample.wi, wo);
+        if (!Test_IsClose(sample.f, evaluated, 1.0e-5f)) {
+            printf(
+                "    Sampled and evaluated OpenPBR transmission differ: "
+                "sample=(%f,%f,%f) eval=(%f,%f,%f)\n",
+                sample.f[0], sample.f[1], sample.f[2],
+                evaluated[0], evaluated[1], evaluated[2]);
+            return false;
+        }
+
+        const Vec3f uncompensated = Bsdf::EvalGGXTransmission(
+            perceptualRoughness,
+            ior,
+            Vec3f(1.0f),
+            N,
+            sample.wi,
+            wo);
+        if (uncompensated[0] <= 1.0e-6f) {
+            printf("    Expected nonzero uncompensated transmission\n");
+            return false;
+        }
+        const float actualScale = evaluated[0] / uncompensated[0];
+        const float expectedScale =
+            backfacing ? expectedBackScale : expectedFrontScale;
+        if (!Test_IsClose(actualScale, expectedScale, 2.0e-4f)) {
+            printf(
+                "    OpenPBR transmission energy scale mismatch: "
+                "actual=%f expected=%f backfacing=%d\n",
+                actualScale, expectedScale, backfacing);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool
+TestStandaloneDielectricRoughTransmissionRemainsUncompensated()
+{
+    Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
+
+    SurfaceClosure closure;
+    Bsdf::DielectricData dielectric;
+    dielectric.weight = 1.0f;
+    dielectric.tint = Vec3f(1.0f);
+    dielectric.ior = 1.5f;
+    dielectric.roughness = Vec2f(0.09f, 0.09f);
+    dielectric.scatterMode = Bsdf::ScatterMode::Transmission;
+    closure.bsdfTree.root = closure.bsdfTree.Add(dielectric);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const Vec3f wo = _DirectionFromCosThetaYUp(0.1f);
+    const auto sample = Bsdf::SampleGGXTransmission(
+        0.3f, 1.5f, Vec3f(1.0f), N, wo, 0.3f, 0.7f);
+    if (sample.pdf <= 0.0f) {
+        printf("    Expected valid standalone dielectric transmission sample\n");
+        return false;
+    }
+
+    const Vec3f evaluated =
+        Bsdf::EvalSurface(closure, N, sample.wi, wo);
+    const Vec3f uncompensated = Bsdf::EvalGGXTransmission(
+        0.3f, 1.5f, Vec3f(1.0f), N, sample.wi, wo);
+    if (!Test_IsClose(evaluated, uncompensated, 1.0e-5f)) {
+        printf(
+            "    Standalone dielectric transmission was unexpectedly "
+            "compensated: eval=(%f,%f,%f) raw=(%f,%f,%f)\n",
+            evaluated[0], evaluated[1], evaluated[2],
+            uncompensated[0], uncompensated[1], uncompensated[2]);
+        return false;
+    }
+
+    return true;
+}
+
+static bool
 TestDielectricInterfaceSamplePdfConsistency()
 {
     SurfaceClosure c;
@@ -3371,6 +3485,8 @@ Test_RegisterBsdfTests()
     _REG(TestEvalSurfaceTransmissionFromInterior);
     _REG(TestTreeAddTransmissionPreservesWeight);
     _REG(TestDielectricInterfaceLayerDoesNotDoubleAttenuateTransmission);
+    _REG(TestOpenPbrInterfaceRoughTransmissionUsesBsdlEnergyCompensation);
+    _REG(TestStandaloneDielectricRoughTransmissionRemainsUncompensated);
     _REG(TestDielectricInterfaceSamplePdfConsistency);
     _REG(TestDeltaDielectricInterfaceTransmissionSamplesSingleFresnel);
     _REG(TestDeltaDielectricInterfaceTirDoesNotAmplifyThroughput);

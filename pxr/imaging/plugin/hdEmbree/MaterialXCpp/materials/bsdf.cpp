@@ -7,6 +7,7 @@
 #include "bsdf.h"
 
 #include "adobeOpenPbr.h"
+#include "bsdfDielectricBothLut.h"
 #include "bsdfDielectricReflFrontLut.h"
 
 #include "../spectral.h"
@@ -241,6 +242,79 @@ _LookupBsdlDielectricReflFrontFilter(
     const auto lerpRoughness = [&](int i) {
         return lerpCos(i, roughness0) * (1.0f - roughnessT) +
                lerpCos(i, roughness1) * roughnessT;
+    };
+
+    return _Clamp01(
+        lerpRoughness(ior0) * (1.0f - iorT) +
+        lerpRoughness(ior1) * iorT);
+}
+
+inline float
+_LookupBsdlDielectricBothMissingEnergy(
+    float cosTheta,
+    float perceptualRoughness,
+    float ior,
+    bool backfacing)
+{
+    namespace lut = bsdf_luts;
+
+    const float c = _Clamp01(cosTheta);
+    const float roughness = _Clamp01(perceptualRoughness);
+    const float clampedIor = std::clamp(
+        ior,
+        _kBsdlDielectricIorMin,
+        _kBsdlDielectricIorMax);
+
+    const float iorIndex = std::sqrt(
+        (clampedIor - _kBsdlDielectricIorMin) /
+        (_kBsdlDielectricIorMax - _kBsdlDielectricIorMin));
+    const float iorCoord =
+        iorIndex * static_cast<float>(lut::kBsdlDielectricBothIorCount - 1);
+    const int ior0 = std::clamp(
+        static_cast<int>(iorCoord), 0, lut::kBsdlDielectricBothIorCount - 1);
+    const int ior1 =
+        std::min(ior0 + 1, lut::kBsdlDielectricBothIorCount - 1);
+    const float iorT = iorCoord - static_cast<float>(ior0);
+
+    const float roughnessCoord = roughness * static_cast<float>(
+        lut::kBsdlDielectricBothRoughnessCount - 1);
+    const int roughness0 = std::clamp(
+        static_cast<int>(roughnessCoord),
+        0,
+        lut::kBsdlDielectricBothRoughnessCount - 1);
+    const int roughness1 = std::min(
+        roughness0 + 1,
+        lut::kBsdlDielectricBothRoughnessCount - 1);
+    const float roughnessT =
+        roughnessCoord - static_cast<float>(roughness0);
+
+    const float cosCoord = c * static_cast<float>(
+        lut::kBsdlDielectricBothCosThetaCount - 1);
+    const int cos0 = std::clamp(
+        static_cast<int>(cosCoord),
+        0,
+        lut::kBsdlDielectricBothCosThetaCount - 1);
+    const int cos1 =
+        std::min(cos0 + 1, lut::kBsdlDielectricBothCosThetaCount - 1);
+    const float cosT = cosCoord - static_cast<float>(cos0);
+
+    const float* values = backfacing
+        ? lut::kBsdlDielectricBothBackMissingEnergy
+        : lut::kBsdlDielectricBothFrontMissingEnergy;
+    const auto lookup = [&](int i, int r, int cosine) {
+        const int index =
+            (i * lut::kBsdlDielectricBothRoughnessCount + r) *
+                lut::kBsdlDielectricBothCosThetaCount +
+            cosine;
+        return values[index];
+    };
+    const auto lerpCos = [&](int i, int r) {
+        return lookup(i, r, cos0) * (1.0f - cosT) +
+            lookup(i, r, cos1) * cosT;
+    };
+    const auto lerpRoughness = [&](int i) {
+        return lerpCos(i, roughness0) * (1.0f - roughnessT) +
+            lerpCos(i, roughness1) * roughnessT;
     };
 
     return _Clamp01(
@@ -872,6 +946,26 @@ _IsGgxMicrofacetMultipleScatteringEnabled()
 {
     return _gGgxMicrofacetMultipleScatteringEnabled.load(
         std::memory_order_relaxed);
+}
+
+inline float
+_BsdlRoughDielectricTransmissionScale(
+    float cosThetaO,
+    float perceptualRoughness,
+    float ior,
+    bool backfacing)
+{
+    if (!_IsGgxMicrofacetMultipleScatteringEnabled() ||
+        perceptualRoughness < std::sqrt(_kTurquinMicrofacetMsMinAlpha)) {
+        return 1.0f;
+    }
+
+    const float missingEnergy = _LookupBsdlDielectricBothMissingEnergy(
+        cosThetaO,
+        perceptualRoughness,
+        ior,
+        backfacing);
+    return 1.0f / std::max(0.01f, 1.0f - missingEnergy);
 }
 
 inline Bsdf::DielectricLayerThroughputMode
@@ -2547,6 +2641,13 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     _TransmissionFresnelCosTheta(effectiveIor, N, wi, wo);
                 const float baseReflectance =
                     _SchlickFresnelScalar(effectiveIor, fresnelCos);
+                const float energyScale =
+                    _BsdlRoughDielectricTransmissionScale(
+                        std::max(
+                            std::abs(Dot(shadingN, wo)), _kEpsilon),
+                        _BsdlLayerRoughnessFromAlpha(data.roughness),
+                        effectiveIor,
+                        Dot(N, wo) < 0.0f);
                 const Vec3f transmissionScale = _TransmissionScale(
                     baseReflectance,
                     _DielectricInterfaceReflectanceUntinted(
@@ -2559,7 +2660,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                         N,
                         wi,
                         wo) * _Clamp01(data.transmissionWeight),
-                    transmissionScale);
+                    transmissionScale) *
+                    energyScale;
             }
             return _SafeVec(result);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
@@ -3489,6 +3591,9 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 wo,
                 u1,
                 u2);
+            // Rough samples are finalized by re-evaluating this interface,
+            // which applies the same BSDL front/back transmission-energy
+            // scale used by direct evaluation.
             if (sample.pdf <= 0.0f) {
                 return _ScaleDiscreteSpecularSample(
                     _SampleDeltaDielectricInterfaceTransmission(
