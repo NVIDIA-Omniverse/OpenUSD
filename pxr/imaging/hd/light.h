@@ -107,6 +107,9 @@ public:
     /// radiance/luminance into the value required by the UsdLux physical
     /// lighting APIs. If the light has no photometric parameters, this returns
     /// 1.0.
+    /// TODO: Store lightType on HdLight itself so callers do not need to pass
+    /// it here. That requires a broader Hydra API change because light type is
+    /// currently only passed to render delegates during Sprim creation.
     HD_API
     static float ComputePhysicalScalingFactor(
         HdSceneDelegate* sceneDelegate,
