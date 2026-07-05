@@ -1083,6 +1083,45 @@ static bool TestProceduralFractal3dColor() {
     return Test_IsClose(_GetVec3(fractal), first + second, 1e-5f);
 }
 
+static bool TestArtisticIor() {
+    ParamMap in;
+    in["reflectivity"] = Value(Vec3f(0.25f));
+    in["edge_color"] = Value(Vec3f(0.0f, 1.0f, 0.5f));
+    const auto out = _Eval("ND_artistic_ior", in);
+
+    return Test_IsClose(
+               _GetVec3(out, "ior"),
+               Vec3f(3.0f, 0.6f, 1.8f),
+               1e-5f) &&
+           Test_IsClose(
+               _GetVec3(out, "extinction"),
+               Vec3f(0.0f, 0.8f, std::sqrt(1.76f)),
+               1e-5f);
+}
+
+static bool TestBlackbody() {
+    ParamMap in;
+    in["temperature"] = Value(1900.0f);
+    const Vec3f warm = _GetVec3(_Eval("ND_blackbody", in));
+    if (!Test_IsClose(
+            warm, Vec3f(2.64310986f, 0.61265858f, 0.0f), 1e-5f)) {
+        return false;
+    }
+
+    in["temperature"] = Value(4500.0f);
+    const Vec3f neutral = _GetVec3(_Eval("ND_blackbody", in));
+    if (!Test_IsClose(
+            neutral, Vec3f(1.30027675f, 0.94580768f, 0.65325726f), 1e-5f)) {
+        return false;
+    }
+
+    in["temperature"] = Value(9000.0f);
+    return Test_IsClose(
+        _GetVec3(_Eval("ND_blackbody", in)),
+        Vec3f(0.90484315f, 0.99376682f, 1.34251550f),
+        1e-5f);
+}
+
 static bool TestProceduralUnifiedNoise2dCellRemap() {
     ParamMap in;
     in["texcoord"] = Value(Vec2f(1.2f, 2.7f));
@@ -1153,6 +1192,33 @@ static bool TestProceduralRampLrAndSplitLr() {
     return true;
 }
 
+static bool TestProceduralRampTbAndSplitTb() {
+    {
+        ParamMap in;
+        in["valuet"] = Value(5.0f);
+        in["valueb"] = Value(1.0f);
+        in["texcoord"] = Value(Vec2f(0.0f, 0.25f));
+        if (!Test_IsClose(
+                _GetFloat(_Eval("ND_ramptb_float", in)), 2.0f, 1e-5f)) {
+            return false;
+        }
+    }
+
+    ParamMap in;
+    in["valuet"] = Value(5.0f);
+    in["valueb"] = Value(1.0f);
+    in["center"] = Value(0.5f);
+    in["texcoord"] = Value(Vec2f(0.0f, 0.25f));
+    if (!Test_IsClose(
+            _GetFloat(_Eval("ND_splittb_float", in)), 1.0f, 1e-5f)) {
+        return false;
+    }
+
+    in["texcoord"] = Value(Vec2f(0.0f, 0.75f));
+    return Test_IsClose(
+        _GetFloat(_Eval("ND_splittb_float", in)), 5.0f, 1e-5f);
+}
+
 static bool TestProceduralRamp4AndRamp() {
     {
         ParamMap in;
@@ -1162,7 +1228,7 @@ static bool TestProceduralRamp4AndRamp() {
         in["valuebr"] = Value(3.0f);
         in["texcoord"] = Value(Vec2f(0.25f, 0.25f));
         auto out = _Eval("ND_ramp4_float", in);
-        if (!Test_IsClose(_GetFloat(out), 0.75f, 1e-5f)) {
+        if (!Test_IsClose(_GetFloat(out), 1.75f, 1e-5f)) {
             return false;
         }
     }
@@ -2713,9 +2779,12 @@ Test_RegisterNodeTests()
     _REG(TestProceduralWorleyNoise3d);
     _REG(TestProceduralFractal2dSingleOctave);
     _REG(TestProceduralFractal3dColor);
+    _REG(TestArtisticIor);
+    _REG(TestBlackbody);
     _REG(TestProceduralUnifiedNoise2dCellRemap);
     _REG(TestProceduralUnifiedNoise3dCellRemap);
     _REG(TestProceduralRampLrAndSplitLr);
+    _REG(TestProceduralRampTbAndSplitTb);
     _REG(TestProceduralRamp4AndRamp);
     _REG(TestProceduralPatterns);
     _REG(TestProceduralGridAndCrosshatch);

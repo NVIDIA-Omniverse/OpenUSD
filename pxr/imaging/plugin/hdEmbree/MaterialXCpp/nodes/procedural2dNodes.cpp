@@ -94,7 +94,7 @@ _RampTb(const ParamMap& inputs, const ShadingContext& ctx)
     const T top = Get<T>(inputs, _kValuet, Zero<T>());
     const T bottom = Get<T>(inputs, _kValueb, Zero<T>());
     const Vec2f tc = Get<Vec2f>(inputs, _kTexcoord, ctx.texcoord);
-    return Mix(top, bottom, Clamp01(tc[1]));
+    return Mix(bottom, top, Clamp01(tc[1]));
 }
 
 template<typename T>
@@ -106,9 +106,9 @@ _Ramp4(const ParamMap& inputs, const ShadingContext& ctx)
     const T bottomLeft = Get<T>(inputs, _kValuebl, Zero<T>());
     const T bottomRight = Get<T>(inputs, _kValuebr, Zero<T>());
     const Vec2f uv = Clamp01(Get<Vec2f>(inputs, _kTexcoord, ctx.texcoord));
-    const T top = Mix(topLeft, topRight, uv[0]);
     const T bottom = Mix(bottomLeft, bottomRight, uv[0]);
-    return Mix(top, bottom, uv[1]);
+    const T top = Mix(topLeft, topRight, uv[0]);
+    return Mix(bottom, top, uv[1]);
 }
 
 static Vec4f
@@ -331,7 +331,7 @@ _EvalSplitTbTyped(const ParamMap& inputs,
     const float center = Get<float>(inputs, _kCenter, 0.5f);
     const Vec2f tc = Get<Vec2f>(inputs, _kTexcoord, ctx.texcoord);
     const float t = AAStep(center, tc[1], ctx.dvdx, ctx.dvdy);
-    StoreTypedOutput(outputs, _kOut, Mix(top, bottom, t));
+    StoreTypedOutput(outputs, _kOut, Mix(bottom, top, t));
 }
 
 static void
