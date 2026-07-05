@@ -40,6 +40,14 @@ static const SlotName _kWrapS("wrapS");
 static const SlotName _kWrapT("wrapT");
 static const SlotName _kFilterType("filtertype");
 static const SlotName _kRotation("rotation");
+static const SlotName _kPivot("pivot");
+static const SlotName _kRotate("rotate");
+static const SlotName _kOperationOrder("operationorder");
+static const SlotName _kStrength("strength");
+static const SlotName _kFlipG("flip_g");
+static const SlotName _kNormal("normal");
+static const SlotName _kTangent("tangent");
+static const SlotName _kBitangent("bitangent");
 static const SlotName _kFrameRange("framerange");
 static const SlotName _kFrameOffset("frameoffset");
 static const SlotName _kFrameEndAction("frameendaction");
@@ -70,6 +78,7 @@ struct _HexTileFootprint
     std::array<Vec2f, 3> st = {Vec2f(0.0f), Vec2f(0.0f), Vec2f(0.0f)};
     std::array<Vec2f, 3> dstdx = {Vec2f(0.0f), Vec2f(0.0f), Vec2f(0.0f)};
     std::array<Vec2f, 3> dstdy = {Vec2f(0.0f), Vec2f(0.0f), Vec2f(0.0f)};
+    std::array<float, 3> rotations = {0.0f, 0.0f, 0.0f};
     Vec3f weights = Vec3f(0.0f);
 };
 
@@ -139,20 +148,27 @@ _ComputeHexTileFootprint(const ParamMap& inputs, const ShadingContext& ctx)
     const float offsetAmount = Get<float>(inputs, _kOffset, 1.0f);
     const Vec2f offsetRange =
         Get<Vec2f>(inputs, _kOffsetRange, Vec2f(0.0f, 1.0f));
+    // Hex hashing and rotation operate in the texture system's T convention.
+    // Enter that convention before the nonlinear transform, then convert the
+    // generated coordinates and derivatives back before Sample2D flips them
+    // at the backend boundary.
 
     const Vec2f baseTexcoord =
         EvaluateInput<Vec2f>(inputs, _kTexcoord, ctx, ctx.texcoord);
-    const Vec2f coord = CompMul(baseTexcoord, tiling);
+    const Vec2f coord = CompMul(
+        Vec2f(baseTexcoord[0], 1.0f - baseTexcoord[1]), tiling);
 
     const ShadingContext shiftedDx = OffsetContextDx(ctx);
     const Vec2f texcoordDx =
         EvaluateInput<Vec2f>(inputs, _kTexcoord, shiftedDx, shiftedDx.texcoord);
-    const Vec2f coordDx = CompMul(texcoordDx, tiling);
+    const Vec2f coordDx = CompMul(
+        Vec2f(texcoordDx[0], 1.0f - texcoordDx[1]), tiling);
 
     const ShadingContext shiftedDy = OffsetContextDy(ctx);
     const Vec2f texcoordDy =
         EvaluateInput<Vec2f>(inputs, _kTexcoord, shiftedDy, shiftedDy.texcoord);
-    const Vec2f coordDy = CompMul(texcoordDy, tiling);
+    const Vec2f coordDy = CompMul(
+        Vec2f(texcoordDy[0], 1.0f - texcoordDy[1]), tiling);
 
     const Vec2f baseDstdx = coordDx - coord;
     const Vec2f baseDstdy = coordDy - coord;
@@ -213,20 +229,22 @@ _ComputeHexTileFootprint(const ParamMap& inputs, const ShadingContext& ctx)
         const float cosRotation = std::cos(tileRotation);
         const Vec2f delta = coord - tileCenter;
 
+        footprint.rotations[i] = tileRotation;
         footprint.st[i] = Vec2f(
             (delta[0] * cosRotation - delta[1] * sinRotation) / tileScale +
                 tileCenter[0] + tileOffset[0],
-            (delta[0] * sinRotation + delta[1] * cosRotation) / tileScale +
-                tileCenter[1] + tileOffset[1]);
+            1.0f -
+                ((delta[0] * sinRotation + delta[1] * cosRotation) /
+                     tileScale + tileCenter[1] + tileOffset[1]));
         footprint.dstdx[i] = Vec2f(
             (baseDstdx[0] * cosRotation - baseDstdx[1] * sinRotation) /
                 tileScale,
-            (baseDstdx[0] * sinRotation + baseDstdx[1] * cosRotation) /
+            -(baseDstdx[0] * sinRotation + baseDstdx[1] * cosRotation) /
                 tileScale);
         footprint.dstdy[i] = Vec2f(
             (baseDstdy[0] * cosRotation - baseDstdy[1] * sinRotation) /
                 tileScale,
-            (baseDstdy[0] * sinRotation + baseDstdy[1] * cosRotation) /
+            -(baseDstdy[0] * sinRotation + baseDstdy[1] * cosRotation) /
                 tileScale);
     }
 
@@ -451,6 +469,92 @@ _EvalHexTiledImageNode(const ParamMap& inputs,
         (*outputs)[_kOut] = Value(result);
     }
 }
+static Vec3f
+_NormalToGradient(const Vec3f& normal, const Vec3f& perturbed)
+{
+    const float d = Dot(normal, perturbed);
+    return (d * normal - perturbed) / std::max(1.0e-8f, std::abs(d));
+}
+
+static void
+_EvalHexTiledNormalMap(const ParamMap& inputs,
+                       const ShadingContext& ctx,
+                       NodeOutputMap* outputs)
+{
+    const Vec3f normal = Get<Vec3f>(inputs, _kNormal, ctx.normal);
+    const std::string filePath =
+        Get<std::string>(inputs, _kFile, std::string());
+    if (!ctx.textureSystem || filePath.empty()) {
+        (*outputs)[_kOut] = Value(normal);
+        return;
+    }
+
+    const Vec3f defaultValue =
+        Get<Vec3f>(inputs, _kDefaultVal, Vec3f(0.5f, 0.5f, 1.0f));
+    const Vec3f tangent = Get<Vec3f>(inputs, _kTangent, ctx.tangent);
+    const Vec3f bitangent =
+        Get<Vec3f>(inputs, _kBitangent, ctx.bitangent);
+    const float strength = Get<float>(inputs, _kStrength, 1.0f);
+    const bool flipG = Get<bool>(inputs, _kFlipG, false);
+    const float falloff = Get<float>(inputs, _kFalloff, 0.5f);
+    const _HexTileFootprint footprint =
+        _ComputeHexTileFootprint(inputs, ctx);
+
+    Texture2DRequest request;
+    request.filePath = filePath;
+    request.uAddressMode = TextureAddressMode::Periodic;
+    request.vAddressMode = TextureAddressMode::Periodic;
+    request.filterType = TextureFilterType::Linear;
+    request.frame = ctx.frame;
+    request.dataRole = TextureDataRole::NonColor;
+    request.sourceColorSpace = NormalizeColorSpace(
+        Get<std::string>(inputs, _kFileColorSpace, std::string()));
+    request.channelCount = 3;
+    request.channelFillValue = 0.0f;
+    request.defaultValue = TextureValueTraits<Vec3f>::ToVec4(defaultValue);
+
+    std::array<Vec3f, 3> tileNormals;
+    for (int i = 0; i < 3; ++i) {
+        request.st = footprint.st[i];
+        request.dstdx = footprint.dstdx[i];
+        request.dstdy = footprint.dstdy[i];
+        const Vec4f sampled = ctx.textureSystem->Sample2D(request).value;
+        Vec3f decoded(sampled[0], sampled[1], sampled[2]);
+        if (flipG) {
+            decoded[1] = 1.0f - decoded[1];
+        }
+        decoded = decoded * 2.0f - Vec3f(1.0f);
+
+        Vec3f rotatedTangent = Rotate3d(
+            tangent, -footprint.rotations[i] / kDegreesToRadians, normal);
+        Vec3f rotatedBitangent = Rotate3d(
+            bitangent, -footprint.rotations[i] / kDegreesToRadians, normal);
+        rotatedTangent *= strength;
+        rotatedBitangent *= strength;
+
+        Vec3f orthogonalTangent =
+            rotatedTangent - normal * Dot(rotatedTangent, normal);
+        orthogonalTangent.normalize();
+        Vec3f orthogonalBitangent =
+            rotatedBitangent -
+            normal * Dot(rotatedBitangent, normal) -
+            orthogonalTangent * Dot(rotatedBitangent, orthogonalTangent);
+        orthogonalBitangent.normalize();
+
+        tileNormals[i] = (
+            orthogonalTangent * decoded[0] +
+            orthogonalBitangent * decoded[1] +
+            normal * decoded[2]).normalized();
+    }
+
+    const Vec3f weights = _ComputeHexBlendWeights(
+        Vec3f(1.0f), footprint.weights, falloff);
+    const Vec3f gradient =
+        _NormalToGradient(normal, tileNormals[0]) * weights[0] +
+        _NormalToGradient(normal, tileNormals[1]) * weights[1] +
+        _NormalToGradient(normal, tileNormals[2]) * weights[2];
+    (*outputs)[_kOut] = Value((normal - gradient).normalized());
+}
 
 template<typename T, TextureDataRole DataRole, bool IsTiled>
 static void
@@ -511,6 +615,82 @@ _EvalTextureNode(const ParamMap& inputs,
 
     const Texture2DResult sampled = ctx.textureSystem->Sample2D(request);
     (*outputs)[_kOut] = Value(TextureValueTraits<T>::FromVec4(sampled.value));
+}
+static Vec2f
+_ComputeGltfImageCoord(const ParamMap& inputs, const ShadingContext& ctx)
+{
+    const Vec2f texcoord =
+        EvaluateInput<Vec2f>(inputs, _kTexcoord, ctx, ctx.texcoord);
+    const Vec2f pivot = Get<Vec2f>(inputs, _kPivot, Vec2f(0.0f, 1.0f));
+    const Vec2f scale = Get<Vec2f>(inputs, _kScale, Vec2f(1.0f));
+    const float rotate = Get<float>(inputs, _kRotate, 0.0f);
+    const Vec2f offset = Get<Vec2f>(inputs, _kOffset, Vec2f(0.0f));
+    const int order = Get<int>(inputs, _kOperationOrder, 0);
+
+    // Express the glTF nodegraph's inverse-scale, negated-rotation and
+    // Y-adjusted-offset wiring directly using place2d semantics.
+    Vec2f result = texcoord - pivot;
+    const Vec2f gltfOffset(-offset[0], offset[1]);
+    if (order == 0) {
+        result = CompMul(result, scale);
+        result = Rotate2d(result, -rotate);
+        result -= gltfOffset;
+    } else {
+        result -= gltfOffset;
+        result = Rotate2d(result, -rotate);
+        result = CompMul(result, scale);
+    }
+    return result + pivot;
+}
+
+static void
+_EvalGltfImageVector3(const ParamMap& inputs,
+                      const ShadingContext& ctx,
+                      NodeOutputMap* outputs)
+{
+    const Vec3f defaultValue =
+        Get<Vec3f>(inputs, _kDefaultVal, Vec3f(0.0f));
+    const std::string filePath =
+        Get<std::string>(inputs, _kFile, std::string());
+    if (!ctx.textureSystem || filePath.empty()) {
+        (*outputs)[_kOut] = Value(defaultValue);
+        return;
+    }
+
+    const Vec2f st = _ComputeGltfImageCoord(inputs, ctx);
+    const Vec2f stDx =
+        _ComputeGltfImageCoord(inputs, OffsetContextDx(ctx));
+    const Vec2f stDy =
+        _ComputeGltfImageCoord(inputs, OffsetContextDy(ctx));
+    const TextureAddressMode uAddressMode =
+        GetAddressMode(inputs, _kUAddressMode, "periodic");
+    const TextureAddressMode vAddressMode =
+        GetAddressMode(inputs, _kVAddressMode, "periodic");
+    if (UsesConstantDefaultOutside(uAddressMode, st[0]) ||
+        UsesConstantDefaultOutside(vAddressMode, st[1])) {
+        (*outputs)[_kOut] = Value(defaultValue);
+        return;
+    }
+
+    Texture2DRequest request;
+    request.filePath = filePath;
+    request.st = st;
+    request.dstdx = stDx - st;
+    request.dstdy = stDy - st;
+    request.uAddressMode = uAddressMode;
+    request.vAddressMode = vAddressMode;
+    request.filterType = GetFilterType(inputs, _kFilterType);
+    request.frame = ctx.frame;
+    request.dataRole = TextureDataRole::NonColor;
+    request.sourceColorSpace = NormalizeColorSpace(
+        Get<std::string>(inputs, _kFileColorSpace, std::string()));
+    request.channelCount = 3;
+    request.channelFillValue = 0.0f;
+    request.defaultValue = TextureValueTraits<Vec3f>::ToVec4(defaultValue);
+
+    const Texture2DResult sampled = ctx.textureSystem->Sample2D(request);
+    (*outputs)[_kOut] =
+        Value(TextureValueTraits<Vec3f>::FromVec4(sampled.value));
 }
 
 static void
@@ -669,6 +849,8 @@ RegisterTextureNodes(NodeRegistry& reg)
     _REG("ND_latlongimage", &_EvalLatLongImageNode);
     _REG("ND_hextiledimage_color3", &_EvalHexTiledImageNode<Vec3f>);
     _REG("ND_hextiledimage_color4", &_EvalHexTiledImageNode<Vec4f>);
+    _REG("ND_hextilednormalmap_vector3", &_EvalHexTiledNormalMap);
+    _REG("ND_gltf_image_vector3_vector3_1_0", &_EvalGltfImageVector3);
     _REG("UsdUVTexture", &_EvalUsdUvTextureNode);
     _REG("ND_UsdUVTexture", &_EvalUsdUvTextureNode);
     _REG("ND_UsdUVTexture_23", &_EvalUsdUvTextureNode);

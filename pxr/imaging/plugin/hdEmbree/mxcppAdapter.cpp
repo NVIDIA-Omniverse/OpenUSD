@@ -6,6 +6,8 @@
 
 #include "pxr/base/vt/value.h"
 #include "pxr/base/gf/matrix4d.h"
+#include "pxr/base/gf/matrix3d.h"
+#include "pxr/base/gf/matrix3f.h"
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/vec2f.h"
 #include "pxr/base/gf/vec3f.h"
@@ -182,6 +184,26 @@ _ConvertValue(const VtValue& v)
         auto gf = v.UncheckedGet<GfVec4f>();
         return mxcpp::Value(
             mxcpp::Vec4f(gf[0], gf[1], gf[2], gf[3]));
+    }
+    if (v.IsHolding<GfMatrix3f>()) {
+        const auto gf = v.UncheckedGet<GfMatrix3f>();
+        mxcpp::Mat3f result;
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 3; ++col) {
+                result[row][col] = gf[row][col];
+            }
+        }
+        return mxcpp::Value(result);
+    }
+    if (v.IsHolding<GfMatrix3d>()) {
+        const auto gf = v.UncheckedGet<GfMatrix3d>();
+        mxcpp::Mat3f result;
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 3; ++col) {
+                result[row][col] = static_cast<float>(gf[row][col]);
+            }
+        }
+        return mxcpp::Value(result);
     }
     if (v.IsHolding<GfMatrix4f>()) {
         auto gf = v.UncheckedGet<GfMatrix4f>();

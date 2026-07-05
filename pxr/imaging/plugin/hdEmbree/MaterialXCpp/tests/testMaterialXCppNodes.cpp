@@ -304,10 +304,101 @@ static bool TestDivideFloat() {
     auto out = _Eval("ND_divide_float", in);
     if (!Test_IsClose(_GetFloat(out), 2.5f)) return false;
 
-    // Division by zero should be safe.
+    // OSL maps degenerate division to zero.
     in["in2"] = Value(0.0f);
     out = _Eval("ND_divide_float", in);
     return Test_IsClose(_GetFloat(out), 0.0f);
+}
+static bool TestRun0052MathSemantics() {
+    ParamMap in;
+    in["in"] = Value(Vec4f(-1.2f, -0.2f, 0.5f, 1.2f));
+    auto out = _Eval("ND_asin_vector4", in);
+    if (!Test_IsClose(
+            _GetVec4(out),
+            Vec4f(0.0f, std::asin(-0.2f), std::asin(0.5f), 0.0f))) {
+        return false;
+    }
+
+    in = ParamMap();
+    in["in"] = Value(true);
+    if (!Test_IsClose(_GetFloat(_Eval("ND_dot_float", in)), 1.0f)) {
+        return false;
+    }
+
+    in = ParamMap();
+    in["in"] = Value(Vec2f(1.0f, 0.0f));
+    in["amount"] = Value(90.0f);
+    if (!Test_IsClose(
+            _GetVec2(_Eval("ND_rotate2d_vector2", in)),
+            Vec2f(0.0f, -1.0f),
+            1.0e-5f)) {
+        return false;
+    }
+
+    in = ParamMap();
+    in["texcoord"] = Value(Vec2f(0.8f, 0.6f));
+    in["scale"] = Value(Vec2f(2.0f, 4.0f));
+    if (!Test_IsClose(
+            _GetVec2(_Eval("ND_place2d_vector2", in)),
+            Vec2f(0.4f, 0.15f))) {
+        return false;
+    }
+
+    Mat3f matrix(0.0f);
+    matrix[0][0] = 1.0f;
+    matrix[0][1] = 2.0f;
+    matrix[0][2] = 3.0f;
+    in = ParamMap();
+    in["in"] = Value(matrix);
+    in["index"] = Value(0);
+    return Test_IsClose(
+        _GetVec3(_Eval("ND_extract_matrix33", in)),
+        Vec3f(1.0f, 2.0f, 3.0f));
+}
+static bool TestTransformMatrixDropsHomogeneousOutput() {
+    const Vec2f input2(0.25f, 0.75f);
+    ParamMap in;
+
+    Mat3f matrix3;
+    matrix3[0][2] = 0.2f;
+    matrix3[1][2] = -0.1f;
+    in["in"] = Value(input2);
+    in["mat"] = Value(matrix3);
+    if (!Test_IsClose(
+            _GetVec2(_Eval("ND_transformmatrix_vector2M3", in)),
+            input2)) {
+        return false;
+    }
+
+    matrix3 = Mat3f();
+    matrix3[2][0] = 0.2f;
+    matrix3[2][1] = -0.1f;
+    in["mat"] = Value(matrix3);
+    if (!Test_IsClose(
+            _GetVec2(_Eval("ND_transformmatrix_vector2M3", in)),
+            input2 + Vec2f(0.2f, -0.1f))) {
+        return false;
+    }
+
+    const Vec3f input3(0.25f, 0.75f, 0.0f);
+    Mat4f matrix4;
+    matrix4[0][3] = 0.2f;
+    matrix4[1][3] = -0.1f;
+    in["in"] = Value(input3);
+    in["mat"] = Value(matrix4);
+    if (!Test_IsClose(
+            _GetVec3(_Eval("ND_transformmatrix_vector3M4", in)),
+            input3)) {
+        return false;
+    }
+
+    matrix4 = Mat4f();
+    matrix4[3][0] = 0.2f;
+    matrix4[3][1] = -0.1f;
+    in["mat"] = Value(matrix4);
+    return Test_IsClose(
+        _GetVec3(_Eval("ND_transformmatrix_vector3M4", in)),
+        input3 + Vec3f(0.2f, -0.1f, 0.0f));
 }
 
 static bool TestAtan2UsesCanonicalInputs() {
@@ -1930,7 +2021,7 @@ static bool TestHexTiledImageBlendsThreeColorSamples() {
         return false;
     }
 
-    const Vec2f expectedSt(0.14433757f, 0.08333333f);
+    const Vec2f expectedSt(0.14433757f, -1.91666667f);
     const Vec2f expectedDstdx(0.25f, -0.75f);
     const Vec2f expectedDstdy(1.0f, 0.75f);
     for (const Texture2DRequest& request : textureSystem.requests) {
@@ -2549,6 +2640,8 @@ Test_RegisterNodeTests()
     _REG(TestMultiplyFloat);
     _REG(TestSubtractFloat);
     _REG(TestDivideFloat);
+    _REG(TestRun0052MathSemantics);
+    _REG(TestTransformMatrixDropsHomogeneousOutput);
     _REG(TestAtan2UsesCanonicalInputs);
     _REG(TestClamp);
     _REG(TestMix);

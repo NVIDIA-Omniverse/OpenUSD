@@ -95,6 +95,7 @@ _EvalDivide(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(CompDiv(a, b));
 }
 
+
 template<typename T>
 static void
 _EvalDivideFA(const ParamMap& inputs, const ShadingContext&,
@@ -106,12 +107,26 @@ _EvalDivideFA(const ParamMap& inputs, const ShadingContext&,
 }
 
 static void
-_EvalModulo(const ParamMap& inputs, const ShadingContext&,
-            NodeOutputMap* outputs)
+_EvalModuloFloat(const ParamMap& inputs, const ShadingContext&,
+                 NodeOutputMap* outputs)
 {
     float a = Get<float>(inputs, _kIn1, 0.0f);
     float b = Get<float>(inputs, _kIn2, 1.0f);
-    (*outputs)[_kOut] = Value(b != 0.0f ? std::fmod(a, b) : 0.0f);
+    (*outputs)[_kOut] = Value(b != 0.0f ? a - b * std::floor(a / b) : 0.0f);
+}
+
+template<typename T>
+static void
+_EvalModuloVector(const ParamMap& inputs, const ShadingContext&,
+                  NodeOutputMap* outputs)
+{
+    const T a = Get<T>(inputs, _kIn1, T(0.0f));
+    const T b = Get<T>(inputs, _kIn2, T(1.0f));
+    T result;
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {
+        result[i] = b[i] != 0.0f ? a[i] - b[i] * std::floor(a[i] / b[i]) : 0.0f;
+    }
+    (*outputs)[_kOut] = Value(result);
 }
 
 template<typename T>
@@ -143,6 +158,34 @@ _EvalMaxFloat(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(std::max(a, b));
 }
 
+template<typename T>
+static void
+_EvalMinVector(const ParamMap& inputs, const ShadingContext&,
+               NodeOutputMap* outputs)
+{
+    const T a = Get<T>(inputs, _kIn1, T(0.0f));
+    const T b = Get<T>(inputs, _kIn2, T(0.0f));
+    T result;
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {
+        result[i] = std::min(a[i], b[i]);
+    }
+    (*outputs)[_kOut] = Value(result);
+}
+
+template<typename T>
+static void
+_EvalMaxVector(const ParamMap& inputs, const ShadingContext&,
+               NodeOutputMap* outputs)
+{
+    const T a = Get<T>(inputs, _kIn1, T(0.0f));
+    const T b = Get<T>(inputs, _kIn2, T(0.0f));
+    T result;
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {
+        result[i] = std::max(a[i], b[i]);
+    }
+    (*outputs)[_kOut] = Value(result);
+}
+
 // ---- Unary math ----------------------------------------------------------
 
 static void
@@ -153,13 +196,17 @@ _EvalAbsvalFloat(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(std::fabs(v));
 }
 
+template<typename T>
 static void
-_EvalAbsvalVec3(const ParamMap& inputs, const ShadingContext&,
-                NodeOutputMap* outputs)
+_EvalAbsvalVector(const ParamMap& inputs, const ShadingContext&,
+                  NodeOutputMap* outputs)
 {
-    Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
-    (*outputs)[_kOut] = Value(
-        Vec3f(std::fabs(v[0]), std::fabs(v[1]), std::fabs(v[2])));
+    const T v = Get<T>(inputs, _kIn, T(0.0f));
+    T result;
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {
+        result[i] = std::fabs(v[i]);
+    }
+    (*outputs)[_kOut] = Value(result);
 }
 
 static void
@@ -169,6 +216,41 @@ _EvalSign(const ParamMap& inputs, const ShadingContext&,
     float v = Get<float>(inputs, _kIn, 0.0f);
     (*outputs)[_kOut] = Value(v > 0.0f ? 1.0f : (v < 0.0f ? -1.0f : 0.0f));
 }
+
+template<typename T>
+static void
+_EvalSignVector(const ParamMap& inputs, const ShadingContext&,
+                NodeOutputMap* outputs)
+{
+    const T v = Get<T>(inputs, _kIn, T(0.0f));
+    T result;
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {
+        result[i] = v[i] > 0.0f ? 1.0f : (v[i] < 0.0f ? -1.0f : 0.0f);
+    }
+    (*outputs)[_kOut] = Value(result);
+}
+
+#define DEFINE_UNARY_VECTOR_EVALUATOR(name, expression)                     \
+template<typename T>                                                        \
+static void name(const ParamMap& inputs, const ShadingContext&,              \
+                 NodeOutputMap* outputs)                                     \
+{                                                                            \
+    const T v = Get<T>(inputs, _kIn, T(0.0f));                               \
+    T result;                                                                \
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {                     \
+        result[i] = expression;                                              \
+    }                                                                        \
+    (*outputs)[_kOut] = Value(result);                                        \
+}
+
+DEFINE_UNARY_VECTOR_EVALUATOR(_EvalFloorVector, std::floor(v[i]))
+DEFINE_UNARY_VECTOR_EVALUATOR(_EvalCeilVector, std::ceil(v[i]))
+DEFINE_UNARY_VECTOR_EVALUATOR(_EvalRoundVector, std::round(v[i]))
+DEFINE_UNARY_VECTOR_EVALUATOR(_EvalLnVector, v[i] > 0.0f ? std::log(v[i]) : 0.0f)
+DEFINE_UNARY_VECTOR_EVALUATOR(_EvalAsinVector, std::abs(v[i]) <= 1.0f ? std::asin(v[i]) : 0.0f)
+DEFINE_UNARY_VECTOR_EVALUATOR(_EvalAcosVector, std::abs(v[i]) <= 1.0f ? std::acos(v[i]) : 0.0f)
+
+#undef DEFINE_UNARY_VECTOR_EVALUATOR
 
 static void
 _EvalFloor(const ParamMap& inputs, const ShadingContext&,
@@ -200,7 +282,23 @@ _EvalPower(const ParamMap& inputs, const ShadingContext&,
 {
     float base = Get<float>(inputs, _kIn1, 0.0f);
     float exp  = Get<float>(inputs, _kIn2, 1.0f);
-    (*outputs)[_kOut] = Value(std::pow(base, exp));
+    const float result = std::pow(base, exp);
+    (*outputs)[_kOut] = Value(std::isfinite(result) ? result : 0.0f);
+}
+
+template<typename T>
+static void
+_EvalPowerVector(const ParamMap& inputs, const ShadingContext&,
+                 NodeOutputMap* outputs)
+{
+    const T base = Get<T>(inputs, _kIn1, T(0.0f));
+    const T exponent = Get<T>(inputs, _kIn2, T(1.0f));
+    T result;
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {
+        const float value = std::pow(base[i], exponent[i]);
+        result[i] = std::isfinite(value) ? value : 0.0f;
+    }
+    (*outputs)[_kOut] = Value(result);
 }
 
 static void
@@ -273,13 +371,13 @@ static void _EvalTan(const ParamMap& in, const ShadingContext&,
 }
 static void _EvalAsin(const ParamMap& in, const ShadingContext&,
                       NodeOutputMap* out) {
-    float v = std::clamp(Get<float>(in, _kIn, 0.0f), -1.0f, 1.0f);
-    (*out)[_kOut] = Value(std::asin(v));
+    float v = Get<float>(in, _kIn, 0.0f);
+    (*out)[_kOut] = Value(std::abs(v) <= 1.0f ? std::asin(v) : 0.0f);
 }
 static void _EvalAcos(const ParamMap& in, const ShadingContext&,
                       NodeOutputMap* out) {
-    float v = std::clamp(Get<float>(in, _kIn, 0.0f), -1.0f, 1.0f);
-    (*out)[_kOut] = Value(std::acos(v));
+    float v = Get<float>(in, _kIn, 0.0f);
+    (*out)[_kOut] = Value(std::abs(v) <= 1.0f ? std::acos(v) : 0.0f);
 }
 static void _EvalAtan2(const ParamMap& in, const ShadingContext&,
                        NodeOutputMap* out) {
@@ -290,12 +388,13 @@ static void _EvalAtan2(const ParamMap& in, const ShadingContext&,
 
 // ---- Vector operations ---------------------------------------------------
 
+template<typename T>
 static void
 _EvalDotProduct(const ParamMap& inputs, const ShadingContext&,
                 NodeOutputMap* outputs)
 {
-    Vec3f a = Get<Vec3f>(inputs, _kIn1, Vec3f(0.0f));
-    Vec3f b = Get<Vec3f>(inputs, _kIn2, Vec3f(0.0f));
+    T a = Get<T>(inputs, _kIn1, T(0.0f));
+    T b = Get<T>(inputs, _kIn2, T(0.0f));
     (*outputs)[_kOut] = Value(Dot(a, b));
 }
 
@@ -517,10 +616,11 @@ _EvalTransformMatrixVec2M3(const ParamMap& inputs, const ShadingContext&,
     if (value && ValueHolds<Mat3f>(*value)) {
         m = ValueGet<Mat3f>(*value);
     }
-    // Imath Matrix33::multVecMatrix operates on Vec2 (homogeneous 2D).
-    Vec2f r;
-    m.multVecMatrix(v, r);
-    (*outputs)[_kOut] = Value(r);
+    // MaterialX uses an implicit homogeneous one, then discards the third
+    // component without perspective division.
+    (*outputs)[_kOut] = Value(Vec2f(
+        v[0] * m[0][0] + v[1] * m[1][0] + m[2][0],
+        v[0] * m[0][1] + v[1] * m[1][1] + m[2][1]));
 }
 
 static void
@@ -551,9 +651,11 @@ _EvalTransformMatrixVec3M4(const ParamMap& inputs, const ShadingContext&,
     if (value && ValueHolds<Mat4f>(*value)) {
         m = ValueGet<Mat4f>(*value);
     }
-    Vec3f r;
-    m.multVecMatrix(v, r);
-    (*outputs)[_kOut] = Value(r);
+    // Likewise, discard W without applying perspective division.
+    (*outputs)[_kOut] = Value(Vec3f(
+        v[0] * m[0][0] + v[1] * m[1][0] + v[2] * m[2][0] + m[3][0],
+        v[0] * m[0][1] + v[1] * m[1][1] + v[2] * m[2][1] + m[3][1],
+        v[0] * m[0][2] + v[1] * m[1][2] + v[2] * m[2][2] + m[3][2]));
 }
 
 static void
@@ -708,18 +810,14 @@ _EvalPlace2d(const ParamMap& inputs, const ShadingContext&,
     Vec2f offset = Get<Vec2f>(inputs, _kOffset, Vec2f(0.0f));
     int order    = Get<int>(inputs, _kOperationOrder, 0);
 
-    float rad = rotate * (static_cast<float>(M_PI) / 180.0f);
-    float c = std::cos(rad);
-    float s = std::sin(rad);
-
     auto applyScale = [&](Vec2f p) -> Vec2f {
-        return Vec2f(p[0] * scale[0], p[1] * scale[1]);
+        return Vec2f(p[0] / scale[0], p[1] / scale[1]);
     };
     auto applyRotate = [&](Vec2f p) -> Vec2f {
-        return Vec2f(p[0]*c - p[1]*s, p[0]*s + p[1]*c);
+        return Rotate2d(p, rotate);
     };
     auto applyTranslate = [&](Vec2f p) -> Vec2f {
-        return p + offset;
+        return p - offset;
     };
 
     Vec2f result = uv - pivot;
@@ -817,25 +915,75 @@ RegisterMathNodes(NodeRegistry& reg)
     _REG("ND_divide_vector4FA", &_EvalDivideFA<Vec4f>);
 
     // modulo
-    _REG("ND_modulo_float", &_EvalModulo);
+    _REG("ND_modulo_float", &_EvalModuloFloat);
+    _REG("ND_modulo_color3", &_EvalModuloVector<Vec3f>);
+    _REG("ND_modulo_color4", &_EvalModuloVector<Vec4f>);
+    _REG("ND_modulo_vector2", &_EvalModuloVector<Vec2f>);
+    _REG("ND_modulo_vector3", &_EvalModuloVector<Vec3f>);
+    _REG("ND_modulo_vector4", &_EvalModuloVector<Vec4f>);
     _REG("ND_clamp_float", &_EvalClamp<float>);
     _REG("ND_clamp_color3", &_EvalClamp<Vec3f>);
     _REG("ND_clamp_color4", &_EvalClamp<Vec4f>);
     _REG("ND_clamp_vector3", &_EvalClamp<Vec3f>);
+    _REG("ND_clamp_vector2", &_EvalClamp<Vec2f>);
+    _REG("ND_clamp_vector4", &_EvalClamp<Vec4f>);
     _REG("ND_min_float", &_EvalMinFloat);
+    _REG("ND_min_color3", &_EvalMinVector<Vec3f>);
+    _REG("ND_min_color4", &_EvalMinVector<Vec4f>);
+    _REG("ND_min_vector2", &_EvalMinVector<Vec2f>);
+    _REG("ND_min_vector3", &_EvalMinVector<Vec3f>);
+    _REG("ND_min_vector4", &_EvalMinVector<Vec4f>);
     _REG("ND_max_float", &_EvalMaxFloat);
+    _REG("ND_max_color3", &_EvalMaxVector<Vec3f>);
+    _REG("ND_max_color4", &_EvalMaxVector<Vec4f>);
+    _REG("ND_max_vector2", &_EvalMaxVector<Vec2f>);
+    _REG("ND_max_vector3", &_EvalMaxVector<Vec3f>);
+    _REG("ND_max_vector4", &_EvalMaxVector<Vec4f>);
 
     // unary
     _REG("ND_absval_float",   &_EvalAbsvalFloat);
-    _REG("ND_absval_color3",  &_EvalAbsvalVec3);
-    _REG("ND_absval_vector3", &_EvalAbsvalVec3);
+    _REG("ND_absval_color3",  &_EvalAbsvalVector<Vec3f>);
+    _REG("ND_absval_color4",  &_EvalAbsvalVector<Vec4f>);
+    _REG("ND_absval_vector2", &_EvalAbsvalVector<Vec2f>);
+    _REG("ND_absval_vector3", &_EvalAbsvalVector<Vec3f>);
+    _REG("ND_absval_vector4", &_EvalAbsvalVector<Vec4f>);
     _REG("ND_sign_float",  &_EvalSign);
+    _REG("ND_sign_color3", &_EvalSignVector<Vec3f>);
+    _REG("ND_sign_color4", &_EvalSignVector<Vec4f>);
+    _REG("ND_sign_vector2", &_EvalSignVector<Vec2f>);
+    _REG("ND_sign_vector3", &_EvalSignVector<Vec3f>);
+    _REG("ND_sign_vector4", &_EvalSignVector<Vec4f>);
     _REG("ND_floor_float",  &_EvalFloor);
+    _REG("ND_floor_color3", &_EvalFloorVector<Vec3f>);
+    _REG("ND_floor_color4", &_EvalFloorVector<Vec4f>);
+    _REG("ND_floor_vector2", &_EvalFloorVector<Vec2f>);
+    _REG("ND_floor_vector3", &_EvalFloorVector<Vec3f>);
+    _REG("ND_floor_vector4", &_EvalFloorVector<Vec4f>);
     _REG("ND_ceil_float",   &_EvalCeil);
+    _REG("ND_ceil_color3", &_EvalCeilVector<Vec3f>);
+    _REG("ND_ceil_color4", &_EvalCeilVector<Vec4f>);
+    _REG("ND_ceil_vector2", &_EvalCeilVector<Vec2f>);
+    _REG("ND_ceil_vector3", &_EvalCeilVector<Vec3f>);
+    _REG("ND_ceil_vector4", &_EvalCeilVector<Vec4f>);
     _REG("ND_round_float",  &_EvalRound);
+    _REG("ND_round_color3", &_EvalRoundVector<Vec3f>);
+    _REG("ND_round_color4", &_EvalRoundVector<Vec4f>);
+    _REG("ND_round_vector2", &_EvalRoundVector<Vec2f>);
+    _REG("ND_round_vector3", &_EvalRoundVector<Vec3f>);
+    _REG("ND_round_vector4", &_EvalRoundVector<Vec4f>);
     _REG("ND_power_float",  &_EvalPower);
+    _REG("ND_power_color3", &_EvalPowerVector<Vec3f>);
+    _REG("ND_power_color4", &_EvalPowerVector<Vec4f>);
+    _REG("ND_power_vector2", &_EvalPowerVector<Vec2f>);
+    _REG("ND_power_vector3", &_EvalPowerVector<Vec3f>);
+    _REG("ND_power_vector4", &_EvalPowerVector<Vec4f>);
     _REG("ND_sqrt_float",   &_EvalSqrt);
     _REG("ND_ln_float",     &_EvalLn);
+    _REG("ND_ln_color3", &_EvalLnVector<Vec3f>);
+    _REG("ND_ln_color4", &_EvalLnVector<Vec4f>);
+    _REG("ND_ln_vector2", &_EvalLnVector<Vec2f>);
+    _REG("ND_ln_vector3", &_EvalLnVector<Vec3f>);
+    _REG("ND_ln_vector4", &_EvalLnVector<Vec4f>);
     _REG("ND_exp_float",    &_EvalExp);
 
     // negate
@@ -855,10 +1003,22 @@ RegisterMathNodes(NodeRegistry& reg)
     _REG("ND_tan_float",   &_EvalTan);
     _REG("ND_asin_float",  &_EvalAsin);
     _REG("ND_acos_float",  &_EvalAcos);
+    _REG("ND_asin_color3", &_EvalAsinVector<Vec3f>);
+    _REG("ND_asin_color4", &_EvalAsinVector<Vec4f>);
+    _REG("ND_asin_vector2", &_EvalAsinVector<Vec2f>);
+    _REG("ND_asin_vector3", &_EvalAsinVector<Vec3f>);
+    _REG("ND_asin_vector4", &_EvalAsinVector<Vec4f>);
+    _REG("ND_acos_color3", &_EvalAcosVector<Vec3f>);
+    _REG("ND_acos_color4", &_EvalAcosVector<Vec4f>);
+    _REG("ND_acos_vector2", &_EvalAcosVector<Vec2f>);
+    _REG("ND_acos_vector3", &_EvalAcosVector<Vec3f>);
+    _REG("ND_acos_vector4", &_EvalAcosVector<Vec4f>);
     _REG("ND_atan2_float", &_EvalAtan2);
 
     // vector
-    _REG("ND_dotproduct_vector3",  &_EvalDotProduct);
+    _REG("ND_dotproduct_vector2",  &_EvalDotProduct<Vec2f>);
+    _REG("ND_dotproduct_vector3",  &_EvalDotProduct<Vec3f>);
+    _REG("ND_dotproduct_vector4",  &_EvalDotProduct<Vec4f>);
     _REG("ND_crossproduct_vector3", &_EvalCrossProduct);
     _REG("ND_normalize_vector3",   &_EvalNormalize);
     _REG("ND_magnitude_vector2",   &_EvalMagnitude<Vec2f>);

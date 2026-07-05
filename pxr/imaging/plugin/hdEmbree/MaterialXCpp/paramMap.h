@@ -208,6 +208,52 @@ struct ValueGetter<float>
         if (ValueHolds<int>(*value)) {
             return static_cast<float>(ValueGet<int>(*value));
         }
+        if (ValueHolds<bool>(*value)) {
+            return ValueGet<bool>(*value) ? 1.0f : 0.0f;
+        }
+        return defaultVal;
+    }
+};
+template<>
+struct ValueGetter<int>
+{
+    template<typename NameT>
+    static int Get(const ParamMap& params,
+                   const NameT& name,
+                   const int& defaultVal)
+    {
+        const Value* value = params.Find(name);
+        if (!value) {
+            return defaultVal;
+        }
+        if (ValueHolds<int>(*value)) {
+            return ValueGet<int>(*value);
+        }
+        if (ValueHolds<bool>(*value)) {
+            return ValueGet<bool>(*value) ? 1 : 0;
+        }
+        return defaultVal;
+    }
+};
+
+template<>
+struct ValueGetter<bool>
+{
+    template<typename NameT>
+    static bool Get(const ParamMap& params,
+                    const NameT& name,
+                    const bool& defaultVal)
+    {
+        const Value* value = params.Find(name);
+        if (!value) {
+            return defaultVal;
+        }
+        if (ValueHolds<bool>(*value)) {
+            return ValueGet<bool>(*value);
+        }
+        if (ValueHolds<int>(*value)) {
+            return ValueGet<int>(*value) != 0;
+        }
         return defaultVal;
     }
 };
@@ -236,6 +282,10 @@ struct ValueGetter<Vec3f>
         }
         if (ValueHolds<int>(*value)) {
             const float f = static_cast<float>(ValueGet<int>(*value));
+            return Vec3f(f, f, f);
+        }
+        if (ValueHolds<bool>(*value)) {
+            const float f = ValueGet<bool>(*value) ? 1.0f : 0.0f;
             return Vec3f(f, f, f);
         }
         return defaultVal;

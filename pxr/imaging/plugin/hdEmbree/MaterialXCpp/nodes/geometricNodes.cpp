@@ -259,9 +259,24 @@ _EvalNormalMap(const ParamMap& inputs,
     }
 
     const Vec3f normal = Get<Vec3f>(inputs, _kNormal, ctx.normal);
-    const Vec3f tangent = Get<Vec3f>(inputs, _kTangent, ctx.tangent);
+    Vec3f defaultTangent =
+        ctx.dPdu - normal * Dot(ctx.dPdu, normal);
+    if (Dot(defaultTangent, defaultTangent) < _kFloatEps * _kFloatEps) {
+        defaultTangent = ctx.tangent;
+    } else {
+        defaultTangent.normalize();
+    }
+    Vec3f defaultBitangent = Cross(normal, defaultTangent);
+    if (Dot(defaultBitangent, defaultBitangent) <
+        _kFloatEps * _kFloatEps) {
+        defaultBitangent = ctx.bitangent;
+    } else {
+        defaultBitangent.normalize();
+    }
+    const Vec3f tangent =
+        Get<Vec3f>(inputs, _kTangent, defaultTangent);
     const Vec3f bitangent =
-        Get<Vec3f>(inputs, _kBitangent, ctx.bitangent);
+        Get<Vec3f>(inputs, _kBitangent, defaultBitangent);
     Vec3f result =
         tangent * value[0] * scale[0] +
         bitangent * value[1] * scale[1] +

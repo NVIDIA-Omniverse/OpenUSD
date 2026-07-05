@@ -22,6 +22,7 @@ constexpr float kDegreesToRadians = kPi / 180.0f;
 
 inline float Dot(const Vec2f& a, const Vec2f& b) { return a.dot(b); }
 inline float Dot(const Vec3f& a, const Vec3f& b) { return a.dot(b); }
+inline float Dot(const Vec4f& a, const Vec4f& b) { return a.dot(b); }
 
 inline Vec3f Cross(const Vec3f& a, const Vec3f& b) { return a.cross(b); }
 
@@ -122,8 +123,8 @@ Rotate2d(const Vec2f& v, float amountDegrees)
     const float rad = amountDegrees * kDegreesToRadians;
     const float c = std::cos(rad);
     const float s = std::sin(rad);
-    return Vec2f(v[0] * c - v[1] * s,
-                 v[0] * s + v[1] * c);
+    return Vec2f(v[0] * c + v[1] * s,
+                 -v[0] * s + v[1] * c);
 }
 
 inline Vec3f
@@ -140,7 +141,7 @@ Rotate3d(const Vec3f& v, float amountDegrees, const Vec3f& axis)
     const float c = std::cos(rad);
     const float s = std::sin(rad);
     return v * c +
-           Cross(normalizedAxis, v) * s +
+           Cross(v, normalizedAxis) * s +
            normalizedAxis * Dot(normalizedAxis, v) * (1.0f - c);
 }
 

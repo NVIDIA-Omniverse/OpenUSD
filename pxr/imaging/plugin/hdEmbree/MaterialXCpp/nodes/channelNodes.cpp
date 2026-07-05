@@ -144,6 +144,35 @@ _EvalExtract_vec4(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(v[idx]);
 }
 
+static void
+_EvalExtract_matrix33(const ParamMap& inputs, const ShadingContext&,
+                      NodeOutputMap* outputs)
+{
+    const Mat3f m = Get<Mat3f>(inputs, _kIn, Mat3f(0.0f));
+    const int index = std::clamp(Get<int>(inputs, _kIndex, 0), 0, 2);
+    (*outputs)[_kOut] = Value(
+        Vec3f(m[index][0], m[index][1], m[index][2]));
+}
+
+static void
+_EvalExtract_matrix44(const ParamMap& inputs, const ShadingContext&,
+                      NodeOutputMap* outputs)
+{
+    const Mat4f m = Get<Mat4f>(inputs, _kIn, Mat4f(0.0f));
+    const int index = std::clamp(Get<int>(inputs, _kIndex, 0), 0, 3);
+    (*outputs)[_kOut] = Value(Vec4f(
+        m[index][0], m[index][1], m[index][2], m[index][3]));
+}
+// ---- Dot (organization pass-through) -------------------------------------
+
+template<typename T>
+static void
+_EvalDot(const ParamMap& inputs, const ShadingContext&,
+         NodeOutputMap* outputs)
+{
+    (*outputs)[_kOut] = Value(Get<T>(inputs, _kIn, T{}));
+}
+
 // ---- Convert (type promotion/demotion) -----------------------------------
 
 template<typename Source, typename Destination>
@@ -259,6 +288,21 @@ RegisterChannelNodes(NodeRegistry& reg)
     _REG("ND_extract_vector3", &_EvalExtract_vec3);
     _REG("ND_extract_color4",  &_EvalExtract_vec4);
     _REG("ND_extract_vector4", &_EvalExtract_vec4);
+    _REG("ND_extract_matrix33", &_EvalExtract_matrix33);
+    _REG("ND_extract_matrix44", &_EvalExtract_matrix44);
+
+    _REG("ND_dot_float", &_EvalDot<float>);
+    _REG("ND_dot_color3", &_EvalDot<Vec3f>);
+    _REG("ND_dot_color4", &_EvalDot<Vec4f>);
+    _REG("ND_dot_vector2", &_EvalDot<Vec2f>);
+    _REG("ND_dot_vector3", &_EvalDot<Vec3f>);
+    _REG("ND_dot_vector4", &_EvalDot<Vec4f>);
+    _REG("ND_dot_boolean", &_EvalDot<bool>);
+    _REG("ND_dot_integer", &_EvalDot<int>);
+    _REG("ND_dot_matrix33", &_EvalDot<Mat3f>);
+    _REG("ND_dot_matrix44", &_EvalDot<Mat4f>);
+    _REG("ND_dot_string", &_EvalDot<std::string>);
+    _REG("ND_dot_filename", &_EvalDot<std::string>);
 
     _REG("ND_convert_float_color3",     (&_EvalConvertScalarToVector<float, Vec3f>));
     _REG("ND_convert_float_color4",     (&_EvalConvertScalarToVector<float, Vec4f>));

@@ -98,10 +98,6 @@ TransformNamedVec3(const ShadingContext& ctx,
         } else {
             return false;
         }
-
-        if (Dot(result, result) > 0.0f) {
-            result.normalize();
-        }
     }
 
     if (out) {

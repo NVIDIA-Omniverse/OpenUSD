@@ -587,7 +587,7 @@ TestStandardSurfaceSpecularRotationUsesCanonicalName()
         return false;
     }
 
-    return Test_IsClose(dielectric->tangent, Vec3f(0.0f, 1.0f, 0.0f), 1e-4f);
+    return Test_IsClose(dielectric->tangent, Vec3f(0.0f, -1.0f, 0.0f), 1e-4f);
 }
 
 static bool
@@ -854,7 +854,7 @@ TestStandardSurfaceCoatNormalAndRotationReachBsdf()
 
     return coat->hasShadingNormal &&
            Test_IsClose(coat->normal, Vec3f(0.0f, 1.0f, 0.0f), 1e-4f) &&
-           Test_IsClose(coat->tangent, Vec3f(0.0f, 0.0f, -1.0f), 1e-4f) &&
+           Test_IsClose(coat->tangent, Vec3f(0.0f, 0.0f, 1.0f), 1e-4f) &&
            Test_IsClose(coat->roughness[0], expected[0], 1e-4f) &&
            Test_IsClose(coat->roughness[1], expected[1], 1e-4f);
 }
@@ -2119,7 +2119,7 @@ TestGltfPbrAnisotropyRotationRotatesTangent()
         1.0f);
     const Vec2f expected(alphaX, roughnessSquared);
 
-    return Test_IsClose(reflective->tangent, Vec3f(0.0f, -1.0f, 0.0f), 1e-4f) &&
+    return Test_IsClose(reflective->tangent, Vec3f(0.0f, 1.0f, 0.0f), 1e-4f) &&
            Test_IsClose(reflective->roughness[0], expected[0], 1e-4f) &&
            Test_IsClose(reflective->roughness[1], expected[1], 1e-4f);
 }
