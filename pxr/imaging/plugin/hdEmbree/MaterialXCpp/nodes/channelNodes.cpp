@@ -21,6 +21,10 @@ static const SlotName _kOutx("outx");
 static const SlotName _kOuty("outy");
 static const SlotName _kOutz("outz");
 static const SlotName _kOutw("outw");
+static const SlotName _kOutr("outr");
+static const SlotName _kOutg("outg");
+static const SlotName _kOutb("outb");
+static const SlotName _kOuta("outa");
 static const SlotName _kIndex("index");
 
 // ---- Combine -------------------------------------------------------------
@@ -67,8 +71,8 @@ _EvalSeparate2(const ParamMap& inputs, const ShadingContext&,
 }
 
 static void
-_EvalSeparate3_color3(const ParamMap& inputs, const ShadingContext&,
-                      NodeOutputMap* outputs)
+_EvalSeparate3Vector(const ParamMap& inputs, const ShadingContext&,
+                     NodeOutputMap* outputs)
 {
     Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
     (*outputs)[_kOutx] = Value(v[0]);
@@ -77,14 +81,35 @@ _EvalSeparate3_color3(const ParamMap& inputs, const ShadingContext&,
 }
 
 static void
-_EvalSeparate4(const ParamMap& inputs, const ShadingContext&,
-               NodeOutputMap* outputs)
+_EvalSeparate3Color(const ParamMap& inputs, const ShadingContext&,
+                    NodeOutputMap* outputs)
+{
+    Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
+    (*outputs)[_kOutr] = Value(v[0]);
+    (*outputs)[_kOutg] = Value(v[1]);
+    (*outputs)[_kOutb] = Value(v[2]);
+}
+
+static void
+_EvalSeparate4Vector(const ParamMap& inputs, const ShadingContext&,
+                     NodeOutputMap* outputs)
 {
     Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
     (*outputs)[_kOutx] = Value(v[0]);
     (*outputs)[_kOuty] = Value(v[1]);
     (*outputs)[_kOutz] = Value(v[2]);
     (*outputs)[_kOutw] = Value(v[3]);
+}
+
+static void
+_EvalSeparate4Color(const ParamMap& inputs, const ShadingContext&,
+                    NodeOutputMap* outputs)
+{
+    Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
+    (*outputs)[_kOutr] = Value(v[0]);
+    (*outputs)[_kOutg] = Value(v[1]);
+    (*outputs)[_kOutb] = Value(v[2]);
+    (*outputs)[_kOuta] = Value(v[3]);
 }
 
 // ---- Extract (single channel by index) -----------------------------------
@@ -121,13 +146,22 @@ _EvalExtract_vec4(const ParamMap& inputs, const ShadingContext&,
 
 // ---- Convert (type promotion/demotion) -----------------------------------
 
+template<typename Source, typename Destination>
 static void
-_EvalConvert_float_color3(const ParamMap& inputs,
-                          const ShadingContext&,
-                          NodeOutputMap* outputs)
+_EvalConvertScalar(const ParamMap& inputs, const ShadingContext&,
+                   NodeOutputMap* outputs)
 {
-    float v = Get<float>(inputs, _kIn, 0.0f);
-    (*outputs)[_kOut] = Value(Vec3f(v));
+    const Source v = Get<Source>(inputs, _kIn, Source(0));
+    (*outputs)[_kOut] = Value(static_cast<Destination>(v));
+}
+
+template<typename Source, typename Destination>
+static void
+_EvalConvertScalarToVector(const ParamMap& inputs, const ShadingContext&,
+                           NodeOutputMap* outputs)
+{
+    const Source v = Get<Source>(inputs, _kIn, Source(0));
+    (*outputs)[_kOut] = Value(Destination(static_cast<float>(v)));
 }
 
 static void
@@ -140,57 +174,65 @@ _EvalConvert_color3_float(const ParamMap& inputs,
 }
 
 static void
-_EvalConvert_color3_vector3(const ParamMap& inputs,
-                            const ShadingContext&,
-                            NodeOutputMap* outputs)
+_EvalConvert2To3(const ParamMap& inputs, const ShadingContext&,
+                 NodeOutputMap* outputs)
 {
-    Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
-    (*outputs)[_kOut] = Value(v);
+    const Vec2f v = Get<Vec2f>(inputs, _kIn, Vec2f(0.0f));
+    (*outputs)[_kOut] = Value(Vec3f(v[0], v[1], 0.0f));
 }
 
 static void
-_EvalConvert_color4_vector4(const ParamMap& inputs,
-                            const ShadingContext&,
-                            NodeOutputMap* outputs)
+_EvalConvert2To4(const ParamMap& inputs, const ShadingContext&,
+                 NodeOutputMap* outputs)
 {
-    Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
-    (*outputs)[_kOut] = Value(v);
+    const Vec2f v = Get<Vec2f>(inputs, _kIn, Vec2f(0.0f));
+    (*outputs)[_kOut] = Value(Vec4f(v[0], v[1], 0.0f, 1.0f));
 }
 
 static void
-_EvalConvert_color4_vector2(const ParamMap& inputs,
-                            const ShadingContext&,
-                            NodeOutputMap* outputs)
+_EvalConvert3To2(const ParamMap& inputs, const ShadingContext&,
+                 NodeOutputMap* outputs)
 {
-    Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
+    const Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
     (*outputs)[_kOut] = Value(Vec2f(v[0], v[1]));
 }
 
 static void
-_EvalConvert_color4_color3(const ParamMap& inputs,
-                           const ShadingContext&,
-                           NodeOutputMap* outputs)
+_EvalConvert3To3(const ParamMap& inputs, const ShadingContext&,
+                 NodeOutputMap* outputs)
 {
-    Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
+    (*outputs)[_kOut] = Value(Get<Vec3f>(inputs, _kIn, Vec3f(0.0f)));
+}
+
+static void
+_EvalConvert3To4(const ParamMap& inputs, const ShadingContext&,
+                 NodeOutputMap* outputs)
+{
+    const Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
+    (*outputs)[_kOut] = Value(Vec4f(v[0], v[1], v[2], 1.0f));
+}
+
+static void
+_EvalConvert4To2(const ParamMap& inputs, const ShadingContext&,
+                 NodeOutputMap* outputs)
+{
+    const Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
+    (*outputs)[_kOut] = Value(Vec2f(v[0], v[1]));
+}
+
+static void
+_EvalConvert4To3(const ParamMap& inputs, const ShadingContext&,
+                 NodeOutputMap* outputs)
+{
+    const Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
     (*outputs)[_kOut] = Value(Vec3f(v[0], v[1], v[2]));
 }
 
 static void
-_EvalConvert_float_color4(const ParamMap& inputs,
-                          const ShadingContext&,
-                          NodeOutputMap* outputs)
+_EvalConvert4To4(const ParamMap& inputs, const ShadingContext&,
+                 NodeOutputMap* outputs)
 {
-    float v = Get<float>(inputs, _kIn, 0.0f);
-    (*outputs)[_kOut] = Value(Vec4f(v, v, v, 1.0f));
-}
-
-static void
-_EvalConvert_integer_float(const ParamMap& inputs,
-                           const ShadingContext&,
-                           NodeOutputMap* outputs)
-{
-    int v = Get<int>(inputs, _kIn, 0);
-    (*outputs)[_kOut] = Value(static_cast<float>(v));
+    (*outputs)[_kOut] = Value(Get<Vec4f>(inputs, _kIn, Vec4f(0.0f)));
 }
 
 // ---- Registration --------------------------------------------------------
@@ -207,10 +249,10 @@ RegisterChannelNodes(NodeRegistry& reg)
     _REG("ND_combine4_vector4", &_EvalCombine4);
 
     _REG("ND_separate2_vector2", &_EvalSeparate2);
-    _REG("ND_separate3_color3",  &_EvalSeparate3_color3);
-    _REG("ND_separate3_vector3", &_EvalSeparate3_color3);
-    _REG("ND_separate4_color4",  &_EvalSeparate4);
-    _REG("ND_separate4_vector4", &_EvalSeparate4);
+    _REG("ND_separate3_color3",  &_EvalSeparate3Color);
+    _REG("ND_separate3_vector3", &_EvalSeparate3Vector);
+    _REG("ND_separate4_color4",  &_EvalSeparate4Color);
+    _REG("ND_separate4_vector4", &_EvalSeparate4Vector);
 
     _REG("ND_extract_vector2", &_EvalExtract_vec2);
     _REG("ND_extract_color3",  &_EvalExtract_vec3);
@@ -218,20 +260,53 @@ RegisterChannelNodes(NodeRegistry& reg)
     _REG("ND_extract_color4",  &_EvalExtract_vec4);
     _REG("ND_extract_vector4", &_EvalExtract_vec4);
 
-    _REG("ND_convert_float_color3",     &_EvalConvert_float_color3);
+    _REG("ND_convert_float_color3",     (&_EvalConvertScalarToVector<float, Vec3f>));
+    _REG("ND_convert_float_color4",     (&_EvalConvertScalarToVector<float, Vec4f>));
+    _REG("ND_convert_float_vector2",    (&_EvalConvertScalarToVector<float, Vec2f>));
+    _REG("ND_convert_float_vector3",    (&_EvalConvertScalarToVector<float, Vec3f>));
+    _REG("ND_convert_float_vector4",    (&_EvalConvertScalarToVector<float, Vec4f>));
+
     _REG("ND_convert_color3_float",     &_EvalConvert_color3_float);
-    _REG("ND_convert_color3_vector3",   &_EvalConvert_color3_vector3);
-    _REG("ND_convert_vector3_color3",   &_EvalConvert_color3_vector3);
-    _REG("ND_convert_color4_color3",    &_EvalConvert_color4_color3);
-    _REG("ND_convert_vector4_color3",   &_EvalConvert_color4_color3);
-    _REG("ND_convert_color4_vector2",   &_EvalConvert_color4_vector2);
-    _REG("ND_convert_vector4_vector2",  &_EvalConvert_color4_vector2);
-    _REG("ND_convert_color4_vector3",   &_EvalConvert_color4_color3);
-    _REG("ND_convert_vector4_vector3",  &_EvalConvert_color4_color3);
-    _REG("ND_convert_color4_vector4",   &_EvalConvert_color4_vector4);
-    _REG("ND_convert_vector4_color4",   &_EvalConvert_color4_vector4);
-    _REG("ND_convert_float_color4",     &_EvalConvert_float_color4);
-    _REG("ND_convert_integer_float",    &_EvalConvert_integer_float);
+    _REG("ND_convert_color3_color4",    &_EvalConvert3To4);
+    _REG("ND_convert_color3_vector2",   &_EvalConvert3To2);
+    _REG("ND_convert_color3_vector3",   &_EvalConvert3To3);
+    _REG("ND_convert_color3_vector4",   &_EvalConvert3To4);
+
+    _REG("ND_convert_color4_color3",    &_EvalConvert4To3);
+    _REG("ND_convert_color4_vector2",   &_EvalConvert4To2);
+    _REG("ND_convert_color4_vector3",   &_EvalConvert4To3);
+    _REG("ND_convert_color4_vector4",   &_EvalConvert4To4);
+
+    _REG("ND_convert_vector2_color3",   &_EvalConvert2To3);
+    _REG("ND_convert_vector2_color4",   &_EvalConvert2To4);
+    _REG("ND_convert_vector2_vector3",  &_EvalConvert2To3);
+    _REG("ND_convert_vector2_vector4",  &_EvalConvert2To4);
+
+    _REG("ND_convert_vector3_color3",   &_EvalConvert3To3);
+    _REG("ND_convert_vector3_color4",   &_EvalConvert3To4);
+    _REG("ND_convert_vector3_vector2",  &_EvalConvert3To2);
+    _REG("ND_convert_vector3_vector4",  &_EvalConvert3To4);
+
+    _REG("ND_convert_vector4_color3",   &_EvalConvert4To3);
+    _REG("ND_convert_vector4_color4",   &_EvalConvert4To4);
+    _REG("ND_convert_vector4_vector2",  &_EvalConvert4To2);
+    _REG("ND_convert_vector4_vector3",  &_EvalConvert4To3);
+
+    _REG("ND_convert_boolean_float",    (&_EvalConvertScalar<bool, float>));
+    _REG("ND_convert_boolean_color3",   (&_EvalConvertScalarToVector<bool, Vec3f>));
+    _REG("ND_convert_boolean_color4",   (&_EvalConvertScalarToVector<bool, Vec4f>));
+    _REG("ND_convert_boolean_vector2",  (&_EvalConvertScalarToVector<bool, Vec2f>));
+    _REG("ND_convert_boolean_vector3",  (&_EvalConvertScalarToVector<bool, Vec3f>));
+    _REG("ND_convert_boolean_vector4",  (&_EvalConvertScalarToVector<bool, Vec4f>));
+    _REG("ND_convert_boolean_integer",  (&_EvalConvertScalar<bool, int>));
+
+    _REG("ND_convert_integer_float",    (&_EvalConvertScalar<int, float>));
+    _REG("ND_convert_integer_color3",   (&_EvalConvertScalarToVector<int, Vec3f>));
+    _REG("ND_convert_integer_color4",   (&_EvalConvertScalarToVector<int, Vec4f>));
+    _REG("ND_convert_integer_vector2",  (&_EvalConvertScalarToVector<int, Vec2f>));
+    _REG("ND_convert_integer_vector3",  (&_EvalConvertScalarToVector<int, Vec3f>));
+    _REG("ND_convert_integer_vector4",  (&_EvalConvertScalarToVector<int, Vec4f>));
+    _REG("ND_convert_integer_boolean",  (&_EvalConvertScalar<int, bool>));
 }
 
 #undef _REG

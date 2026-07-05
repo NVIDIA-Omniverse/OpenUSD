@@ -315,11 +315,12 @@ _EvalNormalize(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(len > 0.0f ? v / len : Vec3f(0.0f));
 }
 
+template<typename T>
 static void
 _EvalMagnitude(const ParamMap& inputs, const ShadingContext&,
                NodeOutputMap* outputs)
 {
-    Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
+    T v = Get<T>(inputs, _kIn, T(0.0f));
     (*outputs)[_kOut] = Value(v.length());
 }
 
@@ -858,7 +859,9 @@ RegisterMathNodes(NodeRegistry& reg)
     _REG("ND_dotproduct_vector3",  &_EvalDotProduct);
     _REG("ND_crossproduct_vector3", &_EvalCrossProduct);
     _REG("ND_normalize_vector3",   &_EvalNormalize);
-    _REG("ND_magnitude_vector3",   &_EvalMagnitude);
+    _REG("ND_magnitude_vector2",   &_EvalMagnitude<Vec2f>);
+    _REG("ND_magnitude_vector3",   &_EvalMagnitude<Vec3f>);
+    _REG("ND_magnitude_vector4",   &_EvalMagnitude<Vec4f>);
 
     // safepower
     _REG("ND_safepower_float",      &_EvalSafePowerFloat);

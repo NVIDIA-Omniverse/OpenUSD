@@ -481,12 +481,22 @@ static bool TestCombineSeparateRoundtrip() {
     ParamMap in2;
     in2["in"] = Value(combined);
     auto sepOut = _Eval("ND_separate3_color3", in2);
-    float x = _GetFloat(sepOut, "outx");
-    float y = _GetFloat(sepOut, "outy");
-    float z = _GetFloat(sepOut, "outz");
+    float x = _GetFloat(sepOut, "outr");
+    float y = _GetFloat(sepOut, "outg");
+    float z = _GetFloat(sepOut, "outb");
     return Test_IsClose(x, 0.2f) &&
            Test_IsClose(y, 0.4f) &&
            Test_IsClose(z, 0.6f);
+}
+
+static bool TestSeparateColorOutputs() {
+    ParamMap in;
+    in["in"] = Value(Vec4f(0.1f, 0.2f, 0.3f, 0.4f));
+    const auto out = _Eval("ND_separate4_color4", in);
+    return Test_IsClose(_GetFloat(out, "outr"), 0.1f) &&
+           Test_IsClose(_GetFloat(out, "outg"), 0.2f) &&
+           Test_IsClose(_GetFloat(out, "outb"), 0.3f) &&
+           Test_IsClose(_GetFloat(out, "outa"), 0.4f);
 }
 
 static bool TestConvertColor4ToColor3() {
@@ -500,6 +510,86 @@ static bool TestConvertColor4ToColor3() {
 
     auto vec2Out = _Eval("ND_convert_vector4_vector2", in);
     return Test_IsClose(_GetVec2(vec2Out), Vec2f(0.2f, 0.4f), 1e-6f);
+}
+
+static bool TestChannelConvertValues() {
+    ParamMap in;
+    in["in"] = Value(0.25f);
+    auto out = _Eval("ND_convert_float_color4", in);
+    if (!Test_IsClose(_GetVec4(out), Vec4f(0.25f))) return false;
+
+    in["in"] = Value(Vec2f(0.2f, 0.4f));
+    out = _Eval("ND_convert_vector2_color4", in);
+    if (!Test_IsClose(_GetVec4(out), Vec4f(0.2f, 0.4f, 0.0f, 1.0f))) {
+        return false;
+    }
+
+    in["in"] = Value(Vec3f(0.2f, 0.4f, 0.6f));
+    out = _Eval("ND_convert_color3_vector2", in);
+    if (!Test_IsClose(_GetVec2(out), Vec2f(0.2f, 0.4f))) return false;
+    out = _Eval("ND_convert_vector3_color4", in);
+    if (!Test_IsClose(_GetVec4(out), Vec4f(0.2f, 0.4f, 0.6f, 1.0f))) {
+        return false;
+    }
+
+    in["in"] = Value(true);
+    out = _Eval("ND_convert_boolean_vector3", in);
+    if (!Test_IsClose(_GetVec3(out), Vec3f(1.0f))) return false;
+    out = _Eval("ND_convert_boolean_integer", in);
+    if (_GetInt(out) != 1) return false;
+
+    in["in"] = Value(-2);
+    out = _Eval("ND_convert_integer_color3", in);
+    if (!Test_IsClose(_GetVec3(out), Vec3f(-2.0f))) return false;
+    out = _Eval("ND_convert_integer_boolean", in);
+    if (!_GetBool(out)) return false;
+
+    in["in"] = Value(0);
+    out = _Eval("ND_convert_integer_boolean", in);
+    return !_GetBool(out);
+}
+
+static bool TestChannelConversionRegistrations() {
+    NodeRegistry::RegisterBuiltinNodes();
+    static const std::array<const char*, 39> nodeTypeIds = {{
+        "ND_convert_float_color3", "ND_convert_float_color4",
+        "ND_convert_float_vector2", "ND_convert_float_vector3",
+        "ND_convert_float_vector4", "ND_convert_color3_color4",
+        "ND_convert_color3_vector2", "ND_convert_color3_vector3",
+        "ND_convert_color3_vector4", "ND_convert_color4_color3",
+        "ND_convert_color4_vector2", "ND_convert_color4_vector3",
+        "ND_convert_color4_vector4", "ND_convert_vector2_color3",
+        "ND_convert_vector2_color4", "ND_convert_vector2_vector3",
+        "ND_convert_vector2_vector4", "ND_convert_vector3_color3",
+        "ND_convert_vector3_color4", "ND_convert_vector3_vector2",
+        "ND_convert_vector3_vector4", "ND_convert_vector4_color3",
+        "ND_convert_vector4_color4", "ND_convert_vector4_vector2",
+        "ND_convert_vector4_vector3", "ND_convert_boolean_float",
+        "ND_convert_boolean_color3", "ND_convert_boolean_color4",
+        "ND_convert_boolean_vector2", "ND_convert_boolean_vector3",
+        "ND_convert_boolean_vector4", "ND_convert_boolean_integer",
+        "ND_convert_integer_float", "ND_convert_integer_color3",
+        "ND_convert_integer_color4", "ND_convert_integer_vector2",
+        "ND_convert_integer_vector3", "ND_convert_integer_vector4",
+        "ND_convert_integer_boolean"
+    }};
+    for (const char* nodeTypeId : nodeTypeIds) {
+        if (!NodeRegistry::GetInstance().Find(std::string(nodeTypeId))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool TestMagnitudeVectorVariants() {
+    ParamMap in;
+    in["in"] = Value(Vec2f(3.0f, 4.0f));
+    auto out = _Eval("ND_magnitude_vector2", in);
+    if (!Test_IsClose(_GetFloat(out), 5.0f)) return false;
+
+    in["in"] = Value(Vec4f(1.0f, 2.0f, 2.0f, 4.0f));
+    out = _Eval("ND_magnitude_vector4", in);
+    return Test_IsClose(_GetFloat(out), 5.0f);
 }
 
 // ---------------------------------------------------------------------------
@@ -2387,7 +2477,11 @@ Test_RegisterNodeTests()
     _REG(TestRemapOverloads);
     _REG(TestOpenPbrAnisotropy);
     _REG(TestCombineSeparateRoundtrip);
+    _REG(TestSeparateColorOutputs);
     _REG(TestConvertColor4ToColor3);
+    _REG(TestChannelConvertValues);
+    _REG(TestChannelConversionRegistrations);
+    _REG(TestMagnitudeVectorVariants);
     _REG(TestIfgreater);
     // Conditional (expanded)
     _REG(TestIfgreaterInteger);
