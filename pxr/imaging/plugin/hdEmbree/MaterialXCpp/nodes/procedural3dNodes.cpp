@@ -91,6 +91,27 @@ _EvalFractal3dFloat(const ParamMap& inputs,
 }
 
 static void
+_EvalFractal3dVec3(const ParamMap& inputs,
+                   const ShadingContext& ctx,
+                   NodeOutputMap* outputs)
+{
+    Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    const Vec3f amplitude = ReadAmplitude<Vec3f>(inputs, _kAmplitude);
+    const int octaves = Get<int>(inputs, _kOctaves, 3);
+    const float lacunarity = Get<float>(inputs, _kLacunarity, 2.0f);
+    const float diminish = Get<float>(inputs, _kDiminish, 0.5f);
+
+    Vec3f result(0.0f);
+    float weight = 1.0f;
+    for (int i = 0; i < octaves; ++i) {
+        result += weight * PerlinNoise3dVec3(pos[0], pos[1], pos[2]);
+        pos *= lacunarity;
+        weight *= diminish;
+    }
+    StoreTypedOutput(outputs, _kOut, CompMul(result, amplitude));
+}
+
+static void
 _EvalCellnoise3d(const ParamMap& inputs,
                  const ShadingContext& ctx,
                  NodeOutputMap* outputs)
@@ -298,6 +319,8 @@ RegisterProcedural3dNodes(NodeRegistry& reg)
     _REG("ND_noise3d_float", &_EvalNoise3dFloat);
     _REG("ND_noise3d_color3", &_EvalNoise3dColor3);
     _REG("ND_fractal3d_float", &_EvalFractal3dFloat);
+    _REG("ND_fractal3d_vector3", &_EvalFractal3dVec3);
+    _REG("ND_fractal3d_color3", &_EvalFractal3dVec3);
     _REG("ND_cellnoise3d_float", &_EvalCellnoise3d);
     _REG("ND_worleynoise3d_float", &_EvalWorleyNoise3dFloat);
     _REG("ND_worleynoise3d_vector2", &_EvalWorleyNoise3dVec2);

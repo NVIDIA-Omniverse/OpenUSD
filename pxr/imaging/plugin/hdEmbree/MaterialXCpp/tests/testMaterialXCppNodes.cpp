@@ -1057,6 +1057,32 @@ static bool TestProceduralFractal2dSingleOctave() {
     return Test_IsClose(_GetFloat(fractal), _GetFloat(noise), 1e-5f);
 }
 
+static bool TestProceduralFractal3dColor() {
+    const Vec3f position(0.37f, 0.81f, 1.23f);
+    const Vec3f amplitude(0.9f, 0.75f, 0.6f);
+    constexpr float lacunarity = 2.25f;
+    constexpr float diminish = 0.55f;
+
+    ParamMap in;
+    in["position"] = Value(position);
+    in["amplitude"] = Value(amplitude);
+    in["octaves"] = Value(2);
+    in["lacunarity"] = Value(lacunarity);
+    in["diminish"] = Value(diminish);
+    const auto fractal = _Eval("ND_fractal3d_color3", in);
+
+    ParamMap noiseIn;
+    noiseIn["amplitude"] = Value(amplitude);
+    noiseIn["pivot"] = Value(0.0f);
+    noiseIn["position"] = Value(position);
+    const Vec3f first = _GetVec3(_Eval("ND_noise3d_color3", noiseIn));
+    noiseIn["amplitude"] = Value(amplitude * diminish);
+    noiseIn["position"] = Value(position * lacunarity);
+    const Vec3f second = _GetVec3(_Eval("ND_noise3d_color3", noiseIn));
+
+    return Test_IsClose(_GetVec3(fractal), first + second, 1e-5f);
+}
+
 static bool TestProceduralUnifiedNoise2dCellRemap() {
     ParamMap in;
     in["texcoord"] = Value(Vec2f(1.2f, 2.7f));
@@ -2686,6 +2712,7 @@ Test_RegisterNodeTests()
     _REG(TestProceduralWorleyNoise2d);
     _REG(TestProceduralWorleyNoise3d);
     _REG(TestProceduralFractal2dSingleOctave);
+    _REG(TestProceduralFractal3dColor);
     _REG(TestProceduralUnifiedNoise2dCellRemap);
     _REG(TestProceduralUnifiedNoise3dCellRemap);
     _REG(TestProceduralRampLrAndSplitLr);
