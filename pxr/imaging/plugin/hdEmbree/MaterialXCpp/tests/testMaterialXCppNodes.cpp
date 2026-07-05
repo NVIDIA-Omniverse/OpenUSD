@@ -356,7 +356,54 @@ static bool TestSmoothstep() {
 
     in["in"] = Value(0.5f);
     out = _Eval("ND_smoothstep_float", in);
-    return Test_IsClose(_GetFloat(out), 0.5f);
+    if (!Test_IsClose(_GetFloat(out), 0.5f)) return false;
+
+    // Equal and inverted bounds use the deterministic hard-step behavior
+    // emitted by MaterialX, with the upper comparison taking precedence.
+    in["low"] = Value(0.5f);
+    in["high"] = Value(0.5f);
+    in["in"] = Value(0.49f);
+    out = _Eval("ND_smoothstep_float", in);
+    if (!Test_IsClose(_GetFloat(out), 0.0f)) return false;
+    in["in"] = Value(0.5f);
+    out = _Eval("ND_smoothstep_float", in);
+    if (!Test_IsClose(_GetFloat(out), 1.0f)) return false;
+
+    in["low"] = Value(0.75f);
+    in["high"] = Value(0.25f);
+    in["in"] = Value(0.2f);
+    out = _Eval("ND_smoothstep_float", in);
+    if (!Test_IsClose(_GetFloat(out), 0.0f)) return false;
+    in["in"] = Value(0.5f);
+    out = _Eval("ND_smoothstep_float", in);
+    return Test_IsClose(_GetFloat(out), 1.0f);
+}
+
+static bool TestSmoothstepOverloads() {
+    ParamMap full;
+    full["in"] = Value(Vec4f(0.5f, 0.5f, 0.2f, 0.4f));
+    full["low"] = Value(Vec4f(0.0f, 0.5f, 0.75f, 0.5f));
+    full["high"] = Value(Vec4f(1.0f, 0.5f, 0.25f, 0.5f));
+    auto out = _Eval("ND_smoothstep_vector4", full);
+    if (!Test_IsClose(_GetVec4(out), Vec4f(0.5f, 1.0f, 0.0f, 0.0f))) {
+        return false;
+    }
+
+    ParamMap color;
+    color["in"] = Value(Vec3f(0.25f, 0.5f, 0.75f));
+    color["low"] = Value(Vec3f(0.0f));
+    color["high"] = Value(Vec3f(1.0f));
+    out = _Eval("ND_smoothstep_color3", color);
+    if (!Test_IsClose(_GetVec3(out), Vec3f(0.15625f, 0.5f, 0.84375f))) {
+        return false;
+    }
+
+    ParamMap scalarBounds;
+    scalarBounds["in"] = Value(Vec2f(0.25f, 0.5f));
+    scalarBounds["low"] = Value(0.25f);
+    scalarBounds["high"] = Value(0.75f);
+    out = _Eval("ND_smoothstep_vector2FA", scalarBounds);
+    return Test_IsClose(_GetVec2(out), Vec2f(0.0f, 0.5f));
 }
 
 static bool TestRemap() {
@@ -368,6 +415,39 @@ static bool TestRemap() {
     in["outhigh"] = Value(20.0f);
     auto out = _Eval("ND_remap_float", in);
     return Test_IsClose(_GetFloat(out), 15.0f);
+}
+
+static bool TestRemapOverloads() {
+    ParamMap full;
+    full["in"] = Value(Vec4f(0.5f, 0.5f, 0.25f, 0.75f));
+    full["inlow"] = Value(Vec4f(0.0f, 0.0f, 0.75f, 0.75f));
+    full["inhigh"] = Value(Vec4f(1.0f, 0.0f, 0.25f, 0.25f));
+    full["outlow"] = Value(Vec4f(0.1f, 0.2f, 0.0f, 0.0f));
+    full["outhigh"] = Value(Vec4f(0.9f, 0.8f, 1.0f, 1.0f));
+    auto out = _Eval("ND_remap_vector4", full);
+    if (!Test_IsClose(_GetVec4(out), Vec4f(0.5f, 0.2f, 1.0f, 0.0f))) {
+        return false;
+    }
+
+    ParamMap color;
+    color["in"] = Value(Vec3f(-2.0f, 0.0f, 2.0f));
+    color["inlow"] = Value(Vec3f(-2.0f));
+    color["inhigh"] = Value(Vec3f(2.0f));
+    color["outlow"] = Value(Vec3f(0.0f, 0.1f, 0.2f));
+    color["outhigh"] = Value(Vec3f(1.0f, 0.9f, 0.8f));
+    out = _Eval("ND_remap_color3", color);
+    if (!Test_IsClose(_GetVec3(out), Vec3f(0.0f, 0.5f, 0.8f))) {
+        return false;
+    }
+
+    ParamMap scalarBounds;
+    scalarBounds["in"] = Value(Vec2f(0.25f, 0.75f));
+    scalarBounds["inlow"] = Value(0.0f);
+    scalarBounds["inhigh"] = Value(1.0f);
+    scalarBounds["outlow"] = Value(2.0f);
+    scalarBounds["outhigh"] = Value(4.0f);
+    out = _Eval("ND_remap_vector2FA", scalarBounds);
+    return Test_IsClose(_GetVec2(out), Vec2f(2.5f, 3.5f));
 }
 
 static bool TestOpenPbrAnisotropy() {
@@ -2302,7 +2382,9 @@ Test_RegisterNodeTests()
     _REG(TestClamp);
     _REG(TestMix);
     _REG(TestSmoothstep);
+    _REG(TestSmoothstepOverloads);
     _REG(TestRemap);
+    _REG(TestRemapOverloads);
     _REG(TestOpenPbrAnisotropy);
     _REG(TestCombineSeparateRoundtrip);
     _REG(TestConvertColor4ToColor3);

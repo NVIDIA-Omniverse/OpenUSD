@@ -66,10 +66,16 @@ Mix(const T& bg, const T& fg, float t)
 inline float
 Smoothstep(float lo, float hi, float v)
 {
-    if (hi <= lo) {
+    // Match the generated MaterialX implementation. Testing the upper edge
+    // first gives deterministic hard-step behavior for equal or inverted
+    // bounds instead of dividing by zero or returning zero everywhere.
+    if (v >= hi) {
+        return 1.0f;
+    }
+    if (v <= lo) {
         return 0.0f;
     }
-    const float t = Clamp01((v - lo) / (hi - lo));
+    const float t = (v - lo) / (hi - lo);
     return t * t * (3.0f - 2.0f * t);
 }
 

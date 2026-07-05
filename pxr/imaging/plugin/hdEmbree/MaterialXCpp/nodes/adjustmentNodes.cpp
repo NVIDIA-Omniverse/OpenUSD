@@ -39,25 +39,17 @@ static const SlotName _kDoclamp("doclamp");
 // ---- Remap / Smoothstep --------------------------------------------------
 
 template<typename T>
-static void
-_EvalRemap(const ParamMap& inputs, const ShadingContext&,
-           NodeOutputMap* outputs)
+static T
+_RemapComponents(const T& v, const T& inLo, const T& inHi,
+                 const T& outLo, const T& outHi)
 {
-    T v  = Get<T>(inputs, _kIn,     Zero<T>());
-    T il = Get<T>(inputs, _kInlow,  Zero<T>());
-    T ih = Get<T>(inputs, _kInhigh, One<T>());
-    T ol = Get<T>(inputs, _kOutlow, Zero<T>());
-    T oh = Get<T>(inputs, _kOuthigh, One<T>());
-    // Scalar remap for float type.
-    (*outputs)[_kOut] = Value(
-        Remap(Get<float>(inputs, _kIn, 0.0f),
-              Get<float>(inputs, _kInlow, 0.0f),
-              Get<float>(inputs, _kInhigh, 1.0f),
-              Get<float>(inputs, _kOutlow, 0.0f),
-              Get<float>(inputs, _kOuthigh, 1.0f)));
+    T result;
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {
+        result[i] = Remap(v[i], inLo[i], inHi[i], outLo[i], outHi[i]);
+    }
+    return result;
 }
 
-// Specialization for float remap
 static void
 _EvalRemapFloat(const ParamMap& inputs, const ShadingContext&,
                 NodeOutputMap* outputs)
@@ -70,14 +62,75 @@ _EvalRemapFloat(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(Remap(v, il, ih, ol, oh));
 }
 
+template<typename T>
+static void
+_EvalRemap(const ParamMap& inputs, const ShadingContext&,
+           NodeOutputMap* outputs)
+{
+    const T v = Get<T>(inputs, _kIn, Zero<T>());
+    const T inLo = Get<T>(inputs, _kInlow, Zero<T>());
+    const T inHi = Get<T>(inputs, _kInhigh, One<T>());
+    const T outLo = Get<T>(inputs, _kOutlow, Zero<T>());
+    const T outHi = Get<T>(inputs, _kOuthigh, One<T>());
+    (*outputs)[_kOut] = Value(
+        _RemapComponents(v, inLo, inHi, outLo, outHi));
+}
+
+template<typename T>
+static void
+_EvalRemapFA(const ParamMap& inputs, const ShadingContext&,
+             NodeOutputMap* outputs)
+{
+    const T v = Get<T>(inputs, _kIn, Zero<T>());
+    const float inLo = Get<float>(inputs, _kInlow, 0.0f);
+    const float inHi = Get<float>(inputs, _kInhigh, 1.0f);
+    const float outLo = Get<float>(inputs, _kOutlow, 0.0f);
+    const float outHi = Get<float>(inputs, _kOuthigh, 1.0f);
+    (*outputs)[_kOut] = Value(_RemapComponents(
+        v, T(inLo), T(inHi), T(outLo), T(outHi)));
+}
+
+template<typename T>
+static T
+_SmoothstepComponents(const T& lo, const T& hi, const T& v)
+{
+    T result;
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {
+        result[i] = Smoothstep(lo[i], hi[i], v[i]);
+    }
+    return result;
+}
+
+static void
+_EvalSmoothstepFloat(const ParamMap& inputs, const ShadingContext&,
+                     NodeOutputMap* outputs)
+{
+    const float v = Get<float>(inputs, _kIn, 0.0f);
+    const float lo = Get<float>(inputs, _kLow, 0.0f);
+    const float hi = Get<float>(inputs, _kHigh, 1.0f);
+    (*outputs)[_kOut] = Value(Smoothstep(lo, hi, v));
+}
+
+template<typename T>
 static void
 _EvalSmoothstep(const ParamMap& inputs, const ShadingContext&,
                 NodeOutputMap* outputs)
 {
-    float v  = Get<float>(inputs, _kIn,   0.0f);
-    float lo = Get<float>(inputs, _kLow,  0.0f);
-    float hi = Get<float>(inputs, _kHigh, 1.0f);
-    (*outputs)[_kOut] = Value(Smoothstep(lo, hi, v));
+    const T v = Get<T>(inputs, _kIn, Zero<T>());
+    const T lo = Get<T>(inputs, _kLow, Zero<T>());
+    const T hi = Get<T>(inputs, _kHigh, One<T>());
+    (*outputs)[_kOut] = Value(_SmoothstepComponents(lo, hi, v));
+}
+
+template<typename T>
+static void
+_EvalSmoothstepFA(const ParamMap& inputs, const ShadingContext&,
+                  NodeOutputMap* outputs)
+{
+    const T v = Get<T>(inputs, _kIn, Zero<T>());
+    const float lo = Get<float>(inputs, _kLow, 0.0f);
+    const float hi = Get<float>(inputs, _kHigh, 1.0f);
+    (*outputs)[_kOut] = Value(_SmoothstepComponents(T(lo), T(hi), v));
 }
 
 // ---- Contrast ------------------------------------------------------------
@@ -370,8 +423,29 @@ _EvalRangeFA(const ParamMap& inputs, const ShadingContext&,
 void
 RegisterAdjustmentNodes(NodeRegistry& reg)
 {
-    _REG("ND_remap_float", &_EvalRemapFloat);
-    _REG("ND_smoothstep_float", &_EvalSmoothstep);
+    _REG("ND_remap_float",     &_EvalRemapFloat);
+    _REG("ND_remap_color3",    &_EvalRemap<Vec3f>);
+    _REG("ND_remap_color4",    &_EvalRemap<Vec4f>);
+    _REG("ND_remap_vector2",   &_EvalRemap<Vec2f>);
+    _REG("ND_remap_vector3",   &_EvalRemap<Vec3f>);
+    _REG("ND_remap_vector4",   &_EvalRemap<Vec4f>);
+    _REG("ND_remap_color3FA",  &_EvalRemapFA<Vec3f>);
+    _REG("ND_remap_color4FA",  &_EvalRemapFA<Vec4f>);
+    _REG("ND_remap_vector2FA", &_EvalRemapFA<Vec2f>);
+    _REG("ND_remap_vector3FA", &_EvalRemapFA<Vec3f>);
+    _REG("ND_remap_vector4FA", &_EvalRemapFA<Vec4f>);
+
+    _REG("ND_smoothstep_float",     &_EvalSmoothstepFloat);
+    _REG("ND_smoothstep_color3",    &_EvalSmoothstep<Vec3f>);
+    _REG("ND_smoothstep_color4",    &_EvalSmoothstep<Vec4f>);
+    _REG("ND_smoothstep_vector2",   &_EvalSmoothstep<Vec2f>);
+    _REG("ND_smoothstep_vector3",   &_EvalSmoothstep<Vec3f>);
+    _REG("ND_smoothstep_vector4",   &_EvalSmoothstep<Vec4f>);
+    _REG("ND_smoothstep_color3FA",  &_EvalSmoothstepFA<Vec3f>);
+    _REG("ND_smoothstep_color4FA",  &_EvalSmoothstepFA<Vec4f>);
+    _REG("ND_smoothstep_vector2FA", &_EvalSmoothstepFA<Vec2f>);
+    _REG("ND_smoothstep_vector3FA", &_EvalSmoothstepFA<Vec3f>);
+    _REG("ND_smoothstep_vector4FA", &_EvalSmoothstepFA<Vec4f>);
 
     _REG("ND_contrast_float",  &_EvalContrastFloat);
     _REG("ND_contrast_color3", &_EvalContrast<Vec3f>);
