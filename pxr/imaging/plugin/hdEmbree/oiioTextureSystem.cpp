@@ -309,15 +309,15 @@ HdEmbreeOiioTextureSystem::Sample2D(
         request.defaultValue[3],
     };
 
-    // ShadingContext texture coordinates already use the convention expected
-    // by this OIIO request. Applying another V transform here mirrors file
-    // textures relative to their authored USD coordinates.
+    // MaterialX graph coordinates use a lower-left origin, while the OIIO
+    // image-space T axis increases from top to bottom.  Convert values and
+    // derivatives together at the texture backend boundary.
     const float s = request.st[0];
-    const float t = request.st[1];
+    const float t = 1.0f - request.st[1];
     const float dsdx = request.dstdx[0];
-    const float dtdx = request.dstdx[1];
+    const float dtdx = -request.dstdx[1];
     const float dsdy = request.dstdy[0];
-    const float dtdy = request.dstdy[1];
+    const float dtdy = -request.dstdy[1];
 
     OIIO::TextureSystem::Perthread* const threadInfo =
         _impl->textureSystem->get_perthread_info();
