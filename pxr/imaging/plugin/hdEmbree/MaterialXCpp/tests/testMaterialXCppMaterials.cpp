@@ -2052,6 +2052,30 @@ TestGltfPbrIridescenceParametersReachBsdf()
 }
 
 static bool
+TestGltfPbrDispersionStrengthReachesTransmissionAsAbbeNumber()
+{
+    ParamMap params;
+    params["metallic"] = Value(0.0f);
+    params["transmission"] = Value(1.0f);
+    params["dispersion"] = Value(0.5f);
+
+    const SurfaceClosure c = EvalGltfPbr(params);
+    const auto* transmission = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Transmission;
+        });
+
+    if (!transmission) {
+        printf("    Failed to find glTF transmission dielectric node\n");
+        return false;
+    }
+
+    return Test_IsClose(transmission->dispersionAbbe, 40.0f, 1e-4f) &&
+           c.HasDispersion();
+}
+
+static bool
 TestGltfPbrClearcoatNormalReachesBsdf()
 {
     const Vec3f clearcoatNormal(0.0f, 0.70710677f, 0.70710677f);
@@ -2083,6 +2107,30 @@ TestGltfPbrClearcoatNormalReachesBsdf()
            Test_IsClose(coat->tangent, Vec3f(1.0f, 0.0f, 0.0f), 1e-4f) &&
            Test_IsClose(coat->roughness[0], expectedRoughness, 1e-4f) &&
            Test_IsClose(coat->roughness[1], expectedRoughness, 1e-4f);
+}
+
+static bool
+TestGltfPbrClearcoatInheritsGeometricNormalByDefault()
+{
+    ParamMap params;
+    params["metallic"] = Value(0.0f);
+    params["clearcoat"] = Value(1.0f);
+
+    const SurfaceClosure c = EvalGltfPbr(params);
+    const auto* coat = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree,
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection &&
+                   Test_IsClose(data.ior, 1.5f, 1e-4f) &&
+                   Test_IsClose(data.weight, 1.0f, 1e-4f);
+        });
+
+    if (!coat) {
+        printf("    Failed to find default glTF clearcoat dielectric node\n");
+        return false;
+    }
+
+    return !coat->hasShadingNormal;
 }
 
 static bool
@@ -2445,7 +2493,9 @@ Test_RegisterMaterialTests()
     _REG(TestGltfPbrDefaults);
     _REG(TestGltfPbrAlphaMask);
     _REG(TestGltfPbrIridescenceParametersReachBsdf);
+    _REG(TestGltfPbrDispersionStrengthReachesTransmissionAsAbbeNumber);
     _REG(TestGltfPbrClearcoatNormalReachesBsdf);
+    _REG(TestGltfPbrClearcoatInheritsGeometricNormalByDefault);
     _REG(TestGltfPbrAnisotropyRotationRotatesTangent);
     _REG(TestUsdPreviewSurfaceDefaults);
     _REG(TestUsdPreviewSurfaceMetallicWorkflow);

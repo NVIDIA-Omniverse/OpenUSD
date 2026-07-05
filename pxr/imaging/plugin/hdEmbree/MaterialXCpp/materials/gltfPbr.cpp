@@ -40,6 +40,7 @@ static const SlotName _kEmissiveStrength("emissive_strength");
 static const SlotName _kThickness("thickness");
 static const SlotName _kAnisotropyStrength("anisotropy_strength");
 static const SlotName _kAnisotropyRotation("anisotropy_rotation");
+static const SlotName _kDispersion("dispersion");
 
 namespace {
 
@@ -171,6 +172,7 @@ EvalGltfPbr(const ParamMap& params)
     const float thickness = Get<float>(params, _kThickness, 0.0f);
     const float anisotropyStrength = Get<float>(params, _kAnisotropyStrength, 0.0f);
     const float anisotropyRotation = Get<float>(params, _kAnisotropyRotation, 0.0f);
+    const float dispersion = std::max(Get<float>(params, _kDispersion, 0.0f), 0.0f);
     const Vec3f mainTangent = _RotateTangent(
         tangent,
         normal,
@@ -223,6 +225,10 @@ EvalGltfPbr(const ParamMap& params)
     transmissionData.weight = 1.0f;
     transmissionData.tint = baseColor;
     transmissionData.ior = std::max(ior, 1.0f);
+    // KHR_materials_dispersion stores dispersion strength as 20 / Abbe.
+    // Zero disables wavelength-dependent refraction.
+    transmissionData.dispersionAbbe =
+        dispersion > 0.0f ? 20.0f / dispersion : 0.0f;
     transmissionData.roughness = baseRoughness;
     transmissionData.tangent = mainTangent;
     transmissionData.scatterMode = Bsdf::ScatterMode::Transmission;
@@ -292,7 +298,8 @@ EvalGltfPbr(const ParamMap& params)
         clearcoatData.roughness = _ComputeIsotropicRoughness(clearcoatRoughness);
         clearcoatData.tangent = tangent;
         clearcoatData.normal = clearcoatNormal;
-        clearcoatData.hasShadingNormal = true;
+        clearcoatData.hasShadingNormal =
+            params.Find(_kClearcoatNormal) || params.Find(_kNormal);
         root = _AppendLayer(&tree, tree.Add(clearcoatData), root);
     }
 
