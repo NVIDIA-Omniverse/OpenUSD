@@ -69,6 +69,9 @@ _EvalViewDirection(const ParamMap& inputs, const ShadingContext& ctx,
         ctx, "world", space,
         ShadingContext::TransformSpaceType::Vector,
         result, &result);
+    if (result.length2() > _kFloatEps * _kFloatEps) {
+        result.normalize();
+    }
     (*outputs)[_kOut] = Value(result);
 }
 

@@ -310,6 +310,18 @@ static bool TestDivideFloat() {
     return Test_IsClose(_GetFloat(out), 0.0f);
 }
 
+static bool TestAtan2UsesCanonicalInputs() {
+    ParamMap in;
+    in["iny"] = Value(1.0f);
+    in["inx"] = Value(0.0f);
+    auto out = _Eval("ND_atan2_float", in);
+    if (!Test_IsClose(_GetFloat(out), 0.5f * 3.14159265358979323846f)) {
+        return false;
+    }
+
+    return Test_IsClose(_GetFloat(_Eval("ND_atan2_float", ParamMap())), 0.0f);
+}
+
 static bool TestClamp() {
     ParamMap in;
     in["in"] = Value(1.5f);
@@ -1412,6 +1424,53 @@ static bool TestGeometricNormal() {
     return Test_IsClose(_GetVec3(out), Vec3f(0.0f, 1.0f, 0.0f));
 }
 
+static bool TestGeometricTangentUsesPositionDerivative() {
+    NodeRegistry::RegisterBuiltinNodes();
+    auto fn = NodeRegistry::GetInstance().Find(
+        std::string("ND_tangent_vector3"));
+    if (!fn) return false;
+
+    ShadingContext ctx;
+    ctx.dPdu = Vec3f(0.0f, 3.0f, 4.0f);
+    ctx.tangent = Vec3f(1.0f, 0.0f, 0.0f);
+    _SetObjectWorldTransform(&ctx, _MakeIdentityMatrix());
+
+    NodeOutputMap out;
+    fn(ParamMap(), ctx, &out);
+    return Test_IsClose(_GetVec3(out), Vec3f(0.0f, 0.6f, 0.8f));
+}
+
+static bool TestGeometricBitangentUsesNormalAndPositionDerivative() {
+    NodeRegistry::RegisterBuiltinNodes();
+    auto fn = NodeRegistry::GetInstance().Find(
+        std::string("ND_bitangent_vector3"));
+    if (!fn) return false;
+
+    ShadingContext ctx;
+    ctx.normal = Vec3f(0.0f, 0.0f, 1.0f);
+    ctx.dPdu = Vec3f(0.0f, 2.0f, 0.0f);
+    ctx.bitangent = Vec3f(1.0f, 0.0f, 0.0f);
+    _SetObjectWorldTransform(&ctx, _MakeIdentityMatrix());
+
+    NodeOutputMap out;
+    fn(ParamMap(), ctx, &out);
+    return Test_IsClose(_GetVec3(out), Vec3f(-1.0f, 0.0f, 0.0f));
+}
+
+static bool TestGeometricTexcoordVector3() {
+    NodeRegistry::RegisterBuiltinNodes();
+    auto fn = NodeRegistry::GetInstance().Find(
+        std::string("ND_texcoord_vector3"));
+    if (!fn) return false;
+
+    ShadingContext ctx;
+    ctx.texcoord = Vec2f(0.25f, 0.75f);
+
+    NodeOutputMap out;
+    fn(ParamMap(), ctx, &out);
+    return Test_IsClose(_GetVec3(out), Vec3f(0.25f, 0.75f, 0.0f));
+}
+
 static bool TestGeometricViewDirectionWorldSpace() {
     NodeRegistry::RegisterBuiltinNodes();
     auto fn = NodeRegistry::GetInstance().Find(
@@ -1432,6 +1491,27 @@ static bool TestGeometricViewDirectionWorldSpace() {
     return Test_IsClose(
         _GetVec3(out),
         Vec3f(0.0f, 1.0f, -5.0f).normalized());
+}
+
+static bool TestGeometricViewDirectionRemainsNormalizedAcrossSpaces() {
+    NodeRegistry::RegisterBuiltinNodes();
+    auto fn = NodeRegistry::GetInstance().Find(
+        std::string("ND_viewdirection_vector3"));
+    if (!fn) return false;
+
+    ParamMap in;
+    in["space"] = Value(std::string("object"));
+
+    ShadingContext ctx;
+    ctx.position = Vec3f(0.0f);
+    ctx.viewPosition = Vec3f(0.0f, 0.0f, 5.0f);
+    Mat4f objectToWorld;
+    objectToWorld.setScale(Vec3f(2.0f));
+    _SetObjectWorldTransform(&ctx, objectToWorld);
+
+    NodeOutputMap out;
+    fn(in, ctx, &out);
+    return Test_IsClose(_GetVec3(out), Vec3f(0.0f, 0.0f, -1.0f));
 }
 
 static bool TestFacingRatioDefaultsToViewDirectionAndNormal() {
@@ -2469,6 +2549,7 @@ Test_RegisterNodeTests()
     _REG(TestMultiplyFloat);
     _REG(TestSubtractFloat);
     _REG(TestDivideFloat);
+    _REG(TestAtan2UsesCanonicalInputs);
     _REG(TestClamp);
     _REG(TestMix);
     _REG(TestSmoothstep);
@@ -2524,7 +2605,11 @@ Test_RegisterNodeTests()
     _REG(TestGeometricPosition);
     _REG(TestGeometricPositionWorldSpace);
     _REG(TestGeometricNormal);
+    _REG(TestGeometricTangentUsesPositionDerivative);
+    _REG(TestGeometricBitangentUsesNormalAndPositionDerivative);
+    _REG(TestGeometricTexcoordVector3);
     _REG(TestGeometricViewDirectionWorldSpace);
+    _REG(TestGeometricViewDirectionRemainsNormalizedAcrossSpaces);
     _REG(TestFacingRatioDefaultsToViewDirectionAndNormal);
     _REG(TestFacingRatioSupportsFlagsAndAuthoredInputs);
     _REG(TestGoochShadeAddsSpecularHighlight);

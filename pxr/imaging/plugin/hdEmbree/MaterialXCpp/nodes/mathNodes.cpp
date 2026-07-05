@@ -18,6 +18,8 @@ namespace mxcpp {
 static const SlotName _kIn("in");
 static const SlotName _kIn1("in1");
 static const SlotName _kIn2("in2");
+static const SlotName _kInx("inx");
+static const SlotName _kIny("iny");
 static const SlotName _kLow("low");
 static const SlotName _kHigh("high");
 static const SlotName _kOut("out");
@@ -281,8 +283,8 @@ static void _EvalAcos(const ParamMap& in, const ShadingContext&,
 }
 static void _EvalAtan2(const ParamMap& in, const ShadingContext&,
                        NodeOutputMap* out) {
-    float y = Get<float>(in, _kIn1, 0.0f);
-    float x = Get<float>(in, _kIn2, 1.0f);
+    float y = Get<float>(in, _kIny, 0.0f);
+    float x = Get<float>(in, _kInx, 1.0f);
     (*out)[_kOut] = Value(std::atan2(y, x));
 }
 

@@ -122,11 +122,22 @@ _EvalTangent(const ParamMap& inputs, const ShadingContext& ctx,
              NodeOutputMap* outputs)
 {
     const std::string space = _GetSpace(inputs);
-    Vec3f result = ctx.tangent;
+    // Match the MaterialX OSL definition: normalize(transform(space, dPdu)).
+    // ctx.tangent is the renderer's material tangent frame and may be a
+    // smoothed or authored primvar, which is intentionally distinct from the
+    // geometric derivative exposed by this node.
+    Vec3f worldTangent = ctx.dPdu;
+    if (Dot(worldTangent, worldTangent) < _kFloatEps * _kFloatEps) {
+        worldTangent = ctx.tangent;
+    }
+    Vec3f result = worldTangent;
     TransformNamedVec3(
         ctx, "world", space,
         ShadingContext::TransformSpaceType::Vector,
-        ctx.tangent, &result);
+        worldTangent, &result);
+    if (Dot(result, result) > _kFloatEps * _kFloatEps) {
+        result.normalize();
+    }
     (*outputs)[_kOut] = Value(result);
 }
 
@@ -135,19 +146,43 @@ _EvalBitangent(const ParamMap& inputs, const ShadingContext& ctx,
                NodeOutputMap* outputs)
 {
     const std::string space = _GetSpace(inputs);
-    Vec3f result = ctx.bitangent;
+    // Match the MaterialX OSL definition:
+    // normalize(transform(space, cross(N, normalize(dPdu)))).
+    Vec3f worldTangent = ctx.dPdu;
+    if (Dot(worldTangent, worldTangent) < _kFloatEps * _kFloatEps) {
+        worldTangent = ctx.tangent;
+    }
+    if (Dot(worldTangent, worldTangent) > _kFloatEps * _kFloatEps) {
+        worldTangent.normalize();
+    }
+
+    Vec3f worldBitangent = Cross(ctx.normal, worldTangent);
+    if (Dot(worldBitangent, worldBitangent) < _kFloatEps * _kFloatEps) {
+        worldBitangent = ctx.bitangent;
+    }
+    Vec3f result = worldBitangent;
     TransformNamedVec3(
         ctx, "world", space,
         ShadingContext::TransformSpaceType::Vector,
-        ctx.bitangent, &result);
+        worldBitangent, &result);
+    if (Dot(result, result) > _kFloatEps * _kFloatEps) {
+        result.normalize();
+    }
     (*outputs)[_kOut] = Value(result);
 }
 
 static void
-_EvalTexcoord(const ParamMap&, const ShadingContext& ctx,
-              NodeOutputMap* outputs)
+_EvalTexcoordVector2(const ParamMap&, const ShadingContext& ctx,
+                     NodeOutputMap* outputs)
 {
     (*outputs)[_kOut] = Value(ctx.texcoord);
+}
+
+static void
+_EvalTexcoordVector3(const ParamMap&, const ShadingContext& ctx,
+                     NodeOutputMap* outputs)
+{
+    (*outputs)[_kOut] = Value(Vec3f(ctx.texcoord[0], ctx.texcoord[1], 0.0f));
 }
 
 static void
@@ -299,7 +334,8 @@ RegisterGeometricNodes(NodeRegistry& reg)
     _REG("ND_normal_vector3",    &_EvalNormal);
     _REG("ND_tangent_vector3",   &_EvalTangent);
     _REG("ND_bitangent_vector3", &_EvalBitangent);
-    _REG("ND_texcoord_vector2",  &_EvalTexcoord);
+    _REG("ND_texcoord_vector2",  &_EvalTexcoordVector2);
+    _REG("ND_texcoord_vector3",  &_EvalTexcoordVector3);
     _REG("ND_geomcolor_color3",  &_EvalGeomcolor);
     _REG("ND_bump_vector3", &_EvalBump);
     _REG("ND_normalmap_float", &_EvalNormalMapFloat);
