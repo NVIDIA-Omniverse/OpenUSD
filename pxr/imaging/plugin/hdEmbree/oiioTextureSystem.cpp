@@ -220,6 +220,8 @@ _ToOiioInterp(const mxcpp::TextureFilterType filterType)
         return OIIO::TextureOpt::InterpBilinear;
     case mxcpp::TextureFilterType::Cubic:
         return OIIO::TextureOpt::InterpBicubic;
+    case mxcpp::TextureFilterType::SmartBicubic:
+        return OIIO::TextureOpt::InterpSmartBicubic;
     }
 
     return OIIO::TextureOpt::InterpSmartBicubic;

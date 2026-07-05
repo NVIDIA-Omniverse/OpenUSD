@@ -16,6 +16,8 @@ environments:
       - conda: https://conda.anaconda.org/anderslanglands/linux-64/openexr-lib-3.4.13-h20f790b_2.conda
       - conda: https://conda.anaconda.org/anderslanglands/linux-64/openimageio-2.5.19.1-h1890329_0.conda
       - conda: https://conda.anaconda.org/anderslanglands/linux-64/openimageio-dev-2.5.19.1-heb5cef6_0.conda
+      - conda: https://conda.anaconda.org/anderslanglands/linux-64/openimageio-format-gif-2.5.19.1-heb5cef6_0.conda
+      - conda: https://conda.anaconda.org/anderslanglands/linux-64/openimageio-format-webp-2.5.19.1-heb5cef6_0.conda
       - conda: https://conda.anaconda.org/anderslanglands/linux-64/openimageio-lib-2.5.19.1-hb0f4dca_0.conda
       - conda: https://conda.anaconda.org/anderslanglands/linux-64/openimageio-tools-2.5.19.1-heb5cef6_0.conda
       - conda: https://conda.anaconda.org/anderslanglands/linux-64/openqmc-0.7.1-h8b3e86a_0.conda
@@ -45,6 +47,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/gcc-14.3.0-h0dff253_19.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/gcc_impl_linux-64-14.3.0-h235f0fe_19.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/gcc_linux-64-14.3.0-h50e9bb6_27.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/giflib-5.2.2-hd590300_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/glew-2.3.0-h71661d4_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/glfw-3.4-hb03c661_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/graphite2-1.3.15-hecca717_0.conda
@@ -111,6 +114,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libuuid-2.42.2-h5347b49_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libuv-1.52.1-h280c20c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libvulkan-loader-1.4.341.0-h5279c79_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/libwebp-1.6.0-h9635ea4_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libwebp-base-1.6.0-hd42ef1d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libxcb-1.17.0-h8a09558_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libxcrypt-4.4.36-hd590300_1.conda
@@ -189,6 +193,8 @@ environments:
       - conda: https://conda.anaconda.org/anderslanglands/win-64/openexr-lib-3.4.13-hb8f40f8_2.conda
       - conda: https://conda.anaconda.org/anderslanglands/win-64/openimageio-2.5.19.1-hde1abb1_0.conda
       - conda: https://conda.anaconda.org/anderslanglands/win-64/openimageio-dev-2.5.19.1-he52ce19_0.conda
+      - conda: https://conda.anaconda.org/anderslanglands/win-64/openimageio-format-gif-2.5.19.1-he52ce19_0.conda
+      - conda: https://conda.anaconda.org/anderslanglands/win-64/openimageio-format-webp-2.5.19.1-he52ce19_0.conda
       - conda: https://conda.anaconda.org/anderslanglands/win-64/openimageio-lib-2.5.19.1-ha41a7fa_0.conda
       - conda: https://conda.anaconda.org/anderslanglands/win-64/openimageio-tools-2.5.19.1-he52ce19_0.conda
       - conda: https://conda.anaconda.org/anderslanglands/win-64/openqmc-0.7.1-hce4bec7_0.conda
@@ -218,6 +224,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/embree-4.4.1-h8b2b210_3.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/fmt-12.2.0-h1ced75a_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/fontconfig-2.18.1-hd47e2ca_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/win-64/giflib-5.2.2-h64bf75a_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/glew-2.3.0-hdfd1c44_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/glfw-3.4-hfd05255_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/graphite2-1.3.15-hac47afa_0.conda
@@ -251,6 +258,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/libtiff-4.7.1-h8f73337_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/libuv-1.52.1-h6a83c73_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/libvulkan-loader-1.4.341.0-h477610d_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/win-64/libwebp-1.6.0-h4d5522a_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/libwebp-base-1.6.0-h4d5522a_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/libwinpthread-12.0.0.r4.gg4f2fc60ca-h57928b3_10.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/libxml2-16-2.15.3-h3cfd58e_0.conda
@@ -383,6 +391,24 @@ packages:
   - openexr-lib >=3.4.12,<3.5.0a0
   license: Apache-2.0
   size: 482347
+  timestamp: 1781854041169
+- conda: https://conda.anaconda.org/anderslanglands/linux-64/openimageio-format-gif-2.5.19.1-heb5cef6_0.conda
+  sha256: 23583a88e4b51f6f57973b3a934095fbadd713e04091537636516c5157ed18e2
+  md5: 297c98a023f472c8e18cc7ab39a09838
+  depends:
+  - openimageio-lib ==2.5.19.1 hb0f4dca_0
+  - giflib
+  license: Apache-2.0
+  size: 150143
+  timestamp: 1781854041169
+- conda: https://conda.anaconda.org/anderslanglands/linux-64/openimageio-format-webp-2.5.19.1-heb5cef6_0.conda
+  sha256: c4f32e1ec8f79910b738b40085ca8997b27ef3d29389dd3c475a3eb2d69650b5
+  md5: bdb3ac8599cf1eb0c65d31c9a4e589a5
+  depends:
+  - openimageio-lib ==2.5.19.1 hb0f4dca_0
+  - libwebp
+  license: Apache-2.0
+  size: 133772
   timestamp: 1781854041169
 - conda: https://conda.anaconda.org/anderslanglands/linux-64/openimageio-lib-2.5.19.1-hb0f4dca_0.conda
   sha256: 3700eb16fae58275541f3734d552e741d2790cd290b800cc0532b35ed598e36d
@@ -624,6 +650,24 @@ packages:
   - libjpeg-turbo >=3.1.4.1,<4.0a0
   license: Apache-2.0
   size: 568194
+  timestamp: 1781854070644
+- conda: https://conda.anaconda.org/anderslanglands/win-64/openimageio-format-gif-2.5.19.1-he52ce19_0.conda
+  sha256: 0e06b71b3812accc2a4514ad13c9d58ff284edb2d0ca8bc5726274bb78a3ccc5
+  md5: 15c01df2edf0c2d30c4041999c21d4ec
+  depends:
+  - openimageio-lib ==2.5.19.1 ha41a7fa_0
+  - giflib
+  license: Apache-2.0
+  size: 109904
+  timestamp: 1781854070644
+- conda: https://conda.anaconda.org/anderslanglands/win-64/openimageio-format-webp-2.5.19.1-he52ce19_0.conda
+  sha256: 00f96ed70575223874a0a8201e5bf388ec8358731ea375d4d42b6524cec0eefc
+  md5: 815e19f409aefeba40c422514fa493a5
+  depends:
+  - openimageio-lib ==2.5.19.1 ha41a7fa_0
+  - libwebp
+  license: Apache-2.0
+  size: 100648
   timestamp: 1781854070644
 - conda: https://conda.anaconda.org/anderslanglands/win-64/openimageio-lib-2.5.19.1-ha41a7fa_0.conda
   sha256: fd5dba779c138ef0e1b0102e294e0081cd0e998c66fd76ac80f8f77f2c6cd032
@@ -1060,6 +1104,18 @@ packages:
     - libgcc >=14
   size: 29324
   timestamp: 1781279939286
+- conda: https://conda.anaconda.org/conda-forge/linux-64/giflib-5.2.2-hd590300_0.conda
+  sha256: aac402a8298f0c0cc528664249170372ef6b37ac39fdc92b40601a6aed1e32ff
+  md5: 3bf7b9fd5a7136126e0234db4b87c8b6
+  depends:
+  - libgcc-ng >=12
+  license: MIT
+  license_family: MIT
+  run_exports:
+    weak:
+    - giflib >=5.2.2,<5.3.0a0
+  size: 77248
+  timestamp: 1712692454246
 - conda: https://conda.anaconda.org/conda-forge/linux-64/glew-2.3.0-h71661d4_0.conda
   sha256: 535d152ee06e3d3015a5ab410dfea9574e1678e226fa166f859a0b9e1153e597
   md5: 7eefecda1c71c380bfc406d16e78bbee
@@ -2004,6 +2060,25 @@ packages:
     - libvulkan-loader >=1.4.341.0,<2.0a0
   size: 199795
   timestamp: 1770077125520
+- conda: https://conda.anaconda.org/conda-forge/linux-64/libwebp-1.6.0-h9635ea4_0.conda
+  sha256: 6ebd63ad14a601d715e5812c062e6c0c7a1fe9e9acacd8bd103de00a492f7b5f
+  md5: 2a4575ed55e0a4346722aac07ccd2b23
+  depends:
+  - __glibc >=2.17,<3.0.a0
+  - giflib >=5.2.2,<5.3.0a0
+  - libgcc >=14
+  - libjpeg-turbo >=3.1.0,<4.0a0
+  - libpng >=1.6.50,<1.7.0a0
+  - libtiff >=4.7.0,<4.8.0a0
+  - libwebp-base 1.6.0.*
+  - libwebp-base >=1.6.0,<2.0a0
+  license: BSD-3-Clause
+  license_family: BSD
+  run_exports:
+    weak:
+    - libwebp-base >=1.6.0,<2.0a0
+  size: 93944
+  timestamp: 1752167121836
 - conda: https://conda.anaconda.org/conda-forge/linux-64/libwebp-base-1.6.0-hd42ef1d_0.conda
   sha256: 3aed21ab28eddffdaf7f804f49be7a7d701e8f0e46c856d801270b470820a37b
   md5: aea31d2e5b1091feca96fcfe945c3cf9
@@ -3215,6 +3290,20 @@ packages:
     - fonts-conda-ecosystem
   size: 202630
   timestamp: 1780450217840
+- conda: https://conda.anaconda.org/conda-forge/win-64/giflib-5.2.2-h64bf75a_0.conda
+  sha256: 85fa240e749a1a88a588b6895c53f253d990697749b3a7b1ed8bb92ebb3d64c8
+  md5: 72f424715c78a04fd5b991ee5dca820f
+  depends:
+  - ucrt >=10.0.20348.0
+  - vc >=14.2,<15
+  - vc14_runtime >=14.29.30139
+  license: MIT
+  license_family: MIT
+  run_exports:
+    weak:
+    - giflib >=5.2.2,<5.3.0a0
+  size: 84497
+  timestamp: 1712692952874
 - conda: https://conda.anaconda.org/conda-forge/win-64/glew-2.3.0-hdfd1c44_0.conda
   sha256: a582ff0418d9b0bbe13d7f42c363506ebfc026b487569885a5cb01c88e2d8641
   md5: 993d65db21f7a63a21da83f0bc9adab4
@@ -3718,6 +3807,22 @@ packages:
     - libvulkan-loader >=1.4.341.0,<2.0a0
   size: 282251
   timestamp: 1770077165680
+- conda: https://conda.anaconda.org/conda-forge/win-64/libwebp-1.6.0-h4d5522a_0.conda
+  sha256: 9442e93a6e51bdfdeb1e3f90889f7ddea4e1127ceda5b19e97c0ad7c0aede5ca
+  md5: 151aee0a97a0234a289c781e2e48ce9a
+  depends:
+  - libwebp-base 1.6.0.*
+  - libwebp-base >=1.6.0,<2.0a0
+  - ucrt >=10.0.20348.0
+  - vc >=14.3,<15
+  - vc14_runtime >=14.44.35208
+  license: BSD-3-Clause
+  license_family: BSD
+  run_exports:
+    weak:
+    - libwebp-base >=1.6.0,<2.0a0
+  size: 72249
+  timestamp: 1752167597373
 - conda: https://conda.anaconda.org/conda-forge/win-64/libwebp-base-1.6.0-h4d5522a_0.conda
   sha256: 7b6316abfea1007e100922760e9b8c820d6fc19df3f42fb5aca684cfacb31843
   md5: f9bbae5e2537e3b06e0f7310ba76c893

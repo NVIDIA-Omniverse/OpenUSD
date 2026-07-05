@@ -7,6 +7,8 @@ channel-priority = "strict"
 [dependencies]
 python = "3.11.*"
 openimageio = "2.5.*"
+openimageio-format-gif = "2.5.*"
+openimageio-format-webp = "2.5.*"
 opensubdiv-gpu = "*"
 tbb = "*"
 pyside6 = "*"

@@ -21,7 +21,8 @@ enum class TextureAddressMode {
 enum class TextureFilterType {
     Closest,
     Linear,
-    Cubic
+    Cubic,
+    SmartBicubic
 };
 
 enum class TextureDataRole {

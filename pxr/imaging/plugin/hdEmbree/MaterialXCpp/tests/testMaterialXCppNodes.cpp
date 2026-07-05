@@ -2113,7 +2113,7 @@ static bool TestHexTiledImageBlendsThreeColorSamples() {
         return false;
     }
 
-    const Vec2f expectedSt(0.14433757f, -1.91666667f);
+    const Vec2f expectedSt(0.14433757f, 0.08333333f);
     const Vec2f expectedDstdx(0.25f, -0.75f);
     const Vec2f expectedDstdy(1.0f, 0.75f);
     for (const Texture2DRequest& request : textureSystem.requests) {
@@ -2123,7 +2123,7 @@ static bool TestHexTiledImageBlendsThreeColorSamples() {
             !Test_IsClose(request.dstdy, expectedDstdy) ||
             request.uAddressMode != TextureAddressMode::Periodic ||
             request.vAddressMode != TextureAddressMode::Periodic ||
-            request.filterType != TextureFilterType::Linear ||
+            request.filterType != TextureFilterType::SmartBicubic ||
             request.dataRole != TextureDataRole::Color ||
             request.sourceColorSpace != "srgb_texture" ||
             request.channelCount != 3) {
@@ -2164,6 +2164,55 @@ static bool TestHexTiledImageColor4BlendsAlphaSeparately() {
 
     const Vec4f expected(0.2f, 0.3f, 0.5f, (0.2f + 0.4f + 0.8f) / 3.0f);
     return Test_IsClose(_GetVec4(out), expected, 1e-5f);
+}
+
+static bool TestGltfNormalMapSamplesAndTransformsToWorld() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/gltf_normal.jpg"));
+    in["colorSpace:file"] = Value(std::string("none"));
+    in["texcoord"] = Value(Vec2f(0.25f, 0.75f));
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult = {
+        Vec4f(0.75f, 0.25f, 1.0f, 1.0f),
+        TextureSampleStatus::Ok};
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    ctx.normal = Vec3f(0.0f, 0.0f, 1.0f);
+    ctx.tangent = Vec3f(1.0f, 0.0f, 0.0f);
+    ctx.bitangent = Vec3f(0.0f, 1.0f, 0.0f);
+    ctx.dPdu = ctx.tangent;
+    ctx.dPdv = ctx.bitangent;
+
+    const NodeOutputMap out =
+        _EvalWithCtx("ND_gltf_normalmap_vector3_1_0", in, ctx);
+    if (textureSystem.requests.size() != 1) {
+        printf("    glTF normalmap should sample one texture\n");
+        return false;
+    }
+
+    const Texture2DRequest& request = textureSystem.lastRequest;
+    if (request.filePath != "/tmp/gltf_normal.jpg" ||
+        !Test_IsClose(request.st, Vec2f(0.25f, 0.75f)) ||
+        request.dataRole != TextureDataRole::NonColor ||
+        request.sourceColorSpace != "none" ||
+        request.channelCount != 3) {
+        printf("    glTF normalmap texture request mismatch\n");
+        return false;
+    }
+
+    const Vec3f expected =
+        Vec3f(0.5f, -0.5f, 1.0f).normalized();
+    if (!Test_IsClose(_GetVec3(out), expected, 1e-5f)) {
+        printf("    glTF normalmap tangent-frame conversion mismatch\n");
+        return false;
+    }
+
+    ParamMap missing;
+    const NodeOutputMap missingOut =
+        _EvalWithCtx("ND_gltf_normalmap_vector3_1_0", missing, ctx);
+    return Test_IsClose(_GetVec3(missingOut), ctx.normal, 1e-5f);
 }
 
 static bool TestTriplanarProjectionColor3SamplesAxesAndBlends() {
@@ -2815,6 +2864,7 @@ Test_RegisterNodeTests()
     _REG(TestLatLongImageReevaluatesConnectedViewdir);
     _REG(TestHexTiledImageBlendsThreeColorSamples);
     _REG(TestHexTiledImageColor4BlendsAlphaSeparately);
+    _REG(TestGltfNormalMapSamplesAndTransformsToWorld);
     _REG(TestTriplanarProjectionColor3SamplesAxesAndBlends);
     _REG(TestTriplanarProjectionReevaluatesConnectedPosition);
     _REG(TestTriplanarProjectionDefaultsNormalToObjectSpace);

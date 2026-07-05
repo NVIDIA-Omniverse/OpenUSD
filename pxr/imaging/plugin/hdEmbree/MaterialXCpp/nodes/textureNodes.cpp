@@ -155,20 +155,20 @@ _ComputeHexTileFootprint(const ParamMap& inputs, const ShadingContext& ctx)
 
     const Vec2f baseTexcoord =
         EvaluateInput<Vec2f>(inputs, _kTexcoord, ctx, ctx.texcoord);
-    const Vec2f coord = CompMul(
-        Vec2f(baseTexcoord[0], 1.0f - baseTexcoord[1]), tiling);
+    const Vec2f coord(
+        baseTexcoord[0] * tiling[0], 1.0f - baseTexcoord[1] * tiling[1]);
 
     const ShadingContext shiftedDx = OffsetContextDx(ctx);
     const Vec2f texcoordDx =
         EvaluateInput<Vec2f>(inputs, _kTexcoord, shiftedDx, shiftedDx.texcoord);
-    const Vec2f coordDx = CompMul(
-        Vec2f(texcoordDx[0], 1.0f - texcoordDx[1]), tiling);
+    const Vec2f coordDx(
+        texcoordDx[0] * tiling[0], 1.0f - texcoordDx[1] * tiling[1]);
 
     const ShadingContext shiftedDy = OffsetContextDy(ctx);
     const Vec2f texcoordDy =
         EvaluateInput<Vec2f>(inputs, _kTexcoord, shiftedDy, shiftedDy.texcoord);
-    const Vec2f coordDy = CompMul(
-        Vec2f(texcoordDy[0], 1.0f - texcoordDy[1]), tiling);
+    const Vec2f coordDy(
+        texcoordDy[0] * tiling[0], 1.0f - texcoordDy[1] * tiling[1]);
 
     const Vec2f baseDstdx = coordDx - coord;
     const Vec2f baseDstdy = coordDy - coord;
@@ -405,7 +405,7 @@ _EvalHexTiledImageNode(const ParamMap& inputs,
     request.filePath = filePath;
     request.uAddressMode = TextureAddressMode::Periodic;
     request.vAddressMode = TextureAddressMode::Periodic;
-    request.filterType = TextureFilterType::Linear;
+    request.filterType = TextureFilterType::SmartBicubic;
     request.frame = ctx.frame;
     request.dataRole = TextureDataRole::Color;
     request.sourceColorSpace = NormalizeColorSpace(
@@ -694,6 +694,52 @@ _EvalGltfImageVector3(const ParamMap& inputs,
 }
 
 static void
+_EvalGltfNormalMap(const ParamMap& inputs,
+                   const ShadingContext& ctx,
+                   NodeOutputMap* outputs)
+{
+    NodeOutputMap imageOutputs;
+    _EvalGltfImageVector3(inputs, ctx, &imageOutputs);
+
+    Vec3f value(0.0f);
+    const Value* const imageOutput = imageOutputs.Find(_kOut);
+    if (imageOutput && ValueHolds<Vec3f>(*imageOutput)) {
+        value = ValueGet<Vec3f>(*imageOutput);
+    }
+    if (Dot(value, value) == 0.0f) {
+        value = Vec3f(0.0f, 0.0f, 1.0f);
+    } else {
+        value = value * 2.0f - Vec3f(1.0f);
+    }
+
+    const Vec3f normal = ctx.normal;
+    Vec3f tangent = ctx.dPdu - normal * Dot(ctx.dPdu, normal);
+    if (Dot(tangent, tangent) < _kFloatEps * _kFloatEps) {
+        tangent = ctx.tangent;
+    } else {
+        tangent.normalize();
+    }
+
+    Vec3f bitangent = Cross(normal, tangent);
+    if (Dot(bitangent, bitangent) < _kFloatEps * _kFloatEps) {
+        bitangent = ctx.bitangent;
+    } else {
+        bitangent.normalize();
+    }
+
+    Vec3f result =
+        tangent * value[0] +
+        bitangent * value[1] +
+        normal * value[2];
+    if (Dot(result, result) < _kFloatEps * _kFloatEps) {
+        result = normal;
+    } else {
+        result.normalize();
+    }
+    (*outputs)[_kOut] = Value(result);
+}
+
+static void
 _EvalLatLongImageNode(const ParamMap& inputs,
                       const ShadingContext& ctx,
                       NodeOutputMap* outputs)
@@ -851,6 +897,10 @@ RegisterTextureNodes(NodeRegistry& reg)
     _REG("ND_hextiledimage_color4", &_EvalHexTiledImageNode<Vec4f>);
     _REG("ND_hextilednormalmap_vector3", &_EvalHexTiledNormalMap);
     _REG("ND_gltf_image_vector3_vector3_1_0", &_EvalGltfImageVector3);
+    _REG("ND_gltf_normalmap_vector3_1_0", &_EvalGltfNormalMap);
+    _REG("ND_gltf_normalmap_vector3", &_EvalGltfNormalMap);
+    _REG("ND_gltf_normalmap", &_EvalGltfNormalMap);
+
     _REG("UsdUVTexture", &_EvalUsdUvTextureNode);
     _REG("ND_UsdUVTexture", &_EvalUsdUvTextureNode);
     _REG("ND_UsdUVTexture_23", &_EvalUsdUvTextureNode);
