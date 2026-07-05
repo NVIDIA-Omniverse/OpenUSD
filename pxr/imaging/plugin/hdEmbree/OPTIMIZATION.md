@@ -155,6 +155,62 @@ The initial trace split 2.111 seconds in `HdEmbreeRenderer::Render()` as:
 For this scene, scene commit, setup, and AOV resolve are not primary
 optimization targets.
 
+## End-to-End `usdrender` Overhead
+
+The initial measurements leave approximately 0.53 seconds between the
+renderer-reported time and the end-to-end command time:
+
+| Measurement | Time |
+| --- | ---: |
+| `HdEmbreeRenderer` | approximately 2.13 s |
+| End-to-end `usdrender` | approximately 2.66 s |
+| Difference | approximately 0.53 s |
+
+Python `cProfile` and the OpenUSD trace give the following approximate
+breakdown for `input_coat_darkening`:
+
+| Phase | Time |
+| --- | ---: |
+| Python startup and USD module imports | approximately 115 ms |
+| PySide and OpenGL context creation | approximately 98 ms |
+| USD stage composition | approximately 47 ms |
+| Plugin loading, including hdEmbree | approximately 18 ms |
+| Hydra synchronization and execution | approximately 184 ms |
+| Embree mesh population, within Hydra synchronization | approximately 48 ms |
+| CPU-to-GPU AOV copies, within Hydra execution | approximately 65 ms |
+| EXR plugin loading and teardown | approximately 1 ms |
+
+These values are not strictly additive. hdEmbree renders asynchronously, so
+some Hydra task execution overlaps `HdEmbreeRenderer::Render()`.
+
+`usdrender` creates a PySide OpenGL context by default even when using the CPU
+Embree renderer. Passing `--disableGpu` avoids this path. Five focused runs
+measured:
+
+| Configuration | End-to-end time |
+| --- | ---: |
+| Default GPU-enabled `usdrender` | 2.6625 +/- 0.0200 s |
+| `usdrender --disableGpu` | 2.5749 +/- 0.0240 s |
+
+This saves approximately 88 ms, or 3.3%. OpenUSD warns that color correction
+is unavailable with the GPU disabled, but the GPU-enabled and GPU-disabled
+linear EXRs for this fixture passed an exact `oiiotool --diff` comparison.
+Broader fidelity coverage is still required before changing all test runs.
+
+A direct C++ implementation that retains `UsdAppUtils::FrameRecorder` and the
+same Hydra path would mainly remove Python startup, imports, and binding
+overhead. A reasonable estimate is a 100-150 ms reduction, not the full
+0.53 seconds. USD composition, Hydra and scene-index setup, mesh
+synchronization, renderer/plugin initialization, AOV handling, and image
+writing would remain.
+
+Bypassing `FrameRecorder`, Hgi, or Hydra could remove more overhead, but that
+would be a substantially different rendering path and would make the test
+runner less representative. For a suite containing many short renders, a
+persistent worker that amortizes interpreter, plugin, and render-framework
+initialization may provide more benefit than translating the command-line
+driver to C++.
+
 ## Prioritized Opportunities
 
 ### 1. Cache `HdEmbreeBufferSampler` metadata
