@@ -1,0 +1,11 @@
+#usda 1.0
+(
+    customLayerData = {
+        malformed_item=
+    }
+    defaultPrim = "Root"
+)
+
+def Xform "Root"
+{
+}

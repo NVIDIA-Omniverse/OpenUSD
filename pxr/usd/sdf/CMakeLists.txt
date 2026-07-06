@@ -345,6 +345,14 @@ pxr_build_test(testSdfLayerHints
         testenv/testSdfLayerHints.cpp
 )
 
+pxr_build_test(testSdfMalformedCustomData
+    LIBRARIES
+        sdf
+        tf
+    CPPFILES
+        testenv/testSdfMalformedCustomData.cpp
+)
+
 pxr_build_test(testSdfMetaDataPlugInfo
     LIBRARIES
         sdf
@@ -575,6 +583,12 @@ pxr_register_test(testSdfLayerHints
     COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testSdfLayerHints"
     TESTENV testenv/testSdfLayerHints.testenv
     TESTENV_DEST testSdfLayerHints/testSdfLayerHints.testenv
+)
+
+pxr_register_test(testSdfMalformedCustomData
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testSdfMalformedCustomData"
+    TESTENV testenv/testSdfMalformedCustomData.testenv
+    TESTENV_DEST testSdfMalformedCustomData/testSdfMalformedCustomData.testenv
 )
 
 pxr_register_test(testSdfLayerMuting
