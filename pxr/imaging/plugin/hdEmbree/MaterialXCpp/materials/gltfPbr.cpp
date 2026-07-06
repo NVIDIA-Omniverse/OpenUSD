@@ -249,7 +249,7 @@ EvalGltfPbr(const ParamMap& params)
 
     Bsdf::GeneralizedSchlickData reflection;
     reflection.color0 = dielectricF0;
-    reflection.color82 = dielectricF0;
+    reflection.color82 = Vec3f(1.0f);
     reflection.color90 = dielectricF90;
     reflection.roughness = baseRoughness;
     reflection.tangent = mainTangent;
@@ -267,7 +267,7 @@ EvalGltfPbr(const ParamMap& params)
 
     Bsdf::GeneralizedSchlickData metal;
     metal.color0 = baseColor;
-    metal.color82 = baseColor;
+    metal.color82 = Vec3f(1.0f);
     metal.color90 = Vec3f(1.0f);
     metal.roughness = baseRoughness;
     metal.tangent = mainTangent;

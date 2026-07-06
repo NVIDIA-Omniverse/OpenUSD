@@ -172,6 +172,19 @@ _EvalHeightFromTexcoordXSquared(const void*,
 }
 
 static bool
+_EvalRotationFromTexcoordX(const void*,
+                           int,
+                           SlotId,
+                           const ShadingContext& ctx,
+                           Value* out)
+{
+    if (out) {
+        *out = Value(ctx.texcoord[0] * 90.0f);
+    }
+    return true;
+}
+
+static bool
 _EvalViewdirFromTexcoord(const void*,
                          int,
                          SlotId,
@@ -2181,9 +2194,11 @@ static bool TestGltfNormalMapSamplesAndTransformsToWorld() {
     ctx.textureSystem = &textureSystem;
     ctx.normal = Vec3f(0.0f, 0.0f, 1.0f);
     ctx.tangent = Vec3f(1.0f, 0.0f, 0.0f);
-    ctx.bitangent = Vec3f(0.0f, 1.0f, 0.0f);
+    // Deliberately disagree with dPdv so the test verifies the generated
+    // OSL normalmap frame is derived from dPdu/dPdv.
+    ctx.bitangent = Vec3f(0.0f, -1.0f, 0.0f);
     ctx.dPdu = ctx.tangent;
-    ctx.dPdv = ctx.bitangent;
+    ctx.dPdv = Vec3f(0.0f, 1.0f, 0.0f);
 
     const NodeOutputMap out =
         _EvalWithCtx("ND_gltf_normalmap_vector3_1_0", in, ctx);
@@ -2213,6 +2228,144 @@ static bool TestGltfNormalMapSamplesAndTransformsToWorld() {
     const NodeOutputMap missingOut =
         _EvalWithCtx("ND_gltf_normalmap_vector3_1_0", missing, ctx);
     return Test_IsClose(_GetVec3(missingOut), ctx.normal, 1e-5f);
+}
+
+static bool TestGltfNormalMapReevaluatesConnectedTransformInputs() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/gltf_normal.jpg"));
+    in["pivot"] = Value(Vec2f(0.0f));
+    in.Add(
+        AsSlotId("rotate"),
+        nullptr,
+        &_EvalRotationFromTexcoordX,
+        nullptr,
+        -1,
+        InvalidSlotId);
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult = {
+        Vec4f(0.5f, 0.5f, 1.0f, 1.0f),
+        TextureSampleStatus::Ok};
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    ctx.texcoord = Vec2f(0.0f);
+    ctx.dudx = 0.1f;
+    ctx.dvdy = 0.1f;
+
+    _EvalWithCtx("ND_gltf_normalmap_vector3_1_0", in, ctx);
+    const Texture2DRequest& request = textureSystem.lastRequest;
+    return Test_IsClose(request.st, Vec2f(0.0f)) &&
+           Test_IsClose(
+               request.dstdx,
+               Vec2f(-0.0576656f, -0.0033318f),
+               1e-5f) &&
+           Test_IsClose(request.dstdy, Vec2f(0.0f, 0.1f), 1e-5f);
+}
+
+static bool TestGltfImageColor3SamplesAndAppliesFactor() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/gltf_color.png"));
+    in["colorSpace:file"] = Value(std::string("srgb_texture"));
+    in["factor"] = Value(Vec3f(0.5f, 0.25f, 0.75f));
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult = {
+        Vec4f(0.8f, 0.6f, 0.4f, 1.0f),
+        TextureSampleStatus::Ok};
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    const NodeOutputMap out = _EvalWithCtx(
+        "ND_gltf_image_color3_color3_1_0", in, ctx);
+
+    const Texture2DRequest& request = textureSystem.lastRequest;
+    return Test_IsClose(_GetVec3(out), Vec3f(0.4f, 0.15f, 0.3f)) &&
+           request.dataRole == TextureDataRole::Color &&
+           request.sourceColorSpace == "srgb_texture" &&
+           request.channelCount == 3;
+}
+
+static bool TestGltfColorImageModulatesRgbAndAlpha() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/gltf_color.png"));
+    in["color"] = Value(Vec4f(0.5f, 1.0f, 0.25f, 0.5f));
+    in["geomcolor"] = Value(Vec4f(0.5f, 0.25f, 1.0f, 0.5f));
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult = {
+        Vec4f(0.8f, 0.6f, 0.4f, 0.2f),
+        TextureSampleStatus::Ok};
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    const NodeOutputMap out =
+        _EvalWithCtx("ND_gltf_colorimage", in, ctx);
+
+    const Texture2DRequest& request = textureSystem.lastRequest;
+    return Test_IsClose(
+               _GetVec3(out, "outcolor"),
+               Vec3f(0.2f, 0.15f, 0.1f)) &&
+           Test_IsClose(_GetFloat(out, "outa"), 0.05f) &&
+           request.dataRole == TextureDataRole::Color &&
+           request.channelCount == 4;
+}
+
+static bool TestGltfIridescenceThicknessUsesGreenChannel() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/gltf_thickness.png"));
+    in["thicknessMin"] = Value(120.0f);
+    in["thicknessMax"] = Value(900.0f);
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult = {
+        Vec4f(0.1f, 0.25f, 0.9f, 1.0f),
+        TextureSampleStatus::Ok};
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    const NodeOutputMap out = _EvalWithCtx(
+        "ND_gltf_iridescence_thickness_float_1_0", in, ctx);
+
+    const Texture2DRequest& request = textureSystem.lastRequest;
+    return Test_IsClose(_GetFloat(out), 705.0f) &&
+           request.dataRole == TextureDataRole::NonColor &&
+           request.channelCount == 3;
+}
+
+static bool TestGltfAnisotropyImageDecodesDirectionAndStrength() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/gltf_anisotropy.png"));
+    in["anisotropy_strength"] = Value(0.8f);
+    in["anisotropy_rotation"] = Value(0.25f);
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult = {
+        Vec4f(0.5f, 1.0f, 0.75f, 1.0f),
+        TextureSampleStatus::Ok};
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+    const NodeOutputMap out =
+        _EvalWithCtx("ND_gltf_anisotropy_image", in, ctx);
+
+    const Texture2DRequest& request = textureSystem.lastRequest;
+    return Test_IsClose(
+               _GetFloat(out, "anisotropy_strength_out"), 0.6f) &&
+           Test_IsClose(
+               _GetFloat(out, "anisotropy_rotation_out"),
+               0.25f + 1.57079632679f) &&
+           request.dataRole == TextureDataRole::NonColor &&
+           request.channelCount == 3;
+}
+
+static bool TestGltfAnisotropyImageUsesSpecificationDefault() {
+    const NodeOutputMap out =
+        _EvalWithCtx("ND_gltf_anisotropy_image", ParamMap(), ShadingContext());
+    return Test_IsClose(
+               _GetFloat(out, "anisotropy_strength_out"), 1.0f) &&
+           Test_IsClose(
+               _GetFloat(out, "anisotropy_rotation_out"), 0.0f);
 }
 
 static bool TestTriplanarProjectionColor3SamplesAxesAndBlends() {
@@ -2865,6 +3018,12 @@ Test_RegisterNodeTests()
     _REG(TestHexTiledImageBlendsThreeColorSamples);
     _REG(TestHexTiledImageColor4BlendsAlphaSeparately);
     _REG(TestGltfNormalMapSamplesAndTransformsToWorld);
+    _REG(TestGltfNormalMapReevaluatesConnectedTransformInputs);
+    _REG(TestGltfImageColor3SamplesAndAppliesFactor);
+    _REG(TestGltfColorImageModulatesRgbAndAlpha);
+    _REG(TestGltfIridescenceThicknessUsesGreenChannel);
+    _REG(TestGltfAnisotropyImageDecodesDirectionAndStrength);
+    _REG(TestGltfAnisotropyImageUsesSpecificationDefault);
     _REG(TestTriplanarProjectionColor3SamplesAxesAndBlends);
     _REG(TestTriplanarProjectionReevaluatesConnectedPosition);
     _REG(TestTriplanarProjectionDefaultsNormalToObjectSpace);

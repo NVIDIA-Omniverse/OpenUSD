@@ -32,7 +32,18 @@ static const SlotName _kTexcoord("texcoord");
 static const SlotName _kSt("st");
 static const SlotName _kViewdir("viewdir");
 static const SlotName _kOut("out");
+static const SlotName _kOutColor("outcolor");
+static const SlotName _kOutA("outa");
 static const SlotName _kDefaultVal("default");
+static const SlotName _kFactor("factor");
+static const SlotName _kColor("color");
+static const SlotName _kGeomColor("geomcolor");
+static const SlotName _kThicknessMin("thicknessMin");
+static const SlotName _kThicknessMax("thicknessMax");
+static const SlotName _kAnisotropyStrength("anisotropy_strength");
+static const SlotName _kAnisotropyRotation("anisotropy_rotation");
+static const SlotName _kAnisotropyStrengthOut("anisotropy_strength_out");
+static const SlotName _kAnisotropyRotationOut("anisotropy_rotation_out");
 static const SlotName _kFallback("fallback");
 static const SlotName _kUAddressMode("uaddressmode");
 static const SlotName _kVAddressMode("vaddressmode");
@@ -617,19 +628,27 @@ _EvalTextureNode(const ParamMap& inputs,
     (*outputs)[_kOut] = Value(TextureValueTraits<T>::FromVec4(sampled.value));
 }
 static Vec2f
-_ComputeGltfImageCoord(const ParamMap& inputs, const ShadingContext& ctx)
+_ComputeGltfImageCoord(const ParamMap& inputs,
+                       const ShadingContext& ctx,
+                       const bool useGltfTextureSpace)
 {
     const Vec2f texcoord =
         EvaluateInput<Vec2f>(inputs, _kTexcoord, ctx, ctx.texcoord);
-    const Vec2f pivot = Get<Vec2f>(inputs, _kPivot, Vec2f(0.0f, 1.0f));
-    const Vec2f scale = Get<Vec2f>(inputs, _kScale, Vec2f(1.0f));
-    const float rotate = Get<float>(inputs, _kRotate, 0.0f);
-    const Vec2f offset = Get<Vec2f>(inputs, _kOffset, Vec2f(0.0f));
-    const int order = Get<int>(inputs, _kOperationOrder, 0);
+    const Vec2f pivot =
+        EvaluateInput<Vec2f>(inputs, _kPivot, ctx, Vec2f(0.0f, 1.0f));
+    const Vec2f scale =
+        EvaluateInput<Vec2f>(inputs, _kScale, ctx, Vec2f(1.0f));
+    const float rotate =
+        EvaluateInput<float>(inputs, _kRotate, ctx, 0.0f);
+    const Vec2f offset =
+        EvaluateInput<Vec2f>(inputs, _kOffset, ctx, Vec2f(0.0f));
+    const int order =
+        EvaluateInput<int>(inputs, _kOperationOrder, ctx, 0);
 
-    // Express the glTF nodegraph's inverse-scale, negated-rotation and
-    // Y-adjusted-offset wiring directly using place2d semantics.
-    Vec2f result = texcoord - pivot;
+    Vec2f result = useGltfTextureSpace
+        ? Vec2f(texcoord[0], 1.0f - texcoord[1])
+        : texcoord;
+    result -= pivot;
     const Vec2f gltfOffset(-offset[0], offset[1]);
     if (order == 0) {
         result = CompMul(result, scale);
@@ -640,35 +659,66 @@ _ComputeGltfImageCoord(const ParamMap& inputs, const ShadingContext& ctx)
         result = Rotate2d(result, -rotate);
         result = CompMul(result, scale);
     }
-    return result + pivot;
+    result += pivot;
+    return useGltfTextureSpace
+        ? Vec2f(result[0], 1.0f - result[1])
+        : result;
 }
 
+template<
+    typename T,
+    TextureDataRole DataRole,
+    bool ApplyFactor,
+    bool UseGltfTextureSpace = false>
 static void
-_EvalGltfImageVector3(const ParamMap& inputs,
-                      const ShadingContext& ctx,
-                      NodeOutputMap* outputs)
+_EvalGltfImage(const ParamMap& inputs,
+               const ShadingContext& ctx,
+               NodeOutputMap* outputs)
 {
-    const Vec3f defaultValue =
-        Get<Vec3f>(inputs, _kDefaultVal, Vec3f(0.0f));
+    const T defaultValue =
+        EvaluateInput<T>(inputs, _kDefaultVal, ctx, T(0.0f));
     const std::string filePath =
         Get<std::string>(inputs, _kFile, std::string());
     if (!ctx.textureSystem || filePath.empty()) {
-        (*outputs)[_kOut] = Value(defaultValue);
+        T result = defaultValue;
+        if constexpr (ApplyFactor) {
+            const T factor =
+                EvaluateInput<T>(inputs, _kFactor, ctx, T(1.0f));
+            if constexpr (std::is_arithmetic_v<T>) {
+                result *= factor;
+            } else {
+                result = CompMul(result, factor);
+            }
+        }
+        (*outputs)[_kOut] = Value(result);
         return;
     }
 
-    const Vec2f st = _ComputeGltfImageCoord(inputs, ctx);
+    const Vec2f st =
+        _ComputeGltfImageCoord(inputs, ctx, UseGltfTextureSpace);
     const Vec2f stDx =
-        _ComputeGltfImageCoord(inputs, OffsetContextDx(ctx));
+        _ComputeGltfImageCoord(
+            inputs, OffsetContextDx(ctx), UseGltfTextureSpace);
     const Vec2f stDy =
-        _ComputeGltfImageCoord(inputs, OffsetContextDy(ctx));
+        _ComputeGltfImageCoord(
+            inputs, OffsetContextDy(ctx), UseGltfTextureSpace);
     const TextureAddressMode uAddressMode =
         GetAddressMode(inputs, _kUAddressMode, "periodic");
     const TextureAddressMode vAddressMode =
         GetAddressMode(inputs, _kVAddressMode, "periodic");
     if (UsesConstantDefaultOutside(uAddressMode, st[0]) ||
         UsesConstantDefaultOutside(vAddressMode, st[1])) {
-        (*outputs)[_kOut] = Value(defaultValue);
+        T result = defaultValue;
+        if constexpr (ApplyFactor) {
+            const T factor =
+                EvaluateInput<T>(inputs, _kFactor, ctx, T(1.0f));
+            if constexpr (std::is_arithmetic_v<T>) {
+                result *= factor;
+            } else {
+                result = CompMul(result, factor);
+            }
+        }
+        (*outputs)[_kOut] = Value(result);
         return;
     }
 
@@ -681,16 +731,113 @@ _EvalGltfImageVector3(const ParamMap& inputs,
     request.vAddressMode = vAddressMode;
     request.filterType = GetFilterType(inputs, _kFilterType);
     request.frame = ctx.frame;
-    request.dataRole = TextureDataRole::NonColor;
+    request.dataRole = DataRole;
     request.sourceColorSpace = NormalizeColorSpace(
         Get<std::string>(inputs, _kFileColorSpace, std::string()));
-    request.channelCount = 3;
-    request.channelFillValue = 0.0f;
-    request.defaultValue = TextureValueTraits<Vec3f>::ToVec4(defaultValue);
+    request.channelCount = TextureValueTraits<T>::kChannelCount;
+    if constexpr (DataRole == TextureDataRole::Color) {
+        request.channelFillValue = 1.0f;
+    } else {
+        request.channelFillValue = TextureValueTraits<T>::kFillValue;
+    }
+    request.defaultValue = TextureValueTraits<T>::ToVec4(defaultValue);
 
     const Texture2DResult sampled = ctx.textureSystem->Sample2D(request);
+    T result = TextureValueTraits<T>::FromVec4(sampled.value);
+    if constexpr (ApplyFactor) {
+        const T factor =
+            EvaluateInput<T>(inputs, _kFactor, ctx, T(1.0f));
+        if constexpr (std::is_arithmetic_v<T>) {
+            result *= factor;
+        } else {
+            result = CompMul(result, factor);
+        }
+    }
+    (*outputs)[_kOut] = Value(result);
+}
+
+static void
+_EvalGltfImageVector3(const ParamMap& inputs,
+                      const ShadingContext& ctx,
+                      NodeOutputMap* outputs)
+{
+    _EvalGltfImage<Vec3f, TextureDataRole::NonColor, false>(
+        inputs, ctx, outputs);
+}
+
+static void
+_EvalGltfColorImage(const ParamMap& inputs,
+                    const ShadingContext& ctx,
+                    NodeOutputMap* outputs)
+{
+    NodeOutputMap imageOutputs;
+    _EvalGltfImage<
+        Vec4f, TextureDataRole::Color, false>(inputs, ctx, &imageOutputs);
+
+    Vec4f image(0.0f);
+    if (const Value* value = imageOutputs.Find(_kOut);
+        value && ValueHolds<Vec4f>(*value)) {
+        image = ValueGet<Vec4f>(*value);
+    }
+    const Vec4f color =
+        EvaluateInput<Vec4f>(inputs, _kColor, ctx, Vec4f(1.0f));
+    const Vec4f geomColor =
+        EvaluateInput<Vec4f>(inputs, _kGeomColor, ctx, Vec4f(1.0f));
+    const Vec4f result = CompMul(CompMul(image, color), geomColor);
+    (*outputs)[_kOutColor] =
+        Value(Vec3f(result[0], result[1], result[2]));
+    (*outputs)[_kOutA] = Value(result[3]);
+}
+
+static void
+_EvalGltfIridescenceThickness(const ParamMap& inputs,
+                              const ShadingContext& ctx,
+                              NodeOutputMap* outputs)
+{
+    NodeOutputMap imageOutputs;
+    _EvalGltfImageVector3(inputs, ctx, &imageOutputs);
+
+    float green = 0.0f;
+    if (const Value* value = imageOutputs.Find(_kOut);
+        value && ValueHolds<Vec3f>(*value)) {
+        green = ValueGet<Vec3f>(*value)[1];
+    }
+    const float thicknessMin =
+        EvaluateInput<float>(inputs, _kThicknessMin, ctx, 100.0f);
+    const float thicknessMax =
+        EvaluateInput<float>(inputs, _kThicknessMax, ctx, 400.0f);
     (*outputs)[_kOut] =
-        Value(TextureValueTraits<Vec3f>::FromVec4(sampled.value));
+        Value(Mix(thicknessMax, thicknessMin, green));
+}
+
+static void
+_EvalGltfAnisotropyImage(const ParamMap& inputs,
+                         const ShadingContext& ctx,
+                         NodeOutputMap* outputs)
+{
+    ParamMap imageInputs = inputs;
+    if (!imageInputs.Find(_kDefaultVal)) {
+        imageInputs[_kDefaultVal] = Value(Vec3f(1.0f, 0.5f, 1.0f));
+    }
+    NodeOutputMap imageOutputs;
+    _EvalGltfImageVector3(imageInputs, ctx, &imageOutputs);
+
+    Vec3f image(1.0f, 0.5f, 1.0f);
+    if (const Value* value = imageOutputs.Find(_kOut);
+        value && ValueHolds<Vec3f>(*value)) {
+        image = ValueGet<Vec3f>(*value);
+    }
+
+    const float strength = EvaluateInput<float>(
+        inputs, _kAnisotropyStrength, ctx, 1.0f);
+    const float rotation = EvaluateInput<float>(
+        inputs, _kAnisotropyRotation, ctx, 0.0f);
+    const float directionX = image[0] * 2.0f - 1.0f;
+    const float directionY = image[1] * 2.0f - 1.0f;
+
+    (*outputs)[_kAnisotropyStrengthOut] = Value(strength * image[2]);
+    (*outputs)[_kAnisotropyRotationOut] =
+        Value(rotation + std::atan2(directionY, directionX));
 }
 
 static void
@@ -699,7 +846,9 @@ _EvalGltfNormalMap(const ParamMap& inputs,
                    NodeOutputMap* outputs)
 {
     NodeOutputMap imageOutputs;
-    _EvalGltfImageVector3(inputs, ctx, &imageOutputs);
+    _EvalGltfImage<
+        Vec3f, TextureDataRole::NonColor, false, true>(
+            inputs, ctx, &imageOutputs);
 
     Vec3f value(0.0f);
     const Value* const imageOutput = imageOutputs.Find(_kOut);
@@ -720,7 +869,13 @@ _EvalGltfNormalMap(const ParamMap& inputs,
         tangent.normalize();
     }
 
-    Vec3f bitangent = Cross(normal, tangent);
+    // Match the generated OSL normalmap implementation: Bworld is dPdv,
+    // then the normalmap function Gram-Schmidt orthogonalizes it against N
+    // and the normalized tangent.
+    Vec3f bitangent =
+        ctx.dPdv -
+        normal * Dot(ctx.dPdv, normal) -
+        tangent * Dot(ctx.dPdv, tangent);
     if (Dot(bitangent, bitangent) < _kFloatEps * _kFloatEps) {
         bitangent = ctx.bitangent;
     } else {
@@ -896,7 +1051,17 @@ RegisterTextureNodes(NodeRegistry& reg)
     _REG("ND_hextiledimage_color3", &_EvalHexTiledImageNode<Vec3f>);
     _REG("ND_hextiledimage_color4", &_EvalHexTiledImageNode<Vec4f>);
     _REG("ND_hextilednormalmap_vector3", &_EvalHexTiledNormalMap);
+    _REG("ND_gltf_colorimage", &_EvalGltfColorImage);
+    _REG("ND_gltf_image_color3_color3_1_0",
+         &_EvalGltfImage<Vec3f, TextureDataRole::Color, true>);
+    _REG("ND_gltf_image_color4_color4_1_0",
+         &_EvalGltfImage<Vec4f, TextureDataRole::Color, true>);
+    _REG("ND_gltf_image_float_float_1_0",
+         &_EvalGltfImage<float, TextureDataRole::NonColor, true>);
     _REG("ND_gltf_image_vector3_vector3_1_0", &_EvalGltfImageVector3);
+    _REG("ND_gltf_iridescence_thickness_float_1_0",
+         &_EvalGltfIridescenceThickness);
+    _REG("ND_gltf_anisotropy_image", &_EvalGltfAnisotropyImage);
     _REG("ND_gltf_normalmap_vector3_1_0", &_EvalGltfNormalMap);
     _REG("ND_gltf_normalmap_vector3", &_EvalGltfNormalMap);
     _REG("ND_gltf_normalmap", &_EvalGltfNormalMap);

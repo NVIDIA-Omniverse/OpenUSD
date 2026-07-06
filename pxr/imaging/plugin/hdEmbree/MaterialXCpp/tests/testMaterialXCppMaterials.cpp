@@ -2052,6 +2052,39 @@ TestGltfPbrIridescenceParametersReachBsdf()
 }
 
 static bool
+TestGltfPbrUsesDefaultWhiteColor82()
+{
+    const Vec3f baseColor(0.2f, 0.4f, 0.7f);
+
+    ParamMap params;
+    params["base_color"] = Value(baseColor);
+    params["metallic"] = Value(0.5f);
+    params["specular"] = Value(0.5f);
+    params["ior"] = Value(1.5f);
+
+    const SurfaceClosure c = EvalGltfPbr(params);
+    const auto* dielectric = FindNodeIf<Bsdf::GeneralizedSchlickData>(
+        c.bsdfTree,
+        [&baseColor](const Bsdf::GeneralizedSchlickData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Reflection &&
+                   !Test_IsClose(data.color0, baseColor, 1e-4f);
+        });
+    const auto* metal = FindNodeIf<Bsdf::GeneralizedSchlickData>(
+        c.bsdfTree,
+        [&baseColor](const Bsdf::GeneralizedSchlickData& data) {
+            return Test_IsClose(data.color0, baseColor, 1e-4f);
+        });
+
+    if (!dielectric || !metal) {
+        printf("    Failed to find both glTF generalized-Schlick branches\n");
+        return false;
+    }
+
+    return Test_IsClose(dielectric->color82, Vec3f(1.0f), 1e-4f) &&
+           Test_IsClose(metal->color82, Vec3f(1.0f), 1e-4f);
+}
+
+static bool
 TestGltfPbrDispersionStrengthReachesTransmissionAsAbbeNumber()
 {
     ParamMap params;
@@ -2493,6 +2526,7 @@ Test_RegisterMaterialTests()
     _REG(TestGltfPbrDefaults);
     _REG(TestGltfPbrAlphaMask);
     _REG(TestGltfPbrIridescenceParametersReachBsdf);
+    _REG(TestGltfPbrUsesDefaultWhiteColor82);
     _REG(TestGltfPbrDispersionStrengthReachesTransmissionAsAbbeNumber);
     _REG(TestGltfPbrClearcoatNormalReachesBsdf);
     _REG(TestGltfPbrClearcoatInheritsGeometricNormalByDefault);
