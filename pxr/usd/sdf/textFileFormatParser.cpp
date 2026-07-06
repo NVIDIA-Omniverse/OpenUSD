@@ -514,6 +514,25 @@ struct TextParserAction<KeywordCustomData>
 };
 
 template <>
+struct TextParserAction<EmptyCustomDataEntry>
+{
+    template <class Input>
+    static void apply(
+        const Input& in,
+        Sdf_TextParserContext& context)
+    {
+        TF_WARN(
+            "Skipping malformed custom data entry '%s' on line %zu%s%s; "
+            "custom data entries require a type, key, and value.",
+            in.string().c_str(),
+            in.position().line,
+            context.fileContext.empty() ? "" : " in file ",
+            context.fileContext.empty() ? "" :
+                context.fileContext.c_str());
+    }
+};
+
+template <>
 struct TextParserAction<KeywordSymmetryArguments>
 {
     template <class Input>
@@ -1944,6 +1963,12 @@ struct TextParserAction<DictionaryValue>
             _PopContext(context);
         }
     }
+};
+
+template <>
+struct TextParserAction<RecoveringCustomDataDictionaryValue> :
+    TextParserAction<DictionaryValue>
+{
 };
 
 template <>

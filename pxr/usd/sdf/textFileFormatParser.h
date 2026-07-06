@@ -636,6 +636,48 @@ struct MetadataBlock :PEGTL_NS::if_must<
     MetadataClose> {};
 
 
+struct EmptyCustomDataEntry : PEGTL_NS::seq<
+    // Prevent DictionaryKey/String actions from modifying parser state.
+    PEGTL_NS::disable<DictionaryKey>,
+    Assignment,
+
+    // Recovery is safe only when the RHS is empty and the statement ends.
+    PEGTL_NS::at<PEGTL_NS::sor<
+        StatementSeparator,
+        DictionaryValueClose,
+        Comment>>
+> {};
+
+struct RecoveringCustomDataDictionaryValue;
+
+struct RecoveringCustomDataDictionaryItem : PEGTL_NS::sor<
+    EmptyCustomDataEntry,
+
+    // Nested custom-data dictionaries should get the same recovery.
+    PEGTL_NS::if_must<
+        KeywordDictionary,
+        TokenSeparator,
+        DictionaryKey,
+        Assignment,
+        RecoveringCustomDataDictionaryValue>,
+
+    PEGTL_NS::seq<
+        DictionaryType,
+        TokenSeparator,
+        DictionaryKey,
+        Assignment,
+        TypedValue>
+> {};
+
+struct RecoveringCustomDataDictionaryValue : PEGTL_NS::if_must<
+    DictionaryValueOpen,
+    PEGTL_NS::pad_opt<
+        StatementSequenceOf<RecoveringCustomDataDictionaryItem>,
+        MultilinePadding>,
+    DictionaryValueClose> {};
+
+
+
 // MetadataKey = customData /
 //               symmetryArguments /
 //               Identifier
@@ -652,6 +694,7 @@ struct KeyValueMetadata : PEGTL_NS::seq<
     Assignment,
     PEGTL_NS::sor<
         KeywordNone,
+        RecoveringCustomDataDictionaryValue,
         DictionaryValue,
         TypedValue>> {};
 struct LayerKeyValueMetadata : PEGTL_NS::seq<
@@ -659,6 +702,7 @@ struct LayerKeyValueMetadata : PEGTL_NS::seq<
     Assignment,
     PEGTL_NS::sor<
         KeywordNone,
+        RecoveringCustomDataDictionaryValue,
         DictionaryValue,
         TypedValue>> {};
 
@@ -1245,7 +1289,9 @@ struct ReferenceParameter : PEGTL_NS::sor<
     PEGTL_NS::seq<
         KeywordCustomData,
         Assignment,
-        DictionaryValue>,
+        PEGTL_NS::sor<
+            RecoveringCustomDataDictionaryValue,
+            DictionaryValue>>,
     LayerOffset> {};
 
 // ReferenceParameterList = (TokenSeparator)? ReferenceParameter
