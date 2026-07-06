@@ -250,31 +250,30 @@ _ColorCorrectRgb(Vec3f c, float hue, float saturation, float gamma,
                  float lift, float gain, float contrast,
                  float contrastpivot, float exposure)
 {
-    // 1. HSV adjust: hue rotation + saturation
+    // Match NG_colorcorrect_color3 in the MaterialX standard library.
+    // Hue is an HSV adjustment, while saturation is the separate
+    // luminance-based saturate node.
     Vec3f hsv = RgbToHsv(c);
     hsv[0] = std::fmod(hsv[0] + hue, 1.0f);
     if (hsv[0] < 0.0f) hsv[0] += 1.0f;
-    hsv[1] *= saturation;
     c = HsvToRgb(hsv);
 
-    // 2. Exposure: multiply by 2^exposure
-    float expMul = std::pow(2.0f, exposure);
-    c *= expMul;
+    const Vec3f luma = AcesCgLumaCoeffs();
+    const float gray = Dot(c, luma);
+    c = Vec3f(gray) + (c - Vec3f(gray)) * saturation;
 
-    // 3. Contrast
-    c = Vec3f(contrastpivot) + (c - Vec3f(contrastpivot)) * contrast;
-
-    // 4. Gamma (apply 1/gamma)
-    if (gamma > 0.0f) {
-        float invGamma = 1.0f / gamma;
-        c[0] = c[0] > 0.0f ? std::pow(c[0], invGamma) : 0.0f;
-        c[1] = c[1] > 0.0f ? std::pow(c[1], invGamma) : 0.0f;
-        c[2] = c[2] > 0.0f ? std::pow(c[2], invGamma) : 0.0f;
+    const float invGamma = 1.0f / gamma;
+    for (int channel = 0; channel < 3; ++channel) {
+        c[channel] =
+            c[channel] > 0.0f && invGamma != 0.0f
+            ? std::pow(c[channel], invGamma)
+            : 0.0f;
     }
 
-    // 5. Lift and Gain
     c = c * (Vec3f(1.0f) - Vec3f(lift)) + Vec3f(lift);
     c *= gain;
+    c = Vec3f(contrastpivot) + (c - Vec3f(contrastpivot)) * contrast;
+    c *= std::pow(2.0f, exposure);
 
     return c;
 }

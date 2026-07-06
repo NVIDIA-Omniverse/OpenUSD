@@ -74,7 +74,7 @@ static float _BurnF(float fg, float bg) {
 
 static float _DodgeF(float fg, float bg) {
     float denom = 1.0f - fg;
-    return (std::abs(denom) < _kEps) ? 1.0f : bg / denom;
+    return (std::abs(denom) < _kEps) ? 0.0f : bg / denom;
 }
 
 static float _ScreenF(float fg, float bg) {

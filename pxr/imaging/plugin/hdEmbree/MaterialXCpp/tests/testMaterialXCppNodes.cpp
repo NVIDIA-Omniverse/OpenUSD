@@ -883,7 +883,7 @@ static bool TestCompositingDodge() {
 
     in["fg"] = Value(1.0f);
     out = _Eval("ND_dodge_float", in);
-    return Test_IsClose(_GetFloat(out), 1.0f);
+    return Test_IsClose(_GetFloat(out), 0.0f);
 }
 
 static bool TestCompositingScreen() {
@@ -2746,6 +2746,23 @@ static bool TestLuminance() {
     return true;
 }
 
+static bool TestColorCorrectUsesCanonicalNodeOrder() {
+    ParamMap in;
+    in["in"] = Value(Vec3f(1.0215262f, 0.12157982f, 0.3721071f));
+    in["hue"] = Value(0.08f);
+    in["saturation"] = Value(1.25f);
+    in["gamma"] = Value(0.95f);
+    in["lift"] = Value(0.02f);
+    in["gain"] = Value(1.1f);
+    in["contrast"] = Value(1.2f);
+    in["contrastpivot"] = Value(0.5f);
+    in["exposure"] = Value(0.15f);
+
+    const NodeOutputMap out = _Eval("ND_colorcorrect_color3", in);
+    const Vec3f expected(1.5882975f, 0.2611460f, -0.0461693f);
+    return Test_IsClose(_GetVec3(out), expected, 1e-5f);
+}
+
 static bool TestColorTransformG22Rec709FallbackClamp() {
     ParamMap in;
     in["in"] = Value(Vec3f(-1.0f, 0.5f, 2.0f));
@@ -3032,6 +3049,7 @@ Test_RegisterNodeTests()
     _REG(TestBumpDefaultBasis);
     _REG(TestNormalMapVariants);
     _REG(TestLuminance);
+    _REG(TestColorCorrectUsesCanonicalNodeOrder);
     _REG(TestColorTransformG22Rec709FallbackClamp);
     _REG(TestColorTransformSrgbTextureFallbackPiecewise);
     _REG(TestColorTransformAcescgMatrix);
