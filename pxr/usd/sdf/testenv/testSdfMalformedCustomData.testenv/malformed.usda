@@ -1,11 +1,31 @@
 #usda 1.0
 (
     customLayerData = {
-        malformed_item=
+        string before = "before"
+        malformed_layer=
+        dictionary nested = {
+            int retained = 7
+            malformed_nested=}
+        string after = "after"
     }
     defaultPrim = "Root"
 )
 
-def Xform "Root"
+def Xform "Root" (
+    customData = {
+        string before = "before"
+        malformed_prim= # Keep parsing after a trailing comment.
+        string after = "after"
+    }
+    references = </Target> (
+        customData = {
+            malformed_reference=; int retained = 42
+        }
+    )
+)
+{
+}
+
+def Xform "Target"
 {
 }

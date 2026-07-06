@@ -23,6 +23,7 @@
 #include "pxr/base/ts/valueTypeDispatch.h"
 #include "pxr/usd/ar/asset.h"
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 
@@ -521,6 +522,31 @@ struct TextParserAction<EmptyCustomDataEntry>
         const Input& in,
         Sdf_TextParserContext& context)
     {
+        // EmptyCustomDataEntry participates in the shared dictionary grammar;
+        // only accept it when the dictionary is destined for custom data.
+        using ParsingContext = Sdf_TextParserCurrentParsingContext;
+        const bool isCustomDataContext = std::any_of(
+            context.parsingContext.begin(),
+            context.parsingContext.end(),
+            [&context](ParsingContext parsingContext) {
+                return (parsingContext == ParsingContext::KeyValueMetadata &&
+                        (context.genericMetadataKey ==
+                             SdfFieldKeys->CustomData ||
+                         context.genericMetadataKey ==
+                             SdfFieldKeys->CustomLayerData)) ||
+                    parsingContext == ParsingContext::ReferenceParameters ||
+                    parsingContext == ParsingContext::SplineKnotParam;
+            });
+
+        if (!isCustomDataContext) {
+            const std::string errorMessage =
+                "Empty dictionary entries are only recoverable in custom "
+                "data";
+            Sdf_TextFileFormatParser_Err(
+                context, in.input(), in.position(), errorMessage);
+            throw PEGTL_NS::parse_error(errorMessage, in);
+        }
+
         TF_WARN(
             "Skipping malformed custom data entry '%s' on line %zu%s%s; "
             "custom data entries require a type, key, and value.",
@@ -1963,12 +1989,6 @@ struct TextParserAction<DictionaryValue>
             _PopContext(context);
         }
     }
-};
-
-template <>
-struct TextParserAction<RecoveringCustomDataDictionaryValue> :
-    TextParserAction<DictionaryValue>
-{
 };
 
 template <>

@@ -527,6 +527,17 @@ struct DictionaryKey : PEGTL_NS::sor<
 struct DictionaryType : PEGTL_NS::seq<
     Identifier,
     PEGTL_NS::opt<PEGTL_NS::star<InlinePadding>, ArrayType>> {};
+struct EmptyCustomDataEntry : PEGTL_NS::seq<
+    // Prevent DictionaryKey/String actions from modifying parser state.
+    PEGTL_NS::disable<DictionaryKey>,
+    Assignment,
+
+    // Recovery is safe only when the RHS is empty and the statement ends.
+    PEGTL_NS::at<PEGTL_NS::sor<
+        StatementSeparator,
+        DictionaryValueClose,
+        Comment>>
+> {};
 struct DictionaryValueItem : PEGTL_NS::sor<
     PEGTL_NS::if_must<
         KeywordDictionary,
@@ -540,9 +551,14 @@ struct DictionaryValueItem : PEGTL_NS::sor<
         DictionaryKey,
         Assignment,
         TypedValue>> {};
+// Keep recovery outside DictionaryValueItem so its action does not attempt
+// to insert a key and value that were intentionally not parsed.
+struct DictionaryValueEntry : PEGTL_NS::sor<
+    EmptyCustomDataEntry,
+    DictionaryValueItem> {};
 struct DictionaryValue : PEGTL_NS::if_must<
     DictionaryValueOpen,
-    PEGTL_NS::pad_opt<StatementSequenceOf<DictionaryValueItem>,
+    PEGTL_NS::pad_opt<StatementSequenceOf<DictionaryValueEntry>,
                       MultilinePadding>,
     DictionaryValueClose> {};
 
@@ -636,55 +652,12 @@ struct MetadataBlock :PEGTL_NS::if_must<
     MetadataClose> {};
 
 
-struct EmptyCustomDataEntry : PEGTL_NS::seq<
-    // Prevent DictionaryKey/String actions from modifying parser state.
-    PEGTL_NS::disable<DictionaryKey>,
-    Assignment,
-
-    // Recovery is safe only when the RHS is empty and the statement ends.
-    PEGTL_NS::at<PEGTL_NS::sor<
-        StatementSeparator,
-        DictionaryValueClose,
-        Comment>>
-> {};
-
-struct RecoveringCustomDataDictionaryValue;
-
-struct RecoveringCustomDataDictionaryItem : PEGTL_NS::sor<
-    EmptyCustomDataEntry,
-
-    // Nested custom-data dictionaries should get the same recovery.
-    PEGTL_NS::if_must<
-        KeywordDictionary,
-        TokenSeparator,
-        DictionaryKey,
-        Assignment,
-        RecoveringCustomDataDictionaryValue>,
-
-    PEGTL_NS::seq<
-        DictionaryType,
-        TokenSeparator,
-        DictionaryKey,
-        Assignment,
-        TypedValue>
-> {};
-
-struct RecoveringCustomDataDictionaryValue : PEGTL_NS::if_must<
-    DictionaryValueOpen,
-    PEGTL_NS::pad_opt<
-        StatementSequenceOf<RecoveringCustomDataDictionaryItem>,
-        MultilinePadding>,
-    DictionaryValueClose> {};
-
-
-
 // MetadataKey = customData /
 //               symmetryArguments /
 //               Identifier
 // MetadataValue = None /
 //			       DictionaryValue /
 //			       TypedValue
-// KeyValueMetadata = Identifier Assignment MetadataValue
 struct MetadataKey : PEGTL_NS::sor<
     KeywordCustomData,
     KeywordSymmetryArguments,
@@ -694,7 +667,6 @@ struct KeyValueMetadata : PEGTL_NS::seq<
     Assignment,
     PEGTL_NS::sor<
         KeywordNone,
-        RecoveringCustomDataDictionaryValue,
         DictionaryValue,
         TypedValue>> {};
 struct LayerKeyValueMetadata : PEGTL_NS::seq<
@@ -702,7 +674,6 @@ struct LayerKeyValueMetadata : PEGTL_NS::seq<
     Assignment,
     PEGTL_NS::sor<
         KeywordNone,
-        RecoveringCustomDataDictionaryValue,
         DictionaryValue,
         TypedValue>> {};
 
@@ -1289,9 +1260,7 @@ struct ReferenceParameter : PEGTL_NS::sor<
     PEGTL_NS::seq<
         KeywordCustomData,
         Assignment,
-        PEGTL_NS::sor<
-            RecoveringCustomDataDictionaryValue,
-            DictionaryValue>>,
+        DictionaryValue>,
     LayerOffset> {};
 
 // ReferenceParameterList = (TokenSeparator)? ReferenceParameter
