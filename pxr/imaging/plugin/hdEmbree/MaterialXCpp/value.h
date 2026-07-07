@@ -4,6 +4,7 @@
 #ifndef MXCPP_VALUE_H
 #define MXCPP_VALUE_H
 
+#include "../medium.h"
 #include "materials/closureTree.h"
 #include "mathTypes.h"
 
@@ -18,6 +19,12 @@ struct UniformEdf {
 
 struct BsdfClosure {
     Bsdf::ClosureTree tree;
+    bool hasInteriorMedium = false;
+    MediumProperties interiorMedium;
+};
+
+struct VdfClosure {
+    MediumProperties medium;
 };
 
 using Value = std::variant<
@@ -32,6 +39,7 @@ using Value = std::variant<
     Mat4f,
     UniformEdf,
     BsdfClosure,
+    VdfClosure,
     std::string>;
 
 inline bool ValueIsEmpty(const Value& v) {

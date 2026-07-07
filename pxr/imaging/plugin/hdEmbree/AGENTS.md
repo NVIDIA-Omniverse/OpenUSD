@@ -40,6 +40,7 @@ The Linux `configure` task currently runs CMake with Ninja, Release mode, and:
 - `-DPXR_BUILD_OPENIMAGEIO_PLUGIN=TRUE`
 - `-DPXR_OIIO_PLUGIN_ENABLED=TRUE`
 - `-DPXR_ENABLE_OPENQMC_SUPPORT=TRUE`
+- `-DPXR_ENABLE_MATERIALX_SUPPORT=TRUE`
 - `-DPXR_HDEMBREE_ENABLE_OPENQMC=2`
 - `-DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX`
 
@@ -65,8 +66,8 @@ used:
 - `pixi run ctest --test-dir build -R testHdEmbreeRenderSettings --output-on-failure`
 
 Relevant Pixi-managed dependencies include Python 3.11, Embree 4.4, OpenQMC
-0.7.1, OpenImageIO 2.5, OpenSubdiv, TBB, PySide6, PyOpenGL, CMake, Ninja, and
-compilers.
+0.7.1, MaterialX Render 1.39.4, OpenImageIO 2.5, OpenSubdiv, TBB, PySide6,
+PyOpenGL, CMake, Ninja, and compilers.
 
 ## Profiling hdEmbree
 
@@ -350,7 +351,16 @@ old diffuse/specular defaults. When the connected BSDF tree contains a
 `SubsurfaceData` node, `ND_surface` must also copy its color/radius/anisotropy
 into the `SurfaceClosure` subsurface summary fields because the renderer's
 random-walk SSS path uses those fields after `Bsdf::SampleSurface()` marks a
-subsurface event.
+subsurface event. `ND_dielectric_bsdf` maps to `Bsdf::DielectricData`, including
+MaterialX `scatter_mode` values `R`, `T`, and `RT`. `ND_layer_bsdf` combines
+typed `BsdfClosure` inputs into one closure tree; when merging trees, remap all
+child node ids in nested mix/layer/add/multiply nodes before appending the new
+layer root. MaterialX VDF nodes are carried as typed `mxcpp::VdfClosure` medium
+data: `ND_absorption_vdf` fills absorption, `ND_anisotropic_vdf` fills
+absorption/scattering/Henyey-Greenstein anisotropy, and `ND_layer_vdf` attaches
+that medium to the top BSDF closure. `ND_surface` copies the optional medium
+into `SurfaceClosure::interiorMedium`; keep `thin_walled` suppressing that
+interior medium so thin surfaces do not enter participating media.
 
 MaterialXCpp implements `ND_tiledcircles_color3`,
 `ND_tiledcloverleafs_color3`, and `ND_tiledhexagons_color3` directly from the

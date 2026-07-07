@@ -481,12 +481,19 @@ EvalGraph::_EvalMaterialModel(
         const BsdfClosure bsdfClosure = Get<BsdfClosure>(
             params, bsdf, BsdfClosure{});
         closure.bsdfTree = bsdfClosure.tree;
+        closure.hasInteriorMedium = bsdfClosure.hasInteriorMedium &&
+            !bsdfClosure.interiorMedium.IsVacuum();
+        closure.interiorMedium = bsdfClosure.interiorMedium;
         _ApplySubsurfaceSummaryFromTree(
             closure.bsdfTree, closure.bsdfTree.root, &closure);
         closure.emissiveColor = uniformEdf.emittance;
         closure.presence = std::clamp(
             Get<float>(params, opacity, 1.0f), 0.0f, 1.0f);
         closure.thinWalled = Get<bool>(params, thinWalled, false);
+        if (closure.thinWalled) {
+            closure.hasInteriorMedium = false;
+            closure.interiorMedium = MediumProperties{};
+        }
         return closure;
     }
 
