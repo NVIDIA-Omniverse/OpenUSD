@@ -376,6 +376,7 @@ HdEmbreeMesh::GetInitialDirtyBitsMask() const
         | HdChangeTracker::DirtyPrimvar
         | HdChangeTracker::DirtyNormals
         | HdChangeTracker::DirtyInstancer
+        | HdChangeTracker::DirtyCategories
         | HdChangeTracker::DirtyMaterialId
         ;
 
@@ -1511,28 +1512,38 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
     HdInstancer::_SyncInstancerAndParents(
         sceneDelegate->GetRenderIndex(), GetInstancerId());
 
+    if (*dirtyBits & HdChangeTracker::DirtyCategories) {
+        _categories = sceneDelegate->GetCategories(id);
+    }
+
     // If the instance topology changes, we need to update the instance
     // geometries. Un-instanced prims are treated here as a special case.
     // Instance geometries read from the instancer (for per-instance transform)
     // and the rprim transform, which gets added to the per instance transform.
     if (HdChangeTracker::IsInstancerDirty(*dirtyBits, id) ||
-        HdChangeTracker::IsTransformDirty(*dirtyBits, id)) {
+        HdChangeTracker::IsTransformDirty(*dirtyBits, id) ||
+        (*dirtyBits & HdChangeTracker::DirtyCategories)) {
 
-        VtMatrix4dArray transforms;
+        std::vector<HdEmbreeInstanceData> instances;
         if (!GetInstancerId().IsEmpty()) {
             // Retrieve instance transforms from the instancer.
             HdRenderIndex &renderIndex = sceneDelegate->GetRenderIndex();
             HdInstancer *instancer =
                 renderIndex.GetInstancer(GetInstancerId());
-            transforms = static_cast<HdEmbreeInstancer*>(instancer)->
-                ComputeInstanceTransforms(GetId());
+            instances = static_cast<HdEmbreeInstancer*>(instancer)->
+                ComputeInstanceData(GetId());
+            for (HdEmbreeInstanceData& instance : instances) {
+                HdEmbreeMergeCategories(
+                    _categories, &instance.categories);
+            }
         } else {
             // If there's no instancer, add a single instance with transform I.
-            transforms.push_back(GfMatrix4d(1.0));
+            instances.emplace_back();
+            instances.back().categories = _categories;
         }
 
         size_t oldSize = _rtcInstanceIds.size();
-        size_t newSize = transforms.size();
+        size_t newSize = instances.size();
 
         // Size down (if necessary).
         for(size_t i = newSize; i < oldSize; ++i) {
@@ -1563,9 +1574,10 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         }
 
         // Update transform
-        for (size_t i = 0; i < transforms.size(); ++i) {
+        for (size_t i = 0; i < instances.size(); ++i) {
             // Combine the local transform and the instance transform.
-            GfMatrix4f matf = _transform * GfMatrix4f(transforms[i]);
+            GfMatrix4f matf =
+                _transform * GfMatrix4f(instances[i].transform);
 
             // Update the transform in the BVH.
             rtcSetGeometryTransform(_rtcInstanceGeometries[i],
@@ -1573,6 +1585,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
             // // Update the transform in the instance context.
             _GetInstanceContext(scene, i)->objectToWorldMatrix = matf;
             _GetInstanceContext(scene, i)->worldToObjectMatrix = matf.GetInverse();
+            _GetInstanceContext(scene, i)->categories = instances[i].categories;
             // // Mark the instance as updated in the BVH.
             rtcCommitGeometry(_rtcInstanceGeometries[i]);
         }

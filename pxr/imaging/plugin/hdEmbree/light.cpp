@@ -1158,7 +1158,6 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
         _lightData.visible = sceneDelegate->GetVisible(id);
         _lightData.visibleInPrimaryRay = sceneDelegate->GetLightParamValue(
             id, _visibleInPrimaryRayToken).GetWithDefault(false);
-
         // Switch on the _lightData type and pull the relevant attributes from
         // the scene delegate.
         std::visit([this, &id, &sceneDelegate](auto& typedLight) {
@@ -1271,6 +1270,15 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
         }
 
         HdEmbreeBuildDirectionalShapingDistribution(&_lightData.shaping);
+    }
+
+    if (bits & (HdLight::DirtyParams |
+                HdLight::DirtyResource |
+                HdLight::DirtyCollection)) {
+        _lightData.lightLink = sceneDelegate->GetLightParamValue(
+            id, HdTokens->lightLink).GetWithDefault(TfToken());
+        _lightData.shadowLink = sceneDelegate->GetLightParamValue(
+            id, HdTokens->shadowLink).GetWithDefault(TfToken());
     }
 
     HdEmbreeRenderer *renderer = embreeRenderParam->GetRenderer();

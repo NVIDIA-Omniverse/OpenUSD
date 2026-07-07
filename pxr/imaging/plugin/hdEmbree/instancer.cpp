@@ -35,6 +35,13 @@ HdEmbreeInstancer::~HdEmbreeInstancer()
     _primvarMap.clear();
 }
 
+HdDirtyBits
+HdEmbreeInstancer::GetInitialDirtyBitsMask() const
+{
+    return HdInstancer::GetInitialDirtyBitsMask() |
+        HdChangeTracker::DirtyCategories;
+}
+
 void
 HdEmbreeInstancer::Sync(HdSceneDelegate* delegate,
                         HdRenderParam* renderParam,
@@ -42,6 +49,11 @@ HdEmbreeInstancer::Sync(HdSceneDelegate* delegate,
 {
     if (*dirtyBits & HdChangeTracker::DirtyVisibility) {
         _visible = delegate->GetVisible(GetId());
+    }
+
+    if (*dirtyBits & HdChangeTracker::DirtyCategories) {
+        _categories = delegate->GetCategories(GetId());
+        _instanceCategories = delegate->GetInstanceCategories(GetId());
     }
 
     _UpdateInstancer(delegate, dirtyBits);
@@ -77,8 +89,8 @@ HdEmbreeInstancer::_SyncPrimvars(HdSceneDelegate* delegate,
     }
 }
 
-VtMatrix4dArray
-HdEmbreeInstancer::ComputeInstanceTransforms(SdfPath const &prototypeId)
+std::vector<HdEmbreeInstanceData>
+HdEmbreeInstancer::ComputeInstanceData(SdfPath const &prototypeId)
 {
     HD_TRACE_FUNCTION();
     HF_MALLOC_TAG_FUNCTION();
@@ -102,9 +114,22 @@ HdEmbreeInstancer::ComputeInstanceTransforms(SdfPath const &prototypeId)
     VtIntArray instanceIndices =
         GetDelegate()->GetInstanceIndices(GetId(), prototypeId);
 
-    VtMatrix4dArray transforms(instanceIndices.size());
+    std::vector<HdEmbreeInstanceData> instances(instanceIndices.size());
     for (size_t i = 0; i < instanceIndices.size(); ++i) {
-        transforms[i] = instancerTransform;
+        HdEmbreeInstanceData& instance = instances[i];
+        instance.transform = instancerTransform;
+        instance.sourceInstanceIndex = instanceIndices[i];
+        HdEmbreeMergeCategories(_categories, &instance.categories);
+        const int sourceIndex = instanceIndices[i];
+        if (sourceIndex >= 0 &&
+            static_cast<size_t>(sourceIndex) < _instanceCategories.size()) {
+            HdEmbreeMergeCategories(
+                _instanceCategories[sourceIndex], &instance.categories);
+        } else if (!_instanceCategories.empty()) {
+            TF_CODING_ERROR(
+                "Instance category index %d is out of range for instancer %s",
+                sourceIndex, GetId().GetText());
+        }
     }
 
     // "hydra:instanceTranslations" holds a translation vector for each index.
@@ -116,7 +141,8 @@ HdEmbreeInstancer::ComputeInstanceTransforms(SdfPath const &prototypeId)
             if (sampler.Sample(instanceIndices[i], &translate)) {
                 GfMatrix4d translateMat(1);
                 translateMat.SetTranslate(GfVec3d(translate));
-                transforms[i] = translateMat * transforms[i];
+                instances[i].transform =
+                    translateMat * instances[i].transform;
             }
         }
     }
@@ -131,7 +157,7 @@ HdEmbreeInstancer::ComputeInstanceTransforms(SdfPath const &prototypeId)
                 GfMatrix4d rotateMat(1);
                 rotateMat.SetRotate(GfQuatd(
                     quat[0], quat[1], quat[2], quat[3]));
-                transforms[i] = rotateMat * transforms[i];
+                instances[i].transform = rotateMat * instances[i].transform;
             }
         }
     }
@@ -144,7 +170,7 @@ HdEmbreeInstancer::ComputeInstanceTransforms(SdfPath const &prototypeId)
             if (sampler.Sample(instanceIndices[i], &scale)) {
                 GfMatrix4d scaleMat(1);
                 scaleMat.SetScale(GfVec3d(scale));
-                transforms[i] = scaleMat * transforms[i];
+                instances[i].transform = scaleMat * instances[i].transform;
             }
         }
     }
@@ -156,39 +182,45 @@ HdEmbreeInstancer::ComputeInstanceTransforms(SdfPath const &prototypeId)
         for (size_t i = 0; i < instanceIndices.size(); ++i) {
             GfMatrix4d instanceTransform;
             if (sampler.Sample(instanceIndices[i], &instanceTransform)) {
-                transforms[i] = instanceTransform * transforms[i];
+                instances[i].transform =
+                    instanceTransform * instances[i].transform;
             }
         }
     }
 
     if (GetParentId().IsEmpty()) {
-        return transforms;
+        return instances;
     }
 
     HdInstancer *parentInstancer =
         GetDelegate()->GetRenderIndex().GetInstancer(GetParentId());
     if (!TF_VERIFY(parentInstancer)) {
-        return transforms;
+        return instances;
     }
 
     // The transforms taking nesting into account are computed by:
-    // parentTransforms = parentInstancer->ComputeInstanceTransforms(GetId())
-    // foreach (parentXf : parentTransforms, xf : transforms) {
-    //     parentXf * xf
+    // parentInstances = parentInstancer->ComputeInstanceData(GetId())
+    // foreach (parent : parentInstances, instance : instances) {
+    //     compose parent and child transform/category data
     // }
-    VtMatrix4dArray parentTransforms =
+    std::vector<HdEmbreeInstanceData> parentInstances =
         static_cast<HdEmbreeInstancer*>(parentInstancer)->
-            ComputeInstanceTransforms(GetId());
+            ComputeInstanceData(GetId());
 
-    VtMatrix4dArray final(parentTransforms.size() * transforms.size());
-    for (size_t i = 0; i < parentTransforms.size(); ++i) {
-        for (size_t j = 0; j < transforms.size(); ++j) {
-            final[i * transforms.size() + j] = transforms[j] *
-                                               parentTransforms[i];
+    std::vector<HdEmbreeInstanceData> final(
+        parentInstances.size() * instances.size());
+    for (size_t i = 0; i < parentInstances.size(); ++i) {
+        for (size_t j = 0; j < instances.size(); ++j) {
+            HdEmbreeInstanceData& output = final[i * instances.size() + j];
+            output.transform = instances[j].transform *
+                parentInstances[i].transform;
+            output.sourceInstanceIndex = instances[j].sourceInstanceIndex;
+            HdEmbreeMergeCategories(
+                parentInstances[i].categories, &output.categories);
+            HdEmbreeMergeCategories(instances[j].categories, &output.categories);
         }
     }
     return final;
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE
-

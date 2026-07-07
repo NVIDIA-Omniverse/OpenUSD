@@ -14,6 +14,7 @@
 #include "pxr/base/gf/matrix4f.h"
 
 #include "pxr/imaging/plugin/hdEmbree/meshSamplers.h"
+#include "pxr/imaging/plugin/hdEmbree/lightLinking.h"
 
 #include <embree4/rtcore.h>
 #include <embree4/rtcore_ray.h>
@@ -217,6 +218,7 @@ private:
     HdMeshTopology _topology;
     GfMatrix4f _transform;
     VtVec3fArray _points;
+    HdEmbreeCategorySet _categories;
 
     // Derived scene data:
     // - _triangulatedIndices holds a triangulation of the source topology,

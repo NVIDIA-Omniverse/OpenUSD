@@ -12,6 +12,7 @@
 #include "pxr/imaging/plugin/hdEmbree/context.h"
 #include "pxr/imaging/plugin/hdEmbree/light.h"
 #include "pxr/imaging/plugin/hdEmbree/lightSamplers.h"
+#include "pxr/imaging/plugin/hdEmbree/lightLinking.h"
 #include "pxr/imaging/plugin/hdEmbree/medium.h"
 #include "pxr/imaging/plugin/hdEmbree/sampling.h"
 
@@ -85,6 +86,7 @@ struct HdEmbreeMediumState {
     bool active = false;
     mxcpp::MediumProperties medium;
     HdEmbreeMesh* ownerMesh = nullptr;
+    HdEmbreeCategorySet const* categories = nullptr;
 };
 
 /// \class HdEmbreeRenderer
@@ -327,6 +329,7 @@ private:
         bool doubleSided,
         bool includeBsdfSamplingMis,
         mxcpp::SurfaceClosure const* closure,
+        HdEmbreeCategorySet const& receiverCategories,
         HdEmbreeMediumState const& mediumState = HdEmbreeMediumState(),
         bool spectralActive = false,
         float heroWavelengthNm = 0.0f,
@@ -356,6 +359,7 @@ private:
         float surfaceDist = std::numeric_limits<float>::infinity();
         bool hasFiniteLightHit = false;
         HdEmbreeLightSampler::LightSample finiteLightHit;
+        TfToken finiteLightLink;
         float finiteLightDist = std::numeric_limits<float>::infinity();
         int bounce = 0;
         bool spectralActive = false;
@@ -376,6 +380,7 @@ private:
         bool hasDiffuseLikeAncestor = false;
         bool currentPathIsCaustic = false;
         bool isFirstBounce = false;
+        HdEmbreeCategorySet const* lastScatterCategories = nullptr;
     };
 
     _VolumeTransmissionResult _TraceVolumeTransmission(
@@ -396,6 +401,7 @@ private:
                         GfVec3f const& normal,
                         GfVec3f const& direction,
                         float dist,
+                        TfToken const& shadowLink,
                         HdEmbreeMediumState const& mediumState =
                             HdEmbreeMediumState()) const;
 
@@ -403,14 +409,16 @@ private:
         GfVec3f const& position,
         GfVec3f const& direction,
         float maxDist,
-        HdEmbreeLightSampler::LightSample* outSample) const;
+        HdEmbreeLightSampler::LightSample* outSample,
+        TfToken* outLightLink) const;
 
     HdEmbree_Light* _GetLightGeometryHit(RTCRayHit const& rayHit) const;
     bool _EvaluateLightGeometryHit(
         RTCRayHit const& rayHit,
         GfVec3f const& position,
         GfVec3f const& direction,
-        HdEmbreeLightSampler::LightSample* outSample) const;
+        HdEmbreeLightSampler::LightSample* outSample,
+        TfToken* outLightLink = nullptr) const;
 
     // Should the ray continue based on the possibly intersected prim's visibility settings?
     bool _RayShouldContinue(RTCRayHit const& rayHit) const;

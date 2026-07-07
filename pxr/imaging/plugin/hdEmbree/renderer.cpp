@@ -3139,9 +3139,11 @@ HdEmbreeRenderer::_Visibility(
     GfVec3f const& normal,
     GfVec3f const& direction,
     float dist,
+    TfToken const& shadowLink,
     HdEmbreeMediumState const& mediumState) const
 {
     constexpr int kMaxTransparentHits = 16;
+    constexpr int kMaxIntersections = 256;
     constexpr float kVisThreshold = 1e-4f;
     constexpr float kRayBias = 1e-4f;
 
@@ -3166,7 +3168,10 @@ HdEmbreeRenderer::_Visibility(
             : mxcpp::EvalBeerTransmittance(shadowMedium.medium, distance));
     };
 
-    for (int i = 0; i < kMaxTransparentHits; ++i) {
+    int materialHits = 0;
+    for (int intersection = 0;
+         intersection < kMaxIntersections;
+         ++intersection) {
         RTCRayHit rayHit;
         rayHit.ray.flags = 0;
         _PopulateRayHit(&rayHit, rayOrigin, direction, kRayBias, remaining,
@@ -3194,6 +3199,33 @@ HdEmbreeRenderer::_Visibility(
         }
         if (_IsNearlyBlack(visibility, kVisThreshold)) {
             return GfVec3f(0.0f);
+        }
+
+        HdEmbreeInstanceContext const* blockerContext = nullptr;
+        if (!shadowLink.IsEmpty() &&
+            rayHit.hit.instID[0] != RTC_INVALID_GEOMETRY_ID) {
+            RTCGeometry instanceGeometry =
+                rtcGetGeometry(_scene, rayHit.hit.instID[0]);
+            if (instanceGeometry) {
+                blockerContext = static_cast<HdEmbreeInstanceContext const*>(
+                    rtcGetGeometryUserData(instanceGeometry));
+            }
+        }
+
+        if (blockerContext &&
+            !HdEmbreeMatchesLink(shadowLink, blockerContext->categories)) {
+            remaining -= hitDist;
+            if (remaining <= 0.001f) {
+                return visibility;
+            }
+            const GfVec3f hitPos = rayOrigin + direction * hitDist;
+            rayOrigin = _OffsetRayOrigin(
+                hitPos, direction, direction, kRayBias);
+            continue;
+        }
+
+        if (++materialHits > kMaxTransparentHits) {
+            return visibility;
         }
 
         mxcpp::SurfaceClosure closure;
@@ -3280,7 +3312,10 @@ HdEmbreeRenderer::_Visibility(
             kRayBias);
     }
 
-    return visibility;
+    // Reaching the defensive intersection limit indicates malformed or
+    // pathologically layered geometry. Block conservatively rather than
+    // leaking light past an unexamined linked blocker.
+    return GfVec3f(0.0f);
 }
 
 bool
@@ -3288,7 +3323,8 @@ HdEmbreeRenderer::_FindNearestFiniteLightHit(
     GfVec3f const& position,
     GfVec3f const& direction,
     float maxDist,
-    HdEmbreeLightSampler::LightSample* outSample) const
+    HdEmbreeLightSampler::LightSample* outSample,
+    TfToken* outLightLink) const
 {
     if (!outSample || maxDist <= 0.0f) {
         return false;
@@ -3297,6 +3333,7 @@ HdEmbreeRenderer::_FindNearestFiniteLightHit(
     bool found = false;
     float closestDist = maxDist;
     HdEmbreeLightSampler::LightSample closestSample{};
+    TfToken closestLightLink;
 
     for (auto const& it : _lightMap) {
         if (!it.second || !it.second->IsFiniteLight()) {
@@ -3320,11 +3357,15 @@ HdEmbreeRenderer::_FindNearestFiniteLightHit(
 
         closestDist = ls.dist;
         closestSample = ls;
+        closestLightLink = light.lightLink;
         found = true;
     }
 
     if (found) {
         *outSample = closestSample;
+        if (outLightLink) {
+            *outLightLink = closestLightLink;
+        }
     }
     return found;
 }
@@ -3347,7 +3388,8 @@ HdEmbreeRenderer::_EvaluateLightGeometryHit(
     RTCRayHit const& rayHit,
     GfVec3f const& position,
     GfVec3f const& direction,
-    HdEmbreeLightSampler::LightSample* outSample) const
+    HdEmbreeLightSampler::LightSample* outSample,
+    TfToken* outLightLink) const
 {
     HdEmbree_Light* light = _GetLightGeometryHit(rayHit);
     if (!light || !outSample) {
@@ -3369,6 +3411,9 @@ HdEmbreeRenderer::_EvaluateLightGeometryHit(
     }
 
     *outSample = sample;
+    if (outLightLink) {
+        *outLightLink = light->LightData().lightLink;
+    }
     return true;
 }
 
@@ -3656,6 +3701,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
     bool /*doubleSided*/,
     bool includeBsdfSamplingMis,
     mxcpp::SurfaceClosure const* closure,
+    HdEmbreeCategorySet const& receiverCategories,
     HdEmbreeMediumState const& mediumState,
     bool spectralActive,
     float heroWavelengthNm,
@@ -3686,8 +3732,13 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
     int lightIndex = 0;
     for (auto const& it : _lightMap)
     {
+        if (!it.second) {
+            ++lightIndex;
+            continue;
+        }
         auto const& light = it.second->LightData();
-        if (!light.visible) {
+        if (!light.visible ||
+            !HdEmbreeMatchesLink(light.lightLink, receiverCategories)) {
             ++lightIndex;
             continue;
         }
@@ -3734,6 +3785,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 visibilityNormal,
                 ls.wI,
                 ls.dist * 0.99f,
+                light.shadowLink,
                 mediumState);
             if (_IsNearlyBlack(vis)) {
                 continue;
@@ -3854,6 +3906,10 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
             mxcpp::MediumTransportModel::AdobeOpenPBR;
 
     GfVec3f finalColor(0.0f);
+    const HdEmbreeCategorySet emptyCategories;
+    HdEmbreeCategorySet const& receiverCategories = mediumState.categories
+        ? *mediumState.categories
+        : emptyCategories;
     const int N = _lightSamplesPerHit;
     const float invN = 1.0f / static_cast<float>(N);
 
@@ -3868,8 +3924,13 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
 
     int lightIndex = 0;
     for (auto const& it : _lightMap) {
+        if (!it.second) {
+            ++lightIndex;
+            continue;
+        }
         auto const& light = it.second->LightData();
-        if (!light.visible) {
+        if (!light.visible ||
+            !HdEmbreeMatchesLink(light.lightLink, receiverCategories)) {
             ++lightIndex;
             continue;
         }
@@ -3910,7 +3971,8 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
             }
 
             const GfVec3f vis = _Visibility(
-                position, ls.wI, ls.wI, ls.dist * 0.99f, mediumState);
+                position, ls.wI, ls.wI, ls.dist * 0.99f,
+                light.shadowLink, mediumState);
             if (_IsNearlyBlack(vis)) {
                 continue;
             }
@@ -4010,6 +4072,12 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
     };
 
     const auto addFiniteLightHit = [&]() {
+        if (!input.finiteLightLink.IsEmpty() &&
+            (!state->lastScatterCategories ||
+             !HdEmbreeMatchesLink(
+                 input.finiteLightLink, *state->lastScatterCategories))) {
+            return _VolumeTransmissionResult::Terminate;
+        }
         GfVec3f lightContrib = input.finiteLightHit.Li;
         if (state->lastBsdfPdf > 0.0f &&
             input.finiteLightHit.invPdfW > 0.0f) {
@@ -4221,6 +4289,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
             state->rayDiff.hasDifferentials = false;
             state->lastBsdfPdf = phasePdf;
             state->lastScatterWasMedium = true;
+            state->lastScatterCategories = mediumState.categories;
             state->anyNonSpecularBounces = true;
             state->hasDiffuseLikeAncestor = true;
             state->isFirstBounce = false;
@@ -4297,6 +4366,7 @@ HdEmbreeRenderer::_TracePath(
     GfVec3f rayDir = dir;
     float lastBsdfPdf = 0.0f;
     bool lastScatterWasMedium = false;
+    HdEmbreeCategorySet const* lastScatterCategories = nullptr;
     HdEmbreeLightSampler::SamplingMode lastLightSamplingMode =
         HdEmbreeLightSampler::SamplingMode::FullSphere;
     GfVec3f lastLightSamplingNormal(0.0f);
@@ -4353,10 +4423,11 @@ HdEmbreeRenderer::_TracePath(
         }
 
         HdEmbreeLightSampler::LightSample finiteLightHit{};
+        TfToken finiteLightLink;
         const bool hitLightGeometry =
             !syntheticLambertianHit &&
             _EvaluateLightGeometryHit(
-                rayHit, rayOrigin, rayDir, &finiteLightHit);
+                rayHit, rayOrigin, rayDir, &finiteLightHit, &finiteLightLink);
         const float surfaceDist =
             rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID && !hitLightGeometry
                 ? rayHit.ray.tfar
@@ -4369,7 +4440,8 @@ HdEmbreeRenderer::_TracePath(
                 rayOrigin,
                 rayDir,
                 surfaceDist,
-                &finiteLightHit);
+                &finiteLightHit,
+                &finiteLightLink);
         const bool hasFiniteLightHit =
             hitLightGeometry || hasAnalyticFiniteLightHit;
         const float finiteLightDist =
@@ -4384,6 +4456,7 @@ HdEmbreeRenderer::_TracePath(
             volumeInput.surfaceDist = surfaceDist;
             volumeInput.hasFiniteLightHit = hasFiniteLightHit;
             volumeInput.finiteLightHit = finiteLightHit;
+            volumeInput.finiteLightLink = finiteLightLink;
             volumeInput.finiteLightDist = finiteLightDist;
             volumeInput.bounce = bounce;
             volumeInput.spectralActive = hero.active;
@@ -4403,6 +4476,7 @@ HdEmbreeRenderer::_TracePath(
             volumeState.hasDiffuseLikeAncestor = hasDiffuseLikeAncestor;
             volumeState.currentPathIsCaustic = currentPathIsCaustic;
             volumeState.isFirstBounce = isFirstBounce;
+            volumeState.lastScatterCategories = lastScatterCategories;
 
             const _VolumeTransmissionResult volumeResult =
                 _TraceVolumeTransmission(
@@ -4423,6 +4497,7 @@ HdEmbreeRenderer::_TracePath(
             hasDiffuseLikeAncestor = volumeState.hasDiffuseLikeAncestor;
             currentPathIsCaustic = volumeState.currentPathIsCaustic;
             isFirstBounce = volumeState.isFirstBounce;
+            lastScatterCategories = volumeState.lastScatterCategories;
 
             if (volumeResult == _VolumeTransmissionResult::Terminate) {
                 break;
@@ -4433,6 +4508,12 @@ HdEmbreeRenderer::_TracePath(
         }
 
         if (hasFiniteLightHit && finiteLightDist < surfaceDist) {
+            if (!isFirstBounce && !finiteLightLink.IsEmpty() &&
+                (!lastScatterCategories ||
+                 !HdEmbreeMatchesLink(
+                     finiteLightLink, *lastScatterCategories))) {
+                break;
+            }
             GfVec3f lightContrib = finiteLightHit.Li;
             if (lastBsdfPdf > 0.0f && finiteLightHit.invPdfW > 0.0f) {
                 const float lightPdf = 1.0f / finiteLightHit.invPdfW;
@@ -4469,7 +4550,11 @@ HdEmbreeRenderer::_TracePath(
                 auto const& light = it.second->LightData();
                 if (!light.visible ||
                     !std::holds_alternative<HdEmbree_Distant>(
-                        light.lightVariant)) {
+                        light.lightVariant) ||
+                    (!isFirstBounce && !light.lightLink.IsEmpty() &&
+                     (!lastScatterCategories ||
+                      !HdEmbreeMatchesLink(
+                          light.lightLink, *lastScatterCategories)))) {
                     continue;
                 }
 
@@ -4503,7 +4588,13 @@ HdEmbreeRenderer::_TracePath(
             }
 
             for (auto* dome : _domes) {
-                if (!dome->LightData().visible) {
+                if (!dome->LightData().visible ||
+                    (!isFirstBounce &&
+                     !dome->LightData().lightLink.IsEmpty() &&
+                     (!lastScatterCategories ||
+                      !HdEmbreeMatchesLink(
+                          dome->LightData().lightLink,
+                          *lastScatterCategories)))) {
                     continue;
                 }
                 const HdEmbreeLightSampler::SamplingMode domeSamplingMode =
@@ -5018,6 +5109,7 @@ HdEmbreeRenderer::_TracePath(
                 doubleSided,
                 bounce <= maxBounces,
                 bsdfClosure,
+                instanceContext->categories,
                 currentMedium,
                 hero.active,
                 hero.wavelengthNm,
@@ -5043,6 +5135,7 @@ HdEmbreeRenderer::_TracePath(
                 doubleSided,
                 false,
                 &fallback,
+                instanceContext->categories,
                 currentMedium,
                 hero.active,
                 hero.wavelengthNm,
@@ -5122,6 +5215,7 @@ HdEmbreeRenderer::_TracePath(
 
         lastBsdfPdf = bs.isSpecular ? 0.0f : bs.pdf;
         lastScatterWasMedium = false;
+        lastScatterCategories = &instanceContext->categories;
         lastLightSamplingMode =
             (!bs.isSpecular && _IsReflectionOnlyClosure(closure))
                 ? HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere
@@ -5148,6 +5242,7 @@ HdEmbreeRenderer::_TracePath(
                 currentMedium.active = true;
                 currentMedium.medium = closure.interiorMedium;
                 currentMedium.ownerMesh = mesh;
+                currentMedium.categories = &instanceContext->categories;
             }
         }
 

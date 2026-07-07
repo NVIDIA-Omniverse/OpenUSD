@@ -11,6 +11,7 @@
 
 #include "pxr/imaging/hd/instancer.h"
 #include "pxr/imaging/hd/vtBufferSource.h"
+#include "pxr/imaging/plugin/hdEmbree/lightLinking.h"
 
 #include "pxr/base/tf/hashmap.h"
 #include "pxr/base/tf/token.h"
@@ -20,16 +21,22 @@ PXR_NAMESPACE_OPEN_SCOPE
 /// \class HdEmbreeInstancer
 ///
 /// HdEmbree implements instancing by adding prototype geometry to the BVH
-/// multiple times within HdEmbreeMesh::Sync(). The only instance-varying
-/// attribute that HdEmbree supports is transform, so the natural
-/// accessor to instancer data is ComputeInstanceTransforms(),
-/// which returns a list of transforms to apply to the given prototype
-/// (one instance per transform).
+/// multiple times within HdEmbreeMesh::Sync(). Transform and resolved Hydra
+/// category membership travel together so nested flattening cannot misalign
+/// light-linking identity with an instance transform.
 ///
 /// Nested instancing can be handled by recursion, and by taking the
 /// cartesian product of the transform arrays at each nesting level, to
 /// create a flattened transform array.
 ///
+struct HdEmbreeInstanceData
+{
+    GfMatrix4d transform{1.0};
+    HdEmbreeCategorySet categories;
+    /// Source index at the leaf/current instancer level after flattening.
+    int sourceInstanceIndex = -1;
+};
+
 class HdEmbreeInstancer : public HdInstancer
 {
 public:
@@ -41,15 +48,19 @@ public:
     /// Destructor.
     ~HdEmbreeInstancer();
 
-    /// Computes all instance transforms for the provided prototype id,
+    /// Computes all instance transforms and effective category memberships
+    /// for the provided prototype id,
     /// taking into account the scene delegate's instancerTransform and the
     /// instance primvars "hydra:instanceTransforms",
     /// "hydra:instanceTranslations", "hydra:instanceRotations", and
     /// "hydra:instanceScales". Computes and flattens nested transforms,
     /// if necessary.
     ///   \param prototypeId The prototype to compute transforms for.
-    ///   \return One transform per instance, to apply when drawing.
-    VtMatrix4dArray ComputeInstanceTransforms(SdfPath const &prototypeId);
+    ///   \return One record per flattened instance, to apply when drawing.
+    std::vector<HdEmbreeInstanceData> ComputeInstanceData(
+        SdfPath const &prototypeId);
+
+    HdDirtyBits GetInitialDirtyBitsMask() const override;
 
     /// Updates cached primvar data from the scene delegate.
     ///   \param sceneDelegate The scene delegate for this prim.
@@ -66,10 +77,13 @@ private:
 
     // Map of the latest primvar data for this instancer, keyed by
     // primvar name. Primvar values are VtValue, an any-type; they are
-    // interpreted at consumption time (here, in ComputeInstanceTransforms).
+    // interpreted at consumption time (here, in ComputeInstanceData).
     TfHashMap<TfToken,
               HdVtBufferSource*,
               TfToken::HashFunctor> _primvarMap;
+
+    HdEmbreeCategorySet _categories;
+    std::vector<HdEmbreeCategorySet> _instanceCategories;
 
     bool _visible;
 };

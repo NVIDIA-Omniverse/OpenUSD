@@ -112,6 +112,7 @@ pxr_plugin(hdEmbree
 
     PUBLIC_HEADERS
         context.h
+        lightLinking.h
         renderParam.h
         sampling.h
         pxrPbrt/pbrtUtils.h
@@ -168,6 +169,31 @@ pxr_build_test(testHdEmbreeSampling
         tf
     CPPFILES
         testenv/testHdEmbreeSampling.cpp
+)
+
+pxr_build_test(testHdEmbreeLightLinking
+    LIBRARIES
+        hd
+        hdEmbree
+        tf
+        vt
+    CPPFILES
+        testenv/testHdEmbreeLightLinking.cpp
+)
+
+if (TARGET testHdEmbreeLightLinking)
+    _pxr_init_rpath(_hdEmbreeLightLinkingTestRpath "tests")
+    _pxr_add_rpath(
+        _hdEmbreeLightLinkingTestRpath "${CMAKE_INSTALL_PREFIX}/lib")
+    _pxr_add_rpath(
+        _hdEmbreeLightLinkingTestRpath "${CMAKE_INSTALL_PREFIX}/plugin/usd")
+    _pxr_install_rpath(
+        _hdEmbreeLightLinkingTestRpath testHdEmbreeLightLinking)
+endif()
+
+pxr_register_test(testHdEmbreeLightLinking
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdEmbreeLightLinking"
+    EXPECTED_RETURN_CODE 0
 )
 
 pxr_build_test(testHdEmbreeRenderSettings

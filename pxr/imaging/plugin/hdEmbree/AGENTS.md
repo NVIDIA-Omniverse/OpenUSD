@@ -362,6 +362,29 @@ geometry and tracked by `HdEmbreeRenderer::AddLightGeometry()`/
 Camera visibility for dome-light backgrounds is controlled by the generic
 `domeLightCameraVisibility` render setting, not a light prim attribute.
 
+## Light And Shadow Linking
+
+`HdEmbree_Light::Sync()` reads Hydra's resolved `lightLink` and `shadowLink`
+category tokens. Mesh and instancer category memberships come from
+`HdSceneDelegate::GetCategories()` and native-instance memberships from
+`GetInstanceCategories()`. Flattened instance records keep transforms and
+categories together; their complete, immutable membership snapshot is stored
+on `HdEmbreeInstanceContext` for renderer hit tests.
+
+Light links filter surface and medium next-event estimation as well as finite,
+distant, and dome emitters reached through BSDF or phase sampling. Shadow
+links are evaluated for every mesh boundary in the existing transparent-shadow
+intersection loop, before presence, transmission, or interior-medium state is
+applied. Empty link tokens retain the default match-all behavior.
+
+Use source values from `GetInstanceIndices()` to index native-instance
+categories; local flattened ordinals are not equivalent. Whole-instancer
+categories apply to all point-instancer instances because Hydra does not expose
+per-point categories through these APIs. The upstream light-linking scene
+index also has limited category support for nested native-instance proxies, so
+hdEmbree consumes the memberships Hydra supplies but cannot reconstruct absent
+per-proxy data.
+
 ## Rendering And Output
 
 `HdEmbreeRenderer` owns the path tracing loop. Key responsibilities include:

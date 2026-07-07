@@ -10,6 +10,7 @@
 #include "pxr/pxr.h"
 
 #include "pxr/imaging/plugin/hdEmbree/sampler.h"
+#include "pxr/imaging/plugin/hdEmbree/lightLinking.h"
 
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/vt/array.h"
@@ -63,6 +64,8 @@ struct HdEmbreeInstanceContext
     RTCScene rootScene;
     /// The instance id of this instance.
     int32_t instanceId;
+    /// Resolved Hydra light- and shadow-link category memberships.
+    HdEmbreeCategorySet categories;
 };
 
 

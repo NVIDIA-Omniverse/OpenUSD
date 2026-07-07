@@ -86,8 +86,6 @@ class HdEmbreeRenderer;
 ///   - LightFilter
 /// - Unsupported attributes on supported light types / APIs:
 ///   - LightAPI:
-///     - collection:lightLink:includeRoot
-///     - collection:shadowLink:includeRoot
 ///     - light:shaderId
 ///     - light:materialSyncMode
 ///     - inputs:specular
@@ -264,6 +262,8 @@ struct HdEmbree_LightData
     bool normalize = false;
     bool visible = true;
     bool visibleInPrimaryRay = false;
+    TfToken lightLink;
+    TfToken shadowLink;
     HdEmbree_Shaping shaping;
 };
 
