@@ -346,6 +346,15 @@ as cutout presence, and clears the legacy BSDF summary when no scattering
 closure is present. `ND_surface.bsdf` is intentionally rejected until native
 closure-valued BSDF inputs are implemented.
 
+MaterialXCpp implements `ND_tiledcircles_color3`,
+`ND_tiledcloverleafs_color3`, and `ND_tiledhexagons_color3` directly from the
+MaterialX stdlib nodegraph formulas. Keep the regular branch based on
+`mod(texcoord * uvtiling - uvoffset) * 2 - 1`, and keep the staggered branch
+constants aligned with stdlib. `ND_cloverleaf_float` doubles both texcoord and
+center before evaluating its four circle lobes. `ND_hexagon_float` follows the
+stdlib folded-coordinate SDF, including the swapped absolute delta vector and
+both reflection folds before the final inside/outside test.
+
 The active material render context is controlled by `ty:materialRenderContext`.
 `HdEmbreeRenderDelegate::GetMaterialRenderContexts()` returns context priority
 for Hydra material network selection. When that setting changes,

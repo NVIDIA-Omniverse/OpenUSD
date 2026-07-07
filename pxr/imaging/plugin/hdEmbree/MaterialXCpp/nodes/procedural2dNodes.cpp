@@ -531,6 +531,56 @@ _LineMask(const Vec2f& texcoord, const Vec2f& center, float radius,
     return dist > radius ? 0.0f : 1.0f;
 }
 
+static float
+_CircleMask(const Vec2f& texcoord, const Vec2f& center, float radius)
+{
+    const Vec2f delta = texcoord - center;
+    return Dot(delta, delta) > radius * radius ? 0.0f : 1.0f;
+}
+
+static float
+_CloverleafMask(const Vec2f& texcoord, const Vec2f& center, float radius)
+{
+    const Vec2f sampleDouble = texcoord + texcoord;
+    const Vec2f centerDouble = center + center;
+    const Vec2f sampleAdd = sampleDouble + Vec2f(radius);
+    const Vec2f sampleSubtract = sampleDouble - Vec2f(radius);
+
+    const std::array<Vec2f, 4> coords = {
+        Vec2f(sampleAdd[0], sampleDouble[1]),
+        Vec2f(sampleSubtract[0], sampleDouble[1]),
+        Vec2f(sampleDouble[0], sampleSubtract[1]),
+        Vec2f(sampleDouble[0], sampleAdd[1])
+    };
+
+    float result = 0.0f;
+    for (const Vec2f& coord : coords) {
+        result = std::max(
+            result, _CircleMask(coord, centerDouble, radius));
+    }
+    return result;
+}
+
+static float
+_HexagonMask(const Vec2f& texcoord, const Vec2f& center, float radius)
+{
+    const Vec3f k(-0.866025f, 0.5f, 0.57735f);
+    const Vec2f delta = texcoord - center;
+    Vec2f p(std::fabs(delta[1]), std::fabs(delta[0]));
+
+    const Vec2f kxy(k[0], k[1]);
+    const float m1 = std::min(Dot(kxy, p), 0.0f);
+    p -= kxy * (2.0f * m1);
+
+    const Vec2f minusKxKy(-k[0], k[1]);
+    const float m2 = std::min(Dot(minusKxKy, p), 0.0f);
+    p -= minusKxKy * (2.0f * m2);
+
+    p -= Vec2f(ClampValue(p[0], -k[2] * radius, k[2] * radius), radius);
+
+    return p[0] + p[1] > 0.0f ? 0.0f : 1.0f;
+}
+
 static void
 _EvalLineFloat(const ParamMap& inputs,
                const ShadingContext& ctx,
@@ -553,9 +603,7 @@ _EvalCircleFloat(const ParamMap& inputs,
     const Vec2f texcoord = Get<Vec2f>(inputs, _kTexcoord, ctx.texcoord);
     const Vec2f center = Get<Vec2f>(inputs, _kCenter, Vec2f(0.0f));
     const float radius = Get<float>(inputs, _kRadius, 0.5f);
-    const Vec2f delta = texcoord - center;
-    StoreTypedOutput(outputs, _kOut,
-                      Dot(delta, delta) > radius * radius ? 0.0f : 1.0f);
+    StoreTypedOutput(outputs, _kOut, _CircleMask(texcoord, center, radius));
 }
 
 static void
@@ -566,25 +614,7 @@ _EvalCloverleafFloat(const ParamMap& inputs,
     const Vec2f texcoord = Get<Vec2f>(inputs, _kTexcoord, ctx.texcoord);
     const Vec2f center = Get<Vec2f>(inputs, _kCenter, Vec2f(0.0f));
     const float radius = Get<float>(inputs, _kRadius, 0.5f);
-
-    const Vec2f sampleDouble = texcoord + texcoord;
-    const Vec2f sampleAdd = sampleDouble + Vec2f(radius);
-    const Vec2f sampleSubtract = sampleDouble - Vec2f(radius);
-
-    const std::array<Vec2f, 4> coords = {
-        Vec2f(sampleAdd[0], sampleDouble[1]),
-        Vec2f(sampleSubtract[0], sampleDouble[1]),
-        Vec2f(sampleDouble[0], sampleSubtract[1]),
-        Vec2f(sampleDouble[0], sampleAdd[1])
-    };
-
-    float result = 0.0f;
-    for (const Vec2f& coord : coords) {
-        const Vec2f delta = coord - center;
-        result = std::max(result,
-                          Dot(delta, delta) > radius * radius ? 0.0f : 1.0f);
-    }
-    StoreTypedOutput(outputs, _kOut, result);
+    StoreTypedOutput(outputs, _kOut, _CloverleafMask(texcoord, center, radius));
 }
 
 static void
@@ -595,18 +625,118 @@ _EvalHexagonFloat(const ParamMap& inputs,
     const Vec2f texcoord = Get<Vec2f>(inputs, _kTexcoord, ctx.texcoord);
     const Vec2f center = Get<Vec2f>(inputs, _kCenter, Vec2f(0.0f));
     const float radius = Get<float>(inputs, _kRadius, 0.5f);
+    StoreTypedOutput(outputs, _kOut, _HexagonMask(texcoord, center, radius));
+}
 
-    Vec2f p = texcoord - center;
-    p = Vec2f(std::fabs(p[0]), std::fabs(p[1]));
+static Vec2f
+_TiledShapeTexcoordBias(const ParamMap& inputs, const ShadingContext& ctx)
+{
+    const Vec2f texcoord = Get<Vec2f>(inputs, _kTexcoord, ctx.texcoord);
+    const Vec2f uvtiling = Get<Vec2f>(inputs, _kUvtiling, Vec2f(1.0f));
+    const Vec2f uvoffset = Get<Vec2f>(inputs, _kUvoffset, Vec2f(0.0f));
+    return CompMul(texcoord, uvtiling) - uvoffset;
+}
 
-    const Vec3f k(-0.866025f, 0.5f, 0.57735f);
-    const float dotKp = k[0] * p[0] + k[1] * p[1];
-    const float m = std::min(dotKp, 0.0f);
-    p -= Vec2f(2.0f * m * k[0], 2.0f * m * k[1]);
-    p -= Vec2f(ClampValue(p[0], -k[2] * radius, k[2] * radius), radius);
+static Vec2f
+_TiledShapeRecenter(const Vec2f& texcoordBias)
+{
+    const Vec2f modTexcoord(
+        PositiveMod(texcoordBias[0]),
+        PositiveMod(texcoordBias[1]));
+    return modTexcoord * 2.0f - Vec2f(1.0f);
+}
 
-    const float signedDistance = p.length() * (p[1] < 0.0f ? -1.0f : 1.0f);
-    StoreTypedOutput(outputs, _kOut, signedDistance > 0.0f ? 0.0f : 1.0f);
+static float
+_TiledTriangleStaggerMask(
+    const Vec2f& texcoordBias,
+    float size,
+    float (*shapeMask)(const Vec2f&, const Vec2f&, float))
+{
+    const float staggY = PositiveMod(texcoordBias[1], 1.73205f);
+    const float deltaX = staggY > 0.866025f ? 0.5f : 0.0f;
+    const float shiftX = texcoordBias[0] + deltaX;
+    const float modX = PositiveMod(shiftX);
+    const float modY = PositiveMod(texcoordBias[1], 0.866025f);
+    const float scaleHalf = size * 0.5f;
+
+    const Vec2f coord1(modX, modY);
+    const Vec2f coord2(1.0f - modX, modY);
+    const Vec2f coord3(modX - 0.5f, 0.866025f - modY);
+
+    return std::max(
+        std::max(
+            shapeMask(coord1, Vec2f(0.0f), scaleHalf),
+            shapeMask(coord2, Vec2f(0.0f), scaleHalf)),
+        shapeMask(coord3, Vec2f(0.0f), scaleHalf));
+}
+
+static float
+_TiledCloverleafStaggerMask(const Vec2f& texcoordBias, float size)
+{
+    const float staggY = PositiveMod(texcoordBias[1]);
+    const float deltaX = staggY > 0.5f ? 0.5f : 0.0f;
+    const float shiftX = texcoordBias[0] + deltaX;
+    const float modX = PositiveMod(shiftX);
+    const float modY = PositiveMod(texcoordBias[1], 0.5f);
+    const float scaleHalf = size * 0.5f;
+
+    const Vec2f coord1(modX, modY);
+    const Vec2f coord2(1.0f - modX, modY);
+    const Vec2f coord3(modX - 0.5f, 0.5f - modY);
+
+    return std::max(
+        std::max(
+            _CloverleafMask(coord1, Vec2f(0.0f), scaleHalf),
+            _CloverleafMask(coord2, Vec2f(0.0f), scaleHalf)),
+        _CloverleafMask(coord3, Vec2f(0.0f), scaleHalf));
+}
+
+static void
+_EvalTiledCirclesColor3(const ParamMap& inputs,
+                        const ShadingContext& ctx,
+                        NodeOutputMap* outputs)
+{
+    const Vec2f texcoordBias = _TiledShapeTexcoordBias(inputs, ctx);
+    const float size = Get<float>(inputs, _kSize, 0.5f);
+    const bool staggered = Get<bool>(inputs, _kStaggered, false);
+    const float regular =
+        _CircleMask(_TiledShapeRecenter(texcoordBias), Vec2f(0.0f), size);
+    const float value = staggered
+        ? _TiledTriangleStaggerMask(texcoordBias, size, &_CircleMask)
+        : regular;
+    StoreTypedOutput(outputs, _kOut, Vec3f(value));
+}
+
+static void
+_EvalTiledCloverleafsColor3(const ParamMap& inputs,
+                            const ShadingContext& ctx,
+                            NodeOutputMap* outputs)
+{
+    const Vec2f texcoordBias = _TiledShapeTexcoordBias(inputs, ctx);
+    const float size = Get<float>(inputs, _kSize, 0.5f);
+    const bool staggered = Get<bool>(inputs, _kStaggered, false);
+    const float regular =
+        _CloverleafMask(_TiledShapeRecenter(texcoordBias), Vec2f(0.0f), size);
+    const float value = staggered
+        ? _TiledCloverleafStaggerMask(texcoordBias, size)
+        : regular;
+    StoreTypedOutput(outputs, _kOut, Vec3f(value));
+}
+
+static void
+_EvalTiledHexagonsColor3(const ParamMap& inputs,
+                         const ShadingContext& ctx,
+                         NodeOutputMap* outputs)
+{
+    const Vec2f texcoordBias = _TiledShapeTexcoordBias(inputs, ctx);
+    const float size = Get<float>(inputs, _kSize, 0.5f);
+    const bool staggered = Get<bool>(inputs, _kStaggered, false);
+    const float regular =
+        _HexagonMask(_TiledShapeRecenter(texcoordBias), Vec2f(0.0f), size);
+    const float value = staggered
+        ? _TiledTriangleStaggerMask(texcoordBias, size, &_HexagonMask)
+        : regular;
+    StoreTypedOutput(outputs, _kOut, Vec3f(value));
 }
 
 static void
@@ -776,6 +906,9 @@ RegisterProcedural2dNodes(NodeRegistry& reg)
     _REG("ND_hexagon_float", &_EvalHexagonFloat);
     _REG("ND_grid_color3", &_EvalGridColor3);
     _REG("ND_crosshatch_color3", &_EvalCrosshatchColor3);
+    _REG("ND_tiledcircles_color3", &_EvalTiledCirclesColor3);
+    _REG("ND_tiledcloverleafs_color3", &_EvalTiledCloverleafsColor3);
+    _REG("ND_tiledhexagons_color3", &_EvalTiledHexagonsColor3);
     _REG("ND_flake2d", &_EvalFlake2d);
 }
 
