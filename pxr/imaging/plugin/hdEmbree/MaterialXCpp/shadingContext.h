@@ -68,6 +68,11 @@ struct ShadingContext
     float dudx = 0.0f, dvdx = 0.0f;
     float dudy = 0.0f, dvdy = 0.0f;
 
+    // Additional MaterialX blur amount for texture lookups in UV space.
+    // This is subtree-local state set by ND_blur_* and consumed by image
+    // nodes when constructing Texture2DRequest values.
+    Vec2f textureBlur = Vec2f(0.0f);
+
     // Named-space transform support for geometric and transform* nodes.
     // The callback can handle arbitrary renderer-defined spaces; when it is
     // absent or declines a transform, mxcpp falls back to built-in object/world

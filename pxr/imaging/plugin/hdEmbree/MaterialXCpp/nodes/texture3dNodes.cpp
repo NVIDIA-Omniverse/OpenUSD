@@ -212,6 +212,7 @@ _SampleTriplanarTexture(const ParamMap& inputs,
     } else {
         request.channelFillValue = TextureValueTraits<T>::kFillValue;
     }
+    ApplyContextTextureBlur(ctx, &request);
 
     return ctx.textureSystem->Sample2D(request).value;
 }

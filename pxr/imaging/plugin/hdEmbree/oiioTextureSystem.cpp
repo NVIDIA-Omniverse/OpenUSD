@@ -291,6 +291,8 @@ HdEmbreeOiioTextureSystem::Sample2D(
     options.mipmode = OIIO::TextureOpt::MipModeDefault;
     options.time = request.frame;
     options.fill = request.channelFillValue;
+    options.sblur = std::max(0.0f, request.blur[0]);
+    options.tblur = std::max(0.0f, request.blur[1]);
 
     const float missingColor[4] = {
         request.defaultValue[0],

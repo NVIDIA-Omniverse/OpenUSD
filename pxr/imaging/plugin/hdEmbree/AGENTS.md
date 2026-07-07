@@ -371,6 +371,15 @@ center before evaluating its four circle lobes. `ND_hexagon_float` follows the
 stdlib folded-coordinate SDF, including the swapped absolute delta vector and
 both reflection folds before the final inside/outside test.
 
+MaterialXCpp implements `ND_blur_float`, `ND_blur_color3`, `ND_blur_color4`,
+`ND_blur_vector2`, `ND_blur_vector3`, and `ND_blur_vector4` by propagating a
+subtree-local texture preblur amount through `ShadingContext::textureBlur` to
+`Texture2DRequest::blur` and OIIO `TextureOpt::sblur/tblur`. Do not map them
+back to MaterialX's stdlib nodegraph, which is documented as a pass-through
+placeholder, and do not implement blur by arbitrary repeated UV resampling.
+Constant/unconnected inputs should remain stable; image-backed inputs should
+receive OIIO texture preblur based on the MaterialX `size` input.
+
 The active material render context is controlled by `ty:materialRenderContext`.
 `HdEmbreeRenderDelegate::GetMaterialRenderContexts()` returns context priority
 for Hydra material network selection. When that setting changes,

@@ -186,6 +186,17 @@ UsesConstantDefaultOutside(const TextureAddressMode mode, const float value)
            (value < 0.0f || value > 1.0f);
 }
 
+inline void
+ApplyContextTextureBlur(const ShadingContext& ctx, Texture2DRequest* request)
+{
+    if (!request) {
+        return;
+    }
+
+    request->blur[0] = std::max(request->blur[0], ctx.textureBlur[0]);
+    request->blur[1] = std::max(request->blur[1], ctx.textureBlur[1]);
+}
+
 }  // namespace mxcpp
 
 #endif

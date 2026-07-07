@@ -44,6 +44,7 @@ struct Texture2DRequest
     Vec2f st = Vec2f(0.0f);
     Vec2f dstdx = Vec2f(0.0f);
     Vec2f dstdy = Vec2f(0.0f);
+    Vec2f blur = Vec2f(0.0f);
 
     TextureAddressMode uAddressMode = TextureAddressMode::Periodic;
     TextureAddressMode vAddressMode = TextureAddressMode::Periodic;

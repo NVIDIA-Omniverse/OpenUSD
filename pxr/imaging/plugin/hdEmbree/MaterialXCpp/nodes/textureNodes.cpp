@@ -428,6 +428,7 @@ _EvalHexTiledImageNode(const ParamMap& inputs,
     } else {
         request.channelFillValue = TextureValueTraits<T>::kFillValue;
     }
+    ApplyContextTextureBlur(ctx, &request);
 
     std::array<Vec4f, 3> sampledValues = {
         Vec4f(0.0f), Vec4f(0.0f), Vec4f(0.0f)};
@@ -523,6 +524,7 @@ _EvalHexTiledNormalMap(const ParamMap& inputs,
     request.channelCount = 3;
     request.channelFillValue = 0.0f;
     request.defaultValue = TextureValueTraits<Vec3f>::ToVec4(defaultValue);
+    ApplyContextTextureBlur(ctx, &request);
 
     std::array<Vec3f, 3> tileNormals;
     for (int i = 0; i < 3; ++i) {
@@ -623,6 +625,7 @@ _EvalTextureNode(const ParamMap& inputs,
     } else {
         request.channelFillValue = TextureValueTraits<T>::kFillValue;
     }
+    ApplyContextTextureBlur(ctx, &request);
 
     const Texture2DResult sampled = ctx.textureSystem->Sample2D(request);
     (*outputs)[_kOut] = Value(TextureValueTraits<T>::FromVec4(sampled.value));
@@ -741,6 +744,7 @@ _EvalGltfImage(const ParamMap& inputs,
         request.channelFillValue = TextureValueTraits<T>::kFillValue;
     }
     request.defaultValue = TextureValueTraits<T>::ToVec4(defaultValue);
+    ApplyContextTextureBlur(ctx, &request);
 
     const Texture2DResult sampled = ctx.textureSystem->Sample2D(request);
     T result = TextureValueTraits<T>::FromVec4(sampled.value);
@@ -928,6 +932,7 @@ _EvalLatLongImageNode(const ParamMap& inputs,
     request.channelCount = TextureValueTraits<Vec3f>::kChannelCount;
     request.channelFillValue = TextureValueTraits<Vec3f>::kFillValue;
     request.defaultValue = defaultColor;
+    ApplyContextTextureBlur(ctx, &request);
 
     const Texture2DResult sampled = ctx.textureSystem->Sample2D(request);
     (*outputs)[_kOut] = Value(TextureValueTraits<Vec3f>::FromVec4(sampled.value));
@@ -1003,6 +1008,7 @@ _EvalUsdUvTextureNode(const ParamMap& inputs,
         request.channelCount = 4;
         request.channelFillValue = 1.0f;
         request.defaultValue = fallback;
+        ApplyContextTextureBlur(ctx, &request);
 
         const Texture2DResult sampled = ctx.textureSystem->Sample2D(request);
         sampledValue = sampled.value;

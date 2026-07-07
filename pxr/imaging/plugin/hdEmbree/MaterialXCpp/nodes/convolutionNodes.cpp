@@ -10,10 +10,6 @@
 #include "helpers/shadingContextHelpers.h"
 #include "../nodeRegistry.h"
 
-#include <cmath>
-#include <iostream>
-#include <mutex>
-
 namespace mxcpp {
 
 namespace {
@@ -21,37 +17,41 @@ namespace {
 static const SlotName _kIn("in");
 static const SlotName _kOut("out");
 static const SlotName _kScale("scale");
+static const SlotName _kSize("size");
 static const SlotName _kTexcoord("texcoord");
 
 static constexpr float _kFloatEps = 1e-6f;
 static constexpr float _kSobelScaleFactor = 1.0f / 16.0f;
 
-static void
-_WarnBlurPassThroughOnce()
+template<typename T>
+static T
+_EvaluateBlurInput(const ParamMap& inputs,
+                   const ShadingContext& ctx,
+                   const T& defaultValue)
 {
-    static std::once_flag once;
-    std::call_once(once, []() {
-        std::cout
-            << "hdEmbree MaterialX warning: 'blur' is unsupported for ray "
-               "tracing and will pass through 'in' unchanged.\n";
-    });
+    Value value;
+    if (inputs.Evaluate(_kIn, ctx, &value) && ValueHolds<T>(value)) {
+        return ValueGet<T>(value);
+    }
+    return Get<T>(inputs, _kIn, defaultValue);
 }
 
 template<typename T>
 static void
-_EvalBlurPassThrough(const ParamMap& inputs,
-                     const ShadingContext& ctx,
-                     NodeOutputMap* outputs)
+_EvalBlur(const ParamMap& inputs,
+          const ShadingContext& ctx,
+          NodeOutputMap* outputs)
 {
-    _WarnBlurPassThroughOnce();
-
-    Value value;
-    if (inputs.Evaluate(_kIn, ctx, &value) && ValueHolds<T>(value)) {
-        (*outputs)[_kOut] = value;
+    const T defaultValue = Get<T>(inputs, _kIn, Zero<T>());
+    const float size = EvaluateInput<float>(inputs, _kSize, ctx, 0.0f);
+    if (size <= _kFloatEps) {
+        (*outputs)[_kOut] = Value(_EvaluateBlurInput(inputs, ctx, defaultValue));
         return;
     }
 
-    (*outputs)[_kOut] = Value(Get<T>(inputs, _kIn, Zero<T>()));
+    ShadingContext blurCtx = ctx;
+    blurCtx.textureBlur += Vec2f(size);
+    (*outputs)[_kOut] = Value(_EvaluateBlurInput(inputs, blurCtx, defaultValue));
 }
 
 static Vec3f
@@ -117,12 +117,12 @@ _EvalHeightToNormal(const ParamMap& inputs, const ShadingContext& ctx,
 void
 RegisterConvolutionNodes(NodeRegistry& reg)
 {
-    _REG("ND_blur_float",   &_EvalBlurPassThrough<float>);
-    _REG("ND_blur_color3",  &_EvalBlurPassThrough<Vec3f>);
-    _REG("ND_blur_color4",  &_EvalBlurPassThrough<Vec4f>);
-    _REG("ND_blur_vector2", &_EvalBlurPassThrough<Vec2f>);
-    _REG("ND_blur_vector3", &_EvalBlurPassThrough<Vec3f>);
-    _REG("ND_blur_vector4", &_EvalBlurPassThrough<Vec4f>);
+    _REG("ND_blur_float",   &_EvalBlur<float>);
+    _REG("ND_blur_color3",  &_EvalBlur<Vec3f>);
+    _REG("ND_blur_color4",  &_EvalBlur<Vec4f>);
+    _REG("ND_blur_vector2", &_EvalBlur<Vec2f>);
+    _REG("ND_blur_vector3", &_EvalBlur<Vec3f>);
+    _REG("ND_blur_vector4", &_EvalBlur<Vec4f>);
     _REG("ND_heighttonormal_vector3", &_EvalHeightToNormal);
 }
 

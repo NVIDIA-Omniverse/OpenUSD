@@ -172,6 +172,19 @@ _EvalHeightFromTexcoordXSquared(const void*,
 }
 
 static bool
+_EvalHeightFromTextureBlurS(const void*,
+                            int,
+                            SlotId,
+                            const ShadingContext& ctx,
+                            Value* out)
+{
+    if (out) {
+        *out = Value(ctx.textureBlur[0]);
+    }
+    return true;
+}
+
+static bool
 _EvalRotationFromTexcoordX(const void*,
                            int,
                            SlotId,
@@ -2590,37 +2603,58 @@ static bool TestHeightToNormalDefaultTexcoord() {
     return Test_IsClose(_GetVec3(out), expected, 1e-5f);
 }
 
-static bool TestBlurPassThroughWarnsOnce() {
-    std::ostringstream captured;
-    std::streambuf* const oldBuf = std::cout.rdbuf(captured.rdbuf());
-
+static bool TestBlurPropagatesTextureBlur() {
     ParamMap floatInputs;
     floatInputs["in"] = Value(0.375f);
-    const NodeOutputMap floatOut = _Eval("ND_blur_float", floatInputs);
-
-    ParamMap colorInputs;
-    colorInputs["in"] = Value(Vec3f(0.1f, 0.2f, 0.3f));
-    const NodeOutputMap colorOut = _Eval("ND_blur_color3", colorInputs);
-
-    std::cout.rdbuf(oldBuf);
-
-    const std::string output = captured.str();
-    const std::string warning =
-        "hdEmbree MaterialX warning: 'blur' is unsupported for ray tracing "
-        "and will pass through 'in' unchanged.\n";
-
-    if (!Test_IsClose(_GetFloat(floatOut), 0.375f)) {
-        printf("    blur float output did not pass through input\n");
+    floatInputs["size"] = Value(0.2f);
+    const NodeOutputMap constantOut = _Eval("ND_blur_float", floatInputs);
+    if (!Test_IsClose(_GetFloat(constantOut), 0.375f)) {
+        printf("    blur changed a constant input\n");
         return false;
     }
-    if (!Test_IsClose(_GetVec3(colorOut), Vec3f(0.1f, 0.2f, 0.3f))) {
-        printf("    blur color3 output did not pass through input\n");
+
+    NodeRegistry::RegisterBuiltinNodes();
+    auto fn = NodeRegistry::GetInstance().Find(std::string("ND_blur_float"));
+    if (!fn) return false;
+
+    ParamMap connectedInputs;
+    connectedInputs["size"] = Value(0.2f);
+    connectedInputs["filtertype"] = Value(std::string("box"));
+    connectedInputs.Add(
+        AsSlotId("in"),
+        nullptr,
+        &_EvalHeightFromTextureBlurS,
+        nullptr,
+        -1,
+        InvalidSlotId);
+
+    ShadingContext ctx;
+
+    NodeOutputMap out;
+    fn(connectedInputs, ctx, &out);
+    if (!Test_IsClose(_GetFloat(out), 0.2f, 1e-5f)) {
+        printf("    blur did not propagate texture blur context: %f\n", _GetFloat(out));
         return false;
     }
-    if (output != warning) {
-        printf("    blur warning output mismatch: '%s'\n", output.c_str());
+
+    ParamMap imageInputs;
+    imageInputs["file"] = Value(std::string("/tmp/blur.tx"));
+    imageInputs["default"] = Value(Vec3f(0.0f));
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult = {
+        Vec4f(0.25f, 0.5f, 0.75f, 1.0f),
+        TextureSampleStatus::Ok};
+
+    ShadingContext imageCtx;
+    imageCtx.textureSystem = &textureSystem;
+    imageCtx.textureBlur = Vec2f(0.12f, 0.34f);
+    _EvalWithCtx("ND_image_color3", imageInputs, imageCtx);
+    if (!Test_IsClose(textureSystem.lastRequest.blur, Vec2f(0.12f, 0.34f))) {
+        printf("    image request did not receive texture blur\n");
         return false;
     }
+
     return true;
 }
 
@@ -3044,7 +3078,7 @@ Test_RegisterNodeTests()
     _REG(TestTriplanarProjectionColor3SamplesAxesAndBlends);
     _REG(TestTriplanarProjectionReevaluatesConnectedPosition);
     _REG(TestTriplanarProjectionDefaultsNormalToObjectSpace);
-    _REG(TestBlurPassThroughWarnsOnce);
+    _REG(TestBlurPropagatesTextureBlur);
     _REG(TestHeightToNormalDefaultTexcoord);
     _REG(TestBumpDefaultBasis);
     _REG(TestNormalMapVariants);
