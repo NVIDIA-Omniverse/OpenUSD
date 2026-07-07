@@ -338,6 +338,14 @@ scene delegate. It accepts modern `HdMaterialNetwork2` and legacy material
 network maps, converts them in `mxcppAdapter.*`, and compiles an
 `mxcpp::EvalGraph`.
 
+MaterialXCpp supports EDF-only materials authored as `ND_uniform_edf`
+connected to the `edf` input of an `ND_surface` terminal. The uniform EDF is
+carried through graph evaluation as a typed `mxcpp::UniformEdf` closure;
+`ND_surface` writes it to `SurfaceClosure::emissiveColor`, applies its opacity
+as cutout presence, and clears the legacy BSDF summary when no scattering
+closure is present. `ND_surface.bsdf` is intentionally rejected until native
+closure-valued BSDF inputs are implemented.
+
 The active material render context is controlled by `ty:materialRenderContext`.
 `HdEmbreeRenderDelegate::GetMaterialRenderContexts()` returns context priority
 for Hydra material network selection. When that setting changes,

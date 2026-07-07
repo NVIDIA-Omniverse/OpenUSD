@@ -23,6 +23,26 @@
 
 namespace mxcpp {
 
+namespace {
+
+const SlotName _color("color");
+const SlotName _out("out");
+
+void
+_EvalUniformEdf(
+    const ParamMap& inputs,
+    const ShadingContext&,
+    NodeOutputMap* outputs)
+{
+    // MaterialX's uniform_edf is direction-independent, so its closure can
+    // be represented by emitted radiance, but keep it typed as an EDF closure
+    // until ND_surface consumes it.
+    (*outputs)[_out] = Value(
+        UniformEdf{Get<Vec3f>(inputs, _color, Vec3f(1.0f))});
+}
+
+} // namespace
+
 NodeRegistry&
 NodeRegistry::GetInstance()
 {
@@ -68,6 +88,7 @@ NodeRegistry::RegisterBuiltinNodes()
         RegisterProcedural2dNodes(reg);
         RegisterProcedural3dNodes(reg);
         RegisterColorTransformNodes(reg);
+        reg.Register("ND_uniform_edf", &_EvalUniformEdf);
     });
 }
 

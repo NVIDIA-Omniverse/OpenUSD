@@ -10,6 +10,7 @@
 #include "materials/openPbr.h"
 #include "materials/usdPreviewSurface.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <functional>
 #include <map>
@@ -29,6 +30,20 @@ static const std::string _kGltfPbr =
 static const std::string _kUsdPreviewSurface = "UsdPreviewSurface";
 static const std::string _kMaterialXUsdPreviewSurface =
     "ND_UsdPreviewSurface_surfaceshader";
+static const std::string _kSurfaceConstructor = "ND_surface";
+
+static bool
+_HasAuthoredInput(const GraphNode& node, const std::string& inputName)
+{
+    const auto connIt = node.inputConnections.find(inputName);
+    if (connIt != node.inputConnections.end() && !connIt->second.empty()) {
+        return true;
+    }
+
+    const auto paramIt = node.parameters.find(inputName);
+    return paramIt != node.parameters.end() &&
+           !ValueIsEmpty(paramIt->second);
+}
 
 // ---------------------------------------------------------------------------
 // Compile
@@ -72,6 +87,13 @@ EvalGraph::Compile(
     }
 
     graph->_materialModelType = termNodeIt->second.nodeTypeId;
+
+    if (graph->_materialModelType == _kSurfaceConstructor &&
+        _HasAuthoredInput(termNodeIt->second, "bsdf")) {
+        fprintf(stderr,
+            "EvalGraph: ND_surface bsdf input is not supported\n");
+        return graph;
+    }
 
     // ---- Gather reachable nodes via DFS topological sort ----
 
@@ -402,6 +424,28 @@ EvalGraph::_EvalMaterialModel(
     }
     if (modelType == _kMaterialXUsdPreviewSurface) {
         return EvalUsdPreviewSurface(params);
+    }
+    if (modelType == _kSurfaceConstructor) {
+        static const SlotName edf("edf");
+        static const SlotName opacity("opacity");
+        static const SlotName thinWalled("thin_walled");
+
+        SurfaceClosure closure;
+        // ND_surface may contain no BSDF at all. Clear the legacy summary so
+        // an EDF-only surface does not acquire the default diffuse/specular
+        // fallback used by older material models.
+        const UniformEdf uniformEdf = Get<UniformEdf>(
+            params, edf, UniformEdf{Vec3f(0.0f)});
+        closure.baseColor = Vec3f(0.0f);
+        closure.specular = 0.0f;
+        closure.specularColor = Vec3f(0.0f);
+        closure.transmission = 0.0f;
+        closure.transmissionColor = Vec3f(0.0f);
+        closure.emissiveColor = uniformEdf.emittance;
+        closure.presence = std::clamp(
+            Get<float>(params, opacity, 1.0f), 0.0f, 1.0f);
+        closure.thinWalled = Get<bool>(params, thinWalled, false);
+        return closure;
     }
 
     // Unknown model: construct a basic closure from common parameter names.

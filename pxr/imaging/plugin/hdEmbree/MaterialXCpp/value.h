@@ -11,6 +11,10 @@
 
 namespace mxcpp {
 
+struct UniformEdf {
+    Vec3f emittance = Vec3f(1.0f);
+};
+
 using Value = std::variant<
     std::monostate,
     float,
@@ -21,6 +25,7 @@ using Value = std::variant<
     Vec4f,
     Mat3f,
     Mat4f,
+    UniformEdf,
     std::string>;
 
 inline bool ValueIsEmpty(const Value& v) {
