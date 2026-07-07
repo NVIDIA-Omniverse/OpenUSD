@@ -108,6 +108,7 @@ pxr_plugin(hdEmbree
         MaterialXCpp/nodes/proceduralNodes
         MaterialXCpp/nodes/procedural2dNodes
         MaterialXCpp/nodes/procedural3dNodes
+        MaterialXCpp/nodes/pbrNodes
         MaterialXCpp/nodes/colorTransformNodes
 
     PUBLIC_HEADERS
@@ -283,6 +284,7 @@ pxr_build_test(testMaterialXCpp
         MaterialXCpp/nodes/proceduralNodes.cpp
         MaterialXCpp/nodes/procedural2dNodes.cpp
         MaterialXCpp/nodes/procedural3dNodes.cpp
+        MaterialXCpp/nodes/pbrNodes.cpp
         MaterialXCpp/nodes/colorTransformNodes.cpp
 )
 

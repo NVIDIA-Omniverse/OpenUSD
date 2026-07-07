@@ -17,6 +17,7 @@
 #include "nodes/proceduralNodes.h"
 #include "nodes/procedural2dNodes.h"
 #include "nodes/procedural3dNodes.h"
+#include "nodes/pbrNodes.h"
 #include "nodes/colorTransformNodes.h"
 
 #include <mutex>
@@ -87,6 +88,7 @@ NodeRegistry::RegisterBuiltinNodes()
         RegisterProceduralNodes(reg);
         RegisterProcedural2dNodes(reg);
         RegisterProcedural3dNodes(reg);
+        RegisterPbrNodes(reg);
         RegisterColorTransformNodes(reg);
         reg.Register("ND_uniform_edf", &_EvalUniformEdf);
     });

@@ -4,6 +4,7 @@
 #ifndef MXCPP_VALUE_H
 #define MXCPP_VALUE_H
 
+#include "materials/closureTree.h"
 #include "mathTypes.h"
 
 #include <string>
@@ -13,6 +14,10 @@ namespace mxcpp {
 
 struct UniformEdf {
     Vec3f emittance = Vec3f(1.0f);
+};
+
+struct BsdfClosure {
+    Bsdf::ClosureTree tree;
 };
 
 using Value = std::variant<
@@ -26,6 +31,7 @@ using Value = std::variant<
     Mat3f,
     Mat4f,
     UniformEdf,
+    BsdfClosure,
     std::string>;
 
 inline bool ValueIsEmpty(const Value& v) {

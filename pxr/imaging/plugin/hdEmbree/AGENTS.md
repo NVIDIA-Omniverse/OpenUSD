@@ -343,8 +343,14 @@ connected to the `edf` input of an `ND_surface` terminal. The uniform EDF is
 carried through graph evaluation as a typed `mxcpp::UniformEdf` closure;
 `ND_surface` writes it to `SurfaceClosure::emissiveColor`, applies its opacity
 as cutout presence, and clears the legacy BSDF summary when no scattering
-closure is present. `ND_surface.bsdf` is intentionally rejected until native
-closure-valued BSDF inputs are implemented.
+closure is present. `ND_surface.bsdf` carries typed `mxcpp::BsdfClosure`
+values from MaterialX PBR BSDF nodes into `SurfaceClosure::bsdfTree`; keep the
+legacy summary cleared so missing or empty BSDF inputs do not fall back to the
+old diffuse/specular defaults. When the connected BSDF tree contains a
+`SubsurfaceData` node, `ND_surface` must also copy its color/radius/anisotropy
+into the `SurfaceClosure` subsurface summary fields because the renderer's
+random-walk SSS path uses those fields after `Bsdf::SampleSurface()` marks a
+subsurface event.
 
 MaterialXCpp implements `ND_tiledcircles_color3`,
 `ND_tiledcloverleafs_color3`, and `ND_tiledhexagons_color3` directly from the

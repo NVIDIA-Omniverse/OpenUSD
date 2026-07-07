@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <functional>
 #include <map>
+#include <variant>
 
 namespace mxcpp {
 
@@ -31,19 +32,6 @@ static const std::string _kUsdPreviewSurface = "UsdPreviewSurface";
 static const std::string _kMaterialXUsdPreviewSurface =
     "ND_UsdPreviewSurface_surfaceshader";
 static const std::string _kSurfaceConstructor = "ND_surface";
-
-static bool
-_HasAuthoredInput(const GraphNode& node, const std::string& inputName)
-{
-    const auto connIt = node.inputConnections.find(inputName);
-    if (connIt != node.inputConnections.end() && !connIt->second.empty()) {
-        return true;
-    }
-
-    const auto paramIt = node.parameters.find(inputName);
-    return paramIt != node.parameters.end() &&
-           !ValueIsEmpty(paramIt->second);
-}
 
 // ---------------------------------------------------------------------------
 // Compile
@@ -87,13 +75,6 @@ EvalGraph::Compile(
     }
 
     graph->_materialModelType = termNodeIt->second.nodeTypeId;
-
-    if (graph->_materialModelType == _kSurfaceConstructor &&
-        _HasAuthoredInput(termNodeIt->second, "bsdf")) {
-        fprintf(stderr,
-            "EvalGraph: ND_surface bsdf input is not supported\n");
-        return graph;
-    }
 
     // ---- Gather reachable nodes via DFS topological sort ----
 
@@ -365,6 +346,56 @@ EvalGraph::_ReevaluateInput(
         sourceNodeIndex, sourceOutputSlot, ctx, out);
 }
 
+static Vec3f
+_SaturateVec(const Vec3f& v)
+{
+    return Vec3f(
+        std::clamp(v[0], 0.0f, 1.0f),
+        std::clamp(v[1], 0.0f, 1.0f),
+        std::clamp(v[2], 0.0f, 1.0f));
+}
+
+static bool
+_ApplySubsurfaceSummaryFromTree(
+    const Bsdf::ClosureTree& tree,
+    Bsdf::NodeId nodeId,
+    SurfaceClosure* closure)
+{
+    const Bsdf::Node* node = tree.Get(nodeId);
+    if (!node || !closure) {
+        return false;
+    }
+
+    if (const auto* subsurface =
+            std::get_if<Bsdf::SubsurfaceData>(&node->data)) {
+        closure->subsurfaceWeight = std::clamp(
+            subsurface->weight, 0.0f, 1.0f);
+        closure->subsurfaceColor = _SaturateVec(subsurface->color);
+        closure->subsurfaceRadius = subsurface->radius;
+        closure->subsurfaceRadiusScale = Vec3f(1.0f);
+        closure->subsurfaceAnisotropy = subsurface->anisotropy;
+        return closure->HasSubsurfaceScattering();
+    }
+
+    if (const auto* mix = std::get_if<Bsdf::MixData>(&node->data)) {
+        return _ApplySubsurfaceSummaryFromTree(tree, mix->fg, closure) ||
+               _ApplySubsurfaceSummaryFromTree(tree, mix->bg, closure);
+    }
+    if (const auto* layer = std::get_if<Bsdf::LayerData>(&node->data)) {
+        return _ApplySubsurfaceSummaryFromTree(tree, layer->top, closure) ||
+               _ApplySubsurfaceSummaryFromTree(tree, layer->base, closure);
+    }
+    if (const auto* add = std::get_if<Bsdf::AddData>(&node->data)) {
+        return _ApplySubsurfaceSummaryFromTree(tree, add->in1, closure) ||
+               _ApplySubsurfaceSummaryFromTree(tree, add->in2, closure);
+    }
+    if (const auto* multiply = std::get_if<Bsdf::MultiplyData>(&node->data)) {
+        return _ApplySubsurfaceSummaryFromTree(tree, multiply->input, closure);
+    }
+
+    return false;
+}
+
 SurfaceClosure
 EvalGraph::Evaluate(const ShadingContext& ctx, const EvalOptions& options) const
 {
@@ -426,21 +457,32 @@ EvalGraph::_EvalMaterialModel(
         return EvalUsdPreviewSurface(params);
     }
     if (modelType == _kSurfaceConstructor) {
+        static const SlotName bsdf("bsdf");
         static const SlotName edf("edf");
         static const SlotName opacity("opacity");
         static const SlotName thinWalled("thin_walled");
 
         SurfaceClosure closure;
         // ND_surface may contain no BSDF at all. Clear the legacy summary so
-        // an EDF-only surface does not acquire the default diffuse/specular
-        // fallback used by older material models.
+        // an EDF-only or empty surface does not acquire the default
+        // diffuse/specular fallback used by older material models.
         const UniformEdf uniformEdf = Get<UniformEdf>(
             params, edf, UniformEdf{Vec3f(0.0f)});
         closure.baseColor = Vec3f(0.0f);
+        closure.metallic = 0.0f;
         closure.specular = 0.0f;
         closure.specularColor = Vec3f(0.0f);
         closure.transmission = 0.0f;
         closure.transmissionColor = Vec3f(0.0f);
+        closure.coat = 0.0f;
+        closure.sheen = 0.0f;
+        closure.subsurfaceWeight = 0.0f;
+
+        const BsdfClosure bsdfClosure = Get<BsdfClosure>(
+            params, bsdf, BsdfClosure{});
+        closure.bsdfTree = bsdfClosure.tree;
+        _ApplySubsurfaceSummaryFromTree(
+            closure.bsdfTree, closure.bsdfTree.root, &closure);
         closure.emissiveColor = uniformEdf.emittance;
         closure.presence = std::clamp(
             Get<float>(params, opacity, 1.0f), 0.0f, 1.0f);
