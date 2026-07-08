@@ -7,6 +7,7 @@
 #include "../medium.h"
 #include "materials/closureTree.h"
 #include "mathTypes.h"
+#include "surfaceClosure.h"
 
 #include <string>
 #include <variant>
@@ -40,6 +41,7 @@ using Value = std::variant<
     UniformEdf,
     BsdfClosure,
     VdfClosure,
+    SurfaceClosure,
     std::string>;
 
 inline bool ValueIsEmpty(const Value& v) {

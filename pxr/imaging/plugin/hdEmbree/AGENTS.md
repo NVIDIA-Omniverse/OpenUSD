@@ -340,11 +340,16 @@ network maps, converts them in `mxcppAdapter.*`, and compiles an
 `mxcpp::EvalGraph`.
 
 MaterialXCpp supports EDF-only materials authored as `ND_uniform_edf`
-connected to the `edf` input of an `ND_surface` terminal. The uniform EDF is
-carried through graph evaluation as a typed `mxcpp::UniformEdf` closure;
-`ND_surface` writes it to `SurfaceClosure::emissiveColor`, applies its opacity
-as cutout presence, and clears the legacy BSDF summary when no scattering
-closure is present. `ND_surface.bsdf` carries typed `mxcpp::BsdfClosure`
+connected to the `edf` input of `ND_surface`. The uniform EDF is carried
+through graph evaluation as a typed `mxcpp::UniformEdf` closure; `ND_surface`
+writes it to `SurfaceClosure::emissiveColor`, applies its opacity as cutout
+presence, and clears the legacy BSDF summary when no scattering closure is
+present. `ND_surface` may be either the terminal material model or an ordinary
+surfaceshader-valued node feeding another surfaceshader node. Surface-shader
+values are carried through `mxcpp::Value` as `SurfaceClosure`; for example,
+`ND_mix_surfaceshader` blends its `bg` and `fg` `SurfaceClosure` inputs,
+including emissive summaries and BSDF closure trees. `ND_surface.bsdf` carries
+typed `mxcpp::BsdfClosure`
 values from MaterialX PBR BSDF nodes into `SurfaceClosure::bsdfTree`; keep the
 legacy summary cleared so missing or empty BSDF inputs do not fall back to the
 old diffuse/specular defaults. When the connected BSDF tree contains a

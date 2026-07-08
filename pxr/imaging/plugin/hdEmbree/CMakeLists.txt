@@ -121,6 +121,7 @@ pxr_plugin(hdEmbree
         MaterialXCpp/shadingContext.h
         MaterialXCpp/spectral.h
         MaterialXCpp/surfaceClosure.h
+        MaterialXCpp/surfaceShaderUtils.h
         MaterialXCpp/materials/closureTree.h
         MaterialXCpp/paramMap.h
         MaterialXCpp/textureSystem.h
