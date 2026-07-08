@@ -369,6 +369,13 @@ stream is available, they fall back to the sampled `displayColor`/
 `displayOpacity` values in `ShadingContext` for compatibility with older USD
 scenes that relied on display primvars as geometry color.
 
+MaterialX `ND_geompropvalueuniform_string` and
+`ND_geompropvalueuniform_filename` read `HdInterpolationConstant` primvars
+from the per-mesh `uniformPrimvarMap`. String-like values are accepted from
+string, token, asset path, and their array forms; asset paths should resolve to
+the resolved path when available and otherwise fall back to the authored asset
+path.
+
 MaterialXCpp implements `ND_tiledcircles_color3`,
 `ND_tiledcloverleafs_color3`, and `ND_tiledhexagons_color3` directly from the
 MaterialX stdlib nodegraph formulas. Keep the regular branch based on

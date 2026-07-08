@@ -17,6 +17,7 @@
 #include "pxr/imaging/pxOsd/tokens.h"
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/matrix4d.h"
+#include "pxr/usd/sdf/assetPath.h"
 
 #include <algorithm> // sort
 #include <cmath>
@@ -87,6 +88,58 @@ _WarnUnsupportedMatrixPrimvarOnce(
         "interpolation; only constant and uniform are supported",
         name.GetText(),
         _InterpolationName(interpolation));
+}
+
+std::string
+_AssetPathToString(const SdfAssetPath& assetPath)
+{
+    const std::string resolvedPath = assetPath.GetResolvedPath();
+    return resolvedPath.empty() ? assetPath.GetAssetPath() : resolvedPath;
+}
+
+bool
+_GetUniformStringPrimvarValue(const VtValue& value, std::string* result)
+{
+    if (!result) {
+        return false;
+    }
+
+    if (value.IsHolding<std::string>()) {
+        *result = value.UncheckedGet<std::string>();
+        return true;
+    }
+    if (value.IsHolding<TfToken>()) {
+        *result = value.UncheckedGet<TfToken>().GetString();
+        return true;
+    }
+    if (value.IsHolding<SdfAssetPath>()) {
+        *result = _AssetPathToString(value.UncheckedGet<SdfAssetPath>());
+        return true;
+    }
+
+    if (value.IsHolding<VtStringArray>()) {
+        const auto& array = value.UncheckedGet<VtStringArray>();
+        if (!array.empty()) {
+            *result = array[0];
+            return true;
+        }
+    }
+    if (value.IsHolding<VtTokenArray>()) {
+        const auto& array = value.UncheckedGet<VtTokenArray>();
+        if (!array.empty()) {
+            *result = array[0].GetString();
+            return true;
+        }
+    }
+    if (value.IsHolding<VtArray<SdfAssetPath>>()) {
+        const auto& array = value.UncheckedGet<VtArray<SdfAssetPath>>();
+        if (!array.empty()) {
+            *result = _AssetPathToString(array[0]);
+            return true;
+        }
+    }
+
+    return false;
 }
 
 float
@@ -1456,17 +1509,11 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
             protoCtx->uniformPrimvarMap.clear();
             TF_FOR_ALL(it, _primvarSourceMap) {
                 if (it->second.interpolation == HdInterpolationConstant) {
-                    const VtValue& val = it->second.data;
-                    const std::string name = it->first.GetString();
-                    if (val.IsHolding<std::string>()) {
+                    std::string value;
+                    if (_GetUniformStringPrimvarValue(it->second.data, &value)) {
+                        const std::string name = it->first.GetString();
                         protoCtx->uniformPrimvarMap[name] =
-                            mxcpp::Value(val.UncheckedGet<std::string>());
-                    } else if (val.IsHolding<VtStringArray>()) {
-                        const auto& arr = val.UncheckedGet<VtStringArray>();
-                        if (!arr.empty()) {
-                            protoCtx->uniformPrimvarMap[name] =
-                                mxcpp::Value(std::string(arr[0]));
-                        }
+                            mxcpp::Value(std::move(value));
                     }
                 }
             }
