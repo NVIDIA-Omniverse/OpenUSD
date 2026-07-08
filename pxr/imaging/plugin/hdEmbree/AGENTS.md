@@ -395,6 +395,11 @@ materials to recompile.
 
 Textures go through `HdEmbreeOiioTextureSystem`, which implements the
 MaterialXCpp texture system over OpenImageIO.
+PNG image nodes expect source alpha to remain straight/unassociated. PNG
+textures use a dedicated OIIO texture system with `unassociatedalpha` enabled
+so alpha is not premultiplied into RGB before hdEmbree applies texture
+color-space conversion to RGB only. Do not enable this globally; non-PNG
+formats should retain OIIO's default alpha handling.
 
 `ShadingContext::texcoord` preserves authored USD `st` values in MaterialX's
 lower-left UV convention. Do not pre-flip V when building the shading context.

@@ -25,6 +25,7 @@ struct HdEmbreeOiioTextureSystem::_Impl
 {
 #if defined(PXR_OIIO_PLUGIN_ENABLED)
     OIIO::TextureSystem* textureSystem = nullptr;
+    OIIO::TextureSystem* pngTextureSystem = nullptr;
 #endif
     mutable std::mutex warningMutex;
     mutable std::unordered_set<std::string> warnedFiles;
@@ -234,6 +235,63 @@ _LocalUdimCoord(const float coord)
     return coord - std::floor(coord);
 }
 
+void
+_ConfigureTextureSystem(
+    OIIO::TextureSystem* const textureSystem,
+    const bool preserveUnassociatedAlpha)
+{
+    if (!textureSystem) {
+        return;
+    }
+
+    textureSystem->attribute("automip", 1);
+    textureSystem->attribute("autotile", 64);
+    textureSystem->attribute("accept_untiled", 1);
+    textureSystem->attribute("accept_unmipped", 1);
+    textureSystem->attribute("gray_to_rgb", 1);
+    textureSystem->attribute("unassociatedalpha",
+                             preserveUnassociatedAlpha ? 1 : 0);
+}
+
+bool
+_HasPngExtension(const std::string& filePath)
+{
+    if (filePath.empty()) {
+        return false;
+    }
+
+    size_t pathEnd = filePath.find_first_of("?#");
+    if (pathEnd == std::string::npos) {
+        pathEnd = filePath.size();
+    }
+    if (pathEnd < 4) {
+        return false;
+    }
+
+    const size_t dot = filePath.find_last_of('.', pathEnd - 1);
+    const size_t slash = filePath.find_last_of("/\\", pathEnd - 1);
+    if (dot == std::string::npos ||
+        (slash != std::string::npos && dot < slash) ||
+        pathEnd - dot != 4) {
+        return false;
+    }
+
+    return std::tolower(static_cast<unsigned char>(filePath[dot + 1])) == 'p' &&
+           std::tolower(static_cast<unsigned char>(filePath[dot + 2])) == 'n' &&
+           std::tolower(static_cast<unsigned char>(filePath[dot + 3])) == 'g';
+}
+
+OIIO::TextureSystem*
+_SelectTextureSystem(
+    HdEmbreeOiioTextureSystem::_Impl* const impl,
+    const std::string& filePath)
+{
+    if (impl && impl->pngTextureSystem && _HasPngExtension(filePath)) {
+        return impl->pngTextureSystem;
+    }
+    return impl ? impl->textureSystem : nullptr;
+}
+
 #endif
 
 }  // namespace
@@ -243,19 +301,25 @@ HdEmbreeOiioTextureSystem::HdEmbreeOiioTextureSystem()
 {
 #if defined(PXR_OIIO_PLUGIN_ENABLED)
     _impl->textureSystem = OIIO::TextureSystem::create(/* shared = */ true);
-    if (_impl->textureSystem) {
-        _impl->textureSystem->attribute("automip", 1);
-        _impl->textureSystem->attribute("autotile", 64);
-        _impl->textureSystem->attribute("accept_untiled", 1);
-        _impl->textureSystem->attribute("accept_unmipped", 1);
-        _impl->textureSystem->attribute("gray_to_rgb", 1);
-    }
+    _ConfigureTextureSystem(
+        _impl->textureSystem, /* preserveUnassociatedAlpha = */ false);
+
+    // OIIO exposes unassociated-alpha handling at the TextureSystem/ImageCache
+    // level rather than per texture lookup.  Use a separate non-shared system
+    // so only PNG inputs bypass OIIO's default automatic premultiplication.
+    _impl->pngTextureSystem = OIIO::TextureSystem::create(/* shared = */ false);
+    _ConfigureTextureSystem(
+        _impl->pngTextureSystem, /* preserveUnassociatedAlpha = */ true);
 #endif
 }
 
 HdEmbreeOiioTextureSystem::~HdEmbreeOiioTextureSystem()
 {
 #if defined(PXR_OIIO_PLUGIN_ENABLED)
+    if (_impl && _impl->pngTextureSystem) {
+        OIIO::TextureSystem::destroy(_impl->pngTextureSystem);
+        _impl->pngTextureSystem = nullptr;
+    }
     if (_impl && _impl->textureSystem) {
         OIIO::TextureSystem::destroy(_impl->textureSystem);
         _impl->textureSystem = nullptr;
@@ -281,7 +345,9 @@ HdEmbreeOiioTextureSystem::Sample2D(
     }
     return _MakeDefaultResult(request, mxcpp::TextureSampleStatus::Error);
 #else
-    if (!_impl || !_impl->textureSystem) {
+    OIIO::TextureSystem* const textureSystem =
+        _SelectTextureSystem(_impl.get(), request.filePath);
+    if (!textureSystem) {
         if (_ShouldWarnOnce(_impl.get(), request.filePath)) {
             TF_WARN(
                 "OpenImageIO texture system is unavailable for '%s'. "
@@ -321,9 +387,9 @@ HdEmbreeOiioTextureSystem::Sample2D(
     };
 
     OIIO::TextureSystem::Perthread* const threadInfo =
-        _impl->textureSystem->get_perthread_info();
+        textureSystem->get_perthread_info();
     OIIO::TextureSystem::TextureHandle* handle =
-        _impl->textureSystem->get_texture_handle(
+        textureSystem->get_texture_handle(
             OIIO::ustring(request.filePath), threadInfo);
 
     // MaterialX graph coordinates use a lower-left origin, while the OIIO
@@ -336,20 +402,20 @@ HdEmbreeOiioTextureSystem::Sample2D(
     const float dsdy = request.dstdy[0];
     const float dtdy = -request.dstdy[1];
 
-    if (handle && _impl->textureSystem->is_udim(handle)) {
+    if (handle && textureSystem->is_udim(handle)) {
         // UDIM tile numbers are defined in MaterialX UV space:
         // 1001 + floor(u) + 10 * floor(v).  Resolve the concrete tile before
         // flipping T for image-space sampling, otherwise the first row works
         // by accident and higher rows are resolved from the flipped axis.
-        handle = _impl->textureSystem->resolve_udim(
+        handle = textureSystem->resolve_udim(
             handle, threadInfo, request.st[0], request.st[1]);
         s = _LocalUdimCoord(request.st[0]);
         t = 1.0f - _LocalUdimCoord(request.st[1]);
     }
 
     const bool ok =
-        handle && _impl->textureSystem->good(handle) &&
-        _impl->textureSystem->texture(
+        handle && textureSystem->good(handle) &&
+        textureSystem->texture(
             handle,
             threadInfo,
             options,
@@ -363,7 +429,7 @@ HdEmbreeOiioTextureSystem::Sample2D(
             sampled);
 
     if (!ok) {
-        const std::string error = _impl->textureSystem->geterror();
+        const std::string error = textureSystem->geterror();
         if (_ShouldWarnOnce(_impl.get(), request.filePath)) {
             if (error.empty()) {
                 TF_WARN(
