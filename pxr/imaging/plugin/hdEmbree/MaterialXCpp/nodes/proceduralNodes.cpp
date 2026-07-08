@@ -146,11 +146,15 @@ RegisterProceduralNodes(NodeRegistry& reg)
     _REG("ND_constant_float", &_EvalConstant<float>);
     _REG("ND_constant_integer", &_EvalConstant<int>);
     _REG("ND_constant_boolean", &_EvalConstant<bool>);
+    _REG("ND_constant_string", &_EvalConstant<std::string>);
+    _REG("ND_constant_filename", &_EvalConstant<std::string>);
     _REG("ND_constant_color3", &_EvalConstant<Vec3f>);
     _REG("ND_constant_color4", &_EvalConstant<Vec4f>);
     _REG("ND_constant_vector2", &_EvalConstant<Vec2f>);
     _REG("ND_constant_vector3", &_EvalConstant<Vec3f>);
     _REG("ND_constant_vector4", &_EvalConstant<Vec4f>);
+    _REG("ND_constant_matrix33", &_EvalConstant<Mat3f>);
+    _REG("ND_constant_matrix44", &_EvalConstant<Mat4f>);
 
     _REG("ND_randomfloat_float", &_EvalRandomFloatTyped<float>);
     _REG("ND_randomfloat_integer", &_EvalRandomFloatTyped<int>);

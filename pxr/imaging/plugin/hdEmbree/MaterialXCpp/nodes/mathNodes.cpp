@@ -7,6 +7,7 @@
 #include "mathNodes.h"
 #include "helpers/mathHelpers.h"
 #include "helpers/spaceHelpers.h"
+#include "../surfaceShaderUtils.h"
 #include "../nodeRegistry.h"
 
 #include <cmath>
@@ -66,6 +67,32 @@ _EvalSubtract(const ParamMap& inputs, const ShadingContext&,
 
 template<typename T>
 static void
+_EvalAddFA(const ParamMap& inputs, const ShadingContext&,
+           NodeOutputMap* outputs)
+{
+    T result = Get<T>(inputs, _kIn1, Zero<T>());
+    const float b = Get<float>(inputs, _kIn2, 0.0f);
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {
+        result[i] += b;
+    }
+    (*outputs)[_kOut] = Value(result);
+}
+
+template<typename T>
+static void
+_EvalSubtractFA(const ParamMap& inputs, const ShadingContext&,
+                NodeOutputMap* outputs)
+{
+    T result = Get<T>(inputs, _kIn1, Zero<T>());
+    const float b = Get<float>(inputs, _kIn2, 0.0f);
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {
+        result[i] -= b;
+    }
+    (*outputs)[_kOut] = Value(result);
+}
+
+template<typename T>
+static void
 _EvalMultiply(const ParamMap& inputs, const ShadingContext&,
               NodeOutputMap* outputs)
 {
@@ -104,6 +131,243 @@ _EvalDivideFA(const ParamMap& inputs, const ShadingContext&,
     T a = Get<T>(inputs, _kIn1, Zero<T>());
     float b = Get<float>(inputs, _kIn2, 1.0f);
     (*outputs)[_kOut] = Value(b != 0.0f ? a / b : Zero<T>());
+}
+
+template<typename MatrixT, int N>
+static MatrixT
+_MatrixAddScalar(MatrixT matrix, float value)
+{
+    for (int row = 0; row < N; ++row) {
+        for (int col = 0; col < N; ++col) {
+            matrix[row][col] += value;
+        }
+    }
+    return matrix;
+}
+
+template<typename MatrixT, int N>
+static MatrixT
+_MatrixSubtractScalar(MatrixT matrix, float value)
+{
+    for (int row = 0; row < N; ++row) {
+        for (int col = 0; col < N; ++col) {
+            matrix[row][col] -= value;
+        }
+    }
+    return matrix;
+}
+
+template<typename MatrixT, int N>
+static void
+_EvalMatrixAddFA(const ParamMap& inputs, const ShadingContext&,
+                 NodeOutputMap* outputs)
+{
+    const MatrixT a = Get<MatrixT>(inputs, _kIn1, One<MatrixT>());
+    const float b = Get<float>(inputs, _kIn2, 0.0f);
+    (*outputs)[_kOut] = Value(_MatrixAddScalar<MatrixT, N>(a, b));
+}
+
+template<typename MatrixT, int N>
+static void
+_EvalMatrixSubtractFA(const ParamMap& inputs, const ShadingContext&,
+                      NodeOutputMap* outputs)
+{
+    const MatrixT a = Get<MatrixT>(inputs, _kIn1, One<MatrixT>());
+    const float b = Get<float>(inputs, _kIn2, 0.0f);
+    (*outputs)[_kOut] = Value(_MatrixSubtractScalar<MatrixT, N>(a, b));
+}
+
+template<typename MatrixT>
+static void
+_EvalMatrixDivide(const ParamMap& inputs, const ShadingContext&,
+                  NodeOutputMap* outputs)
+{
+    const MatrixT a = Get<MatrixT>(inputs, _kIn1, One<MatrixT>());
+    const MatrixT b = Get<MatrixT>(inputs, _kIn2, One<MatrixT>());
+    (*outputs)[_kOut] = Value(a * b.inverse());
+}
+
+static BsdfClosure
+_MakeAddBsdfClosure(
+    const BsdfClosure& in1Closure,
+    const BsdfClosure& in2Closure)
+{
+    BsdfClosure closure;
+    const Bsdf::NodeId in1 =
+        AppendClosureTree(&closure.tree, in1Closure.tree);
+    const Bsdf::NodeId in2 =
+        AppendClosureTree(&closure.tree, in2Closure.tree);
+
+    if (closure.tree.IsValid(in1) && closure.tree.IsValid(in2)) {
+        Bsdf::AddData add;
+        add.in1 = in1;
+        add.in2 = in2;
+        closure.tree.root = closure.tree.Add(add);
+    } else if (closure.tree.IsValid(in1)) {
+        closure.tree.root = in1;
+    } else if (closure.tree.IsValid(in2)) {
+        closure.tree.root = in2;
+    }
+
+    if (in1Closure.hasInteriorMedium) {
+        closure.hasInteriorMedium = true;
+        closure.interiorMedium = in1Closure.interiorMedium;
+    } else if (in2Closure.hasInteriorMedium) {
+        closure.hasInteriorMedium = true;
+        closure.interiorMedium = in2Closure.interiorMedium;
+    }
+
+    return closure;
+}
+
+static BsdfClosure
+_MakeMultiplyBsdfClosure(
+    const BsdfClosure& inClosure,
+    const Vec3f& weight)
+{
+    BsdfClosure closure = inClosure;
+    if (closure.tree.Empty()) {
+        return closure;
+    }
+
+    const Vec3f clampedWeight(
+        std::clamp(weight[0], 0.0f, 1.0f),
+        std::clamp(weight[1], 0.0f, 1.0f),
+        std::clamp(weight[2], 0.0f, 1.0f));
+    if (clampedWeight == Vec3f(1.0f)) {
+        return closure;
+    }
+
+    Bsdf::MultiplyData multiply;
+    multiply.input = closure.tree.root;
+    multiply.weight = clampedWeight;
+    closure.tree.root = closure.tree.Add(multiply);
+    return closure;
+}
+
+static float
+_MediumScatterWeight(const MediumProperties& medium)
+{
+    return std::max(0.0f,
+        medium.sigmaS[0] + medium.sigmaS[1] + medium.sigmaS[2]);
+}
+
+static VdfClosure
+_AddVdfClosures(const VdfClosure& in1Closure, const VdfClosure& in2Closure)
+{
+    VdfClosure closure;
+    closure.medium.sigmaA =
+        in1Closure.medium.sigmaA + in2Closure.medium.sigmaA;
+    closure.medium.sigmaS =
+        in1Closure.medium.sigmaS + in2Closure.medium.sigmaS;
+
+    const float weight1 = _MediumScatterWeight(in1Closure.medium);
+    const float weight2 = _MediumScatterWeight(in2Closure.medium);
+    const float weightSum = weight1 + weight2;
+    if (weightSum > 0.0f) {
+        closure.medium.anisotropy =
+            (in1Closure.medium.anisotropy * weight1 +
+             in2Closure.medium.anisotropy * weight2) / weightSum;
+    } else if (!in1Closure.medium.IsVacuum()) {
+        closure.medium.anisotropy = in1Closure.medium.anisotropy;
+    } else {
+        closure.medium.anisotropy = in2Closure.medium.anisotropy;
+    }
+    return closure;
+}
+
+static VdfClosure
+_MultiplyVdfClosure(const VdfClosure& inClosure, const Vec3f& weight)
+{
+    VdfClosure closure = inClosure;
+    closure.medium.sigmaA = CompMul(closure.medium.sigmaA, weight);
+    closure.medium.sigmaS = CompMul(closure.medium.sigmaS, weight);
+    return closure;
+}
+
+static void
+_EvalAddBsdf(const ParamMap& inputs, const ShadingContext&,
+             NodeOutputMap* outputs)
+{
+    (*outputs)[_kOut] = Value(_MakeAddBsdfClosure(
+        Get<BsdfClosure>(inputs, _kIn1, BsdfClosure{}),
+        Get<BsdfClosure>(inputs, _kIn2, BsdfClosure{})));
+}
+
+static void
+_EvalAddEdf(const ParamMap& inputs, const ShadingContext&,
+            NodeOutputMap* outputs)
+{
+    const UniformEdf in1 = Get<UniformEdf>(
+        inputs, _kIn1, UniformEdf{Vec3f(0.0f)});
+    const UniformEdf in2 = Get<UniformEdf>(
+        inputs, _kIn2, UniformEdf{Vec3f(0.0f)});
+    (*outputs)[_kOut] = Value(UniformEdf{in1.emittance + in2.emittance});
+}
+
+static void
+_EvalAddVdf(const ParamMap& inputs, const ShadingContext&,
+            NodeOutputMap* outputs)
+{
+    (*outputs)[_kOut] = Value(_AddVdfClosures(
+        Get<VdfClosure>(inputs, _kIn1, VdfClosure{}),
+        Get<VdfClosure>(inputs, _kIn2, VdfClosure{})));
+}
+
+static void
+_EvalMultiplyBsdfC(const ParamMap& inputs, const ShadingContext&,
+                   NodeOutputMap* outputs)
+{
+    (*outputs)[_kOut] = Value(_MakeMultiplyBsdfClosure(
+        Get<BsdfClosure>(inputs, _kIn1, BsdfClosure{}),
+        Get<Vec3f>(inputs, _kIn2, Vec3f(1.0f))));
+}
+
+static void
+_EvalMultiplyBsdfF(const ParamMap& inputs, const ShadingContext&,
+                   NodeOutputMap* outputs)
+{
+    (*outputs)[_kOut] = Value(_MakeMultiplyBsdfClosure(
+        Get<BsdfClosure>(inputs, _kIn1, BsdfClosure{}),
+        Vec3f(Get<float>(inputs, _kIn2, 1.0f))));
+}
+
+static void
+_EvalMultiplyEdfC(const ParamMap& inputs, const ShadingContext&,
+                  NodeOutputMap* outputs)
+{
+    const UniformEdf in = Get<UniformEdf>(
+        inputs, _kIn1, UniformEdf{Vec3f(0.0f)});
+    const Vec3f weight = Get<Vec3f>(inputs, _kIn2, Vec3f(1.0f));
+    (*outputs)[_kOut] = Value(UniformEdf{CompMul(in.emittance, weight)});
+}
+
+static void
+_EvalMultiplyEdfF(const ParamMap& inputs, const ShadingContext&,
+                  NodeOutputMap* outputs)
+{
+    const UniformEdf in = Get<UniformEdf>(
+        inputs, _kIn1, UniformEdf{Vec3f(0.0f)});
+    const float weight = Get<float>(inputs, _kIn2, 1.0f);
+    (*outputs)[_kOut] = Value(UniformEdf{in.emittance * weight});
+}
+
+static void
+_EvalMultiplyVdfC(const ParamMap& inputs, const ShadingContext&,
+                  NodeOutputMap* outputs)
+{
+    (*outputs)[_kOut] = Value(_MultiplyVdfClosure(
+        Get<VdfClosure>(inputs, _kIn1, VdfClosure{}),
+        Get<Vec3f>(inputs, _kIn2, Vec3f(1.0f))));
+}
+
+static void
+_EvalMultiplyVdfF(const ParamMap& inputs, const ShadingContext&,
+                  NodeOutputMap* outputs)
+{
+    (*outputs)[_kOut] = Value(_MultiplyVdfClosure(
+        Get<VdfClosure>(inputs, _kIn1, VdfClosure{}),
+        Vec3f(Get<float>(inputs, _kIn2, 1.0f))));
 }
 
 static void
@@ -872,19 +1136,42 @@ RegisterMathNodes(NodeRegistry& reg)
 {
     // add
     _REG("ND_add_float",   &_EvalAdd<float>);
+    _REG("ND_add_integer", &_EvalAdd<int>);
     _REG("ND_add_color3",  &_EvalAdd<Vec3f>);
     _REG("ND_add_color4",  &_EvalAdd<Vec4f>);
     _REG("ND_add_vector2", &_EvalAdd<Vec2f>);
     _REG("ND_add_vector3", &_EvalAdd<Vec3f>);
     _REG("ND_add_vector4", &_EvalAdd<Vec4f>);
+    _REG("ND_add_matrix33", &_EvalAdd<Mat3f>);
+    _REG("ND_add_matrix44", &_EvalAdd<Mat4f>);
+    _REG("ND_add_color3FA",  &_EvalAddFA<Vec3f>);
+    _REG("ND_add_color4FA",  &_EvalAddFA<Vec4f>);
+    _REG("ND_add_vector2FA", &_EvalAddFA<Vec2f>);
+    _REG("ND_add_vector3FA", &_EvalAddFA<Vec3f>);
+    _REG("ND_add_vector4FA", &_EvalAddFA<Vec4f>);
+    reg.Register("ND_add_matrix33FA", &_EvalMatrixAddFA<Mat3f, 3>);
+    reg.Register("ND_add_matrix44FA", &_EvalMatrixAddFA<Mat4f, 4>);
+    _REG("ND_add_bsdf", &_EvalAddBsdf);
+    _REG("ND_add_edf", &_EvalAddEdf);
+    _REG("ND_add_vdf", &_EvalAddVdf);
 
     // subtract
     _REG("ND_subtract_float",   &_EvalSubtract<float>);
+    _REG("ND_subtract_integer", &_EvalSubtract<int>);
     _REG("ND_subtract_color3",  &_EvalSubtract<Vec3f>);
     _REG("ND_subtract_color4",  &_EvalSubtract<Vec4f>);
     _REG("ND_subtract_vector2", &_EvalSubtract<Vec2f>);
     _REG("ND_subtract_vector3", &_EvalSubtract<Vec3f>);
     _REG("ND_subtract_vector4", &_EvalSubtract<Vec4f>);
+    _REG("ND_subtract_matrix33", &_EvalSubtract<Mat3f>);
+    _REG("ND_subtract_matrix44", &_EvalSubtract<Mat4f>);
+    _REG("ND_subtract_color3FA",  &_EvalSubtractFA<Vec3f>);
+    _REG("ND_subtract_color4FA",  &_EvalSubtractFA<Vec4f>);
+    _REG("ND_subtract_vector2FA", &_EvalSubtractFA<Vec2f>);
+    _REG("ND_subtract_vector3FA", &_EvalSubtractFA<Vec3f>);
+    _REG("ND_subtract_vector4FA", &_EvalSubtractFA<Vec4f>);
+    reg.Register("ND_subtract_matrix33FA", &_EvalMatrixSubtractFA<Mat3f, 3>);
+    reg.Register("ND_subtract_matrix44FA", &_EvalMatrixSubtractFA<Mat4f, 4>);
 
     // multiply (component-wise)
     _REG("ND_multiply_float",   &_EvalMultiply<float>);
@@ -893,6 +1180,8 @@ RegisterMathNodes(NodeRegistry& reg)
     _REG("ND_multiply_vector2", &_EvalMultiply<Vec2f>);
     _REG("ND_multiply_vector3", &_EvalMultiply<Vec3f>);
     _REG("ND_multiply_vector4", &_EvalMultiply<Vec4f>);
+    _REG("ND_multiply_matrix33", &_EvalMultiply<Mat3f>);
+    _REG("ND_multiply_matrix44", &_EvalMultiply<Mat4f>);
 
     // multiply (vector * float)
     _REG("ND_multiply_color3FA",  &_EvalMultiplyFA<Vec3f>);
@@ -900,6 +1189,12 @@ RegisterMathNodes(NodeRegistry& reg)
     _REG("ND_multiply_vector2FA", &_EvalMultiplyFA<Vec2f>);
     _REG("ND_multiply_vector3FA", &_EvalMultiplyFA<Vec3f>);
     _REG("ND_multiply_vector4FA", &_EvalMultiplyFA<Vec4f>);
+    _REG("ND_multiply_bsdfC", &_EvalMultiplyBsdfC);
+    _REG("ND_multiply_bsdfF", &_EvalMultiplyBsdfF);
+    _REG("ND_multiply_edfC", &_EvalMultiplyEdfC);
+    _REG("ND_multiply_edfF", &_EvalMultiplyEdfF);
+    _REG("ND_multiply_vdfC", &_EvalMultiplyVdfC);
+    _REG("ND_multiply_vdfF", &_EvalMultiplyVdfF);
 
     // divide
     _REG("ND_divide_float",   &_EvalDivide<float>);
@@ -908,6 +1203,8 @@ RegisterMathNodes(NodeRegistry& reg)
     _REG("ND_divide_vector2", &_EvalDivide<Vec2f>);
     _REG("ND_divide_vector3", &_EvalDivide<Vec3f>);
     _REG("ND_divide_vector4", &_EvalDivide<Vec4f>);
+    _REG("ND_divide_matrix33", &_EvalMatrixDivide<Mat3f>);
+    _REG("ND_divide_matrix44", &_EvalMatrixDivide<Mat4f>);
     _REG("ND_divide_color3FA",  &_EvalDivideFA<Vec3f>);
     _REG("ND_divide_color4FA",  &_EvalDivideFA<Vec4f>);
     _REG("ND_divide_vector2FA", &_EvalDivideFA<Vec2f>);
