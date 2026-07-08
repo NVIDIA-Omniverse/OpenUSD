@@ -2271,7 +2271,7 @@ static bool TestGltfNormalMapReevaluatesConnectedTransformInputs() {
     return Test_IsClose(request.st, Vec2f(0.0f)) &&
            Test_IsClose(
                request.dstdx,
-               Vec2f(-0.0576656f, -0.0033318f),
+               Vec2f(0.0987688f, 0.0156434f),
                1e-5f) &&
            Test_IsClose(request.dstdy, Vec2f(0.0f, 0.1f), 1e-5f);
 }

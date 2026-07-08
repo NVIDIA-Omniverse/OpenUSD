@@ -419,6 +419,8 @@ The OpenImageIO texture backend is the boundary that converts MaterialX UVs to
 OIIO/image-space coordinates by flipping T together with its derivatives.
 For UDIM filenames, tile selection must use the unflipped MaterialX UVs; only
 the local per-tile T coordinate is flipped before sampling the concrete image.
+glTF image and normal-map nodes use this same graph-facing MaterialX UV
+convention; do not add an additional glTF-only V flip around texture transforms.
 
 ## Lights
 

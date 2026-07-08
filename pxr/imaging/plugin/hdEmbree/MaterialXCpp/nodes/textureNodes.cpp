@@ -632,8 +632,7 @@ _EvalTextureNode(const ParamMap& inputs,
 }
 static Vec2f
 _ComputeGltfImageCoord(const ParamMap& inputs,
-                       const ShadingContext& ctx,
-                       const bool useGltfTextureSpace)
+                       const ShadingContext& ctx)
 {
     const Vec2f texcoord =
         EvaluateInput<Vec2f>(inputs, _kTexcoord, ctx, ctx.texcoord);
@@ -648,9 +647,7 @@ _ComputeGltfImageCoord(const ParamMap& inputs,
     const int order =
         EvaluateInput<int>(inputs, _kOperationOrder, ctx, 0);
 
-    Vec2f result = useGltfTextureSpace
-        ? Vec2f(texcoord[0], 1.0f - texcoord[1])
-        : texcoord;
+    Vec2f result = texcoord;
     result -= pivot;
     const Vec2f gltfOffset(-offset[0], offset[1]);
     if (order == 0) {
@@ -663,16 +660,13 @@ _ComputeGltfImageCoord(const ParamMap& inputs,
         result = CompMul(result, scale);
     }
     result += pivot;
-    return useGltfTextureSpace
-        ? Vec2f(result[0], 1.0f - result[1])
-        : result;
+    return result;
 }
 
 template<
     typename T,
     TextureDataRole DataRole,
-    bool ApplyFactor,
-    bool UseGltfTextureSpace = false>
+    bool ApplyFactor>
 static void
 _EvalGltfImage(const ParamMap& inputs,
                const ShadingContext& ctx,
@@ -698,13 +692,11 @@ _EvalGltfImage(const ParamMap& inputs,
     }
 
     const Vec2f st =
-        _ComputeGltfImageCoord(inputs, ctx, UseGltfTextureSpace);
+        _ComputeGltfImageCoord(inputs, ctx);
     const Vec2f stDx =
-        _ComputeGltfImageCoord(
-            inputs, OffsetContextDx(ctx), UseGltfTextureSpace);
+        _ComputeGltfImageCoord(inputs, OffsetContextDx(ctx));
     const Vec2f stDy =
-        _ComputeGltfImageCoord(
-            inputs, OffsetContextDy(ctx), UseGltfTextureSpace);
+        _ComputeGltfImageCoord(inputs, OffsetContextDy(ctx));
     const TextureAddressMode uAddressMode =
         GetAddressMode(inputs, _kUAddressMode, "periodic");
     const TextureAddressMode vAddressMode =
@@ -851,7 +843,7 @@ _EvalGltfNormalMap(const ParamMap& inputs,
 {
     NodeOutputMap imageOutputs;
     _EvalGltfImage<
-        Vec3f, TextureDataRole::NonColor, false, true>(
+        Vec3f, TextureDataRole::NonColor, false>(
             inputs, ctx, &imageOutputs);
 
     Vec3f value(0.0f);
