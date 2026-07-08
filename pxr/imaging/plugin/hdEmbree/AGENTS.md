@@ -396,6 +396,11 @@ materials to recompile.
 Textures go through `HdEmbreeOiioTextureSystem`, which implements the
 MaterialXCpp texture system over OpenImageIO.
 
+`ShadingContext::texcoord` preserves authored USD `st` values in MaterialX's
+lower-left UV convention. Do not pre-flip V when building the shading context.
+The OpenImageIO texture backend is the boundary that converts MaterialX UVs to
+OIIO/image-space coordinates by flipping T together with its derivatives.
+
 ## Lights
 
 `HdEmbree_Light` supports USD Lux cylinder, disk, distant, dome, rect, and

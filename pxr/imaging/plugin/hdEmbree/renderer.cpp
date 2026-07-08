@@ -3034,11 +3034,11 @@ HdEmbreeRenderer::_BuildShadingContext(
     ctx.tangent = _ToMx(tangent);
     ctx.bitangent = _ToMx(bitangent);
     ctx.viewPosition = _ToMx(GfVec3f(_inverseViewMatrix.Transform(GfVec3f(0.0f))));
-    // USD primvar texture coordinates use the opposite T-axis convention
-    // from the MaterialX OSL implementation.  Keep the graph-facing shading
-    // context in MaterialX convention; texture backends convert from that
-    // convention to their native image-space convention at lookup time.
-    ctx.texcoord = mxcpp::Vec2f(texcoordVal[0], 1.0f - texcoordVal[1]);
+    // Graph-facing texture coordinates preserve authored USD st values, which
+    // match MaterialX's lower-left UV convention.  Texture backends convert
+    // from that convention to their native image-space convention at lookup
+    // time.
+    ctx.texcoord = mxcpp::Vec2f(texcoordVal[0], texcoordVal[1]);
     ctx.displayColor = _ToMx(displayColor);
     ctx.displayOpacity = displayOpacity;
     ctx.textureSystem = _textureSystem.get();
@@ -3065,10 +3065,6 @@ HdEmbreeRenderer::_BuildShadingContext(
             _samplesToConvergence,
             ctx);
 
-        // _ComputeScreenSpaceDerivatives solves against the authored USD
-        // primvar basis.  Match the graph-facing MaterialX T axis above.
-        ctx.dvdx = -ctx.dvdx;
-        ctx.dvdy = -ctx.dvdy;
     }
 
     ctx.dPositiondx = _ToMx(
