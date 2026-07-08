@@ -29,6 +29,9 @@ static const SlotName _kOut("out");
 static const SlotName _kGeomprop("geomprop");
 static const SlotName _kDefault("default");
 static const SlotName _kSpace("space");
+static const SlotName _kIndex("index");
+
+static const std::string _kGeomColorPrimvar("geomColor");
 
 static std::string
 _GetSpace(const ParamMap& inputs)
@@ -185,11 +188,120 @@ _EvalTexcoordVector3(const ParamMap&, const ShadingContext& ctx,
     (*outputs)[_kOut] = Value(Vec3f(ctx.texcoord[0], ctx.texcoord[1], 0.0f));
 }
 
-static void
-_EvalGeomcolor(const ParamMap&, const ShadingContext& ctx,
-               NodeOutputMap* outputs)
+static std::string
+_GetGeomColorPrimvarName(int index)
 {
+    if (index <= 0) {
+        return _kGeomColorPrimvar;
+    }
+    return _kGeomColorPrimvar + std::to_string(index);
+}
+
+static Value
+_LookupGeomColor(const ParamMap& inputs, const ShadingContext& ctx)
+{
+    if (!ctx.geomPropLookup) {
+        return Value();
+    }
+    const int index = Get<int>(inputs, _kIndex, 0);
+    return ctx.geomPropLookup(
+        ctx.geomPropUserData, _GetGeomColorPrimvarName(index));
+}
+
+static bool
+_GeomColorAsFloat(const Value& value, float* out)
+{
+    if (ValueHolds<float>(value)) {
+        *out = ValueGet<float>(value);
+        return true;
+    }
+    if (ValueHolds<Vec3f>(value)) {
+        *out = ValueGet<Vec3f>(value)[0];
+        return true;
+    }
+    if (ValueHolds<Vec4f>(value)) {
+        *out = ValueGet<Vec4f>(value)[0];
+        return true;
+    }
+    return false;
+}
+
+static bool
+_GeomColorAsColor3(const Value& value, Vec3f* out)
+{
+    if (ValueHolds<Vec3f>(value)) {
+        *out = ValueGet<Vec3f>(value);
+        return true;
+    }
+    if (ValueHolds<Vec4f>(value)) {
+        const Vec4f& v = ValueGet<Vec4f>(value);
+        *out = Vec3f(v[0], v[1], v[2]);
+        return true;
+    }
+    if (ValueHolds<float>(value)) {
+        const float v = ValueGet<float>(value);
+        *out = Vec3f(v, v, v);
+        return true;
+    }
+    return false;
+}
+
+static bool
+_GeomColorAsColor4(const Value& value, Vec4f* out)
+{
+    if (ValueHolds<Vec4f>(value)) {
+        *out = ValueGet<Vec4f>(value);
+        return true;
+    }
+    if (ValueHolds<Vec3f>(value)) {
+        const Vec3f& v = ValueGet<Vec3f>(value);
+        *out = Vec4f(v[0], v[1], v[2], 1.0f);
+        return true;
+    }
+    if (ValueHolds<float>(value)) {
+        const float v = ValueGet<float>(value);
+        *out = Vec4f(v, v, v, 1.0f);
+        return true;
+    }
+    return false;
+}
+
+static void
+_EvalGeomcolorFloat(const ParamMap& inputs, const ShadingContext& ctx,
+                    NodeOutputMap* outputs)
+{
+    float result = 0.0f;
+    if (_GeomColorAsFloat(_LookupGeomColor(inputs, ctx), &result)) {
+        (*outputs)[_kOut] = Value(result);
+        return;
+    }
+    (*outputs)[_kOut] = Value(ctx.displayColor[0]);
+}
+
+static void
+_EvalGeomcolorColor3(const ParamMap& inputs, const ShadingContext& ctx,
+                     NodeOutputMap* outputs)
+{
+    Vec3f result(0.0f);
+    if (_GeomColorAsColor3(_LookupGeomColor(inputs, ctx), &result)) {
+        (*outputs)[_kOut] = Value(result);
+        return;
+    }
     (*outputs)[_kOut] = Value(ctx.displayColor);
+}
+
+static void
+_EvalGeomcolorColor4(const ParamMap& inputs, const ShadingContext& ctx,
+                     NodeOutputMap* outputs)
+{
+    Vec4f result(0.0f);
+    if (_GeomColorAsColor4(_LookupGeomColor(inputs, ctx), &result)) {
+        (*outputs)[_kOut] = Value(result);
+        return;
+    }
+    (*outputs)[_kOut] = Value(Vec4f(
+        ctx.displayColor[0], ctx.displayColor[1], ctx.displayColor[2],
+        ctx.displayOpacity));
 }
 
 static void
@@ -351,7 +463,9 @@ RegisterGeometricNodes(NodeRegistry& reg)
     _REG("ND_bitangent_vector3", &_EvalBitangent);
     _REG("ND_texcoord_vector2",  &_EvalTexcoordVector2);
     _REG("ND_texcoord_vector3",  &_EvalTexcoordVector3);
-    _REG("ND_geomcolor_color3",  &_EvalGeomcolor);
+    _REG("ND_geomcolor_float",   &_EvalGeomcolorFloat);
+    _REG("ND_geomcolor_color3",  &_EvalGeomcolorColor3);
+    _REG("ND_geomcolor_color4",  &_EvalGeomcolorColor4);
     _REG("ND_bump_vector3", &_EvalBump);
     _REG("ND_normalmap_float", &_EvalNormalMapFloat);
     _REG("ND_normalmap_vector2", &_EvalNormalMapVector2);

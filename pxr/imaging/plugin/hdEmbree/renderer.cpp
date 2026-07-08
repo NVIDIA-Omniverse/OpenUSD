@@ -2931,6 +2931,16 @@ HdEmbreeRenderer::_BuildShadingContext(
         }
     }
 
+    float displayOpacity = 1.0f;
+    {
+        auto it = prototypeContext->primvarMap.find(HdTokens->displayOpacity);
+        if (it != prototypeContext->primvarMap.end()) {
+            it->second->Sample(
+                rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
+                &displayOpacity);
+        }
+    }
+
     // Surface derivatives (dPdu, dPdv) and normal derivatives (dndu, dndv)
     // start in object space and are transformed to world space below.
     GfVec3f dPdu, dPdv, dndu, dndv;
@@ -3030,7 +3040,7 @@ HdEmbreeRenderer::_BuildShadingContext(
     // convention to their native image-space convention at lookup time.
     ctx.texcoord = mxcpp::Vec2f(texcoordVal[0], 1.0f - texcoordVal[1]);
     ctx.displayColor = _ToMx(displayColor);
-    ctx.displayOpacity = 1.0f;
+    ctx.displayOpacity = displayOpacity;
     ctx.textureSystem = _textureSystem.get();
     ctx.frame = _sceneFrame;
     ctx.time = _sceneTime;

@@ -362,6 +362,13 @@ that medium to the top BSDF closure. `ND_surface` copies the optional medium
 into `SurfaceClosure::interiorMedium`; keep `thin_walled` suppressing that
 interior medium so thin surfaces do not enter participating media.
 
+MaterialX `ND_geomcolor_*` nodes read the USD/Hydra primvar stream named
+`geomColor` for index 0 and `geomColorN` for higher indices. The float,
+color3, and color4 variants are registered explicitly. If no authored geomColor
+stream is available, they fall back to the sampled `displayColor`/
+`displayOpacity` values in `ShadingContext` for compatibility with older USD
+scenes that relied on display primvars as geometry color.
+
 MaterialXCpp implements `ND_tiledcircles_color3`,
 `ND_tiledcloverleafs_color3`, and `ND_tiledhexagons_color3` directly from the
 MaterialX stdlib nodegraph formulas. Keep the regular branch based on
