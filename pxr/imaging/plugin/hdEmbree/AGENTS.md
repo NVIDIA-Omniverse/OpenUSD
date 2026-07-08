@@ -400,6 +400,8 @@ MaterialXCpp texture system over OpenImageIO.
 lower-left UV convention. Do not pre-flip V when building the shading context.
 The OpenImageIO texture backend is the boundary that converts MaterialX UVs to
 OIIO/image-space coordinates by flipping T together with its derivatives.
+For UDIM filenames, tile selection must use the unflipped MaterialX UVs; only
+the local per-tile T coordinate is flipped before sampling the concrete image.
 
 ## Lights
 

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <mutex>
 #include <unordered_set>
 
@@ -227,6 +228,12 @@ _ToOiioInterp(const mxcpp::TextureFilterType filterType)
     return OIIO::TextureOpt::InterpSmartBicubic;
 }
 
+float
+_LocalUdimCoord(const float coord)
+{
+    return coord - std::floor(coord);
+}
+
 #endif
 
 }  // namespace
@@ -313,21 +320,32 @@ HdEmbreeOiioTextureSystem::Sample2D(
         request.defaultValue[3],
     };
 
+    OIIO::TextureSystem::Perthread* const threadInfo =
+        _impl->textureSystem->get_perthread_info();
+    OIIO::TextureSystem::TextureHandle* handle =
+        _impl->textureSystem->get_texture_handle(
+            OIIO::ustring(request.filePath), threadInfo);
+
     // MaterialX graph coordinates use a lower-left origin, while the OIIO
     // image-space T axis increases from top to bottom.  Convert values and
     // derivatives together at the texture backend boundary.
-    const float s = request.st[0];
-    const float t = 1.0f - request.st[1];
+    float s = request.st[0];
+    float t = 1.0f - request.st[1];
     const float dsdx = request.dstdx[0];
     const float dtdx = -request.dstdx[1];
     const float dsdy = request.dstdy[0];
     const float dtdy = -request.dstdy[1];
 
-    OIIO::TextureSystem::Perthread* const threadInfo =
-        _impl->textureSystem->get_perthread_info();
-    OIIO::TextureSystem::TextureHandle* const handle =
-        _impl->textureSystem->get_texture_handle(
-            OIIO::ustring(request.filePath), threadInfo);
+    if (handle && _impl->textureSystem->is_udim(handle)) {
+        // UDIM tile numbers are defined in MaterialX UV space:
+        // 1001 + floor(u) + 10 * floor(v).  Resolve the concrete tile before
+        // flipping T for image-space sampling, otherwise the first row works
+        // by accident and higher rows are resolved from the flipped axis.
+        handle = _impl->textureSystem->resolve_udim(
+            handle, threadInfo, request.st[0], request.st[1]);
+        s = _LocalUdimCoord(request.st[0]);
+        t = 1.0f - _LocalUdimCoord(request.st[1]);
+    }
 
     const bool ok =
         handle && _impl->textureSystem->good(handle) &&
