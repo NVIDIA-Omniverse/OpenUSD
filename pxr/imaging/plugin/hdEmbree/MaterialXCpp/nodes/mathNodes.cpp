@@ -395,6 +395,20 @@ _EvalModuloVector(const ParamMap& inputs, const ShadingContext&,
 
 template<typename T>
 static void
+_EvalModuloVectorFA(const ParamMap& inputs, const ShadingContext&,
+                    NodeOutputMap* outputs)
+{
+    const T a = Get<T>(inputs, _kIn1, T(0.0f));
+    const float b = Get<float>(inputs, _kIn2, 1.0f);
+    T result;
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {
+        result[i] = b != 0.0f ? a[i] - b * std::floor(a[i] / b) : 0.0f;
+    }
+    (*outputs)[_kOut] = Value(result);
+}
+
+template<typename T>
+static void
 _EvalClamp(const ParamMap& inputs, const ShadingContext&,
            NodeOutputMap* outputs)
 {
@@ -402,6 +416,17 @@ _EvalClamp(const ParamMap& inputs, const ShadingContext&,
     const T lo = Get<T>(inputs, _kLow, Zero<T>());
     const T hi = Get<T>(inputs, _kHigh, One<T>());
     (*outputs)[_kOut] = Value(ClampValue(v, lo, hi));
+}
+
+template<typename T>
+static void
+_EvalClampFA(const ParamMap& inputs, const ShadingContext&,
+             NodeOutputMap* outputs)
+{
+    const T v = Get<T>(inputs, _kIn, Zero<T>());
+    const float lo = Get<float>(inputs, _kLow, 0.0f);
+    const float hi = Get<float>(inputs, _kHigh, 1.0f);
+    (*outputs)[_kOut] = Value(ClampValue(v, T(lo), T(hi)));
 }
 
 static void
@@ -438,6 +463,20 @@ _EvalMinVector(const ParamMap& inputs, const ShadingContext&,
 
 template<typename T>
 static void
+_EvalMinVectorFA(const ParamMap& inputs, const ShadingContext&,
+                 NodeOutputMap* outputs)
+{
+    const T a = Get<T>(inputs, _kIn1, T(0.0f));
+    const float b = Get<float>(inputs, _kIn2, 0.0f);
+    T result;
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {
+        result[i] = std::min(a[i], b);
+    }
+    (*outputs)[_kOut] = Value(result);
+}
+
+template<typename T>
+static void
 _EvalMaxVector(const ParamMap& inputs, const ShadingContext&,
                NodeOutputMap* outputs)
 {
@@ -446,6 +485,20 @@ _EvalMaxVector(const ParamMap& inputs, const ShadingContext&,
     T result;
     for (unsigned int i = 0; i < T::dimensions(); ++i) {
         result[i] = std::max(a[i], b[i]);
+    }
+    (*outputs)[_kOut] = Value(result);
+}
+
+template<typename T>
+static void
+_EvalMaxVectorFA(const ParamMap& inputs, const ShadingContext&,
+                 NodeOutputMap* outputs)
+{
+    const T a = Get<T>(inputs, _kIn1, T(0.0f));
+    const float b = Get<float>(inputs, _kIn2, 0.0f);
+    T result;
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {
+        result[i] = std::max(a[i], b);
     }
     (*outputs)[_kOut] = Value(result);
 }
@@ -536,7 +589,12 @@ static void name(const ParamMap& inputs, const ShadingContext&,              \
 DEFINE_UNARY_VECTOR_EVALUATOR(_EvalFloorVector, std::floor(v[i]))
 DEFINE_UNARY_VECTOR_EVALUATOR(_EvalCeilVector, std::ceil(v[i]))
 DEFINE_UNARY_VECTOR_EVALUATOR(_EvalRoundVector, std::round(v[i]))
+DEFINE_UNARY_VECTOR_EVALUATOR(_EvalSqrtVector, std::sqrt(std::max(0.0f, v[i])))
 DEFINE_UNARY_VECTOR_EVALUATOR(_EvalLnVector, v[i] > 0.0f ? std::log(v[i]) : 0.0f)
+DEFINE_UNARY_VECTOR_EVALUATOR(_EvalExpVector, std::exp(v[i]))
+DEFINE_UNARY_VECTOR_EVALUATOR(_EvalSinVector, std::sin(v[i]))
+DEFINE_UNARY_VECTOR_EVALUATOR(_EvalCosVector, std::cos(v[i]))
+DEFINE_UNARY_VECTOR_EVALUATOR(_EvalTanVector, std::tan(v[i]))
 DEFINE_UNARY_VECTOR_EVALUATOR(_EvalAsinVector, std::abs(v[i]) <= 1.0f ? std::asin(v[i]) : 0.0f)
 DEFINE_UNARY_VECTOR_EVALUATOR(_EvalAcosVector, std::abs(v[i]) <= 1.0f ? std::acos(v[i]) : 0.0f)
 
@@ -567,6 +625,30 @@ _EvalRound(const ParamMap& inputs, const ShadingContext&,
 }
 
 static void
+_EvalFloorInteger(const ParamMap& inputs, const ShadingContext&,
+                  NodeOutputMap* outputs)
+{
+    const float v = Get<float>(inputs, _kIn, 0.0f);
+    (*outputs)[_kOut] = Value(static_cast<int>(std::floor(v)));
+}
+
+static void
+_EvalCeilInteger(const ParamMap& inputs, const ShadingContext&,
+                 NodeOutputMap* outputs)
+{
+    const float v = Get<float>(inputs, _kIn, 0.0f);
+    (*outputs)[_kOut] = Value(static_cast<int>(std::ceil(v)));
+}
+
+static void
+_EvalRoundInteger(const ParamMap& inputs, const ShadingContext&,
+                  NodeOutputMap* outputs)
+{
+    const float v = Get<float>(inputs, _kIn, 0.0f);
+    (*outputs)[_kOut] = Value(static_cast<int>(std::round(v)));
+}
+
+static void
 _EvalPower(const ParamMap& inputs, const ShadingContext&,
            NodeOutputMap* outputs)
 {
@@ -586,6 +668,21 @@ _EvalPowerVector(const ParamMap& inputs, const ShadingContext&,
     T result;
     for (unsigned int i = 0; i < T::dimensions(); ++i) {
         const float value = std::pow(base[i], exponent[i]);
+        result[i] = std::isfinite(value) ? value : 0.0f;
+    }
+    (*outputs)[_kOut] = Value(result);
+}
+
+template<typename T>
+static void
+_EvalPowerFA(const ParamMap& inputs, const ShadingContext&,
+             NodeOutputMap* outputs)
+{
+    const T base = Get<T>(inputs, _kIn1, T(0.0f));
+    const float exponent = Get<float>(inputs, _kIn2, 1.0f);
+    T result;
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {
+        const float value = std::pow(base[i], exponent);
         result[i] = std::isfinite(value) ? value : 0.0f;
     }
     (*outputs)[_kOut] = Value(result);
@@ -645,6 +742,16 @@ _EvalInvert<float>(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(amount - v);
 }
 
+template<typename T>
+static void
+_EvalInvertFA(const ParamMap& inputs, const ShadingContext&,
+              NodeOutputMap* outputs)
+{
+    T v = Get<T>(inputs, _kIn, Zero<T>());
+    float amount = Get<float>(inputs, _kAmount, 1.0f);
+    (*outputs)[_kOut] = Value(T(amount) - v);
+}
+
 // ---- Trigonometric -------------------------------------------------------
 
 static void _EvalSin(const ParamMap& in, const ShadingContext&,
@@ -676,6 +783,20 @@ static void _EvalAtan2(const ParamMap& in, const ShadingContext&,
     (*out)[_kOut] = Value(std::atan2(y, x));
 }
 
+template<typename T>
+static void
+_EvalAtan2Vector(const ParamMap& inputs, const ShadingContext&,
+                 NodeOutputMap* outputs)
+{
+    const T y = Get<T>(inputs, _kIny, T(0.0f));
+    const T x = Get<T>(inputs, _kInx, T(1.0f));
+    T result;
+    for (unsigned int i = 0; i < T::dimensions(); ++i) {
+        result[i] = std::atan2(y[i], x[i]);
+    }
+    (*outputs)[_kOut] = Value(result);
+}
+
 // ---- Vector operations ---------------------------------------------------
 
 template<typename T>
@@ -704,6 +825,16 @@ _EvalNormalize(const ParamMap& inputs, const ShadingContext&,
     Vec3f v = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f, 0.0f, 1.0f));
     float len = v.length();
     (*outputs)[_kOut] = Value(len > 0.0f ? v / len : Vec3f(0.0f));
+}
+
+template<typename T>
+static void
+_EvalNormalizeVector(const ParamMap& inputs, const ShadingContext&,
+                     NodeOutputMap* outputs)
+{
+    T v = Get<T>(inputs, _kIn, T(0.0f));
+    float len = v.length();
+    (*outputs)[_kOut] = Value(len > 0.0f ? v / len : T(0.0f));
 }
 
 template<typename T>
@@ -1244,24 +1375,44 @@ RegisterMathNodes(NodeRegistry& reg)
     _REG("ND_modulo_vector2", &_EvalModuloVector<Vec2f>);
     _REG("ND_modulo_vector3", &_EvalModuloVector<Vec3f>);
     _REG("ND_modulo_vector4", &_EvalModuloVector<Vec4f>);
+    _REG("ND_modulo_color3FA", &_EvalModuloVectorFA<Vec3f>);
+    _REG("ND_modulo_color4FA", &_EvalModuloVectorFA<Vec4f>);
+    _REG("ND_modulo_vector2FA", &_EvalModuloVectorFA<Vec2f>);
+    _REG("ND_modulo_vector3FA", &_EvalModuloVectorFA<Vec3f>);
+    _REG("ND_modulo_vector4FA", &_EvalModuloVectorFA<Vec4f>);
     _REG("ND_clamp_float", &_EvalClamp<float>);
     _REG("ND_clamp_color3", &_EvalClamp<Vec3f>);
     _REG("ND_clamp_color4", &_EvalClamp<Vec4f>);
     _REG("ND_clamp_vector3", &_EvalClamp<Vec3f>);
     _REG("ND_clamp_vector2", &_EvalClamp<Vec2f>);
     _REG("ND_clamp_vector4", &_EvalClamp<Vec4f>);
+    _REG("ND_clamp_color3FA", &_EvalClampFA<Vec3f>);
+    _REG("ND_clamp_color4FA", &_EvalClampFA<Vec4f>);
+    _REG("ND_clamp_vector2FA", &_EvalClampFA<Vec2f>);
+    _REG("ND_clamp_vector3FA", &_EvalClampFA<Vec3f>);
+    _REG("ND_clamp_vector4FA", &_EvalClampFA<Vec4f>);
     _REG("ND_min_float", &_EvalMinFloat);
     _REG("ND_min_color3", &_EvalMinVector<Vec3f>);
     _REG("ND_min_color4", &_EvalMinVector<Vec4f>);
     _REG("ND_min_vector2", &_EvalMinVector<Vec2f>);
     _REG("ND_min_vector3", &_EvalMinVector<Vec3f>);
     _REG("ND_min_vector4", &_EvalMinVector<Vec4f>);
+    _REG("ND_min_color3FA", &_EvalMinVectorFA<Vec3f>);
+    _REG("ND_min_color4FA", &_EvalMinVectorFA<Vec4f>);
+    _REG("ND_min_vector2FA", &_EvalMinVectorFA<Vec2f>);
+    _REG("ND_min_vector3FA", &_EvalMinVectorFA<Vec3f>);
+    _REG("ND_min_vector4FA", &_EvalMinVectorFA<Vec4f>);
     _REG("ND_max_float", &_EvalMaxFloat);
     _REG("ND_max_color3", &_EvalMaxVector<Vec3f>);
     _REG("ND_max_color4", &_EvalMaxVector<Vec4f>);
     _REG("ND_max_vector2", &_EvalMaxVector<Vec2f>);
     _REG("ND_max_vector3", &_EvalMaxVector<Vec3f>);
     _REG("ND_max_vector4", &_EvalMaxVector<Vec4f>);
+    _REG("ND_max_color3FA", &_EvalMaxVectorFA<Vec3f>);
+    _REG("ND_max_color4FA", &_EvalMaxVectorFA<Vec4f>);
+    _REG("ND_max_vector2FA", &_EvalMaxVectorFA<Vec2f>);
+    _REG("ND_max_vector3FA", &_EvalMaxVectorFA<Vec3f>);
+    _REG("ND_max_vector4FA", &_EvalMaxVectorFA<Vec4f>);
     _REG("ND_mincomponent_color3", &_EvalMinComponent<Vec3f>);
     _REG("ND_mincomponent_color4", &_EvalMinComponent<Vec4f>);
     _REG("ND_mincomponent_vector2", &_EvalMinComponent<Vec2f>);
@@ -1292,25 +1443,36 @@ RegisterMathNodes(NodeRegistry& reg)
     _REG("ND_floor_vector2", &_EvalFloorVector<Vec2f>);
     _REG("ND_floor_vector3", &_EvalFloorVector<Vec3f>);
     _REG("ND_floor_vector4", &_EvalFloorVector<Vec4f>);
+    _REG("ND_floor_integer", &_EvalFloorInteger);
     _REG("ND_ceil_float",   &_EvalCeil);
     _REG("ND_ceil_color3", &_EvalCeilVector<Vec3f>);
     _REG("ND_ceil_color4", &_EvalCeilVector<Vec4f>);
     _REG("ND_ceil_vector2", &_EvalCeilVector<Vec2f>);
     _REG("ND_ceil_vector3", &_EvalCeilVector<Vec3f>);
     _REG("ND_ceil_vector4", &_EvalCeilVector<Vec4f>);
+    _REG("ND_ceil_integer", &_EvalCeilInteger);
     _REG("ND_round_float",  &_EvalRound);
     _REG("ND_round_color3", &_EvalRoundVector<Vec3f>);
     _REG("ND_round_color4", &_EvalRoundVector<Vec4f>);
     _REG("ND_round_vector2", &_EvalRoundVector<Vec2f>);
     _REG("ND_round_vector3", &_EvalRoundVector<Vec3f>);
     _REG("ND_round_vector4", &_EvalRoundVector<Vec4f>);
+    _REG("ND_round_integer", &_EvalRoundInteger);
     _REG("ND_power_float",  &_EvalPower);
     _REG("ND_power_color3", &_EvalPowerVector<Vec3f>);
     _REG("ND_power_color4", &_EvalPowerVector<Vec4f>);
     _REG("ND_power_vector2", &_EvalPowerVector<Vec2f>);
     _REG("ND_power_vector3", &_EvalPowerVector<Vec3f>);
     _REG("ND_power_vector4", &_EvalPowerVector<Vec4f>);
+    _REG("ND_power_color3FA", &_EvalPowerFA<Vec3f>);
+    _REG("ND_power_color4FA", &_EvalPowerFA<Vec4f>);
+    _REG("ND_power_vector2FA", &_EvalPowerFA<Vec2f>);
+    _REG("ND_power_vector3FA", &_EvalPowerFA<Vec3f>);
+    _REG("ND_power_vector4FA", &_EvalPowerFA<Vec4f>);
     _REG("ND_sqrt_float",   &_EvalSqrt);
+    _REG("ND_sqrt_vector2", &_EvalSqrtVector<Vec2f>);
+    _REG("ND_sqrt_vector3", &_EvalSqrtVector<Vec3f>);
+    _REG("ND_sqrt_vector4", &_EvalSqrtVector<Vec4f>);
     _REG("ND_ln_float",     &_EvalLn);
     _REG("ND_ln_color3", &_EvalLnVector<Vec3f>);
     _REG("ND_ln_color4", &_EvalLnVector<Vec4f>);
@@ -1318,6 +1480,9 @@ RegisterMathNodes(NodeRegistry& reg)
     _REG("ND_ln_vector3", &_EvalLnVector<Vec3f>);
     _REG("ND_ln_vector4", &_EvalLnVector<Vec4f>);
     _REG("ND_exp_float",    &_EvalExp);
+    _REG("ND_exp_vector2", &_EvalExpVector<Vec2f>);
+    _REG("ND_exp_vector3", &_EvalExpVector<Vec3f>);
+    _REG("ND_exp_vector4", &_EvalExpVector<Vec4f>);
 
     // negate
     _REG("ND_negate_float",   &_EvalNegate<float>);
@@ -1328,12 +1493,28 @@ RegisterMathNodes(NodeRegistry& reg)
     _REG("ND_invert_float",   &_EvalInvert<float>);
     _REG("ND_invert_color3",  &_EvalInvert<Vec3f>);
     _REG("ND_invert_color4",  &_EvalInvert<Vec4f>);
+    _REG("ND_invert_color3FA", &_EvalInvertFA<Vec3f>);
+    _REG("ND_invert_color4FA", &_EvalInvertFA<Vec4f>);
+    _REG("ND_invert_vector2", &_EvalInvert<Vec2f>);
+    _REG("ND_invert_vector2FA", &_EvalInvertFA<Vec2f>);
     _REG("ND_invert_vector3", &_EvalInvert<Vec3f>);
+    _REG("ND_invert_vector3FA", &_EvalInvertFA<Vec3f>);
+    _REG("ND_invert_vector4", &_EvalInvert<Vec4f>);
+    _REG("ND_invert_vector4FA", &_EvalInvertFA<Vec4f>);
 
     // trigonometric
     _REG("ND_sin_float",   &_EvalSin);
+    _REG("ND_sin_vector2", &_EvalSinVector<Vec2f>);
+    _REG("ND_sin_vector3", &_EvalSinVector<Vec3f>);
+    _REG("ND_sin_vector4", &_EvalSinVector<Vec4f>);
     _REG("ND_cos_float",   &_EvalCos);
+    _REG("ND_cos_vector2", &_EvalCosVector<Vec2f>);
+    _REG("ND_cos_vector3", &_EvalCosVector<Vec3f>);
+    _REG("ND_cos_vector4", &_EvalCosVector<Vec4f>);
     _REG("ND_tan_float",   &_EvalTan);
+    _REG("ND_tan_vector2", &_EvalTanVector<Vec2f>);
+    _REG("ND_tan_vector3", &_EvalTanVector<Vec3f>);
+    _REG("ND_tan_vector4", &_EvalTanVector<Vec4f>);
     _REG("ND_asin_float",  &_EvalAsin);
     _REG("ND_acos_float",  &_EvalAcos);
     _REG("ND_asin_color3", &_EvalAsinVector<Vec3f>);
@@ -1347,13 +1528,18 @@ RegisterMathNodes(NodeRegistry& reg)
     _REG("ND_acos_vector3", &_EvalAcosVector<Vec3f>);
     _REG("ND_acos_vector4", &_EvalAcosVector<Vec4f>);
     _REG("ND_atan2_float", &_EvalAtan2);
+    _REG("ND_atan2_vector2", &_EvalAtan2Vector<Vec2f>);
+    _REG("ND_atan2_vector3", &_EvalAtan2Vector<Vec3f>);
+    _REG("ND_atan2_vector4", &_EvalAtan2Vector<Vec4f>);
 
     // vector
     _REG("ND_dotproduct_vector2",  &_EvalDotProduct<Vec2f>);
     _REG("ND_dotproduct_vector3",  &_EvalDotProduct<Vec3f>);
     _REG("ND_dotproduct_vector4",  &_EvalDotProduct<Vec4f>);
     _REG("ND_crossproduct_vector3", &_EvalCrossProduct);
+    _REG("ND_normalize_vector2",   &_EvalNormalizeVector<Vec2f>);
     _REG("ND_normalize_vector3",   &_EvalNormalize);
+    _REG("ND_normalize_vector4",   &_EvalNormalizeVector<Vec4f>);
     _REG("ND_magnitude_vector2",   &_EvalMagnitude<Vec2f>);
     _REG("ND_magnitude_vector3",   &_EvalMagnitude<Vec3f>);
     _REG("ND_magnitude_vector4",   &_EvalMagnitude<Vec4f>);
