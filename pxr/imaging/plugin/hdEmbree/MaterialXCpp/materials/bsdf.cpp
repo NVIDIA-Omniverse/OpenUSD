@@ -1142,11 +1142,10 @@ _MaterialXGlslDielectricLayerReflectance(
 }
 
 inline bool
-_HasThinFilm(float weight, float thickness, float ior)
+_HasThinFilm(float weight, float thickness, float /*ior*/)
 {
     return weight > _kEpsilon &&
-           thickness > _kEpsilon &&
-           ior > (1.0f + _kEpsilon);
+           thickness > _kEpsilon;
 }
 
 enum class _ThinFilmModel
@@ -1268,12 +1267,14 @@ _FresnelConductorPhasePolarized(
     Vec3f* phiS)
 {
     const Vec3f k2 = CompDiv(kappa2, eta2);
+    const Vec3f eta2Squared = CompMul(eta2, eta2);
     const Vec3f sinThetaSqr(1.0f - cosTheta * cosTheta);
     const Vec3f A =
-        CompMul(eta2, eta2) * (Vec3f(1.0f) - CompMul(k2, k2)) -
+        eta2Squared * (Vec3f(1.0f) - CompMul(k2, k2)) -
         eta1 * eta1 * sinThetaSqr;
-    const Vec3f B = _SqrtVec(CompMul(A, A) +
-                             4.0f * CompMul(CompMul(eta2, eta2), CompMul(k2, k2)));
+    const Vec3f twoEta2SquaredK2 = 2.0f * CompMul(eta2Squared, k2);
+    const Vec3f B = _SqrtVec(
+        CompMul(A, A) + CompMul(twoEta2SquaredK2, twoEta2SquaredK2));
     const Vec3f U = _SqrtVec((A + B) * 0.5f);
     const Vec3f V = _MaxVec(_SqrtVec((B - A) * 0.5f), 0.0f);
 
@@ -1285,7 +1286,6 @@ _FresnelConductorPhasePolarized(
         std::atan2(2.0f * eta1 * V[2] * cosTheta,
                    U[2] * U[2] + V[2] * V[2] - eta1 * eta1 * cosTheta * cosTheta));
 
-    const Vec3f eta2Squared = CompMul(eta2, eta2);
     const Vec3f oneMinusK2 = Vec3f(1.0f) - CompMul(k2, k2);
     const Vec3f onePlusK2 = Vec3f(1.0f) + CompMul(k2, k2);
     *phiP = Vec3f(
@@ -1305,8 +1305,19 @@ _FresnelConductorPhasePolarized(
             2.0f * eta1 * eta2Squared[2] * cosTheta *
                 (2.0f * k2[2] * U[2] - oneMinusK2[2] * V[2]),
             eta2Squared[2] * eta2Squared[2] * onePlusK2[2] * onePlusK2[2] *
-                    cosTheta * cosTheta -
+                   cosTheta * cosTheta -
                 eta1 * eta1 * (U[2] * U[2] + V[2] * V[2])));
+}
+
+inline Vec3f
+_FresnelConductor(
+    float cosTheta,
+    const Vec3f& ior,
+    const Vec3f& extinction)
+{
+    Vec3f Rp(0.0f), Rs(0.0f);
+    _FresnelConductorPolarized(cosTheta, ior, extinction, &Rp, &Rs);
+    return _SaturateVec((Rp + Rs) * 0.5f);
 }
 
 inline Vec3f
@@ -1603,9 +1614,10 @@ _ConductorReflectionFresnel(
     const Bsdf::ConductorData& data,
     float cosTheta)
 {
-    const Vec3f baseReflectance = _SchlickFresnel(
-        _ConductorF0(data.ior, data.extinction),
-        cosTheta);
+    const Vec3f baseReflectance = _FresnelConductor(
+        cosTheta,
+        _MaxVec(data.ior, 0.0f),
+        _MaxVec(data.extinction, 0.0f));
     _ThinFilmParams thinFilm;
     thinFilm.model = _ThinFilmModel::Conductor;
     thinFilm.ior = _MaxVec(data.ior, 0.0f);
@@ -1677,6 +1689,20 @@ _ResolveReflectionNormal(const Bsdf::DielectricData& data,
 
 inline Vec3f
 _ResolveReflectionNormal(const Bsdf::DielectricInterfaceData& data,
+                         const Vec3f& N,
+                         const Vec3f& wo)
+{
+    if (!data.hasShadingNormal) {
+        return _FaceForwardNormal(N, wo);
+    }
+
+    return _FaceForwardNormal(
+        _NormalizeOrFallback(data.normal, _FaceForwardNormal(N, wo)),
+        wo);
+}
+
+inline Vec3f
+_ResolveReflectionNormal(const Bsdf::ConductorData& data,
                          const Vec3f& N,
                          const Vec3f& wo)
 {
@@ -2665,7 +2691,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             }
             return _SafeVec(result);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
-            if (Dot(N, wi) <= 0.0f || data.weight <= 0.0f) {
+            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            if (Dot(shadingN, wi) <= 0.0f || data.weight <= 0.0f) {
                 return Vec3f(0.0f);
             }
             if (_IsEffectivelyDeltaAlpha(data.roughness)) {
@@ -2680,7 +2707,7 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                         data.roughness[0], _kMinMicrofacetAlpha, 1.0f),
                     fresnel,
                     data.weight,
-                    N,
+                    shadingN,
                     wi,
                     wo);
             }
@@ -2689,7 +2716,7 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 data.tangent,
                 fresnel,
                 data.weight,
-                N,
+                shadingN,
                 wi,
                 wo);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
@@ -2894,7 +2921,9 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             }
             return _SaturateVec(throughput);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
-            const float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
+            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            const float NdotV =
+                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
             const Vec3f reflectance = _LayerThroughputReflectance(
                 _AverageAlphaForEnergy(data.roughness),
                 NdotV,
@@ -3007,11 +3036,12 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 _Luminance(reflection) + _Luminance(transmission);
             return weight > 0.0f ? std::max(weight, 0.05f) : 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
+            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
             return data.weight *
                 std::max(
                     _Luminance(_ConductorReflectionFresnel(
                         data,
-                        std::max(std::abs(Dot(N, wo)), _kEpsilon))),
+                        std::max(std::abs(Dot(shadingN, wo)), _kEpsilon))),
                     0.05f);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
             const float NdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
@@ -3190,17 +3220,18 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             if (_IsEffectivelyDeltaAlpha(data.roughness)) {
                 return 0.0f;
             }
-            return (Dot(N, wi) > 0.0f)
+            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            return (Dot(shadingN, wi) > 0.0f)
                 ? (_IsEffectivelyIsotropic(data.roughness)
                     ? Bsdf::PdfGGXSpecular(
                         _AverageAlphaAsRoughness(data.roughness),
-                        N,
+                        shadingN,
                         wi,
                         wo)
                     : _PdfGGXSpecularAnisotropic(
                         data.roughness,
                         data.tangent,
-                        N,
+                        shadingN,
                         wi,
                         wo))
                 : 0.0f;
@@ -3604,15 +3635,16 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return _FinalizeSubtreeSample(
                 tree, nodeId, N, wo, sample, heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
+            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
             if (_IsEffectivelyDeltaAlpha(data.roughness)) {
-                return _SampleDeltaConductorReflection(data, N, wo);
+                return _SampleDeltaConductorReflection(data, shadingN, wo);
             }
             if (_IsEffectivelyIsotropic(data.roughness)) {
                 auto sample = Bsdf::SampleGGXSpecular(
                     _AverageAlphaAsRoughness(data.roughness),
                     1.5f,
                     _ConductorF0(data.ior, data.extinction),
-                    N,
+                    shadingN,
                     wo,
                     u1,
                     u2);
@@ -3622,7 +3654,7 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             auto sample = _SampleGGXSpecularAnisotropic(
                 data.roughness,
                 data.tangent,
-                N,
+                shadingN,
                 wo,
                 u1,
                 u2);

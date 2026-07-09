@@ -21,6 +21,7 @@ const SlotName _kWeight("weight");
 const SlotName _kColor("color");
 const SlotName _kTint("tint");
 const SlotName _kIor("ior");
+const SlotName _kExtinction("extinction");
 const SlotName _kRoughness("roughness");
 const SlotName _kRetroreflective("retroreflective");
 const SlotName _kThinfilmThickness("thinfilm_thickness");
@@ -289,6 +290,31 @@ _EvalDielectricBsdf(
 }
 
 void
+_EvalConductorBsdf(
+    const ParamMap& inputs,
+    const ShadingContext&,
+    NodeOutputMap* outputs)
+{
+    Bsdf::ConductorData data;
+    data.weight = Get<float>(inputs, _kWeight, 1.0f);
+    data.ior = Get<Vec3f>(inputs, _kIor, Vec3f(0.183f, 0.421f, 1.373f));
+    data.extinction =
+        Get<Vec3f>(inputs, _kExtinction, Vec3f(3.424f, 2.346f, 1.770f));
+    data.roughness = Get<Vec2f>(inputs, _kRoughness, Vec2f(0.05f, 0.05f));
+    data.retroreflective = Get<bool>(inputs, _kRetroreflective, false);
+    data.thinFilmThickness = Get<float>(inputs, _kThinfilmThickness, 0.0f);
+    data.thinFilmIor = Get<float>(inputs, _kThinfilmIor, 1.5f);
+    data.tangent = Get<Vec3f>(inputs, _kTangent, Vec3f(1.0f, 0.0f, 0.0f));
+
+    if (inputs.Find(_kNormal)) {
+        data.normal = Get<Vec3f>(inputs, _kNormal, Vec3f(0.0f, 0.0f, 1.0f));
+        data.hasShadingNormal = true;
+    }
+
+    (*outputs)[_kOut] = Value(_MakeClosure(data));
+}
+
+void
 _EvalLayerBsdf(
     const ParamMap& inputs,
     const ShadingContext&,
@@ -336,6 +362,7 @@ RegisterPbrNodes(NodeRegistry& reg)
     _REG("ND_anisotropic_vdf", &_EvalAnisotropicVdf);
     _REG("ND_sheen_bsdf", &_EvalSheenBsdf);
     _REG("ND_dielectric_bsdf", &_EvalDielectricBsdf);
+    _REG("ND_conductor_bsdf", &_EvalConductorBsdf);
     _REG("ND_layer_bsdf", &_EvalLayerBsdf);
     _REG("ND_layer_vdf", &_EvalLayerVdf);
     _REG("ND_chiang_hair_bsdf", &_EvalChiangHairBsdf);
