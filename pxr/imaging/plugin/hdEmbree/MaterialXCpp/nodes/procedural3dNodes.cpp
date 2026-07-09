@@ -44,29 +44,63 @@ static const SlotName _kStyle("style");
 static const SlotName _kTangent("tangent");
 static const SlotName _kType("type");
 
-static void
-_EvalNoise3dFloat(const ParamMap& inputs,
-                  const ShadingContext& ctx,
-                  NodeOutputMap* outputs)
+template <typename T>
+static T
+_Noise3dValue(const ParamMap& inputs, const ShadingContext& ctx);
+
+template <>
+float
+_Noise3dValue<float>(const ParamMap& inputs, const ShadingContext& ctx)
 {
     const Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
     const float amplitude = Get<float>(inputs, _kAmplitude, 1.0f);
     const float pivot = Get<float>(inputs, _kPivot, 0.0f);
-    StoreTypedOutput(outputs, _kOut,
-                     PerlinNoise3d(pos[0], pos[1], pos[2]) * amplitude + pivot);
+    return PerlinNoise3d(pos[0], pos[1], pos[2]) * amplitude + pivot;
 }
 
-static void
-_EvalNoise3dColor3(const ParamMap& inputs,
-                   const ShadingContext& ctx,
-                   NodeOutputMap* outputs)
+template <>
+Vec2f
+_Noise3dValue<Vec2f>(const ParamMap& inputs, const ShadingContext& ctx)
+{
+    const Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    const Vec2f amplitude = ReadAmplitude<Vec2f>(inputs, _kAmplitude);
+    const float pivot = Get<float>(inputs, _kPivot, 0.0f);
+    const Vec3f value = PerlinNoise3dVec3(pos[0], pos[1], pos[2]);
+    return CompMul(Vec2f(value[0], value[1]), amplitude) + Vec2f(pivot);
+}
+
+template <>
+Vec3f
+_Noise3dValue<Vec3f>(const ParamMap& inputs, const ShadingContext& ctx)
 {
     const Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
     const Vec3f amplitude = ReadAmplitude<Vec3f>(inputs, _kAmplitude);
     const float pivot = Get<float>(inputs, _kPivot, 0.0f);
     const Vec3f value = PerlinNoise3dVec3(pos[0], pos[1], pos[2]);
-    StoreTypedOutput(outputs, _kOut,
-                     CompMul(value, amplitude) + Vec3f(pivot));
+    return CompMul(value, amplitude) + Vec3f(pivot);
+}
+
+template <>
+Vec4f
+_Noise3dValue<Vec4f>(const ParamMap& inputs, const ShadingContext& ctx)
+{
+    const Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    const Vec4f amplitude = ReadAmplitude<Vec4f>(inputs, _kAmplitude);
+    const float pivot = Get<float>(inputs, _kPivot, 0.0f);
+    const Vec3f xyz = PerlinNoise3dVec3(pos[0], pos[1], pos[2]);
+    const float w = PerlinNoise3d(
+        pos[0] + 19.0f, pos[1] + 73.0f, pos[2] + 37.0f);
+    return CompMul(Vec4f(xyz[0], xyz[1], xyz[2], w), amplitude) +
+           Vec4f(pivot);
+}
+
+template <typename T>
+static void
+_EvalNoise3dTyped(const ParamMap& inputs,
+                  const ShadingContext& ctx,
+                  NodeOutputMap* outputs)
+{
+    StoreTypedOutput(outputs, _kOut, _Noise3dValue<T>(inputs, ctx));
 }
 
 template <typename T>
@@ -338,8 +372,17 @@ _EvalFlake3d(const ParamMap& inputs,
 void
 RegisterProcedural3dNodes(NodeRegistry& reg)
 {
-    _REG("ND_noise3d_float", &_EvalNoise3dFloat);
-    _REG("ND_noise3d_color3", &_EvalNoise3dColor3);
+    _REG("ND_noise3d_float", &_EvalNoise3dTyped<float>);
+    _REG("ND_noise3d_color3", &_EvalNoise3dTyped<Vec3f>);
+    _REG("ND_noise3d_color4", &_EvalNoise3dTyped<Vec4f>);
+    _REG("ND_noise3d_vector2", &_EvalNoise3dTyped<Vec2f>);
+    _REG("ND_noise3d_vector3", &_EvalNoise3dTyped<Vec3f>);
+    _REG("ND_noise3d_vector4", &_EvalNoise3dTyped<Vec4f>);
+    _REG("ND_noise3d_color3FA", &_EvalNoise3dTyped<Vec3f>);
+    _REG("ND_noise3d_color4FA", &_EvalNoise3dTyped<Vec4f>);
+    _REG("ND_noise3d_vector2FA", &_EvalNoise3dTyped<Vec2f>);
+    _REG("ND_noise3d_vector3FA", &_EvalNoise3dTyped<Vec3f>);
+    _REG("ND_noise3d_vector4FA", &_EvalNoise3dTyped<Vec4f>);
     _REG("ND_fractal3d_float", &_EvalFractal3dTyped<float>);
     _REG("ND_fractal3d_color3", &_EvalFractal3dTyped<Vec3f>);
     _REG("ND_fractal3d_color4", &_EvalFractal3dTyped<Vec4f>);
