@@ -217,13 +217,34 @@ _EvalSaturateColor4(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(Vec4f(r, g, b, c[3]));
 }
 
+static float
+_Luminance(const Vec3f& c, const Vec3f& lumaCoeffs)
+{
+    return lumaCoeffs[0] * c[0] +
+           lumaCoeffs[1] * c[1] +
+           lumaCoeffs[2] * c[2];
+}
+
 static void
-_EvalLuminance(const ParamMap& inputs, const ShadingContext&,
-               NodeOutputMap* outputs)
+_EvalLuminanceColor3(const ParamMap& inputs, const ShadingContext&,
+                     NodeOutputMap* outputs)
 {
     const Vec3f c = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
-    (*outputs)[_kOut] = Value(
-        kRec709LumaR * c[0] + kRec709LumaG * c[1] + kRec709LumaB * c[2]);
+    const Vec3f lumaCoeffs = Get<Vec3f>(
+        inputs, _kLumacoeffs, Rec709LumaCoeffs());
+    const float luma = _Luminance(c, lumaCoeffs);
+    (*outputs)[_kOut] = Value(Vec3f(luma));
+}
+
+static void
+_EvalLuminanceColor4(const ParamMap& inputs, const ShadingContext&,
+                     NodeOutputMap* outputs)
+{
+    const Vec4f c = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
+    const Vec3f lumaCoeffs = Get<Vec3f>(
+        inputs, _kLumacoeffs, Rec709LumaCoeffs());
+    const float luma = _Luminance(Vec3f(c[0], c[1], c[2]), lumaCoeffs);
+    (*outputs)[_kOut] = Value(Vec4f(luma, luma, luma, c[3]));
 }
 
 static void
@@ -508,7 +529,8 @@ RegisterAdjustmentNodes(NodeRegistry& reg)
     _REG("ND_contrast_vector4FA", &_EvalContrastFA<Vec4f>);
 
     // Saturate
-    _REG("ND_luminance_color3", &_EvalLuminance);
+    _REG("ND_luminance_color3", &_EvalLuminanceColor3);
+    _REG("ND_luminance_color4", &_EvalLuminanceColor4);
     _REG("ND_rgbtohsv_color3", &_EvalRgbToHsv);
     _REG("ND_rgbtohsv_color4", &_EvalRgbToHsvColor4);
     _REG("ND_hsvtorgb_color3", &_EvalHsvToRgb);

@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "compositingNodes.h"
+#include "../surfaceShaderUtils.h"
 #include "../nodeRegistry.h"
 
 #include <cmath>
@@ -43,6 +44,97 @@ _EvalMixVec(const ParamMap& inputs, const ShadingContext&,
     T bg  = Get<T>(inputs, _kBg, Zero<T>());
     T m   = Get<T>(inputs, _kMix, Zero<T>());
     (*outputs)[_kOut] = Value(bg + CompMul(fg - bg, m));
+}
+
+static void
+_EvalMixBsdf(const ParamMap& inputs, const ShadingContext&,
+             NodeOutputMap* outputs)
+{
+    const BsdfClosure fg = Get<BsdfClosure>(inputs, _kFg, BsdfClosure{});
+    const BsdfClosure bg = Get<BsdfClosure>(inputs, _kBg, BsdfClosure{});
+    const float mix = Get<float>(inputs, _kMix, 0.0f);
+
+    BsdfClosure result;
+    const Bsdf::NodeId bgRoot = AppendClosureTree(&result.tree, bg.tree);
+    const Bsdf::NodeId fgRoot = AppendClosureTree(&result.tree, fg.tree);
+
+    if (result.tree.IsValid(bgRoot) && result.tree.IsValid(fgRoot)) {
+        Bsdf::MixData mixData;
+        mixData.bg = bgRoot;
+        mixData.fg = fgRoot;
+        mixData.mix = mix;
+        result.tree.root = result.tree.Add(mixData);
+    } else if (result.tree.IsValid(fgRoot)) {
+        result.tree.root = WeightClosureTreeRoot(&result.tree, fgRoot, mix);
+    } else if (result.tree.IsValid(bgRoot)) {
+        result.tree.root = WeightClosureTreeRoot(
+            &result.tree, bgRoot, 1.0f - mix);
+    }
+
+    const bool chooseFg = mix >= 0.5f;
+    if (fg.hasInteriorMedium && (!bg.hasInteriorMedium || chooseFg)) {
+        result.hasInteriorMedium = true;
+        result.interiorMedium = fg.interiorMedium;
+    } else if (bg.hasInteriorMedium) {
+        result.hasInteriorMedium = true;
+        result.interiorMedium = bg.interiorMedium;
+    }
+
+    (*outputs)[_kOut] = Value(result);
+}
+
+static void
+_EvalMixEdf(const ParamMap& inputs, const ShadingContext&,
+            NodeOutputMap* outputs)
+{
+    const UniformEdf fg = Get<UniformEdf>(
+        inputs, _kFg, UniformEdf{Vec3f(0.0f)});
+    const UniformEdf bg = Get<UniformEdf>(
+        inputs, _kBg, UniformEdf{Vec3f(0.0f)});
+    const float mix = Get<float>(inputs, _kMix, 0.0f);
+    (*outputs)[_kOut] = Value(UniformEdf{
+        bg.emittance + (fg.emittance - bg.emittance) * mix});
+}
+
+static float
+_MediumScatterWeight(const MediumProperties& medium)
+{
+    return std::max(0.0f,
+        medium.sigmaS[0] + medium.sigmaS[1] + medium.sigmaS[2]);
+}
+
+static void
+_EvalMixVdf(const ParamMap& inputs, const ShadingContext&,
+            NodeOutputMap* outputs)
+{
+    const VdfClosure fg = Get<VdfClosure>(inputs, _kFg, VdfClosure{});
+    const VdfClosure bg = Get<VdfClosure>(inputs, _kBg, VdfClosure{});
+    const float mix = Get<float>(inputs, _kMix, 0.0f);
+    const float bgScale = 1.0f - mix;
+
+    VdfClosure result;
+    result.medium.sigmaA = bg.medium.sigmaA * bgScale +
+                           fg.medium.sigmaA * mix;
+    result.medium.sigmaS = bg.medium.sigmaS * bgScale +
+                           fg.medium.sigmaS * mix;
+
+    const float bgScatterWeight = std::max(
+        0.0f, _MediumScatterWeight(bg.medium) * bgScale);
+    const float fgScatterWeight = std::max(
+        0.0f, _MediumScatterWeight(fg.medium) * mix);
+    const float scatterWeightSum = bgScatterWeight + fgScatterWeight;
+    if (scatterWeightSum > 0.0f) {
+        result.medium.anisotropy =
+            (bg.medium.anisotropy * bgScatterWeight +
+             fg.medium.anisotropy * fgScatterWeight) /
+            scatterWeightSum;
+    } else if (!bg.medium.IsVacuum() && bgScale > 0.0f) {
+        result.medium.anisotropy = bg.medium.anisotropy;
+    } else {
+        result.medium.anisotropy = fg.medium.anisotropy;
+    }
+
+    (*outputs)[_kOut] = Value(result);
 }
 
 // ---- Premult / Unpremult -------------------------------------------------
@@ -421,6 +513,9 @@ RegisterCompositingNodes(NodeRegistry& reg)
     _REG("ND_mix_vector2", &_EvalMix<Vec2f>);
     _REG("ND_mix_vector3", &_EvalMix<Vec3f>);
     _REG("ND_mix_vector4", &_EvalMix<Vec4f>);
+    _REG("ND_mix_bsdf", &_EvalMixBsdf);
+    _REG("ND_mix_edf", &_EvalMixEdf);
+    _REG("ND_mix_vdf", &_EvalMixVdf);
 
     // mix (vector mix param)
     _REG("ND_mix_color3_color3",   &_EvalMixVec<Vec3f>);
