@@ -235,6 +235,56 @@ FractalNoise2dVec4(Vec2f p, int octaves, float lacunarity, float diminish)
     return Vec4f(xyz[0], xyz[1], xyz[2], w);
 }
 
+inline float
+FractalNoise3dFloat(Vec3f p, int octaves, float lacunarity, float diminish)
+{
+    float result = 0.0f;
+    float amplitude = 1.0f;
+    for (int i = 0; i < octaves; ++i) {
+        result += amplitude * PerlinNoise3d(p[0], p[1], p[2]);
+        amplitude *= diminish;
+        p *= lacunarity;
+    }
+    return result;
+}
+
+inline Vec3f
+FractalNoise3dVec3(Vec3f p, int octaves, float lacunarity, float diminish)
+{
+    Vec3f result(0.0f);
+    float amplitude = 1.0f;
+    for (int i = 0; i < octaves; ++i) {
+        result += PerlinNoise3dVec3(p[0], p[1], p[2]) * amplitude;
+        amplitude *= diminish;
+        p *= lacunarity;
+    }
+    return result;
+}
+
+inline Vec2f
+FractalNoise3dVec2(Vec3f p, int octaves, float lacunarity, float diminish)
+{
+    return Vec2f(
+        FractalNoise3dFloat(p, octaves, lacunarity, diminish),
+        FractalNoise3dFloat(
+            p + Vec3f(19.0f, 193.0f, 37.0f),
+            octaves,
+            lacunarity,
+            diminish));
+}
+
+inline Vec4f
+FractalNoise3dVec4(Vec3f p, int octaves, float lacunarity, float diminish)
+{
+    const Vec3f xyz = FractalNoise3dVec3(p, octaves, lacunarity, diminish);
+    const float w = FractalNoise3dFloat(
+        p + Vec3f(19.0f, 193.0f, 37.0f),
+        octaves,
+        lacunarity,
+        diminish);
+    return Vec4f(xyz[0], xyz[1], xyz[2], w);
+}
+
 inline Vec2f
 WorleyCellPosition2d(int x, int y, int xoff, int yoff, float jitter)
 {

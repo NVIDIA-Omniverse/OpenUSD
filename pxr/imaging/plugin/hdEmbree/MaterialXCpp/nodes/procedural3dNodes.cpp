@@ -69,46 +69,68 @@ _EvalNoise3dColor3(const ParamMap& inputs,
                      CompMul(value, amplitude) + Vec3f(pivot));
 }
 
-static void
-_EvalFractal3dFloat(const ParamMap& inputs,
-                    const ShadingContext& ctx,
-                    NodeOutputMap* outputs)
+template <typename T>
+static T
+_Fractal3dValue(const ParamMap& inputs, const ShadingContext& ctx);
+
+template <>
+float
+_Fractal3dValue<float>(const ParamMap& inputs, const ShadingContext& ctx)
 {
-    Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    const Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
     const float amplitude = Get<float>(inputs, _kAmplitude, 1.0f);
     const int octaves = Get<int>(inputs, _kOctaves, 3);
     const float lacunarity = Get<float>(inputs, _kLacunarity, 2.0f);
     const float diminish = Get<float>(inputs, _kDiminish, 0.5f);
-
-    float result = 0.0f;
-    float weight = 1.0f;
-    for (int i = 0; i < octaves; ++i) {
-        result += weight * PerlinNoise3d(pos[0], pos[1], pos[2]);
-        pos *= lacunarity;
-        weight *= diminish;
-    }
-    StoreTypedOutput(outputs, _kOut, result * amplitude);
+    return FractalNoise3dFloat(pos, octaves, lacunarity, diminish) * amplitude;
 }
 
-static void
-_EvalFractal3dVec3(const ParamMap& inputs,
-                   const ShadingContext& ctx,
-                   NodeOutputMap* outputs)
+template <>
+Vec2f
+_Fractal3dValue<Vec2f>(const ParamMap& inputs, const ShadingContext& ctx)
 {
-    Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    const Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    const Vec2f amplitude = ReadAmplitude<Vec2f>(inputs, _kAmplitude);
+    const int octaves = Get<int>(inputs, _kOctaves, 3);
+    const float lacunarity = Get<float>(inputs, _kLacunarity, 2.0f);
+    const float diminish = Get<float>(inputs, _kDiminish, 0.5f);
+    return CompMul(
+        FractalNoise3dVec2(pos, octaves, lacunarity, diminish), amplitude);
+}
+
+template <>
+Vec3f
+_Fractal3dValue<Vec3f>(const ParamMap& inputs, const ShadingContext& ctx)
+{
+    const Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
     const Vec3f amplitude = ReadAmplitude<Vec3f>(inputs, _kAmplitude);
     const int octaves = Get<int>(inputs, _kOctaves, 3);
     const float lacunarity = Get<float>(inputs, _kLacunarity, 2.0f);
     const float diminish = Get<float>(inputs, _kDiminish, 0.5f);
+    return CompMul(
+        FractalNoise3dVec3(pos, octaves, lacunarity, diminish), amplitude);
+}
 
-    Vec3f result(0.0f);
-    float weight = 1.0f;
-    for (int i = 0; i < octaves; ++i) {
-        result += weight * PerlinNoise3dVec3(pos[0], pos[1], pos[2]);
-        pos *= lacunarity;
-        weight *= diminish;
-    }
-    StoreTypedOutput(outputs, _kOut, CompMul(result, amplitude));
+template <>
+Vec4f
+_Fractal3dValue<Vec4f>(const ParamMap& inputs, const ShadingContext& ctx)
+{
+    const Vec3f pos = Get<Vec3f>(inputs, _kPosition, ctx.position);
+    const Vec4f amplitude = ReadAmplitude<Vec4f>(inputs, _kAmplitude);
+    const int octaves = Get<int>(inputs, _kOctaves, 3);
+    const float lacunarity = Get<float>(inputs, _kLacunarity, 2.0f);
+    const float diminish = Get<float>(inputs, _kDiminish, 0.5f);
+    return CompMul(
+        FractalNoise3dVec4(pos, octaves, lacunarity, diminish), amplitude);
+}
+
+template <typename T>
+static void
+_EvalFractal3dTyped(const ParamMap& inputs,
+                    const ShadingContext& ctx,
+                    NodeOutputMap* outputs)
+{
+    StoreTypedOutput(outputs, _kOut, _Fractal3dValue<T>(inputs, ctx));
 }
 
 static void
@@ -318,9 +340,17 @@ RegisterProcedural3dNodes(NodeRegistry& reg)
 {
     _REG("ND_noise3d_float", &_EvalNoise3dFloat);
     _REG("ND_noise3d_color3", &_EvalNoise3dColor3);
-    _REG("ND_fractal3d_float", &_EvalFractal3dFloat);
-    _REG("ND_fractal3d_vector3", &_EvalFractal3dVec3);
-    _REG("ND_fractal3d_color3", &_EvalFractal3dVec3);
+    _REG("ND_fractal3d_float", &_EvalFractal3dTyped<float>);
+    _REG("ND_fractal3d_color3", &_EvalFractal3dTyped<Vec3f>);
+    _REG("ND_fractal3d_color4", &_EvalFractal3dTyped<Vec4f>);
+    _REG("ND_fractal3d_vector2", &_EvalFractal3dTyped<Vec2f>);
+    _REG("ND_fractal3d_vector3", &_EvalFractal3dTyped<Vec3f>);
+    _REG("ND_fractal3d_vector4", &_EvalFractal3dTyped<Vec4f>);
+    _REG("ND_fractal3d_color3FA", &_EvalFractal3dTyped<Vec3f>);
+    _REG("ND_fractal3d_color4FA", &_EvalFractal3dTyped<Vec4f>);
+    _REG("ND_fractal3d_vector2FA", &_EvalFractal3dTyped<Vec2f>);
+    _REG("ND_fractal3d_vector3FA", &_EvalFractal3dTyped<Vec3f>);
+    _REG("ND_fractal3d_vector4FA", &_EvalFractal3dTyped<Vec4f>);
     _REG("ND_cellnoise3d_float", &_EvalCellnoise3d);
     _REG("ND_worleynoise3d_float", &_EvalWorleyNoise3dFloat);
     _REG("ND_worleynoise3d_vector2", &_EvalWorleyNoise3dVec2);
