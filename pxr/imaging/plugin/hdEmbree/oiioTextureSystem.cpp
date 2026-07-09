@@ -12,11 +12,14 @@
 #include <cctype>
 #include <cmath>
 #include <mutex>
+#include <string>
 #include <unordered_set>
 
 #if defined(PXR_OIIO_PLUGIN_ENABLED)
 #include <OpenImageIO/texture.h>
 #include <OpenImageIO/ustring.h>
+
+#include <tbb/concurrent_unordered_map.h>
 #endif
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -26,6 +29,48 @@ struct HdEmbreeOiioTextureSystem::_Impl
 #if defined(PXR_OIIO_PLUGIN_ENABLED)
     OIIO::TextureSystem* textureSystem = nullptr;
     OIIO::TextureSystem* pngTextureSystem = nullptr;
+
+    // Resolving an OIIO texture handle requires constructing a ustring (a
+    // globally locked table insert plus a hash of the whole path) and calling
+    // get_texture_handle (another locked map lookup).  Both are stable for the
+    // lifetime of the texture system, but they were previously repeated on
+    // every single texture tap across every render thread, so their shared
+    // locks serialized the workers and dominated textured-render cost.  Cache
+    // the resolved handle per file path in a lock-free concurrent map so the
+    // hot path performs one wait-free lookup instead.  A given file path
+    // always selects the same underlying texture system (PNG inputs go to
+    // pngTextureSystem, everything else to textureSystem), so a single
+    // path-keyed map stays consistent across both.
+    struct _CachedHandle
+    {
+        OIIO::ustring filename;
+        OIIO::TextureSystem::TextureHandle* handle = nullptr;
+        bool isUdim = false;
+    };
+    mutable tbb::concurrent_unordered_map<std::string, _CachedHandle>
+        handleCache;
+
+    const _CachedHandle& ResolveHandle(
+        OIIO::TextureSystem* const system,
+        OIIO::TextureSystem::Perthread* const threadInfo,
+        const std::string& filePath) const
+    {
+        const auto it = handleCache.find(filePath);
+        if (it != handleCache.end()) {
+            return it->second;
+        }
+
+        _CachedHandle entry;
+        entry.filename = OIIO::ustring(filePath);
+        entry.handle = system->get_texture_handle(entry.filename, threadInfo);
+        entry.isUdim = entry.handle && system->is_udim(entry.handle);
+
+        // A concurrent insert of the same key from another thread simply
+        // resolves to the same stable handle; the losing entry is discarded.
+        // Node references into the map stay valid because entries are never
+        // erased.
+        return handleCache.insert({filePath, entry}).first->second;
+    }
 #endif
     mutable std::mutex warningMutex;
     mutable std::unordered_set<std::string> warnedFiles;
@@ -245,7 +290,18 @@ _ConfigureTextureSystem(
     }
 
     textureSystem->attribute("automip", 1);
-    textureSystem->attribute("autotile", 64);
+    // Untiled inputs (JPEG, PNG, ...) are cached in autotile-sized blocks.
+    // The OIIO default of 64 produces ~1024 tiles for a 2048^2 image, so
+    // path-traced taps that scatter across the surface cross tile
+    // boundaries constantly and each crossing costs a locked tile-cache
+    // lookup -- that dominated textured-render cost (measured ~35% of a
+    // single-sphere frame).  A larger block keeps far fewer, coarser tiles
+    // resident, which is the right trade for a path tracer that ends up
+    // touching most of every visible texture.  The value only affects
+    // caching granularity, not filtering, so output is bit-identical.
+    // Pre-generated tiled, mipped .tx inputs avoid this path entirely and
+    // remain the fastest option for texture-heavy scenes.
+    textureSystem->attribute("autotile", 512);
     textureSystem->attribute("accept_untiled", 1);
     textureSystem->attribute("accept_unmipped", 1);
     textureSystem->attribute("gray_to_rgb", 1);
@@ -388,9 +444,9 @@ HdEmbreeOiioTextureSystem::Sample2D(
 
     OIIO::TextureSystem::Perthread* const threadInfo =
         textureSystem->get_perthread_info();
-    OIIO::TextureSystem::TextureHandle* handle =
-        textureSystem->get_texture_handle(
-            OIIO::ustring(request.filePath), threadInfo);
+    const _Impl::_CachedHandle& cached =
+        _impl->ResolveHandle(textureSystem, threadInfo, request.filePath);
+    OIIO::TextureSystem::TextureHandle* handle = cached.handle;
 
     // MaterialX graph coordinates use a lower-left origin, while the OIIO
     // image-space T axis increases from top to bottom.  Convert values and
@@ -402,7 +458,7 @@ HdEmbreeOiioTextureSystem::Sample2D(
     const float dsdy = request.dstdy[0];
     const float dtdy = -request.dstdy[1];
 
-    if (handle && textureSystem->is_udim(handle)) {
+    if (handle && cached.isUdim) {
         // UDIM tile numbers are defined in MaterialX UV space:
         // 1001 + floor(u) + 10 * floor(v).  Resolve the concrete tile before
         // flipping T for image-space sampling, otherwise the first row works

@@ -583,8 +583,8 @@ _SpectralScalarToRgb(float value, const _HeroWavelengthState& hero)
 // Callback data for geompropvalue node — holds references needed to
 // sample an arbitrary primvar at a ray hit point.
 struct _GeomPropCallbackData {
-    const TfHashMap<TfToken, HdEmbreePrimvarSampler*,
-                    TfToken::HashFunctor>* primvarMap;
+    const std::unordered_map<std::string, HdEmbreePrimvarSampler*>*
+        primvarMap;
     unsigned int primID;
     float u, v;
 };
@@ -597,30 +597,22 @@ static mxcpp::Value
 _SampleGeomProp(const void* userData, const std::string& name)
 {
     auto* data = static_cast<const _GeomPropCallbackData*>(userData);
-    auto it = data->primvarMap->find(TfToken(name));
+    // Look up by string: constructing a TfToken here would take the global
+    // token-table lock on every material input evaluation.
+    auto it = data->primvarMap->find(name);
     if (it == data->primvarMap->end()) {
         return mxcpp::Value();
     }
 
     auto* sampler = it->second;
 
-    // Try types from widest to narrowest.
+    // Sample() only succeeds on an exact tuple-type match, so attempt order
+    // does not change the result — try the types material inputs actually
+    // use (texcoords, colors, scalars) before the rare matrix primvars.
     {
-        GfMatrix4f val;
+        GfVec2f val;
         if (sampler->Sample(data->primID, data->u, data->v, &val)) {
-            return mxcpp::Value(_ToMx(val));
-        }
-    }
-    {
-        GfMatrix4d val;
-        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
-            return mxcpp::Value(_ToMx(val));
-        }
-    }
-    {
-        GfVec4f val;
-        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
-            return mxcpp::Value(mxcpp::Vec4f(val[0], val[1], val[2], val[3]));
+            return mxcpp::Value(mxcpp::Vec2f(val[0], val[1]));
         }
     }
     {
@@ -630,15 +622,15 @@ _SampleGeomProp(const void* userData, const std::string& name)
         }
     }
     {
-        GfVec2f val;
-        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
-            return mxcpp::Value(mxcpp::Vec2f(val[0], val[1]));
-        }
-    }
-    {
         float val;
         if (sampler->Sample(data->primID, data->u, data->v, &val)) {
             return mxcpp::Value(val);
+        }
+    }
+    {
+        GfVec4f val;
+        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
+            return mxcpp::Value(mxcpp::Vec4f(val[0], val[1], val[2], val[3]));
         }
     }
     {
@@ -651,6 +643,18 @@ _SampleGeomProp(const void* userData, const std::string& name)
         bool val;
         if (sampler->Sample(data->primID, data->u, data->v, &val)) {
             return mxcpp::Value(val);
+        }
+    }
+    {
+        GfMatrix4f val;
+        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
+            return mxcpp::Value(_ToMx(val));
+        }
+    }
+    {
+        GfMatrix4d val;
+        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
+            return mxcpp::Value(_ToMx(val));
         }
     }
 
@@ -2148,6 +2152,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
                         convergedCount, _pixelConverged.size(), convergedPct);
             std::printf("  Avg samples/pixel: %.1f\n", avgSamples);
         }
+
         std::printf("======================================\n");
         std::fflush(stdout);
     }
@@ -3124,7 +3129,7 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
             instanceContext, prototypeContext, hitPos, normal,
             nullptr, nullptr, options);
         _GeomPropCallbackData cbData{
-            &prototypeContext->primvarMap,
+            &prototypeContext->primvarMapByString,
             rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
         ctx.geomPropLookup = &_SampleGeomProp;
         ctx.geomPropUserData = &cbData;
@@ -3473,6 +3478,22 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
             1.0f);
     }
 
+    if (_enableLighting) {
+        // Path trace from the camera ray origin.  _TracePath re-intersects
+        // the ray and derives all surface data (shading context, material
+        // closure, shading normal) at the hit itself, so evaluating the
+        // material here as well would be pure duplicate work -- it used to
+        // roughly double the per-sample material-evaluation cost on
+        // material-heavy scenes.
+        const GfVec3f lightingColor =
+            _TracePath(origin, dir, rayDiff, sampler.RootDomain());
+        return GfVec4f(
+            std::max(0.0f, lightingColor[0]),
+            std::max(0.0f, lightingColor[1]),
+            std::max(0.0f, lightingColor[2]),
+            1.0f);
+    }
+
     // Get the instance and prototype context structures for the hit prim.
     // We don't use embree's multi-level instancing; we
     // flatten everything in hydra. So instID[0] should always be correct.
@@ -3505,7 +3526,7 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
     mxcpp::ShadingContext ctx = _BuildShadingContext(
         rayHit, rayDiff, instanceContext, prototypeContext, hitPos, normal);
     _GeomPropCallbackData cbData{
-        &prototypeContext->primvarMap,
+        &prototypeContext->primvarMapByString,
         rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
     ctx.geomPropLookup = &_SampleGeomProp;
     ctx.geomPropUserData = &cbData;
@@ -3550,41 +3571,30 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
         }
     }
 
-    GfVec3f lightingColor(0.0f);
-
-    if (!_enableLighting)
-    {
-        GfVec3f materialColor;
-        if (hasMaterialClosure) {
-            materialColor = _ToGf(closure.baseColor);
-        } else {
-            materialColor = _enableSceneColors
-                ? _ToGf(ctx.displayColor) : GfVec3f(0.5f);
-        }
-
-        GfVec3f dir = GfVec3f(rayHit.ray.dir_x, rayHit.ray.dir_y,
-                              rayHit.ray.dir_z);
-        float diffuseLight = fabs(GfDot(-dir, normal)) *
-            HdEmbreeConfig::GetInstance().cameraLightIntensity;
-
-        float aoLightIntensity =
-            _ComputeAmbientOcclusion(
-                hitPos,
-                normal,
-                sampler.RootDomain()
-                    .Fork(HdEmbreeSampleDomainKey::AmbientOcclusion));
-
-        lightingColor = materialColor * diffuseLight * aoLightIntensity;
+    GfVec3f materialColor;
+    if (hasMaterialClosure) {
+        materialColor = _ToGf(closure.baseColor);
+    } else {
+        materialColor = _enableSceneColors
+            ? _ToGf(ctx.displayColor) : GfVec3f(0.5f);
     }
-    else
-    {
-        // Path trace from the camera ray origin.
-        GfVec3f origin(rayHit.ray.org_x, rayHit.ray.org_y,
-                       rayHit.ray.org_z);
-        GfVec3f dir = GfVec3f(rayHit.ray.dir_x, rayHit.ray.dir_y,
-                              rayHit.ray.dir_z).GetNormalized();
-        lightingColor = _TracePath(origin, dir, rayDiff, sampler.RootDomain());
-    }
+
+    // The lighting-enabled path returned above; this is the camera-light
+    // shading fallback, which is what actually consumes the closure and the
+    // resolved shading normal computed in this function.
+    const GfVec3f rawDir(
+        rayHit.ray.dir_x, rayHit.ray.dir_y, rayHit.ray.dir_z);
+    float diffuseLight = fabs(GfDot(-rawDir, normal)) *
+        HdEmbreeConfig::GetInstance().cameraLightIntensity;
+
+    float aoLightIntensity =
+        _ComputeAmbientOcclusion(
+            hitPos,
+            normal,
+            sampler.RootDomain()
+                .Fork(HdEmbreeSampleDomainKey::AmbientOcclusion));
+
+    const GfVec3f lightingColor = materialColor * diffuseLight * aoLightIntensity;
 
     GfVec4f output;
     output[0] = std::max(0.0f, lightingColor[0]);
@@ -4735,7 +4745,7 @@ HdEmbreeRenderer::_TracePath(
             instanceContext, prototypeContext, hitPos, normal,
             &lastDndu, &lastDndv);
         _GeomPropCallbackData cbData{
-            &prototypeContext->primvarMap,
+            &prototypeContext->primvarMapByString,
             rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
         ctx.geomPropLookup = &_SampleGeomProp;
         ctx.geomPropUserData = &cbData;

@@ -1124,6 +1124,7 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
         delete ctx->primvarMap[name];
     }
     ctx->primvarMap.erase(name);
+    ctx->primvarMapByString.erase(name.GetString());
 
     HdVtBufferSource buffer(name, data);
     const HdTupleType tupleType = buffer.GetTupleType();
@@ -1185,6 +1186,7 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
     // Put the new sampler back in the primvar map.
     if (sampler != nullptr) {
         ctx->primvarMap[name] = sampler;
+        ctx->primvarMapByString[name.GetString()] = sampler;
     }
 }
 
@@ -1448,6 +1450,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
             delete ctx->primvarMap[HdTokens->normals];
         }
         ctx->primvarMap.erase(HdTokens->normals);
+        ctx->primvarMapByString.erase(HdTokens->normals.GetString());
 
         // Force the smooth normals code to rebuild the "normals" primvar the
         // next time smooth normals is enabled.
@@ -1496,6 +1499,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
                 if (it != ctx->primvarMap.end()) {
                     delete it->second;
                     ctx->primvarMap.erase(it);
+                    ctx->primvarMapByString.erase(name.GetString());
                 }
             }
         }

@@ -318,8 +318,12 @@ _ComputeTextureFootprintForSlot(const ParamMap& inputs,
                                 Vec2f* outDstdx,
                                 Vec2f* outDstdy)
 {
-    const Vec2f baseTexcoord =
-        EvaluateInput<Vec2f>(inputs, texcoordSlot, ctx, ctx.texcoord);
+    // The base coordinate uses the same shading context this node is being
+    // evaluated with, so the connected input's cached value (computed during
+    // the current graph pass) is already correct.  Only the dx/dy probes
+    // below need the re-evaluation machinery, which runs the upstream
+    // subgraph again per shifted context.
+    const Vec2f baseTexcoord = Get<Vec2f>(inputs, texcoordSlot, ctx.texcoord);
     const Vec2f st = _ComputeSampleCoord<IsTiled>(inputs, baseTexcoord);
 
     const ShadingContext shiftedDx = OffsetContextDx(ctx);

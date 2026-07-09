@@ -420,16 +420,21 @@ static void
 _EvalGeomPropValue(const ParamMap& inputs, const ShadingContext& ctx,
                    NodeOutputMap* outputs)
 {
-    std::string name = Get<std::string>(inputs, _kGeomprop, std::string());
-    T defaultVal = Get<T>(inputs, _kDefault, Zero<T>());
-    if (!name.empty() && ctx.geomPropLookup) {
-        Value v = ctx.geomPropLookup(ctx.geomPropUserData, name);
+    // Read the primvar name by reference: this node runs for every material
+    // input re-evaluation, so a per-call std::string copy is measurable.
+    const Value* nameValue = inputs.Find(_kGeomprop);
+    const std::string* name =
+        (nameValue && ValueHolds<std::string>(*nameValue))
+            ? &ValueGet<std::string>(*nameValue)
+            : nullptr;
+    if (name && !name->empty() && ctx.geomPropLookup) {
+        Value v = ctx.geomPropLookup(ctx.geomPropUserData, *name);
         if (ValueHolds<T>(v)) {
             (*outputs)[_kOut] = v;
             return;
         }
     }
-    (*outputs)[_kOut] = Value(defaultVal);
+    (*outputs)[_kOut] = Value(Get<T>(inputs, _kDefault, Zero<T>()));
 }
 
 static void

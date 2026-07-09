@@ -313,11 +313,33 @@ EvalGraph::_EvaluateNodeOutput(
         return false;
     }
 
-    EvalScratch scratch;
-    const size_t nodeCount = static_cast<size_t>(nodeIndex) + 1;
-    _EvaluateNodes(ctx, nodeCount, &scratch);
+    // This runs inside an outer Evaluate() whose thread_local scratch holds
+    // the values that downstream nodes are still reading, so a nested
+    // re-evaluation needs its own scratch.  It is also extremely hot: texture
+    // nodes re-evaluate their texcoord input three times per tap to build a
+    // filter footprint, so constructing a fresh EvalScratch here made every
+    // connected-texture material eval allocate and free dozens of containers,
+    // and the resulting allocator contention dominated textured-material
+    // shading cost on many-core renders.  Keep a per-thread, depth-indexed
+    // pool of scratches instead; entries grow once and are reused for the
+    // lifetime of the thread.
+    thread_local std::vector<std::unique_ptr<EvalScratch>> nestedScratchPool;
+    thread_local size_t nestedScratchDepth = 0;
+    if (nestedScratchDepth >= nestedScratchPool.size()) {
+        nestedScratchPool.emplace_back(std::make_unique<EvalScratch>());
+    }
+    EvalScratch* const scratch = nestedScratchPool[nestedScratchDepth].get();
 
-    const Value* value = scratch.nodeOutputs[nodeIndex].Find(outputSlot);
+    struct _DepthGuard {
+        size_t& depth;
+        explicit _DepthGuard(size_t& d) : depth(d) { ++depth; }
+        ~_DepthGuard() { --depth; }
+    } depthGuard(nestedScratchDepth);
+
+    const size_t nodeCount = static_cast<size_t>(nodeIndex) + 1;
+    _EvaluateNodes(ctx, nodeCount, scratch);
+
+    const Value* value = scratch->nodeOutputs[nodeIndex].Find(outputSlot);
     if (!value) {
         return false;
     }

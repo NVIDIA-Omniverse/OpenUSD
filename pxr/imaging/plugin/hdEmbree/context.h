@@ -38,6 +38,14 @@ struct HdEmbreePrototypeContext
     /// A name-indexed map of primvar samplers.
     TfHashMap<TfToken, HdEmbreePrimvarSampler*, TfToken::HashFunctor>
         primvarMap;
+    /// String-keyed mirror of primvarMap for the material geomprop-lookup
+    /// callback, which receives plain string names from the pxr-independent
+    /// shading core.  Looking up here avoids constructing a TfToken — a
+    /// locked global-table operation — on every material input evaluation,
+    /// which is far too hot for the shading inner loop.  The samplers are
+    /// owned by primvarMap; this map only references them.
+    std::unordered_map<std::string, HdEmbreePrimvarSampler*>
+        primvarMapByString;
     /// A copy of the primitive params for this rprim.
     VtIntArray primitiveParams;
     /// The bound material, or nullptr if none.

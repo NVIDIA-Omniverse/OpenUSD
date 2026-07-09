@@ -271,6 +271,137 @@ whether a reversed index is recomputed across multiple sample dimensions for
 the same pixel and sample. Cache or incrementally update it only if that
 preserves the exact OpenQMC sequence.
 
+## Textured Renders Are Much Slower Than Untextured (2026-07-07)
+
+Textured assets rendered roughly an order of magnitude slower than the same
+mesh with constant inputs. Because `perf` was unavailable on the test host
+(`perf_event_paranoid=4`), the cause was isolated with A/B render timing on a
+single brass sphere (`ND_UsdPreviewSurface` + two `ND_tiledimage`, 2048x2048
+JPEG color and roughness, `usdrender --renderer Embree --disableCameraLight
+--disableGpu`, `HDEMBREE_RANDOM_NUMBER_SEED=1`, 64 logical CPUs, renderer time):
+
+| Variant | Time | Isolates |
+| --- | ---: | --- |
+| Constant `diffuseColor`/`roughness` (no texture) | 1.70 s | baseline |
+| `ND_constant` nodes, same graph topology | 1.76 s | graph plumbing is ~free |
+| `ND_tiledimage`, tiny 4x4 textures | 3.25 s | fixed per-tap overhead |
+| `ND_tiledimage`, 2048^2 JPEG | 5.72 s | full texture cost |
+
+Splitting the full-texture case with an env-gated no-op in `Sample2D`:
+
+| Segment | Cost |
+| --- | ---: |
+| MaterialX graph plumbing | approximately 0.06 s |
+| Image-node work (footprint 3x eval, string ops, request build) | approximately 0.72 s |
+| OIIO `texture()` call itself | approximately 3.08 s |
+
+The `texture()` call dominated. The texture:constant ratio also grew with
+thread count (1.78x at 1 thread, 2.41x at 16, 3.36x at 64), pointing at shared
+locking inside OIIO's tile cache rather than raw per-tap arithmetic.
+
+Root cause: untiled inputs (JPEG, PNG) were cached with `autotile = 64`, which
+splits a 2048^2 image into ~1024 tiles. Path-traced taps scatter across the
+surface and cross tile boundaries constantly; each crossing is a locked
+tile-cache lookup. Sweeping `autotile` (output stays bit-identical because it
+only changes caching granularity, not filtering) on the JPEG scene:
+
+| `autotile` | Time |
+| --- | ---: |
+| 64 (previous default) | 5.9 s |
+| 256 | 4.2 s |
+| 512 (new default) | 3.95 s |
+| 1024 | 3.8 s |
+| pre-generated mipped tiled `.tx` | 3.4 s |
+
+Applied fixes in `oiioTextureSystem.cpp`:
+
+1. Raised `autotile` from 64 to 512. On the brass sphere this cut renderer time
+   from 5.72 s to 3.73 s (about 35%) with an exact `oiiotool --diff` match to
+   the previous output. 512x512 blocks (1 MB float RGBA) are a middle ground;
+   larger blocks are marginally faster but cost more resident cache in
+   many-texture scenes.
+2. Cached the resolved OIIO `TextureHandle` (and its `ustring` and UDIM flag)
+   per file path in a lock-free `tbb::concurrent_unordered_map`, so the hot path
+   no longer constructs a `ustring` and calls `get_texture_handle` -- both
+   globally locked -- on every tap. This was a smaller win on the two-texture
+   sphere but removes shared-lock contention that grows with texture and thread
+   count.
+
+For texture-heavy production scenes, feeding pre-generated tiled, mipped `.tx`
+inputs remains the fastest option and avoids the auto-tile/auto-mip path
+entirely.
+
+## Materials-On Renders Were ~46x Slower In usdview (2026-07-08)
+
+The ALab `tool_garden_hose01` asset rendered ~46x slower in usdview with
+Enable Scene Materials on (10.9 s vs 0.24 s at 8 spp, 1121x793, 64 threads),
+scaling to tens of minutes at converged sample counts. Temporary shading-cost
+diagnostics (per-sample counters and timers printed with the render
+statistics; removed again once the investigation concluded) showed the per-tap and
+per-context costs were normal but every material graph evaluation cost
+~410-450 us versus ~6 us for the brass reference material, and the ratio
+shrank with fewer threads (76 us/eval at 8 threads) — lock contention, not
+arithmetic.
+
+A dedicated reeval counter isolated it: the asset's UsdPreviewSurface wires
+seven UsdUVTexture inputs whose `st` comes from a UsdPrimvarReader. Each
+texture computes a filter footprint by re-evaluating its texcoord input three
+times (base/dx/dy), so every material eval ran 21 connected-input
+re-evaluations, 461 million in the test render — 91% of all material eval
+time. Each re-evaluation ran one geomprop node whose primvar lookup called
+`TfToken(name)`: a locked global-table operation, hammered from 64 threads.
+
+Fixes (all output bit-identical, `oiiotool --diff` PASS on the repro and the
+brass scene; 297/297 MaterialXCpp tests pass):
+
+1. `_SampleGeomProp` now looks up samplers in a string-keyed mirror map
+   (`HdEmbreePrototypeContext::primvarMapByString`) instead of constructing a
+   TfToken per call. This was the dominant fix: 155 s -> 22 s on the repro
+   scene (19.4 us -> 0.44 us per re-evaluation).
+2. Texture footprints read the base texcoord from the cached input value and
+   only re-evaluate the upstream subgraph for the dx/dy probes (21 -> 14
+   re-evaluations per eval): 22 s -> 17 s.
+3. `_SampleGeomProp` tries common primvar types (Vec2f/Vec3f/float) before
+   matrices — `HdEmbreeBufferSampler::Sample` only accepts an exact
+   tuple-type match, so order does not affect results.
+4. `_EvalGeomPropValue` reads the primvar name by reference instead of
+   copying the string per evaluation, and nested input re-evaluations reuse
+   a per-thread depth-indexed scratch pool instead of allocating fresh
+   containers per call.
+
+Net: the hose-material repro (sphere, seven-texture UsdPreviewSurface, 512^2,
+256 spp) went from 154.8 s to 17.1 s (~9x) with unchanged output. Remaining
+gap versus brass (42.5 us/eval vs 5.7 us/eval) is the larger node count and
+the remaining 14 re-evaluations; candidates are caching context-independent
+node outputs across footprint probes and reducing Value copies.
+
+Repro recipe: bind a material with `UsdPreviewSurface` + several
+`UsdUVTexture` nodes whose `st` connects to a `UsdPrimvarReader_float2`
+(the ALab assets' standard wiring). The temporary diagnostics line
+`Input reevals` showed the multiplier directly while it existed; re-add
+counters around `EvalGraph::_EvaluateNodeOutput` to measure this again.
+
+## Duplicate Camera-Hit Material Evaluation (2026-07-08)
+
+The shading-cost diagnostics showed `Color mat evals` tracking `Path mat
+evals` almost one-to-one (0.57 vs 0.58 per camera sample on the brass
+sphere; 25.5 of 69 material-evaluation CPU-seconds on the ALab garden
+hose). `_ComputeColor` built a shading context, evaluated the material
+graph, and resolved the shading normal on every camera hit — but with
+lighting enabled it then called `_TracePath`, which re-intersects the same
+ray and re-derives all of that at the hit itself, so the first evaluation
+was never consumed. The closure and resolved normal are only used by the
+camera-light/AO fallback branch.
+
+Fix: `_ComputeColor` dispatches to `_TracePath` before building any surface
+data; the context build, material evaluation, and normal resolution now run
+only on the no-lighting fallback path.
+
+Validation: brass sphere 4.50 s -> 3.08 s renderer time (~32%), `Color mat
+evals` 0.57/sample -> 0 with lighting on, and exact `oiiotool --diff`
+matches for both the lit scene and the `HDEMBREE_ENABLE_LIGHTING=false`
+fallback. All hdEmbree/MaterialXCpp unit tests pass.
+
 ## Validation Rules
 
 For each optimization:
