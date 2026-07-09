@@ -450,6 +450,32 @@ _EvalMaxVector(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(result);
 }
 
+template<typename T>
+static void
+_EvalMinComponent(const ParamMap& inputs, const ShadingContext&,
+                  NodeOutputMap* outputs)
+{
+    const T v = Get<T>(inputs, _kIn, Zero<T>());
+    float result = v[0];
+    for (unsigned int i = 1; i < T::dimensions(); ++i) {
+        result = std::min(result, v[i]);
+    }
+    (*outputs)[_kOut] = Value(result);
+}
+
+template<typename T>
+static void
+_EvalMaxComponent(const ParamMap& inputs, const ShadingContext&,
+                  NodeOutputMap* outputs)
+{
+    const T v = Get<T>(inputs, _kIn, Zero<T>());
+    float result = v[0];
+    for (unsigned int i = 1; i < T::dimensions(); ++i) {
+        result = std::max(result, v[i]);
+    }
+    (*outputs)[_kOut] = Value(result);
+}
+
 // ---- Unary math ----------------------------------------------------------
 
 static void
@@ -1236,6 +1262,16 @@ RegisterMathNodes(NodeRegistry& reg)
     _REG("ND_max_vector2", &_EvalMaxVector<Vec2f>);
     _REG("ND_max_vector3", &_EvalMaxVector<Vec3f>);
     _REG("ND_max_vector4", &_EvalMaxVector<Vec4f>);
+    _REG("ND_mincomponent_color3", &_EvalMinComponent<Vec3f>);
+    _REG("ND_mincomponent_color4", &_EvalMinComponent<Vec4f>);
+    _REG("ND_mincomponent_vector2", &_EvalMinComponent<Vec2f>);
+    _REG("ND_mincomponent_vector3", &_EvalMinComponent<Vec3f>);
+    _REG("ND_mincomponent_vector4", &_EvalMinComponent<Vec4f>);
+    _REG("ND_maxcomponent_color3", &_EvalMaxComponent<Vec3f>);
+    _REG("ND_maxcomponent_color4", &_EvalMaxComponent<Vec4f>);
+    _REG("ND_maxcomponent_vector2", &_EvalMaxComponent<Vec2f>);
+    _REG("ND_maxcomponent_vector3", &_EvalMaxComponent<Vec3f>);
+    _REG("ND_maxcomponent_vector4", &_EvalMaxComponent<Vec4f>);
 
     // unary
     _REG("ND_absval_float",   &_EvalAbsvalFloat);
