@@ -66,6 +66,16 @@ MakeEmptySurfaceClosure()
     return closure;
 }
 
+inline SurfaceClosure
+MakeUnlitSurfaceClosure(const Vec3f& emissionColor, float opacity = 1.0f)
+{
+    SurfaceClosure closure = MakeEmptySurfaceClosure();
+    closure.emissiveColor = emissionColor;
+    closure.opacity = std::clamp(opacity, 0.0f, 1.0f);
+    closure.presence = closure.opacity;
+    return closure;
+}
+
 inline bool
 ApplySubsurfaceSummaryFromTree(
     const Bsdf::ClosureTree& tree,

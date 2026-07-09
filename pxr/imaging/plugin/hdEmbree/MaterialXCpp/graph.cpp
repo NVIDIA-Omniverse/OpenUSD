@@ -18,6 +18,7 @@
 namespace mxcpp {
 
 static const std::string _kSurface = "surface";
+static const SlotName _kIn("in");
 static const SlotName _kOut("out");
 static const std::string _kStandardSurface =
     "ND_standard_surface_surfaceshader";
@@ -32,6 +33,22 @@ static const std::string _kMaterialXUsdPreviewSurface =
     "ND_UsdPreviewSurface_surfaceshader";
 static const std::string _kSurfaceConstructor = "ND_surface";
 static const std::string _kMixSurfaceShader = "ND_mix_surfaceshader";
+static const std::string _kConvertFloatSurfaceShader =
+    "ND_convert_float_surfaceshader";
+static const std::string _kConvertIntegerSurfaceShader =
+    "ND_convert_integer_surfaceshader";
+static const std::string _kConvertBooleanSurfaceShader =
+    "ND_convert_boolean_surfaceshader";
+static const std::string _kConvertColor3SurfaceShader =
+    "ND_convert_color3_surfaceshader";
+static const std::string _kConvertColor4SurfaceShader =
+    "ND_convert_color4_surfaceshader";
+static const std::string _kConvertVector2SurfaceShader =
+    "ND_convert_vector2_surfaceshader";
+static const std::string _kConvertVector3SurfaceShader =
+    "ND_convert_vector3_surfaceshader";
+static const std::string _kConvertVector4SurfaceShader =
+    "ND_convert_vector4_surfaceshader";
 
 // ---------------------------------------------------------------------------
 // Compile
@@ -441,6 +458,33 @@ EvalGraph::_EvalMaterialModel(
             Get<SurfaceClosure>(params, bg, empty),
             Get<SurfaceClosure>(params, fg, empty),
             Get<float>(params, mix, 0.0f));
+    }
+    if (modelType == _kConvertFloatSurfaceShader) {
+        const float v = Get<float>(params, _kIn, 0.0f);
+        return MakeUnlitSurfaceClosure(Vec3f(v));
+    }
+    if (modelType == _kConvertIntegerSurfaceShader) {
+        const float v = static_cast<float>(Get<int>(params, _kIn, 0));
+        return MakeUnlitSurfaceClosure(Vec3f(v));
+    }
+    if (modelType == _kConvertBooleanSurfaceShader) {
+        const float v = Get<bool>(params, _kIn, false) ? 1.0f : 0.0f;
+        return MakeUnlitSurfaceClosure(Vec3f(v));
+    }
+    if (modelType == _kConvertColor3SurfaceShader ||
+        modelType == _kConvertVector3SurfaceShader) {
+        return MakeUnlitSurfaceClosure(
+            Get<Vec3f>(params, _kIn, Vec3f(0.0f)));
+    }
+    if (modelType == _kConvertColor4SurfaceShader ||
+        modelType == _kConvertVector4SurfaceShader) {
+        const Vec4f v = Get<Vec4f>(
+            params, _kIn, Vec4f(0.0f, 0.0f, 0.0f, 1.0f));
+        return MakeUnlitSurfaceClosure(Vec3f(v[0], v[1], v[2]), v[3]);
+    }
+    if (modelType == _kConvertVector2SurfaceShader) {
+        const Vec2f v = Get<Vec2f>(params, _kIn, Vec2f(0.0f));
+        return MakeUnlitSurfaceClosure(Vec3f(v[0], v[1], 0.0f));
     }
 
     // Unknown model: construct a basic closure from common parameter names.

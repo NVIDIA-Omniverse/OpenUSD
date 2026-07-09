@@ -25,6 +25,7 @@ static const SlotName _kOuthigh("outhigh");
 static const SlotName _kOut("out");
 static const SlotName _kAmount("amount");
 static const SlotName _kCenter("center");
+static const SlotName _kPivot("pivot");
 static const SlotName _kHue("hue");
 static const SlotName _kSaturation("saturation");
 static const SlotName _kGamma("gamma");
@@ -136,16 +137,46 @@ _EvalSmoothstepFA(const ParamMap& inputs, const ShadingContext&,
 // ---- Contrast ------------------------------------------------------------
 
 template<typename T>
+static T
+_GetContrastPivot(const ParamMap& inputs, const T& defaultValue)
+{
+    if (inputs.Find(_kPivot)) {
+        return Get<T>(inputs, _kPivot, defaultValue);
+    }
+    return Get<T>(inputs, _kCenter, defaultValue);
+}
+
+static float
+_GetContrastPivotFloat(const ParamMap& inputs, float defaultValue)
+{
+    if (inputs.Find(_kPivot)) {
+        return Get<float>(inputs, _kPivot, defaultValue);
+    }
+    return Get<float>(inputs, _kCenter, defaultValue);
+}
+
+template<typename T>
 static void
 _EvalContrast(const ParamMap& inputs, const ShadingContext&,
               NodeOutputMap* outputs)
 {
     T v      = Get<T>(inputs, _kIn,     Zero<T>());
     T amount = Get<T>(inputs, _kAmount, One<T>());
-    T pivot  = Get<T>(inputs, _kCenter, T(0.5f));
+    T pivot  = _GetContrastPivot<T>(inputs, T(0.5f));
     // contrast = pivot + (v - pivot) * amount
     (*outputs)[_kOut] = Value(
         pivot + CompMul(v - pivot, amount));
+}
+
+template<typename T>
+static void
+_EvalContrastFA(const ParamMap& inputs, const ShadingContext&,
+                NodeOutputMap* outputs)
+{
+    const T v = Get<T>(inputs, _kIn, Zero<T>());
+    const float amount = Get<float>(inputs, _kAmount, 1.0f);
+    const float pivot = _GetContrastPivotFloat(inputs, 0.5f);
+    (*outputs)[_kOut] = Value(T(pivot) + (v - T(pivot)) * amount);
 }
 
 static void
@@ -154,7 +185,7 @@ _EvalContrastFloat(const ParamMap& inputs, const ShadingContext&,
 {
     float v      = Get<float>(inputs, _kIn,     0.0f);
     float amount = Get<float>(inputs, _kAmount, 1.0f);
-    float pivot  = Get<float>(inputs, _kCenter, 0.5f);
+    float pivot  = _GetContrastPivotFloat(inputs, 0.5f);
     (*outputs)[_kOut] = Value(pivot + (v - pivot) * amount);
 }
 
@@ -449,6 +480,14 @@ RegisterAdjustmentNodes(NodeRegistry& reg)
     _REG("ND_contrast_float",  &_EvalContrastFloat);
     _REG("ND_contrast_color3", &_EvalContrast<Vec3f>);
     _REG("ND_contrast_color4", &_EvalContrast<Vec4f>);
+    _REG("ND_contrast_vector2", &_EvalContrast<Vec2f>);
+    _REG("ND_contrast_vector3", &_EvalContrast<Vec3f>);
+    _REG("ND_contrast_vector4", &_EvalContrast<Vec4f>);
+    _REG("ND_contrast_color3FA", &_EvalContrastFA<Vec3f>);
+    _REG("ND_contrast_color4FA", &_EvalContrastFA<Vec4f>);
+    _REG("ND_contrast_vector2FA", &_EvalContrastFA<Vec2f>);
+    _REG("ND_contrast_vector3FA", &_EvalContrastFA<Vec3f>);
+    _REG("ND_contrast_vector4FA", &_EvalContrastFA<Vec4f>);
 
     // Saturate
     _REG("ND_luminance_color3", &_EvalLuminance);

@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "channelNodes.h"
+#include "../surfaceShaderUtils.h"
 #include "../nodeRegistry.h"
 
 #include <string>
@@ -36,6 +37,33 @@ _EvalCombine2(const ParamMap& inputs, const ShadingContext&,
     float x = Get<float>(inputs, _kIn1, 0.0f);
     float y = Get<float>(inputs, _kIn2, 0.0f);
     (*outputs)[_kOut] = Value(Vec2f(x, y));
+}
+
+static void
+_EvalCombine2Color4CF(const ParamMap& inputs, const ShadingContext&,
+                      NodeOutputMap* outputs)
+{
+    const Vec3f c = Get<Vec3f>(inputs, _kIn1, Vec3f(0.0f));
+    const float a = Get<float>(inputs, _kIn2, 0.0f);
+    (*outputs)[_kOut] = Value(Vec4f(c[0], c[1], c[2], a));
+}
+
+static void
+_EvalCombine2Vector4VF(const ParamMap& inputs, const ShadingContext&,
+                       NodeOutputMap* outputs)
+{
+    const Vec3f v = Get<Vec3f>(inputs, _kIn1, Vec3f(0.0f));
+    const float w = Get<float>(inputs, _kIn2, 0.0f);
+    (*outputs)[_kOut] = Value(Vec4f(v[0], v[1], v[2], w));
+}
+
+static void
+_EvalCombine2Vector4VV(const ParamMap& inputs, const ShadingContext&,
+                       NodeOutputMap* outputs)
+{
+    const Vec2f a = Get<Vec2f>(inputs, _kIn1, Vec2f(0.0f));
+    const Vec2f b = Get<Vec2f>(inputs, _kIn2, Vec2f(0.0f));
+    (*outputs)[_kOut] = Value(Vec4f(a[0], a[1], b[0], b[1]));
 }
 
 static void
@@ -264,6 +292,55 @@ _EvalConvert4To4(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(Get<Vec4f>(inputs, _kIn, Vec4f(0.0f)));
 }
 
+static void
+_EvalConvertFloatSurfaceShader(const ParamMap& inputs, const ShadingContext&,
+                               NodeOutputMap* outputs)
+{
+    const float v = Get<float>(inputs, _kIn, 0.0f);
+    (*outputs)[_kOut] = Value(MakeUnlitSurfaceClosure(Vec3f(v)));
+}
+
+static void
+_EvalConvertIntegerSurfaceShader(const ParamMap& inputs, const ShadingContext&,
+                                 NodeOutputMap* outputs)
+{
+    const float v = static_cast<float>(Get<int>(inputs, _kIn, 0));
+    (*outputs)[_kOut] = Value(MakeUnlitSurfaceClosure(Vec3f(v)));
+}
+
+static void
+_EvalConvertBooleanSurfaceShader(const ParamMap& inputs, const ShadingContext&,
+                                 NodeOutputMap* outputs)
+{
+    const float v = Get<bool>(inputs, _kIn, false) ? 1.0f : 0.0f;
+    (*outputs)[_kOut] = Value(MakeUnlitSurfaceClosure(Vec3f(v)));
+}
+
+static void
+_EvalConvertVector2SurfaceShader(const ParamMap& inputs, const ShadingContext&,
+                                 NodeOutputMap* outputs)
+{
+    const Vec2f v = Get<Vec2f>(inputs, _kIn, Vec2f(0.0f));
+    (*outputs)[_kOut] = Value(MakeUnlitSurfaceClosure(Vec3f(v[0], v[1], 0.0f)));
+}
+
+static void
+_EvalConvertVector3SurfaceShader(const ParamMap& inputs, const ShadingContext&,
+                                 NodeOutputMap* outputs)
+{
+    (*outputs)[_kOut] = Value(
+        MakeUnlitSurfaceClosure(Get<Vec3f>(inputs, _kIn, Vec3f(0.0f))));
+}
+
+static void
+_EvalConvertVector4SurfaceShader(const ParamMap& inputs, const ShadingContext&,
+                                 NodeOutputMap* outputs)
+{
+    const Vec4f v = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f, 0.0f, 0.0f, 1.0f));
+    (*outputs)[_kOut] = Value(
+        MakeUnlitSurfaceClosure(Vec3f(v[0], v[1], v[2]), v[3]));
+}
+
 // ---- Registration --------------------------------------------------------
 
 #define _REG(name, fn) reg.Register(name, fn)
@@ -272,6 +349,9 @@ void
 RegisterChannelNodes(NodeRegistry& reg)
 {
     _REG("ND_combine2_vector2", &_EvalCombine2);
+    _REG("ND_combine2_color4CF", &_EvalCombine2Color4CF);
+    _REG("ND_combine2_vector4VF", &_EvalCombine2Vector4VF);
+    _REG("ND_combine2_vector4VV", &_EvalCombine2Vector4VV);
     _REG("ND_combine3_color3",  &_EvalCombine3_color3);
     _REG("ND_combine3_vector3", &_EvalCombine3_color3);
     _REG("ND_combine4_color4",  &_EvalCombine4);
@@ -351,6 +431,15 @@ RegisterChannelNodes(NodeRegistry& reg)
     _REG("ND_convert_integer_vector3",  (&_EvalConvertScalarToVector<int, Vec3f>));
     _REG("ND_convert_integer_vector4",  (&_EvalConvertScalarToVector<int, Vec4f>));
     _REG("ND_convert_integer_boolean",  (&_EvalConvertScalar<int, bool>));
+
+    _REG("ND_convert_float_surfaceshader", &_EvalConvertFloatSurfaceShader);
+    _REG("ND_convert_integer_surfaceshader", &_EvalConvertIntegerSurfaceShader);
+    _REG("ND_convert_boolean_surfaceshader", &_EvalConvertBooleanSurfaceShader);
+    _REG("ND_convert_color3_surfaceshader", &_EvalConvertVector3SurfaceShader);
+    _REG("ND_convert_color4_surfaceshader", &_EvalConvertVector4SurfaceShader);
+    _REG("ND_convert_vector2_surfaceshader", &_EvalConvertVector2SurfaceShader);
+    _REG("ND_convert_vector3_surfaceshader", &_EvalConvertVector3SurfaceShader);
+    _REG("ND_convert_vector4_surfaceshader", &_EvalConvertVector4SurfaceShader);
 }
 
 #undef _REG
