@@ -235,11 +235,29 @@ _EvalRgbToHsv(const ParamMap& inputs, const ShadingContext&,
 }
 
 static void
+_EvalRgbToHsvColor4(const ParamMap& inputs, const ShadingContext&,
+                    NodeOutputMap* outputs)
+{
+    const Vec4f rgba = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
+    const Vec3f hsv = RgbToHsv(Vec3f(rgba[0], rgba[1], rgba[2]));
+    (*outputs)[_kOut] = Value(Vec4f(hsv[0], hsv[1], hsv[2], rgba[3]));
+}
+
+static void
 _EvalHsvToRgb(const ParamMap& inputs, const ShadingContext&,
               NodeOutputMap* outputs)
 {
     const Vec3f hsv = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
     (*outputs)[_kOut] = Value(HsvToRgb(hsv));
+}
+
+static void
+_EvalHsvToRgbColor4(const ParamMap& inputs, const ShadingContext&,
+                    NodeOutputMap* outputs)
+{
+    const Vec4f hsva = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
+    const Vec3f rgb = HsvToRgb(Vec3f(hsva[0], hsva[1], hsva[2]));
+    (*outputs)[_kOut] = Value(Vec4f(rgb[0], rgb[1], rgb[2], hsva[3]));
 }
 
 // ---- HSV Adjust ----------------------------------------------------------
@@ -492,7 +510,9 @@ RegisterAdjustmentNodes(NodeRegistry& reg)
     // Saturate
     _REG("ND_luminance_color3", &_EvalLuminance);
     _REG("ND_rgbtohsv_color3", &_EvalRgbToHsv);
+    _REG("ND_rgbtohsv_color4", &_EvalRgbToHsvColor4);
     _REG("ND_hsvtorgb_color3", &_EvalHsvToRgb);
+    _REG("ND_hsvtorgb_color4", &_EvalHsvToRgbColor4);
     _REG("ND_saturate_color3", &_EvalSaturateColor3);
     _REG("ND_saturate_color4", &_EvalSaturateColor4);
 
