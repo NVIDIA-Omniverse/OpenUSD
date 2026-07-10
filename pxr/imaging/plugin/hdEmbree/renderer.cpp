@@ -519,6 +519,14 @@ _HasTransmissionClosure(mxcpp::SurfaceClosure const& closure)
     return !_IsEffectivelyZero(closure.transmission);
 }
 
+bool
+_IsVolumeOnlyBoundary(mxcpp::SurfaceClosure const& closure)
+{
+    return closure.hasInteriorMedium &&
+           !closure.HasBsdfTree() &&
+           _IsEffectivelyZero(closure.opacity);
+}
+
 GfVec3f
 _GetBsdfNormal(
     mxcpp::SurfaceClosure const& closure,
@@ -3249,8 +3257,12 @@ HdEmbreeRenderer::_Visibility(
             shadowMedium.active && hitMesh == shadowMedium.ownerMesh;
         const bool exitsStraightTransparent =
             straightTransparentOwner && hitMesh == straightTransparentOwner;
+        const bool volumeOnlyBoundary =
+            hasClosure && _IsVolumeOnlyBoundary(closure);
         GfVec3f surfaceVisibility(0.0f);
-        if (hasClosure) {
+        if (volumeOnlyBoundary) {
+            surfaceVisibility = GfVec3f(1.0f);
+        } else if (hasClosure) {
             const bool useStraightTransmission =
                 closure.thinWalled || _approxTransparentShadows;
             if (useStraightTransmission) {
@@ -3299,6 +3311,11 @@ HdEmbreeRenderer::_Visibility(
             shadowMedium = HdEmbreeMediumState();
         } else if (exitsStraightTransparent) {
             straightTransparentOwner = nullptr;
+        } else if (volumeOnlyBoundary && !shadowMedium.active && hitMesh &&
+                   GfDot(direction, hitNormal) < 0.0f) {
+            shadowMedium.active = true;
+            shadowMedium.medium = closure.interiorMedium;
+            shadowMedium.ownerMesh = hitMesh;
         } else if (_approxTransparentShadows && !shadowMedium.active &&
                    hasClosure && !closure.thinWalled &&
                    closure.transmission > 0.0f && hitMesh &&
@@ -4870,9 +4887,11 @@ HdEmbreeRenderer::_TracePath(
         }
 
         mxcpp::SurfaceClosure causticPrunedClosure;
+        const bool volumeOnlyBoundary =
+            hasClosure && _IsVolumeOnlyBoundary(closure) && mesh;
         const mxcpp::SurfaceClosure* bsdfClosure =
             hasClosure ? &closure : nullptr;
-        bool hasBsdfClosure = hasClosure;
+        bool hasBsdfClosure = hasClosure && !volumeOnlyBoundary;
         if (hasClosure && hasDiffuseLikeAncestor && !_enableCaustics) {
             causticPrunedClosure =
                 mxcpp::Bsdf::PruneCausticClassLobes(closure);
@@ -5161,6 +5180,32 @@ HdEmbreeRenderer::_TracePath(
             addRadiance(direct * spectralThroughput);
         } else {
             addRadiance(GfCompMult(throughput, direct));
+        }
+
+        if (volumeOnlyBoundary) {
+            const float wiDotNg = GfDot(rayDir, geometricNormal);
+            if (currentMedium.active && currentMedium.ownerMesh == mesh &&
+                wiDotNg > 0.0f) {
+                currentMedium = HdEmbreeMediumState();
+            } else if (!currentMedium.active && wiDotNg < 0.0f) {
+                currentMedium.active = true;
+                currentMedium.medium = closure.interiorMedium;
+                currentMedium.ownerMesh = mesh;
+                currentMedium.categories = &instanceContext->categories;
+            }
+
+            const float advance = rayHit.ray.tfar + 1e-4f;
+            const float bias = wiDotNg > 0.0f ? 1e-4f : -1e-4f;
+            rayOrigin = hitPos + geometricNormal * bias;
+            if (currentRayDiff.hasDifferentials) {
+                currentRayDiff.rxOrigin += rayDir * advance;
+                currentRayDiff.ryOrigin += rayDir * advance;
+            }
+
+            // Medium-only boundaries are not scattering events and should not
+            // consume the user's surface-bounce budget.
+            --bounce;
+            continue;
         }
 
         // --- Stop after last allowed surface bounce ---

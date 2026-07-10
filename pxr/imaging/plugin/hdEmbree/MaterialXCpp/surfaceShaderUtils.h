@@ -99,6 +99,29 @@ EvalSurfaceUnlit(const ParamMap& params)
         Get<Vec3f>(params, transmissionColor, Vec3f(1.0f)));
 }
 
+inline SurfaceClosure
+MakeVolumeSurfaceClosure(const VdfClosure& vdfClosure)
+{
+    SurfaceClosure closure = MakeEmptySurfaceClosure();
+    // A MaterialX volume terminal describes the participating medium inside
+    // the bound object.  The boundary itself contributes no surface shading,
+    // but the renderer still needs a closure at the boundary so it can enter
+    // and exit the medium.
+    closure.opacity = 0.0f;
+    closure.hasInteriorMedium = !vdfClosure.medium.IsVacuum();
+    closure.interiorMedium = vdfClosure.medium;
+    return closure;
+}
+
+inline SurfaceClosure
+EvalVolumeConstructor(const ParamMap& params)
+{
+    static const SlotName vdf("vdf");
+
+    return MakeVolumeSurfaceClosure(
+        Get<VdfClosure>(params, vdf, VdfClosure{}));
+}
+
 inline bool
 ApplySubsurfaceSummaryFromTree(
     const Bsdf::ClosureTree& tree,

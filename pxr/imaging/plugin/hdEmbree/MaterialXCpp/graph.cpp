@@ -37,6 +37,7 @@ static const std::string _kMaterialXUsdPreviewSurface =
     "ND_UsdPreviewSurface_surfaceshader";
 static const std::string _kSurfaceConstructor = "ND_surface";
 static const std::string _kSurfaceUnlit = "ND_surface_unlit";
+static const std::string _kVolumeConstructor = "ND_volume";
 static const std::string _kMixSurfaceShader = "ND_mix_surfaceshader";
 static const std::string _kConvertFloatSurfaceShader =
     "ND_convert_float_surfaceshader";
@@ -705,6 +706,9 @@ EvalGraph::_EvalMaterialModel(
     }
     if (modelType == _kSurfaceUnlit) {
         return EvalSurfaceUnlit(params);
+    }
+    if (modelType == _kVolumeConstructor) {
+        return EvalVolumeConstructor(params);
     }
     if (modelType == _kMixSurfaceShader) {
         static const SlotName bg("bg");
