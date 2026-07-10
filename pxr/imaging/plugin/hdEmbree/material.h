@@ -30,6 +30,8 @@ public:
               HdRenderParam   *renderParam,
               HdDirtyBits     *dirtyBits) override;
 
+    void Finalize(HdRenderParam *renderParam) override;
+
     HdDirtyBits GetInitialDirtyBitsMask() const override;
 
     /// Recompile the material after the render context priority changed.
