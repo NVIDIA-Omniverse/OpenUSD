@@ -67,13 +67,36 @@ MakeEmptySurfaceClosure()
 }
 
 inline SurfaceClosure
-MakeUnlitSurfaceClosure(const Vec3f& emissionColor, float opacity = 1.0f)
+MakeUnlitSurfaceClosure(
+    const Vec3f& emissionColor,
+    float opacity = 1.0f,
+    float transmission = 0.0f,
+    const Vec3f& transmissionColor = Vec3f(1.0f))
 {
     SurfaceClosure closure = MakeEmptySurfaceClosure();
-    closure.emissiveColor = emissionColor;
+    closure.transmission = std::clamp(transmission, 0.0f, 1.0f);
+    closure.transmissionColor = transmissionColor;
+    closure.emissiveColor = emissionColor * (1.0f - closure.transmission);
     closure.opacity = std::clamp(opacity, 0.0f, 1.0f);
     closure.presence = closure.opacity;
     return closure;
+}
+
+inline SurfaceClosure
+EvalSurfaceUnlit(const ParamMap& params)
+{
+    static const SlotName emission("emission");
+    static const SlotName emissionColor("emission_color");
+    static const SlotName transmission("transmission");
+    static const SlotName transmissionColor("transmission_color");
+    static const SlotName opacity("opacity");
+
+    const float emissionWeight = Get<float>(params, emission, 1.0f);
+    return MakeUnlitSurfaceClosure(
+        Get<Vec3f>(params, emissionColor, Vec3f(1.0f)) * emissionWeight,
+        Get<float>(params, opacity, 1.0f),
+        Get<float>(params, transmission, 0.0f),
+        Get<Vec3f>(params, transmissionColor, Vec3f(1.0f)));
 }
 
 inline bool

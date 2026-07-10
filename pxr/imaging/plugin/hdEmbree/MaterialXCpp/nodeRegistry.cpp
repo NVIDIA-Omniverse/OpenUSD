@@ -56,6 +56,15 @@ _EvalSurface(
 }
 
 void
+_EvalSurfaceUnlit(
+    const ParamMap& inputs,
+    const ShadingContext&,
+    NodeOutputMap* outputs)
+{
+    (*outputs)[_out] = Value(EvalSurfaceUnlit(inputs));
+}
+
+void
 _EvalMixSurfaceShader(
     const ParamMap& inputs,
     const ShadingContext&,
@@ -118,6 +127,7 @@ NodeRegistry::RegisterBuiltinNodes()
         RegisterColorTransformNodes(reg);
         reg.Register("ND_uniform_edf", &_EvalUniformEdf);
         reg.Register("ND_surface", &_EvalSurface);
+        reg.Register("ND_surface_unlit", &_EvalSurfaceUnlit);
         reg.Register("ND_mix_surfaceshader", &_EvalMixSurfaceShader);
     });
 }
