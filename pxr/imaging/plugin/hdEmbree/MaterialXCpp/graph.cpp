@@ -13,7 +13,11 @@
 
 #include <cstdio>
 #include <functional>
+#include <initializer_list>
 #include <map>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace mxcpp {
 
@@ -50,6 +54,253 @@ static const std::string _kConvertVector3SurfaceShader =
 static const std::string _kConvertVector4SurfaceShader =
     "ND_convert_vector4_surfaceshader";
 
+enum class _ImplicitDefaultKind {
+    Texcoord0,
+    PositionObject,
+    NormalObject,
+    NormalWorld,
+    TangentWorld,
+    BitangentWorld,
+    ViewDirectionWorld
+};
+
+struct _ImplicitInputDefault {
+    const char* inputName;
+    _ImplicitDefaultKind kind;
+};
+
+static bool
+_StartsWith(const std::string& value, const char* prefix)
+{
+    return value.rfind(prefix, 0) == 0;
+}
+
+static bool
+_MatchesAnyPrefix(
+    const std::string& value,
+    std::initializer_list<const char*> prefixes)
+{
+    for (const char* prefix : prefixes) {
+        if (_StartsWith(value, prefix)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool
+_MatchesAnyExact(
+    const std::string& value,
+    std::initializer_list<const char*> names)
+{
+    for (const char* name : names) {
+        if (value == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static GraphNode
+_MakeImplicitDefaultNode(_ImplicitDefaultKind kind)
+{
+    GraphNode node;
+    switch (kind) {
+    case _ImplicitDefaultKind::Texcoord0:
+        node.nodeTypeId = "ND_texcoord_vector2";
+        node.parameters["index"] = Value(0);
+        break;
+    case _ImplicitDefaultKind::PositionObject:
+        node.nodeTypeId = "ND_position_vector3";
+        node.parameters["space"] = Value(std::string("object"));
+        break;
+    case _ImplicitDefaultKind::NormalObject:
+        node.nodeTypeId = "ND_normal_vector3";
+        node.parameters["space"] = Value(std::string("object"));
+        break;
+    case _ImplicitDefaultKind::NormalWorld:
+        node.nodeTypeId = "ND_normal_vector3";
+        node.parameters["space"] = Value(std::string("world"));
+        break;
+    case _ImplicitDefaultKind::TangentWorld:
+        node.nodeTypeId = "ND_tangent_vector3";
+        node.parameters["space"] = Value(std::string("world"));
+        break;
+    case _ImplicitDefaultKind::BitangentWorld:
+        node.nodeTypeId = "ND_bitangent_vector3";
+        node.parameters["space"] = Value(std::string("world"));
+        break;
+    case _ImplicitDefaultKind::ViewDirectionWorld:
+        node.nodeTypeId = "ND_viewdirection_vector3";
+        node.parameters["space"] = Value(std::string("world"));
+        break;
+    }
+    return node;
+}
+
+static bool
+_HasInputConnection(const GraphNode& node, const char* inputName)
+{
+    auto it = node.inputConnections.find(inputName);
+    if (it == node.inputConnections.end()) {
+        return false;
+    }
+    for (const GraphConnection& conn : it->second) {
+        if (!conn.upstreamNode.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static std::vector<_ImplicitInputDefault>
+_GetImplicitInputDefaults(const std::string& nodeTypeId)
+{
+    std::vector<_ImplicitInputDefault> defaults;
+
+    if (_MatchesAnyPrefix(nodeTypeId, {
+            "ND_image_",
+            "ND_tiledimage_",
+            "ND_hextiledimage_",
+            "ND_ramplr_",
+            "ND_ramptb_",
+            "ND_ramp4_",
+            "ND_splitlr_",
+            "ND_splittb_",
+            "ND_noise2d_",
+            "ND_fractal2d_",
+            "ND_cellnoise2d_",
+            "ND_worleynoise2d_",
+            "ND_unifiednoise2d_",
+            "ND_checkerboard_",
+            "ND_line_",
+            "ND_circle_",
+            "ND_cloverleaf_",
+            "ND_hexagon_",
+            "ND_grid_",
+            "ND_crosshatch_",
+            "ND_tiledcircles_",
+            "ND_tiledcloverleafs_",
+            "ND_tiledhexagons_",
+            "ND_hextilednormalmap",
+            "ND_heighttonormal_"})) {
+        defaults.push_back({"texcoord", _ImplicitDefaultKind::Texcoord0});
+    }
+
+    if (_MatchesAnyPrefix(nodeTypeId, {
+            "ND_triplanarprojection_",
+            "ND_noise3d_",
+            "ND_fractal3d_",
+            "ND_cellnoise3d_",
+            "ND_worleynoise3d_",
+            "ND_unifiednoise3d_"})) {
+        defaults.push_back(
+            {"position", _ImplicitDefaultKind::PositionObject});
+    }
+
+    if (_StartsWith(nodeTypeId, "ND_triplanarprojection_")) {
+        defaults.push_back({"normal", _ImplicitDefaultKind::NormalObject});
+    }
+
+    if (_MatchesAnyPrefix(nodeTypeId, {
+            "ND_bump_",
+            "ND_normalmap",
+            "ND_hextilednormalmap",
+            "ND_reflect_",
+            "ND_refract_"}) ||
+        _MatchesAnyExact(nodeTypeId, {
+            "ND_oren_nayar_diffuse_bsdf",
+            "ND_burley_diffuse_bsdf",
+            "ND_dielectric_bsdf",
+            "ND_conductor_bsdf",
+            "ND_generalized_schlick_bsdf",
+            "ND_translucent_bsdf",
+            "ND_subsurface_bsdf",
+            "ND_sheen_bsdf",
+            "ND_chiang_hair_bsdf",
+            "ND_conical_edf",
+            "ND_measured_edf",
+            "ND_facingratio_float"})) {
+        defaults.push_back({"normal", _ImplicitDefaultKind::NormalWorld});
+    }
+
+    if (_MatchesAnyPrefix(nodeTypeId, {
+            "ND_bump_",
+            "ND_normalmap",
+            "ND_hextilednormalmap"}) ||
+        _MatchesAnyExact(nodeTypeId, {
+            "ND_dielectric_bsdf",
+            "ND_conductor_bsdf",
+            "ND_generalized_schlick_bsdf"})) {
+        defaults.push_back({"tangent", _ImplicitDefaultKind::TangentWorld});
+    }
+
+    if (_MatchesAnyPrefix(nodeTypeId, {
+            "ND_bump_",
+            "ND_normalmap",
+            "ND_hextilednormalmap"})) {
+        defaults.push_back(
+            {"bitangent", _ImplicitDefaultKind::BitangentWorld});
+    }
+
+    if (nodeTypeId == "ND_chiang_hair_bsdf") {
+        defaults.push_back(
+            {"curve_direction", _ImplicitDefaultKind::TangentWorld});
+    }
+
+    if (nodeTypeId == "ND_facingratio_float") {
+        defaults.push_back(
+            {"viewdirection", _ImplicitDefaultKind::ViewDirectionWorld});
+    }
+
+    return defaults;
+}
+
+static std::string
+_MakeImplicitNodePath(
+    const MaterialGraph& graph,
+    const std::string& nodePath,
+    const char* inputName)
+{
+    const std::string base = nodePath + "/__implicit_" + inputName;
+    std::string path = base;
+    int suffix = 1;
+    while (graph.nodes.find(path) != graph.nodes.end()) {
+        path = base + "_" + std::to_string(suffix++);
+    }
+    return path;
+}
+
+static void
+_InjectImplicitDefaultConnections(MaterialGraph* graph)
+{
+    if (!graph) {
+        return;
+    }
+
+    std::vector<std::pair<std::string, _ImplicitInputDefault>> injections;
+    for (const auto& entry : graph->nodes) {
+        for (const auto& defaultInput :
+             _GetImplicitInputDefaults(entry.second.nodeTypeId)) {
+            if (!_HasInputConnection(entry.second, defaultInput.inputName)) {
+                injections.push_back({entry.first, defaultInput});
+            }
+        }
+    }
+
+    for (const auto& injection : injections) {
+        const std::string path = _MakeImplicitNodePath(
+            *graph, injection.first, injection.second.inputName);
+        graph->nodes[path] = _MakeImplicitDefaultNode(injection.second.kind);
+
+        GraphConnection conn;
+        conn.upstreamNode = path;
+        conn.upstreamOutputName = "out";
+        graph->nodes[injection.first]
+            .inputConnections[injection.second.inputName] = {std::move(conn)};
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Compile
 // ---------------------------------------------------------------------------
@@ -67,15 +318,18 @@ EvalGraph::Compile(
 
     NodeRegistry::RegisterBuiltinNodes();
 
+    MaterialGraph normalized = network;
+    _InjectImplicitDefaultConnections(&normalized);
+
     auto graph = std::make_unique<EvalGraph>();
 
     // Locate the surface terminal.
     std::string terminal = terminalName.empty()
         ? _kSurface : terminalName;
-    auto termIt = network.terminals.find(terminal);
-    if (termIt == network.terminals.end()) {
-        if (!network.terminals.empty()) {
-            termIt = network.terminals.begin();
+    auto termIt = normalized.terminals.find(terminal);
+    if (termIt == normalized.terminals.end()) {
+        if (!normalized.terminals.empty()) {
+            termIt = normalized.terminals.begin();
         } else {
             fprintf(stderr,
                 "EvalGraph: no terminal found in material network\n");
@@ -83,9 +337,9 @@ EvalGraph::Compile(
         }
     }
 
-    const std::string& terminalNodePath = termIt->second.upstreamNode;
-    auto termNodeIt = network.nodes.find(terminalNodePath);
-    if (termNodeIt == network.nodes.end()) {
+    const std::string terminalNodePath = termIt->second.upstreamNode;
+    auto termNodeIt = normalized.nodes.find(terminalNodePath);
+    if (termNodeIt == normalized.nodes.end()) {
         fprintf(stderr, "EvalGraph: terminal node %s not found\n",
                  terminalNodePath.c_str());
         return graph;
@@ -115,8 +369,8 @@ EvalGraph::Compile(
 
             state = _VisitState::Visiting;
 
-            auto nodeIt = network.nodes.find(nodePath);
-            if (nodeIt != network.nodes.end()) {
+            auto nodeIt = normalized.nodes.find(nodePath);
+            if (nodeIt != normalized.nodes.end()) {
                 for (const auto& entry :
                      nodeIt->second.inputConnections) {
                     for (const auto& conn : entry.second) {
@@ -155,7 +409,7 @@ EvalGraph::Compile(
 
     for (size_t i = 0; i < sorted.size(); ++i) {
         const auto& path = sorted[i];
-        const auto& node = network.nodes.at(path);
+        const auto& node = normalized.nodes.at(path);
         auto& compiled = graph->_nodes[i];
 
         compiled.evalFn = registry.Find(node.nodeTypeId);

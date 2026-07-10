@@ -43,6 +43,8 @@ struct OrenNayarDiffuseData
     Vec3f color = Vec3f(0.18f);
     float roughness = 0.0f;
     bool energyCompensation = false;
+    Vec3f normal = Vec3f(0.0f, 0.0f, 1.0f);
+    bool hasShadingNormal = false;
 };
 
 struct BurleyDiffuseData
@@ -50,12 +52,16 @@ struct BurleyDiffuseData
     float weight = 1.0f;
     Vec3f color = Vec3f(0.18f);
     float roughness = 0.0f;
+    Vec3f normal = Vec3f(0.0f, 0.0f, 1.0f);
+    bool hasShadingNormal = false;
 };
 
 struct TranslucentData
 {
     float weight = 1.0f;
     Vec3f color = Vec3f(1.0f);
+    Vec3f normal = Vec3f(0.0f, 0.0f, 1.0f);
+    bool hasShadingNormal = false;
 };
 
 struct SubsurfaceData
@@ -64,6 +70,8 @@ struct SubsurfaceData
     Vec3f color = Vec3f(1.0f);
     Vec3f radius = Vec3f(1.0f);
     float anisotropy = 0.0f;
+    Vec3f normal = Vec3f(0.0f, 0.0f, 1.0f);
+    bool hasShadingNormal = false;
 };
 
 struct DielectricData
@@ -128,6 +136,8 @@ struct GeneralizedSchlickData
     float thinFilmWeight = 1.0f;
     float thinFilmThickness = 0.0f;
     float thinFilmIor = 1.5f;
+    Vec3f normal = Vec3f(0.0f, 0.0f, 1.0f);
+    bool hasShadingNormal = false;
     Vec3f tangent = Vec3f(1.0f, 0.0f, 0.0f);
     ScatterMode scatterMode = ScatterMode::Reflection;
 };
@@ -138,6 +148,8 @@ struct SheenData
     Vec3f color = Vec3f(1.0f);
     float roughness = 0.3f;
     SheenMode mode = SheenMode::ContyKulla;
+    Vec3f normal = Vec3f(0.0f, 0.0f, 1.0f);
+    bool hasShadingNormal = false;
 };
 
 struct AdobeOpenPbrData
