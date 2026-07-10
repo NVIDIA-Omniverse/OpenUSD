@@ -89,7 +89,7 @@ _Noise3dValue<Vec4f>(const ParamMap& inputs, const ShadingContext& ctx)
     const float pivot = Get<float>(inputs, _kPivot, 0.0f);
     const Vec3f xyz = PerlinNoise3dVec3(pos[0], pos[1], pos[2]);
     const float w = PerlinNoise3d(
-        pos[0] + 19.0f, pos[1] + 73.0f, pos[2] + 37.0f);
+        pos[0] + 19.0f, pos[1] + 73.0f, pos[2] + 29.0f);
     return CompMul(Vec4f(xyz[0], xyz[1], xyz[2], w), amplitude) +
            Vec4f(pivot);
 }
@@ -301,7 +301,7 @@ _EvalRandomColorFloat(const ParamMap& inputs,
                       const ShadingContext&,
                       NodeOutputMap* outputs)
 {
-    const float inputValue = Get<float>(inputs, _kIn, 0.0f);
+    const float inputValue = Get<float>(inputs, _kIn, 0.0f) * 4096.0f;
     const int seed = Get<int>(inputs, _kSeed, 0);
     StoreTypedOutput(outputs, _kOut, _EvalRandomColor(
         inputValue,
@@ -319,7 +319,8 @@ _EvalRandomColorInteger(const ParamMap& inputs,
                         const ShadingContext&,
                         NodeOutputMap* outputs)
 {
-    const float inputValue = static_cast<float>(Get<int>(inputs, _kIn, 0));
+    const float inputValue =
+        static_cast<float>(Get<int>(inputs, _kIn, 0)) * 4096.0f;
     const int seed = Get<int>(inputs, _kSeed, 0);
     StoreTypedOutput(outputs, _kOut, _EvalRandomColor(
         inputValue,

@@ -8,6 +8,7 @@
 #define MXCPP_NODES_HASH_HELPER_H
 
 #include <cstdint>
+#include <limits>
 
 namespace mxcpp {
 
@@ -112,7 +113,13 @@ HashVec3(int x, int y, int z)
 inline float
 BitsTo01(uint32_t bits)
 {
-    return float(bits) / float(0xFFFFFFFFu);
+    // Match OSL's oslnoise::bits_to_01: derive the reciprocal in double
+    // precision before casting to float, avoiding an intermediate rounded
+    // float representation of UINT_MAX.
+    constexpr float convertFactor = static_cast<float>(
+        static_cast<double>(1.0) /
+        static_cast<double>(std::numeric_limits<uint32_t>::max()));
+    return static_cast<float>(bits) * convertFactor;
 }
 
 inline uint32_t
