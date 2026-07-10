@@ -22,8 +22,11 @@
 namespace mxcpp {
 
 static const std::string _kSurface = "surface";
+static const std::string _kVolume = "volume";
 static const SlotName _kIn("in");
 static const SlotName _kOut("out");
+static const std::string _kSurfaceVolumeMaterial =
+    "ND_hdembree_surface_volume_material";
 static const std::string _kStandardSurface =
     "ND_standard_surface_surfaceshader";
 static const std::string _kOpenPbr =
@@ -39,6 +42,7 @@ static const std::string _kSurfaceConstructor = "ND_surface";
 static const std::string _kSurfaceUnlit = "ND_surface_unlit";
 static const std::string _kVolumeConstructor = "ND_volume";
 static const std::string _kMixSurfaceShader = "ND_mix_surfaceshader";
+static const std::string _kMixVolumeShader = "ND_mix_volumeshader";
 static const std::string _kConvertFloatSurfaceShader =
     "ND_convert_float_surfaceshader";
 static const std::string _kConvertIntegerSurfaceShader =
@@ -303,6 +307,46 @@ _InjectImplicitDefaultConnections(MaterialGraph* graph)
     }
 }
 
+static std::string
+_MakeUniqueGraphNodePath(const MaterialGraph& graph, const char* baseName)
+{
+    std::string path = baseName;
+    int suffix = 1;
+    while (graph.nodes.find(path) != graph.nodes.end()) {
+        path = std::string(baseName) + "_" + std::to_string(suffix++);
+    }
+    return path;
+}
+
+static void
+_InjectSurfaceVolumeMaterialTerminal(MaterialGraph* graph)
+{
+    if (!graph) {
+        return;
+    }
+
+    auto surfaceIt = graph->terminals.find(_kSurface);
+    auto volumeIt = graph->terminals.find(_kVolume);
+    if (surfaceIt == graph->terminals.end() ||
+        volumeIt == graph->terminals.end()) {
+        return;
+    }
+
+    GraphNode materialNode;
+    materialNode.nodeTypeId = _kSurfaceVolumeMaterial;
+    materialNode.inputConnections[_kSurface] = {surfaceIt->second};
+    materialNode.inputConnections[_kVolume] = {volumeIt->second};
+
+    const std::string path = _MakeUniqueGraphNodePath(
+        *graph, "/__hdembree_surface_volume_material");
+    graph->nodes[path] = std::move(materialNode);
+
+    GraphConnection conn;
+    conn.upstreamNode = path;
+    conn.upstreamOutputName = "out";
+    graph->terminals[_kSurface] = std::move(conn);
+}
+
 // ---------------------------------------------------------------------------
 // Compile
 // ---------------------------------------------------------------------------
@@ -322,6 +366,9 @@ EvalGraph::Compile(
 
     MaterialGraph normalized = network;
     _InjectImplicitDefaultConnections(&normalized);
+    if (terminalName.empty()) {
+        _InjectSurfaceVolumeMaterialTerminal(&normalized);
+    }
 
     auto graph = std::make_unique<EvalGraph>();
 
@@ -677,6 +724,9 @@ EvalGraph::_EvalMaterialModel(
     const ParamMap& params,
     const EvalOptions& options)
 {
+    if (modelType == _kSurfaceVolumeMaterial) {
+        return EvalSurfaceVolumeMaterial(params);
+    }
     if (modelType == _kStandardSurface) {
         return EvalStandardSurface(params);
     }
@@ -709,6 +759,9 @@ EvalGraph::_EvalMaterialModel(
     }
     if (modelType == _kVolumeConstructor) {
         return EvalVolumeConstructor(params);
+    }
+    if (modelType == _kMixVolumeShader) {
+        return EvalMixVolumeShader(params);
     }
     if (modelType == _kMixSurfaceShader) {
         static const SlotName bg("bg");

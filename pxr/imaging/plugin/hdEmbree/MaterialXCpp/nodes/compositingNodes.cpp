@@ -137,6 +137,13 @@ _EvalMixVdf(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(result);
 }
 
+static void
+_EvalMixVolumeShader(const ParamMap& inputs, const ShadingContext&,
+                     NodeOutputMap* outputs)
+{
+    (*outputs)[_kOut] = Value(EvalMixVolumeShader(inputs));
+}
+
 // ---- Premult / Unpremult -------------------------------------------------
 
 static void
@@ -516,6 +523,7 @@ RegisterCompositingNodes(NodeRegistry& reg)
     _REG("ND_mix_bsdf", &_EvalMixBsdf);
     _REG("ND_mix_edf", &_EvalMixEdf);
     _REG("ND_mix_vdf", &_EvalMixVdf);
+    _REG("ND_mix_volumeshader", &_EvalMixVolumeShader);
 
     // mix (vector mix param)
     _REG("ND_mix_color3_color3",   &_EvalMixVec<Vec3f>);

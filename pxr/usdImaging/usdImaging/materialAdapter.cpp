@@ -419,27 +419,30 @@ UsdImagingMaterialAdapter::TrackVariability(
         return;
     }
 
+    bool isTimeVarying = false;
+
     const TfTokenVector contextVector = _GetMaterialRenderContexts();
     if (UsdShadeShader s = material.ComputeSurfaceSource(contextVector)) {
         if (UsdImagingIsHdMaterialNetworkTimeVarying(s.GetPrim())) {
-            *timeVaryingBits |= HdMaterial::DirtyResource;
-            return;
+            isTimeVarying = true;
         }
         // Only check if displacement is timeVarying if we also have a surface 
         if (UsdShadeShader d = 
                 material.ComputeDisplacementSource(contextVector)) {
             if (UsdImagingIsHdMaterialNetworkTimeVarying(d.GetPrim())) {
-                *timeVaryingBits |= HdMaterial::DirtyResource;
+                isTimeVarying = true;
             }
         }
-        return;
     }
 
     if (UsdShadeShader v = material.ComputeVolumeSource(contextVector)) {
         if (UsdImagingIsHdMaterialNetworkTimeVarying(v.GetPrim())) {
-            *timeVaryingBits |= HdMaterial::DirtyResource;
+            isTimeVarying = true;
         }
-        return;
+    }
+
+    if (isTimeVarying) {
+        *timeVaryingBits |= HdMaterial::DirtyResource;
     }
 }
 
@@ -587,9 +590,7 @@ UsdImagingMaterialAdapter::GetMaterialResource(UsdPrim const &prim,
         }
     }
 
-    // Only build a volume materialNetwork if we do not have a surface
-    else if (UsdShadeShader volume = 
-                    material.ComputeVolumeSource(contextVector)) {
+    if (UsdShadeShader volume = material.ComputeVolumeSource(contextVector)) {
         UsdImagingBuildHdMaterialNetworkFromTerminal(
             volume.GetPrim(),
             HdMaterialTerminalTokens->volume,

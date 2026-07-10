@@ -122,6 +122,97 @@ EvalVolumeConstructor(const ParamMap& params)
         Get<VdfClosure>(params, vdf, VdfClosure{}));
 }
 
+inline float
+MediumScatterWeight(const MediumProperties& medium)
+{
+    return std::max(0.0f,
+        medium.sigmaS[0] + medium.sigmaS[1] + medium.sigmaS[2]);
+}
+
+inline MediumProperties
+MixMediumProperties(
+    const MediumProperties& bg,
+    const MediumProperties& fg,
+    float mix)
+{
+    const float bgScale = 1.0f - mix;
+
+    MediumProperties result;
+    result.sigmaA = bg.sigmaA * bgScale + fg.sigmaA * mix;
+    result.sigmaS = bg.sigmaS * bgScale + fg.sigmaS * mix;
+
+    const float bgScatterWeight = std::max(
+        0.0f, MediumScatterWeight(bg) * bgScale);
+    const float fgScatterWeight = std::max(
+        0.0f, MediumScatterWeight(fg) * mix);
+    const float scatterWeightSum = bgScatterWeight + fgScatterWeight;
+    if (scatterWeightSum > 0.0f) {
+        result.anisotropy =
+            (bg.anisotropy * bgScatterWeight +
+             fg.anisotropy * fgScatterWeight) /
+            scatterWeightSum;
+    } else if (!bg.IsVacuum() && bgScale > 0.0f) {
+        result.anisotropy = bg.anisotropy;
+    } else {
+        result.anisotropy = fg.anisotropy;
+    }
+
+    return result;
+}
+
+inline SurfaceClosure
+MixVolumeSurfaceClosures(
+    const SurfaceClosure& bg,
+    const SurfaceClosure& fg,
+    float mix)
+{
+    SurfaceClosure result = MakeEmptySurfaceClosure();
+    result.opacity = 0.0f;
+    result.interiorMedium = MixMediumProperties(
+        bg.hasInteriorMedium ? bg.interiorMedium : MediumProperties{},
+        fg.hasInteriorMedium ? fg.interiorMedium : MediumProperties{},
+        mix);
+    result.hasInteriorMedium = !result.interiorMedium.IsVacuum();
+    return result;
+}
+
+inline SurfaceClosure
+EvalMixVolumeShader(const ParamMap& params)
+{
+    static const SlotName bg("bg");
+    static const SlotName fg("fg");
+    static const SlotName mix("mix");
+
+    const SurfaceClosure empty = MakeEmptySurfaceClosure();
+    return MixVolumeSurfaceClosures(
+        Get<SurfaceClosure>(params, bg, empty),
+        Get<SurfaceClosure>(params, fg, empty),
+        Get<float>(params, mix, 0.0f));
+}
+
+inline SurfaceClosure
+ApplyVolumeToSurfaceClosure(
+    SurfaceClosure surface,
+    const SurfaceClosure& volume)
+{
+    if (!surface.thinWalled && volume.hasInteriorMedium) {
+        surface.hasInteriorMedium = true;
+        surface.interiorMedium = volume.interiorMedium;
+    }
+    return surface;
+}
+
+inline SurfaceClosure
+EvalSurfaceVolumeMaterial(const ParamMap& params)
+{
+    static const SlotName surface("surface");
+    static const SlotName volume("volume");
+
+    return ApplyVolumeToSurfaceClosure(
+        Get<SurfaceClosure>(params, surface, MakeEmptySurfaceClosure()),
+        Get<SurfaceClosure>(params, volume, MakeEmptySurfaceClosure()));
+}
+
 inline bool
 ApplySubsurfaceSummaryFromTree(
     const Bsdf::ClosureTree& tree,
