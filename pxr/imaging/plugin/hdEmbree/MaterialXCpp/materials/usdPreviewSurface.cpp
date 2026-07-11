@@ -114,6 +114,26 @@ _AppendLayer(Bsdf::ClosureTree* tree, Bsdf::NodeId top, Bsdf::NodeId base)
     return tree->Add(layer);
 }
 
+Bsdf::NodeId
+_AppendMultiply(Bsdf::ClosureTree* tree, Bsdf::NodeId input, const Vec3f& weight)
+{
+    if (!tree->IsValid(input)) {
+        return input;
+    }
+
+    const Vec3f saturatedWeight = _Saturate(weight);
+    if (saturatedWeight[0] >= 1.0f &&
+        saturatedWeight[1] >= 1.0f &&
+        saturatedWeight[2] >= 1.0f) {
+        return input;
+    }
+
+    Bsdf::MultiplyData multiply;
+    multiply.input = input;
+    multiply.weight = saturatedWeight;
+    return tree->Add(multiply);
+}
+
 _OpacityMode
 _GetOpacityMode(const ParamMap& params)
 {
@@ -197,6 +217,52 @@ EvalUsdPreviewSurface(const ParamMap& params)
 
     Bsdf::ClosureTree tree;
     Bsdf::NodeId root = Bsdf::InvalidNodeId;
+
+    // Metalness-workflow transparency: reflectivity, refraction, and total
+    // internal reflection are all governed by the single authored ior, which
+    // is exactly the coupled dielectric interface's parameterization.  Build
+    // the same interface-over-attenuated-base structure OpenPBR uses so
+    // transparent UsdPreviewSurface and OpenPBR shade identically.  The
+    // specular workflow (arbitrary specularColor F0 decoupled from ior) and
+    // metallic transparency have no such physical mapping and stay on the
+    // paired Schlick-reflection + transmission closure below.
+    const bool useDielectricInterface =
+        !useSpecWf && c.transmission > 0.0f && _Clamp01(c.metallic) <= 0.0f;
+    if (useDielectricInterface) {
+        Bsdf::NodeId substrate = Bsdf::InvalidNodeId;
+        const float substrateWeight = _Clamp01(1.0f - c.transmission);
+        if (substrateWeight > 0.0f) {
+            Bsdf::OrenNayarDiffuseData diffuse;
+            diffuse.weight = 1.0f;
+            diffuse.color = c.baseColor;
+            diffuse.roughness = 0.0f;
+            substrate = _AppendMultiply(
+                &tree, tree.Add(diffuse), Vec3f(substrateWeight));
+        }
+
+        Bsdf::DielectricInterfaceData interface;
+        interface.reflectionWeight = 1.0f;
+        interface.reflectionTint = Vec3f(1.0f);
+        interface.transmissionWeight = _Clamp01(c.transmission);
+        interface.transmissionTint = _Saturate(c.transmissionColor);
+        interface.ior = std::max(c.specularIor, 1.0f);
+        interface.roughness = _ComputeIsotropicAlpha(c.roughness);
+        root = _AppendLayer(&tree, tree.Add(interface), substrate);
+
+        if (c.coat > 0.0f) {
+            Bsdf::DielectricData coat;
+            coat.weight = _Clamp01(c.coat);
+            coat.tint = Vec3f(1.0f);
+            coat.ior = c.coatIor;
+            coat.roughness = _ComputeIsotropicAlpha(c.coatRoughness);
+            coat.scatterMode = Bsdf::ScatterMode::Reflection;
+            root = _AppendLayer(&tree, tree.Add(coat), root);
+        }
+
+        tree.root = root;
+        c.bsdfTree = std::move(tree);
+        return c;
+    }
 
     const float diffuseWeight =
         _Clamp01((1.0f - c.metallic) * (1.0f - c.transmission));

@@ -2470,11 +2470,124 @@ TestUsdPreviewSurfaceIgnoresOcclusion()
     return Test_IsClose(c.baseColor, Vec3f(0.2f, 0.4f, 0.8f), 1e-4f);
 }
 
+static bool
+TestUsdPreviewSurfaceMetalnessTransmissionUsesDielectricInterface()
+{
+    // Metalness-workflow transparency maps onto the same coupled dielectric
+    // interface OpenPBR uses, so both shade identically.  F0 is derived from
+    // ior in this workflow, which is exactly the interface's parameterization.
+    ParamMap params;
+    params["diffuseColor"] = Value(Vec3f(0.18f));
+    params["metallic"] = Value(0.0f);
+    params["roughness"] = Value(0.0f);
+    params["ior"] = Value(1.5f);
+    params["opacity"] = Value(0.0f);
+    params["opacityThreshold"] = Value(0.0f);
+    const SurfaceClosure c = EvalUsdPreviewSurface(params);
+
+    const auto* interface = FindNodeIf<Bsdf::DielectricInterfaceData>(
+        c.bsdfTree, [](const Bsdf::DielectricInterfaceData&) {
+            return true;
+        });
+    if (!interface) {
+        printf("    expected a DielectricInterfaceData lobe\n");
+        return false;
+    }
+    if (!Test_IsClose(interface->ior, 1.5f, 1e-5f) ||
+        !Test_IsClose(interface->reflectionWeight, 1.0f, 1e-5f) ||
+        !Test_IsClose(interface->transmissionWeight, 1.0f, 1e-5f)) {
+        printf("    interface parameters mismatch: ior=%f reflW=%f "
+               "transW=%f\n",
+               interface->ior,
+               interface->reflectionWeight,
+               interface->transmissionWeight);
+        return false;
+    }
+
+    const bool hasPairLobes =
+        FindNodeIf<Bsdf::GeneralizedSchlickData>(
+            c.bsdfTree, [](const Bsdf::GeneralizedSchlickData&) {
+                return true;
+            }) ||
+        FindNodeIf<Bsdf::DielectricData>(
+            c.bsdfTree, [](const Bsdf::DielectricData& d) {
+                return d.scatterMode == Bsdf::ScatterMode::Transmission;
+            });
+    if (hasPairLobes) {
+        printf("    metalness transparency should not keep the "
+               "Schlick/transmission pair\n");
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestUsdPreviewSurfaceSpecularWorkflowTransmissionKeepsSchlickPair()
+{
+    // The specular workflow decouples reflectivity (specularColor) from
+    // refraction (ior), which a single ior-driven interface cannot express;
+    // it stays on the paired Schlick-reflection + transmission closure.
+    ParamMap params;
+    params["useSpecularWorkflow"] = Value(1);
+    params["specularColor"] = Value(Vec3f(0.2f, 0.3f, 0.4f));
+    params["roughness"] = Value(0.0f);
+    params["ior"] = Value(1.5f);
+    params["opacity"] = Value(0.0f);
+    const SurfaceClosure c = EvalUsdPreviewSurface(params);
+
+    const bool hasSchlick = FindNodeIf<Bsdf::GeneralizedSchlickData>(
+        c.bsdfTree, [](const Bsdf::GeneralizedSchlickData&) {
+            return true;
+        }) != nullptr;
+    const bool hasTransmission = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree, [](const Bsdf::DielectricData& d) {
+            return d.scatterMode == Bsdf::ScatterMode::Transmission;
+        }) != nullptr;
+    const bool hasInterface = FindNodeIf<Bsdf::DielectricInterfaceData>(
+        c.bsdfTree, [](const Bsdf::DielectricInterfaceData&) {
+            return true;
+        }) != nullptr;
+    if (!hasSchlick || !hasTransmission || hasInterface) {
+        printf("    specular workflow structure changed: schlick=%d "
+               "transmission=%d interface=%d\n",
+               int(hasSchlick), int(hasTransmission), int(hasInterface));
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestUsdPreviewSurfaceMetallicTransmissionKeepsSchlickPair()
+{
+    // Metallic transparency has no physical dielectric-interface analog;
+    // it stays on the legacy pair as well.
+    ParamMap params;
+    params["metallic"] = Value(0.5f);
+    params["roughness"] = Value(0.0f);
+    params["ior"] = Value(1.5f);
+    params["opacity"] = Value(0.0f);
+    const SurfaceClosure c = EvalUsdPreviewSurface(params);
+
+    const bool hasInterface = FindNodeIf<Bsdf::DielectricInterfaceData>(
+        c.bsdfTree, [](const Bsdf::DielectricInterfaceData&) {
+            return true;
+        }) != nullptr;
+    if (hasInterface) {
+        printf("    metallic transparency should not use the dielectric "
+               "interface\n");
+        return false;
+    }
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 
 void
 Test_RegisterMaterialTests()
 {
+    _REG(TestUsdPreviewSurfaceMetalnessTransmissionUsesDielectricInterface);
+    _REG(TestUsdPreviewSurfaceSpecularWorkflowTransmissionKeepsSchlickPair);
+    _REG(TestUsdPreviewSurfaceMetallicTransmissionKeepsSchlickPair);
     _REG(TestMaterialNormalSpaceContracts);
     _REG(TestStandardSurfaceDefaults);
     _REG(TestStandardSurfaceMetallic);
