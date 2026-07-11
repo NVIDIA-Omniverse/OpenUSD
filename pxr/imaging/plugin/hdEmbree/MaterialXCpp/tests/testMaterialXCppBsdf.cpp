@@ -6,6 +6,7 @@
 //
 #include "../materials/bsdf.h"
 #include "../materials/bsdfDielectricReflFrontLut.h"
+#include "../materials/standardSurface.h"
 #include "../materials/usdPreviewSurface.h"
 #include "../spectral.h"
 #include "../nodes/helpers/mathHelpers.h"
@@ -3549,6 +3550,19 @@ TestUsdPreviewSurfaceTransmissionTirEnergyConservation()
             "generalized_schlick R+T pair",
             0.90f) && ok;
     }
+
+    // standard_surface glass compiles to the same coupled dielectric
+    // interface and must conserve exactly like the other workflows.
+    ParamMap standardParams;
+    standardParams["base"] = Value(0.0f);
+    standardParams["specular"] = Value(1.0f);
+    standardParams["specular_roughness"] = Value(0.0f);
+    standardParams["specular_IOR"] = Value(1.5f);
+    standardParams["transmission"] = Value(1.0f);
+    ok = _CheckTransparentClosureEnergy(
+        EvalStandardSurface(standardParams),
+        "standard_surface glass",
+        0.97f) && ok;
 
     return ok;
 }

@@ -445,7 +445,40 @@ EvalStandardSurface(const ParamMap& params)
     }
 
     const float transmissionMix = _Clamp01(c.transmission);
-    if (transmissionMix > 0.0f) {
+    const float clampedSpec = _Clamp01(spec);
+    // Transmissive standard_surface maps onto the coupled dielectric
+    // interface: reflectivity, refraction, and total internal reflection all
+    // derive from specular_IOR, and one Fresnel drives the reflection and
+    // transmission split.  The previous LAYER(reflection, transmission-lobe)
+    // pairing stacked the layer's (1-F) throughput on the transmission
+    // lobe's own (1-F) pairing, darkening glass by up to ~25%.
+    // transmission_extra_roughness authors a rougher transmission than
+    // reflection, which the single-roughness interface cannot express; that
+    // case keeps the legacy pairing.
+    const bool useCombinedDielectricInterface =
+        transmissionMix > 0.0f && transmissionExtraRoughness <= 0.0f;
+    if (useCombinedDielectricInterface) {
+        root = _AppendMultiply(&tree, root, Vec3f(1.0f - transmissionMix));
+
+        Bsdf::DielectricInterfaceData interface;
+        interface.reflectionWeight = clampedSpec;
+        interface.reflectionTint = _Saturate(c.specularColor);
+        interface.transmissionWeight = transmissionMix;
+        // Regular volumes carry transmission_color through the interior
+        // medium; tinting the surface BTDF as well would double-color it.
+        interface.transmissionTint = c.hasInteriorMedium
+            ? Vec3f(1.0f)
+            : _Saturate(c.transmissionColor);
+        interface.ior = std::max(c.specularIor, 1.0f);
+        interface.dispersionAbbe = transmissionDispersionAbbe;
+        interface.roughness = specularRoughness;
+        interface.tangent = mainTangent;
+        interface.thinFilmWeight = 1.0f;
+        interface.thinFilmThickness = thinFilmThicknessNm;
+        interface.thinFilmIor = thinFilmIor;
+        interface.thinWalled = c.thinWalled;
+        root = _AppendLayer(&tree, tree.Add(interface), root);
+    } else if (transmissionMix > 0.0f) {
         Bsdf::NodeId transmissionId = Bsdf::InvalidNodeId;
         if (c.thinWalled) {
             Bsdf::DielectricData transmission;
@@ -471,8 +504,7 @@ EvalStandardSurface(const ParamMap& params)
         root = _AppendMix(&tree, root, transmissionId, transmissionMix);
     }
 
-    const float clampedSpec = _Clamp01(spec);
-    if (clampedSpec > 0.0f) {
+    if (clampedSpec > 0.0f && !useCombinedDielectricInterface) {
         Bsdf::DielectricData dielectric;
         dielectric.weight = clampedSpec;
         dielectric.tint = _Saturate(c.specularColor);
