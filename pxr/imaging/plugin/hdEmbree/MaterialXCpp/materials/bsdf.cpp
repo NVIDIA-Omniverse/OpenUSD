@@ -1972,6 +1972,19 @@ _SampleDeltaDielectricTransmission(
     const Vec3f& N,
     const Vec3f& wo)
 {
+    if (_WouldTotalInternalReflect(effectiveIor, N, wo)) {
+        // A transmission-only lobe is paired with a separate reflection lobe
+        // that keeps contributing its Schlick reflectance from inside the
+        // medium, so a full-weight TIR sample here would double-count
+        // reflection and gain energy on every internal bounce.  Carry only
+        // the remainder so the reflection/transmission pair totals one.
+        const float pairedReflectance = _Clamp01(_Luminance(
+            _DielectricReflectionFresnelUntinted(
+                data, fresnelCos, effectiveIor)));
+        return _SampleDeltaTotalInternalReflection(
+            data.weight * (1.0f - pairedReflectance), N, wo);
+    }
+
     auto sample = _SampleDeltaTransmission(
         effectiveIor, data.tint, data.weight, N, wo);
     const float baseReflectance =
@@ -3393,6 +3406,13 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             if (hasDeltaRoughness &&
                 data.scatterMode != Bsdf::ScatterMode::Reflection &&
                 _WouldTotalInternalReflect(effectiveIor, N, wo)) {
+                if (data.scatterMode == Bsdf::ScatterMode::Transmission) {
+                    // Transmission-only lobes are paired with a separate
+                    // reflection lobe; the helper splits the TIR energy with
+                    // that pair instead of double-counting it.
+                    return _SampleDeltaDielectricTransmission(
+                        data, effectiveIor, NdotV, N, wo);
+                }
                 return _SampleDeltaTotalInternalReflection(
                     data.weight, N, wo);
             }
@@ -3667,10 +3687,26 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 float avgF0 = _Clamp01(_Luminance(_SaturateVec(data.color0)));
                 float sqrtF0 = std::sqrt(std::max(avgF0, 0.01f));
                 float ior = (1.0f + sqrtF0) / (1.0f - sqrtF0);
+                // A transmission-only lobe is paired with a separate
+                // reflection lobe that keeps contributing its Schlick
+                // reflectance from inside the medium, so a full-weight TIR
+                // sample would double-count reflection and gain energy on
+                // every internal bounce.  Carry only the remainder so the
+                // reflection/transmission pair totals one.
+                const auto samplePairedTir = [&]() {
+                    auto tir = _SampleDeltaTotalInternalReflection(
+                        data.weight, N, wo);
+                    tir.f = CompMul(
+                        tir.f,
+                        _SaturateVec(
+                            Vec3f(1.0f) -
+                            _GeneralizedSchlickReflectionFresnel(
+                                data, NdotV)));
+                    return tir;
+                };
                 if (hasDeltaRoughness &&
                     _WouldTotalInternalReflect(ior, N, wo)) {
-                    return _SampleDeltaTotalInternalReflection(
-                        data.weight, N, wo);
+                    return samplePairedTir();
                 }
                 if (hasDeltaRoughness) {
                     auto deltaSample = _SampleDeltaTransmission(
@@ -3692,6 +3728,9 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     u1,
                     u2);
                 if (sample.pdf <= 0.0f) {
+                    if (_WouldTotalInternalReflect(ior, N, wo)) {
+                        return samplePairedTir();
+                    }
                     auto deltaSample = _SampleDeltaTransmission(
                         ior, Vec3f(1.0f), data.weight, N, wo);
                     deltaSample.f = CompMul(

@@ -6,6 +6,7 @@
 //
 #include "../materials/bsdf.h"
 #include "../materials/bsdfDielectricReflFrontLut.h"
+#include "../materials/usdPreviewSurface.h"
 #include "../spectral.h"
 #include "../nodes/helpers/mathHelpers.h"
 #include "../../medium.h"
@@ -3428,9 +3429,134 @@ TestBackwardDwivediFraction()
 
 // ---------------------------------------------------------------------------
 
+static bool
+_CheckTransparentClosureEnergy(
+    const SurfaceClosure& closure,
+    const char* label,
+    float lowerBound)
+{
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    const int kSamples = 50000;
+    // ior 1.5 puts the critical angle at cosTheta ~0.745; 0.05-0.5 exercise
+    // the total-internal-reflection range from inside the medium.
+    const float cosThetas[] = {0.05f, 0.2f, 0.5f, 0.8f, 1.0f};
+
+    std::uint64_t state = 0x853c49e6748fea9bull;
+    auto nextFloat = [&state]() {
+        state = state * 6364136223846793005ull + 1442695040888963407ull;
+        return float((state >> 33) & 0xFFFFFF) / 16777216.0f;
+    };
+
+    bool ok = true;
+    printf("    %s energy:\n", label);
+    for (int side = 0; side < 2; ++side) {
+        for (const float cosTheta : cosThetas) {
+            Vec3f wo = _DirectionFromCosThetaYUp(cosTheta);
+            if (side == 1) {
+                wo[1] = -wo[1];
+            }
+            Vec3f energy(0.0f);
+            for (int i = 0; i < kSamples; ++i) {
+                const Bsdf::BsdfSample sample = Bsdf::SampleSurface(
+                    closure, N, wo, nextFloat(), nextFloat(), nextFloat());
+                if (!(sample.pdf > 0.0f)) {
+                    continue;
+                }
+                if (sample.isSpecular) {
+                    energy += sample.f;
+                } else {
+                    energy += sample.f *
+                        (std::abs(Dot(N, sample.wi)) / sample.pdf);
+                }
+            }
+            energy = energy * (1.0f / float(kSamples));
+            printf("      %s NoV=%.2f E=%.4f\n",
+                   side == 0 ? "outside" : "inside ", cosTheta, energy[0]);
+            for (int c = 0; c < 3; ++c) {
+                if (!(energy[c] <= 1.0f + _kFurnaceEnergyUpperSlack)) {
+                    printf("        energy gain on channel %d: %f\n",
+                           c, energy[c]);
+                    ok = false;
+                }
+                if (!(energy[c] >= lowerBound)) {
+                    printf("        unexpected energy loss on channel %d: "
+                           "%f\n", c, energy[c]);
+                    ok = false;
+                }
+            }
+        }
+    }
+    return ok;
+}
+
+static bool
+TestUsdPreviewSurfaceTransmissionTirEnergyConservation()
+{
+    // Transparent UsdPreviewSurface must not gain energy from either side of
+    // the interface, including internal directions beyond the critical angle
+    // (total internal reflection), where the transmission lobe degenerates
+    // to a TIR sample while the paired reflection lobe keeps contributing
+    // its Schlick reflectance.
+    ParamMap params;
+    params["diffuseColor"] = Value(Vec3f(0.18f));
+    params["metallic"] = Value(0.0f);
+    params["roughness"] = Value(0.0f);
+    params["ior"] = Value(1.5f);
+    params["opacity"] = Value(0.0f);
+    params["opacityThreshold"] = Value(0.0f);
+    bool ok = _CheckTransparentClosureEnergy(
+        EvalUsdPreviewSurface(params),
+        "UsdPreviewSurface glass (metalness workflow)",
+        0.97f);
+
+    // specularColor 0.04 matches the ior 1.5 F0, so the pair should conserve
+    // within the Schlick pairing's approximation; it must never gain.
+    ParamMap specParams;
+    specParams["useSpecularWorkflow"] = Value(1);
+    specParams["specularColor"] = Value(Vec3f(0.04f));
+    specParams["roughness"] = Value(0.0f);
+    specParams["ior"] = Value(1.5f);
+    specParams["opacity"] = Value(0.0f);
+    specParams["opacityThreshold"] = Value(0.0f);
+    ok = _CheckTransparentClosureEnergy(
+        EvalUsdPreviewSurface(specParams),
+        "UsdPreviewSurface glass (specular workflow)",
+        0.90f) && ok;
+
+    // A MaterialX generalized_schlick_bsdf reflection/transmission pair
+    // (scatter_mode "R" + "T" combined additively) must not gain energy at
+    // total internal reflection either; its transmission lobe shares the
+    // (1 - pair F) TIR split with the dielectric transmission lobe.
+    {
+        SurfaceClosure schlickPair;
+        Bsdf::GeneralizedSchlickData reflection;
+        reflection.weight = 1.0f;
+        reflection.color0 = Vec3f(0.04f);
+        reflection.color82 = Vec3f(1.0f);
+        reflection.color90 = Vec3f(1.0f);
+        reflection.exponent = 5.0f;
+        reflection.roughness = Vec2f(0.0f, 0.0f);
+        reflection.scatterMode = Bsdf::ScatterMode::Reflection;
+        Bsdf::GeneralizedSchlickData transmission = reflection;
+        transmission.scatterMode = Bsdf::ScatterMode::Transmission;
+
+        Bsdf::AddData add;
+        add.in1 = schlickPair.bsdfTree.Add(reflection);
+        add.in2 = schlickPair.bsdfTree.Add(transmission);
+        schlickPair.bsdfTree.root = schlickPair.bsdfTree.Add(add);
+        ok = _CheckTransparentClosureEnergy(
+            schlickPair,
+            "generalized_schlick R+T pair",
+            0.90f) && ok;
+    }
+
+    return ok;
+}
+
 void
 Test_RegisterBsdfTests()
 {
+    _REG(TestUsdPreviewSurfaceTransmissionTirEnergyConservation);
     _REG(TestLambertianValue);
     _REG(TestLambertianColorScaling);
     _REG(TestFurnaceHelperMatchesLambertian);
