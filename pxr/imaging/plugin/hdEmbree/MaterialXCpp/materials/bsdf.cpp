@@ -1536,11 +1536,22 @@ inline Vec3f
 _DielectricInterfaceReflectanceUntinted(
     const Bsdf::DielectricInterfaceData& data,
     float cosTheta,
-    float effectiveIor)
+    float effectiveIor,
+    bool backside)
 {
-    float F0 = (effectiveIor - 1.0f) / (effectiveIor + 1.0f);
-    F0 *= F0;
-    const Vec3f baseReflectance = _SchlickFresnel(Vec3f(F0), cosTheta);
+    // The interface models MaterialX dielectric_bsdf, whose reference
+    // implementation evaluates the exact dielectric Fresnel equations
+    // (mx_fresnel_dielectric).  Schlick fits the outside curve but badly
+    // underestimates reflectance from inside the medium near the critical
+    // angle, so pick the relative eta by side.  Thin-walled sheets respond
+    // symmetrically, so they always use the outside eta.
+    const float safeIor = std::max(effectiveIor, 1.0f + 1.0e-4f);
+    const float eta = (backside && !data.thinWalled)
+        ? 1.0f / safeIor
+        : safeIor;
+    const Vec2f polarized = _FresnelDielectricPolarized(cosTheta, eta);
+    const Vec3f baseReflectance(
+        _Clamp01(0.5f * (polarized[0] + polarized[1])));
     _ThinFilmParams thinFilm;
     thinFilm.model = _ThinFilmModel::Dielectric;
     thinFilm.ior = Vec3f(std::max(effectiveIor, 1.0f));
@@ -1561,11 +1572,12 @@ inline Vec3f
 _DielectricInterfaceReflectionCoefficient(
     const Bsdf::DielectricInterfaceData& data,
     float cosTheta,
-    float effectiveIor)
+    float effectiveIor,
+    bool backside)
 {
     return CompMul(
         _DielectricInterfaceReflectanceUntinted(
-            data, cosTheta, effectiveIor),
+            data, cosTheta, effectiveIor, backside),
         _SafeVec(data.reflectionTint)) * _Clamp01(data.reflectionWeight);
 }
 
@@ -1573,12 +1585,13 @@ inline Vec3f
 _DielectricInterfaceTransmissionCoefficient(
     const Bsdf::DielectricInterfaceData& data,
     float cosTheta,
-    float effectiveIor)
+    float effectiveIor,
+    bool backside)
 {
     return CompMul(
         Vec3f(1.0f) -
             _DielectricInterfaceReflectanceUntinted(
-                data, cosTheta, effectiveIor),
+                data, cosTheta, effectiveIor, backside),
         _SafeVec(data.transmissionTint)) * _Clamp01(data.transmissionWeight);
 }
 
@@ -1592,15 +1605,16 @@ inline _DielectricInterfaceSelection
 _DielectricInterfaceSelectionProbabilities(
     const Bsdf::DielectricInterfaceData& data,
     float cosTheta,
-    float effectiveIor)
+    float effectiveIor,
+    bool backside)
 {
     const float reflectionWeight = std::max(
         _Luminance(_DielectricInterfaceReflectionCoefficient(
-            data, cosTheta, effectiveIor)),
+            data, cosTheta, effectiveIor, backside)),
         0.0f);
     const float transmissionWeight = std::max(
         _Luminance(_DielectricInterfaceTransmissionCoefficient(
-            data, cosTheta, effectiveIor)),
+            data, cosTheta, effectiveIor, backside)),
         0.0f);
     const float total = reflectionWeight + transmissionWeight;
     if (total <= 0.0f) {
@@ -2003,12 +2017,14 @@ _SampleDeltaDielectricInterfaceReflection(
     const Bsdf::DielectricInterfaceData& data,
     float effectiveIor,
     const Vec3f& shadingN,
-    const Vec3f& wo)
+    const Vec3f& wo,
+    bool backside)
 {
     const float cosTheta =
         std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
     return _SampleDeltaReflection(
-        _DielectricInterfaceReflectionCoefficient(data, cosTheta, effectiveIor),
+        _DielectricInterfaceReflectionCoefficient(
+            data, cosTheta, effectiveIor, backside),
         1.0f,
         shadingN,
         wo);
@@ -2022,13 +2038,14 @@ _SampleDeltaDielectricInterfaceTransmission(
     const Vec3f& N,
     const Vec3f& wo)
 {
+    const bool backside = Dot(N, wo) < 0.0f;
     if (data.thinWalled) {
         Vec3f wi = -wo;
         wi.normalize();
         Bsdf::BsdfSample sample{
             wi,
             _DielectricInterfaceTransmissionCoefficient(
-                data, fresnelCos, effectiveIor),
+                data, fresnelCos, effectiveIor, backside),
             1.0f,
             true
         };
@@ -2049,7 +2066,7 @@ _SampleDeltaDielectricInterfaceTransmission(
         _TransmissionScale(
             baseReflectance,
             _DielectricInterfaceReflectanceUntinted(
-                data, fresnelCos, effectiveIor)));
+                data, fresnelCos, effectiveIor, backside)));
     return sample;
 }
 
@@ -2598,7 +2615,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 const Vec3f fresnel = _DielectricInterfaceReflectionCoefficient(
                     data,
                     _ReflectionFresnelCosTheta(wi, wo),
-                    effectiveIor);
+                    effectiveIor,
+                    Dot(N, wo) < 0.0f);
                 if (_IsEffectivelyIsotropic(data.roughness)) {
                     result += _EvalMicrofacetReflectionIsotropic(
                         std::clamp(
@@ -2625,7 +2643,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                         std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
                     const Vec3f transmission =
                         _DielectricInterfaceTransmissionCoefficient(
-                            data, NdotV, effectiveIor);
+                            data, NdotV, effectiveIor,
+                            /* backside = */ false);
                     const Vec3f transmissionN = -shadingN;
                     Vec3f mirroredWo = _MirrorAcrossSurface(wo, shadingN);
                     mirroredWo.normalize();
@@ -2667,7 +2686,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 const Vec3f transmissionScale = _TransmissionScale(
                     baseReflectance,
                     _DielectricInterfaceReflectanceUntinted(
-                        data, fresnelCos, effectiveIor));
+                        data, fresnelCos, effectiveIor,
+                        Dot(N, wo) < 0.0f));
                 result += CompMul(
                     Bsdf::EvalGGXTransmission(
                         _AverageAlphaAsRoughness(data.roughness),
@@ -2905,7 +2925,8 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                         _AverageAlphaForEnergy(data.roughness),
                         NdotV,
                         _DielectricInterfaceReflectanceUntinted(
-                            data, NdotV, effectiveIor));
+                            data, NdotV, effectiveIor,
+                            Dot(N, wo) < 0.0f));
                     throughput -=
                         reflectance * _Clamp01(data.reflectionWeight);
                 }
@@ -3022,10 +3043,12 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 _ResolveDielectricIor(data, heroWavelengthNm);
             const Vec3f reflection =
                 _DielectricInterfaceReflectionCoefficient(
-                    data, NdotV, effectiveIor);
+                    data, NdotV, effectiveIor,
+                    Dot(N, wo) < 0.0f);
             const Vec3f transmission =
                 _DielectricInterfaceTransmissionCoefficient(
-                    data, NdotV, effectiveIor);
+                    data, NdotV, effectiveIor,
+                    Dot(N, wo) < 0.0f);
             const float weight =
                 _Luminance(reflection) + _Luminance(transmission);
             return weight > 0.0f ? std::max(weight, 0.05f) : 0.0f;
@@ -3169,7 +3192,8 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
             const _DielectricInterfaceSelection selection =
                 _DielectricInterfaceSelectionProbabilities(
-                    data, NdotV, effectiveIor);
+                    data, NdotV, effectiveIor,
+                    Dot(N, wo) < 0.0f);
             if (sameSide && data.reflectionWeight > 0.0f) {
                 const float branchPdf =
                     _IsEffectivelyIsotropic(data.roughness)
@@ -3530,7 +3554,8 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 _ResolveDielectricIor(data, heroWavelengthNm);
             const _DielectricInterfaceSelection selection =
                 _DielectricInterfaceSelectionProbabilities(
-                    data, NdotV, effectiveIor);
+                    data, NdotV, effectiveIor,
+                    Dot(N, wo) < 0.0f);
             if (selection.reflection + selection.transmission <= 0.0f) {
                 return Bsdf::BsdfSample{
                     Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
@@ -3555,7 +3580,8 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 if (hasDeltaRoughness) {
                     return _ScaleDiscreteSpecularSample(
                         _SampleDeltaDielectricInterfaceReflection(
-                            data, effectiveIor, shadingN, wo),
+                            data, effectiveIor, shadingN, wo,
+                            Dot(N, wo) < 0.0f),
                         selection.reflection);
                 }
                 if (_IsEffectivelyIsotropic(data.roughness)) {

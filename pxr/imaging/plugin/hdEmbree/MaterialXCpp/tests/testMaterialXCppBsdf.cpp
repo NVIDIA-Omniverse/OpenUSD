@@ -1955,8 +1955,11 @@ TestOpenPbrInterfaceRoughTransmissionUsesBsdlEnergyCompensation()
     constexpr float alphaRoughness =
         perceptualRoughness * perceptualRoughness;
     constexpr float ior = 1.5f;
-    constexpr float expectedFrontScale = 1.07993165f;
-    constexpr float expectedBackScale = 1.01935121f;
+    // The scales combine the BSDL front/back transmission energy
+    // compensation with the exact-Fresnel-over-Schlick pairing ratio
+    // (1 - F_exact) / (1 - F_schlick) applied by the interface lobe.
+    constexpr float expectedFrontScale = 1.08192599f;
+    constexpr float expectedBackScale = 0.98724377f;
 
     for (const bool backfacing : {false, true}) {
         SurfaceClosure closure;
@@ -3431,6 +3434,63 @@ TestBackwardDwivediFraction()
 // ---------------------------------------------------------------------------
 
 static bool
+TestDielectricInterfaceUsesExactFresnel()
+{
+    // The dielectric interface models MaterialX dielectric_bsdf, whose
+    // reference implementation evaluates the exact dielectric Fresnel
+    // equations (mx_fresnel_dielectric), not the Schlick approximation.
+    // Schlick fits the outside curve well but is badly wrong from inside
+    // the medium, where reflectance rises steeply toward one at the
+    // critical angle (cos ~0.745 for ior 1.5).
+    SurfaceClosure closure;
+    Bsdf::DielectricInterfaceData interface;
+    interface.reflectionWeight = 1.0f;
+    interface.reflectionTint = Vec3f(1.0f);
+    interface.transmissionWeight = 0.0f;
+    interface.ior = 1.5f;
+    interface.roughness = Vec2f(0.0f, 0.0f);
+    closure.bsdfTree.root = closure.bsdfTree.Add(interface);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    struct _Case {
+        bool inside;
+        float cosTheta;
+        float expected;  // exact unpolarized dielectric Fresnel
+    };
+    const _Case cases[] = {
+        {false, 1.00f, 0.040000f},
+        {false, 0.50f, 0.089187f},
+        {false, 0.20f, 0.338894f},
+        {true, 0.80f, 0.114141f},
+        {true, 0.76f, 0.302338f},
+        {true, 0.50f, 1.000000f},  // total internal reflection
+    };
+
+    bool ok = true;
+    for (const _Case& c : cases) {
+        Vec3f wo = _DirectionFromCosThetaYUp(c.cosTheta);
+        if (c.inside) {
+            wo[1] = -wo[1];
+        }
+        const Bsdf::BsdfSample sample = Bsdf::SampleSurface(
+            closure, N, wo, 0.5f, 0.5f, 0.5f);
+        if (!(sample.pdf > 0.0f) || !sample.isSpecular) {
+            printf("    expected a delta reflection sample at %s cos=%.2f\n",
+                   c.inside ? "inside" : "outside", c.cosTheta);
+            ok = false;
+            continue;
+        }
+        if (!Test_IsClose(sample.f[0], c.expected, 2e-3f)) {
+            printf("    %s cos=%.2f reflectance %.6f, expected exact %.6f\n",
+                   c.inside ? "inside " : "outside", c.cosTheta,
+                   sample.f[0], c.expected);
+            ok = false;
+        }
+    }
+    return ok;
+}
+
+static bool
 _CheckTransparentClosureEnergy(
     const SurfaceClosure& closure,
     const char* label,
@@ -3495,9 +3555,10 @@ TestUsdPreviewSurfaceTransmissionTirEnergyConservation()
 {
     // Transparent UsdPreviewSurface must not gain energy from either side of
     // the interface, including internal directions beyond the critical angle
-    // (total internal reflection), where the transmission lobe degenerates
-    // to a TIR sample while the paired reflection lobe keeps contributing
-    // its Schlick reflectance.
+    // (total internal reflection).  Cover both closure structures: the
+    // metalness workflow compiles to a coupled dielectric interface, while
+    // the specular workflow keeps the paired Schlick-reflection +
+    // transmission lobes whose TIR branch splits energy with its pair.
     ParamMap params;
     params["diffuseColor"] = Value(Vec3f(0.18f));
     params["metallic"] = Value(0.0f);
@@ -3570,6 +3631,7 @@ TestUsdPreviewSurfaceTransmissionTirEnergyConservation()
 void
 Test_RegisterBsdfTests()
 {
+    _REG(TestDielectricInterfaceUsesExactFresnel);
     _REG(TestUsdPreviewSurfaceTransmissionTirEnergyConservation);
     _REG(TestLambertianValue);
     _REG(TestLambertianColorScaling);
