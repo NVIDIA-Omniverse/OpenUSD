@@ -40,22 +40,16 @@ _ReadNamespacedSettings(
         const TfToken basename = shadeOutput ? shadeOutput.GetBaseName() : name;
         const std::string attrNamespace = _GetAttrNamespace(basename);
 
-        // Only unnamespaced custom attributes can be gathered as
-        // unnamespaced render settings. Built-in UsdRender schema attributes
-        // are handled explicitly by UsdRenderSpec.
-        if (attrNamespace.empty() && !attr.IsCustom()) {
+        // Only collect namespaced settings
+        if (attrNamespace.empty()) {
             continue;
         }
 
-        // If specific namespaces were requested, require a match.
-        // An empty namespace token requests unnamespaced custom settings.
-        if (!requestedNamespaces.empty()) {
-            const TfToken namespaceToken(attrNamespace);
-            if (std::find(requestedNamespaces.begin(),
-                          requestedNamespaces.end(),
-                          namespaceToken) == requestedNamespaces.end()) {
-                continue;
-            }
+        // If specific namespaces were requested, require a match
+        if (!requestedNamespaces.empty() &&
+            std::find(requestedNamespaces.begin(), requestedNamespaces.end(),
+                      attrNamespace) == requestedNamespaces.end()) {
+            continue;
         }
 
         // Connections are stronger than values authored on the attribute,

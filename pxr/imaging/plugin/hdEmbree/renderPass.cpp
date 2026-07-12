@@ -323,119 +323,6 @@ _WriteFloatRgbaImage(const std::string &filename,
     return true;
 }
 
-static std::string
-_DefaultFrameString(double frame)
-{
-    if (std::isfinite(frame) && std::floor(frame) == frame) {
-        return std::to_string(static_cast<long long>(frame));
-    }
-
-    std::ostringstream out;
-    out << frame;
-    return out.str();
-}
-
-static bool
-_ParseUnsignedDecimal(const std::string &text, int *value)
-{
-    if (text.empty()) {
-        *value = 0;
-        return true;
-    }
-
-    int result = 0;
-    for (char ch : text) {
-        if (ch < '0' || ch > '9') {
-            return false;
-        }
-        result = result * 10 + (ch - '0');
-    }
-
-    *value = result;
-    return true;
-}
-
-static bool
-_FormatFrameWithSpec(double frame,
-                     const std::string &spec,
-                     std::string *formatted)
-{
-    if (spec.empty()) {
-        *formatted = _DefaultFrameString(frame);
-        return true;
-    }
-
-    if (spec.back() != 'd') {
-        return false;
-    }
-
-    std::string widthText = spec.substr(0, spec.size() - 1);
-    char fill = ' ';
-    if (widthText.size() > 1 && widthText[0] == '0') {
-        fill = '0';
-        widthText.erase(0, 1);
-    }
-
-    int width = 0;
-    if (!_ParseUnsignedDecimal(widthText, &width)) {
-        return false;
-    }
-
-    std::ostringstream out;
-    if (width > 0) {
-        out << std::setfill(fill) << std::setw(width);
-    }
-    out << static_cast<long long>(std::llround(frame));
-    *formatted = out.str();
-    return true;
-}
-
-static std::string
-_ExpandFramePlaceholders(const std::string &productName, double frame)
-{
-    std::string result = productName;
-    size_t searchFrom = 0;
-    while (true) {
-        const size_t open = result.find("{frame", searchFrom);
-        if (open == std::string::npos) {
-            break;
-        }
-
-        const size_t close = result.find('}', open);
-        if (close == std::string::npos) {
-            TF_WARN("RenderProduct productName '%s' has an unterminated "
-                    "frame placeholder",
-                    productName.c_str());
-            break;
-        }
-
-        const std::string field = result.substr(open + 1, close - open - 1);
-        std::string spec;
-        if (field == "frame") {
-            spec = std::string();
-        } else if (field.compare(0, 6, "frame:") == 0) {
-            spec = field.substr(6);
-        } else {
-            searchFrom = close + 1;
-            continue;
-        }
-
-        std::string formatted;
-        if (!_FormatFrameWithSpec(frame, spec, &formatted)) {
-            TF_WARN("RenderProduct productName '%s' has unsupported frame "
-                    "placeholder '{%s}'",
-                    productName.c_str(), field.c_str());
-            searchFrom = close + 1;
-            continue;
-        }
-
-        result.replace(open, close - open + 1, formatted);
-        searchFrom = open + formatted.size();
-    }
-
-    return result;
-}
-
 HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
                                        HdRprimCollection const &collection,
                                        HdRenderThread *renderThread,
@@ -696,7 +583,7 @@ HdEmbreeRenderPass::_WriteActiveRenderProducts()
         }
 
         _WriteFloatRgbaImage(
-            _ExpandFramePlaceholders(productName.GetString(), _lastFrame),
+            productName.GetString(),
             width,
             height,
             &pixels);

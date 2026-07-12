@@ -1,0 +1,25 @@
+#usda 1.0
+(
+    renderSettingsPrimPath = "/Render/Settings"
+)
+def Camera "Camera" {
+    float focalLength = 50
+    float horizontalAperture = 20.955
+    float verticalAperture = 15.2908
+    double3 xformOp:translate = (0, 0, 5)
+    uniform token[] xformOpOrder = ["xformOp:translate"]
+}
+def Cube "Cube" {
+    color3f[] primvars:displayColor = [(1, 0, 0)]
+}
+def Scope "Render" {
+    def RenderSettings "Settings" {
+        rel camera = </Camera>
+        rel products = [</Render/Product>]
+    }
+    def RenderProduct "Product" {
+        token productType = "raster"
+        token productName = "frame.{frame:04d}.png"
+        int2 resolution = (64, 32)
+    }
+}

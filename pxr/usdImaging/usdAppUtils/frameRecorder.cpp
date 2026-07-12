@@ -59,12 +59,10 @@ UsdAppUtilsFrameRecorder::UsdAppUtilsFrameRecorder(
     _imagingEngine(_GetParams(
         HdDriver(), rendererPluginId, gpuEnabled, enableUsdDrawModes)),
     _imageWidth(960u),
-    _imageHeight(0u),
     _complexity(1.0f),
     _colorCorrectionMode(HdxColorCorrectionTokens->disabled),
     _purposes({UsdGeomTokens->default_, UsdGeomTokens->proxy}),
     _cameraLightEnabled(true),
-    _overrideDomeLightVisibility(false),
     _domeLightsVisible(false)
 {
     // Disable presentation to avoid the need to create an OpenGL context when
@@ -124,7 +122,6 @@ UsdAppUtilsFrameRecorder::SetCameraLightEnabled(bool cameraLightEnabled)
 void
 UsdAppUtilsFrameRecorder::SetDomeLightVisibility(bool domeLightsVisible)
 {
-    _overrideDomeLightVisibility = true;
     _domeLightsVisible = domeLightsVisible;
 }
 
@@ -361,6 +358,9 @@ _RenderProductsGenerated(
         TfToken productName;
         product.GetProductNameAttr().Get(&productName);
         if (ArchOpenFile(productName.GetText(), "r")) {
+            TF_STATUS("Product '%s' generated from RenderProduct prim <%s> "
+                      "on RenderSettings <%s>", productName.GetText(),
+                      productPath.GetText(), renderSettingsPrimPath.GetText());
             productsGenerated |= true;
         } else {
             TF_WARN("Missing generated Product '%s' from RenderProduct prim "
@@ -414,11 +414,9 @@ UsdAppUtilsFrameRecorder::Record(
     if (GfIsClose(aspectRatio, 0.0f, 1e-4)) {
         aspectRatio = 1.0f;
     }
-    const size_t imageHeight = _imageHeight > 0u
-        ? _imageHeight
-        : std::max<size_t>(
-            static_cast<size_t>(static_cast<float>(_imageWidth) / aspectRatio),
-            1u);
+    const size_t imageHeight = std::max<size_t>(
+        static_cast<size_t>(static_cast<float>(_imageWidth) / aspectRatio),
+        1u);
 
     _imagingEngine.SetRendererAov(HdAovTokens->color);
 
@@ -455,11 +453,9 @@ UsdAppUtilsFrameRecorder::Record(
 
     _imagingEngine.SetLightingState(lights, material, SCENE_AMBIENT);
 
-    if (_overrideDomeLightVisibility) {
-        _imagingEngine.SetRendererSetting(
-            HdRenderSettingsTokens->domeLightCameraVisibility,
-            VtValue(_domeLightsVisible));
-    }
+    _imagingEngine.SetRendererSetting(
+        HdRenderSettingsTokens->domeLightCameraVisibility,
+        VtValue(_domeLightsVisible));
 
     UsdImagingGLRenderParams renderParams;
     renderParams.frame = timeCode;

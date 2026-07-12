@@ -12,8 +12,6 @@
 #include "pxr/pxr.h"
 #include "pxr/usdImaging/usdAppUtils/api.h"
 
-#include "pxr/base/gf/vec2i.h"
-
 #include "pxr/base/tf/diagnostic.h"
 #include "pxr/base/tf/token.h"
 #include "pxr/usd/usd/stage.h"
@@ -101,20 +99,6 @@ public:
             return;
         }
         _imageWidth = imageWidth;
-        _imageHeight = 0u;
-    }
-
-    /// Sets the exact dimensions of the recorded image.
-    ///
-    /// Unlike SetImageWidth(), the height will not be computed from the
-    /// camera aspect ratio.
-    void SetImageResolution(const GfVec2i& imageResolution) {
-        if (imageResolution[0] <= 0 || imageResolution[1] <= 0) {
-            TF_CODING_ERROR("Image resolution dimensions must be positive");
-            return;
-        }
-        _imageWidth = static_cast<size_t>(imageResolution[0]);
-        _imageHeight = static_cast<size_t>(imageResolution[1]);
     }
 
     /// Sets the level of refinement complexity.
@@ -140,8 +124,7 @@ public:
     /// Sets the camera visibility of dome lights.
     ///
     /// When on, dome light textures will be drawn to the background as if
-    /// mapped onto a sphere infinitely far away. If not called, dome light
-    /// visibility comes from scene description without an override.
+    /// mapped onto a sphere infinitely far away.
     USDAPPUTILS_API
     void SetDomeLightVisibility(bool domeLightsVisible);
 
@@ -184,14 +167,12 @@ public:
 private:
     UsdImagingGLEngine _imagingEngine;
     size_t _imageWidth;
-    size_t _imageHeight;
     float _complexity;
     TfToken _colorCorrectionMode;
     TfTokenVector _purposes;
     SdfPath _renderPassPrimPath;
     SdfPath _renderSettingsPrimPath;
     bool _cameraLightEnabled;
-    bool _overrideDomeLightVisibility;
     bool _domeLightsVisible;
 };
 

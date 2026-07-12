@@ -475,10 +475,10 @@ per-proxy data.
 The render pass handles Hydra-facing output concerns: camera/data-window/AOV
 state, fallback color/depth buffers, convergence checks, and
 RenderProduct file writing. `usdrender` is the stage-authored output command;
-its Python entry point is `pxr/usdImaging/bin/usdrender/usdrender.py`.
-`UsdAppUtilsFrameRecorder` remains in
-`pxr/usdImaging/usdAppUtils/frameRecorder.*` and is used by `usdrecord` and
-`usdrender`.
+its C++ implementation is under `pxr/usdImaging/bin/usdrender/` and drives
+`UsdImagingGLEngine` directly. It owns output roots and frame-placeholder
+expansion; hdEmbree must not expand placeholders. `UsdAppUtilsFrameRecorder`
+remains the legacy `usdrecord` path and is not used by `usdrender`.
 
 ## USD Render References
 
