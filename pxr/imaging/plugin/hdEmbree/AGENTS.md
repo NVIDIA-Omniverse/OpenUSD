@@ -198,10 +198,12 @@ plugin in the active Pixi environment.
 - `renderer/mxcppAdapter.*` and `renderer/MaterialXCpp/`: MaterialX/OpenPBR/UsdPreviewSurface
   conversion and evaluation.
 - `renderer/oiioTextureSystem.*`: texture lookup implementation used by MaterialXCpp.
-- `delegate/light.*`: Hydra/USD Lux light Sprim implementation. Handles cylinder, disk,
+- `delegate/light.*`: Hydra/USD Lux light Sprim adapter. Populates renderer-owned light data for cylinder, disk,
   distant, dome, rect, and sphere lights; textures; IES shaping; and finite
   visible light geometry.
-- `renderer/lightSamplers.*`: direct-light and dome-light sampling helpers.
+- `renderer/light.h` and `renderer/lightSamplers.*`: renderer light data plus direct-light and dome-light sampling helpers.
+- `renderer/material.h`: stable compiled-material handle populated by the delegate.
+- `renderer/renderBuffer.h`: renderer AOV-output interface implemented by the delegate buffer.
 - `renderer/meshSamplers.*`, `renderer/sampler.*`, `renderer/sampling.h`: primvar sampling and OpenQMC
   sample-domain logic.
 - `delegate/renderBuffer.*`: CPU-backed Hydra render buffer implementation for AOVs.

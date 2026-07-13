@@ -8,19 +8,20 @@
 #include "pxr/imaging/plugin/hdEmbree/renderer/oiioTextureSystem.h"
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/config.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/light.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/lightSamplers.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/material.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/mesh.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderBuffer.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/sss.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/MaterialXCpp/graph.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/MaterialXCpp/materials/adobeOpenPbr.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/MaterialXCpp/materials/bsdf.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/MaterialXCpp/shadingContext.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/MaterialXCpp/spectral.h"
 
 #include "pxr/imaging/hd/perfLog.h"
+#include "pxr/imaging/hd/renderBuffer.h"
+#include "pxr/imaging/hd/tokens.h"
+#include "pxr/imaging/hd/meshUtil.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/meshSamplers.h"
 
 #include "pxr/base/gf/matrix3f.h"
 #include "pxr/base/tf/hash.h"
@@ -212,6 +213,8 @@ _DotZeroClip(GfVec3f const& a, GfVec3f const& b)
 }  // anonymous namespace
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+TF_DEFINE_PUBLIC_TOKENS(HdEmbreeAovTokens, HDEMBREE_AOV_TOKENS);
 
 // Conversion helpers between GfVec3f and mxcpp::Vec3f (Imath::V3f).
 // GfVec3f in this build does not have implicit Imath conversion.
@@ -673,10 +676,7 @@ _SampleGeomProp(const void* userData, const std::string& name)
 static bool
 _IsSubdivMesh(HdEmbreePrototypeContext const* prototypeContext)
 {
-    if (auto* mesh = dynamic_cast<HdEmbreeMesh*>(prototypeContext->rprim)) {
-        return mesh->EmbreeMeshIsRefined();
-    }
-    return false;
+    return prototypeContext->refined;
 }
 
 /// Try to compute a smooth limit-surface normal for a subdivision hit.
@@ -759,11 +759,9 @@ _ComputeTriangleSurfaceDerivatives(
 {
     bool haveCachedDerivatives = false;
     {
-        HdEmbreeMesh* mesh =
-            dynamic_cast<HdEmbreeMesh*>(prototypeContext->rprim);
-        if (mesh) {
-            const VtVec3fArray& cachedDPdu = mesh->GetTriangleDPdu();
-            const VtVec3fArray& cachedDPdv = mesh->GetTriangleDPdv();
+        if (prototypeContext->triangleDPdu && prototypeContext->triangleDPdv) {
+            const VtVec3fArray& cachedDPdu = *prototypeContext->triangleDPdu;
+            const VtVec3fArray& cachedDPdv = *prototypeContext->triangleDPdv;
             if (primID < cachedDPdu.size() && primID < cachedDPdv.size()) {
                 *outDPdu = cachedDPdu[primID];
                 *outDPdv = cachedDPdv[primID];
@@ -1378,11 +1376,11 @@ HdEmbreeRenderer::SetAovBindings(
 void
 HdEmbreeRenderer::AddLight(
     SdfPath const& lightPath,
-    HdEmbree_Light* light)
+    HdEmbree_LightData const* light)
 {
     ScopedLock lightsWriteLock(_lightsWriteMutex);
 
-    auto eraseDomeEntries = [this](HdEmbree_Light* lightToRemove) {
+    auto eraseDomeEntries = [this](HdEmbree_LightData const* lightToRemove) {
         if (!lightToRemove) {
             return;
         }
@@ -1392,7 +1390,7 @@ HdEmbreeRenderer::AddLight(
 
     auto it = _lightMap.find(lightPath);
     if (it != _lightMap.end() && it->second == light) {
-        if (!light || !light->IsDome()) {
+        if (!light || !std::holds_alternative<HdEmbree_Dome>(light->lightVariant)) {
             return;
         }
 
@@ -1415,13 +1413,13 @@ HdEmbreeRenderer::AddLight(
         eraseDomeEntries(light);
     }
 
-    if (light && light->IsDome()) {
+    if (light && std::holds_alternative<HdEmbree_Dome>(light->lightVariant)) {
         _domes.push_back(light);
     }
 }
 
 void
-HdEmbreeRenderer::RemoveLight(SdfPath const& lightPath, HdEmbree_Light* light)
+HdEmbreeRenderer::RemoveLight(SdfPath const& lightPath, HdEmbree_LightData const* light)
 {
     ScopedLock lightsWriteLock(_lightsWriteMutex);
     _lightMap.erase(lightPath);
@@ -1433,7 +1431,7 @@ HdEmbreeRenderer::RemoveLight(SdfPath const& lightPath, HdEmbree_Light* light)
 void
 HdEmbreeRenderer::AddLightGeometry(
     unsigned int geometryId,
-    HdEmbree_Light* light)
+    HdEmbree_LightData const* light)
 {
     if (geometryId == RTC_INVALID_GEOMETRY_ID || !light) {
         return;
@@ -1446,7 +1444,7 @@ HdEmbreeRenderer::AddLightGeometry(
 void
 HdEmbreeRenderer::RemoveLightGeometry(
     unsigned int geometryId,
-    HdEmbree_Light* light)
+    HdEmbree_LightData const* light)
 {
     if (geometryId == RTC_INVALID_GEOMETRY_ID) {
         return;
@@ -1651,8 +1649,8 @@ HdEmbreeRenderer::Clear()
             continue;
         }
 
-        HdEmbreeRenderBuffer *rb =
-            static_cast<HdEmbreeRenderBuffer*>(_aovBindings[i].renderBuffer);
+        HdEmbreeRenderBufferInterface *rb =
+            dynamic_cast<HdEmbreeRenderBufferInterface*>(_aovBindings[i].renderBuffer);
 
         rb->Map();
         if (_aovNames[i].name == HdAovTokens->color) {
@@ -1688,8 +1686,8 @@ HdEmbreeRenderer::ResetAccumulation()
     }
 
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
-        HdEmbreeRenderBuffer *rb =
-            static_cast<HdEmbreeRenderBuffer*>(_aovBindings[i].renderBuffer);
+        HdEmbreeRenderBufferInterface *rb =
+            dynamic_cast<HdEmbreeRenderBufferInterface*>(_aovBindings[i].renderBuffer);
         rb->ClearSamples();
         rb->SetConverged(false);
     }
@@ -1704,8 +1702,8 @@ void
 HdEmbreeRenderer::MarkAovBuffersUnconverged()
 {
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
-        HdEmbreeRenderBuffer *rb =
-            static_cast<HdEmbreeRenderBuffer*>(_aovBindings[i].renderBuffer);
+        HdEmbreeRenderBufferInterface *rb =
+            dynamic_cast<HdEmbreeRenderBufferInterface*>(_aovBindings[i].renderBuffer);
         rb->SetConverged(false);
     }
 }
@@ -1777,7 +1775,7 @@ HdEmbreeRenderer::_PreRenderSetup()
         // We aren't going to render anything. Just mark all AOVs as converged
         // so that we will stop rendering.
         for (size_t i = 0; i < _aovBindings.size(); ++i) {
-            HdEmbreeRenderBuffer *rb = static_cast<HdEmbreeRenderBuffer*>(
+            HdEmbreeRenderBufferInterface *rb = dynamic_cast<HdEmbreeRenderBufferInterface*>(
                 _aovBindings[i].renderBuffer);
             rb->SetConverged(true);
         }
@@ -1798,7 +1796,7 @@ HdEmbreeRenderer::_PreRenderSetup()
         // render buffer instead of a pointer to the
         // render buffer.
         //
-        static_cast<HdEmbreeRenderBuffer*>(
+        dynamic_cast<HdEmbreeRenderBufferInterface*>(
             _aovBindings[i].renderBuffer)->Map();
 
         if (i == 0) {
@@ -1854,7 +1852,7 @@ HdEmbreeRenderer::_BuildAovDispatchTable()
 
     // Build writer table.
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
-        HdEmbreeRenderBuffer *rb = static_cast<HdEmbreeRenderBuffer*>(
+        HdEmbreeRenderBufferInterface *rb = dynamic_cast<HdEmbreeRenderBufferInterface*>(
             _aovBindings[i].renderBuffer);
         const auto& aovName = _aovNames[i];
 
@@ -1951,8 +1949,8 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
                 HD_TRACE_SCOPE("HdEmbreeRenderer::ResolvePreviewPass");
                 auto lock = renderThread->LockFramebuffer();
                 for (size_t a = 0; a < _aovBindings.size(); ++a) {
-                    HdEmbreeRenderBuffer *rb =
-                        static_cast<HdEmbreeRenderBuffer*>(
+                    HdEmbreeRenderBufferInterface *rb =
+                        dynamic_cast<HdEmbreeRenderBufferInterface*>(
                             _aovBindings[a].renderBuffer);
                     rb->Resolve();
                     rb->BlockFill(stride);
@@ -1965,8 +1963,8 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         // the coarse preview for visual continuity.
         if (!renderThread->IsStopRequested()) {
             for (size_t a = 0; a < _aovBindings.size(); ++a) {
-                HdEmbreeRenderBuffer *rb =
-                    static_cast<HdEmbreeRenderBuffer*>(
+                HdEmbreeRenderBufferInterface *rb =
+                    dynamic_cast<HdEmbreeRenderBufferInterface*>(
                         _aovBindings[a].renderBuffer);
                 rb->ClearSamples();
             }
@@ -2013,8 +2011,8 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
             HD_TRACE_SCOPE("HdEmbreeRenderer::ResolveSamplePass");
             auto lock = renderThread->LockFramebuffer();
             for (size_t a = 0; a < _aovBindings.size(); ++a) {
-                HdEmbreeRenderBuffer *rb =
-                    static_cast<HdEmbreeRenderBuffer*>(
+                HdEmbreeRenderBufferInterface *rb =
+                    dynamic_cast<HdEmbreeRenderBufferInterface*>(
                         _aovBindings[a].renderBuffer);
                 rb->Resolve();
             }
@@ -2026,7 +2024,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         if (i == 0) {
             bool moreWork = false;
             for (size_t a = 0; a < _aovBindings.size(); ++a) {
-                HdEmbreeRenderBuffer *rb = static_cast<HdEmbreeRenderBuffer*>(
+                HdEmbreeRenderBufferInterface *rb = dynamic_cast<HdEmbreeRenderBufferInterface*>(
                     _aovBindings[a].renderBuffer);
                 if (rb->IsMultiSampled()) {
                     moreWork = true;
@@ -2073,7 +2071,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
     {
         HD_TRACE_SCOPE("HdEmbreeRenderer::FinalizeAovs");
         for (size_t i = 0; i < _aovBindings.size(); ++i) {
-            HdEmbreeRenderBuffer *rb = static_cast<HdEmbreeRenderBuffer*>(
+            HdEmbreeRenderBufferInterface *rb = dynamic_cast<HdEmbreeRenderBufferInterface*>(
                 _aovBindings[i].renderBuffer);
             rb->Unmap();
             rb->SetConverged(true);
@@ -2772,7 +2770,7 @@ HdEmbreeRenderer::_ComputeId(RTCRayHit const& rayHit, TfToken const& idType,
                                                   rayHit.hit.geomID)));
 
     if (idType == HdAovTokens->primId) {
-        *id = prototypeContext->rprim->GetPrimId();
+        *id = prototypeContext->primId;
     } else if (idType == HdAovTokens->elementId) {
         if (prototypeContext->primitiveParams.empty()) {
             *id = rayHit.hit.primID;
@@ -3093,7 +3091,7 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
     RTCRayHit const& rayHit,
     mxcpp::SurfaceClosure* outClosure,
     GfVec3f* outGeometricNormal,
-    HdEmbreeMesh** outMesh) const
+    HdEmbreePrototypeContext const** outGeometry) const
 {
     if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID ||
         _GetLightGeometryHit(rayHit)) {
@@ -3110,14 +3108,11 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
                 rtcGetGeometry(instanceContext->rootScene,
                                rayHit.hit.geomID)));
 
-    HdEmbreeMaterial *material = prototypeContext->material;
-    if (outMesh) {
-        *outMesh = dynamic_cast<HdEmbreeMesh*>(prototypeContext->rprim);
+    mxcpp::EvalGraph *evalGraph = prototypeContext->material ? prototypeContext->material->evalGraph : nullptr;
+    if (outGeometry) {
+        *outGeometry = prototypeContext;
     }
-    if (!material || !outClosure) return false;
-
-    mxcpp::EvalGraph *evalGraph = material->GetEvalGraph();
-    if (!evalGraph) return false;
+    if (!evalGraph || !outClosure) return false;
 
     GfVec3f hitPos = _CalculateHitPosition(rayHit);
     GfVec3f normal = _ResolveObjectSpaceNormal(
@@ -3172,7 +3167,7 @@ HdEmbreeRenderer::_Visibility(
 
     GfVec3f visibility(1.0f);
     HdEmbreeMediumState shadowMedium = mediumState;
-    HdEmbreeMesh* straightTransparentOwner = nullptr;
+    HdEmbreePrototypeContext const* straightTransparentOwner = nullptr;
     GfVec3f rayOrigin = _OffsetRayOrigin(position, normal, direction, kRayBias);
     float remaining = dist;
 
@@ -3249,12 +3244,12 @@ HdEmbreeRenderer::_Visibility(
 
         mxcpp::SurfaceClosure closure;
         GfVec3f hitNormal(0.0f);
-        HdEmbreeMesh* hitMesh = nullptr;
+        HdEmbreePrototypeContext const* hitMesh = nullptr;
         const bool hasClosure = _TryEvalSurfaceClosureAtHit(
             rayHit, &closure, &hitNormal, &hitMesh);
 
         const bool exitsCurrentMedium =
-            shadowMedium.active && hitMesh == shadowMedium.ownerMesh;
+            shadowMedium.active && hitMesh == shadowMedium.ownerGeometry;
         const bool exitsStraightTransparent =
             straightTransparentOwner && hitMesh == straightTransparentOwner;
         const bool volumeOnlyBoundary =
@@ -3315,7 +3310,7 @@ HdEmbreeRenderer::_Visibility(
                    GfDot(direction, hitNormal) < 0.0f) {
             shadowMedium.active = true;
             shadowMedium.medium = closure.interiorMedium;
-            shadowMedium.ownerMesh = hitMesh;
+            shadowMedium.ownerGeometry = hitMesh;
         } else if (_approxTransparentShadows && !shadowMedium.active &&
                    hasClosure && !closure.thinWalled &&
                    closure.transmission > 0.0f && hitMesh &&
@@ -3323,7 +3318,7 @@ HdEmbreeRenderer::_Visibility(
             if (closure.hasInteriorMedium) {
                 shadowMedium.active = true;
                 shadowMedium.medium = closure.interiorMedium;
-                shadowMedium.ownerMesh = hitMesh;
+                shadowMedium.ownerGeometry = hitMesh;
             } else {
                 straightTransparentOwner = hitMesh;
             }
@@ -3368,7 +3363,7 @@ HdEmbreeRenderer::_FindNearestFiniteLightHit(
             continue;
         }
 
-        auto const& light = it.second->LightData();
+        auto const& light = *it.second;
         if (!light.visible) {
             continue;
         }
@@ -3398,7 +3393,7 @@ HdEmbreeRenderer::_FindNearestFiniteLightHit(
     return found;
 }
 
-HdEmbree_Light*
+HdEmbree_LightData const*
 HdEmbreeRenderer::_GetLightGeometryHit(RTCRayHit const& rayHit) const
 {
     if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID ||
@@ -3419,14 +3414,14 @@ HdEmbreeRenderer::_EvaluateLightGeometryHit(
     HdEmbreeLightSampler::LightSample* outSample,
     TfToken* outLightLink) const
 {
-    HdEmbree_Light* light = _GetLightGeometryHit(rayHit);
+    HdEmbree_LightData const* light = _GetLightGeometryHit(rayHit);
     if (!light || !outSample) {
         return false;
     }
 
     HdEmbreeLightSampler::LightSample sample =
         HdEmbreeLightSampler::EvaluateLightDirection(
-            light->LightData(), position, direction);
+            *light, position, direction);
     if (!sample.valid) {
         sample.Li = GfVec3f(0.0f);
         sample.wI = direction;
@@ -3440,7 +3435,7 @@ HdEmbreeRenderer::_EvaluateLightGeometryHit(
 
     *outSample = sample;
     if (outLightLink) {
-        *outLightLink = light->LightData().lightLink;
+        *outLightLink = light->lightLink;
     }
     return true;
 }
@@ -3464,14 +3459,14 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
         // directly
         GfVec4f domeColor(0.0f, 0.0f, 0.0f, 1.0f);
         for (auto* dome : _domes) {
-            if (!dome->LightData().visible) {
+            if (!dome->visible) {
                 continue;
             }
             // Direct visibility: sample the dome lights. Since we know
             // we're only evaluating domes along the camera ray direction.
             HdEmbreeLightSampler::LightSample ls =
                 HdEmbreeLightSampler::EvaluateDomeLightDirection(
-                    dome->LightData(),
+                    *dome,
                     GfVec3f(
                         rayHit.ray.dir_x,
                         rayHit.ray.dir_y,
@@ -3554,11 +3549,7 @@ HdEmbreeRenderer::_ComputeColor(RTCRayHit const& rayHit,
     GfVec3f bitangent = _ToGf(ctx.bitangent);
 
     // Try to evaluate MaterialXCpp material if one is bound.
-    HdEmbreeMaterial *material = prototypeContext->material;
-    mxcpp::EvalGraph *evalGraph = nullptr;
-    if (material) {
-        evalGraph = material->GetEvalGraph();
-    }
+    mxcpp::EvalGraph *evalGraph = prototypeContext->material ? prototypeContext->material->evalGraph : nullptr;
 
     mxcpp::SurfaceClosure closure;
     bool hasMaterialClosure = false;
@@ -3769,7 +3760,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
             ++lightIndex;
             continue;
         }
-        auto const& light = it.second->LightData();
+        auto const& light = *it.second;
         if (!light.visible ||
             !HdEmbreeMatchesLink(light.lightLink, receiverCategories)) {
             ++lightIndex;
@@ -3961,7 +3952,7 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
             ++lightIndex;
             continue;
         }
-        auto const& light = it.second->LightData();
+        auto const& light = *it.second;
         if (!light.visible ||
             !HdEmbreeMatchesLink(light.lightLink, receiverCategories)) {
             ++lightIndex;
@@ -4580,7 +4571,7 @@ HdEmbreeRenderer::_TracePath(
                     continue;
                 }
 
-                auto const& light = it.second->LightData();
+                auto const& light = *it.second;
                 if (!light.visible ||
                     !std::holds_alternative<HdEmbree_Distant>(
                         light.lightVariant) ||
@@ -4621,12 +4612,12 @@ HdEmbreeRenderer::_TracePath(
             }
 
             for (auto* dome : _domes) {
-                if (!dome->LightData().visible ||
+                if (!dome->visible ||
                     (!isFirstBounce &&
-                     !dome->LightData().lightLink.IsEmpty() &&
+                     !dome->lightLink.IsEmpty() &&
                      (!lastScatterCategories ||
                       !HdEmbreeMatchesLink(
-                          dome->LightData().lightLink,
+                          dome->lightLink,
                           *lastScatterCategories)))) {
                     continue;
                 }
@@ -4638,13 +4629,13 @@ HdEmbreeRenderer::_TracePath(
                 if (domeSamplingMode ==
                     HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere) {
                     ls = HdEmbreeLightSampler::EvaluateDomeLightDirection(
-                        dome->LightData(),
+                        *dome,
                         rayDir,
                         lastLightSamplingNormal,
                         domeSamplingMode);
                 } else {
                     ls = HdEmbreeLightSampler::EvaluateDomeLightDirection(
-                        dome->LightData(), rayDir);
+                        *dome, rayDir);
                 }
                 GfVec3f domeContrib = ls.Li;
 
@@ -4730,10 +4721,9 @@ HdEmbreeRenderer::_TracePath(
 
         // Double-sided check
         bool doubleSided = false;
-        HdEmbreeMesh *mesh =
-            dynamic_cast<HdEmbreeMesh*>(prototypeContext->rprim);
+        HdEmbreePrototypeContext const* mesh = prototypeContext;
         if (mesh) {
-            doubleSided = mesh->EmbreeMeshIsDoubleSided();
+            doubleSided = prototypeContext->doubleSided;
         }
 
         // Face-forward the shading normal and the face Ng against the
@@ -4783,9 +4773,7 @@ HdEmbreeRenderer::_TracePath(
         GfVec3f bitangent = _ToGf(ctx.bitangent);
 
         // --- Evaluate material ---
-        HdEmbreeMaterial *material = prototypeContext->material;
-        mxcpp::EvalGraph *evalGraph = material
-            ? material->GetEvalGraph() : nullptr;
+        mxcpp::EvalGraph *evalGraph = prototypeContext->material ? prototypeContext->material->evalGraph : nullptr;
 
         mxcpp::SurfaceClosure closure;
         bool hasClosure = false;
@@ -5184,13 +5172,13 @@ HdEmbreeRenderer::_TracePath(
 
         if (volumeOnlyBoundary) {
             const float wiDotNg = GfDot(rayDir, geometricNormal);
-            if (currentMedium.active && currentMedium.ownerMesh == mesh &&
+            if (currentMedium.active && currentMedium.ownerGeometry == mesh &&
                 wiDotNg > 0.0f) {
                 currentMedium = HdEmbreeMediumState();
             } else if (!currentMedium.active && wiDotNg < 0.0f) {
                 currentMedium.active = true;
                 currentMedium.medium = closure.interiorMedium;
-                currentMedium.ownerMesh = mesh;
+                currentMedium.ownerGeometry = mesh;
                 currentMedium.categories = &instanceContext->categories;
             }
 
@@ -5292,7 +5280,7 @@ HdEmbreeRenderer::_TracePath(
         if (crossesBoundary) {
             // Initial implementation keeps only one medium active at a time;
             // nested dielectric stacks are deferred to a later task.
-            if (currentMedium.active && currentMedium.ownerMesh == mesh &&
+            if (currentMedium.active && currentMedium.ownerGeometry == mesh &&
                 wiDotNg > 0.0f) {
                 currentMedium = HdEmbreeMediumState();
             } else if (!currentMedium.active &&
@@ -5302,7 +5290,7 @@ HdEmbreeRenderer::_TracePath(
                        wiDotNg < 0.0f) {
                 currentMedium.active = true;
                 currentMedium.medium = closure.interiorMedium;
-                currentMedium.ownerMesh = mesh;
+                currentMedium.ownerGeometry = mesh;
                 currentMedium.categories = &instanceContext->categories;
             }
         }

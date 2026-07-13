@@ -50,11 +50,6 @@ class HdEmbreeRenderParam;
 
 TF_DECLARE_PUBLIC_TOKENS(HdEmbreeRenderSettingsTokens, HDEMBREE_RENDER_SETTINGS_TOKENS);
 
-#define HDEMBREE_AOV_TOKENS \
-    (adaptiveHeatmap)
-
-TF_DECLARE_PUBLIC_TOKENS(HdEmbreeAovTokens, HDEMBREE_AOV_TOKENS);
-
 ///
 /// \class HdEmbreeRenderDelegate
 ///

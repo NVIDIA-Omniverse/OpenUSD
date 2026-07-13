@@ -31,7 +31,6 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 TF_DEFINE_PUBLIC_TOKENS(HdEmbreeRenderSettingsTokens, HDEMBREE_RENDER_SETTINGS_TOKENS);
-TF_DEFINE_PUBLIC_TOKENS(HdEmbreeAovTokens, HDEMBREE_AOV_TOKENS);
 
 static const TfToken _materialRenderContextMtlxToken(
     "mtlx", TfToken::Immortal);

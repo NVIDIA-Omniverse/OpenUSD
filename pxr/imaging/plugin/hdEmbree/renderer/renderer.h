@@ -10,7 +10,7 @@
 #include "pxr/pxr.h"
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/context.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/light.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/light.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/lightSamplers.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/lightLinking.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/medium.h"
@@ -43,8 +43,12 @@ class TextureSystem;
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-class HdEmbreeRenderBuffer;
-class HdEmbreeMesh;
+#define HDEMBREE_AOV_TOKENS \
+    (adaptiveHeatmap)
+
+TF_DECLARE_PUBLIC_TOKENS(HdEmbreeAovTokens, HDEMBREE_AOV_TOKENS);
+
+class HdEmbreeRenderBufferInterface;
 
 enum HdEmbree_RayMask : uint32_t {
     None = 0,
@@ -85,7 +89,7 @@ struct HdEmbreeCameraDepthOfField {
 struct HdEmbreeMediumState {
     bool active = false;
     mxcpp::MediumProperties medium;
-    HdEmbreeMesh* ownerMesh = nullptr;
+    HdEmbreePrototypeContext const* ownerGeometry = nullptr;
     HdEmbreeCategorySet const* categories = nullptr;
 };
 
@@ -140,16 +144,16 @@ public:
     void SetAovBindings(HdRenderPassAovBindingVector const& aovBindings);
 
     /// Add a light
-    void AddLight(SdfPath const& lightPath, HdEmbree_Light* light);
+    void AddLight(SdfPath const& lightPath, HdEmbree_LightData const* light);
 
     /// Remove a light
-    void RemoveLight(SdfPath const& lightPath, HdEmbree_Light* light);
+    void RemoveLight(SdfPath const& lightPath, HdEmbree_LightData const* light);
 
     /// Register top-level Embree geometry that represents a finite light.
-    void AddLightGeometry(unsigned int geometryId, HdEmbree_Light* light);
+    void AddLightGeometry(unsigned int geometryId, HdEmbree_LightData const* light);
 
     /// Unregister top-level Embree geometry that represents a finite light.
-    void RemoveLightGeometry(unsigned int geometryId, HdEmbree_Light* light);
+    void RemoveLightGeometry(unsigned int geometryId, HdEmbree_LightData const* light);
 
     /// Get the aov bindings being used for rendering.
     ///   \return the current aov bindings.
@@ -412,7 +416,7 @@ private:
         HdEmbreeLightSampler::LightSample* outSample,
         TfToken* outLightLink) const;
 
-    HdEmbree_Light* _GetLightGeometryHit(RTCRayHit const& rayHit) const;
+    HdEmbree_LightData const* _GetLightGeometryHit(RTCRayHit const& rayHit) const;
     bool _EvaluateLightGeometryHit(
         RTCRayHit const& rayHit,
         GfVec3f const& position,
@@ -454,7 +458,7 @@ private:
         RTCRayHit const& rayHit,
         mxcpp::SurfaceClosure* outClosure,
         GfVec3f* outGeometricNormal = nullptr,
-        HdEmbreeMesh** outMesh = nullptr) const;
+        HdEmbreePrototypeContext const** outGeometry = nullptr) const;
 
     // ---- AOV dispatch table (built once per frame in _PreRenderSetup) ----
 
@@ -466,7 +470,7 @@ private:
                                  GfVec4f const&,
                                  unsigned int, unsigned int);
     struct _AovWriter {
-        HdEmbreeRenderBuffer* buffer = nullptr;
+        HdEmbreeRenderBufferInterface* buffer = nullptr;
         _AovWriteFn writeFn = nullptr;
         TfToken token;
     };
@@ -623,9 +627,9 @@ private:
 
     // Lights
     mutable WriteMutex _lightsWriteMutex; // protects the light containers below
-    std::map<SdfPath, HdEmbree_Light*> _lightMap;
-    std::map<unsigned int, HdEmbree_Light*> _lightGeometryMap;
-    std::vector<HdEmbree_Light*> _domes;
+    std::map<SdfPath, HdEmbree_LightData const*> _lightMap;
+    std::map<unsigned int, HdEmbree_LightData const*> _lightGeometryMap;
+    std::vector<HdEmbree_LightData const*> _domes;
 
     // Pre-resolved per-frame state (built in _PreRenderSetup).
     bool _needColor = false;

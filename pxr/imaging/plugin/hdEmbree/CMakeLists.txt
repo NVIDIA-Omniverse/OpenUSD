@@ -114,7 +114,10 @@ pxr_plugin(hdEmbree
 
     PUBLIC_HEADERS
         renderer/context.h
+        renderer/light.h
         renderer/lightLinking.h
+        renderer/material.h
+        renderer/renderBuffer.h
         delegate/renderParam.h
         renderer/sampling.h
         renderer/pxrPbrt/pbrtUtils.h

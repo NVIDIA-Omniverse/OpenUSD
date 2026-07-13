@@ -10,7 +10,9 @@
 #include "pxr/pxr.h"
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/sampler.h"
+#include "pxr/imaging/hd/enums.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/lightLinking.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/material.h"
 
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/vt/array.h"
@@ -23,8 +25,6 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-class HdRprim;
-class HdEmbreeMaterial;
 
 /// \class HdEmbreePrototypeContext
 ///
@@ -33,8 +33,12 @@ class HdEmbreeMaterial;
 ///
 struct HdEmbreePrototypeContext
 {
-    /// A pointer back to the owning HdEmbree rprim.
-    HdRprim *rprim;
+    int32_t primId = 0;
+    HdCullStyle cullStyle = HdCullStyleDontCare;
+    bool doubleSided = false;
+    bool refined = false;
+    VtVec3fArray const* triangleDPdu = nullptr;
+    VtVec3fArray const* triangleDPdv = nullptr;
     /// A name-indexed map of primvar samplers.
     TfHashMap<TfToken, HdEmbreePrimvarSampler*, TfToken::HashFunctor>
         primvarMap;
@@ -49,7 +53,7 @@ struct HdEmbreePrototypeContext
     /// A copy of the primitive params for this rprim.
     VtIntArray primitiveParams;
     /// The bound material, or nullptr if none.
-    HdEmbreeMaterial *material = nullptr;
+    HdEmbreeMaterialData const* material = nullptr;
     /// Per-mesh uniform primvar values for geompropvalueuniform nodes.
     /// Built once during Sync from HdInterpolationConstant primvars.
     std::unordered_map<std::string, mxcpp::Value> uniformPrimvarMap;

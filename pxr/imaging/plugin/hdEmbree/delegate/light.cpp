@@ -1040,7 +1040,7 @@ HdEmbree_Light::_ReleaseVisibleGeometry(
     }
 
     if (renderer) {
-        renderer->RemoveLightGeometry(_rtcVisibleGeometryId, this);
+        renderer->RemoveLightGeometry(_rtcVisibleGeometryId, &_lightData);
     }
     if (scene && _rtcVisibleGeometryId != RTC_INVALID_GEOMETRY_ID) {
         rtcDetachGeometry(scene, _rtcVisibleGeometryId);
@@ -1076,7 +1076,7 @@ HdEmbree_Light::_UpdateVisibleGeometry(
         rtcSetGeometryTimeStepCount(_rtcVisibleGeometry, 1);
         rtcSetGeometryMask(_rtcVisibleGeometry, HdEmbree_RayMask::All);
         _rtcVisibleGeometryId = rtcAttachGeometry(scene, _rtcVisibleGeometry);
-        renderer->AddLightGeometry(_rtcVisibleGeometryId, this);
+        renderer->AddLightGeometry(_rtcVisibleGeometryId, &_lightData);
     }
 
     _rtcVisiblePoints = std::move(points);
@@ -1283,7 +1283,7 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
 
     HdEmbreeRenderer *renderer = embreeRenderParam->GetRenderer();
     _UpdateVisibleGeometry(scene, device, renderer);
-    renderer->AddLight(id, this);
+    renderer->AddLight(id, &_lightData);
 
     *dirtyBits &= ~HdLight::AllDirty;
 }
@@ -1304,7 +1304,7 @@ HdEmbree_Light::Finalize(HdRenderParam *renderParam)
     _ReleaseVisibleGeometry(scene, renderer);
 
     // Remove from renderer's light map.
-    renderer->RemoveLight(GetId(), this);
+    renderer->RemoveLight(GetId(), &_lightData);
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

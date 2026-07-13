@@ -9,7 +9,7 @@
 #include "pxr/pxr.h"
 #include "pxr/base/gf/vec3f.h"
 
-#include "pxr/imaging/plugin/hdEmbree/delegate/light.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/light.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 

@@ -10,6 +10,7 @@
 #include "pxr/pxr.h"
 #include "pxr/imaging/hd/material.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/MaterialXCpp/graph.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/material.h"
 
 #include <memory>
 
@@ -38,13 +39,14 @@ public:
     void ResyncForRenderContextChange(HdRenderParam *renderParam);
 
     /// Return the compiled evaluation graph, or nullptr if unavailable.
-    mxcpp::EvalGraph* GetEvalGraph() const { return _evalGraph.get(); }
+    HdEmbreeMaterialData const* GetRenderMaterial() const { return &_renderMaterial; }
 
 private:
     // Non-owning; cached from the last Hydra Sync for direct recompile when
     // render-setting context priority changes outside normal dirty tracking.
     HdSceneDelegate *_sceneDelegate = nullptr;
     std::unique_ptr<mxcpp::EvalGraph> _evalGraph;
+    HdEmbreeMaterialData _renderMaterial;
 };
 
 PXR_NAMESPACE_CLOSE_SCOPE

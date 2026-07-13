@@ -496,14 +496,13 @@ void HdEmbreeMesh::_EmbreeCullFaces(const RTCFilterFunctionNArguments* args)
     // Pull out the prototype context.
     // Only HdEmbreeMesh gets HdEmbreeMesh::_EmbreeCullFaces bound
     // as an intersection filter. The filter is bound to the prototype,
-    // whose context's rprim always points back to the original HdEmbreeMesh.
+    // whose renderer context contains all values needed by the filter.
     HdEmbreePrototypeContext *ctx =
         static_cast<HdEmbreePrototypeContext*>(args->geometryUserPtr);
-    if (!ctx || !ctx->rprim) {
+    if (!ctx) {
         TF_CODING_ERROR("_EmbreeCullFaces got NULL prototype context");
         return;
     }
-    HdEmbreeMesh *mesh = static_cast<HdEmbreeMesh*>(ctx->rprim);
 
     // Note: this is called to filter every candidate ray hit
     // with the bound object, so this function should be fast.
@@ -529,16 +528,16 @@ void HdEmbreeMesh::_EmbreeCullFaces(const RTCFilterFunctionNArguments* args)
         // Determine if we should ignore this hit. HdCullStyleBack means
         // cull back faces.
         bool cull = false;
-        switch(mesh->_cullStyle) {
+        switch(ctx->cullStyle) {
             case HdCullStyleBack:
                 cull = !isFrontFace; break;
             case HdCullStyleFront:
                 cull =  isFrontFace; break;
 
             case HdCullStyleBackUnlessDoubleSided:
-                cull = !isFrontFace && !mesh->_doubleSided; break;
+                cull = !isFrontFace && !ctx->doubleSided; break;
             case HdCullStyleFrontUnlessDoubleSided:
-                cull =  isFrontFace && !mesh->_doubleSided; break;
+                cull =  isFrontFace && !ctx->doubleSided; break;
 
             default: break;
         }
@@ -1359,7 +1358,13 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         // Prototype geometry gets tagged with a prototype context, that the
         // ray-hit algorithm can use to look up data.
         rtcSetGeometryUserData(_geometry,new HdEmbreePrototypeContext);
-        _GetPrototypeContext()->rprim = this;
+        _GetPrototypeContext()->primId = GetPrimId();
+        _GetPrototypeContext()->cullStyle = _cullStyle;
+        _GetPrototypeContext()->cullStyle = _cullStyle;
+        _GetPrototypeContext()->doubleSided = _doubleSided;
+        _GetPrototypeContext()->refined = _refined;
+        _GetPrototypeContext()->triangleDPdu = &_triangleDPdu;
+        _GetPrototypeContext()->triangleDPdv = &_triangleDPdv;
         _GetPrototypeContext()->primitiveParams = (_refined ?
             _trianglePrimitiveParams : VtIntArray());
         _GetPrototypeContext()->material = nullptr;
@@ -1659,8 +1664,14 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
                         HdPrimTypeTokens->material, materialId);
                 mat = dynamic_cast<HdEmbreeMaterial*>(sprim);
             }
-            _GetPrototypeContext()->material = mat;
+            _GetPrototypeContext()->material = mat ? mat->GetRenderMaterial() : nullptr;
         }
+    }
+
+    if (_geometry) {
+        _GetPrototypeContext()->cullStyle = _cullStyle;
+        _GetPrototypeContext()->doubleSided = _doubleSided;
+        _GetPrototypeContext()->refined = _refined;
     }
 
     // Clean all dirty bits.

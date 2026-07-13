@@ -9,10 +9,12 @@
 
 #include "pxr/pxr.h"
 #include "pxr/imaging/hd/renderBuffer.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-class HdEmbreeRenderBuffer : public HdRenderBuffer
+class HdEmbreeRenderBuffer : public HdRenderBuffer,
+                             public HdEmbreeRenderBufferInterface
 {
 public:
     HdEmbreeRenderBuffer(SdfPath const& id);

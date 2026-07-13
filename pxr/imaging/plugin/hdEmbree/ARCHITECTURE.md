@@ -10,7 +10,7 @@ hdEmbree is one plugin target with three source submodules:
 - `renderer/`: CPU path tracer and support code. Owns progressive state, Embree traversal, path integration, sampling, shading, lighting, textures, media, and subsurface scattering.
 - `schema/`: authored and generated `TyphoonRenderSettingsAPI` schema.
 
-The intended dependency direction is `Hydra -> delegate -> renderer`. Some existing runtime types still span the boundary; new code should avoid adding renderer dependencies on delegate implementation details.
+The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer code depends only on renderer-owned runtime records and interfaces; delegate adapters populate or implement those contracts.
 
 ## Repository map
 
@@ -36,18 +36,21 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Some exist
 - `renderBuffer.h/.cpp`: CPU-backed `HdRenderBuffer` storage, mapping, format conversion, convergence, and renderer write access.
 - `mesh.h/.cpp`: `HdMesh` adapter. Pulls topology, points, transforms, subdivision data, primvars, materials, categories, and instancing; builds/updates Embree prototypes and instances.
 - `instancer.h/.cpp`: `HdInstancer` adapter; computes instance transforms and per-instance category/light-linking context.
-- `material.h/.cpp`: `HdMaterial` adapter; pulls Hydra networks, normalizes them through `mxcppAdapter`, and owns the compiled `mxcpp::EvalGraph`.
-- `light.h/.cpp`: `HdLight` adapter and runtime light representations. Pulls USD Lux parameters, transforms, textures, IES data, shaping, linking, and visible finite-light geometry; updates the renderer light set.
+- `material.h/.cpp`: `HdMaterial` adapter; pulls Hydra networks, normalizes them through `mxcppAdapter`, owns the compiled `mxcpp::EvalGraph`, and updates a stable renderer material-data handle.
+- `light.h/.cpp`: `HdLight` adapter. Pulls USD Lux parameters, transforms, textures, IES data, shaping, linking, and visible finite-light geometry into renderer-owned light data.
 - `implicitSurfaceSceneIndexPlugin.h/.cpp`: scene-index registration used to convert supported implicit primitives before they reach the mesh adapter.
 
 ### `renderer/`: path tracing
 
 - `renderer.h/.cpp`: `HdEmbreeRenderer`, the progressive path tracer. Holds camera/AOV/settings, lights, accumulation/adaptive buffers, and the main frame, tile, ray, lighting, medium, and path loops.
-- `context.h`: Embree hit user data: owning Rprim, primitive parameters, primvar samplers, material, uniform primvars, instance transforms, and light-linking data.
+- `context.h`: Embree hit user data: renderer geometry identity/properties, primitive IDs and parameters, primvar samplers, material-data handle, derivative caches, instance transforms, and light-linking data.
 - `config.h/.cpp`: startup defaults from `HDEMBREE_*` environment variables.
 - `sampling.h`: OpenQMC sequence selection, stable sample-domain keys, and `Fork`, `Split`, `Distrib`, and `Chain` operations.
 - `sampler.h/.cpp`: generic Hydra buffer and primvar type sampling.
 - `meshSamplers.h/.cpp`: constant, uniform, triangle vertex/face-varying, and subdivision primvar interpolation.
+- `light.h`: renderer-owned immutable-at-render-time light shapes, textures, IES/shaping distributions, transforms, linking tokens, and radiometric parameters.
+- `material.h`: stable renderer material handle referencing the currently compiled graph.
+- `renderBuffer.h`: narrow AOV output interface implemented by the Hydra render buffer adapter.
 - `lightSamplers.h/.cpp`: light selection, analytic/environment sampling, directional PDFs, and MIS-facing sample records.
 - `lightLinking.h`: category sets and light/shadow-link matching.
 - `medium.h/.cpp`: participating-medium state, phase functions, and free-flight utilities.
@@ -81,7 +84,7 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Some exist
 2. `CreateRprim/CreateSprim/CreateBprim` create mesh, material, light, and render-buffer adapters.
 3. During `HdRenderIndex::SyncAll()`, Hydra calls each adapter's `Sync()`: meshes pull geometry/primvars/bindings/instances; materials compile networks; lights pull Lux/texture/IES/linking data; instancers update transforms and contexts.
 4. Mutating adapters use `HdEmbreeRenderParam::AcquireSceneForEdit()` or `NotifySceneChange()`. This stops background rendering before shared state changes and increments the scene version.
-5. Mesh prototypes/instances are attached to the top-level `RTCScene`. `HdEmbreePrototypeContext` and `HdEmbreeInstanceContext` make synchronized primvars, materials, transforms, and linking data available at hits.
+5. Mesh prototypes/instances are attached to the top-level `RTCScene`. `HdEmbreePrototypeContext` and `HdEmbreeInstanceContext` make synchronized renderer data available at hits without retaining Hydra adapter objects.
 
 ### Frame execution
 
@@ -118,7 +121,7 @@ Read `renderer.h` for persistent state, `context.h` for hit data, `sampling.h` f
 ### Lights
 
 - Add Hydra support/creation tokens in `delegate/renderDelegate.cpp`.
-- Pull authored data in `HdEmbree_Light::Sync()`; place the runtime representation in `delegate/light.h`.
+- Pull authored data in `HdEmbree_Light::Sync()`; populate the runtime representation declared in `renderer/light.h`.
 - Add sampling and directional PDF logic in `renderer/lightSamplers.*`.
 - Add visible Embree geometry for finite camera-visible lights.
 - Keep radiance evaluation, sampling PDF, normalization, shaping, IES, texture orientation, and linking consistent.
@@ -136,7 +139,7 @@ Read `renderer.h` for persistent state, `context.h` for hit data, `sampling.h` f
 
 - Advertise/create Hydra primitives in `delegate/renderDelegate.cpp`.
 - Extract dirty data and build Embree state in the delegate adapter, acquiring `HdEmbreeRenderParam` before mutation.
-- Put hit-time state in renderer-owned contexts.
+- Put primitive IDs, culling/refinement flags, derivatives, material handles, and other hit-time state in renderer-owned contexts; do not make the renderer query the Hydra Rprim.
 - Add interpolation to `renderer/meshSamplers.*` for new primvar representations.
 
 ### AOVs
@@ -144,7 +147,7 @@ Read `renderer.h` for persistent state, `context.h` for hit data, `sampling.h` f
 - Accept/validate bindings in `delegate/renderPass.*`.
 - Store accumulation state in `renderer/renderer.h`.
 - Compute near the appropriate hit/path stage in `renderer.cpp`.
-- Add a format-aware `_Write*` path and preserve `delegate/renderBuffer.*` conversion/convergence semantics.
+- Add a format-aware `_Write*` path through `HdEmbreeRenderBufferInterface`; implement any new output operation in `delegate/renderBuffer.*`.
 
 ### Render settings
 

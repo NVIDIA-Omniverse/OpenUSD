@@ -49,6 +49,7 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
     SdfPath const& id = GetId();
 
     _evalGraph.reset();
+    _renderMaterial.evalGraph = nullptr;
 
     VtValue networkMapValue;
     try {
@@ -98,6 +99,7 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
         }
     }
 
+    _renderMaterial.evalGraph = _evalGraph.get();
     *dirtyBits = HdMaterial::Clean;
 }
 
@@ -105,7 +107,7 @@ void
 HdEmbreeMaterial::Finalize(HdRenderParam *renderParam)
 {
     // Render worker threads dereference this material (and its compiled
-    // eval graph) through raw pointers held in prototype contexts, so the
+    // eval graph) through the stable renderer handle held in prototype contexts, so the
     // render must be stopped before the render index deletes this sprim.
     // Bumping the scene version guarantees the render pass restarts only
     // after the affected rprims have re-synced their material bindings.
