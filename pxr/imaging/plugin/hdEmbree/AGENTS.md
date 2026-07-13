@@ -6,10 +6,11 @@ support, Hydra render settings, and stage-authored `UsdRender` product output.
 
 Use this file to get oriented quickly before changing code in this plugin.
 
-Important maintenance rule: agents MUST keep this `AGENTS.md` up to date as
-hdEmbree, RenderLab, usdrender, build tasks, tests, or surrounding USD/Hydra
-integration change. If a code change invalidates or adds workflow knowledge,
-update this file in the same change.
+Important maintenance rule: agents MUST keep `AGENTS.md`, `README.md`, and
+`ARCHITECTURE.md` up to date as hdEmbree, RenderLab, usdrender, build tasks,
+tests, or surrounding USD/Hydra integration change. Update all affected
+documents in the same change whenever behavior, architecture, extension
+points, or workflow knowledge changes.
 
 ## Current Build And Run Workflow
 
@@ -165,40 +166,47 @@ are ephemeral.
 Run `pixi run build` when profiling is finished to restore the normal Release
 plugin in the active Pixi environment.
 
+## Source Boundary
+
+- `delegate/` contains the Hydra-facing plugin, render delegate/pass, scene primitives, and AOV bridge.
+- `renderer/` contains the path tracer and its rendering, sampling, shading, texture, and third-party support components.
+- Dependencies should flow from `delegate/` to `renderer/`; new renderer code should not depend on Hydra-facing delegate implementation details.
+- `schema/` contains the authored and generated `TyphoonRenderSettingsAPI` schema files. Runtime plugin metadata remains in root `plugInfo.json`.
+
 ## Directory Map
 
-- `rendererPlugin.*`: Hydra plugin entry point. `HdEmbreeRendererPlugin`
+- `delegate/rendererPlugin.*`: Hydra plugin entry point. `HdEmbreeRendererPlugin`
   creates `HdEmbreeRenderDelegate` instances.
-- `renderDelegate.*`: render delegate factory, supported Hydra prim types,
+- `delegate/renderDelegate.*`: render delegate factory, supported Hydra prim types,
   render setting descriptors/defaults, Embree device and top-level scene
   ownership, global render thread, and shared `HdEmbreeRenderParam`.
-- `renderPass.*`: `HdEmbreeRenderPass`; consumes `HdRenderPassState`, active
+- `delegate/renderPass.*`: `HdEmbreeRenderPass`; consumes `HdRenderPassState`, active
   `RenderSettings` data, cameras, AOV bindings, convergence state, and active
   `RenderProduct` writing.
-- `renderer.*`: `HdEmbreeRenderer`; the progressive path tracer. Owns render
+- `renderer/renderer.*`: `HdEmbreeRenderer`; the progressive path tracer. Owns render
   loop state, camera state, AOV bindings, lights, sampling configuration,
   adaptive buffers, and Embree ray traversal calls.
-- `mesh.*`: `HdEmbreeMesh`; translates Hydra mesh data into Embree prototype
+- `delegate/mesh.*`: `HdEmbreeMesh`; translates Hydra mesh data into Embree prototype
   geometry and top-level instances.
-- `instancer.*`: Hydra instancer support for per-instance transforms and
+- `delegate/instancer.*`: Hydra instancer support for per-instance transforms and
   instance contexts.
-- `context.h`: Embree geometry user data used by ray hits: owning Rprim,
+- `renderer/context.h`: Embree geometry user data used by ray hits: owning Rprim,
   primvar samplers, primitive params, bound material, uniform primvars, and
   instance transforms.
-- `material.*`: `HdEmbreeMaterial`; pulls Hydra material networks and compiles
+- `delegate/material.*`: `HdEmbreeMaterial`; pulls Hydra material networks and compiles
   them into `mxcpp::EvalGraph` objects for CPU shading.
-- `mxcppAdapter.*` and `MaterialXCpp/`: MaterialX/OpenPBR/UsdPreviewSurface
+- `renderer/mxcppAdapter.*` and `renderer/MaterialXCpp/`: MaterialX/OpenPBR/UsdPreviewSurface
   conversion and evaluation.
-- `oiioTextureSystem.*`: texture lookup implementation used by MaterialXCpp.
-- `light.*`: Hydra/USD Lux light Sprim implementation. Handles cylinder, disk,
+- `renderer/oiioTextureSystem.*`: texture lookup implementation used by MaterialXCpp.
+- `delegate/light.*`: Hydra/USD Lux light Sprim implementation. Handles cylinder, disk,
   distant, dome, rect, and sphere lights; textures; IES shaping; and finite
   visible light geometry.
-- `lightSamplers.*`: direct-light and dome-light sampling helpers.
-- `meshSamplers.*`, `sampler.*`, `sampling.h`: primvar sampling and OpenQMC
+- `renderer/lightSamplers.*`: direct-light and dome-light sampling helpers.
+- `renderer/meshSamplers.*`, `renderer/sampler.*`, `renderer/sampling.h`: primvar sampling and OpenQMC
   sample-domain logic.
-- `renderBuffer.*`: CPU-backed Hydra render buffer implementation for AOVs.
-- `config.*`: startup defaults from `HDEMBREE_*` environment variables.
-- `schema.usda`, `generatedSchema.usda`, `plugInfo.json`: the
+- `delegate/renderBuffer.*`: CPU-backed Hydra render buffer implementation for AOVs.
+- `renderer/config.*`: startup defaults from `HDEMBREE_*` environment variables.
+- `schema/schema.usda`, `schema/generatedSchema.usda`, `plugInfo.json`: the
   `TyphoonRenderSettingsAPI` applied USD API schema and schema registration.
 - `testenv/`: focused C++ tests for render settings, sampling, light sampling,
   and basic rendering.
@@ -217,7 +225,7 @@ plugin in the active Pixi environment.
    `cameraAdapter.*`, `gprimAdapter.*`, and `pluginLightAdapter.*`.
 3. Hydra creates the `HdEmbreeRenderDelegate` through
    `HdEmbreeRendererPlugin`. The delegate advertises supported Rprim, Sprim,
-   and Bprim types in `renderDelegate.cpp`.
+   and Bprim types in `delegate/renderDelegate.cpp`.
 4. Hydra calls `HdRenderIndex::SyncAll()`. Dirty `HdEmbreeMesh`,
    `HdEmbree_Light`, `HdEmbreeMaterial`, and `HdEmbreeRenderBuffer` objects
    pull only their dirty data from `HdSceneDelegate` and update renderer-owned
@@ -263,9 +271,9 @@ hdEmbree supports two related settings paths:
   `TyphoonRenderSettingsAPI` attributes and Hydra namespaced settings.
 
 The canonical hdEmbree-specific USD attributes are in the `ty:` namespace.
-Tokens are defined in `HDEMBREE_RENDER_SETTINGS_TOKENS` in `renderDelegate.h`.
+Tokens are defined in `HDEMBREE_RENDER_SETTINGS_TOKENS` in `delegate/renderDelegate.h`.
 Defaults and UI labels are set in `HdEmbreeRenderDelegate::_Initialize()` in
-`renderDelegate.cpp`, mostly from `HdEmbreeConfig`.
+`delegate/renderDelegate.cpp`, mostly from `HdEmbreeConfig`.
 
 `HdEmbreeRenderDelegate::GetRenderSettingsNamespaces()` currently returns
 `ty` and the empty namespace. `ty` asks UsdImaging/Hydra for hdEmbree-specific
@@ -293,12 +301,12 @@ them into `HdEmbreeRenderer` through setters such as
 
 When adding or changing a render setting, update all relevant surfaces:
 
-- `renderDelegate.h`: token definition.
-- `renderDelegate.cpp`: descriptor label, default, and default population.
-- `config.h/.cpp`: environment variable-backed default if appropriate.
-- `renderPass.cpp`: bridge and `_Execute()` push into `HdEmbreeRenderer`.
-- `renderer.h/.cpp`: storage and runtime behavior.
-- `schema.usda` and `generatedSchema.usda`: `TyphoonRenderSettingsAPI`.
+- `delegate/renderDelegate.h`: token definition.
+- `delegate/renderDelegate.cpp`: descriptor label, default, and default population.
+- `renderer/config.h/.cpp`: environment variable-backed default if appropriate.
+- `delegate/renderPass.cpp`: bridge and `_Execute()` push into `HdEmbreeRenderer`.
+- `renderer/renderer.h/.cpp`: storage and runtime behavior.
+- `schema/schema.usda` and `schema/generatedSchema.usda`: `TyphoonRenderSettingsAPI`.
 - `plugInfo.json`: schema registration only if schema identity changes.
 - `testenv/testHdEmbreeRenderSettings.cpp`: descriptor, namespace, bridge, and
   auto-apply coverage.
@@ -325,7 +333,7 @@ surface derivatives.
 
 Primvars are pulled into `_primvarSourceMap` by `_UpdatePrimvarSources()` and
 `_UpdateComputedPrimvarSources()`, then converted into `HdEmbreePrimvarSampler`
-objects in `meshSamplers.*`. The sampler map is stored in
+objects in `renderer/meshSamplers.*`. The sampler map is stored in
 `HdEmbreePrototypeContext` so the renderer can evaluate primvars at ray hits.
 
 Sync methods may run in parallel. Only pull data whose dirty bit is set, and
@@ -336,7 +344,7 @@ released in `Finalize()`.
 
 `HdEmbreeMaterial::Sync()` pulls `HdMaterial::GetMaterialResource()` from the
 scene delegate. It accepts modern `HdMaterialNetwork2` and legacy material
-network maps, converts them in `mxcppAdapter.*`, and compiles an
+network maps, converts them in `renderer/mxcppAdapter.*`, and compiles an
 `mxcpp::EvalGraph`.
 
 MaterialXCpp supports EDF-only materials authored as `ND_uniform_edf`

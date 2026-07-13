@@ -4,9 +4,9 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/lightLinking.h"
-#include "pxr/imaging/plugin/hdEmbree/instancer.h"
-#include "pxr/imaging/plugin/hdEmbree/rendererPlugin.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/lightLinking.h"
+#include "pxr/imaging/plugin/hdEmbree/delegate/instancer.h"
+#include "pxr/imaging/plugin/hdEmbree/delegate/rendererPlugin.h"
 
 #include "pxr/imaging/hd/renderIndex.h"
 #include "pxr/imaging/hd/unitTestDelegate.h"

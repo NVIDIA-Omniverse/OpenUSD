@@ -4,8 +4,8 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/renderDelegate.h"
-#include "pxr/imaging/plugin/hdEmbree/renderBuffer.h"
+#include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
+#include "pxr/imaging/plugin/hdEmbree/delegate/renderBuffer.h"
 
 #include "pxr/base/gf/vec2i.h"
 #include "pxr/imaging/hd/renderIndex.h"

@@ -212,6 +212,7 @@ function(pxr_library NAME)
     set(oneValueArgs
         TYPE
         PRECOMPILED_HEADER_NAME
+        SCHEMA_CLASSES_FILE
     )
     set(multiValueArgs
         PUBLIC_CLASSES
@@ -274,7 +275,11 @@ function(pxr_library NAME)
 
     # If this is a schema library, add schema classes
     if (args_INCLUDE_SCHEMA_FILES)
-        set(filePath "generatedSchema.classes.txt")
+        if (args_SCHEMA_CLASSES_FILE)
+            set(filePath "${args_SCHEMA_CLASSES_FILE}")
+        else()
+            set(filePath "generatedSchema.classes.txt")
+        endif()
 
         # Register a dependency so that cmake will regenerate the build
         # system if generatedSchema.classes.txt changes
