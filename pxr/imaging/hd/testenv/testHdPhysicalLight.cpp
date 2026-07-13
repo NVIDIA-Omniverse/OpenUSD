@@ -6,16 +6,22 @@
 //
 #include "pxr/imaging/hd/light.h"
 
+#include "pxr/base/arch/fileSystem.h"
 #include "pxr/base/gf/matrix4d.h"
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/vt/value.h"
 #include "pxr/imaging/hd/sceneDelegate.h"
 #include "pxr/imaging/hd/tokens.h"
+#include "pxr/imaging/hio/image.h"
+#include "pxr/usd/sdf/assetPath.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <iostream>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -82,11 +88,11 @@ _IsClose(float actual, float expected, float tolerance = 1.0e-5f)
 bool
 _ExpectScale(
     _Delegate* delegate, TfToken const& lightType, float expected,
-    char const* description)
+    char const* description, float tolerance = 1.0e-5f)
 {
     const float actual = HdLight::ComputePhysicalScalingFactor(
         delegate, _lightPath, lightType);
-    if (_IsClose(actual, expected)) {
+    if (_IsClose(actual, expected, tolerance)) {
         return true;
     }
     std::cerr << description << ": expected " << expected
@@ -137,6 +143,63 @@ _TestSceneUnitsAndTransform()
         &delegate, HdSprimTypeTokens->rectLight,
         100.0f / (_pi * 0.0001f),
         "scene-unit and transform-scaled rect power");
+}
+
+bool
+_TestRectTextureUsesCombinedEmissionLuminance()
+{
+    const std::string dir = ArchMakeTmpSubdir(
+        ArchGetTmpDir(), "testHdPhysicalLight_");
+    if (dir.empty()) {
+        std::cerr << "could not create temporary texture directory\n";
+        return false;
+    }
+    const std::string path = dir + "/rect.exr";
+    std::vector<GfVec3f> pixels = {
+        GfVec3f(1.0f, 0.0f, 0.0f),
+        GfVec3f(0.0f, 1.0f, 0.0f),
+    };
+    HioImage::StorageSpec storage;
+    storage.width = 2;
+    storage.height = 1;
+    storage.depth = 1;
+    storage.format = HioFormatFloat32Vec3;
+    storage.data = pixels.data();
+    HioImageSharedPtr image = HioImage::OpenForWriting(path);
+    if (!image || !image->Write(storage)) {
+        std::cerr << "could not write colored rect texture " << path << "\n";
+        std::remove(path.c_str());
+        ArchRmDir(dir.c_str());
+        return false;
+    }
+    image.reset();
+
+    _Delegate delegate;
+    _SetUnitEmission(&delegate);
+    delegate.Set(HdLightTokens->width, VtValue(2.0f));
+    delegate.Set(HdLightTokens->height, VtValue(3.0f));
+    delegate.Set(HdLightTokens->photometricPower, VtValue(600.0f));
+    delegate.Set(
+        HdLightTokens->color, VtValue(GfVec3f(1.0f, 0.25f, 0.0f)));
+    delegate.Set(
+        HdLightTokens->textureFile,
+        VtValue(SdfAssetPath(path, path)));
+
+    const GfVec3f meanTextureColor(0.5f, 0.5f, 0.0f);
+    const GfVec3f emission(1.0f, 0.25f, 0.0f);
+    const GfVec3f texturedEmission = GfCompMult(emission, meanTextureColor);
+    const float texturedLuminance =
+        0.2126f * texturedEmission[0] +
+        0.7152f * texturedEmission[1] +
+        0.0722f * texturedEmission[2];
+    const bool result = _ExpectScale(
+        &delegate, HdSprimTypeTokens->rectLight,
+        600.0f / (_pi * 6.0f * texturedLuminance),
+        "textured rect power", 1.0e-4f);
+
+    std::remove(path.c_str());
+    ArchRmDir(dir.c_str());
+    return result;
 }
 
 bool
@@ -207,12 +270,14 @@ main()
 {
     const bool defaultsAndAreaPower = _TestDefaultsAndAreaPower();
     const bool sceneUnitsAndTransform = _TestSceneUnitsAndTransform();
+    const bool rectTextureLuminance =
+        _TestRectTextureUsesCombinedEmissionLuminance();
     const bool areaIlluminancePrecedence = _TestAreaIlluminancePrecedence();
     const bool distantNormalization = _TestDistantNormalization();
     const bool texturelessDome = _TestTexturelessDome();
     return defaultsAndAreaPower && sceneUnitsAndTransform &&
-                   areaIlluminancePrecedence && distantNormalization &&
-                   texturelessDome
+                   rectTextureLuminance && areaIlluminancePrecedence &&
+                   distantNormalization && texturelessDome
         ? 0
         : 1;
 }

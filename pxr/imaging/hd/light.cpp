@@ -712,17 +712,25 @@ _GetImageColorSpaceName(HioImageSharedPtr const& image)
     return GfColorSpaceNames->LinearRec709;
 }
 
-float
-_GetTextureLuminance(GfVec3f const& rgb, TfToken const& colorSpaceName)
+GfVec3f
+_ConvertTextureToLinearRec709(
+    GfVec3f const& rgb,
+    TfToken const& colorSpaceName)
 {
     if (colorSpaceName.IsEmpty() ||
         colorSpaceName == GfColorSpaceNames->LinearRec709) {
-        return _LinearRec709Luminance(rgb);
+        return rgb;
     }
 
-    const GfColorSpace sourceColorSpace(colorSpaceName);
-    const GfColor xyz = _linearXyzD65ColorSpace.Convert(sourceColorSpace, rgb);
-    return xyz.GetRGB()[1];
+    return _linearRec709ColorSpace.Convert(
+        GfColorSpace(colorSpaceName), rgb).GetRGB();
+}
+
+float
+_GetTextureLuminance(GfVec3f const& rgb, TfToken const& colorSpaceName)
+{
+    return _LinearRec709Luminance(
+        _ConvertTextureToLinearRec709(rgb, colorSpaceName));
 }
 
 float
@@ -732,6 +740,80 @@ _SanitizeWeight(float value)
         return 0.0f;
     }
     return value;
+}
+
+GfVec3f
+_GetEmissionRgb(
+    HdSceneDelegate* sceneDelegate,
+    SdfPath const& id,
+    TfToken const& lightType)
+{
+    const bool isDistant = lightType == HdSprimTypeTokens->distantLight;
+    GfVec3f emission = _GetVec3fParam(
+        sceneDelegate, id, HdLightTokens->color, GfVec3f(1.0f));
+    emission *= _GetFloatParam(
+        sceneDelegate, id, HdLightTokens->intensity,
+        isDistant ? 50000.0f : 1.0f);
+    emission *= _GetFloatParam(
+        sceneDelegate, id, HdLightTokens->diffuse, 1.0f);
+    emission *= std::pow(2.0f, _GetFloatParam(
+        sceneDelegate, id, HdLightTokens->exposure, 0.0f));
+
+    if (_GetBoolParam(
+            sceneDelegate, id, HdLightTokens->enableColorTemperature, false)) {
+        emission = GfCompMult(emission, _BlackbodyTemperatureAsRgb(
+            _GetFloatParam(
+                sceneDelegate, id, HdLightTokens->colorTemperature, 6500.0f)));
+    }
+    return emission;
+}
+
+bool
+_ReadRectTextureMeanColor(std::string const& path, GfVec3f* outMeanColor)
+{
+    if (!outMeanColor || path.empty()) {
+        return false;
+    }
+
+    HioImageSharedPtr image = HioImage::OpenForReading(path);
+    if (!image) {
+        return false;
+    }
+
+    const int width = image->GetWidth();
+    const int height = image->GetHeight();
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+
+    std::vector<GfVec3f> pixels(static_cast<size_t>(width) * height);
+    HioImage::StorageSpec storage;
+    storage.width = width;
+    storage.height = height;
+    storage.depth = 1;
+    storage.format = HioFormatFloat32Vec3;
+    storage.data = pixels.data();
+
+    if (!image->Read(storage)) {
+        TF_WARN("Could not read image %s", path.c_str());
+        return false;
+    }
+
+    const TfToken colorSpaceName = _GetImageColorSpaceName(image);
+    GfVec3d colorSum(0.0);
+    for (GfVec3f const& pixel : pixels) {
+        const GfVec3f linearPixel =
+            _ConvertTextureToLinearRec709(pixel, colorSpaceName);
+        for (int channel = 0; channel < 3; ++channel) {
+            if (std::isfinite(linearPixel[channel])) {
+                colorSum[channel] += std::max(0.0f, linearPixel[channel]);
+            }
+        }
+    }
+
+    *outMeanColor = GfVec3f(
+        colorSum / static_cast<double>(pixels.size()));
+    return true;
 }
 
 bool
@@ -835,24 +917,7 @@ HdLight::EmissionLuminanceFactor(
     SdfPath const& id,
     TfToken const& lightType)
 {
-    const bool isDistant = lightType == HdSprimTypeTokens->distantLight;
-    GfVec3f emission = _GetVec3fParam(
-        sceneDelegate, id, HdLightTokens->color, GfVec3f(1.0f));
-    emission *= _GetFloatParam(
-        sceneDelegate, id, HdLightTokens->intensity,
-        isDistant ? 50000.0f : 1.0f);
-    emission *= _GetFloatParam(
-        sceneDelegate, id, HdLightTokens->diffuse, 1.0f);
-    emission *= std::pow(2.0f, _GetFloatParam(
-        sceneDelegate, id, HdLightTokens->exposure, 0.0f));
-
-    if (_GetBoolParam(
-            sceneDelegate, id, HdLightTokens->enableColorTemperature, false)) {
-        emission = GfCompMult(emission, _BlackbodyTemperatureAsRgb(
-            _GetFloatParam(
-                sceneDelegate, id, HdLightTokens->colorTemperature, 6500.0f)));
-    }
-
+    const GfVec3f emission = _GetEmissionRgb(sceneDelegate, id, lightType);
     const float luminance = GfDot(emission, _Rec709LuminanceComponents());
     return luminance > 0.0f ? 1.0f / luminance : 0.0f;
 }
@@ -903,6 +968,34 @@ HdLight::DistantLightIlluminanceFactor(
     const double geometricNormalizer = _DistantGeometricNormalizer(params);
     return geometricNormalizer > 0.0
         ? static_cast<float>(1.0 / geometricNormalizer)
+        : 0.0f;
+}
+
+/* static */
+float
+HdLight::RectTextureLuminanceFactor(
+    HdSceneDelegate* sceneDelegate,
+    SdfPath const& id)
+{
+    const std::string texturePath = _GetDomeTexturePath(sceneDelegate, id);
+    if (texturePath.empty()) {
+        return 1.0f;
+    }
+
+    GfVec3f meanTextureColor(0.0f);
+    if (!_ReadRectTextureMeanColor(texturePath, &meanTextureColor)) {
+        return 1.0f;
+    }
+
+    const GfVec3f emission = _GetEmissionRgb(
+        sceneDelegate, id, HdSprimTypeTokens->rectLight);
+    const float emissionLuminance =
+        GfDot(emission, _Rec709LuminanceComponents());
+    const float texturedEmissionLuminance = GfDot(
+        GfCompMult(emission, meanTextureColor),
+        _Rec709LuminanceComponents());
+    return emissionLuminance > 0.0f && texturedEmissionLuminance > 0.0f
+        ? emissionLuminance / texturedEmissionLuminance
         : 0.0f;
 }
 
@@ -992,6 +1085,9 @@ HdLight::ComputePhysicalScalingFactor(
             float scale = params.photometricIlluminance;
             scale *= EmissionLuminanceFactor(sceneDelegate, id, lightType);
             scale *= AreaLightIlluminanceFactor(sceneDelegate, id, lightType);
+            if (lightType == HdSprimTypeTokens->rectLight) {
+                scale *= RectTextureLuminanceFactor(sceneDelegate, id);
+            }
             return scale;
         }
 
@@ -1000,6 +1096,9 @@ HdLight::ComputePhysicalScalingFactor(
             scale *= EmissionLuminanceFactor(sceneDelegate, id, lightType);
             scale *= AreaLightPowerFactor(sceneDelegate, id, lightType);
             scale *= IesPowerFactor(sceneDelegate, id);
+            if (lightType == HdSprimTypeTokens->rectLight) {
+                scale *= RectTextureLuminanceFactor(sceneDelegate, id);
+            }
             return scale;
         }
 

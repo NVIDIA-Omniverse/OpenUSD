@@ -414,6 +414,7 @@ pxr_build_test(testHdTypes
 pxr_build_test(testHdPhysicalLight
    LIBRARIES
        hd
+       hio
 
    CPPFILES
        testenv/testHdPhysicalLight.cpp

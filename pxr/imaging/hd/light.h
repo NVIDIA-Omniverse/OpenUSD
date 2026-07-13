@@ -147,6 +147,13 @@ public:
         HdSceneDelegate* sceneDelegate,
         SdfPath const& id);
 
+    /// Returns the reciprocal mean luminance factor for a rect texture.
+    /// Textureless rect lights and unreadable textures return 1.0.
+    HD_API
+    static float RectTextureLuminanceFactor(
+        HdSceneDelegate* sceneDelegate,
+        SdfPath const& id);
+
     /// Returns the reciprocal upper-hemisphere illuminance factor for a dome
     /// texture. Textureless domes use the constant-color value 1 / pi.
     HD_API
