@@ -406,6 +406,14 @@ public:
     uint64_t GetSssIntersectionCount() const;
 
 private:
+    /// Result produced by exactly one selected camera-ray integrator.
+    struct _PixelSampleResult {
+        /// First Embree intersection, retained unchanged for geometric AOVs.
+        RTCRayHit primaryHit{};
+        /// Linear, unexposed RGBA radiance; alpha is one when computed.
+        GfVec4f color = GfVec4f(0.0f);
+    };
+
     /// \brief Prepare shared state immediately before tracing.
     ///
     /// Resets counters, commits the borrowed scene, validates and maps AOVs,
@@ -464,31 +472,37 @@ private:
                       uint32_t baseSeed, unsigned int stride,
                       size_t tileStart, size_t tileEnd);
 
-    /// \brief Trace one camera ray and write all active AOVs for its pixel.
+    /// \brief Evaluate and write one selected pixel sample.
     ///
+    /// Selects the lit or unlit integrator when radiance is required; an
+    /// AOV-only sample performs just one primary intersection. The selected
+    /// integrator owns its camera intersection and returns the retained hit.
     /// \param x Render-buffer x coordinate within the active data window.
     /// \param y Render-buffer y coordinate within the active data window.
-    /// \param origin Finite world-space ray origin.
-    /// \param dir Normalized finite world-space ray direction.
+    /// \param origin Finite world-space camera-ray origin.
+    /// \param dir Normalized finite world-space camera-ray direction.
     /// \param sampler Per-pixel sampler that remains valid for the call.
     /// \param rayDiff Pixel-footprint differentials for this camera ray.
-    void _TraceRay(unsigned int x, unsigned int y,
-                   GfVec3f const& origin, GfVec3f const& dir,
-                   HdEmbreeSampler const& sampler,
-                   HdEmbreeRayDifferential const& rayDiff);
+    void _EvaluatePixelSample(
+        unsigned int x, unsigned int y,
+        GfVec3f const& origin, GfVec3f const& dir,
+        HdEmbreeSampler const& sampler,
+        HdEmbreeRayDifferential const& rayDiff);
 
-    /// \brief Evaluate the color sample represented by an Embree hit.
+    /// \brief Integrate a single-hit camera-light and ambient-occlusion sample.
     ///
-    /// \param rayHit Initialized camera-ray result, including a valid miss
-    /// sentinel or valid renderer-owned geometry user data.
-    /// \param rayDiff Differential state associated with \p rayHit.
-    /// \param sampler Per-pixel sampler used to derive path sample domains.
-    /// \param clearColor RGBA color used when the ray misses visible domes.
-    /// \return Linear RGBA sample; alpha is one.
-    GfVec4f _ComputeColor(RTCRayHit const& rayHit,
-                          HdEmbreeRayDifferential const& rayDiff,
-                          HdEmbreeSampler const& sampler,
-                          GfVec4f const& clearColor);
+    /// This integrator owns the primary intersection and performs no indirect
+    /// light transport.
+    /// \param origin Finite world-space camera-ray origin.
+    /// \param dir Normalized finite world-space camera-ray direction.
+    /// \param rayDiff Initial pixel-footprint differential state.
+    /// \param domain Root sample domain used for ambient occlusion.
+    /// \return Unlit radiance and the unchanged primary intersection.
+    _PixelSampleResult _IntegrateUnlit(
+        GfVec3f const& origin,
+        GfVec3f const& dir,
+        HdEmbreeRayDifferential const& rayDiff,
+        HdEmbreeSampleDomain const& domain);
 
     /// \brief Compute camera or normalized clip depth for a hit.
     ///
@@ -654,14 +668,16 @@ private:
         HdEmbreeSampleDomain const& domain,
         _VolumeTransmissionState* state) const;
 
-    /// \brief Trace a complete multi-bounce path with MIS.
+    /// \brief Integrate a complete multi-bounce camera path with MIS.
     ///
+    /// Owns the primary intersection and handles camera/secondary light hits
+    /// and misses in the same path loop with segment-specific policy.
     /// \param origin Finite world-space camera-ray origin.
     /// \param dir Normalized finite world-space camera-ray direction.
     /// \param rayDiff Initial pixel-footprint differential state.
     /// \param domain Root path sample domain with lifetime covering the call.
-    /// \return Linear RGB radiance reaching the camera.
-    GfVec3f _TracePath(
+    /// \return Path radiance and the unchanged primary intersection.
+    _PixelSampleResult _IntegratePath(
         GfVec3f const& origin,
         GfVec3f const& dir,
         HdEmbreeRayDifferential const& rayDiff,

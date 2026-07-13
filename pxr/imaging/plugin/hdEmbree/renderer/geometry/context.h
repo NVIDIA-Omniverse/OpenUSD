@@ -29,7 +29,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 /// \class HdEmbreePrototypeContext
 ///
 /// A small bit of state attached to each bit of prototype geometry in embree,
-/// for the benefit of HdEmbreeRenderer::_TraceRay.
+/// for renderer integrators and geometric AOV evaluation.
 ///
 struct HdEmbreePrototypeContext
 {
@@ -63,7 +63,7 @@ struct HdEmbreePrototypeContext
 /// \class HdEmbreeInstanceContext
 ///
 /// A small bit of state attached to each bit of instanced geometry in embree,
-/// for the benefit of HdEmbreeRenderer::_TraceRay.
+/// for renderer integrators and geometric AOV evaluation.
 ///
 struct HdEmbreeInstanceContext
 {

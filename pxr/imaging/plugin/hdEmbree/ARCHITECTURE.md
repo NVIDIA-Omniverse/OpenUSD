@@ -51,10 +51,13 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
   and ray differentials. Tile/pixel traversal remains in `renderer.cpp`.
 - `aov/aovOutput.cpp`: AOV binding validation, clear/reset behavior, adaptive
   variance tracking, hit AOV evaluation, and format-specific writers.
-- `integrator/pathIntegrator.cpp`: the main multi-bounce surface/volume path
-  loop, throughput, MIS state, SSS transitions, and Russian roulette.
-- `integrator/surfaceShading.cpp`: hit normals and derivatives, MaterialX
-  shading-context construction, material evaluation, beauty color, and AO.
+- `integrator/pathIntegrator.cpp`: the lit multi-bounce integrator. It owns
+  the camera intersection, all later surface/volume segments, emitter and
+  environment hits, throughput, MIS, SSS, and Russian roulette.
+- `integrator/unlitIntegrator.cpp`: the single-hit unlit integrator. It owns its
+  camera intersection, MaterialX base color, camera-light shading, and AO.
+- `integrator/surfaceShading.cpp`: shared hit-normal, derivative, MaterialX
+  shading-context, and visibility-closure helpers.
 - `integrator/lighting.cpp`: surface and participating-medium direct-light MIS.
 - `integrator/visibility.cpp`: linked and transparent shadow traversal plus
   finite-light hit evaluation.
@@ -127,17 +130,20 @@ than reading one monolithic translation unit:
    cancellation, preview stride, and adaptive-pixel filtering. It calls
    `_SampleCameraRay()` in `camera/camera.cpp` for camera/lens sampling, primary
    rays, and ray differentials.
-3. `_TraceRay()` in `aov/aovOutput.cpp`: first Embree intersection, adaptive
-   sample update, and AOV dispatch.
-4. `_ComputeColor()` in `integrator/surfaceShading.cpp`: miss/light handling,
-   unlit fallback, and entry into the path integrator.
-5. `_TracePath()` in `integrator/pathIntegrator.cpp`: main bounce loop,
-   throughput, medium state, material closures, direct light, BSDF sampling,
-   transmission/SSS, and Russian roulette.
-6. `integrator/lighting.cpp`, `integrator/visibility.cpp`, and
-   `integrator/sss.cpp`: the principal branches called by the path loop.
+3. `_EvaluatePixelSample()` in `renderer.cpp`: selects exactly one radiance
+   integrator, then updates adaptive variance and dispatches AOV writers using
+   the selected integrator's retained primary hit. Geometric-AOV-only samples
+   take a primary-intersection fast path.
+4. `_IntegratePath()` in `integrator/pathIntegrator.cpp`: lit integration. Its
+   first loop iteration traces and retains the camera hit; the same loop handles
+   primary and secondary finite lights, camera background, indirect environment,
+   material closures, direct light, BSDF/volume/SSS transport, and roulette.
+5. `_IntegrateUnlit()` in `integrator/unlitIntegrator.cpp`: independent
+   single-hit integration for material base color, camera light, and AO.
+6. `integrator/surfaceShading.cpp`, `lighting.cpp`, `visibility.cpp`, and
+   `sss.cpp`: shared shading and transport branches used by the integrators.
 7. `_WriteColor()` and the other writers in `aov/aovOutput.cpp`: conversion of
-   samples into Hydra AOV storage.
+   the returned color and retained primary hit into Hydra AOV storage.
 
 Read `renderer.h` for persistent state and function contracts,
 `geometry/context.h` for hit data, `sampling/sampling.h` for random domains,

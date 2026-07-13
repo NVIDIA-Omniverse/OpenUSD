@@ -527,39 +527,6 @@ HdEmbreeRenderer::_UpdateVariance(
     }
 }
 
-void
-HdEmbreeRenderer::_TraceRay(unsigned int x, unsigned int y,
-                            GfVec3f const& origin, GfVec3f const& dir,
-                            HdEmbreeSampler const& sampler,
-                            HdEmbreeRayDifferential const& rayDiff)
-{
-    // Intersect the camera ray.
-    RTCRayHit rayHit; // EMBREE_FIXME: use RTCRay for occlusion rays
-    rayHit.ray.flags = 0;
-    _PopulateRayHit(&rayHit, origin, dir, 0.0f,
-                    std::numeric_limits<float>::max(),
-                    HdEmbree_RayMask::Camera);
-    {
-        rtcIntersect1(_scene, &rayHit);
-    }
-
-    GfVec4f colorSample(0.0f);
-    if (_needColor) {
-        colorSample = _ComputeColor(rayHit, rayDiff, sampler, _colorClearValue);
-    }
-
-    if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
-        GfVec3f rgb(colorSample[0], colorSample[1], colorSample[2]);
-        _UpdateVariance(this, x, y, rgb);
-    }
-
-    for (const auto& writer : _aovWriters) {
-        if (!writer.buffer->IsConverged()) {
-            writer.writeFn(this, writer, rayHit, colorSample, x, y);
-        }
-    }
-}
-
 bool
 HdEmbreeRenderer::_ComputeId(RTCRayHit const& rayHit, TfToken const& idType,
                              int32_t *id)

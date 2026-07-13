@@ -355,6 +355,12 @@ evals` 0.57/sample -> 0 with lighting on, and exact `oiiotool --diff`
 matches for both the lit scene and the `HDEMBREE_ENABLE_LIGHTING=false`
 fallback. All hdEmbree/MaterialXCpp unit tests pass.
 
+Follow-up (2026-07-13): the renderer now selects `_IntegratePath` or
+`_IntegrateUnlit` before intersection. Each integrator owns its camera hit and
+returns that retained hit with its radiance for AOV evaluation. This removes the
+remaining duplicate primary intersection from the lit path; the names above
+describe the historical implementation measured by this optimization.
+
 ## Validation Rules
 
 For each optimization:

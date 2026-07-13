@@ -721,6 +721,41 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
     }
 }
 
+void
+HdEmbreeRenderer::_EvaluatePixelSample(
+    unsigned int x, unsigned int y,
+    GfVec3f const& origin, GfVec3f const& dir,
+    HdEmbreeSampler const& sampler,
+    HdEmbreeRayDifferential const& rayDiff)
+{
+    _PixelSampleResult result;
+    if (_needColor) {
+        result = _enableLighting
+            ? _IntegratePath(origin, dir, rayDiff, sampler.RootDomain())
+            : _IntegrateUnlit(origin, dir, rayDiff, sampler.RootDomain());
+    } else {
+        // Geometric AOV-only renders need the primary hit but no radiance.
+        result.primaryHit.ray.flags = 0;
+        _PopulateRayHit(
+            &result.primaryHit, origin, dir, 0.0f,
+            std::numeric_limits<float>::max(),
+            HdEmbree_RayMask::Camera);
+        rtcIntersect1(_scene, &result.primaryHit);
+    }
+
+    if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
+        const GfVec3f rgb(
+            result.color[0], result.color[1], result.color[2]);
+        _UpdateVariance(this, x, y, rgb);
+    }
+
+    for (const auto& writer : _aovWriters) {
+        if (!writer.buffer->IsConverged()) {
+            writer.writeFn(
+                this, writer, result.primaryHit, result.color, x, y);
+        }
+    }
+}
 
 void
 HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
@@ -801,8 +836,8 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
                     x, y, minX, minY, sampler,
                     origin, dir, rayDiff);
 
-                // Trace the ray.
-                _TraceRay(x, y, origin, dir, sampler, rayDiff);
+                // Evaluate and write this pixel sample.
+                _EvaluatePixelSample(x, y, origin, dir, sampler, rayDiff);
             }
         }
     }

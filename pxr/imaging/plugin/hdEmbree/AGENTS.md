@@ -184,13 +184,17 @@ plugin in the active Pixi environment.
   `RenderSettings` data, cameras, AOV bindings, convergence state, and active
   `RenderProduct` writing.
 - `renderer/renderer.*`: `HdEmbreeRenderer` façade, persistent frame/settings
-  state, and progressive preview/full-resolution orchestration.
+  state, progressive preview/full-resolution orchestration, and per-pixel
+  integrator selection/AOV dispatch.
 - `renderer/camera/camera.cpp`: camera/lens sampling, primary-ray construction, and ray differentials; tile traversal stays in `renderer/renderer.cpp`.
 - `renderer/aov/aovOutput.cpp`: AOV validation, accumulation, adaptive convergence,
   hit outputs, and writer dispatch.
-- `renderer/integrator/pathIntegrator.cpp`: main multi-bounce path loop.
+- `renderer/integrator/pathIntegrator.cpp`: lit multi-bounce integrator; owns
+  its primary hit and every later path segment.
+- `renderer/integrator/unlitIntegrator.cpp`: independent single-hit camera-light
+  and ambient-occlusion integrator.
 - `renderer/integrator/surfaceShading.cpp`, `lighting.cpp`, and `visibility.cpp`:
-  material evaluation, direct-light MIS, and linked/transparent shadow traversal.
+  shared shading contexts, direct-light MIS, and linked/transparent traversal.
 - `renderer/rendererImpl.h`: private shared implementation helpers; do not treat it
   as an installed API or extension point.
 - `delegate/mesh.*`: `HdEmbreeMesh`; translates Hydra mesh data into Embree prototype

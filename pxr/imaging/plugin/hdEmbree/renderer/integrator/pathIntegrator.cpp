@@ -338,13 +338,15 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
     return _VolumeTransmissionResult::ContinueSurface;
 }
 
-GfVec3f
-HdEmbreeRenderer::_TracePath(
+HdEmbreeRenderer::_PixelSampleResult
+HdEmbreeRenderer::_IntegratePath(
     GfVec3f const& origin,
     GfVec3f const& dir,
     HdEmbreeRayDifferential const& rayDiff,
     HdEmbreeSampleDomain const& domain) const
 {
+    _PixelSampleResult result;
+    bool primaryHitCaptured = false;
     HdEmbreeRayDifferential currentRayDiff = rayDiff;
     GfVec3f radiance(0.0f);
     GfVec3f throughput(1.0f);
@@ -408,6 +410,11 @@ HdEmbreeRenderer::_TracePath(
                                 ? HdEmbree_RayMask::Light
                                 : HdEmbree_RayMask::Camera);
             rtcIntersect1(_scene, &rayHit);
+        }
+
+        if (!primaryHitCaptured) {
+            result.primaryHit = rayHit;
+            primaryHitCaptured = true;
         }
 
         HdEmbreeLightSampler::LightSample finiteLightHit{};
@@ -528,8 +535,32 @@ HdEmbreeRenderer::_TracePath(
             break;
         }
 
-        // --- Miss: infinite light contribution ---
+        // --- Miss: camera background or indirect environment ---
         if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
+            if (isFirstBounce) {
+                if (_lights.GetDomes().empty() ||
+                    !_domeLightCameraVisibility) {
+                    radiance = GfVec3f(
+                        _colorClearValue[0],
+                        _colorClearValue[1],
+                        _colorClearValue[2]);
+                } else {
+                    // Camera rays see only explicitly visible dome lights.
+                    // Distant lights illuminate the scene but are not a
+                    // camera background.
+                    for (auto* dome : _lights.GetDomes()) {
+                        if (!dome->visible) {
+                            continue;
+                        }
+                        const auto ls =
+                            HdEmbreeLightSampler::EvaluateDomeLightDirection(
+                                *dome, rayDir);
+                        radiance += ls.Li;
+                    }
+                }
+                break;
+            }
+
             for (auto const& it : _lights.GetLights()) {
                 if (!it.second) {
                     continue;
@@ -1349,7 +1380,12 @@ HdEmbreeRenderer::_TracePath(
         rayDir = wi;
     }
 
-    return radiance;
+    result.color = GfVec4f(
+        std::max(0.0f, radiance[0]),
+        std::max(0.0f, radiance[1]),
+        std::max(0.0f, radiance[2]),
+        1.0f);
+    return result;
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE
