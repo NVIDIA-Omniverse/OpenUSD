@@ -6,7 +6,7 @@
 //
 #include "pxr/imaging/plugin/hdEmbree/delegate/mesh.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/context.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/context.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/instancer.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/material.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderParam.h"

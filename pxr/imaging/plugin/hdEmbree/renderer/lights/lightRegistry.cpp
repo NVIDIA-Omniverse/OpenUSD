@@ -1,0 +1,140 @@
+//
+// Copyright 2018 Pixar
+//
+// Licensed under the terms set forth in the LICENSE.txt file available at
+// https://openusd.org/license.
+//
+#include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightRegistry.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
+
+#include <algorithm>
+#include <iterator>
+
+PXR_NAMESPACE_OPEN_SCOPE
+
+void
+HdEmbreeLightRegistry::Add(
+    SdfPath const& path,
+    HdEmbree_LightData const* light)
+{
+    std::scoped_lock lock(_mutex);
+
+    auto eraseDomeEntries = [this](HdEmbree_LightData const* toRemove) {
+        if (toRemove) {
+            _domes.erase(
+                std::remove(_domes.begin(), _domes.end(), toRemove),
+                _domes.end());
+        }
+    };
+
+    auto it = _lights.find(path);
+    if (it != _lights.end() && it->second == light) {
+        if (!light ||
+            !std::holds_alternative<HdEmbree_Dome>(light->lightVariant)) {
+            return;
+        }
+        const auto firstDome = std::find(_domes.begin(), _domes.end(), light);
+        if (firstDome != _domes.end() &&
+            std::find(std::next(firstDome), _domes.end(), light) ==
+                _domes.end()) {
+            return;
+        }
+        eraseDomeEntries(light);
+    } else {
+        if (it != _lights.end()) {
+            eraseDomeEntries(it->second);
+            it->second = light;
+        } else {
+            _lights.emplace(path, light);
+        }
+        eraseDomeEntries(light);
+    }
+
+    if (light && std::holds_alternative<HdEmbree_Dome>(light->lightVariant)) {
+        _domes.push_back(light);
+    }
+}
+
+void
+HdEmbreeLightRegistry::Remove(
+    SdfPath const& path,
+    HdEmbree_LightData const* light)
+{
+    std::scoped_lock lock(_mutex);
+    _lights.erase(path);
+    _domes.erase(
+        std::remove(_domes.begin(), _domes.end(), light),
+        _domes.end());
+}
+
+void
+HdEmbreeLightRegistry::AddGeometry(
+    unsigned int geometryId,
+    HdEmbree_LightData const* light)
+{
+    if (geometryId == RTC_INVALID_GEOMETRY_ID || !light) {
+        return;
+    }
+    std::scoped_lock lock(_mutex);
+    _geometryLights[geometryId] = light;
+}
+
+void
+HdEmbreeLightRegistry::RemoveGeometry(
+    unsigned int geometryId,
+    HdEmbree_LightData const* light)
+{
+    if (geometryId == RTC_INVALID_GEOMETRY_ID) {
+        return;
+    }
+    std::scoped_lock lock(_mutex);
+    auto it = _geometryLights.find(geometryId);
+    if (it != _geometryLights.end() && (!light || it->second == light)) {
+        _geometryLights.erase(it);
+    }
+}
+
+HdEmbree_LightData const*
+HdEmbreeLightRegistry::FindGeometry(unsigned int geometryId) const
+{
+    if (geometryId == RTC_INVALID_GEOMETRY_ID) {
+        return nullptr;
+    }
+    std::scoped_lock lock(_mutex);
+    auto it = _geometryLights.find(geometryId);
+    return it == _geometryLights.end() ? nullptr : it->second;
+}
+
+void
+HdEmbreeRenderer::AddLight(
+    SdfPath const& lightPath,
+    HdEmbree_LightData const* light)
+{
+    _lights.Add(lightPath, light);
+}
+
+void
+HdEmbreeRenderer::RemoveLight(
+    SdfPath const& lightPath,
+    HdEmbree_LightData const* light)
+{
+    _lights.Remove(lightPath, light);
+}
+
+void
+HdEmbreeRenderer::AddLightGeometry(
+    unsigned int geometryId,
+    HdEmbree_LightData const* light)
+{
+    _lights.AddGeometry(geometryId, light);
+}
+
+void
+HdEmbreeRenderer::RemoveLightGeometry(
+    unsigned int geometryId,
+    HdEmbree_LightData const* light)
+{
+    _lights.RemoveGeometry(geometryId, light);
+}
+
+PXR_NAMESPACE_CLOSE_SCOPE

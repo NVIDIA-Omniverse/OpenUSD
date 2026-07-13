@@ -9,8 +9,8 @@
 
 #include "pxr/pxr.h"
 #include "pxr/imaging/hd/material.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/MaterialXCpp/graph.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/material.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graph.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/material.h"
 
 #include <memory>
 

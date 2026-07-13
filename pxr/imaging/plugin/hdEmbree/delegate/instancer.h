@@ -11,7 +11,7 @@
 
 #include "pxr/imaging/hd/instancer.h"
 #include "pxr/imaging/hd/vtBufferSource.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/lightLinking.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightLinking.h"
 
 #include "pxr/base/tf/hashmap.h"
 #include "pxr/base/tf/token.h"

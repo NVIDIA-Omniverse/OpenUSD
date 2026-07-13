@@ -9,12 +9,13 @@
 
 #include "pxr/pxr.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/context.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/light.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/lightSamplers.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/lightLinking.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/medium.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/sampling.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/context.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/lights/light.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightSamplers.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightLinking.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightRegistry.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/medium.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/sampling/sampling.h"
 
 #include "pxr/imaging/hd/aov.h"
 #include "pxr/imaging/hd/renderThread.h"
@@ -30,9 +31,8 @@
 #include <atomic>
 #include <cstdint>
 #include <limits>
-#include <map>
 #include <memory>
-#include <mutex>
+#include <vector>
 
 namespace mxcpp {
 struct AdobeOpenPbrPreparedSurface;
@@ -75,12 +75,20 @@ struct HdEmbreeCameraDepthOfField {
     float focusDistance = 0.0f;
     float focalLength = 0.0f;
 
+    /// \brief Compare all depth-of-field parameters exactly.
+    ///
+    /// \param other Value to compare; no tolerance or enablement rules apply.
+    /// \return True when f-stop, focus distance, and focal length are equal.
     bool operator==(HdEmbreeCameraDepthOfField const& other) const {
         return fStop == other.fStop &&
                focusDistance == other.focusDistance &&
                focalLength == other.focalLength;
     }
 
+    /// \brief Test whether any depth-of-field parameter differs.
+    ///
+    /// \param other Value to compare using exact floating-point equality.
+    /// \return Logical negation of \ref operator==.
     bool operator!=(HdEmbreeCameraDepthOfField const& other) const {
         return !(*this == other);
     }
@@ -94,236 +102,464 @@ struct HdEmbreeMediumState {
 };
 
 /// \class HdEmbreeRenderer
+/// \brief Progressive CPU path tracer built on Embree.
 ///
-/// HdEmbreeRenderer implements a renderer on top of Embree's raycasting
-/// abilities.  This is currently a very simple renderer.  It breaks the
-/// framebuffer into tiles for multithreading; sends out jittered camera
-/// rays; and implements the following shading:
-///  - Colors via the "color" primvar.
-///  - Lighting via N dot Camera-ray, simulating a point light at the camera
-///    origin.
-///  - Ambient occlusion.
-///
+/// Owns progressive sampling state and MaterialX texture services while
+/// borrowing the Embree scene, renderer light records, and Hydra AOV buffers.
+/// The delegate must stop rendering before mutating or replacing borrowed data.
 class HdEmbreeRenderer final
 {
 public:
-    using WriteMutex = std::mutex;
-    using ScopedLock = std::scoped_lock<WriteMutex>;
-
-    /// Renderer constructor.
+    /// \brief Construct a renderer with configuration-derived defaults.
+    ///
+    /// No scene or AOV buffers are bound until their setters are called.
     HdEmbreeRenderer();
 
-    /// Renderer destructor.
+    /// \brief Destroy renderer-owned sampling and texture state.
+    ///
+    /// Does not release the borrowed Embree scene, lights, or AOV buffers.
     ~HdEmbreeRenderer();
 
-    /// Set the embree scene that this renderer should raycast into.
-    ///   \param scene The embree scene to use.
+    /// \brief Select the Embree scene used for ray traversal.
+    ///
+    /// \param scene Borrowed scene handle. It must be non-null, remain valid,
+    /// and not be mutated from the time \ref Render starts until it returns.
     void SetScene(RTCScene scene);
 
-    /// Set the data window to fill (same meaning as in CameraUtilFraming
-    /// with coordinate system also being y-Down).
-    void SetDataWindow(const GfRect2i& dataWindow);
+    /// \brief Set the y-down pixel region rendered into the AOV buffers.
+    ///
+    /// The window uses CameraUtilFraming semantics and triggers AOV
+    /// revalidation. It must be non-empty and contained by every bound buffer.
+    /// \param dataWindow Inclusive pixel bounds in render-buffer coordinates.
+    void SetDataWindow(GfRect2i const& dataWindow);
 
-    /// Set the camera to use for rendering.
-    ///   \param viewMatrix The camera's world-to-view matrix.
-    ///   \param projMatrix The camera's view-to-NDC projection matrix.
-    void SetCamera(const GfMatrix4d& viewMatrix, const GfMatrix4d& projMatrix);
+    /// \brief Set the camera transforms used to generate rays.
+    ///
+    /// Stores both matrices and their inverses for subsequent renders.
+    /// \param viewMatrix Invertible world-to-camera transform.
+    /// \param projMatrix Invertible camera-to-NDC projection transform.
+    void SetCamera(GfMatrix4d const& viewMatrix,
+                   GfMatrix4d const& projMatrix);
 
-    /// Set the linear exposure scale applied to color output.
+    /// \brief Set the linear exposure multiplier for color samples.
+    ///
+    /// \param cameraExposureScale Finite, normally non-negative scale applied
+    /// after path evaluation.
     void SetCameraExposureScale(float cameraExposureScale);
 
-    /// Set the active camera's physical depth-of-field state.
+    /// \brief Set physical depth-of-field parameters for the active camera.
+    ///
+    /// Depth of field is enabled only for a perspective camera when all three
+    /// values are finite and positive; other values select a pinhole camera.
+    /// \param cameraDepthOfField Value copied for subsequent renders.
     void SetCameraDepthOfField(
         HdEmbreeCameraDepthOfField const& cameraDepthOfField);
 
-    /// Set the application frame/time values exposed to MaterialX shading.
+    /// \brief Set application frame and time values visible to materials.
+    ///
+    /// The frame also supplies the sampler seed when no explicit seed is set.
+    /// \param frame Finite application frame value.
+    /// \param time Finite application time value.
     void SetSceneFrameAndTime(float frame, float time);
 
-    /// Set the aov bindings to use for rendering.
-    ///   \param aovBindings A list of aov bindings.
+    /// \brief Bind the AOVs written by subsequent renders.
+    ///
+    /// Copies the bindings but borrows each render-buffer pointer. Every
+    /// non-null buffer must implement HdEmbreeRenderBufferInterface and remain
+    /// valid and unmodified until rendering stops or bindings are replaced.
+    /// \param aovBindings Hydra AOV bindings to copy and later validate.
     void SetAovBindings(HdRenderPassAovBindingVector const& aovBindings);
 
-    /// Add a light
+    /// \brief Add or replace a renderer light under a scene path.
+    ///
+    /// Dome bookkeeping is updated atomically with the path map.
+    /// \param lightPath Stable, unique key for the light.
+    /// \param light Borrowed non-null record that must remain valid and
+    /// unchanged until removed while rendering is stopped.
     void AddLight(SdfPath const& lightPath, HdEmbree_LightData const* light);
 
-    /// Remove a light
-    void RemoveLight(SdfPath const& lightPath, HdEmbree_LightData const* light);
+    /// \brief Remove a renderer light and any matching dome entry.
+    ///
+    /// \param lightPath Path previously passed to \ref AddLight.
+    /// \param light Exact borrowed pointer registered for that path; it is
+    /// used to remove dome bookkeeping and must be passed before destruction.
+    void RemoveLight(SdfPath const& lightPath,
+                     HdEmbree_LightData const* light);
 
-    /// Register top-level Embree geometry that represents a finite light.
-    void AddLightGeometry(unsigned int geometryId, HdEmbree_LightData const* light);
+    /// \brief Associate top-level Embree geometry with a finite light.
+    ///
+    /// Invalid geometry IDs and null light pointers are ignored.
+    /// \param geometryId Committed top-level scene geometry ID.
+    /// \param light Borrowed light record that must outlive the registration.
+    void AddLightGeometry(unsigned int geometryId,
+                          HdEmbree_LightData const* light);
 
-    /// Unregister top-level Embree geometry that represents a finite light.
-    void RemoveLightGeometry(unsigned int geometryId, HdEmbree_LightData const* light);
+    /// \brief Remove a finite-light geometry association.
+    ///
+    /// \param geometryId Previously registered top-level geometry ID;
+    /// RTC_INVALID_GEOMETRY_ID is ignored.
+    /// \param light Expected registered pointer. A null pointer removes any
+    /// record for \p geometryId; a non-null mismatch leaves it unchanged.
+    void RemoveLightGeometry(unsigned int geometryId,
+                             HdEmbree_LightData const* light);
 
-    /// Get the aov bindings being used for rendering.
-    ///   \return the current aov bindings.
+    /// \brief Return the currently copied AOV bindings.
+    ///
+    /// \return Reference owned by this renderer, valid until the next
+    /// SetAovBindings call or renderer destruction. Its buffer pointers remain
+    /// borrowed from the delegate.
     HdRenderPassAovBindingVector const& GetAovBindings() const {
         return _aovBindings;
     }
 
-    /// Set how many samples to render before considering an image converged.
-    ///   \param samplesToConvergence How many samples are needed, per-pixel,
-    ///                               before the image is considered finished.
+    /// \brief Set the maximum progressive samples per pixel.
+    ///
+    /// \param samplesToConvergence Positive sample count. Values below one
+    /// produce no full-resolution sample passes and should not be supplied.
     void SetSamplesToConvergence(int samplesToConvergence);
 
-    /// Set how many samples to use for ambient occlusion.
-    ///   \param ambientOcclusionSamples How many samples are needed for
-    ///                                  ambient occlusion? 0 = disable.
+    /// \brief Set the ambient-occlusion sample count.
+    ///
+    /// \param ambientOcclusionSamples Zero disables AO; positive values set
+    /// the number of hemisphere rays per surface sample.
     void SetAmbientOcclusionSamples(int ambientOcclusionSamples);
 
-    /// Sets whether dome light direct camera visibility should be enabled.
-    ///   \param domeLightCameraVisibility Whether dome lights should be
-    ///                                    directly visible; i.e. contribute
-    ///                                    color to camera ray misses.
+    /// \brief Control whether camera misses evaluate dome lights.
+    ///
+    /// \param domeLightCameraVisibility True to show visible dome lights in
+    /// primary-ray misses; false to use the color AOV clear value.
     void SetDomeLightCameraVisibility(bool domeLightCameraVisibility);
 
-    /// Sets whether to use scene colors while rendering.
-    ///   \param enableSceneColors Whether drawing should sample color, or draw
-    ///                            everything as white.
+    /// \brief Control display-color contribution to synthetic shading.
+    ///
+    /// Material evaluation still receives authored display color and opacity.
+    /// \param enableSceneColors True to use scene colors; false to shade white.
     void SetEnableSceneColors(bool enableSceneColors);
 
-    /// Sets the OpenQMC frame seed.
-    ///   \param randomNumberSeed If -1, use the current scene frame;
-    ///                           otherwise, use this value.
+    /// \brief Set the sampler's frame seed override.
+    ///
+    /// \param randomNumberSeed -1 derives the seed from the scene frame;
+    /// every other value is used as the deterministic override.
     void SetRandomNumberSeed(int randomNumberSeed);
 
-    /// Sets whether to enable direct lighting (disables ambient occlusion).
-    ///   \param enableLighting Whether drawing should evaluate direct lighting.
+    /// \brief Enable or disable direct scene-light evaluation.
+    ///
+    /// \param enableLighting True to path trace scene lights; false selects
+    /// the unlit/AO fallback configured by SetAmbientOcclusionSamples.
     void SetEnableLighting(bool enableLighting);
 
-    /// Set path tracing parameters.
+    /// \brief Set the maximum number of scattering bounces.
+    ///
+    /// \param maxBounces Requested count; negative values are clamped to zero.
     void SetMaxBounces(int maxBounces);
+
+    /// \brief Set the first bounce eligible for Russian roulette.
+    ///
+    /// \param minBounces Non-negative bounce index, normally no greater than
+    /// the maximum bounce count.
     void SetMinBouncesBeforeRR(int minBounces);
 
-    /// Set the sampler sequence used for per-pixel sample generation.
+    /// \brief Select the per-pixel sampling sequence.
+    ///
+    /// \param sequence Valid HdEmbree sampler-sequence enum value.
     void SetSamplerSequence(HdEmbreeSamplerSequence sequence);
 
-    /// Set adaptive sampling parameters.
+    /// \brief Enable or disable per-pixel adaptive convergence.
+    ///
+    /// \param enable True to stop sampling pixels whose estimated error has
+    /// converged; false to sample every pixel to the global limit.
     void SetEnableAdaptiveSampling(bool enable);
+
+    /// \brief Set the adaptive relative variance threshold.
+    ///
+    /// \param threshold Non-negative threshold; zero retains only the fixed
+    /// absolute-error allowance.
     void SetAdaptiveThreshold(float threshold);
+
+    /// \brief Set the minimum samples before adaptive convergence tests.
+    ///
+    /// \param minSamples Positive per-pixel sample count.
     void SetMinSamplesBeforeAdaptive(int minSamples);
 
-    /// Set light sampling parameters.
+    /// \brief Set the direct-light samples evaluated per light and hit.
+    ///
+    /// \param samples Requested count; values below one are clamped to one.
     void SetLightSamplesPerHit(int samples);
+
+    /// \brief Control stratification of multiple light samples.
+    ///
+    /// \param stratify True to distribute samples across a 2D stratum grid;
+    /// false to draw each sample directly from its sample domain.
     void SetStratifyLightSamples(bool stratify);
 
-    /// Set whether to show the adaptive sampling heatmap.
+    /// \brief Control heatmap display in the color AOV.
+    ///
+    /// \param show True to replace color output with adaptive sample-count
+    /// colors when adaptive sampling is active.
     void SetShowAdaptiveHeatmap(bool show);
 
-    /// Set the firefly clamping threshold (max sample luminance).
-    /// Values <= 0 disable clamping.
+    /// \brief Set the maximum luminance of an individual contribution.
+    ///
+    /// \param threshold Positive luminance limit; values at or below zero
+    /// disable general firefly clamping.
     void SetFireflyClampThreshold(float threshold);
 
-    /// Set caustic path handling.
+    /// \brief Enable indirect caustic paths.
+    ///
+    /// \param enable True to retain and regularize caustics; false to suppress
+    /// paths classified as caustic.
     void SetEnableCaustics(bool enable);
+
+    /// \brief Set the luminance clamp applied to caustic contributions.
+    ///
+    /// \param threshold Positive maximum luminance; values at or below zero
+    /// disable the caustic-specific clamp.
     void SetCausticsClampThreshold(float threshold);
+
+    /// \brief Select approximate straight-through transparent shadows.
+    ///
+    /// \param enable True to use the biased approximation; false to trace the
+    /// full configured transparent-shadow response.
     void SetApproxTransparentShadows(bool enable);
+
+    /// \brief Enable or disable all shadow occlusion.
+    ///
+    /// \param disable True makes visibility queries return full visibility.
     void SetDisableShadows(bool disable);
 
-    /// Set whether GGX reflection uses microfacet multiple scattering.
+    /// \brief Control GGX microfacet multiple-scattering compensation.
+    ///
+    /// Updates the process-wide MaterialXCpp BSDF setting as well as renderer
+    /// state; callers must not race this setter with material evaluation.
+    /// \param enable True to enable compensation.
     void SetEnableGgxMicrofacetMultipleScattering(bool enable);
 
-    /// Set the rough dielectric layer throughput estimate mode.
+    /// \brief Select the rough dielectric layer throughput estimator.
+    ///
+    /// Also updates process-wide MaterialXCpp state and must not race shading.
+    /// \param mode `bsdl` or `materialxGlsl`; unknown tokens warn and fall
+    /// back to `bsdl`.
     void SetDielectricLayerThroughputMode(TfToken const& mode);
 
-    /// Set whether MaterialX OpenPBR uses the Adobe reference backend.
+    /// \brief Select the MaterialX OpenPBR evaluation backend.
+    ///
+    /// \param enable True for the Adobe reference implementation; false for
+    /// the native MaterialXCpp implementation.
     void SetUseAdobeOpenPBR(bool enable);
 
-    /// Rendering entrypoint: add one sample per pixel to the whole sample
-    /// buffer, and then loop until the image is converged.  After each pass,
-    /// the image will be resolved into a color buffer.
-    ///   \param renderThread A handle to the render thread, used for checking
-    ///                       for cancellation and locking the color buffer.
+    /// \brief Progressively render the current scene into bound AOVs.
+    ///
+    /// Commits the scene, maps AOVs, runs coarse previews and full-resolution
+    /// passes, resolves after each pass, then unmaps and marks AOVs converged.
+    /// Scene, light, camera, and AOV state must remain unchanged until return.
+    /// \param renderThread Non-null render-thread controller that must outlive
+    /// the call; used for pause/stop checks and framebuffer locking.
     void Render(HdRenderThread* renderThread);
 
-    /// Clear the bound aov buffers (typically before rendering).
+    /// \brief Clear authored AOV values and adaptive accumulation.
+    ///
+    /// Validates bindings, clears buffers that have non-empty clear values,
+    /// and marks those buffers unconverged. Borrowed buffers must be writable.
     void Clear();
 
-    /// Reset progressive accumulation while preserving the resolved output
-    /// buffers so the previous image remains visible until new samples arrive.
+    /// \brief Reset progressive accumulation without erasing display output.
+    ///
+    /// Clears sample storage and adaptive statistics, preserving resolved
+    /// pixels so the previous image remains visible until new samples arrive.
     void ResetAccumulation();
 
-    /// Mark the aov buffers as unconverged.
+    /// \brief Mark every currently bound AOV buffer unconverged.
+    ///
+    /// All binding pointers must be non-null HdEmbree buffer interfaces.
     void MarkAovBuffersUnconverged();
 
-    /// Get the number of samples completed so far.
+    /// \brief Get the completed full-resolution sample-pass count.
+    ///
+    /// \return Atomic snapshot for the current or most recent Render call;
+    /// coarse preview passes are excluded.
     int GetCompletedSamples() const;
 
-    /// Get elapsed render time in seconds since the last Render() call.
+    /// \brief Get elapsed wall-clock time for the current render invocation.
+    ///
+    /// \return Seconds since the most recent Render call initialized its
+    /// timer. The value continues increasing after that call returns.
     float GetRenderElapsedSeconds() const;
 
-    /// Get accumulated SSS random-walk statistics for the current render.
+    /// \brief Get the number of SSS random walks attempted.
+    ///
+    /// \return Atomic count for the current or most recent Render call.
     uint64_t GetSssCallCount() const;
+
+    /// \brief Get the number of successful SSS random walks.
+    ///
+    /// \return Atomic count for the current or most recent Render call.
     uint64_t GetSssSuccessCount() const;
+
+    /// \brief Get total steps taken by SSS random walks.
+    ///
+    /// \return Atomic count for the current or most recent Render call.
     uint64_t GetSssWalkStepCount() const;
+
+    /// \brief Get total Embree intersections issued by SSS walks.
+    ///
+    /// \return Atomic count for the current or most recent Render call.
     uint64_t GetSssIntersectionCount() const;
 
 private:
-    // Perform validation and setup immediately before starting a render
+    /// \brief Prepare shared state immediately before tracing.
+    ///
+    /// Resets counters, commits the borrowed scene, validates and maps AOVs,
+    /// allocates adaptive state, and builds the per-frame AOV dispatch table.
     void _PreRenderSetup();
 
-    // Validate the internal consistency of aov bindings provided to
-    // SetAovBindings. If the aov bindings are invalid, this will issue
-    // appropriate warnings. If the function returns false, Render() will fail
-    // early.
-    //
-    // This function thunks itself using _aovBindingsNeedValidation and
-    // _aovBindingsValid.
-    //   \return True if the aov bindings are valid for rendering.
+    /// \brief Validate the current bindings for rendering and clearing.
+    ///
+    /// Emits warnings for unsupported formats and caches the result until the
+    /// data window or bindings change.
+    /// \return True when every required buffer, format, and clear value is
+    /// compatible; false when Render must stop early.
     bool _ValidateAovBindings();
 
-    // Return the clear color to use for the given VtValue.
+    /// \brief Convert a Hydra color clear value to float RGBA.
+    ///
+    /// \param clearValue Scalar vec3/vec4 float or double value.
+    /// \return Converted RGBA, adding alpha one for vec3; unsupported or
+    /// array values produce opaque black.
     static GfVec4f _GetClearColor(VtValue const& clearValue);
 
-    // Render square tiles of pixels. This function is one unit of threadpool
-    // work. For each tile, iterate over pixels in the tile, generating camera
-    // rays, and following them/calculating color with _TraceRay. This function
-    // renders all tiles between tileStart and tileEnd.
-    // When \p stride > 1, only pixels whose data-window-relative coordinates
-    // are multiples of stride are rendered (used for coarse preview passes).
+    /// \brief Sample one primary camera ray for a render pixel.
+    ///
+    /// Applies pixel jitter, projection, depth of field, world transformation,
+    /// and ray-differential scaling. Sampling advances only the camera domains
+    /// of \p sampler.
+    /// \param x Render-buffer x coordinate inside the active data window.
+    /// \param y Render-buffer y coordinate inside the active data window.
+    /// \param imageMinX X origin used to normalize the active data window.
+    /// \param imageMinY Y origin after renderer line-order conversion.
+    /// \param sampler Per-pixel sampler; must remain valid for this call and
+    /// is advanced through its camera-jitter and camera-lens domains.
+    /// \param rayOrigin Receives the finite world-space primary-ray origin.
+    /// \param rayDirection Receives a normalized finite world-space direction.
+    /// \param rayDifferential Receives matching primary-ray differentials;
+    /// hasDifferentials is false if depth-of-field projection is invalid.
+    void _SampleCameraRay(
+        unsigned int x, unsigned int y,
+        unsigned int imageMinX, unsigned int imageMinY,
+        HdEmbreeSampler& sampler,
+        GfVec3f& rayOrigin, GfVec3f& rayDirection,
+        HdEmbreeRayDifferential& rayDifferential) const;
+
+    /// \brief Render a half-open range of square tiles.
+    ///
+    /// Generates camera rays and dispatches AOV writes for selected pixels;
+    /// a stride above one samples only the preview lattice.
+    /// \param renderThread Optional controller used only for cancellation;
+    /// when non-null it must outlive this call.
+    /// \param sampleNum Zero-based full-resolution sample index.
+    /// \param baseSeed Frame-wide deterministic sampler seed.
+    /// \param stride Positive pixel stride; one renders every eligible pixel.
+    /// \param tileStart First linear tile index, inclusive.
+    /// \param tileEnd Final linear tile index, exclusive.
     void _RenderTiles(HdRenderThread* renderThread, int sampleNum,
                       uint32_t baseSeed, unsigned int stride,
                       size_t tileStart, size_t tileEnd);
 
-    // Cast a ray into the scene and if it hits an object, write to the bound
-    // aov buffers.
+    /// \brief Trace one camera ray and write all active AOVs for its pixel.
+    ///
+    /// \param x Render-buffer x coordinate within the active data window.
+    /// \param y Render-buffer y coordinate within the active data window.
+    /// \param origin Finite world-space ray origin.
+    /// \param dir Normalized finite world-space ray direction.
+    /// \param sampler Per-pixel sampler that remains valid for the call.
+    /// \param rayDiff Pixel-footprint differentials for this camera ray.
     void _TraceRay(unsigned int x, unsigned int y,
                    GfVec3f const& origin, GfVec3f const& dir,
                    HdEmbreeSampler const& sampler,
                    HdEmbreeRayDifferential const& rayDiff);
 
-    // Compute the color at the given ray hit.
+    /// \brief Evaluate the color sample represented by an Embree hit.
+    ///
+    /// \param rayHit Initialized camera-ray result, including a valid miss
+    /// sentinel or valid renderer-owned geometry user data.
+    /// \param rayDiff Differential state associated with \p rayHit.
+    /// \param sampler Per-pixel sampler used to derive path sample domains.
+    /// \param clearColor RGBA color used when the ray misses visible domes.
+    /// \return Linear RGBA sample; alpha is one.
     GfVec4f _ComputeColor(RTCRayHit const& rayHit,
                           HdEmbreeRayDifferential const& rayDiff,
                           HdEmbreeSampler const& sampler,
                           GfVec4f const& clearColor);
-    // Compute the depth at the given ray hit.
+
+    /// \brief Compute camera or normalized clip depth for a hit.
+    ///
+    /// \param rayHit Initialized Embree intersection result.
+    /// \param depth Non-null output written only on success.
+    /// \param clip True for [0,1] projected depth; false for ray distance.
+    /// \return True when geometry was hit and \p depth was written.
     bool _ComputeDepth(RTCRayHit const& rayHit, float* depth, bool clip);
-    // Compute the given ID at the given ray hit.
+
+    /// \brief Resolve a Hydra ID AOV value for a geometry hit.
+    ///
+    /// \param rayHit Valid renderer geometry hit; finite-light hits fail.
+    /// \param idType One of `primId`, `elementId`, or `instanceId`.
+    /// \param id Non-null output written only on success.
+    /// \return True when \p idType is supported and \p id was written.
     bool _ComputeId(RTCRayHit const& rayHit,
                     TfToken const& idType,
                     int32_t* id);
-    // Compute the normal at the given ray hit.
-    bool _ComputeNormal(RTCRayHit const& rayHit, GfVec3f* normal, bool eye);
-    // Compute a primvar at the given ray hit.
-    bool _ComputePrimvar(RTCRayHit const& rayHit, TfToken const& primvar,
+
+    /// \brief Resolve and normalize a smooth hit normal.
+    ///
+    /// \param rayHit Valid renderer geometry hit; misses and lights fail.
+    /// \param normal Non-null output written only on success.
+    /// \param eye True for camera space; false for world space.
+    /// \return True when a geometry normal was written.
+    bool _ComputeNormal(RTCRayHit const& rayHit,
+                        GfVec3f* normal,
+                        bool eye);
+
+    /// \brief Sample a numeric primvar at an Embree hit.
+    ///
+    /// Vec2 and scalar values are packed into the leading components.
+    /// \param rayHit Valid renderer geometry hit; misses and lights fail.
+    /// \param primvar Name to look up in the hit prototype context.
+    /// \param value Non-null vec3 output written only on success.
+    /// \return True when the primvar exists and has a supported numeric type.
+    bool _ComputePrimvar(RTCRayHit const& rayHit,
+                         TfToken const& primvar,
                          GfVec3f* value);
 
-    // Compute the ambient occlusion term at a given point by firing rays
-    // from "position" in the hemisphere centered on "normal"; the occlusion
-    // factor is the fraction of those rays that are visible.
-    //
-    // Modulating surface color by occlusionFactor is similar to taking
-    // the light contribution of an infinitely far, pure white dome light.
+    /// \brief Estimate hemispherical ambient visibility at a surface point.
+    ///
+    /// \param position World-space surface position.
+    /// \param normal Normalized world-space hemisphere normal.
+    /// \param domain Deterministic sample domain reserved for AO draws.
+    /// \return Unoccluded fraction in [0,1], or one when AO is disabled.
     float _ComputeAmbientOcclusion(GfVec3f const& position,
                                    GfVec3f const& normal,
                                    HdEmbreeSampleDomain const& domain);
 
-    /// Evaluate direct lighting from all scene lights using MIS.
-    /// If \p closure is non-null, uses the MaterialXCpp BSDF evaluation;
-    /// otherwise falls back to a simple Lambertian BRDF.
-    /// \p normal is the BSDF normal; \p visibilityNormal is used only for
-    /// shadow-ray origin bias.
+    /// \brief Estimate direct surface lighting from all linked scene lights.
+    ///
+    /// Uses MIS and MaterialXCpp BSDF evaluation when a closure is supplied;
+    /// otherwise it evaluates a synthetic Lambertian response.
+    /// \param position World-space shading position.
+    /// \param normal Normalized world-space BSDF normal.
+    /// \param visibilityNormal Normal used only to offset visibility rays.
+    /// \param wo Normalized world-space direction toward the previous vertex.
+    /// \param domain Sample domain reserved for this lighting event.
+    /// \param doubleSided Whether both surface sides may receive light.
+    /// \param includeBsdfSamplingMis Whether to weight light samples against
+    /// the competing BSDF-sampling technique.
+    /// \param closure Optional borrowed closure valid for the call.
+    /// \param receiverCategories Light-link categories of the receiver.
+    /// \param mediumState Current participating medium for shadow attenuation.
+    /// \param spectralActive Whether hero-wavelength evaluation is active.
+    /// \param heroWavelengthNm Hero wavelength in nanometres when active.
+    /// \param heroWavelengthPdf Positive wavelength PDF when active.
+    /// \param adobeOpenPbrSurface Optional borrowed prepared Adobe surface,
+    /// valid for the call and corresponding to \p closure.
+    /// \return Linear RGB direct-light contribution before path throughput.
     GfVec3f _ComputeDirectLightingMIS(
         GfVec3f const& position,
         GfVec3f const& normal,
@@ -341,6 +577,20 @@ private:
         mxcpp::AdobeOpenPbrPreparedSurface const*
             adobeOpenPbrSurface = nullptr) const;
 
+    /// \brief Estimate direct lighting at a participating-medium event.
+    ///
+    /// Samples every linked light and evaluates the active volume phase model.
+    /// \param position World-space scattering position.
+    /// \param wo Normalized direction toward the previous path vertex.
+    /// \param mediumState Active, scattering medium and receiver categories.
+    /// \param domain Sample domain reserved for this medium-lighting event.
+    /// \param includePhaseSamplingMis Whether to weight light samples against
+    /// the competing phase-sampling technique.
+    /// \param spectralActive Whether hero-wavelength evaluation is active.
+    /// \param heroWavelengthNm Hero wavelength in nanometres when active.
+    /// \param heroWavelengthPdf Positive wavelength PDF when active.
+    /// \return Linear RGB direct-light contribution before path throughput;
+    /// black when the medium is inactive or absorption-only.
     GfVec3f _ComputeMediumDirectLighting(
         GfVec3f const& position,
         GfVec3f const& wo,
@@ -387,28 +637,64 @@ private:
         HdEmbreeCategorySet const* lastScatterCategories = nullptr;
     };
 
+    /// \brief Transport a path segment through the current medium.
+    ///
+    /// Applies transmittance, may accumulate a finite-light or scattering
+    /// contribution, and may replace the next ray after a volume event.
+    /// \param input Immutable segment, hit-distance, bounce, and spectral data.
+    /// \param mediumState Active medium; inactive media leave state unchanged.
+    /// \param domain Sample domain reserved for volume transport.
+    /// \param state Non-null in/out path state owned by the caller; mutated
+    /// according to the returned continuation action.
+    /// \return ContinueSurface to shade the pending surface, ContinueRay when
+    /// \p state contains a new volume-scattered ray, or Terminate to end path.
     _VolumeTransmissionResult _TraceVolumeTransmission(
         _VolumeTransmissionInput const& input,
         HdEmbreeMediumState const& mediumState,
         HdEmbreeSampleDomain const& domain,
         _VolumeTransmissionState* state) const;
 
-    /// Multi-bounce path tracer with MIS.
+    /// \brief Trace a complete multi-bounce path with MIS.
+    ///
+    /// \param origin Finite world-space camera-ray origin.
+    /// \param dir Normalized finite world-space camera-ray direction.
+    /// \param rayDiff Initial pixel-footprint differential state.
+    /// \param domain Root path sample domain with lifetime covering the call.
+    /// \return Linear RGB radiance reaching the camera.
     GfVec3f _TracePath(
         GfVec3f const& origin,
         GfVec3f const& dir,
         HdEmbreeRayDifferential const& rayDiff,
         HdEmbreeSampleDomain const& domain) const;
 
-    // Return the visibility from `position` along `direction`
-    GfVec3f _Visibility(GfVec3f const& position,
-                        GfVec3f const& normal,
-                        GfVec3f const& direction,
-                        float dist,
-                        TfToken const& shadowLink,
-                        HdEmbreeMediumState const& mediumState =
-                            HdEmbreeMediumState()) const;
+    /// \brief Trace colored shadow visibility along a segment.
+    ///
+    /// Accounts for linking, transparent surfaces, and participating media.
+    /// \param position World-space segment origin at a surface or medium event.
+    /// \param normal Normal used to bias the origin; may equal the direction
+    /// for a medium event.
+    /// \param direction Normalized world-space direction toward the light.
+    /// \param dist Positive maximum trace distance.
+    /// \param shadowLink Light shadow-link token to test against blockers.
+    /// \param mediumState Medium initially containing the shadow segment.
+    /// \return Per-channel visibility in [0,1].
+    GfVec3f _Visibility(
+        GfVec3f const& position,
+        GfVec3f const& normal,
+        GfVec3f const& direction,
+        float dist,
+        TfToken const& shadowLink,
+        HdEmbreeMediumState const& mediumState = HdEmbreeMediumState()) const;
 
+    /// \brief Find the nearest analytic finite light along a ray.
+    ///
+    /// \param position World-space ray origin.
+    /// \param direction Normalized world-space ray direction.
+    /// \param maxDist Positive exclusive search limit.
+    /// \param outSample Non-null output written only when a light is found.
+    /// \param outLightLink Optional output for the found light-link token.
+    /// \return True when outputs describe a visible finite light before
+    /// \p maxDist; false leaves outputs unchanged.
     bool _FindNearestFiniteLightHit(
         GfVec3f const& position,
         GfVec3f const& direction,
@@ -416,7 +702,23 @@ private:
         HdEmbreeLightSampler::LightSample* outSample,
         TfToken* outLightLink) const;
 
-    HdEmbree_LightData const* _GetLightGeometryHit(RTCRayHit const& rayHit) const;
+    /// \brief Resolve a top-level Embree hit to its registered finite light.
+    ///
+    /// \param rayHit Initialized hit; instanced geometry is not a light hit.
+    /// \return Borrowed registered light pointer, valid until unregistered, or
+    /// null when the hit is not finite-light geometry.
+    HdEmbree_LightData const* _GetLightGeometryHit(
+        RTCRayHit const& rayHit) const;
+
+    /// \brief Evaluate radiance for a registered finite-light geometry hit.
+    ///
+    /// \param rayHit Initialized top-level light-geometry hit.
+    /// \param position World-space ray origin used for light evaluation.
+    /// \param direction Normalized world-space direction to the hit.
+    /// \param outSample Non-null output written on success; its distance is
+    /// forced to the Embree hit distance.
+    /// \param outLightLink Optional output for the light-link token.
+    /// \return True for registered light geometry with a writable output.
     bool _EvaluateLightGeometryHit(
         RTCRayHit const& rayHit,
         GfVec3f const& position,
@@ -424,14 +726,19 @@ private:
         HdEmbreeLightSampler::LightSample* outSample,
         TfToken* outLightLink = nullptr) const;
 
-    // Should the ray continue based on the possibly intersected prim's visibility settings?
+    /// \brief Declare a traversal decision for an intersected primitive.
+    ///
+    /// This reserved helper currently has no definition or call sites and must
+    /// not be called until implemented.
+    /// \param rayHit Initialized intersection result to inspect.
+    /// \return Intended to indicate whether traversal should skip the hit.
     bool _RayShouldContinue(RTCRayHit const& rayHit) const;
 
-    // Build a ShadingContext from a ray hit, sampling primvars (normal,
-    // texcoord, displayColor) and constructing the tangent frame.
-    // The caller supplies the world-space normal (already transformed and
-    // normalized) so that double-sided flipping can be handled externally.
     struct _ShadingContextOptions {
+        /// \brief Construct shading-context feature options.
+        ///
+        /// \param computeScreenSpaceDerivatives True to derive texture
+        /// differentials from \ref HdEmbreeRayDifferential.
         explicit _ShadingContextOptions(
             bool computeScreenSpaceDerivatives = true)
             : computeScreenSpaceDerivatives(computeScreenSpaceDerivatives)
@@ -441,6 +748,22 @@ private:
         bool computeScreenSpaceDerivatives;
     };
 
+    /// \brief Build MaterialX inputs for a renderer geometry hit.
+    ///
+    /// Samples primvars and derivatives and constructs a world-space tangent
+    /// frame. Borrowed context pointers and sampler data must remain valid for
+    /// the call; the returned context borrows this renderer's texture system.
+    /// \param rayHit Valid hit belonging to \p prototypeContext.
+    /// \param rayDiff Differential state for the incident ray.
+    /// \param instanceContext Non-null instance context for the hit.
+    /// \param prototypeContext Non-null prototype context for the hit.
+    /// \param hitPos World-space hit position.
+    /// \param normal Normalized world-space shading normal.
+    /// \param outDndu Optional world-space normal-u derivative output.
+    /// \param outDndv Optional world-space normal-v derivative output.
+    /// \param options Controls optional derivative work.
+    /// \return MaterialX shading context valid while this renderer and all
+    /// pointers installed by the caller remain alive.
     mxcpp::ShadingContext _BuildShadingContext(
         RTCRayHit const& rayHit,
         HdEmbreeRayDifferential const& rayDiff,
@@ -452,8 +775,17 @@ private:
         GfVec3f* outDndv = nullptr,
         _ShadingContextOptions options = _ShadingContextOptions()) const;
 
-    // Evaluate a material closure at a ray hit.
-    // Returns false if no material is bound or evaluation fails.
+    /// \brief Evaluate the visibility-only material closure at a hit.
+    ///
+    /// Catches graph-evaluation failures and does not retain output pointers.
+    /// \param rayHit Valid renderer geometry hit; misses and lights fail.
+    /// \param outClosure Non-null output written only after successful graph
+    /// evaluation.
+    /// \param outGeometricNormal Optional normalized world-space normal output.
+    /// \param outGeometry Optional borrowed prototype pointer output, valid
+    /// while the scene geometry user data remains registered; it may be set
+    /// even when no material graph is bound.
+    /// \return True only when a bound graph evaluates successfully.
     bool _TryEvalSurfaceClosureAtHit(
         RTCRayHit const& rayHit,
         mxcpp::SurfaceClosure* outClosure,
@@ -464,52 +796,177 @@ private:
 
     struct _AovWriter;
 
-    using _AovWriteFn = void (*)(HdEmbreeRenderer*,
-                                 _AovWriter const&,
-                                 RTCRayHit const&,
-                                 GfVec4f const&,
-                                 unsigned int, unsigned int);
+    /// Callback contract used by the precomputed AOV dispatch table. All
+    /// pointers and references are borrowed for the duration of one call.
+    using _AovWriteFn = void (*)(HdEmbreeRenderer* self,
+                                 _AovWriter const& writer,
+                                 RTCRayHit const& rayHit,
+                                 GfVec4f const& color,
+                                 unsigned int x,
+                                 unsigned int y);
     struct _AovWriter {
         HdEmbreeRenderBufferInterface* buffer = nullptr;
         _AovWriteFn writeFn = nullptr;
         TfToken token;
     };
 
+    /// \brief Build specialized writers for the current validated AOVs.
+    ///
+    /// Borrows mapped buffer interfaces and stores them until the next setup.
     void _BuildAovDispatchTable();
 
-    static void _WriteColor(HdEmbreeRenderer*, _AovWriter const&,
-                            RTCRayHit const&, GfVec4f const&,
-                            unsigned int, unsigned int);
-    static void _WriteColorHeatmap(HdEmbreeRenderer*, _AovWriter const&,
-                                   RTCRayHit const&, GfVec4f const&,
-                                   unsigned int, unsigned int);
-    static void _WriteDepth(HdEmbreeRenderer*, _AovWriter const&,
-                            RTCRayHit const&, GfVec4f const&,
-                            unsigned int, unsigned int);
-    static void _WriteClipDepth(HdEmbreeRenderer*, _AovWriter const&,
-                                RTCRayHit const&, GfVec4f const&,
-                                unsigned int, unsigned int);
-    static void _WriteId(HdEmbreeRenderer*, _AovWriter const&,
-                         RTCRayHit const&, GfVec4f const&,
-                         unsigned int, unsigned int);
-    static void _WriteNormal(HdEmbreeRenderer*, _AovWriter const&,
-                             RTCRayHit const&, GfVec4f const&,
-                             unsigned int, unsigned int);
-    static void _WriteNormalEye(HdEmbreeRenderer*, _AovWriter const&,
-                                RTCRayHit const&, GfVec4f const&,
-                                unsigned int, unsigned int);
-    static void _WritePrimvar(HdEmbreeRenderer*, _AovWriter const&,
-                              RTCRayHit const&, GfVec4f const&,
-                              unsigned int, unsigned int);
-    static void _WriteAdaptiveHeatmap(HdEmbreeRenderer*, _AovWriter const&,
-                                      RTCRayHit const&, GfVec4f const&,
-                                      unsigned int, unsigned int);
+    /// \brief Accumulate a linear color sample into a color AOV.
+    ///
+    /// \param self Non-null renderer owning the current dispatch table.
+    /// \param writer Writer whose non-null buffer receives the sample.
+    /// \param rayHit Current hit; unused for color output.
+    /// \param color Linear RGBA sample to write.
+    /// \param x In-bounds render-buffer x coordinate.
+    /// \param y In-bounds render-buffer y coordinate.
+    static void _WriteColor(HdEmbreeRenderer* self,
+                            _AovWriter const& writer,
+                            RTCRayHit const& rayHit,
+                            GfVec4f const& color,
+                            unsigned int x,
+                            unsigned int y);
 
+    /// \brief Write adaptive sample-count color instead of scene color.
+    ///
+    /// \param self Non-null renderer with allocated adaptive arrays.
+    /// \param writer Writer whose non-null buffer receives the sample.
+    /// \param rayHit Current hit; unused by this writer.
+    /// \param color Scene color; unused by this writer.
+    /// \param x In-bounds render-buffer x coordinate.
+    /// \param y In-bounds render-buffer y coordinate.
+    static void _WriteColorHeatmap(HdEmbreeRenderer* self,
+                                   _AovWriter const& writer,
+                                   RTCRayHit const& rayHit,
+                                   GfVec4f const& color,
+                                   unsigned int x,
+                                   unsigned int y);
+
+    /// \brief Write camera-space ray distance to a depth AOV.
+    ///
+    /// \param self Non-null renderer used to evaluate the hit.
+    /// \param writer Writer whose non-null buffer receives successful output.
+    /// \param rayHit Current initialized intersection result.
+    /// \param color Current color sample; unused by this writer.
+    /// \param x In-bounds render-buffer x coordinate.
+    /// \param y In-bounds render-buffer y coordinate.
+    static void _WriteDepth(HdEmbreeRenderer* self,
+                            _AovWriter const& writer,
+                            RTCRayHit const& rayHit,
+                            GfVec4f const& color,
+                            unsigned int x,
+                            unsigned int y);
+
+    /// \brief Write normalized projected depth to a depth AOV.
+    ///
+    /// \param self Non-null renderer used to evaluate the hit.
+    /// \param writer Writer whose non-null buffer receives successful output.
+    /// \param rayHit Current initialized intersection result.
+    /// \param color Current color sample; unused by this writer.
+    /// \param x In-bounds render-buffer x coordinate.
+    /// \param y In-bounds render-buffer y coordinate.
+    static void _WriteClipDepth(HdEmbreeRenderer* self,
+                                _AovWriter const& writer,
+                                RTCRayHit const& rayHit,
+                                GfVec4f const& color,
+                                unsigned int x,
+                                unsigned int y);
+
+    /// \brief Write the ID selected by the writer token.
+    ///
+    /// \param self Non-null renderer used to resolve the hit ID.
+    /// \param writer Writer with a non-null buffer and Hydra ID token.
+    /// \param rayHit Current initialized intersection result.
+    /// \param color Current color sample; unused by this writer.
+    /// \param x In-bounds render-buffer x coordinate.
+    /// \param y In-bounds render-buffer y coordinate.
+    static void _WriteId(HdEmbreeRenderer* self,
+                         _AovWriter const& writer,
+                         RTCRayHit const& rayHit,
+                         GfVec4f const& color,
+                         unsigned int x,
+                         unsigned int y);
+
+    /// \brief Write a normalized world-space hit normal.
+    ///
+    /// \param self Non-null renderer used to resolve the normal.
+    /// \param writer Writer whose non-null buffer receives successful output.
+    /// \param rayHit Current initialized intersection result.
+    /// \param color Current color sample; unused by this writer.
+    /// \param x In-bounds render-buffer x coordinate.
+    /// \param y In-bounds render-buffer y coordinate.
+    static void _WriteNormal(HdEmbreeRenderer* self,
+                             _AovWriter const& writer,
+                             RTCRayHit const& rayHit,
+                             GfVec4f const& color,
+                             unsigned int x,
+                             unsigned int y);
+
+    /// \brief Write a normalized camera-space hit normal.
+    ///
+    /// \param self Non-null renderer used to resolve the normal.
+    /// \param writer Writer whose non-null buffer receives successful output.
+    /// \param rayHit Current initialized intersection result.
+    /// \param color Current color sample; unused by this writer.
+    /// \param x In-bounds render-buffer x coordinate.
+    /// \param y In-bounds render-buffer y coordinate.
+    static void _WriteNormalEye(HdEmbreeRenderer* self,
+                                _AovWriter const& writer,
+                                RTCRayHit const& rayHit,
+                                GfVec4f const& color,
+                                unsigned int x,
+                                unsigned int y);
+
+    /// \brief Write the primvar selected by the writer token.
+    ///
+    /// \param self Non-null renderer used to sample the primvar.
+    /// \param writer Writer with a non-null buffer and primvar name token.
+    /// \param rayHit Current initialized intersection result.
+    /// \param color Current color sample; unused by this writer.
+    /// \param x In-bounds render-buffer x coordinate.
+    /// \param y In-bounds render-buffer y coordinate.
+    static void _WritePrimvar(HdEmbreeRenderer* self,
+                              _AovWriter const& writer,
+                              RTCRayHit const& rayHit,
+                              GfVec4f const& color,
+                              unsigned int x,
+                              unsigned int y);
+
+    /// \brief Write adaptive sample-count color to its dedicated AOV.
+    ///
+    /// \param self Non-null renderer with allocated adaptive arrays.
+    /// \param writer Writer whose non-null buffer receives the heatmap color.
+    /// \param rayHit Current hit; unused by this writer.
+    /// \param color Current color sample; unused by this writer.
+    /// \param x In-bounds render-buffer x coordinate.
+    /// \param y In-bounds render-buffer y coordinate.
+    static void _WriteAdaptiveHeatmap(HdEmbreeRenderer* self,
+                                      _AovWriter const& writer,
+                                      RTCRayHit const& rayHit,
+                                      GfVec4f const& color,
+                                      unsigned int x,
+                                      unsigned int y);
+
+    /// \brief Map a normalized sample-count fraction to heatmap RGBA.
+    ///
+    /// \param t Fraction normally in [0,1]; values above one are clamped.
+    /// \return Opaque blue-to-cyan-to-green-to-yellow-to-red color.
     static GfVec4f _HeatmapColor(float t);
 
-    static void _UpdateVariance(HdEmbreeRenderer*,
-                                unsigned int, unsigned int,
-                                GfVec3f const&);
+    /// \brief Add one color sample to a pixel's adaptive statistics.
+    ///
+    /// Updates Welford mean/variance and may mark the pixel converged.
+    /// \param self Non-null renderer with arrays sized to width times height.
+    /// \param x In-bounds render-buffer x coordinate.
+    /// \param y In-bounds render-buffer y coordinate.
+    /// \param rgb Finite linear RGB sample.
+    static void _UpdateVariance(HdEmbreeRenderer* self,
+                                unsigned int x,
+                                unsigned int y,
+                                GfVec3f const& rgb);
 
     // The bound aovs for this renderer.
     HdRenderPassAovBindingVector _aovBindings;
@@ -625,11 +1082,8 @@ private:
     // Render start time for elapsed time tracking.
     std::chrono::steady_clock::time_point _renderStartTime;
 
-    // Lights
-    mutable WriteMutex _lightsWriteMutex; // protects the light containers below
-    std::map<SdfPath, HdEmbree_LightData const*> _lightMap;
-    std::map<unsigned int, HdEmbree_LightData const*> _lightGeometryMap;
-    std::vector<HdEmbree_LightData const*> _domes;
+    // Renderer-side light lookup and dome/geometry registration.
+    HdEmbreeLightRegistry _lights;
 
     // Pre-resolved per-frame state (built in _PreRenderSetup).
     bool _needColor = false;

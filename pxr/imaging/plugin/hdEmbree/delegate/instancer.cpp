@@ -6,7 +6,7 @@
 //
 #include "pxr/imaging/plugin/hdEmbree/delegate/instancer.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/sampler.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampler.h"
 #include "pxr/imaging/hd/sceneDelegate.h"
 #include "pxr/imaging/hd/tokens.h"
 

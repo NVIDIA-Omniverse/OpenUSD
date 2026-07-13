@@ -13,8 +13,8 @@
 #include "pxr/imaging/hd/vertexAdjacency.h"
 #include "pxr/base/gf/matrix4f.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/meshSamplers.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/lightLinking.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/meshSamplers.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightLinking.h"
 
 #include <embree4/rtcore.h>
 #include <embree4/rtcore_ray.h>

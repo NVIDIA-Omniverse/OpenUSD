@@ -11,7 +11,7 @@ if (NOT ${PXR_BUILD_GPU_SUPPORT})
     return()
 endif()
 
-add_subdirectory(renderer/BSDL)
+add_subdirectory(renderer/materials/BSDL)
 
 set(_hdEmbree_libraries
     BSDL::BSDL
@@ -67,78 +67,87 @@ pxr_plugin(hdEmbree
     INCLUDE_DIRS
         ${_hdEmbree_include_dirs}
 
+    CPPFILES
+        renderer/aov/aovOutput.cpp
+        renderer/camera/camera.cpp
+        renderer/integrator/lighting.cpp
+        renderer/integrator/pathIntegrator.cpp
+        renderer/integrator/surfaceShading.cpp
+        renderer/integrator/visibility.cpp
+
     PUBLIC_CLASSES
         renderer/config
         delegate/instancer
         delegate/light
-        renderer/lightSamplers
+        renderer/lights/lightSamplers
+        renderer/lights/lightRegistry
         delegate/material
         delegate/mesh
-        renderer/meshSamplers
-        renderer/medium
-        renderer/mxcppAdapter
-        renderer/pxrIES/ies
-        renderer/pxrIES/pxrIES
+        renderer/geometry/meshSamplers
+        renderer/integrator/medium
+        renderer/materials/mxcppAdapter
+        renderer/lights/pxrIES/ies
+        renderer/lights/pxrIES/pxrIES
         delegate/renderBuffer
         renderer/renderer
         delegate/rendererPlugin
         delegate/renderDelegate
         delegate/renderPass
-        renderer/sampler
-        renderer/MaterialXCpp/graph
-        renderer/MaterialXCpp/slots
-        renderer/MaterialXCpp/nodeRegistry
-        renderer/MaterialXCpp/materials/bsdf
-        renderer/MaterialXCpp/materials/adobeOpenPbr
-        renderer/MaterialXCpp/materials/disneyPrincipled
-        renderer/MaterialXCpp/materials/gltfPbr
-        renderer/MaterialXCpp/materials/standardSurface
-        renderer/MaterialXCpp/materials/openPbr
-        renderer/MaterialXCpp/materials/usdPreviewSurface
-        renderer/MaterialXCpp/nodes/mathNodes
-        renderer/MaterialXCpp/nodes/convolutionNodes
-        renderer/MaterialXCpp/nodes/nprNodes
-        renderer/MaterialXCpp/nodes/adjustmentNodes
-        renderer/MaterialXCpp/nodes/channelNodes
-        renderer/MaterialXCpp/nodes/conditionalNodes
-        renderer/MaterialXCpp/nodes/compositingNodes
-        renderer/MaterialXCpp/nodes/geometricNodes
-        renderer/MaterialXCpp/nodes/applicationNodes
-        renderer/MaterialXCpp/nodes/textureNodes
-        renderer/MaterialXCpp/nodes/texture3dNodes
-        renderer/MaterialXCpp/nodes/proceduralNodes
-        renderer/MaterialXCpp/nodes/procedural2dNodes
-        renderer/MaterialXCpp/nodes/procedural3dNodes
-        renderer/MaterialXCpp/nodes/pbrNodes
-        renderer/MaterialXCpp/nodes/colorTransformNodes
+        renderer/geometry/primvarSampler
+        renderer/materials/MaterialXCpp/graph
+        renderer/materials/MaterialXCpp/slots
+        renderer/materials/MaterialXCpp/nodeRegistry
+        renderer/materials/MaterialXCpp/materials/bsdf
+        renderer/materials/MaterialXCpp/materials/adobeOpenPbr
+        renderer/materials/MaterialXCpp/materials/disneyPrincipled
+        renderer/materials/MaterialXCpp/materials/gltfPbr
+        renderer/materials/MaterialXCpp/materials/standardSurface
+        renderer/materials/MaterialXCpp/materials/openPbr
+        renderer/materials/MaterialXCpp/materials/usdPreviewSurface
+        renderer/materials/MaterialXCpp/nodes/mathNodes
+        renderer/materials/MaterialXCpp/nodes/convolutionNodes
+        renderer/materials/MaterialXCpp/nodes/nprNodes
+        renderer/materials/MaterialXCpp/nodes/adjustmentNodes
+        renderer/materials/MaterialXCpp/nodes/channelNodes
+        renderer/materials/MaterialXCpp/nodes/conditionalNodes
+        renderer/materials/MaterialXCpp/nodes/compositingNodes
+        renderer/materials/MaterialXCpp/nodes/geometricNodes
+        renderer/materials/MaterialXCpp/nodes/applicationNodes
+        renderer/materials/MaterialXCpp/nodes/textureNodes
+        renderer/materials/MaterialXCpp/nodes/texture3dNodes
+        renderer/materials/MaterialXCpp/nodes/proceduralNodes
+        renderer/materials/MaterialXCpp/nodes/procedural2dNodes
+        renderer/materials/MaterialXCpp/nodes/procedural3dNodes
+        renderer/materials/MaterialXCpp/nodes/pbrNodes
+        renderer/materials/MaterialXCpp/nodes/colorTransformNodes
 
     PUBLIC_HEADERS
-        renderer/context.h
-        renderer/light.h
-        renderer/lightLinking.h
-        renderer/material.h
+        renderer/geometry/context.h
+        renderer/lights/light.h
+        renderer/lights/lightLinking.h
+        renderer/materials/material.h
         renderer/renderBuffer.h
         delegate/renderParam.h
-        renderer/sampling.h
+        renderer/sampling/sampling.h
         renderer/pxrPbrt/pbrtUtils.h
-        renderer/MaterialXCpp/mathTypes.h
-        renderer/MaterialXCpp/shadingContext.h
-        renderer/MaterialXCpp/spectral.h
-        renderer/MaterialXCpp/surfaceClosure.h
-        renderer/MaterialXCpp/surfaceShaderUtils.h
-        renderer/MaterialXCpp/materials/closureTree.h
-        renderer/MaterialXCpp/paramMap.h
-        renderer/MaterialXCpp/textureSystem.h
-        renderer/MaterialXCpp/value.h
-        renderer/MaterialXCpp/nodes/helpers/valueHelper.h
-        renderer/MaterialXCpp/graphTypes.h
-        renderer/MaterialXCpp/slots.h
+        renderer/materials/MaterialXCpp/mathTypes.h
+        renderer/materials/MaterialXCpp/shadingContext.h
+        renderer/materials/MaterialXCpp/spectral.h
+        renderer/materials/MaterialXCpp/surfaceClosure.h
+        renderer/materials/MaterialXCpp/surfaceShaderUtils.h
+        renderer/materials/MaterialXCpp/materials/closureTree.h
+        renderer/materials/MaterialXCpp/paramMap.h
+        renderer/materials/MaterialXCpp/textureSystem.h
+        renderer/materials/MaterialXCpp/value.h
+        renderer/materials/MaterialXCpp/nodes/helpers/valueHelper.h
+        renderer/materials/MaterialXCpp/graphTypes.h
+        renderer/materials/MaterialXCpp/slots.h
 
     PRIVATE_CLASSES
         renderer/debugCodes
         delegate/implicitSurfaceSceneIndexPlugin
-        renderer/oiioTextureSystem
-        renderer/sss
+        renderer/materials/oiioTextureSystem
+        renderer/integrator/sss
 
     RESOURCE_FILES
         plugInfo.json
@@ -256,41 +265,41 @@ pxr_build_test(testMaterialXCpp
         tf
         vt
     CPPFILES
-        renderer/MaterialXCpp/tests/testMaterialXCppMain.cpp
-        renderer/MaterialXCpp/tests/testMaterialXCppBsdf.cpp
-        renderer/MaterialXCpp/tests/testMaterialXCppNodes.cpp
-        renderer/MaterialXCpp/tests/testMaterialXCppMaterials.cpp
-        renderer/MaterialXCpp/tests/testMaterialXCppGraph.cpp
-        renderer/MaterialXCpp/tests/testMaterialXCppAdapter.cpp
-        renderer/medium.cpp
-        renderer/mxcppAdapter.cpp
-        renderer/sss.cpp
-        renderer/MaterialXCpp/materials/bsdf.cpp
-        renderer/MaterialXCpp/materials/adobeOpenPbr.cpp
-        renderer/MaterialXCpp/materials/disneyPrincipled.cpp
-        renderer/MaterialXCpp/materials/gltfPbr.cpp
-        renderer/MaterialXCpp/materials/standardSurface.cpp
-        renderer/MaterialXCpp/materials/openPbr.cpp
-        renderer/MaterialXCpp/materials/usdPreviewSurface.cpp
-        renderer/MaterialXCpp/slots.cpp
-        renderer/MaterialXCpp/nodeRegistry.cpp
-        renderer/MaterialXCpp/graph.cpp
-        renderer/MaterialXCpp/nodes/mathNodes.cpp
-        renderer/MaterialXCpp/nodes/convolutionNodes.cpp
-        renderer/MaterialXCpp/nodes/nprNodes.cpp
-        renderer/MaterialXCpp/nodes/adjustmentNodes.cpp
-        renderer/MaterialXCpp/nodes/channelNodes.cpp
-        renderer/MaterialXCpp/nodes/conditionalNodes.cpp
-        renderer/MaterialXCpp/nodes/compositingNodes.cpp
-        renderer/MaterialXCpp/nodes/geometricNodes.cpp
-        renderer/MaterialXCpp/nodes/applicationNodes.cpp
-        renderer/MaterialXCpp/nodes/textureNodes.cpp
-        renderer/MaterialXCpp/nodes/texture3dNodes.cpp
-        renderer/MaterialXCpp/nodes/proceduralNodes.cpp
-        renderer/MaterialXCpp/nodes/procedural2dNodes.cpp
-        renderer/MaterialXCpp/nodes/procedural3dNodes.cpp
-        renderer/MaterialXCpp/nodes/pbrNodes.cpp
-        renderer/MaterialXCpp/nodes/colorTransformNodes.cpp
+        renderer/materials/MaterialXCpp/tests/testMaterialXCppMain.cpp
+        renderer/materials/MaterialXCpp/tests/testMaterialXCppBsdf.cpp
+        renderer/materials/MaterialXCpp/tests/testMaterialXCppNodes.cpp
+        renderer/materials/MaterialXCpp/tests/testMaterialXCppMaterials.cpp
+        renderer/materials/MaterialXCpp/tests/testMaterialXCppGraph.cpp
+        renderer/materials/MaterialXCpp/tests/testMaterialXCppAdapter.cpp
+        renderer/integrator/medium.cpp
+        renderer/materials/mxcppAdapter.cpp
+        renderer/integrator/sss.cpp
+        renderer/materials/MaterialXCpp/materials/bsdf.cpp
+        renderer/materials/MaterialXCpp/materials/adobeOpenPbr.cpp
+        renderer/materials/MaterialXCpp/materials/disneyPrincipled.cpp
+        renderer/materials/MaterialXCpp/materials/gltfPbr.cpp
+        renderer/materials/MaterialXCpp/materials/standardSurface.cpp
+        renderer/materials/MaterialXCpp/materials/openPbr.cpp
+        renderer/materials/MaterialXCpp/materials/usdPreviewSurface.cpp
+        renderer/materials/MaterialXCpp/slots.cpp
+        renderer/materials/MaterialXCpp/nodeRegistry.cpp
+        renderer/materials/MaterialXCpp/graph.cpp
+        renderer/materials/MaterialXCpp/nodes/mathNodes.cpp
+        renderer/materials/MaterialXCpp/nodes/convolutionNodes.cpp
+        renderer/materials/MaterialXCpp/nodes/nprNodes.cpp
+        renderer/materials/MaterialXCpp/nodes/adjustmentNodes.cpp
+        renderer/materials/MaterialXCpp/nodes/channelNodes.cpp
+        renderer/materials/MaterialXCpp/nodes/conditionalNodes.cpp
+        renderer/materials/MaterialXCpp/nodes/compositingNodes.cpp
+        renderer/materials/MaterialXCpp/nodes/geometricNodes.cpp
+        renderer/materials/MaterialXCpp/nodes/applicationNodes.cpp
+        renderer/materials/MaterialXCpp/nodes/textureNodes.cpp
+        renderer/materials/MaterialXCpp/nodes/texture3dNodes.cpp
+        renderer/materials/MaterialXCpp/nodes/proceduralNodes.cpp
+        renderer/materials/MaterialXCpp/nodes/procedural2dNodes.cpp
+        renderer/materials/MaterialXCpp/nodes/procedural3dNodes.cpp
+        renderer/materials/MaterialXCpp/nodes/pbrNodes.cpp
+        renderer/materials/MaterialXCpp/nodes/colorTransformNodes.cpp
 )
 
 if (TARGET testHdEmbreeSampling)

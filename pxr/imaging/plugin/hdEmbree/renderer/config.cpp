@@ -6,7 +6,7 @@
 //
 #include "pxr/imaging/plugin/hdEmbree/renderer/config.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/sampling.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/sampling/sampling.h"
 
 #include "pxr/base/tf/envSetting.h"
 #include "pxr/base/tf/instantiateSingleton.h"

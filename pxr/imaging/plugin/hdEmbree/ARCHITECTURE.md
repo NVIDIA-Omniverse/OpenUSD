@@ -42,32 +42,53 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
 
 ### `renderer/`: path tracing
 
-- `renderer.h/.cpp`: `HdEmbreeRenderer`, the progressive path tracer. Holds camera/AOV/settings, lights, accumulation/adaptive buffers, and the main frame, tile, ray, lighting, medium, and path loops.
-- `context.h`: Embree hit user data: renderer geometry identity/properties, primitive IDs and parameters, primvar samplers, material-data handle, derivative caches, instance transforms, and light-linking data.
+- `renderer.h/.cpp`: `HdEmbreeRenderer` public façade, persistent frame state,
+  settings, and the progressive preview/full-resolution render loop.
+- `rendererImpl.h`: private inline math, ray, closure, spectral, and shading
+  helpers shared by focused renderer translation units. It is not an extension
+  point or installed API.
+- `camera/camera.cpp`: camera and lens sampling, primary-ray construction,
+  and ray differentials. Tile/pixel traversal remains in `renderer.cpp`.
+- `aov/aovOutput.cpp`: AOV binding validation, clear/reset behavior, adaptive
+  variance tracking, hit AOV evaluation, and format-specific writers.
+- `integrator/pathIntegrator.cpp`: the main multi-bounce surface/volume path
+  loop, throughput, MIS state, SSS transitions, and Russian roulette.
+- `integrator/surfaceShading.cpp`: hit normals and derivatives, MaterialX
+  shading-context construction, material evaluation, beauty color, and AO.
+- `integrator/lighting.cpp`: surface and participating-medium direct-light MIS.
+- `integrator/visibility.cpp`: linked and transparent shadow traversal plus
+  finite-light hit evaluation.
+- `integrator/medium.h/.cpp`: participating-medium properties, phase functions,
+  and free-flight utilities.
+- `integrator/sss.h/.cpp`: random-walk subsurface scattering.
+- `lights/light.h`: immutable-at-render-time light shapes, transforms,
+  textures, IES/shaping distributions, links, and radiometric parameters.
+- `lights/lightRegistry.h/.cpp`: synchronized ownership of path, dome, and
+  finite-geometry lookup containers. The light records themselves are borrowed
+  from the delegate.
+- `lights/lightSamplers.h/.cpp`: analytic/environment sampling, directional
+  PDFs, and MIS-facing light samples.
+- `lights/lightLinking.h`: category sets and light/shadow-link matching.
+- `lights/pxrIES/`: IES parser and photometric-profile wrapper.
+- `materials/material.h`: stable renderer material handle referencing the
+  currently compiled graph.
+- `materials/mxcppAdapter.h/.cpp`: converts Hydra/MaterialX networks into
+  canonical MaterialXCpp graphs.
+- `materials/oiioTextureSystem.h/.cpp`: OpenImageIO texture implementation for
+  MaterialXCpp.
+- `materials/MaterialXCpp/`: CPU material graph compiler/evaluator, nodes,
+  terminal models, closures, spectral support, and focused tests.
+- `materials/BSDL/`: BSDF support library and generated lookup tables.
+- `geometry/context.h`: Embree prototype and instance hit data: identities,
+  properties, primvars, materials, derivatives, transforms, and categories.
+- `geometry/primvarSampler.h/.cpp`: generic Hydra buffer and primvar sampling.
+- `geometry/meshSamplers.h/.cpp`: constant, uniform, triangle,
+  face-varying, and subdivision interpolation.
+- `sampling/sampling.h`: OpenQMC sequence selection, stable sample-domain keys,
+  and `Fork`, `Split`, `Distrib`, and `Chain` operations.
+- `renderBuffer.h`: narrow AOV output interface implemented by the delegate.
 - `config.h/.cpp`: startup defaults from `HDEMBREE_*` environment variables.
-- `sampling.h`: OpenQMC sequence selection, stable sample-domain keys, and `Fork`, `Split`, `Distrib`, and `Chain` operations.
-- `sampler.h/.cpp`: generic Hydra buffer and primvar type sampling.
-- `meshSamplers.h/.cpp`: constant, uniform, triangle vertex/face-varying, and subdivision primvar interpolation.
-- `light.h`: renderer-owned immutable-at-render-time light shapes, textures, IES/shaping distributions, transforms, linking tokens, and radiometric parameters.
-- `material.h`: stable renderer material handle referencing the currently compiled graph.
-- `renderBuffer.h`: narrow AOV output interface implemented by the Hydra render buffer adapter.
-- `lightSamplers.h/.cpp`: light selection, analytic/environment sampling, directional PDFs, and MIS-facing sample records.
-- `lightLinking.h`: category sets and light/shadow-link matching.
-- `medium.h/.cpp`: participating-medium state, phase functions, and free-flight utilities.
-- `sss.h/.cpp`: random-walk subsurface scattering.
-- `mxcppAdapter.h/.cpp`: converts Hydra/MaterialX networks into canonical MaterialXCpp graphs.
-- `oiioTextureSystem.h/.cpp`: OpenImageIO texture implementation for MaterialXCpp.
 - `debugCodes.h/.cpp`: hdEmbree `TF_DEBUG` symbols.
-- `MaterialXCpp/`: CPU material graph compiler/evaluator and shading library.
-  - `graph.*`, `graphTypes.h`, `slots.*`, `paramMap.h`, and `value.h`: graph representation, compilation, connections, parameters, and values.
-  - `nodeRegistry.*`: node-type-to-evaluator registration.
-  - `nodes/`: math, geometry, texture, procedural, compositing, conditional, NPR, PBR, and helper evaluators.
-  - `materials/`: terminal material models and BSDF closure trees for USD Preview Surface, Standard Surface, OpenPBR, Adobe OpenPBR, Disney Principled, and glTF PBR.
-  - `shadingContext.h`, `surfaceClosure.h`, `surfaceShaderUtils.h`, and `spectral.h`: shading and spectral data/contracts.
-  - `textureSystem.h`: renderer-independent texture interface.
-  - `tests/`: MaterialXCpp tests and scene/image fixtures.
-- `BSDL/`: BSDF support library and generated lookup tables.
-- `pxrIES/`: IES parser and photometric-profile wrapper.
 - `pxrPbrt/pbrtUtils.h`: small utilities derived from PBRT conventions.
 
 ### `schema/`: render settings
@@ -96,40 +117,55 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
 
 ## Reading the renderer
 
-Start in `renderer/renderer.cpp` and follow:
+Start in `renderer/renderer.cpp` and follow the implementation files rather
+than reading one monolithic translation unit:
 
-1. `HdEmbreeRenderer::Render()`: frame-level progressive loop. Commits the Embree scene, prepares accumulation, schedules preview/full-resolution work, advances samples, resolves AOVs, checks convergence, and handles cancellation.
-2. `_RenderTiles()`: parallel image loop. Maps work to pixels, creates sample domains, generates camera/lens samples, calls `_TraceRay()`, accumulates, and writes AOVs.
-3. `_TraceRay()`: constructs the camera ray and obtains the first Embree hit. `_ComputeDepth()`, `_ComputeNormal()`, `_ComputeId()`, and `_ComputePrimvar()` interpret non-color AOVs.
-4. `_ComputeColor()`: prepares surface state for beauty and enters the integrator.
-5. `_TracePath()`: main bounce loop. Track ray, throughput, medium, material closure, linking, direct-light MIS, BSDF sampling, transmission/SSS, and Russian roulette.
-6. `_ComputeDirectLightingMIS()`, `_ComputeMediumDirectLighting()`, `_TraceVolumeTransmission()`, and `sss.cpp`: major path-loop branches.
-7. `_WriteColor()` and other `_Write*` helpers: convert accumulated results to Hydra AOV formats.
+1. `HdEmbreeRenderer::Render()` in `renderer.cpp`: frame-level progressive
+   loop. It prepares state, schedules preview/full-resolution passes, resolves
+   AOVs, checks convergence, and handles cancellation.
+2. `_RenderTiles()` in `renderer.cpp`: parallel tile/pixel traversal,
+   cancellation, preview stride, and adaptive-pixel filtering. It calls
+   `_SampleCameraRay()` in `camera/camera.cpp` for camera/lens sampling, primary
+   rays, and ray differentials.
+3. `_TraceRay()` in `aov/aovOutput.cpp`: first Embree intersection, adaptive
+   sample update, and AOV dispatch.
+4. `_ComputeColor()` in `integrator/surfaceShading.cpp`: miss/light handling,
+   unlit fallback, and entry into the path integrator.
+5. `_TracePath()` in `integrator/pathIntegrator.cpp`: main bounce loop,
+   throughput, medium state, material closures, direct light, BSDF sampling,
+   transmission/SSS, and Russian roulette.
+6. `integrator/lighting.cpp`, `integrator/visibility.cpp`, and
+   `integrator/sss.cpp`: the principal branches called by the path loop.
+7. `_WriteColor()` and the other writers in `aov/aovOutput.cpp`: conversion of
+   samples into Hydra AOV storage.
 
-Read `renderer.h` for persistent state, `context.h` for hit data, `sampling.h` for random domains, `lightSamplers.*` for PDFs, and `MaterialXCpp/materials/bsdf.*` for closure evaluation/sampling.
+Read `renderer.h` for persistent state and function contracts,
+`geometry/context.h` for hit data, `sampling/sampling.h` for random domains,
+`lights/lightSamplers.*` for light PDFs, and
+`materials/MaterialXCpp/materials/bsdf.*` for closure evaluation and sampling.
 
 ## Extension points
 
 ### Materials and MaterialX nodes
 
-- New terminal model: add a builder under `renderer/MaterialXCpp/materials/`, add it to CMake, and register its node type in `nodeRegistry.cpp` or the appropriate node-family registrar.
+- New terminal model: add a builder under `renderer/materials/MaterialXCpp/materials/`, add it to CMake, and register its node type in `nodeRegistry.cpp` or the appropriate node-family registrar.
 - New MaterialX node: add an evaluator to the matching `nodes/*Nodes.cpp` and register every supported type signature in `Register*Nodes()`.
-- Extend `renderer/mxcppAdapter.cpp` when Hydra network normalization is needed.
+- Extend `renderer/materials/mxcppAdapter.cpp` when Hydra network normalization is needed.
 - Transport changes must update value, PDF, sampling, lobe classification, MIS, and delta behavior consistently.
 - Add focused graph/node/material tests and a rendered fixture when integration is significant.
 
 ### Lights
 
 - Add Hydra support/creation tokens in `delegate/renderDelegate.cpp`.
-- Pull authored data in `HdEmbree_Light::Sync()`; populate the runtime representation declared in `renderer/light.h`.
-- Add sampling and directional PDF logic in `renderer/lightSamplers.*`.
+- Pull authored data in `HdEmbree_Light::Sync()`; populate the runtime representation declared in `renderer/lights/light.h`.
+- Add sampling and directional PDF logic in `renderer/lights/lightSamplers.*`.
 - Add visible Embree geometry for finite camera-visible lights.
 - Keep radiance evaluation, sampling PDF, normalization, shaping, IES, texture orientation, and linking consistent.
 - Extend light-sampler tests and add a render fixture for visibility/synchronization.
 
 ### Sampling
 
-- New user-selectable sequence: add enum/token/OpenQMC draw logic in `renderer/sampling.h`, then expose it through config, delegate settings, schema, README, and renderer setters.
+- New user-selectable sequence: add enum/token/OpenQMC draw logic in `renderer/sampling/sampling.h`, then expose it through config, delegate settings, schema, README, and renderer setters.
 - New stochastic decision: add a stable `HdEmbreeSampleDomainKey`. Never reuse or renumber existing values; they are part of deterministic rendering.
 - Use `Fork` for fixed independent domains, `Split` for one of N samples, `Distrib` for distributed work, and `Chain` for indexed variable-length sequences.
 - Never draw opportunistically from an unrelated domain.
@@ -140,13 +176,13 @@ Read `renderer.h` for persistent state, `context.h` for hit data, `sampling.h` f
 - Advertise/create Hydra primitives in `delegate/renderDelegate.cpp`.
 - Extract dirty data and build Embree state in the delegate adapter, acquiring `HdEmbreeRenderParam` before mutation.
 - Put primitive IDs, culling/refinement flags, derivatives, material handles, and other hit-time state in renderer-owned contexts; do not make the renderer query the Hydra Rprim.
-- Add interpolation to `renderer/meshSamplers.*` for new primvar representations.
+- Add interpolation to `renderer/geometry/meshSamplers.*` for new primvar representations.
 
 ### AOVs
 
 - Accept/validate bindings in `delegate/renderPass.*`.
 - Store accumulation state in `renderer/renderer.h`.
-- Compute near the appropriate hit/path stage in `renderer.cpp`.
+- Compute in `renderer/aov/aovOutput.cpp` or at the appropriate integrator stage.
 - Add a format-aware `_Write*` path through `HdEmbreeRenderBufferInterface`; implement any new output operation in `delegate/renderBuffer.*`.
 
 ### Render settings
@@ -157,7 +193,7 @@ Update all relevant surfaces:
 - environment default in `renderer/config.*`, if appropriate;
 - authored and generated files under `schema/`;
 - bridge logic in `delegate/renderPass.cpp`;
-- renderer setter/state/behavior in `renderer/renderer.*`;
+- renderer setter/state in `renderer/renderer.*` and behavior in the owning `aov/`, `camera/`, or `integrator/` file;
 - user documentation in `README.md`;
 - coverage in `testenv/testHdEmbreeRenderSettings.cpp`.
 

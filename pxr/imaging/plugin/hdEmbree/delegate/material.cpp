@@ -5,7 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/imaging/plugin/hdEmbree/delegate/material.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/mxcppAdapter.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/mxcppAdapter.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderParam.h"
 
 #include "pxr/imaging/hd/sceneDelegate.h"

@@ -5,7 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/imaging/plugin/hdEmbree/delegate/light.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/lightSamplers.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightSamplers.h"
 
 #include "pxr/base/gf/colorSpace.h"
 #include "pxr/base/gf/matrix3f.h"

@@ -4,6 +4,11 @@ hdEmbree uses OpenQMC for all renderer sampling. The `build_usd.py --embree`
 path installs OpenQMC `v0.7.1` automatically, and the hdEmbree CMake target
 requires `OpenQMC::OpenQMC`.
 
+Renderer implementation is organized by responsibility under `renderer/`:
+frame orchestration remains in `renderer.cpp`, while camera traversal, AOVs,
+integration, lights, materials, geometry, and sampling live in dedicated
+subdirectories. See `ARCHITECTURE.md` for the file map and render-flow guide.
+
 The following settings can be configured via `renderSettings` (Hydra render delegate settings API) and/or environment variables. USD `RenderSettings` prim attributes use the `ty:` namespace. Precedence is:
 built-in default < environment variable < USD `RenderSettings` prim < Hydra renderer setting UI.
 
