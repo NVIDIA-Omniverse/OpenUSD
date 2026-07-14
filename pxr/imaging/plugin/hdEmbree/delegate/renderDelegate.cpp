@@ -211,6 +211,9 @@ HdEmbreeRenderDelegate::_Initialize()
         { "Dielectric Layer Throughput Mode",
             HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
             VtValue(config.dielectricLayerThroughputMode) },
+        { "Texture Cache Size (MB)",
+            HdEmbreeRenderSettingsTokens->textureCacheSize,
+            VtValue(int(config.textureCacheSizeMB)) },
     };
     _PopulateDefaultSettings(_settingDescriptors);
 

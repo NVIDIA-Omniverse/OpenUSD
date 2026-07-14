@@ -167,6 +167,11 @@ TF_DEFINE_ENV_SETTING(
     HdEmbreeDefaultDielectricLayerThroughputMode,
     "Throughput implementation for dielectric layer evaluation.");
 
+TF_DEFINE_ENV_SETTING(
+    HDEMBREE_TEXTURE_CACHE_SIZE,
+    HdEmbreeDefaultTextureCacheSizeMB,
+    "Size (in MB) of the OpenImageIO texture/tile cache (must be >= 1).");
+
 TF_DEFINE_ENV_SETTING(HDEMBREE_PRINT_CONFIGURATION,
     false,
     "Should HdEmbree print configuration on startup?");
@@ -229,6 +234,8 @@ HdEmbreeConfig::HdEmbreeConfig()
     useAdobeOpenPBR = TfGetEnvSetting(HDEMBREE_USE_ADOBE_OPENPBR);
     dielectricLayerThroughputMode =
         TfGetEnvSetting(HDEMBREE_DIELECTRIC_LAYER_THROUGHPUT_MODE);
+    textureCacheSizeMB = std::max(1,
+            TfGetEnvSetting(HDEMBREE_TEXTURE_CACHE_SIZE));
 
     if (TfGetEnvSetting(HDEMBREE_PRINT_CONFIGURATION)) {
         std::cout
@@ -289,6 +296,8 @@ HdEmbreeConfig::HdEmbreeConfig()
             <<    useAdobeOpenPBR          << "\n"
             << "  dielectricLayerThroughputMode = "
             <<    dielectricLayerThroughputMode << "\n"
+            << "  textureCacheSizeMB        = "
+            <<    textureCacheSizeMB       << "\n"
             ;
     }
 }

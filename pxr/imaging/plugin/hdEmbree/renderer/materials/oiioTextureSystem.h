@@ -22,6 +22,11 @@ public:
     mxcpp::Texture2DResult Sample2D(
         const mxcpp::Texture2DRequest& request) const override;
 
+    /// Set the OpenImageIO tile-cache size, in MB, for both the shared and
+    /// PNG texture systems. Values are clamped to at least 1 MB. No-op when
+    /// hdEmbree is built without the OIIO plugin.
+    void SetCacheSizeMB(int sizeMB);
+
 private:
     std::unique_ptr<_Impl> _impl;
 };

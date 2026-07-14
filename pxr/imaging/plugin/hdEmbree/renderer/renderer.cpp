@@ -287,6 +287,18 @@ HdEmbreeRenderer::SetUseAdobeOpenPBR(bool enable)
 }
 
 void
+HdEmbreeRenderer::SetTextureCacheSize(int sizeMB)
+{
+    // The texture system is always an HdEmbreeOiioTextureSystem (constructed
+    // above); route the cache size to it. Guarded so a future alternate
+    // texture backend is simply left untouched.
+    if (auto* oiio =
+            dynamic_cast<HdEmbreeOiioTextureSystem*>(_textureSystem.get())) {
+        oiio->SetCacheSizeMB(sizeMB);
+    }
+}
+
+void
 HdEmbreeRenderer::SetRandomNumberSeed(int randomNumberSeed)
 {
     _randomNumberSeed = randomNumberSeed;

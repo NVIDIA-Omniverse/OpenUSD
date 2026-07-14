@@ -741,6 +741,11 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                 HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
                 config.samplesToConvergence));
 
+        _renderer->SetTextureCacheSize(
+            renderDelegate->GetRenderSetting<int>(
+                HdEmbreeRenderSettingsTokens->textureCacheSize,
+                config.textureCacheSizeMB));
+
         bool enableLighting =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->enableLighting,

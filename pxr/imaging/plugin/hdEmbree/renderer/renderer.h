@@ -355,6 +355,9 @@ public:
     /// the native MaterialXCpp implementation.
     void SetUseAdobeOpenPBR(bool enable);
 
+    /// Set the OpenImageIO texture/tile cache size, in MB.
+    void SetTextureCacheSize(int sizeMB);
+
     /// \brief Progressively render the current scene into bound AOVs.
     ///
     /// Commits the scene, maps AOVs, runs coarse previews and full-resolution

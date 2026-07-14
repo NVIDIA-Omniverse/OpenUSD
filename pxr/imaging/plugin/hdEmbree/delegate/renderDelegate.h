@@ -46,7 +46,8 @@ class HdEmbreeRenderParam;
     ((enableGgxMicrofacetMultipleScattering, "ty:enableGgxMicrofacetMultipleScattering")) \
     ((materialRenderContext, "ty:materialRenderContext")) \
     ((dielectricLayerThroughputMode, "ty:dielectricLayerThroughputMode")) \
-    ((useAdobeOpenPBR, "ty:useAdobeOpenPBR"))
+    ((useAdobeOpenPBR, "ty:useAdobeOpenPBR")) \
+    ((textureCacheSize, "ty:textureCacheSize"))
 
 TF_DECLARE_PUBLIC_TOKENS(HdEmbreeRenderSettingsTokens, HDEMBREE_RENDER_SETTINGS_TOKENS);
 

@@ -134,4 +134,8 @@ class "TyphoonRenderSettingsAPI" (
         allowedTokens = ["bsdl", "materialxGlsl"]
         doc = """Rough dielectric top-layer throughput estimate mode."""
     )
+
+    uniform int ty:textureCacheSize = 16384 (
+        doc = """Size (in MB) of the OpenImageIO texture/tile cache."""
+    )
 }

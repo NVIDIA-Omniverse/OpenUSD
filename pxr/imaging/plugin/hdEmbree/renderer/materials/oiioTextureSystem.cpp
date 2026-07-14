@@ -3,6 +3,7 @@
 //
 #include "pxr/imaging/plugin/hdEmbree/renderer/materials/oiioTextureSystem.h"
 
+#include "pxr/imaging/plugin/hdEmbree/renderer/config.h"
 #include "pxr/base/gf/colorSpace.h"
 #include "pxr/base/tf/diagnostic.h"
 #include "pxr/base/tf/token.h"
@@ -302,6 +303,12 @@ _ConfigureTextureSystem(
     // Pre-generated tiled, mipped .tx inputs avoid this path entirely and
     // remain the fastest option for texture-heavy scenes.
     textureSystem->attribute("autotile", 512);
+    // Never close texture files that are still referenced.  ALab-scale UDIM
+    // sets reference hundreds of tiles; with OIIO's default cap of 100 open
+    // files, the cache constantly reopens EXRs, which is a locked path.  A
+    // value of 0 means "unlimited" -- the real ceiling is the OS descriptor
+    // limit (ulimit -n), which is the intended place to govern it.
+    textureSystem->attribute("max_open_files", 0);
     textureSystem->attribute("accept_untiled", 1);
     textureSystem->attribute("accept_unmipped", 1);
     textureSystem->attribute("gray_to_rgb", 1);
@@ -366,6 +373,26 @@ HdEmbreeOiioTextureSystem::HdEmbreeOiioTextureSystem()
     _impl->pngTextureSystem = OIIO::TextureSystem::create(/* shared = */ false);
     _ConfigureTextureSystem(
         _impl->pngTextureSystem, /* preserveUnassociatedAlpha = */ true);
+
+    // Size the tile cache from configuration so the very first render is not
+    // penalized before the render-setting sync applies any override.
+    SetCacheSizeMB(HdEmbreeConfig::GetInstance().textureCacheSizeMB);
+#endif
+}
+
+void
+HdEmbreeOiioTextureSystem::SetCacheSizeMB(int sizeMB)
+{
+#if defined(PXR_OIIO_PLUGIN_ENABLED)
+    const float mb = static_cast<float>(std::max(1, sizeMB));
+    if (_impl->textureSystem) {
+        _impl->textureSystem->attribute("max_memory_MB", mb);
+    }
+    if (_impl->pngTextureSystem) {
+        _impl->pngTextureSystem->attribute("max_memory_MB", mb);
+    }
+#else
+    (void)sizeMB;
 #endif
 }
 

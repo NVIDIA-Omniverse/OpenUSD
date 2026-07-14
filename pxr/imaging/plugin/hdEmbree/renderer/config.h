@@ -44,6 +44,7 @@ constexpr bool HdEmbreeDefaultEnableGgxMicrofacetMultipleScattering = true;
 constexpr char HdEmbreeDefaultMaterialRenderContext[] = "mtlx";
 constexpr bool HdEmbreeDefaultUseAdobeOpenPBR = false;
 constexpr char HdEmbreeDefaultDielectricLayerThroughputMode[] = "bsdl";
+constexpr int HdEmbreeDefaultTextureCacheSizeMB = 16384;
 
 /// \class HdEmbreeConfig
 ///
@@ -219,6 +220,15 @@ public:
     /// Override with *HDEMBREE_DIELECTRIC_LAYER_THROUGHPUT_MODE*.
     std::string dielectricLayerThroughputMode =
         HdEmbreeDefaultDielectricLayerThroughputMode;
+
+    /// Size (in MB) of the OpenImageIO texture/tile cache. Larger values keep
+    /// more texture tiles resident, avoiding the cache thrashing and global
+    /// cache-lock contention that otherwise serialize render threads on
+    /// texture-heavy scenes. Exposed to applications as the "ty:textureCacheSize"
+    /// render setting.
+    ///
+    /// Override with *HDEMBREE_TEXTURE_CACHE_SIZE*.
+    int textureCacheSizeMB = HdEmbreeDefaultTextureCacheSizeMB;
 
 private:
     // The constructor initializes the config variables with their
