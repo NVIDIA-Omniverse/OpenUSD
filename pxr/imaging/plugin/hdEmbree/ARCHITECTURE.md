@@ -51,19 +51,23 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
   and ray differentials. Tile/pixel traversal remains in `renderer.cpp`.
 - `aov/aovOutput.cpp`: AOV binding validation, clear/reset behavior, adaptive
   variance tracking, hit AOV evaluation, and format-specific writers.
-- `integrator/pathIntegrator.cpp`: the lit multi-bounce integrator. It owns
-  the camera intersection, all later surface/volume segments, emitter and
-  environment hits, throughput, MIS, SSS, and Russian roulette.
+- `integrator/pathIntegrator.cpp`: the lit multi-bounce control loop. It owns
+  the primary hit, surface-event ordering, path state, throughput, BSDF
+  continuation, bounce limits, and Russian roulette.
+- `integrator/volumeTransport.cpp`: active-medium segment attenuation,
+  free-flight scattering, medium roulette, and medium-boundary ownership.
 - `integrator/unlitIntegrator.cpp`: the single-hit unlit integrator. It owns its
   camera intersection, MaterialX base color, camera-light shading, and AO.
-- `integrator/surfaceShading.cpp`: shared hit-normal, derivative, MaterialX
-  shading-context, and visibility-closure helpers.
-- `integrator/lighting.cpp`: surface and participating-medium direct-light MIS.
+- `integrator/surfaceShading.cpp`: shared hit-normal, MaterialX shading-context,
+  visibility-closure, and ray-differential propagation helpers.
+- `integrator/lighting.cpp`: surface and participating-medium direct-light MIS,
+  plus camera-background and indirect-environment evaluation.
 - `integrator/visibility.cpp`: linked and transparent shadow traversal plus
   finite-light hit evaluation.
 - `integrator/medium.h/.cpp`: participating-medium properties, phase functions,
   and free-flight utilities.
-- `integrator/sss.h/.cpp`: random-walk subsurface scattering.
+- `integrator/sss.h/.cpp`: subsurface entry/exit orchestration and the
+  self-contained random walk.
 - `lights/light.h`: immutable-at-render-time light shapes, transforms,
   textures, IES/shaping distributions, links, and radiometric parameters.
 - `lights/lightRegistry.h/.cpp`: synchronized ownership of path, dome, and
@@ -117,6 +121,200 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
 3. Changes are pushed through `HdEmbreeRenderer::Set*`. Values originate in delegate descriptors, scene-index `HdRenderSettingsSchema`, and `HdEmbreeConfig`.
 4. If accumulation-relevant state changed, the pass stops the thread, resets as needed, and starts `HdEmbreeRenderer::Render()` on `HdRenderThread`.
 5. The renderer writes bound `HdEmbreeRenderBuffer` objects. The pass exposes convergence and writes active `RenderProduct` files after convergence.
+
+## How a pixel sample becomes a path
+
+### Pixel and camera sampling
+
+1. `Render()` divides the active data window into tiles and schedules
+   `_RenderTiles()` with `WorkParallelForN`. Coarse preview passes use a pixel
+   stride greater than one; full-resolution passes use stride one. Pixels
+   already converged under adaptive sampling are skipped.
+2. Each selected pixel gets one `HdEmbreeSampler`, keyed by the frame seed,
+   pixel coordinates, sample number, and configured OpenQMC sequence. Every
+   later stochastic decision derives a named domain from this root; it must not
+   consume unrelated domains opportunistically.
+3. `_SampleCameraRay()` converts the pixel to NDC, optionally draws camera
+   jitter, unprojects through the projection matrix, and constructs either a
+   perspective or orthographic camera ray. When depth of field is enabled it
+   draws a lens point, focuses the ray, and applies the same lens point to the
+   x/y differential rays. The origin, normalized direction, and scaled ray
+   differentials are transformed to world space.
+4. `_EvaluatePixelSample()` chooses exactly one radiance integrator:
+   `_IntegratePath()` when scene lighting is enabled or `_IntegrateUnlit()`
+   otherwise. Both integrators trace their own camera ray and return a
+   `_PixelSampleResult` containing linear RGBA radiance and the unchanged first
+   Embree result in `primaryHit`.
+5. If neither a color AOV nor adaptive sampling needs radiance,
+   `_EvaluatePixelSample()` takes the geometric-AOV fast path: it intersects the
+   primary ray once without invoking either radiance integrator.
+
+The retained `primaryHit` is deliberately distinct from the final path event.
+For example, a stochastic-presence surface may be retained for depth, ID,
+normal, and primvar AOVs even though the radiance path passes through it and
+continues to another surface or the environment.
+
+### Lit path state
+
+`_IntegratePath()` creates one `_PathState` shared by the main loop and its
+volume, environment, and SSS handlers. It contains:
+
+- accumulated RGB `radiance`;
+- RGB or hero-wavelength `throughput`;
+- current ray and ray differentials;
+- current participating medium;
+- the previous BSDF PDF and light-sampling mode used for MIS;
+- receiver categories used for light and shadow linking;
+- diffuse/specular ancestry used by caustic policy;
+- first-segment state, bounce count, and a separate path-event index.
+
+The bounce count is incremented explicitly only after a surface or medium
+scattering event. Null-presence pass-throughs, volume-only boundaries, and a
+synthetic SSS exit continue without changing it. The path-event index advances
+on every loop iteration, so each receives a distinct `PathBounce` sample domain
+even when it does not consume the user's bounce budget.
+
+### Lit segment loop
+
+For each segment, `_IntegratePath()` performs these stages in order:
+
+1. **Intersect the segment.** A normal segment is populated with the camera ray
+   mask, zero `tnear` for the initial camera ray, and a small positive `tnear`
+   for later segments. The extra iteration after the configured maximum bounce
+   uses the light-only mask: it may collect an emitter reached by the final BSDF
+   sample but may not shade another surface. A successful SSS random walk can
+   instead supply a synthetic exit hit.
+2. **Retain the primary result.** The first intersection or miss is copied to
+   `_PixelSampleResult::primaryHit` exactly once. It is never overwritten by
+   later surfaces, volume events, emitters, or environment misses.
+3. **Resolve candidate events.** The renderer identifies finite-light geometry
+   represented in Embree. On non-camera segments it also tests analytic finite
+   lights and compares their distance with the nearest ordinary surface.
+4. **Transport through the active medium.** `_TraceVolumeTransmission()` in
+   `volumeTransport.cpp` runs before surface shading. It applies absorption/transmittance and compares a
+   sampled free-flight distance with both surface and finite-light distances.
+   It can:
+
+   - terminate at an attenuated finite-light hit;
+   - create a volume-scattering event, add direct medium lighting, sample the
+     phase function, and continue with a new ray;
+   - attenuate throughput to the pending surface and allow surface processing
+     to continue; or
+   - terminate when throughput, sampling, bounce, or roulette conditions fail.
+
+5. **Handle a finite emitter.** If a finite light is closer than the ordinary
+   surface, its emitted radiance is accumulated and the path ends. Secondary
+   hits must match the previous receiver's light-link categories. When the
+   previous direction came from a finite-PDF BSDF sample, the contribution is
+   MIS-weighted against the light-sampling technique; a primary camera hit has
+   neither previous-link filtering nor MIS weighting.
+6. **Handle a miss.** `_AccumulateEnvironment()` in `lighting.cpp` applies
+   segment-specific camera or indirect policy:
+
+   - A camera miss returns the clear color when no dome is registered or dome
+     camera visibility is disabled. Otherwise it evaluates visible domes in the
+     camera direction. Distant lights are not camera backgrounds.
+   - An indirect miss evaluates visible distant and dome lights. It applies
+     light linking from the previous scattering surface and MIS against the
+     previous BSDF PDF. Dome camera visibility does not suppress indirect dome
+     illumination.
+
+7. **Reject an ordinary surface on the emitter-only iteration.** Once the
+   surface-bounce budget is exhausted, the extra iteration exists only to see
+   an emitter. Hitting another non-emissive surface ends the path.
+8. **Construct surface state.** Renderer-owned instance and prototype context
+   records provide the material, transforms, primvars, derivatives, categories,
+   and geometry flags without querying Hydra. The integrator computes the hit
+   position and maintains three normal concepts:
+
+   - the world-oriented smooth `geometricNormal`, used for medium-boundary and
+     ray-offset decisions;
+   - the true Embree face normal, face-forwarded for geometric validity tests;
+   - the face-forwarded shading normal, which may later be changed by the
+     material's normal input.
+
+   `_BuildShadingContext()` supplies texture coordinates, display color,
+   tangents, geomprop lookup, uniform primvars, and surface/ray derivatives.
+9. **Evaluate the material.** The bound `mxcpp::EvalGraph` produces a
+   `SurfaceClosure`. A missing or failed material evaluation leaves a synthetic
+   diffuse fallback available for direct lighting. A synthetic SSS exit replaces
+   the material with a unit Lambertian closure so subsurface albedo is not
+   counted twice. Material normal inputs are resolved before BSDF work.
+10. **Apply stochastic presence.** Presence is treated as the probability of a
+    real interaction. A rejected interaction advances the ray beyond the hit,
+    preserves first-bounce and MIS state, consumes a new path-event domain, and
+    does not consume a bounce.
+11. **Prepare transport policy and sample the closure.** Caustic-class lobes may
+    be pruned after a diffuse-like ancestor when caustics are disabled. A
+    dispersive closure initializes hero-wavelength transport. The integrator
+    prepares the native or Adobe OpenPBR surface and draws the BSDF sample that
+    would produce the next segment.
+12. **Handle subsurface scattering.** `_TraceSubsurface()` in `sss.cpp` applies
+    the selected entry direction and weight, then `HdEmbreeRandomWalkSSS()` walks inside
+    the owning mesh. A successful exit becomes a synthetic Lambertian hit on
+    the next loop iteration. The complete entry, random walk, and exit consume
+    one surface bounce; failure terminates the path.
+13. **Accumulate local radiance.** Material emission is added through current
+    throughput. `_ComputeDirectLightingMIS()` performs next-event estimation
+    for BSDF surfaces, including light selection, linking, colored visibility,
+    active-medium attenuation, and MIS against BSDF sampling. A surface without
+    a usable material closure receives the renderer's synthetic diffuse direct
+    lighting fallback.
+14. **Cross volume-only boundaries.** A closure that only defines an interior
+    medium updates the active medium on entry or exit, offsets the unchanged ray
+    across the boundary, and continues without consuming a surface bounce.
+15. **Enforce the bounce budget.** At the last allowed surface, a valid BSDF
+    sample may be followed by one emitter-only segment. Otherwise integration
+    stops after the local emission and direct-light contributions.
+16. **Advance path throughput.** For a valid non-SSS BSDF sample, the integrator
+    applies `f * abs(cos(theta)) / pdf`; delta events use their direct throughput
+    coefficient. It records the BSDF PDF, receiver categories, dome-sampling
+    hemisphere, diffuse/specular ancestry, and any medium-boundary crossing for
+    the next segment.
+17. **Apply roulette and differentials.** After the configured minimum bounce,
+    Russian roulette terminates low-throughput paths and compensates survivors.
+    `_PropagateRayDifferential()` in `surfaceShading.cpp` propagates specular
+    reflection/refraction differentials; non-specular events discard them. The next origin is biased to the appropriate side of
+    the world-oriented geometric normal, and the loop continues.
+
+When the loop terminates, accumulated radiance is clamped non-negative, packed
+with alpha one, and returned with the retained primary hit. Firefly and caustic
+clamps are applied when contributions are added, before this final packing.
+
+### Unlit integration
+
+`_IntegrateUnlit()` is an independent single-hit integrator, not a special
+branch inside the lit path:
+
+1. It intersects the camera ray and stores that result as `primaryHit`.
+2. A miss returns the configured clear color. Finite-light geometry returns
+   black because scene lighting is explicitly disabled.
+3. For an ordinary surface it resolves instance/prototype state, hit position,
+   smooth normal, shading context, tangent frame, and MaterialX closure.
+4. The output color is the closure's base color, or display color/default gray
+   when no closure is available, multiplied by the camera-facing headlight.
+5. When enabled, `_ComputeAmbientOcclusion()` stratifies cosine-weighted
+   hemisphere samples and traces Embree occlusion rays; its visibility average
+   attenuates the headlight result.
+6. The integrator returns linear RGBA and the same primary hit used for shading.
+
+It performs no scene-light sampling, emissive transport, indirect bounces, MIS,
+participating-medium transport, or Russian roulette.
+
+### Accumulation and AOV output
+
+After the selected integrator returns, `_EvaluatePixelSample()` updates the
+per-pixel mean and variance used by adaptive convergence. It then dispatches the
+prebuilt AOV writers:
+
+- color writers consume the returned radiance and apply camera exposure only at
+  output;
+- depth, normal, ID, and primvar writers interpret the retained `primaryHit`;
+- heatmap writers consume adaptive sample counts rather than scene radiance.
+
+The render buffer accumulates samples until resolve/convergence. Thus transport
+is owned by one selected integrator, while accumulation, format conversion, and
+Hydra buffer writes remain renderer/AOV responsibilities.
 
 ## Reading the renderer
 

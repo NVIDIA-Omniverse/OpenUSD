@@ -189,12 +189,15 @@ plugin in the active Pixi environment.
 - `renderer/camera/camera.cpp`: camera/lens sampling, primary-ray construction, and ray differentials; tile traversal stays in `renderer/renderer.cpp`.
 - `renderer/aov/aovOutput.cpp`: AOV validation, accumulation, adaptive convergence,
   hit outputs, and writer dispatch.
-- `renderer/integrator/pathIntegrator.cpp`: lit multi-bounce integrator; owns
-  its primary hit and every later path segment.
+- `renderer/integrator/pathIntegrator.cpp`: lit multi-bounce control loop and
+  shared path state; owns its primary hit and surface-event ordering.
+- `renderer/integrator/volumeTransport.cpp`: participating-medium segment
+  transport and active-medium boundary ownership.
 - `renderer/integrator/unlitIntegrator.cpp`: independent single-hit camera-light
   and ambient-occlusion integrator.
-- `renderer/integrator/surfaceShading.cpp`, `lighting.cpp`, and `visibility.cpp`:
-  shared shading contexts, direct-light MIS, and linked/transparent traversal.
+- `renderer/integrator/surfaceShading.cpp`, `lighting.cpp`, `sss.cpp`, and
+  `visibility.cpp`: shared shading contexts and ray differentials, direct and
+  environment lighting, subsurface transport, and linked/transparent traversal.
 - `renderer/rendererImpl.h`: private shared implementation helpers; do not treat it
   as an installed API or extension point.
 - `delegate/mesh.*`: `HdEmbreeMesh`; translates Hydra mesh data into Embree prototype

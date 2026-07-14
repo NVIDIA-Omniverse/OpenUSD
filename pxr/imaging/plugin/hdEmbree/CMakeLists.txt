@@ -75,6 +75,7 @@ pxr_plugin(hdEmbree
         renderer/integrator/surfaceShading.cpp
         renderer/integrator/unlitIntegrator.cpp
         renderer/integrator/visibility.cpp
+        renderer/integrator/volumeTransport.cpp
 
     PUBLIC_CLASSES
         renderer/config

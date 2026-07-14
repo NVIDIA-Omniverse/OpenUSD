@@ -20,6 +20,79 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
+void
+HdEmbreeRenderer::_PropagateRayDifferential(
+    _SurfaceDifferentials const& surface,
+    GfVec3f const& hitPos,
+    GfVec3f const& normal,
+    GfVec3f const& wo,
+    GfVec3f const& wi,
+    float eta,
+    bool specular,
+    HdEmbreeRayDifferential* rayDifferential) const
+{
+    if (!rayDifferential) {
+        return;
+    }
+    if (!specular) {
+        rayDifferential->hasDifferentials = false;
+        return;
+    }
+    if (!rayDifferential->hasDifferentials) {
+        return;
+    }
+
+    const GfVec3f dndx =
+        surface.dndu * surface.dudx + surface.dndv * surface.dvdx;
+    const GfVec3f dndy =
+        surface.dndu * surface.dudy + surface.dndv * surface.dvdy;
+    rayDifferential->rxOrigin = hitPos + surface.dpdx;
+    rayDifferential->ryOrigin = hitPos + surface.dpdy;
+
+    const GfVec3f dwodx = -rayDifferential->rxDirection - wo;
+    const GfVec3f dwody = -rayDifferential->ryDirection - wo;
+    const float dwoDotnDx = GfDot(dwodx, normal) + GfDot(wo, dndx);
+    const float dwoDotnDy = GfDot(dwody, normal) + GfDot(wo, dndy);
+
+    if (eta == 1.0f) {
+        rayDifferential->rxDirection =
+            wi - dwodx +
+            2.0f * (GfDot(wo, normal) * dndx + dwoDotnDx * normal);
+        rayDifferential->ryDirection =
+            wi - dwody +
+            2.0f * (GfDot(wo, normal) * dndy + dwoDotnDy * normal);
+    } else if (eta != 0.0f) {
+        const float wiDotN = GfDot(wi, normal);
+        const float safeWiDotN = wiDotN != 0.0f ? wiDotN : 1.0f;
+        const float mu =
+            GfDot(wo, normal) / eta - std::abs(wiDotN);
+        const float derivativeScale =
+            1.0f / eta +
+            GfDot(wo, normal) / (eta * eta * safeWiDotN);
+        const float dmuDx = dwoDotnDx * derivativeScale;
+        const float dmuDy = dwoDotnDy * derivativeScale;
+        rayDifferential->rxDirection =
+            wi - eta * dwodx + mu * dndx + dmuDx * normal;
+        rayDifferential->ryDirection =
+            wi - eta * dwody + mu * dndy + dmuDy * normal;
+    } else {
+        rayDifferential->hasDifferentials = false;
+        return;
+    }
+
+    constexpr float maxDifferentialLengthSquared = 1e16f;
+    if (rayDifferential->rxDirection.GetLengthSq() >
+            maxDifferentialLengthSquared ||
+        rayDifferential->ryDirection.GetLengthSq() >
+            maxDifferentialLengthSquared ||
+        rayDifferential->rxOrigin.GetLengthSq() >
+            maxDifferentialLengthSquared ||
+        rayDifferential->ryOrigin.GetLengthSq() >
+            maxDifferentialLengthSquared) {
+        rayDifferential->hasDifferentials = false;
+    }
+}
+
 mxcpp::ShadingContext
 HdEmbreeRenderer::_BuildShadingContext(
     RTCRayHit const& rayHit,

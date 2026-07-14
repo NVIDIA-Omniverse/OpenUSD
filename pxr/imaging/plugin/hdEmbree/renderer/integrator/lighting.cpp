@@ -20,6 +20,102 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
+void
+HdEmbreeRenderer::_AccumulateEnvironment(_PathState* state) const
+{
+    if (!state) {
+        return;
+    }
+
+    if (state->isFirstBounce) {
+        if (_lights.GetDomes().empty() || !_domeLightCameraVisibility) {
+            state->radiance = GfVec3f(
+                _colorClearValue[0],
+                _colorClearValue[1],
+                _colorClearValue[2]);
+            return;
+        }
+
+        for (auto* dome : _lights.GetDomes()) {
+            if (dome->visible) {
+                state->radiance +=
+                    HdEmbreeLightSampler::EvaluateDomeLightDirection(
+                        *dome, state->rayDir).Li;
+            }
+        }
+        return;
+    }
+
+    for (auto const& it : _lights.GetLights()) {
+        if (!it.second) {
+            continue;
+        }
+
+        auto const& light = *it.second;
+        if (!light.visible ||
+            !std::holds_alternative<HdEmbree_Distant>(light.lightVariant) ||
+            (!light.lightLink.IsEmpty() &&
+             (!state->lastScatterCategories ||
+              !HdEmbreeMatchesLink(
+                  light.lightLink, *state->lastScatterCategories)))) {
+            continue;
+        }
+
+        const HdEmbreeLightSampler::LightSample sample =
+            HdEmbreeLightSampler::EvaluateLightDirection(
+                light, state->rayOrigin, state->rayDir);
+        if (!sample.valid) {
+            continue;
+        }
+
+        GfVec3f contribution = sample.Li;
+        if (state->lastBsdfPdf > 0.0f && sample.invPdfW > 0.0f) {
+            contribution *= mxcpp::Bsdf::PowerHeuristic(
+                state->lastBsdfPdf,
+                _GetMultiSampleMisLightPdf(
+                    1.0f / sample.invPdfW, _lightSamplesPerHit));
+        }
+        _AddPathRadiance(
+            _WeightPathRadiance(contribution, *state), state);
+    }
+
+    for (auto* dome : _lights.GetDomes()) {
+        if (!dome->visible ||
+            (!dome->lightLink.IsEmpty() &&
+             (!state->lastScatterCategories ||
+              !HdEmbreeMatchesLink(
+                  dome->lightLink, *state->lastScatterCategories)))) {
+            continue;
+        }
+
+        const HdEmbreeLightSampler::SamplingMode samplingMode =
+            state->lastScatterWasMedium
+                ? HdEmbreeLightSampler::SamplingMode::FullSphere
+                : state->lastLightSamplingMode;
+        HdEmbreeLightSampler::LightSample sample =
+            samplingMode ==
+                    HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere
+                ? HdEmbreeLightSampler::EvaluateDomeLightDirection(
+                      *dome,
+                      state->rayDir,
+                      state->lastLightSamplingNormal,
+                      samplingMode)
+                : HdEmbreeLightSampler::EvaluateDomeLightDirection(
+                      *dome, state->rayDir);
+
+        GfVec3f contribution = sample.Li;
+        if (state->lastBsdfPdf > 0.0f) {
+            const float domePdf = _GetMultiSampleMisLightPdf(
+                sample.invPdfW > 0.0f ? 1.0f / sample.invPdfW : 0.0f,
+                _lightSamplesPerHit);
+            contribution *= mxcpp::Bsdf::PowerHeuristic(
+                state->lastBsdfPdf, domePdf);
+        }
+        _AddPathRadiance(
+            _WeightPathRadiance(contribution, *state), state);
+    }
+}
+
 GfVec3f
 HdEmbreeRenderer::_ComputeDirectLightingMIS(
     GfVec3f const& position,

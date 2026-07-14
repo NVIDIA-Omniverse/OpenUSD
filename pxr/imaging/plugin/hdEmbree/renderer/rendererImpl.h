@@ -512,13 +512,6 @@ _ToMx(const GfMatrix4d& m)
     return result;
 }
 
-struct _HeroWavelengthState
-{
-    bool active = false;
-    float wavelengthNm = 0.0f;
-    float pdf = 0.0f;
-};
-
 inline float
 _RgbToSpectralValue(const GfVec3f& rgb, const _HeroWavelengthState& hero)
 {

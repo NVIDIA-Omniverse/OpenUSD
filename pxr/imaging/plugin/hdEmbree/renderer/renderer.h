@@ -15,6 +15,7 @@
 #include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightLinking.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightRegistry.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/integrator/medium.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/sss.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/sampling/sampling.h"
 
 #include "pxr/imaging/hd/aov.h"
@@ -99,6 +100,13 @@ struct HdEmbreeMediumState {
     mxcpp::MediumProperties medium;
     HdEmbreePrototypeContext const* ownerGeometry = nullptr;
     HdEmbreeCategorySet const* categories = nullptr;
+};
+
+/// Hero-wavelength sampling state shared by path-transport helpers.
+struct _HeroWavelengthState {
+    bool active = false;
+    float wavelengthNm = 0.0f;
+    float pdf = 0.0f;
 };
 
 /// \class HdEmbreeRenderer
@@ -615,58 +623,173 @@ private:
         float heroWavelengthNm = 0.0f,
         float heroWavelengthPdf = 0.0f) const;
 
-    enum class _VolumeTransmissionResult {
-        ContinueSurface,
-        ContinueRay,
-        Terminate
+    /// Mutable transport state shared by the main loop and focused event
+    /// handlers. Borrowed category and geometry pointers remain scene-owned.
+    struct _PathState {
+        GfVec3f radiance = GfVec3f(0.0f);
+        GfVec3f throughput = GfVec3f(1.0f);
+        float spectralThroughput = 1.0f;
+        _HeroWavelengthState hero;
+
+        GfVec3f rayOrigin = GfVec3f(0.0f);
+        GfVec3f rayDir = GfVec3f(0.0f);
+        HdEmbreeRayDifferential rayDiff;
+        HdEmbreeMediumState medium;
+
+        float lastBsdfPdf = 0.0f;
+        bool lastScatterWasMedium = false;
+        HdEmbreeCategorySet const* lastScatterCategories = nullptr;
+        HdEmbreeLightSampler::SamplingMode lastLightSamplingMode =
+            HdEmbreeLightSampler::SamplingMode::FullSphere;
+        GfVec3f lastLightSamplingNormal = GfVec3f(0.0f);
+
+        bool isFirstBounce = true;
+        bool hasDiffuseLikeAncestor = false;
+        bool currentPathIsCaustic = false;
+
+        bool useSyntheticLambertian = false;
+        HdEmbreeSssOutput syntheticLambertianExit;
     };
 
     struct _VolumeTransmissionInput {
-        GfVec3f rayOrigin;
-        GfVec3f rayDir;
         float surfaceDist = std::numeric_limits<float>::infinity();
         bool hasFiniteLightHit = false;
         HdEmbreeLightSampler::LightSample finiteLightHit;
         TfToken finiteLightLink;
         float finiteLightDist = std::numeric_limits<float>::infinity();
         int bounce = 0;
-        bool spectralActive = false;
-        float heroWavelengthNm = 0.0f;
-        float heroWavelengthPdf = 0.0f;
     };
 
-    struct _VolumeTransmissionState {
-        GfVec3f radiance;
-        GfVec3f throughput;
-        float spectralThroughput = 1.0f;
-        GfVec3f rayOrigin;
-        GfVec3f rayDir;
-        HdEmbreeRayDifferential rayDiff;
-        float lastBsdfPdf = 0.0f;
-        bool lastScatterWasMedium = false;
-        bool anyNonSpecularBounces = false;
-        bool hasDiffuseLikeAncestor = false;
-        bool currentPathIsCaustic = false;
-        bool isFirstBounce = false;
-        HdEmbreeCategorySet const* lastScatterCategories = nullptr;
+    enum class _VolumeTransmissionResult {
+        ContinueSurface,
+        ContinueRay,
+        Terminate
     };
+
+    /// \brief Apply an RGB transport weight in the active path representation.
+    ///
+    /// \param weight Finite, non-negative RGB transport multiplier.
+    /// \param state Non-null path state updated in RGB or hero-wavelength mode.
+    void _ApplyPathWeight(GfVec3f const& weight, _PathState* state) const;
+
+    /// \brief Convert current path throughput to display RGB.
+    ///
+    /// \param state Path state with a valid hero PDF when spectral mode is active.
+    /// \return RGB representation of the current transport throughput.
+    GfVec3f _GetPathThroughputRgb(_PathState const& state) const;
+
+    /// \brief Weight RGB radiance by current path throughput.
+    ///
+    /// \param value Linear RGB radiance at the current path vertex.
+    /// \param state Current path throughput and spectral representation.
+    /// \return Throughput-weighted linear RGB radiance.
+    GfVec3f _WeightPathRadiance(
+        GfVec3f const& value, _PathState const& state) const;
+
+    /// \brief Accumulate a pre-weighted path contribution with firefly clamps.
+    ///
+    /// \param contribution Linear RGB contribution after path throughput.
+    /// \param state Non-null state whose radiance accumulator is updated.
+    void _AddPathRadiance(
+        GfVec3f contribution, _PathState* state) const;
 
     /// \brief Transport a path segment through the current medium.
     ///
     /// Applies transmittance, may accumulate a finite-light or scattering
-    /// contribution, and may replace the next ray after a volume event.
-    /// \param input Immutable segment, hit-distance, bounce, and spectral data.
-    /// \param mediumState Active medium; inactive media leave state unchanged.
+    /// contribution, and may replace the ray after a volume event.
+    /// \param input Immutable endpoint distances, light data, and bounce index.
     /// \param domain Sample domain reserved for volume transport.
-    /// \param state Non-null in/out path state owned by the caller; mutated
-    /// according to the returned continuation action.
-    /// \return ContinueSurface to shade the pending surface, ContinueRay when
-    /// \p state contains a new volume-scattered ray, or Terminate to end path.
+    /// \param state Non-null complete path state; its medium must be active.
+    /// \return ContinueSurface to shade the pending surface, ContinueRay for
+    /// a new volume-scattered ray, or Terminate to end the path.
     _VolumeTransmissionResult _TraceVolumeTransmission(
         _VolumeTransmissionInput const& input,
-        HdEmbreeMediumState const& mediumState,
         HdEmbreeSampleDomain const& domain,
-        _VolumeTransmissionState* state) const;
+        _PathState* state) const;
+
+    /// \brief Enter or leave the single active interior medium.
+    ///
+    /// \param closure Surface closure that may define an interior medium.
+    /// \param geometry Non-null scene-owned boundary geometry.
+    /// \param categories Scene-owned receiver categories for the medium.
+    /// \param directionDotNormal Signed outgoing direction versus the
+    /// world-oriented geometric normal; negative enters and positive exits.
+    /// \param state Non-null path state whose medium ownership is updated.
+    void _UpdatePathMedium(
+        mxcpp::SurfaceClosure const& closure,
+        HdEmbreePrototypeContext const* geometry,
+        HdEmbreeCategorySet const& categories,
+        float directionDotNormal,
+        _PathState* state) const;
+
+    /// \brief Accumulate the camera background or indirect environment.
+    ///
+    /// Applies camera visibility policy, light linking, and emitter-hit MIS.
+    /// \param state Non-null path state containing the missed ray direction
+    /// and previous scattering data.
+    void _AccumulateEnvironment(_PathState* state) const;
+
+    enum class _SubsurfaceResult {
+        ContinueAtExit,
+        Terminate
+    };
+
+    struct _SubsurfaceInput {
+        RTCRayHit const* rayHit = nullptr;
+        HdEmbreeInstanceContext const* instanceContext = nullptr;
+        mxcpp::SurfaceClosure const* closure = nullptr;
+        GfVec3f hitPos = GfVec3f(0.0f);
+        GfVec3f normal = GfVec3f(0.0f);
+        GfVec3f faceNormal = GfVec3f(0.0f);
+        GfVec3f wo = GfVec3f(0.0f);
+        GfVec3f sampledEntryDirection = GfVec3f(0.0f);
+        GfVec3f entryWeight = GfVec3f(0.0f);
+        bool hasSampledEntryDirection = false;
+    };
+
+    /// \brief Execute a selected subsurface event and schedule its exit.
+    ///
+    /// \param input Non-null hit, instance, closure, and sampled-entry data.
+    /// Borrowed pointers remain valid for the call.
+    /// \param domain Sample domain reserved for subsurface transport.
+    /// \param state Non-null complete path state updated on success.
+    /// \return ContinueAtExit when state contains a synthetic exit event;
+    /// Terminate when entry validation or the random walk fails.
+    _SubsurfaceResult _TraceSubsurface(
+        _SubsurfaceInput const& input,
+        HdEmbreeSampleDomain const& domain,
+        _PathState* state) const;
+
+    struct _SurfaceDifferentials {
+        GfVec3f dndu = GfVec3f(0.0f);
+        GfVec3f dndv = GfVec3f(0.0f);
+        GfVec3f dpdx = GfVec3f(0.0f);
+        GfVec3f dpdy = GfVec3f(0.0f);
+        float dudx = 0.0f;
+        float dvdx = 0.0f;
+        float dudy = 0.0f;
+        float dvdy = 0.0f;
+    };
+
+    /// \brief Propagate or discard ray differentials after a BSDF sample.
+    ///
+    /// \param surface Differential geometry at the sampled surface.
+    /// \param hitPos World-space surface position.
+    /// \param normal Face-forwarded world-space shading normal.
+    /// \param wo Normalized direction toward the previous path vertex.
+    /// \param wi Normalized sampled continuation direction.
+    /// \param eta Sampled relative IOR; one denotes reflection.
+    /// \param specular Whether the sampled event is delta/specular.
+    /// \param rayDifferential Non-null in/out differential state.
+    void _PropagateRayDifferential(
+        _SurfaceDifferentials const& surface,
+        GfVec3f const& hitPos,
+        GfVec3f const& normal,
+        GfVec3f const& wo,
+        GfVec3f const& wi,
+        float eta,
+        bool specular,
+        HdEmbreeRayDifferential* rayDifferential) const;
 
     /// \brief Integrate a complete multi-bounce camera path with MIS.
     ///

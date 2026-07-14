@@ -5,6 +5,7 @@
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/integrator/medium.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
+#include "../rendererImpl.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/sampling/sampling.h"
 
 #include "pxr/base/gf/math.h"
@@ -835,6 +836,123 @@ HdEmbreeRandomWalkSSS(
     }
 
     return out;  // max bounces exceeded
+}
+
+HdEmbreeRenderer::_SubsurfaceResult
+HdEmbreeRenderer::_TraceSubsurface(
+    _SubsurfaceInput const& input,
+    HdEmbreeSampleDomain const& domain,
+    _PathState* state) const
+{
+    if (!state || !input.rayHit || !input.instanceContext ||
+        !input.closure) {
+        return _SubsurfaceResult::Terminate;
+    }
+
+    GfVec3f entryDirection = input.sampledEntryDirection;
+    if (!input.hasSampledEntryDirection) {
+        const GfVec2f sample =
+            domain.Fork(HdEmbreeSampleDomainKey::SssEntryDirection).Draw2D();
+        mxcpp::Vec3f sampledDirection;
+        if (!mxcpp::Bsdf::SampleSubsurfaceEntry(
+                *input.closure,
+                _ToMx(input.normal),
+                _ToMx(input.wo),
+                sample[0],
+                sample[1],
+                sampledDirection)) {
+            return _SubsurfaceResult::Terminate;
+        }
+        entryDirection = _ToGf(sampledDirection);
+    }
+
+    // A direction that is inward in the shading frame can still point out of
+    // the true face when a normal map strongly tilts the frame.
+    if (GfDot(input.faceNormal, entryDirection) >= 0.0f) {
+        return _SubsurfaceResult::Terminate;
+    }
+
+    GfVec3f entryWeight = input.entryWeight;
+    for (int i = 0; i < 3; ++i) {
+        if (!std::isfinite(entryWeight[i]) || entryWeight[i] < 0.0f) {
+            entryWeight[i] = 0.0f;
+        }
+    }
+    _ApplyPathWeight(entryWeight, state);
+    if (_IsNearlyBlack(
+            _GetPathThroughputRgb(*state), _minLuminanceCutoff)) {
+        return _SubsurfaceResult::Terminate;
+    }
+
+    HdEmbreeSssInput walkInput;
+    walkInput.entryPos = input.hitPos;
+    walkInput.entryGeomNormal = input.normal;
+    walkInput.entryDir = entryDirection;
+    walkInput.albedo = _ToGf(input.closure->subsurfaceColor);
+    walkInput.radius = GfCompMult(
+        _ToGf(input.closure->subsurfaceRadius),
+        _ToGf(input.closure->subsurfaceRadiusScale));
+    walkInput.anisotropy =
+        std::clamp(input.closure->subsurfaceAnisotropy, -0.99f, 0.99f);
+    if (input.closure->hasPrecomputedSubsurfaceMedium &&
+        !input.closure->precomputedSubsurfaceMedium.IsVacuum()) {
+        walkInput.usePrecomputedCoefficients = true;
+        walkInput.precomputedSigmaA =
+            _ToGf(input.closure->precomputedSubsurfaceMedium.sigmaA);
+        walkInput.precomputedSigmaS =
+            _ToGf(input.closure->precomputedSubsurfaceMedium.sigmaS);
+        walkInput.anisotropy = std::clamp(
+            input.closure->precomputedSubsurfaceMedium.anisotropy,
+            -0.99f,
+            0.99f);
+    }
+    walkInput.ior = std::max(input.closure->specularIor, 1.0f);
+    walkInput.ownerInstanceId = input.rayHit->hit.instID[0];
+    walkInput.ownerGeomId = input.rayHit->hit.geomID;
+    walkInput.ownerScene = input.instanceContext->rootScene;
+    walkInput.objectToWorldMatrix =
+        input.instanceContext->objectToWorldMatrix;
+    walkInput.worldToObjectMatrix =
+        input.instanceContext->worldToObjectMatrix;
+
+    HdEmbreeSssOutput output = HdEmbreeRandomWalkSSS(
+        walkInput,
+        domain.Fork(HdEmbreeSampleDomainKey::SssEntry),
+        _scene);
+    _sssCallCount.fetch_add(1, std::memory_order_relaxed);
+    _sssWalkStepCount.fetch_add(
+        output.walkSteps, std::memory_order_relaxed);
+    _sssIntersectionCount.fetch_add(
+        output.intersectionTests, std::memory_order_relaxed);
+    if (output.success) {
+        _sssSuccessCount.fetch_add(1, std::memory_order_relaxed);
+    } else {
+        return _SubsurfaceResult::Terminate;
+    }
+
+    GfVec3f walkWeight = output.throughputWeight;
+    for (int i = 0; i < 3; ++i) {
+        if (!std::isfinite(walkWeight[i]) || walkWeight[i] < 0.0f) {
+            walkWeight[i] = 0.0f;
+        }
+    }
+    _ApplyPathWeight(walkWeight, state);
+    if (_IsNearlyBlack(
+            _GetPathThroughputRgb(*state), _minLuminanceCutoff)) {
+        return _SubsurfaceResult::Terminate;
+    }
+
+    state->rayOrigin = output.exitPos;
+    state->rayDir = -output.exitDir;
+    state->rayDiff.hasDifferentials = false;
+    state->lastBsdfPdf = 0.0f;
+    state->lastScatterWasMedium = false;
+    state->hasDiffuseLikeAncestor = true;
+    state->isFirstBounce = false;
+    state->syntheticLambertianExit = output;
+    state->useSyntheticLambertian = true;
+    state->medium = HdEmbreeMediumState();
+    return _SubsurfaceResult::ContinueAtExit;
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE
