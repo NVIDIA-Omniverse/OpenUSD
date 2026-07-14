@@ -9,6 +9,7 @@
 #include "adobeOpenPbr.h"
 #include "bsdfDielectricBothLut.h"
 #include "bsdfDielectricReflFrontLut.h"
+#include "bsdfDielectricTransmissionLut.h"
 
 #include "../spectral.h"
 #include "../nodes/helpers/colorHelpers.h"
@@ -305,6 +306,82 @@ _LookupBsdlDielectricBothMissingEnergy(
         const int index =
             (i * lut::kBsdlDielectricBothRoughnessCount + r) *
                 lut::kBsdlDielectricBothCosThetaCount +
+            cosine;
+        return values[index];
+    };
+    const auto lerpCos = [&](int i, int r) {
+        return lookup(i, r, cos0) * (1.0f - cosT) +
+            lookup(i, r, cos1) * cosT;
+    };
+    const auto lerpRoughness = [&](int i) {
+        return lerpCos(i, roughness0) * (1.0f - roughnessT) +
+            lerpCos(i, roughness1) * roughnessT;
+    };
+
+    return _Clamp01(
+        lerpRoughness(ior0) * (1.0f - iorT) +
+        lerpRoughness(ior1) * iorT);
+}
+
+inline float
+_LookupBsdlDielectricTransmissionSingleScatterAlbedo(
+    float cosTheta,
+    float perceptualRoughness,
+    float ior,
+    bool backfacing)
+{
+    namespace lut = bsdf_luts;
+
+    const float c = _Clamp01(cosTheta);
+    const float roughness = _Clamp01(perceptualRoughness);
+    const float clampedIor = std::clamp(
+        ior,
+        _kBsdlDielectricIorMin,
+        _kBsdlDielectricIorMax);
+
+    const float iorIndex = std::sqrt(
+        (clampedIor - _kBsdlDielectricIorMin) /
+        (_kBsdlDielectricIorMax - _kBsdlDielectricIorMin));
+    const float iorCoord = iorIndex * static_cast<float>(
+        lut::kBsdlDielectricTransmissionIorCount - 1);
+    const int ior0 = std::clamp(
+        static_cast<int>(iorCoord),
+        0,
+        lut::kBsdlDielectricTransmissionIorCount - 1);
+    const int ior1 = std::min(
+        ior0 + 1, lut::kBsdlDielectricTransmissionIorCount - 1);
+    const float iorT = iorCoord - static_cast<float>(ior0);
+
+    const float roughnessCoord = roughness * static_cast<float>(
+        lut::kBsdlDielectricTransmissionRoughnessCount - 1);
+    const int roughness0 = std::clamp(
+        static_cast<int>(roughnessCoord),
+        0,
+        lut::kBsdlDielectricTransmissionRoughnessCount - 1);
+    const int roughness1 = std::min(
+        roughness0 + 1,
+        lut::kBsdlDielectricTransmissionRoughnessCount - 1);
+    const float roughnessT =
+        roughnessCoord - static_cast<float>(roughness0);
+
+    const float cosCoord = c * static_cast<float>(
+        lut::kBsdlDielectricTransmissionCosThetaCount - 1);
+    const int cos0 = std::clamp(
+        static_cast<int>(cosCoord),
+        0,
+        lut::kBsdlDielectricTransmissionCosThetaCount - 1);
+    const int cos1 = std::min(
+        cos0 + 1,
+        lut::kBsdlDielectricTransmissionCosThetaCount - 1);
+    const float cosT = cosCoord - static_cast<float>(cos0);
+
+    const float* values = backfacing
+        ? lut::kBsdlDielectricTransmissionBackSingleScatterAlbedo
+        : lut::kBsdlDielectricTransmissionFrontSingleScatterAlbedo;
+    const auto lookup = [&](int i, int r, int cosine) {
+        const int index =
+            (i * lut::kBsdlDielectricTransmissionRoughnessCount + r) *
+                lut::kBsdlDielectricTransmissionCosThetaCount +
             cosine;
         return values[index];
     };
@@ -949,7 +1026,45 @@ _IsGgxMicrofacetMultipleScatteringEnabled()
 }
 
 inline float
-_BsdlRoughDielectricTransmissionScale(
+_AverageFresnelDielectric(float eta)
+{
+    if (eta < 1.0f) {
+        return 0.997118f +
+            eta * (0.1014f + eta * (-0.965241f - eta * 0.130607f));
+    }
+    return (eta - 1.0f) / (4.08567f + 1.00071f * eta);
+}
+
+float
+_AverageBsdlDielectricBothMissingEnergy(
+    float perceptualRoughness,
+    float ior,
+    bool backfacing)
+{
+    // Four-point Gauss-Legendre integration of the cosine-weighted average
+    // 2 * integral(E(c) * c, c=0..1). The factor of two cancels the interval
+    // transform, leaving the standard quadrature weights below.
+    constexpr float cosTheta[4] = {
+        0.0694318442f, 0.3300094782f, 0.6699905218f, 0.9305681558f};
+    constexpr float weight[4] = {
+        0.1739274226f, 0.3260725774f, 0.3260725774f, 0.1739274226f};
+    float average = 0.0f;
+    for (int i = 0; i < 4; ++i) {
+        average += weight[i] * cosTheta[i] *
+            _LookupBsdlDielectricBothMissingEnergy(
+                cosTheta[i], perceptualRoughness, ior, backfacing);
+    }
+    return _Clamp01(average);
+}
+
+struct _CoupledDielectricCompensation
+{
+    float missingEnergy = 0.0f;
+    float reflectionRatio = 0.0f;
+};
+
+inline _CoupledDielectricCompensation
+_BsdlCoupledDielectricCompensation(
     float cosThetaO,
     float perceptualRoughness,
     float ior,
@@ -957,7 +1072,7 @@ _BsdlRoughDielectricTransmissionScale(
 {
     if (!_IsGgxMicrofacetMultipleScatteringEnabled() ||
         perceptualRoughness < std::sqrt(_kTurquinMicrofacetMsMinAlpha)) {
-        return 1.0f;
+        return {};
     }
 
     const float missingEnergy = _LookupBsdlDielectricBothMissingEnergy(
@@ -965,7 +1080,29 @@ _BsdlRoughDielectricTransmissionScale(
         perceptualRoughness,
         ior,
         backfacing);
-    return 1.0f / std::max(0.01f, 1.0f - missingEnergy);
+    if (missingEnergy <= 0.0f) {
+        return {};
+    }
+
+    const float eta = backfacing
+        ? 1.0f / std::max(ior, _kEpsilon)
+        : std::max(ior, _kEpsilon);
+    const float ratioFront = _Clamp01(_AverageFresnelDielectric(eta));
+    const float ratioBack = _Clamp01(_AverageFresnelDielectric(1.0f / eta));
+    const float averageCurrent = _AverageBsdlDielectricBothMissingEnergy(
+        perceptualRoughness, ior, backfacing);
+    const float averageOpposite = _AverageBsdlDielectricBothMissingEnergy(
+        perceptualRoughness, ior, !backfacing);
+    const float left = (1.0f - ratioFront) /
+        std::max(averageOpposite, _kEpsilon);
+    const float right = (1.0f - ratioBack) /
+        std::max(averageCurrent, _kEpsilon) * eta * eta;
+    const float x = right > 1.0e12f
+        ? 1.0f
+        : right / std::max(left + right, _kEpsilon);
+    const float reflectionRatio = _Clamp01(
+        1.0f - x * (1.0f - ratioFront));
+    return {missingEnergy, reflectionRatio};
 }
 
 inline Bsdf::DielectricLayerThroughputMode
@@ -1716,7 +1853,8 @@ _EvalMicrofacetReflectionAnisotropic(
     float weight,
     const Vec3f& N,
     const Vec3f& wi,
-    const Vec3f& wo)
+    const Vec3f& wo,
+    bool compensateMissingEnergy = true)
 {
     const _Frame frame = _Frame::FromNormalAndTangent(N, tangent);
     const Vec3f woLocal = frame.ToLocal(wo);
@@ -1740,10 +1878,12 @@ _EvalMicrofacetReflectionAnisotropic(
     const Vec2f alpha = _ClampAlpha(roughness);
     const float D = _GGX_D_Anisotropic(alpha, wmLocal);
     const float G = _GGX_G_Anisotropic(alpha, woLocal, wiLocal);
-    const Vec3f compensatedFresnel = CompMul(
-        fresnel,
-        _TurquinMicrofacetMsScale(
-            _AverageAlphaForEnergy(alpha), cosThetaO, fresnel)) * weight;
+    const Vec3f compensatedFresnel = compensateMissingEnergy
+        ? CompMul(
+              fresnel,
+              _TurquinMicrofacetMsScale(
+                  _AverageAlphaForEnergy(alpha), cosThetaO, fresnel)) * weight
+        : fresnel * weight;
     return _SafeVec(CompMul(
         compensatedFresnel,
         Vec3f(D * G / std::max(4.0f * cosThetaI * cosThetaO, _kEpsilon))));
@@ -1756,7 +1896,8 @@ _EvalMicrofacetReflectionIsotropic(
     float weight,
     const Vec3f& N,
     const Vec3f& wi,
-    const Vec3f& wo)
+    const Vec3f& wo,
+    bool compensateMissingEnergy = true)
 {
     const float clampedAlpha =
         std::clamp(alpha, _kMinMicrofacetAlpha, 1.0f);
@@ -1774,9 +1915,11 @@ _EvalMicrofacetReflectionIsotropic(
     const float NdotH = std::max(Dot(N, H), 0.0f);
     const float D = _GGX_D(clampedAlpha, NdotH);
     const float G = _GGX_G(clampedAlpha, NdotV, NdotL);
-    const Vec3f compensatedFresnel = CompMul(
-        fresnel,
-        _TurquinMicrofacetMsScale(clampedAlpha, NdotV, fresnel)) * weight;
+    const Vec3f compensatedFresnel = compensateMissingEnergy
+        ? CompMul(
+              fresnel,
+              _TurquinMicrofacetMsScale(clampedAlpha, NdotV, fresnel)) * weight
+        : fresnel * weight;
     return _SafeVec(CompMul(
         compensatedFresnel,
         Vec3f(D * G / std::max(4.0f * NdotL * NdotV, _kEpsilon))));
@@ -1842,6 +1985,341 @@ _SampleGGXSpecularAnisotropic(const Vec2f& roughness,
         Vec3f(0.0f),
         pdfWm / (4.0f * VdotH),
         false};
+}
+
+inline bool
+_UsesCoupledRoughDielectricSampling(
+    const Bsdf::DielectricInterfaceData& data)
+{
+    return data.compensateCoupledDielectric &&
+        !data.thinWalled &&
+        data.reflectionWeight > 0.0f &&
+        data.transmissionWeight > 0.0f &&
+        !_IsEffectivelyDeltaAlpha(data.roughness);
+}
+
+inline bool
+_IsRoughCoupledTransmissionInterfaceForStraightShadow(
+    const Bsdf::DielectricInterfaceData& data)
+{
+    const bool hasThinFilm =
+        data.thinFilmWeight > _kEpsilon &&
+        data.thinFilmThickness > _kEpsilon;
+    return _UsesCoupledRoughDielectricSampling(data) && !hasThinFilm;
+}
+
+inline bool
+_CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+    const Bsdf::ClosureTree& tree,
+    Bsdf::NodeId nodeId,
+    const Bsdf::DielectricInterfaceData** result)
+{
+    const Bsdf::Node* const node = tree.Get(nodeId);
+    if (!node) {
+        return true;
+    }
+
+    return std::visit(
+        [&](const auto& data) -> bool {
+            using T = std::decay_t<decltype(data)>;
+            if constexpr (std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
+                if (!_IsRoughCoupledTransmissionInterfaceForStraightShadow(
+                        data)) {
+                    return true;
+                }
+                if (*result) {
+                    return false;
+                }
+                *result = &data;
+                return true;
+            } else if constexpr (std::is_same_v<T, Bsdf::MixData>) {
+                if (data.mix <= _kEpsilon) {
+                    return _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                        tree, data.bg, result);
+                }
+                if (data.mix >= 1.0f - _kEpsilon) {
+                    return _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                        tree, data.fg, result);
+                }
+                return _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                           tree, data.fg, result) &&
+                    _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                        tree, data.bg, result);
+            } else if constexpr (std::is_same_v<T, Bsdf::LayerData>) {
+                return _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                           tree, data.top, result) &&
+                    _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                        tree, data.base, result);
+            } else if constexpr (std::is_same_v<T, Bsdf::AddData>) {
+                return _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                           tree, data.in1, result) &&
+                    _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                        tree, data.in2, result);
+            } else if constexpr (std::is_same_v<T, Bsdf::MultiplyData>) {
+                return _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                    tree, data.input, result);
+            } else {
+                return true;
+            }
+        },
+        node->data);
+}
+
+inline const Bsdf::DielectricInterfaceData*
+_FindRoughCoupledTransmissionInterfaceForStraightShadow(
+    const SurfaceClosure& closure)
+{
+    if (!closure.HasBsdfTree()) {
+        return nullptr;
+    }
+    const Bsdf::DielectricInterfaceData* result = nullptr;
+    return _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+               closure.bsdfTree, closure.bsdfTree.root, &result)
+        ? result
+        : nullptr;
+}
+
+inline _CoupledDielectricCompensation
+_GetCoupledDielectricCompensation(
+    const Bsdf::DielectricInterfaceData& data,
+    float effectiveIor,
+    const Vec3f& geometricN,
+    const Vec3f& shadingN,
+    const Vec3f& wo)
+{
+    if (!_UsesCoupledRoughDielectricSampling(data)) {
+        return {};
+    }
+    return _BsdlCoupledDielectricCompensation(
+        std::max(std::abs(Dot(shadingN, wo)), _kEpsilon),
+        _BsdlLayerRoughnessFromAlpha(data.roughness),
+        effectiveIor,
+        Dot(geometricN, wo) < 0.0f);
+}
+
+Vec3f
+_EvalCoupledRoughDielectricTransmission(
+    const Bsdf::DielectricInterfaceData& data,
+    float effectiveIor,
+    const Vec3f& geometricN,
+    const Vec3f& shadingN,
+    const Vec3f& wi,
+    const Vec3f& wo)
+{
+    const _Frame frame = _Frame::FromNormalAndTangent(
+        shadingN, data.tangent);
+    const Vec3f woLocal = frame.ToLocal(wo);
+    const Vec3f wiLocal = frame.ToLocal(wi);
+    const float cosThetaO = woLocal[2];
+    const float cosThetaI = -wiLocal[2];
+    if (cosThetaO <= _kEpsilon || cosThetaI <= _kEpsilon) {
+        return Vec3f(0.0f);
+    }
+
+    const bool backside = Dot(geometricN, wo) < 0.0f;
+    const float etap = backside
+        ? 1.0f / std::max(effectiveIor, _kEpsilon)
+        : std::max(effectiveIor, _kEpsilon);
+    Vec3f wmLocal = wiLocal * etap + woLocal;
+    if (wmLocal.length() < _kEpsilon) {
+        return Vec3f(0.0f);
+    }
+    wmLocal.normalize();
+    if (wmLocal[2] < 0.0f) {
+        wmLocal = -wmLocal;
+    }
+
+    const float cosMO = Dot(woLocal, wmLocal);
+    const float cosMI = Dot(wiLocal, wmLocal);
+    if (cosMO <= _kEpsilon || cosMI >= -_kEpsilon) {
+        return Vec3f(0.0f);
+    }
+    const float denom = cosMI + cosMO / etap;
+    const float denom2 = denom * denom;
+    if (denom2 <= _kEpsilon) {
+        return Vec3f(0.0f);
+    }
+
+    const Vec2f alpha = _ClampAlpha(data.roughness);
+    const float D = _GGX_D_Anisotropic(alpha, wmLocal);
+    const Vec3f wiReflectionSide(
+        wiLocal[0], wiLocal[1], -wiLocal[2]);
+    const float G = _GGX_G_Anisotropic(
+        alpha, woLocal, wiReflectionSide);
+    const Vec3f transmission =
+        _DielectricInterfaceTransmissionCoefficient(
+            data, cosMO, effectiveIor, backside);
+    const float scale = D * G * std::abs(cosMO * cosMI) /
+        std::max(cosThetaO * cosThetaI * denom2, _kEpsilon);
+    return _SafeVec(transmission * scale);
+}
+
+float
+_PdfCoupledRoughDielectric(
+    const Bsdf::DielectricInterfaceData& data,
+    float effectiveIor,
+    const Vec3f& geometricN,
+    const Vec3f& shadingN,
+    const Vec3f& wi,
+    const Vec3f& wo)
+{
+    const _Frame frame = _Frame::FromNormalAndTangent(
+        shadingN, data.tangent);
+    const Vec3f woLocal = frame.ToLocal(wo);
+    const Vec3f wiLocal = frame.ToLocal(wi);
+    if (woLocal[2] <= 0.0f || std::abs(wiLocal[2]) <= _kEpsilon) {
+        return 0.0f;
+    }
+
+    const bool backside = Dot(geometricN, wo) < 0.0f;
+    const bool reflection = _IsSameSide(geometricN, wi, wo);
+    const float etap = backside
+        ? 1.0f / std::max(effectiveIor, _kEpsilon)
+        : std::max(effectiveIor, _kEpsilon);
+
+    Vec3f wmLocal = reflection
+        ? wiLocal + woLocal
+        : wiLocal * etap + woLocal;
+    if (wmLocal.length() < _kEpsilon) {
+        return 0.0f;
+    }
+    wmLocal.normalize();
+    if (wmLocal[2] < 0.0f) {
+        wmLocal = -wmLocal;
+    }
+
+    const float cosMO = std::abs(Dot(woLocal, wmLocal));
+    if (cosMO <= _kEpsilon) {
+        return 0.0f;
+    }
+    const _DielectricInterfaceSelection selection =
+        _DielectricInterfaceSelectionProbabilities(
+            data, cosMO, effectiveIor, backside);
+    const Vec2f alpha = _ClampAlpha(data.roughness);
+    const float pdfWm = _PdfGGX_VNDF_Anisotropic(
+        woLocal, wmLocal, alpha);
+    float specularPdf = 0.0f;
+    if (reflection) {
+        specularPdf = selection.reflection * pdfWm / (4.0f * cosMO);
+    } else if (Dot(wiLocal, wmLocal) * Dot(woLocal, wmLocal) < 0.0f) {
+        const float denom =
+            Dot(wiLocal, wmLocal) + Dot(woLocal, wmLocal) / etap;
+        const float denom2 = denom * denom;
+        if (denom2 > _kEpsilon) {
+            const float dwmDwi =
+                std::abs(Dot(wiLocal, wmLocal)) / denom2;
+            specularPdf = selection.transmission * pdfWm * dwmDwi;
+        }
+    }
+
+    const _CoupledDielectricCompensation compensation =
+        _GetCoupledDielectricCompensation(
+            data, effectiveIor, geometricN, shadingN, wo);
+    const float specularProbability = 1.0f - compensation.missingEnergy;
+    const float compensationSideRatio = reflection
+        ? compensation.reflectionRatio
+        : 1.0f - compensation.reflectionRatio;
+    const float compensationPdf = compensation.missingEnergy *
+        compensationSideRatio *
+        _CosineHemispherePdf(std::abs(wiLocal[2]));
+    return specularProbability * specularPdf + compensationPdf;
+}
+
+Bsdf::BsdfSample
+_SampleCoupledRoughDielectric(
+    const Bsdf::DielectricInterfaceData& data,
+    float effectiveIor,
+    const Vec3f& geometricN,
+    const Vec3f& shadingN,
+    const Vec3f& wo,
+    float u1,
+    float u2,
+    float uChoice)
+{
+    const _Frame frame = _Frame::FromNormalAndTangent(
+        shadingN, data.tangent);
+    const Vec3f woLocal = frame.ToLocal(wo);
+    if (woLocal[2] <= 0.0f) {
+        return Bsdf::BsdfSample{
+            Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
+    }
+
+    const bool backside = Dot(geometricN, wo) < 0.0f;
+    const _CoupledDielectricCompensation compensation =
+        _GetCoupledDielectricCompensation(
+            data, effectiveIor, geometricN, shadingN, wo);
+    const float specularProbability = 1.0f - compensation.missingEnergy;
+    if (compensation.missingEnergy > 0.0f && u1 >= specularProbability) {
+        const float remappedU1 = (u1 - specularProbability) /
+            compensation.missingEnergy;
+        Vec3f wiLocal = _SampleCosineHemisphere(remappedU1, u2);
+        const bool sampleReflection =
+            uChoice < compensation.reflectionRatio;
+        if (!sampleReflection) {
+            wiLocal[2] = -wiLocal[2];
+        }
+        Bsdf::BsdfSample sample{
+            frame.ToWorld(wiLocal), Vec3f(0.0f), 1.0f, false};
+        sample.eta = sampleReflection
+            ? 1.0f
+            : (backside
+                ? std::max(effectiveIor, _kEpsilon)
+                : 1.0f / std::max(effectiveIor, _kEpsilon));
+        return sample;
+    }
+
+    if (specularProbability <= 0.0f) {
+        return Bsdf::BsdfSample{
+            Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
+    }
+    u1 /= specularProbability;
+    const Vec2f alpha = _ClampAlpha(data.roughness);
+    const Vec3f wmLocal = _SampleGGX_VNDF_Anisotropic(
+        woLocal, alpha, u1, u2);
+    const float cosMO = std::abs(Dot(woLocal, wmLocal));
+    const _DielectricInterfaceSelection selection =
+        _DielectricInterfaceSelectionProbabilities(
+            data, cosMO, effectiveIor, backside);
+    if (selection.reflection + selection.transmission <= 0.0f) {
+        return Bsdf::BsdfSample{
+            Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
+    }
+
+    const float eta = backside
+        ? std::max(effectiveIor, _kEpsilon)
+        : 1.0f / std::max(effectiveIor, _kEpsilon);
+    const float sin2T = eta * eta *
+        std::max(0.0f, 1.0f - cosMO * cosMO);
+    const bool totalInternalReflection = sin2T >= 1.0f;
+    const bool chooseReflection = totalInternalReflection ||
+        uChoice < selection.reflection;
+
+    Vec3f wiLocal;
+    if (chooseReflection) {
+        wiLocal = 2.0f * Dot(woLocal, wmLocal) * wmLocal - woLocal;
+        if (wiLocal[2] <= 0.0f) {
+            return Bsdf::BsdfSample{
+                Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
+        }
+    } else {
+        float cosT = std::sqrt(std::max(0.0f, 1.0f - sin2T));
+        wiLocal = -eta * woLocal +
+            (eta * cosMO - cosT) * wmLocal;
+        if (wiLocal.length() < _kEpsilon) {
+            return Bsdf::BsdfSample{
+                Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
+        }
+        wiLocal.normalize();
+        if (wiLocal[2] >= 0.0f) {
+            return Bsdf::BsdfSample{
+                Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
+        }
+    }
+
+    Bsdf::BsdfSample sample{
+        frame.ToWorld(wiLocal), Vec3f(0.0f), 1.0f, false};
+    sample.eta = chooseReflection ? 1.0f : eta;
+    return sample;
 }
 
 float
@@ -2611,6 +3089,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             if (_IsEffectivelyDeltaAlpha(data.roughness)) {
                 return Vec3f(0.0f);
             }
+            const bool compensateCoupledDielectric =
+                _UsesCoupledRoughDielectricSampling(data);
             if (sameSide && data.reflectionWeight > 0.0f) {
                 const Vec3f fresnel = _DielectricInterfaceReflectionCoefficient(
                     data,
@@ -2625,7 +3105,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                         1.0f,
                         shadingN,
                         wi,
-                        wo);
+                        wo,
+                        !compensateCoupledDielectric);
                 } else {
                     result += _EvalMicrofacetReflectionAnisotropic(
                         data.roughness,
@@ -2634,7 +3115,8 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                         1.0f,
                         shadingN,
                         wi,
-                        wo);
+                        wo,
+                        !compensateCoupledDielectric);
                 }
             }
             if (!sameSide && data.transmissionWeight > 0.0f) {
@@ -2672,34 +3154,47 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     return _SafeVec(result);
                 }
 
-                const float fresnelCos =
-                    _TransmissionFresnelCosTheta(effectiveIor, N, wi, wo);
-                const float baseReflectance =
-                    _SchlickFresnelScalar(effectiveIor, fresnelCos);
-                const float energyScale =
-                    data.compensateRoughTransmission
-                        ? _BsdlRoughDielectricTransmissionScale(
-                              std::max(
-                                  std::abs(Dot(shadingN, wo)), _kEpsilon),
-                              _BsdlLayerRoughnessFromAlpha(data.roughness),
-                              effectiveIor,
-                              Dot(N, wo) < 0.0f)
-                        : 1.0f;
-                const Vec3f transmissionScale = _TransmissionScale(
-                    baseReflectance,
-                    _DielectricInterfaceReflectanceUntinted(
-                        data, fresnelCos, effectiveIor,
-                        Dot(N, wo) < 0.0f));
-                result += CompMul(
-                    Bsdf::EvalGGXTransmission(
-                        _AverageAlphaAsRoughness(data.roughness),
-                        effectiveIor,
-                        data.transmissionTint,
-                        N,
-                        wi,
-                        wo) * _Clamp01(data.transmissionWeight),
-                    transmissionScale) *
-                    energyScale;
+                if (compensateCoupledDielectric) {
+                    result += _EvalCoupledRoughDielectricTransmission(
+                        data, effectiveIor, N, shadingN, wi, wo);
+                } else {
+                    const float fresnelCos =
+                        _TransmissionFresnelCosTheta(
+                            effectiveIor, N, wi, wo);
+                    const float baseReflectance =
+                        _SchlickFresnelScalar(effectiveIor, fresnelCos);
+                    const Vec3f transmissionScale = _TransmissionScale(
+                        baseReflectance,
+                        _DielectricInterfaceReflectanceUntinted(
+                            data, fresnelCos, effectiveIor,
+                            Dot(N, wo) < 0.0f));
+                    result += CompMul(
+                        Bsdf::EvalGGXTransmission(
+                            _AverageAlphaAsRoughness(data.roughness),
+                            effectiveIor,
+                            data.transmissionTint,
+                            N,
+                            wi,
+                            wo) * _Clamp01(data.transmissionWeight),
+                        transmissionScale);
+                }
+            }
+            if (compensateCoupledDielectric) {
+                const _CoupledDielectricCompensation compensation =
+                    _GetCoupledDielectricCompensation(
+                        data, effectiveIor, N, shadingN, wo);
+                if (compensation.missingEnergy > 0.0f) {
+                    const float sideRatio = sameSide
+                        ? compensation.reflectionRatio
+                        : 1.0f - compensation.reflectionRatio;
+                    const Vec3f tint = sameSide
+                        ? _SafeVec(data.reflectionTint) *
+                            _Clamp01(data.reflectionWeight)
+                        : _SafeVec(data.transmissionTint) *
+                            _Clamp01(data.transmissionWeight);
+                    result += tint *
+                        (compensation.missingEnergy * sideRatio * kInvPi);
+                }
             }
             return _SafeVec(result);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
@@ -3190,6 +3685,10 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             if (_IsEffectivelyDeltaAlpha(data.roughness)) {
                 return 0.0f;
             }
+            if (_UsesCoupledRoughDielectricSampling(data)) {
+                return _PdfCoupledRoughDielectric(
+                    data, effectiveIor, N, shadingN, wi, wo);
+            }
             const float NdotV =
                 std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
             const _DielectricInterfaceSelection selection =
@@ -3565,6 +4064,19 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
 
             const bool hasDeltaRoughness =
                 _IsEffectivelyDeltaAlpha(data.roughness);
+            if (_UsesCoupledRoughDielectricSampling(data)) {
+                auto sample = _SampleCoupledRoughDielectric(
+                    data,
+                    effectiveIor,
+                    N,
+                    shadingN,
+                    wo,
+                    u1,
+                    u2,
+                    uChoice);
+                return _FinalizeSubtreeSample(
+                    tree, nodeId, N, wo, sample, heroWavelengthNm);
+            }
             if (hasDeltaRoughness &&
                 !data.thinWalled &&
                 _WouldTotalInternalReflect(effectiveIor, N, wo)) {
@@ -4260,6 +4772,49 @@ Bsdf::GgxDirectionalSingleScatterEnergy(
     float alphaRoughness)
 {
     return 1.0f - _LookupGgxMissingEnergy(cosTheta, alphaRoughness);
+}
+
+float
+Bsdf::CoupledRoughDielectricDirectionalTransmissionAlbedo(
+    float cosTheta,
+    const Vec2f& roughness,
+    float ior,
+    bool backfacing,
+    bool compensateMultipleScattering)
+{
+    const float perceptualRoughness =
+        _BsdlLayerRoughnessFromAlpha(roughness);
+    float albedo = _LookupBsdlDielectricTransmissionSingleScatterAlbedo(
+        cosTheta, perceptualRoughness, ior, backfacing);
+    if (compensateMultipleScattering) {
+        const _CoupledDielectricCompensation compensation =
+            _BsdlCoupledDielectricCompensation(
+                cosTheta, perceptualRoughness, ior, backfacing);
+        albedo += compensation.missingEnergy *
+            (1.0f - compensation.reflectionRatio);
+    }
+    return _Clamp01(albedo);
+}
+
+float
+Bsdf::StraightShadowDielectricTransmission(
+    const SurfaceClosure& closure,
+    float signedCosTheta)
+{
+    const float cosTheta = _Clamp01(std::abs(signedCosTheta));
+    const float safeIor = std::max(closure.specularIor, 1.0f);
+    const auto* interface =
+        _FindRoughCoupledTransmissionInterfaceForStraightShadow(closure);
+    if (!interface) {
+        return _Clamp01(
+            1.0f - _SchlickFresnelScalar(safeIor, cosTheta));
+    }
+    return CoupledRoughDielectricDirectionalTransmissionAlbedo(
+        cosTheta,
+        interface->roughness,
+        interface->ior,
+        signedCosTheta > 0.0f,
+        interface->compensateCoupledDielectric);
 }
 
 Bsdf::BsdfSample

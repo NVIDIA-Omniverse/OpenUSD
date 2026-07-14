@@ -231,9 +231,11 @@ plugin in the active Pixi environment.
   behavior, but verify against code when changing settings.
 
 Keep transmissive model policy explicit in compiled closures. OpenPBR and
-metalness-workflow UsdPreviewSurface coupled interfaces enable rough-
-transmission energy compensation. Standard Surface retains separate reflection
-and transmission lobes, with `thin_walled` using IOR 1. OpenPBR
+metalness-workflow UsdPreviewSurface coupled interfaces enable combined
+reflection/refraction energy compensation through an additive cosine
+multiple-scattering lobe, and choose glossy rough branches from the sampled
+microfacet Fresnel response. Standard Surface retains separate
+reflection and transmission lobes, with `thin_walled` using IOR 1. OpenPBR
 `geometry_thin_walled` uses the coupled thin-sheet interface and retains
 authored-IOR Fresnel.
 

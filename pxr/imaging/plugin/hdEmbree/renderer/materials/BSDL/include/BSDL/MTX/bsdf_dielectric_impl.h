@@ -12,6 +12,8 @@
 #    include <BSDL/MTX/bsdf_dielectric_bothback_luts.h>
 #    include <BSDL/MTX/bsdf_dielectric_bothfront_luts.h>
 #    include <BSDL/MTX/bsdf_dielectric_reflfront_luts.h>
+#    include <BSDL/MTX/bsdf_dielectric_transback_luts.h>
+#    include <BSDL/MTX/bsdf_dielectric_transfront_luts.h>
 #endif
 
 BSDL_ENTER_NAMESPACE
@@ -105,6 +107,58 @@ DielectricBothBack::DielectricBothBack(float cosNO, float roughness_index,
         DielectricFresnel::from_table_index(fresnel_index, true), cosNO,
         roughness_index, true)
 {
+}
+
+BSDL_INLINE_METHOD
+DielectricTransFront::DielectricTransFront(
+    float cosNO, float roughness_index, float fresnel_index)
+    : DielectricBSDF<DielectricFresnel>(
+        GGXDist(roughness_index, 0),
+        DielectricFresnel::from_table_index(fresnel_index, false), cosNO,
+        roughness_index, true)
+{
+}
+
+BSDL_INLINE_METHOD Sample
+DielectricTransFront::sample(
+    Imath::V3f wo, float randu, float randv, float /*randw*/) const
+{
+    const float z = randu;
+    const float r = sqrtf(std::max(0.0f, 1.0f - z * z));
+    const float phi = 2.0f * PI * randv;
+    const Imath::V3f wi = {r * cosf(phi), r * sinf(phi), -z};
+    Sample s = DielectricBSDF<DielectricFresnel>::eval(wo, wi);
+    // eval().weight * eval().pdf is f * abs(cosThetaI). Dividing by
+    // the uniform-hemisphere PDF integrates directional transmission energy
+    // without inheriting the runtime sampler's reflection-optimized bias.
+    s.weight *= s.pdf * (2.0f * PI);
+    return s;
+}
+
+BSDL_INLINE_METHOD
+DielectricTransBack::DielectricTransBack(
+    float cosNO, float roughness_index, float fresnel_index)
+    : DielectricBSDF<DielectricFresnel>(
+        GGXDist(roughness_index, 0),
+        DielectricFresnel::from_table_index(fresnel_index, true), cosNO,
+        roughness_index, true)
+{
+}
+
+BSDL_INLINE_METHOD Sample
+DielectricTransBack::sample(
+    Imath::V3f wo, float randu, float randv, float /*randw*/) const
+{
+    const float z = randu;
+    const float r = sqrtf(std::max(0.0f, 1.0f - z * z));
+    const float phi = 2.0f * PI * randv;
+    const Imath::V3f wi = {r * cosf(phi), r * sinf(phi), -z};
+    Sample s = DielectricBSDF<DielectricFresnel>::eval(wo, wi);
+    // eval().weight * eval().pdf is f * abs(cosThetaI). Dividing by
+    // the uniform-hemisphere PDF integrates directional transmission energy
+    // without inheriting the runtime sampler's reflection-optimized bias.
+    s.weight *= s.pdf * (2.0f * PI);
+    return s;
 }
 
 template<typename Fresnel>

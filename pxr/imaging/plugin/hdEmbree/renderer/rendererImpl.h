@@ -272,18 +272,6 @@ _Clamp01(GfVec3f const& value)
         _Clamp01(value[2]));
 }
 
-inline float
-_SchlickDielectricFresnel(float ior, float cosTheta)
-{
-    const float safeIor = std::max(ior, 1.0f);
-    const float f0Base = (safeIor - 1.0f) / (safeIor + 1.0f);
-    const float f0 = f0Base * f0Base;
-    const float oneMinusCos = 1.0f - _Clamp01(cosTheta);
-    const float oneMinusCos2 = oneMinusCos * oneMinusCos;
-    return _Clamp01(f0 + (1.0f - f0) *
-        oneMinusCos2 * oneMinusCos2 * oneMinusCos);
-}
-
 inline GfVec3f
 _TransparentShadowTransmission(
     mxcpp::SurfaceClosure const& closure,
@@ -296,10 +284,10 @@ _TransparentShadowTransmission(
         return GfVec3f(0.0f);
     }
 
-    const float cosTheta = _Clamp01(std::abs(GfDot(direction, hitNormal)));
-    const float fresnel =
-        _SchlickDielectricFresnel(closure.specularIor, cosTheta);
-    GfVec3f attenuation(transmission * (1.0f - fresnel));
+    const float interfaceTransmission =
+        mxcpp::Bsdf::StraightShadowDielectricTransmission(
+            closure, GfDot(direction, hitNormal));
+    GfVec3f attenuation(transmission * interfaceTransmission);
     if (includeSurfaceTint) {
         attenuation = GfCompMult(
             attenuation,

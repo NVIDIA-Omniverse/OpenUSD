@@ -6,6 +6,7 @@
 //
 #include "../materials/bsdf.h"
 #include "../materials/bsdfDielectricReflFrontLut.h"
+#include "../materials/openPbr.h"
 #include "../materials/standardSurface.h"
 #include "../materials/usdPreviewSurface.h"
 #include "../spectral.h"
@@ -41,6 +42,24 @@ constexpr float _kFurnacePi = 3.14159265358979323846f;
 constexpr int _kFurnaceSampleCount = 8192;
 constexpr float _kFurnaceEnergyUpperSlack = 0.025f;
 
+class _ScopedGgxMultipleScattering
+{
+public:
+    explicit _ScopedGgxMultipleScattering(bool enabled)
+        : _previous(Bsdf::IsGgxMicrofacetMultipleScatteringEnabled())
+    {
+        Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(enabled);
+    }
+
+    ~_ScopedGgxMultipleScattering()
+    {
+        Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(_previous);
+    }
+
+private:
+    bool _previous;
+};
+
 constexpr float _kFurnaceAlphaRoughness[] = {
     0.05f, 0.2f, 0.4f, 0.6f, 0.8f, 1.0f
 };
@@ -58,6 +77,17 @@ _RadicalInverseBase2(std::uint32_t bits)
     bits = ((bits & 0x0F0F0F0Fu) << 4) | ((bits & 0xF0F0F0F0u) >> 4);
     bits = ((bits & 0x00FF00FFu) << 8) | ((bits & 0xFF00FF00u) >> 8);
     return static_cast<float>(bits) * 2.3283064365386963e-10f;
+}
+
+static float
+_CounterRandomFloat(std::uint64_t index, std::uint64_t stream)
+{
+    std::uint64_t value = index +
+        0x9e3779b97f4a7c15ull * (stream + 1ull);
+    value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ull;
+    value = (value ^ (value >> 27)) * 0x94d049bb133111ebull;
+    value ^= value >> 31;
+    return float((value >> 40) & 0xFFFFFF) / 16777216.0f;
 }
 
 static Vec3f
@@ -1947,20 +1977,15 @@ TestDielectricInterfaceLayerDoesNotDoubleAttenuateTransmission()
 }
 
 static bool
-TestOpenPbrInterfaceRoughTransmissionUsesBsdlEnergyCompensation()
+TestOpenPbrInterfaceAddsBsdlDiffuseDielectricCompensation()
 {
-    Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
+    const _ScopedGgxMultipleScattering multipleScattering(true);
 
     const Vec3f N(0.0f, 1.0f, 0.0f);
     constexpr float perceptualRoughness = 0.3f;
     constexpr float alphaRoughness =
         perceptualRoughness * perceptualRoughness;
     constexpr float ior = 1.5f;
-    // The scales combine the BSDL front/back transmission energy
-    // compensation with the exact-Fresnel-over-Schlick pairing ratio
-    // (1 - F_exact) / (1 - F_schlick) applied by the interface lobe.
-    constexpr float expectedFrontScale = 1.08192599f;
-    constexpr float expectedBackScale = 0.98724377f;
 
     for (const bool backfacing : {false, true}) {
         SurfaceClosure closure;
@@ -1971,71 +1996,372 @@ TestOpenPbrInterfaceRoughTransmissionUsesBsdlEnergyCompensation()
         interface.transmissionTint = Vec3f(1.0f);
         interface.ior = ior;
         interface.roughness = Vec2f(alphaRoughness, alphaRoughness);
-        interface.compensateRoughTransmission = true;
+        interface.compensateCoupledDielectric = true;
         closure.bsdfTree.root = closure.bsdfTree.Add(interface);
 
-        Vec3f wo = _DirectionFromCosThetaYUp(backfacing ? 0.8f : 0.1f);
+        Vec3f wo = _DirectionFromCosThetaYUp(backfacing ? 0.8f : 0.4f);
         if (backfacing) {
             wo = -wo;
         }
-        const auto sample =
-            Bsdf::SampleSurface(closure, N, wo, 0.3f, 0.7f, 0.99f);
-        if (sample.pdf <= 0.0f || sample.isSpecular) {
+        Vec3f wiR1 = _DirectionFromCosThetaYUp(0.85f);
+        Vec3f wiR2 = Vec3f(-0.6f, 0.55f, 0.58f).normalized();
+        if (backfacing) {
+            wiR1 = -wiR1;
+            wiR2 = -wiR2;
+        }
+        const Vec3f wiT1 = -wiR1;
+        const Vec3f wiT2 = -wiR2;
+
+        const Vec3f compensatedR1 =
+            Bsdf::EvalSurface(closure, N, wiR1, wo);
+        const Vec3f compensatedR2 =
+            Bsdf::EvalSurface(closure, N, wiR2, wo);
+        const Vec3f compensatedT1 =
+            Bsdf::EvalSurface(closure, N, wiT1, wo);
+        const Vec3f compensatedT2 =
+            Bsdf::EvalSurface(closure, N, wiT2, wo);
+
+        Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(false);
+        const Vec3f rawR1 = Bsdf::EvalSurface(closure, N, wiR1, wo);
+        const Vec3f rawR2 = Bsdf::EvalSurface(closure, N, wiR2, wo);
+        const Vec3f rawT1 = Bsdf::EvalSurface(closure, N, wiT1, wo);
+        const Vec3f rawT2 = Bsdf::EvalSurface(closure, N, wiT2, wo);
+        Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
+        const Vec3f addedR1 = compensatedR1 - rawR1;
+        const Vec3f addedR2 = compensatedR2 - rawR2;
+        const Vec3f addedT1 = compensatedT1 - rawT1;
+        const Vec3f addedT2 = compensatedT2 - rawT2;
+        // Fixed values from the BSDL SPI dielectric energy tables and
+        // front/back reciprocity split at roughness 0.3, IOR 1.5.
+        constexpr float expectedReflection[] = {
+            0.001656752f, 0.005358432f};
+        constexpr float expectedTransmission[] = {
+            0.003140450f, 0.000684313f};
+        const int side = backfacing ? 1 : 0;
+
+        if (addedR1[0] <= 0.0f || addedT1[0] <= 0.0f ||
+            !Test_IsClose(addedR1, addedR2, 2.0e-5f) ||
+            !Test_IsClose(addedT1, addedT2, 2.0e-5f) ||
+            !Test_IsClose(
+                addedR1, Vec3f(expectedReflection[side]), 3.0e-6f) ||
+            !Test_IsClose(
+                addedT1, Vec3f(expectedTransmission[side]), 3.0e-6f)) {
             printf(
-                "    Expected valid rough OpenPBR transmission sample "
-                "(backfacing=%d)\n",
+                "    Expected direction-independent diffuse compensation: "
+                "R1=%f R2=%f T1=%f T2=%f backfacing=%d\n",
+                addedR1[0], addedR2[0], addedT1[0], addedT2[0],
                 backfacing);
-            return false;
-        }
-
-        const Vec3f evaluated =
-            Bsdf::EvalSurface(closure, N, sample.wi, wo);
-        if (!Test_IsClose(sample.f, evaluated, 1.0e-5f)) {
-            printf(
-                "    Sampled and evaluated OpenPBR transmission differ: "
-                "sample=(%f,%f,%f) eval=(%f,%f,%f)\n",
-                sample.f[0], sample.f[1], sample.f[2],
-                evaluated[0], evaluated[1], evaluated[2]);
-            return false;
-        }
-
-        const Vec3f uncompensated = Bsdf::EvalGGXTransmission(
-            perceptualRoughness,
-            ior,
-            Vec3f(1.0f),
-            N,
-            sample.wi,
-            wo);
-        if (uncompensated[0] <= 1.0e-6f) {
-            printf("    Expected nonzero uncompensated transmission\n");
-            return false;
-        }
-        const float actualScale = evaluated[0] / uncompensated[0];
-        const float expectedScale =
-            backfacing ? expectedBackScale : expectedFrontScale;
-        if (!Test_IsClose(actualScale, expectedScale, 2.0e-4f)) {
-            printf(
-                "    OpenPBR transmission energy scale mismatch: "
-                "actual=%f expected=%f backfacing=%d\n",
-                actualScale, expectedScale, backfacing);
-            return false;
-        }
-
-        SurfaceClosure uncompensatedClosure;
-        interface.compensateRoughTransmission = false;
-        uncompensatedClosure.bsdfTree.root =
-            uncompensatedClosure.bsdfTree.Add(interface);
-        const Vec3f interfaceWithoutCompensation = Bsdf::EvalSurface(
-            uncompensatedClosure, N, sample.wi, wo);
-        if (evaluated[0] <= interfaceWithoutCompensation[0] + 1.0e-5f) {
-            printf(
-                "    Rough transmission policy did not add compensation: "
-                "enabled=%f disabled=%f backfacing=%d\n",
-                evaluated[0], interfaceWithoutCompensation[0], backfacing);
             return false;
         }
     }
 
+    return true;
+}
+
+static bool
+TestCoupledRoughDielectricDirectionalTransmissionAlbedo()
+{
+    struct Case {
+        float alphaRoughness;
+        float cosTheta;
+        float ior;
+        float tolerance;
+    };
+    const Case cases[] = {
+        {0.09f, 0.60f, 1.50f, 0.025f},
+        {0.36f, 0.25f, 1.25f, 0.012f},
+        {0.64f, 0.85f, 2.00f, 0.010f},
+    };
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    constexpr int integrationSamples = 32768;
+    bool ok = true;
+
+    // Numerically integrate the renderer's Walter GGX BTDF independently of
+    // the BSDL bake, for both sides and with compensation both off and on.
+    for (const Case& c : cases) {
+        for (const bool backfacing : {false, true}) {
+            SurfaceClosure closure;
+            Bsdf::DielectricInterfaceData interface;
+            interface.reflectionWeight = 1.0f;
+            interface.transmissionWeight = 1.0f;
+            interface.ior = c.ior;
+            interface.roughness =
+                Vec2f(c.alphaRoughness, c.alphaRoughness);
+            interface.compensateCoupledDielectric = true;
+            closure.bsdfTree.root = closure.bsdfTree.Add(interface);
+
+            Vec3f wo = _DirectionFromCosThetaYUp(c.cosTheta);
+            if (backfacing) {
+                wo = -wo;
+            }
+            for (const bool compensate : {false, true}) {
+                const _ScopedGgxMultipleScattering multipleScattering(
+                    compensate);
+                const Vec3f integrated = _IntegrateHemisphereUniform(
+                    [&](const Vec3f& upperWi) {
+                        const Vec3f wi = backfacing ? upperWi : -upperWi;
+                        return Bsdf::EvalSurface(closure, N, wi, wo);
+                    },
+                    integrationSamples);
+                const float table =
+                    Bsdf::CoupledRoughDielectricDirectionalTransmissionAlbedo(
+                        c.cosTheta,
+                        interface.roughness,
+                        c.ior,
+                        backfacing,
+                        compensate);
+                if (!Test_IsClose(integrated, Vec3f(table), c.tolerance)) {
+                    printf(
+                        "    Rough transmission albedo mismatch: alpha=%f "
+                        "cos=%f ior=%f backfacing=%d compensate=%d "
+                        "integrated=(%f,%f,%f) table=%f\n",
+                        c.alphaRoughness,
+                        c.cosTheta,
+                        c.ior,
+                        backfacing,
+                        compensate,
+                        integrated[0], integrated[1], integrated[2], table);
+                    ok = false;
+                }
+            }
+        }
+    }
+
+    for (const float alpha : {0.002f, 0.04f, 0.09f, 0.36f, 1.0f}) {
+        for (const float cosTheta : {0.03f, 0.2f, 0.6f, 0.99f}) {
+            for (const float ior : {1.05f, 1.5f, 2.5f, 5.0f}) {
+                for (const bool backfacing : {false, true}) {
+                    const Vec2f roughness(alpha, alpha);
+                    float singleScatter = 0.0f;
+                    float argumentTrueGlobalOff = 0.0f;
+                    {
+                        const _ScopedGgxMultipleScattering multipleScattering(
+                            false);
+                        singleScatter =
+                            Bsdf::CoupledRoughDielectricDirectionalTransmissionAlbedo(
+                                cosTheta, roughness, ior, backfacing, false);
+                        argumentTrueGlobalOff =
+                            Bsdf::CoupledRoughDielectricDirectionalTransmissionAlbedo(
+                                cosTheta, roughness, ior, backfacing, true);
+                    }
+                    float argumentFalseGlobalOn = 0.0f;
+                    float compensated = 0.0f;
+                    {
+                        const _ScopedGgxMultipleScattering multipleScattering(
+                            true);
+                        argumentFalseGlobalOn =
+                            Bsdf::CoupledRoughDielectricDirectionalTransmissionAlbedo(
+                                cosTheta, roughness, ior, backfacing, false);
+                        compensated =
+                            Bsdf::CoupledRoughDielectricDirectionalTransmissionAlbedo(
+                                cosTheta, roughness, ior, backfacing, true);
+                    }
+                    if (!std::isfinite(singleScatter) ||
+                        !std::isfinite(compensated) ||
+                        singleScatter < 0.0f || singleScatter > 1.0f ||
+                        compensated + 1.0e-6f < singleScatter ||
+                        compensated > 1.0f ||
+                        !Test_IsClose(
+                            argumentTrueGlobalOff, singleScatter, 1.0e-6f) ||
+                        !Test_IsClose(
+                            argumentFalseGlobalOn, singleScatter, 1.0e-6f)) {
+                        printf(
+                            "    Invalid rough transmission albedo: alpha=%f "
+                            "cos=%f ior=%f backfacing=%d single=%f "
+                            "offTrue=%f onFalse=%f compensated=%f\n",
+                            alpha,
+                            cosTheta,
+                            ior,
+                            backfacing,
+                            singleScatter,
+                            argumentTrueGlobalOff,
+                            argumentFalseGlobalOn,
+                            compensated);
+                        ok = false;
+                    }
+                }
+            }
+        }
+    }
+
+    // The current anisotropic policy is an azimuth-independent symmetric
+    // reduction to one perceptual roughness; pin that approximation explicitly.
+    const _ScopedGgxMultipleScattering multipleScattering(true);
+    const float anisotropicXY =
+        Bsdf::CoupledRoughDielectricDirectionalTransmissionAlbedo(
+            0.45f, Vec2f(0.04f, 0.64f), 1.5f, false, true);
+    const float anisotropicYX =
+        Bsdf::CoupledRoughDielectricDirectionalTransmissionAlbedo(
+            0.45f, Vec2f(0.64f, 0.04f), 1.5f, false, true);
+    if (!Test_IsClose(anisotropicXY, anisotropicYX, 1.0e-7f)) {
+        printf(
+            "    Anisotropic scalar reduction depends on axis order: "
+            "xy=%f yx=%f\n",
+            anisotropicXY, anisotropicYX);
+        ok = false;
+    }
+    return ok;
+}
+
+static bool
+TestStraightShadowDielectricTransmissionPolicy()
+{
+    const _ScopedGgxMultipleScattering multipleScattering(true);
+    constexpr float signedCosTheta = 0.45f;
+    constexpr float ior = 1.5f;
+    const float schlick =
+        1.0f - _SchlickFresnelForTest(ior, signedCosTheta);
+    bool ok = true;
+
+    SurfaceClosure closure;
+    closure.specularIor = ior;
+    if (!Test_IsClose(
+            Bsdf::StraightShadowDielectricTransmission(
+                closure, -signedCosTheta),
+            schlick,
+            1.0e-6f)) {
+        printf("    Legacy closure did not use Schlick transmission\n");
+        ok = false;
+    }
+
+    auto makeInterface = []() {
+        Bsdf::DielectricInterfaceData interface;
+        interface.reflectionWeight = 1.0f;
+        interface.transmissionWeight = 1.0f;
+        interface.ior = ior;
+        interface.roughness = Vec2f(0.36f, 0.36f);
+        interface.compensateCoupledDielectric = true;
+        return interface;
+    };
+
+    const Bsdf::DielectricInterfaceData interface = makeInterface();
+    closure.bsdfTree.Clear();
+    const Bsdf::NodeId interfaceId = closure.bsdfTree.Add(interface);
+    Bsdf::BurleyDiffuseData base;
+    const Bsdf::NodeId baseId = closure.bsdfTree.Add(base);
+    closure.bsdfTree.root = closure.bsdfTree.Add(
+        Bsdf::LayerData{interfaceId, baseId});
+
+    const float entry = Bsdf::StraightShadowDielectricTransmission(
+        closure, -signedCosTheta);
+    const float exit = Bsdf::StraightShadowDielectricTransmission(
+        closure, signedCosTheta);
+    const float expectedEntry =
+        Bsdf::CoupledRoughDielectricDirectionalTransmissionAlbedo(
+            signedCosTheta,
+            interface.roughness,
+            interface.ior,
+            false,
+            true);
+    const float expectedExit =
+        Bsdf::CoupledRoughDielectricDirectionalTransmissionAlbedo(
+            signedCosTheta,
+            interface.roughness,
+            interface.ior,
+            true,
+            true);
+    if (!Test_IsClose(entry, expectedEntry, 1.0e-6f) ||
+        !Test_IsClose(exit, expectedExit, 1.0e-6f) ||
+        std::abs(entry - exit) < 1.0e-3f ||
+        std::abs(entry - schlick) < 1.0e-3f) {
+        printf(
+            "    Straight-shadow table selection/sign mismatch: "
+            "entry=%f expectedEntry=%f exit=%f expectedExit=%f schlick=%f\n",
+            entry, expectedEntry, exit, expectedExit, schlick);
+        ok = false;
+    }
+
+    auto expectFallback = [&](const char* label,
+                              Bsdf::DielectricInterfaceData fallback) {
+        SurfaceClosure c;
+        c.specularIor = ior;
+        c.bsdfTree.root = c.bsdfTree.Add(fallback);
+        const float actual = Bsdf::StraightShadowDielectricTransmission(
+            c, -signedCosTheta);
+        if (!Test_IsClose(actual, schlick, 1.0e-6f)) {
+            printf(
+                "    %s should retain Schlick fallback: got=%f expected=%f\n",
+                label, actual, schlick);
+            ok = false;
+        }
+    };
+
+    auto thinWalled = makeInterface();
+    thinWalled.thinWalled = true;
+    expectFallback("thin-walled", thinWalled);
+    auto thinFilm = makeInterface();
+    thinFilm.thinFilmWeight = 1.0f;
+    thinFilm.thinFilmThickness = 500.0f;
+    expectFallback("thin-film", thinFilm);
+    auto smooth = makeInterface();
+    smooth.roughness = Vec2f(0.0001f, 0.0001f);
+    expectFallback("effectively smooth", smooth);
+    auto uncompensated = makeInterface();
+    uncompensated.compensateCoupledDielectric = false;
+    expectFallback("uncompensated", uncompensated);
+    auto reflectionDisabled = makeInterface();
+    reflectionDisabled.reflectionWeight = 0.0f;
+    expectFallback("reflection-disabled", reflectionDisabled);
+    auto transmissionDisabled = makeInterface();
+    transmissionDisabled.transmissionWeight = 0.0f;
+    expectFallback("transmission-disabled", transmissionDisabled);
+
+    SurfaceClosure ambiguous;
+    ambiguous.specularIor = ior;
+    const Bsdf::NodeId first = ambiguous.bsdfTree.Add(makeInterface());
+    const Bsdf::NodeId second = ambiguous.bsdfTree.Add(makeInterface());
+    ambiguous.bsdfTree.root = ambiguous.bsdfTree.Add(
+        Bsdf::AddData{first, second});
+    const float ambiguousTransmission =
+        Bsdf::StraightShadowDielectricTransmission(
+            ambiguous, -signedCosTheta);
+    if (!Test_IsClose(ambiguousTransmission, schlick, 1.0e-6f)) {
+        printf(
+            "    Ambiguous two-interface closure should use Schlick: "
+            "got=%f expected=%f\n",
+            ambiguousTransmission, schlick);
+        ok = false;
+    }
+
+    return ok;
+}
+
+static bool
+TestCoupledRoughDielectricTransmissionMatchesFixedWalterReferences()
+{
+    const _ScopedGgxMultipleScattering multipleScattering(false);
+
+    SurfaceClosure closure;
+    Bsdf::DielectricInterfaceData interface;
+    interface.reflectionWeight = 1.0f;
+    interface.reflectionTint = Vec3f(1.0f);
+    interface.transmissionWeight = 1.0f;
+    interface.transmissionTint = Vec3f(1.0f);
+    interface.ior = 1.5f;
+    interface.roughness = Vec2f(0.09f, 0.09f);
+    interface.compensateCoupledDielectric = true;
+    closure.bsdfTree.root = closure.bsdfTree.Add(interface);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    // Independently evaluated exact-dielectric Walter GGX BTDF anchors.
+    // The reciprocal pair catches an accidental eta or Jacobian inversion.
+    constexpr float expected[] = {16.2962551f, 0.009318821f};
+    for (const bool backfacing : {false, true}) {
+        const Vec3f wo(0.8f, backfacing ? -0.6f : 0.6f, 0.0f);
+        const Vec3f wi(-0.6f, backfacing ? 0.8f : -0.8f, 0.0f);
+        const Vec3f evaluated = Bsdf::EvalSurface(closure, N, wi, wo);
+        const int side = backfacing ? 1 : 0;
+        const float tolerance = backfacing ? 2.0e-6f : 3.0e-3f;
+        if (!Test_IsClose(
+                evaluated, Vec3f(expected[side]), tolerance)) {
+            printf(
+                "    Fixed Walter BTDF mismatch backfacing=%d: "
+                "got=(%f,%f,%f) expected=%f\n",
+                backfacing,
+                evaluated[0], evaluated[1], evaluated[2], expected[side]);
+            return false;
+        }
+    }
     return true;
 }
 
@@ -2113,6 +2439,63 @@ TestDielectricInterfaceSamplePdfConsistency()
         }
     }
 
+    return true;
+}
+
+static bool
+TestCoupledRoughDielectricSamplesTransmissionBeyondMacroCriticalAngle()
+{
+    const _ScopedGgxMultipleScattering multipleScattering(true);
+    SurfaceClosure closure;
+    Bsdf::DielectricInterfaceData interface;
+    interface.reflectionWeight = 1.0f;
+    interface.reflectionTint = Vec3f(1.0f);
+    interface.transmissionWeight = 1.0f;
+    interface.transmissionTint = Vec3f(1.0f);
+    interface.ior = 1.5f;
+    interface.roughness = Vec2f(0.09f, 0.09f);
+    interface.compensateCoupledDielectric = true;
+    closure.bsdfTree.root = closure.bsdfTree.Add(interface);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    Vec3f wo = -_DirectionFromCosThetaYUp(0.5f);
+    std::uint64_t state = 0x4d595df4d0f33173ull;
+    auto nextFloat = [&state]() {
+        state = state * 6364136223846793005ull + 1442695040888963407ull;
+        return float((state >> 33) & 0xFFFFFF) / 16777216.0f;
+    };
+
+    int reflectionCount = 0;
+    int transmissionCount = 0;
+    for (int i = 0; i < 5000; ++i) {
+        const Bsdf::BsdfSample sample = Bsdf::SampleSurface(
+            closure, N, wo, nextFloat(), nextFloat(), nextFloat());
+        if (!(sample.pdf > 0.0f)) {
+            continue;
+        }
+        if (!_IsFiniteNonNegative(sample.f)) {
+            printf("    Coupled rough dielectric produced invalid energy\n");
+            return false;
+        }
+        if (Dot(N, sample.wi) * Dot(N, wo) > 0.0f) {
+            if (sample.f.length() > 1.0e-6f) {
+                ++reflectionCount;
+            }
+        } else if (sample.f.length() > 1.0e-6f) {
+            ++transmissionCount;
+        }
+    }
+
+    constexpr int minSupportedSamples = 10;
+    if (reflectionCount < minSupportedSamples ||
+        transmissionCount < minSupportedSamples) {
+        printf(
+            "    Expected nontrivial reflection and rough transmission below "
+            "the "
+            "macro critical angle: reflection=%d transmission=%d\n",
+            reflectionCount, transmissionCount);
+        return false;
+    }
     return true;
 }
 
@@ -3519,11 +3902,7 @@ _CheckTransparentClosureEnergy(
     const float cosThetas[] = {
         0.05f, 0.2f, 0.5f, 0.74f, 0.76f, 0.8f, 1.0f};
 
-    std::uint64_t state = 0x853c49e6748fea9bull;
-    auto nextFloat = [&state]() {
-        state = state * 6364136223846793005ull + 1442695040888963407ull;
-        return float((state >> 33) & 0xFFFFFF) / 16777216.0f;
-    };
+    std::uint64_t sampleSequence = 0;
 
     bool ok = true;
     printf("    %s energy:\n", label);
@@ -3535,8 +3914,12 @@ _CheckTransparentClosureEnergy(
             }
             Vec3f energy(0.0f);
             for (int i = 0; i < kSamples; ++i) {
+                const std::uint64_t sampleIndex = sampleSequence++;
+                const float u1 = _CounterRandomFloat(sampleIndex, 0);
+                const float u2 = _CounterRandomFloat(sampleIndex, 1);
+                const float uChoice = _CounterRandomFloat(sampleIndex, 2);
                 const Bsdf::BsdfSample sample = Bsdf::SampleSurface(
-                    closure, N, wo, nextFloat(), nextFloat(), nextFloat());
+                    closure, N, wo, u1, u2, uChoice);
                 if (!(sample.pdf > 0.0f)) {
                     continue;
                 }
@@ -3656,12 +4039,143 @@ TestStandardSurfaceRoughTransmissionWhiteFurnaceDoesNotGainEnergy()
         std::nullopt);
 }
 
+static bool
+TestOpenPbrRoughTransmissionWhiteFurnaceConservesEnergy()
+{
+    const _ScopedGgxMultipleScattering multipleScattering(true);
+    ParamMap params;
+    params["base_weight"] = Value(0.0f);
+    params["base_metalness"] = Value(0.0f);
+    params["specular_weight"] = Value(1.0f);
+    params["specular_color"] = Value(Vec3f(1.0f));
+    params["specular_roughness"] = Value(0.3f);
+    params["specular_ior"] = Value(1.5f);
+    params["transmission_weight"] = Value(1.0f);
+    params["transmission_color"] = Value(Vec3f(1.0f));
+    params["coat_weight"] = Value(0.0f);
+    params["fuzz_weight"] = Value(0.0f);
+    params["geometry_thin_walled"] = Value(false);
+    return _CheckTransparentClosureEnergy(
+        EvalOpenPbr(params),
+        "OpenPBR rough glass",
+        0.95f);
+}
+
+static bool
+TestOpenPbrAnisotropicTintedPartialTransmissionSamplingMatchesIntegration()
+{
+    const _ScopedGgxMultipleScattering multipleScattering(true);
+    ParamMap params;
+    params["base_weight"] = Value(0.0f);
+    params["base_metalness"] = Value(0.0f);
+    params["specular_weight"] = Value(1.0f);
+    params["specular_color"] = Value(Vec3f(0.85f, 0.45f, 0.2f));
+    params["specular_roughness"] = Value(0.5f);
+    params["specular_roughness_anisotropy"] = Value(0.6f);
+    params["specular_ior"] = Value(1.5f);
+    params["transmission_weight"] = Value(0.35f);
+    params["transmission_color"] = Value(Vec3f(0.3f, 0.7f, 0.95f));
+    params["coat_weight"] = Value(0.0f);
+    params["fuzz_weight"] = Value(0.0f);
+    params["geometry_thin_walled"] = Value(false);
+    const SurfaceClosure closure = EvalOpenPbr(params);
+
+    const Vec3f N(0.0f, 1.0f, 0.0f);
+    constexpr int sampleCount = 1000000;
+    constexpr float uniformSpherePdf = 1.0f / (4.0f * _kFurnacePi);
+    bool ok = true;
+    for (const bool inside : {false, true}) {
+        Vec3f wo = _DirectionFromCosThetaYUp(inside ? 0.8f : 0.35f);
+        if (inside) {
+            wo = -wo;
+        }
+
+        Vec3f sampledEnergy(0.0f);
+        Vec3f integratedEnergy(0.0f);
+        float integratedPdf = 0.0f;
+        for (int i = 0; i < sampleCount; ++i) {
+            const std::uint64_t sampleIndex =
+                std::uint64_t(i) + (inside ? sampleCount : 0);
+            const float u1 = _CounterRandomFloat(sampleIndex, 10);
+            const float u2 = _CounterRandomFloat(sampleIndex, 11);
+            const float uChoice = _CounterRandomFloat(sampleIndex, 12);
+            const Bsdf::BsdfSample sample = Bsdf::SampleSurface(
+                closure, N, wo, u1, u2, uChoice);
+            if (sample.pdf > 0.0f) {
+                sampledEnergy += sample.f *
+                    (std::abs(Dot(N, sample.wi)) / sample.pdf);
+            }
+
+            const float y = 1.0f -
+                2.0f * _CounterRandomFloat(sampleIndex, 20);
+            const float phi = _kFurnaceTwoPi *
+                _CounterRandomFloat(sampleIndex, 21);
+            const float radius = std::sqrt(std::max(0.0f, 1.0f - y * y));
+            const Vec3f wi(
+                radius * std::cos(phi), y, radius * std::sin(phi));
+            const Vec3f evaluated =
+                Bsdf::EvalSurface(closure, N, wi, wo);
+            integratedEnergy += evaluated *
+                (std::abs(Dot(N, wi)) / uniformSpherePdf);
+            const float surfacePdf =
+                Bsdf::PdfSurface(closure, N, wi, wo);
+            if (_FurnaceLuminance(evaluated) > 1.0e-7f &&
+                surfacePdf <= 0.0f) {
+                printf("      evaluated BSDF has no sampling support\n");
+                ok = false;
+            }
+            const float mixedPdf = surfacePdf / uniformSpherePdf;
+            integratedPdf += mixedPdf;
+        }
+        sampledEnergy *= 1.0f / float(sampleCount);
+        integratedEnergy *= 1.0f / float(sampleCount);
+        integratedPdf *= 1.0f / float(sampleCount);
+        printf(
+            "    OpenPBR anisotropic %s sampled=(%.4f,%.4f,%.4f) "
+            "integrated=(%.4f,%.4f,%.4f) pdfIntegral=%.4f\n",
+            inside ? "inside" : "outside",
+            sampledEnergy[0], sampledEnergy[1], sampledEnergy[2],
+            integratedEnergy[0], integratedEnergy[1], integratedEnergy[2],
+            integratedPdf);
+        if (integratedPdf < 0.90f || integratedPdf > 1.03f) {
+            printf("      PDF integral is outside the valid sampled mass\n");
+            ok = false;
+        }
+        if (!_IsFiniteNonNegative(sampledEnergy) ||
+            !_IsFiniteNonNegative(integratedEnergy)) {
+            ok = false;
+            continue;
+        }
+        for (int channel = 0; channel < 3; ++channel) {
+            const float tolerance =
+                0.005f + 0.02f * integratedEnergy[channel];
+            if (std::abs(
+                    sampledEnergy[channel] - integratedEnergy[channel]) >
+                tolerance) {
+                printf(
+                    "      sampling/integration mismatch on channel %d\n",
+                    channel);
+                ok = false;
+            }
+            if (sampledEnergy[channel] >
+                1.0f + _kFurnaceEnergyUpperSlack) {
+                printf("      energy gain on channel %d\n", channel);
+                ok = false;
+            }
+        }
+    }
+    return ok;
+}
+
 void
 Test_RegisterBsdfTests()
 {
     _REG(TestDielectricInterfaceUsesExactFresnel);
     _REG(TestUsdPreviewSurfaceTransmissionTirEnergyConservation);
     _REG(TestStandardSurfaceRoughTransmissionWhiteFurnaceDoesNotGainEnergy);
+    _REG(TestOpenPbrRoughTransmissionWhiteFurnaceConservesEnergy);
+    _REG(
+        TestOpenPbrAnisotropicTintedPartialTransmissionSamplingMatchesIntegration);
     _REG(TestLambertianValue);
     _REG(TestLambertianColorScaling);
     _REG(TestFurnaceHelperMatchesLambertian);
@@ -3716,9 +4230,13 @@ Test_RegisterBsdfTests()
     _REG(TestEvalSurfaceTransmissionFromInterior);
     _REG(TestTreeAddTransmissionPreservesWeight);
     _REG(TestDielectricInterfaceLayerDoesNotDoubleAttenuateTransmission);
-    _REG(TestOpenPbrInterfaceRoughTransmissionUsesBsdlEnergyCompensation);
+    _REG(TestOpenPbrInterfaceAddsBsdlDiffuseDielectricCompensation);
+    _REG(TestCoupledRoughDielectricDirectionalTransmissionAlbedo);
+    _REG(TestStraightShadowDielectricTransmissionPolicy);
+    _REG(TestCoupledRoughDielectricTransmissionMatchesFixedWalterReferences);
     _REG(TestStandaloneDielectricRoughTransmissionRemainsUncompensated);
     _REG(TestDielectricInterfaceSamplePdfConsistency);
+    _REG(TestCoupledRoughDielectricSamplesTransmissionBeyondMacroCriticalAngle);
     _REG(TestDeltaDielectricInterfaceTransmissionSamplesSingleFresnel);
     _REG(TestDeltaDielectricInterfaceTirDoesNotAmplifyThroughput);
     _REG(TestThinWalledDielectricInterfaceSamplePdfConsistency);

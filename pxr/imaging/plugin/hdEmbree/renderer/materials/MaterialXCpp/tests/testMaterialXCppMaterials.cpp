@@ -561,7 +561,7 @@ TestOpenPbrThinWalledUsesCombinedInterface()
         return false;
     }
 
-    return interface->compensateRoughTransmission &&
+    return interface->compensateCoupledDielectric &&
            Test_IsClose(interface->ior, 1.5f, 1e-4f) &&
            Test_IsClose(interface->transmissionTint,
                         Vec3f(0.7f, 1.0f, 0.8f),
@@ -2499,13 +2499,13 @@ TestUsdPreviewSurfaceMetalnessTransmissionUsesDielectricInterface()
     if (!Test_IsClose(interface->ior, 1.5f, 1e-5f) ||
         !Test_IsClose(interface->reflectionWeight, 1.0f, 1e-5f) ||
         !Test_IsClose(interface->transmissionWeight, 1.0f, 1e-5f) ||
-        !interface->compensateRoughTransmission) {
+        !interface->compensateCoupledDielectric) {
         printf("    interface parameters mismatch: ior=%f reflW=%f "
                "transW=%f compensate=%d\n",
                interface->ior,
                interface->reflectionWeight,
                interface->transmissionWeight,
-               int(interface->compensateRoughTransmission));
+               int(interface->compensateCoupledDielectric));
         return false;
     }
 

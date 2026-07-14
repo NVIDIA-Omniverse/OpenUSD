@@ -107,10 +107,10 @@ struct DielectricInterfaceData
     bool hasShadingNormal = false;
     Vec3f tangent = Vec3f(1.0f, 0.0f, 0.0f);
     bool thinWalled = false;
-    // Restore microfacet energy missing from a coupled rough dielectric.
-    // OpenPBR and metalness-workflow UsdPreviewSurface opt into this policy;
-    // other interface users remain uncompensated by default.
-    bool compensateRoughTransmission = false;
+    // Restore microfacet energy missing from the combined reflection and
+    // refraction lobes. OpenPBR and metalness-workflow UsdPreviewSurface opt
+    // into this policy; other interface users remain uncompensated by default.
+    bool compensateCoupledDielectric = false;
 };
 
 struct ConductorData

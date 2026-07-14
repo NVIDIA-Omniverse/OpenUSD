@@ -25,7 +25,9 @@ function(ADD_BSDL_LIBRARY NAME)
         MTX/bsdf_zeltnersheen_luts.h
         MTX/bsdf_dielectric_reflfront_luts.h
         MTX/bsdf_dielectric_bothfront_luts.h
-        MTX/bsdf_dielectric_bothback_luts.h)
+        MTX/bsdf_dielectric_bothback_luts.h
+        MTX/bsdf_dielectric_transfront_luts.h
+        MTX/bsdf_dielectric_transback_luts.h)
     set(_bsdl_generated_lut_headers)
     foreach(_bsdl_lut_header ${_bsdl_lut_headers})
         list(APPEND _bsdl_generated_lut_headers

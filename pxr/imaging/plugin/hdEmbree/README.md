@@ -97,7 +97,7 @@ When `ty:enableCaustics` is `false` (default), hdEmbree treats specular or diele
 ### Transparent Shadows (`ty:approxTransparentShadows`)
 Thin-walled transmissive surfaces always use straight RGB shadow attenuation because there is no thickness or refractive path to solve. For thick transmissive surfaces, when `ty:approxTransparentShadows` is `true` (default), shadow rays continue along the original straight line instead of being refracted. This thick-surface behavior is a biased direct-shadow approximation, not a Snell-refraction caustic solver. It keeps direct lighting usable under thick glass when caustic-class paths are suppressed.
 
-The approximation applies RGB attenuation from surface opacity, dielectric Fresnel transmission, transmission tint, and active interior-medium transmittance. For regular thick transmission with an interior medium, the surface tint is skipped so `transmission_color` is not applied once by the surface and again by Beer or Adobe OpenPBR volume transmittance.
+The approximation applies RGB attenuation from surface opacity, dielectric transmission, transmission tint, and active interior-medium transmittance. Smooth and unsupported interfaces use the legacy Schlick Fresnel transmission. Coupled rough dielectric interfaces use baked front/back directional-hemispherical transmission albedo, including their multiple-scattering transmission share when compensation is enabled, so roughness loss is applied independently at every crossed interface. For regular thick transmission with an interior medium, the surface tint is skipped so `transmission_color` is not applied once by the surface and again by Beer or Adobe OpenPBR volume transmittance.
 
 Set `ty:approxTransparentShadows` to `false` to keep the conservative thick-surface behavior: current-medium exits are treated as scalar visibility, while thick transparent entry boundaries block the straight shadow ray. Thin-walled transmissive surfaces still use straight RGB attenuation.
 
@@ -122,9 +122,13 @@ When this AOV is bound (and `ty:enableAdaptiveSampling` is active), it outputs a
 
 Rough-transmission transport is selected by the material model. OpenPBR and
 metalness-workflow UsdPreviewSurface use the compensated coupled dielectric
-interface. Standard Surface keeps its established separate reflection layer
-and transmission lobe for compatibility, including its layered Fresnel
-attenuation and support for `transmission_extra_roughness`.
+interface. Its BSDL compensation adds the missing energy as a cosine-distributed
+multiple-scattering lobe split between reflection and refraction; it does not
+brighten the existing glossy lobes. Rough glossy events sample a visible
+microfacet and select their branch using the exact Fresnel response. Standard Surface keeps
+its established separate reflection layer and transmission lobe for
+compatibility, including its layered Fresnel attenuation and support for
+`transmission_extra_roughness`.
 
 Standard Surface `thin_walled` transmission uses a separate IOR-1 dielectric
 lobe, so transmitted rays remain straight through even when the authored

@@ -146,6 +146,24 @@ namespace Bsdf
         float cosTheta,
         float alphaRoughness);
 
+    /// Directional-hemispherical transmission albedo of the coupled rough
+    /// dielectric interface. roughness contains GGX alpha values; anisotropy
+    /// is reduced symmetrically to one azimuth-independent scalar. Compensation
+    /// is applied only when both its argument and the global GGX multiple-
+    /// scattering setting are enabled.
+    float CoupledRoughDielectricDirectionalTransmissionAlbedo(
+        float cosTheta,
+        const Vec2f& roughness,
+        float ior,
+        bool backfacing,
+        bool compensateMultipleScattering);
+
+    /// Per-interface dielectric factor used by straight transparent shadows.
+    /// signedCosTheta is positive for an inside-to-outside crossing.
+    float StraightShadowDielectricTransmission(
+        const SurfaceClosure& closure,
+        float signedCosTheta);
+
     /// GGX VNDF-based transmission sampling.
     BsdfSample SampleGGXTransmission(
         float roughness,

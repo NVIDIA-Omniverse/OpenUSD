@@ -36,6 +36,10 @@
     E(mtx::DielectricBothFront) \
     E(mtx::DielectricBothBack)
 
+#define BAKE_TRANSMISSION_ALBEDO_LIST(E) \
+    E(mtx::DielectricTransFront)         \
+    E(mtx::DielectricTransBack)
+
 #define LUT_PLACEHOLDER(type)                           \
     BSDL_ENTER_NAMESPACE                                \
     BSDL_INLINE_METHOD type::Energy& type::get_energy() \
@@ -46,6 +50,7 @@
     BSDL_LEAVE_NAMESPACE
 
 BAKE_BSDF_LIST(LUT_PLACEHOLDER)
+BAKE_TRANSMISSION_ALBEDO_LIST(LUT_PLACEHOLDER)
 
 using namespace bsdl;
 
@@ -144,7 +149,7 @@ compute_E(float cos_theta, const BSDF& bsdf, uint32_t fresnel_index,
     return std::min(E, 1.0f);
 }
 
-template<typename BSDF>
+template<typename BSDF, bool store_energy = false>
 BSDL_INLINE void
 bake_emiss_tables(const std::string& output_dir)
 {
@@ -162,7 +167,9 @@ bake_emiss_tables(const std::string& output_dir)
                 int idx = f * BSDF::Nr * BSDF::Nc + r * BSDF::Nc + c;
                 const BSDF bsdf(BSDF::get_cosine(c), roughness_index,
                                 fresnel_index);
-                storedE[idx] = 1 - compute_E(BSDF::get_cosine(c), bsdf, f, r);
+                const float energy =
+                    compute_E(BSDF::get_cosine(c), bsdf, f, r);
+                storedE[idx] = store_energy ? energy : 1 - energy;
             }
         }
     });
@@ -220,6 +227,18 @@ main(int argc, const char** argv)
              ...);
         },
         bsdf_list);
+
+    std::tuple transmission_albedo_list {
+        BAKE_TRANSMISSION_ALBEDO_LIST(DECLARE_DUMMY) };
+
+    std::apply(
+        [&](auto... args) {
+            (bake_emiss_tables<
+                 typename std::remove_reference<decltype(args)>::type, true>(
+                 argv[1]),
+             ...);
+        },
+        transmission_albedo_list);
 
     return 0;
 }

@@ -240,8 +240,12 @@ For each segment, `_IntegratePath()` performs these stages in order:
    diffuse fallback available for direct lighting. A synthetic SSS exit replaces
    the material with a unit Lambertian closure so subsurface albedo is not
    counted twice. Material normal inputs are resolved before BSDF work. Coupled
-   dielectric closures carry an explicit rough-transmission compensation
-   policy enabled by OpenPBR and metalness-workflow UsdPreviewSurface.
+   dielectric closures carry an explicit combined reflection/refraction
+   compensation policy enabled by OpenPBR and metalness-workflow
+   UsdPreviewSurface. Missing energy is restored with an additive cosine
+   multiple-scattering lobe rather than scaling the glossy lobes. Rough coupled
+   glossy events select reflection or refraction from exact Fresnel after
+   sampling the visible microfacet.
    Standard Surface retains separate reflection and transmission lobes; its
    thin-walled transmission uses IOR 1 so the transmitted direction remains
    undeflected.

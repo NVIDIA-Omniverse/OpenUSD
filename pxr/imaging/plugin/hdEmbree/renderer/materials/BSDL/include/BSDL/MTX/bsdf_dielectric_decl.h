@@ -99,6 +99,35 @@ struct DielectricBothBack : public DielectricBSDF<DielectricFresnel> {
     static BSDL_INLINE_METHOD Energy& get_energy();
 };
 
+// Directional-hemispherical single-scatter transmission albedo bake types.
+// Their generated tables store transmitted energy directly, unlike the
+// missing-energy tables used by TabulatedEnergyCurve.
+struct DielectricTransFront : public DielectricBSDF<DielectricFresnel> {
+    explicit BSDL_INLINE_METHOD DielectricTransFront(
+        float cosNO, float roughness_index, float fresnel_index);
+    BSDL_INLINE_METHOD Sample sample(
+        Imath::V3f wo, float randu, float randv, float randw) const;
+    static const char* lut_header()
+    {
+        return "MTX/bsdf_dielectric_transfront_luts.h";
+    }
+    static const char* struct_name() { return "DielectricTransFront"; }
+    static BSDL_INLINE_METHOD Energy& get_energy();
+};
+
+struct DielectricTransBack : public DielectricBSDF<DielectricFresnel> {
+    explicit BSDL_INLINE_METHOD DielectricTransBack(
+        float cosNO, float roughness_index, float fresnel_index);
+    BSDL_INLINE_METHOD Sample sample(
+        Imath::V3f wo, float randu, float randv, float randw) const;
+    static const char* lut_header()
+    {
+        return "MTX/bsdf_dielectric_transback_luts.h";
+    }
+    static const char* struct_name() { return "DielectricTransBack"; }
+    static BSDL_INLINE_METHOD Energy& get_energy();
+};
+
 template<typename BSDF_ROOT> struct DielectricLobe : public Lobe<BSDF_ROOT> {
     using Base = Lobe<BSDF_ROOT>;
     struct Data : public LayeredData {

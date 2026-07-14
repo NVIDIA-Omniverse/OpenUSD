@@ -483,7 +483,7 @@ EvalOpenPbr(const ParamMap& params)
         interface.thinFilmThickness = thinFilmThicknessNm;
         interface.thinFilmIor = thinFilmIor;
         interface.thinWalled = c.thinWalled;
-        interface.compensateRoughTransmission = true;
+        interface.compensateCoupledDielectric = true;
 
         dielectricSubstrate = _AppendMultiply(
             &tree,
