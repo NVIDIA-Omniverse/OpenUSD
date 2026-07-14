@@ -4,6 +4,8 @@
 # Licensed under the terms set forth in the LICENSE.txt file available at
 # https://openusd.org/license.
 #
+import sys
+
 def GetPySideModule():
     """Returns name of PySide module used by usdview,
     e.g. 'PySide2' or 'PySide6'"""
@@ -91,11 +93,27 @@ elif PySideModule == 'PySide6':
     if not hasattr(QGLFormat, 'setSampleBuffers'):
         QGLFormat.setSampleBuffers = lambda self, _: None
 
+    def configureOpenGLFormat(glFormat):
+        glFormat.setRenderableType(QGLFormat.OpenGL)
+        if sys.platform != 'darwin':
+            glFormat.setVersion(4, 5)
+
     def initQGLWidget(self, glFormat, parent):
+        configureOpenGLFormat(glFormat)
         QGLWidget.__init__(self)
         self.setFormat(glFormat)
 
+    QGLFormat.ConfigureForUsdview = configureOpenGLFormat
     QGLWidget.InitQGLWidget = initQGLWidget
 
 else:
     raise ImportError('Unrecognized PySide module "{}"'.format(PySideModule))
+
+
+def ConfigureDefaultGLFormat():
+    if PySideModule != 'PySide6':
+        return
+
+    glFormat = QGLFormat.defaultFormat()
+    configureOpenGLFormat(glFormat)
+    QGLFormat.setDefaultFormat(glFormat)

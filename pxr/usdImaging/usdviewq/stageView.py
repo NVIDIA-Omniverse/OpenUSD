@@ -990,7 +990,15 @@ class StageView(QGLWidget):
     def closeRenderer(self):
         '''Close the current renderer.'''
         with self._makeTimer('shut down Hydra'):
-            self._renderer = None
+            context = self.context()
+            if self._renderer and context and context.isValid():
+                self.makeCurrent()
+                try:
+                    self._renderer = None
+                finally:
+                    self.doneCurrent()
+            else:
+                self._renderer = None
 
     def GetRendererPlugins(self):
         if self._renderer:

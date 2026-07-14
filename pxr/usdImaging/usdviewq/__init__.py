@@ -12,7 +12,7 @@ Tf.PreparePythonModule()
 
 import sys, argparse, os
 
-from .qt import QtCore, QtGui, QtWidgets
+from .qt import QtCore, QtGui, QtWidgets, ConfigureDefaultGLFormat
 from .common import Timer, GetIconPath
 from .appController import AppController
 from .settings import ConfigManager
@@ -478,6 +478,7 @@ class Launcher(object):
                     objc.objc_msgSend(info, setSel, nsVal, nsKey)
 
         # Create the Qt application
+        ConfigureDefaultGLFormat()
         app = QtWidgets.QApplication(sys.argv)
         app.setApplicationName("usdview")
         app.setApplicationDisplayName("usdview")
@@ -499,4 +500,3 @@ class Launcher(object):
             QtCore.QTimer.singleShot(0, app.instance().closeAllWindows)
 
         app.exec_()
-
