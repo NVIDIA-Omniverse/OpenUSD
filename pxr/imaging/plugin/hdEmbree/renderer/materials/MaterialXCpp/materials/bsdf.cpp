@@ -2677,12 +2677,14 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 const float baseReflectance =
                     _SchlickFresnelScalar(effectiveIor, fresnelCos);
                 const float energyScale =
-                    _BsdlRoughDielectricTransmissionScale(
-                        std::max(
-                            std::abs(Dot(shadingN, wo)), _kEpsilon),
-                        _BsdlLayerRoughnessFromAlpha(data.roughness),
-                        effectiveIor,
-                        Dot(N, wo) < 0.0f);
+                    data.compensateRoughTransmission
+                        ? _BsdlRoughDielectricTransmissionScale(
+                              std::max(
+                                  std::abs(Dot(shadingN, wo)), _kEpsilon),
+                              _BsdlLayerRoughnessFromAlpha(data.roughness),
+                              effectiveIor,
+                              Dot(N, wo) < 0.0f)
+                        : 1.0f;
                 const Vec3f transmissionScale = _TransmissionScale(
                     baseReflectance,
                     _DielectricInterfaceReflectanceUntinted(

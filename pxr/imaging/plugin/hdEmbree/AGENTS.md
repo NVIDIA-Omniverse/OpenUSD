@@ -212,6 +212,7 @@ plugin in the active Pixi environment.
 - `renderer/materials/mxcppAdapter.*` and `renderer/materials/MaterialXCpp/`: MaterialX/OpenPBR/UsdPreviewSurface
   conversion and evaluation.
 - `renderer/materials/oiioTextureSystem.*`: texture lookup implementation used by MaterialXCpp.
+
 - `delegate/light.*`: Hydra/USD Lux light Sprim adapter. Populates renderer-owned light data for cylinder, disk,
   distant, dome, rect, and sphere lights; textures; IES shaping; and finite
   visible light geometry.
@@ -228,6 +229,13 @@ plugin in the active Pixi environment.
   and basic rendering.
 - `README.md`: user-facing render setting descriptions. Check it for current
   behavior, but verify against code when changing settings.
+
+Keep transmissive model policy explicit in compiled closures. OpenPBR and
+metalness-workflow UsdPreviewSurface coupled interfaces enable rough-
+transmission energy compensation. Standard Surface retains separate reflection
+and transmission lobes, with `thin_walled` using IOR 1. OpenPBR
+`geometry_thin_walled` uses the coupled thin-sheet interface and retains
+authored-IOR Fresnel.
 
 ## USD To Hydra To hdEmbree Flow
 

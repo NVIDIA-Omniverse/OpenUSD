@@ -247,6 +247,7 @@ EvalUsdPreviewSurface(const ParamMap& params)
         interface.transmissionTint = _Saturate(c.transmissionColor);
         interface.ior = std::max(c.specularIor, 1.0f);
         interface.roughness = _ComputeIsotropicAlpha(c.roughness);
+        interface.compensateRoughTransmission = true;
         root = _AppendLayer(&tree, tree.Add(interface), substrate);
 
         if (c.coat > 0.0f) {

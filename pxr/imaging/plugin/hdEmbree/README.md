@@ -118,6 +118,20 @@ When this AOV is bound (and `ty:enableAdaptiveSampling` is active), it outputs a
 
 ## Material Interpretation Notes
 
+### Rough and thin-walled transmission
+
+Rough-transmission transport is selected by the material model. OpenPBR and
+metalness-workflow UsdPreviewSurface use the compensated coupled dielectric
+interface. Standard Surface keeps its established separate reflection layer
+and transmission lobe for compatibility, including its layered Fresnel
+attenuation and support for `transmission_extra_roughness`.
+
+Standard Surface `thin_walled` transmission uses a separate IOR-1 dielectric
+lobe, so transmitted rays remain straight through even when the authored
+specular IOR or roughness is nonzero. OpenPBR `geometry_thin_walled` instead
+uses its coupled thin-sheet interface: the authored IOR still controls Fresnel,
+and nonzero roughness may blur transmission as defined by that model.
+
 ### Subsurface radius vs. Cycles / Blender Principled BSDF
 
 hdEmbree's random-walk SSS treats the final per-channel radius (`subsurface_radius * subsurface_radius_scale` in OpenPBR, `Subsurface Radius * Subsurface Scale` in Principled BSDF) as the **physical mean free path** fed directly into the Chiang 2016 remap. No additional scaling is applied.

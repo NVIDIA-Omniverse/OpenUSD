@@ -369,19 +369,19 @@ TestStandardSurfaceDispersionParametersReachBsdf()
     params["transmission_dispersion"] = Value(18.0f);
 
     const SurfaceClosure c = EvalStandardSurface(params);
-    const auto* interface = FindNodeIf<Bsdf::DielectricInterfaceData>(
+    const auto* transmission = FindNodeIf<Bsdf::DielectricData>(
         c.bsdfTree,
-        [](const Bsdf::DielectricInterfaceData&) {
-            return true;
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Transmission;
         });
 
-    if (!interface) {
-        printf("    Expected Standard Surface dielectric interface for "
+    if (!transmission) {
+        printf("    Expected Standard Surface transmission lobe for "
                "dispersion\n");
         return false;
     }
 
-    return Test_IsClose(interface->dispersionAbbe, 18.0f, 1e-4f) &&
+    return Test_IsClose(transmission->dispersionAbbe, 18.0f, 1e-4f) &&
            c.HasDispersion();
 }
 
@@ -438,28 +438,29 @@ TestStandardSurfaceLayersSpecularOverTransmissionMix()
     }
 
     const auto* top = c.bsdfTree.Get(layer->top);
-    const auto* interface = top
-        ? std::get_if<Bsdf::DielectricInterfaceData>(&top->data)
+    const auto* reflection = top
+        ? std::get_if<Bsdf::DielectricData>(&top->data)
         : nullptr;
-    if (!interface ||
-        !Test_IsClose(interface->transmissionWeight, 0.6f, 1e-5f)) {
-        printf("    Expected dielectric interface with transmission 0.6 on "
-               "top\n");
+    if (!reflection ||
+        reflection->scatterMode != Bsdf::ScatterMode::Reflection) {
+        printf("    Expected dielectric reflection layer on top\n");
         return false;
     }
 
     const auto* base = c.bsdfTree.Get(layer->base);
-    const auto* multiply =
-        base ? std::get_if<Bsdf::MultiplyData>(&base->data) : nullptr;
-    if (!multiply ||
-        !Test_IsClose(multiply->weight, Vec3f(0.4f), 1e-5f)) {
-        printf("    Expected substrate scaled by (1 - transmission)\n");
+    const auto* mix = base ? std::get_if<Bsdf::MixData>(&base->data) : nullptr;
+    if (!mix || !Test_IsClose(mix->mix, 0.6f, 1e-5f)) {
+        printf("    Expected substrate/transmission mix of 0.6\n");
         return false;
     }
 
-    const auto* substrate = c.bsdfTree.Get(multiply->input);
-    return substrate &&
-           std::holds_alternative<Bsdf::OrenNayarDiffuseData>(substrate->data);
+    const auto* substrate = c.bsdfTree.Get(mix->bg);
+    const auto* transmission = c.bsdfTree.Get(mix->fg);
+    return substrate && transmission &&
+           std::holds_alternative<Bsdf::OrenNayarDiffuseData>(substrate->data) &&
+           std::holds_alternative<Bsdf::DielectricData>(transmission->data) &&
+           std::get<Bsdf::DielectricData>(transmission->data).scatterMode ==
+               Bsdf::ScatterMode::Transmission;
 }
 
 static bool
@@ -468,53 +469,56 @@ TestStandardSurfaceThinWalledUsesUnitIorTransmission()
     ParamMap params;
     params["transmission"] = Value(1.0f);
     params["thin_walled"] = Value(true);
-    params["specular_IOR"] = Value(1.0f);
-    params["specular_roughness"] = Value(0.0f);
+    params["specular_IOR"] = Value(1.5f);
+    params["specular_roughness"] = Value(0.2f);
     params["coat"] = Value(0.0f);
     params["metalness"] = Value(0.0f);
 
     const SurfaceClosure c = EvalStandardSurface(params);
-    const auto* interface = FindNodeIf<Bsdf::DielectricInterfaceData>(
+    const auto* transmission = FindNodeIf<Bsdf::DielectricData>(
         c.bsdfTree,
-        [](const Bsdf::DielectricInterfaceData&) {
-            return true;
+        [](const Bsdf::DielectricData& data) {
+            return data.scatterMode == Bsdf::ScatterMode::Transmission;
         });
 
-    if (!interface || !interface->thinWalled) {
-        printf("    Expected Standard Surface thin_walled to build a "
-               "thin-walled dielectric interface\n");
+    if (!transmission) {
+        printf("    Expected Standard Surface thin_walled to build "
+               "dielectric transmission\n");
         return false;
     }
-    if (!Test_IsClose(interface->ior, 1.0f, 1e-4f)) {
-        printf("    Expected Standard Surface thin_walled interface IOR to "
-               "be 1.0\n");
+    if (!Test_IsClose(transmission->ior, 1.0f, 1e-4f)) {
+        printf("    Expected Standard Surface thin_walled transmission IOR "
+               "to be 1.0\n");
+        return false;
+    }
+    if (FindNodeIf<Bsdf::DielectricInterfaceData>(
+            c.bsdfTree,
+            [](const Bsdf::DielectricInterfaceData&) { return true; })) {
+        printf("    Standard Surface thin_walled should not use the coupled "
+               "dielectric interface\n");
         return false;
     }
 
-    ParamMap openPbrParams;
-    openPbrParams["base_weight"] = Value(0.0f);
-    openPbrParams["base_color"] = Value(Vec3f(1.0f));
-    openPbrParams["base_metalness"] = Value(0.0f);
-    openPbrParams["specular_weight"] = Value(1.0f);
-    openPbrParams["specular_color"] = Value(Vec3f(1.0f));
-    openPbrParams["specular_roughness"] = Value(0.0f);
-    openPbrParams["specular_ior"] = Value(1.0f);
-    openPbrParams["transmission_weight"] = Value(1.0f);
-    openPbrParams["transmission_color"] = Value(Vec3f(1.0f));
-    openPbrParams["geometry_thin_walled"] = Value(true);
-
-    const SurfaceClosure openPbrClosure = EvalOpenPbr(openPbrParams);
+    // IOR-1 rough transmission must remain straight through. This is the
+    // behavioral property that prevents thin-walled Standard Surface from
+    // blurring the background.
+    SurfaceClosure transmissionOnly;
+    transmissionOnly.bsdfTree.root =
+        transmissionOnly.bsdfTree.Add(*transmission);
     const Vec3f N(0.0f, 1.0f, 0.0f);
-    const Vec3f wo = Vec3f(0.0f, 1.0f, 0.0f);
-    const Vec3f wi = Vec3f(0.0f, -1.0f, 0.0f);
-    const Vec3f standardEval = Bsdf::EvalSurface(c, N, wi, wo);
-    const Vec3f openPbrEval = Bsdf::EvalSurface(openPbrClosure, N, wi, wo);
-    if (!Test_IsClose(standardEval, openPbrEval, 1e-4f)) {
-        printf(
-            "    standard=(%f,%f,%f) openpbr=(%f,%f,%f)\n",
-            standardEval[0], standardEval[1], standardEval[2],
-            openPbrEval[0], openPbrEval[1], openPbrEval[2]);
-        return false;
+    const Vec3f wo = Vec3f(0.3f, 0.953939f, 0.0f).normalized();
+    for (const Vec2f& u : {Vec2f(0.2f, 0.3f), Vec2f(0.7f, 0.8f)}) {
+        const auto sample = Bsdf::SampleSurface(
+            transmissionOnly, N, wo, u[0], u[1], 0.5f);
+        if (sample.pdf <= 0.0f ||
+            !Test_IsClose(sample.wi, -wo, 1.0e-5f)) {
+            printf(
+                "    Rough IOR-1 thin-wall transmission bent: "
+                "wi=(%f,%f,%f), expected=(%f,%f,%f), pdf=%f\n",
+                sample.wi[0], sample.wi[1], sample.wi[2],
+                -wo[0], -wo[1], -wo[2], sample.pdf);
+            return false;
+        }
     }
 
     return true;
@@ -557,7 +561,8 @@ TestOpenPbrThinWalledUsesCombinedInterface()
         return false;
     }
 
-    return Test_IsClose(interface->ior, 1.5f, 1e-4f) &&
+    return interface->compensateRoughTransmission &&
+           Test_IsClose(interface->ior, 1.5f, 1e-4f) &&
            Test_IsClose(interface->transmissionTint,
                         Vec3f(0.7f, 1.0f, 0.8f),
                         1e-4f);
@@ -2493,12 +2498,14 @@ TestUsdPreviewSurfaceMetalnessTransmissionUsesDielectricInterface()
     }
     if (!Test_IsClose(interface->ior, 1.5f, 1e-5f) ||
         !Test_IsClose(interface->reflectionWeight, 1.0f, 1e-5f) ||
-        !Test_IsClose(interface->transmissionWeight, 1.0f, 1e-5f)) {
+        !Test_IsClose(interface->transmissionWeight, 1.0f, 1e-5f) ||
+        !interface->compensateRoughTransmission) {
         printf("    interface parameters mismatch: ior=%f reflW=%f "
-               "transW=%f\n",
+               "transW=%f compensate=%d\n",
                interface->ior,
                interface->reflectionWeight,
-               interface->transmissionWeight);
+               interface->transmissionWeight,
+               int(interface->compensateRoughTransmission));
         return false;
     }
 
@@ -2579,12 +2586,10 @@ TestUsdPreviewSurfaceMetallicTransmissionKeepsSchlickPair()
 }
 
 static bool
-TestStandardSurfaceTransmissionUsesDielectricInterface()
+TestStandardSurfaceTransmissionUsesSeparateDielectricLobes()
 {
-    // standard_surface glass maps onto the coupled dielectric interface:
-    // reflectivity, refraction, and TIR all derive from specular_IOR, and
-    // the old LAYER(reflection, transmission-lobe) pairing double-counted
-    // the (1-F) throughput.
+    // Standard Surface retains its legacy reflection layer over a separate
+    // transmission lobe rather than using OpenPBR's coupled interface.
     ParamMap params;
     params["base"] = Value(0.0f);
     params["specular"] = Value(1.0f);
@@ -2594,34 +2599,28 @@ TestStandardSurfaceTransmissionUsesDielectricInterface()
     params["transmission"] = Value(1.0f);
     const SurfaceClosure c = EvalStandardSurface(params);
 
-    const auto* interface = FindNodeIf<Bsdf::DielectricInterfaceData>(
-        c.bsdfTree, [](const Bsdf::DielectricInterfaceData&) {
-            return true;
+    const auto* reflection = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree, [](const Bsdf::DielectricData& d) {
+            return d.scatterMode == Bsdf::ScatterMode::Reflection;
         });
-    if (!interface) {
-        printf("    expected a DielectricInterfaceData lobe\n");
+    const auto* transmission = FindNodeIf<Bsdf::DielectricData>(
+        c.bsdfTree, [](const Bsdf::DielectricData& d) {
+            return d.scatterMode == Bsdf::ScatterMode::Transmission;
+        });
+    if (!reflection || !transmission) {
+        printf("    expected separate reflection and transmission lobes\n");
         return false;
     }
-    if (!Test_IsClose(interface->ior, 1.5f, 1e-5f) ||
-        !Test_IsClose(interface->reflectionWeight, 1.0f, 1e-5f) ||
-        !Test_IsClose(interface->transmissionWeight, 1.0f, 1e-5f) ||
-        !Test_IsClose(interface->reflectionTint,
-                      Vec3f(0.9f, 0.95f, 1.0f), 1e-5f)) {
-        printf("    interface parameters mismatch: ior=%f reflW=%f "
-               "transW=%f\n",
-               interface->ior,
-               interface->reflectionWeight,
-               interface->transmissionWeight);
+    if (!Test_IsClose(reflection->ior, 1.5f, 1e-5f) ||
+        !Test_IsClose(transmission->ior, 1.5f, 1e-5f) ||
+        !Test_IsClose(reflection->tint, Vec3f(0.9f, 0.95f, 1.0f), 1e-5f)) {
+        printf("    Standard Surface dielectric lobe parameters mismatch\n");
         return false;
     }
-    if (FindNodeIf<Bsdf::DielectricData>(
-            c.bsdfTree, [](const Bsdf::DielectricData& d) {
-                return d.scatterMode == Bsdf::ScatterMode::Transmission;
-            })) {
-        printf("    transparency should not keep the transmission lobe\n");
-        return false;
-    }
-    return true;
+    return FindNodeIf<Bsdf::DielectricInterfaceData>(
+               c.bsdfTree,
+               [](const Bsdf::DielectricInterfaceData&) { return true; }) ==
+        nullptr;
 }
 
 static bool
@@ -2656,37 +2655,13 @@ TestStandardSurfaceExtraRoughnessKeepsTransmissionLobe()
     return true;
 }
 
-static bool
-TestStandardSurfaceThinWalledTransmissionUsesInterface()
-{
-    ParamMap params;
-    params["base"] = Value(0.0f);
-    params["specular"] = Value(1.0f);
-    params["specular_roughness"] = Value(0.0f);
-    params["specular_IOR"] = Value(1.5f);
-    params["transmission"] = Value(1.0f);
-    params["thin_walled"] = Value(true);
-    const SurfaceClosure c = EvalStandardSurface(params);
-
-    const auto* interface = FindNodeIf<Bsdf::DielectricInterfaceData>(
-        c.bsdfTree, [](const Bsdf::DielectricInterfaceData&) {
-            return true;
-        });
-    if (!interface || !interface->thinWalled) {
-        printf("    expected a thin-walled dielectric interface\n");
-        return false;
-    }
-    return true;
-}
-
 // ---------------------------------------------------------------------------
 
 void
 Test_RegisterMaterialTests()
 {
-    _REG(TestStandardSurfaceTransmissionUsesDielectricInterface);
+    _REG(TestStandardSurfaceTransmissionUsesSeparateDielectricLobes);
     _REG(TestStandardSurfaceExtraRoughnessKeepsTransmissionLobe);
-    _REG(TestStandardSurfaceThinWalledTransmissionUsesInterface);
     _REG(TestUsdPreviewSurfaceMetalnessTransmissionUsesDielectricInterface);
     _REG(TestUsdPreviewSurfaceSpecularWorkflowTransmissionKeepsSchlickPair);
     _REG(TestUsdPreviewSurfaceMetallicTransmissionKeepsSchlickPair);

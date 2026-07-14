@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <variant>
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -1970,6 +1971,7 @@ TestOpenPbrInterfaceRoughTransmissionUsesBsdlEnergyCompensation()
         interface.transmissionTint = Vec3f(1.0f);
         interface.ior = ior;
         interface.roughness = Vec2f(alphaRoughness, alphaRoughness);
+        interface.compensateRoughTransmission = true;
         closure.bsdfTree.root = closure.bsdfTree.Add(interface);
 
         Vec3f wo = _DirectionFromCosThetaYUp(backfacing ? 0.8f : 0.1f);
@@ -2016,6 +2018,20 @@ TestOpenPbrInterfaceRoughTransmissionUsesBsdlEnergyCompensation()
                 "    OpenPBR transmission energy scale mismatch: "
                 "actual=%f expected=%f backfacing=%d\n",
                 actualScale, expectedScale, backfacing);
+            return false;
+        }
+
+        SurfaceClosure uncompensatedClosure;
+        interface.compensateRoughTransmission = false;
+        uncompensatedClosure.bsdfTree.root =
+            uncompensatedClosure.bsdfTree.Add(interface);
+        const Vec3f interfaceWithoutCompensation = Bsdf::EvalSurface(
+            uncompensatedClosure, N, sample.wi, wo);
+        if (evaluated[0] <= interfaceWithoutCompensation[0] + 1.0e-5f) {
+            printf(
+                "    Rough transmission policy did not add compensation: "
+                "enabled=%f disabled=%f backfacing=%d\n",
+                evaluated[0], interfaceWithoutCompensation[0], backfacing);
             return false;
         }
     }
@@ -3494,13 +3510,14 @@ static bool
 _CheckTransparentClosureEnergy(
     const SurfaceClosure& closure,
     const char* label,
-    float lowerBound)
+    std::optional<float> lowerBound)
 {
     const Vec3f N(0.0f, 1.0f, 0.0f);
     const int kSamples = 50000;
-    // ior 1.5 puts the critical angle at cosTheta ~0.745; 0.05-0.5 exercise
-    // the total-internal-reflection range from inside the medium.
-    const float cosThetas[] = {0.05f, 0.2f, 0.5f, 0.8f, 1.0f};
+    // IOR 1.5 puts the critical cosine at about 0.745. Bracket it closely in
+    // addition to the grazing, TIR, transmissive, and normal directions.
+    const float cosThetas[] = {
+        0.05f, 0.2f, 0.5f, 0.74f, 0.76f, 0.8f, 1.0f};
 
     std::uint64_t state = 0x853c49e6748fea9bull;
     auto nextFloat = [&state]() {
@@ -3533,13 +3550,18 @@ _CheckTransparentClosureEnergy(
             energy = energy * (1.0f / float(kSamples));
             printf("      %s NoV=%.2f E=%.4f\n",
                    side == 0 ? "outside" : "inside ", cosTheta, energy[0]);
+            if (!_IsFiniteNonNegative(energy)) {
+                printf("        invalid non-finite or negative energy\n");
+                ok = false;
+                continue;
+            }
             for (int c = 0; c < 3; ++c) {
                 if (!(energy[c] <= 1.0f + _kFurnaceEnergyUpperSlack)) {
                     printf("        energy gain on channel %d: %f\n",
                            c, energy[c]);
                     ok = false;
                 }
-                if (!(energy[c] >= lowerBound)) {
+                if (lowerBound && !(energy[c] >= *lowerBound)) {
                     printf("        unexpected energy loss on channel %d: "
                            "%f\n", c, energy[c]);
                     ok = false;
@@ -3612,20 +3634,26 @@ TestUsdPreviewSurfaceTransmissionTirEnergyConservation()
             0.90f) && ok;
     }
 
-    // standard_surface glass compiles to the same coupled dielectric
-    // interface and must conserve exactly like the other workflows.
+    return ok;
+}
+
+static bool
+TestStandardSurfaceRoughTransmissionWhiteFurnaceDoesNotGainEnergy()
+{
+    // Exercise the roughness used by the AOUSD transmission_rough fixture.
+    // White unit transmission is a stronger gain stress than the fixture's
+    // 0.95 transmission weight. The legacy layered pairing intentionally
+    // loses some energy, so this test has no behavior-derived lower bound.
     ParamMap standardParams;
     standardParams["base"] = Value(0.0f);
     standardParams["specular"] = Value(1.0f);
-    standardParams["specular_roughness"] = Value(0.0f);
+    standardParams["specular_roughness"] = Value(0.3f);
     standardParams["specular_IOR"] = Value(1.5f);
     standardParams["transmission"] = Value(1.0f);
-    ok = _CheckTransparentClosureEnergy(
+    return _CheckTransparentClosureEnergy(
         EvalStandardSurface(standardParams),
-        "standard_surface glass",
-        0.97f) && ok;
-
-    return ok;
+        "standard_surface rough glass",
+        std::nullopt);
 }
 
 void
@@ -3633,6 +3661,7 @@ Test_RegisterBsdfTests()
 {
     _REG(TestDielectricInterfaceUsesExactFresnel);
     _REG(TestUsdPreviewSurfaceTransmissionTirEnergyConservation);
+    _REG(TestStandardSurfaceRoughTransmissionWhiteFurnaceDoesNotGainEnergy);
     _REG(TestLambertianValue);
     _REG(TestLambertianColorScaling);
     _REG(TestFurnaceHelperMatchesLambertian);
