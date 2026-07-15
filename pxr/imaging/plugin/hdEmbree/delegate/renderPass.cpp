@@ -374,7 +374,6 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _subdivisionDisplacementUpdatePending(false)
     , _subdivisionViewMatrix(1.0f)
     , _subdivisionProjMatrix(1.0f)
-    , _cameraExposureScale(1.0f)
     , _cameraDepthOfField()
     , _lightingEnabled(true)
     , _wireframeColor(0.0f)
@@ -418,6 +417,12 @@ HdEmbreeRenderPass::~HdEmbreeRenderPass()
     // non-current pass must not cancel another live pass's render.
     if (_hasInstalledAovBindings &&
         _aovBindingsVersion == _renderer->GetAovBindingsVersion()) {
+        HdRenderBuffer* const colorBuffer = _GetColorRenderBuffer(
+            _renderer->GetAovBindings(), nullptr);
+        if (HdEmbreeRenderBuffer* const embreeColorBuffer =
+                dynamic_cast<HdEmbreeRenderBuffer*>(colorBuffer)) {
+            embreeColorBuffer->SetPresentationExposureScale(1.0f);
+        }
         _renderThread->StopRender();
         _renderer->SetAovBindings(HdRenderPassAovBindingVector());
     }
@@ -995,24 +1000,18 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     // Determine whether we need to update the renderer camera.
     const GfMatrix4d view = renderPassState->GetWorldToViewMatrix();
     const GfMatrix4d proj = renderPassState->GetProjectionMatrix();
-    const float cameraExposureScale =
-        _GetCameraExposureScale(renderPassState);
     const ty::CameraDepthOfField cameraDepthOfField =
         _GetCameraDepthOfField(renderPassState);
     const bool projectionChanged =
         passActivated ||
         _viewMatrix != view || _projMatrix != proj;
-    if (projectionChanged ||
-        _cameraExposureScale != cameraExposureScale ||
-        _cameraDepthOfField != cameraDepthOfField) {
+    if (projectionChanged || _cameraDepthOfField != cameraDepthOfField) {
         _viewMatrix = view;
         _projMatrix = proj;
-        _cameraExposureScale = cameraExposureScale;
         _cameraDepthOfField = cameraDepthOfField;
 
         _renderThread->StopRender();
         _renderer->SetCamera(_viewMatrix, _projMatrix);
-        _renderer->SetCameraExposureScale(_cameraExposureScale);
         _renderer->SetCameraDepthOfField(_cameraDepthOfField);
         _renderer->ResetAccumulation();
         needStartRender = true;
@@ -1042,7 +1041,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
             _colorBuffer.Allocate(
                 dimensions,
-                HdFormatUNorm8Vec4,
+                HdFormatFloat32Vec4,
                 /*multiSampled=*/true);
             
             _depthBuffer.Allocate(
@@ -1129,6 +1128,23 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     if (!_hasInstalledAovBindings ||
         _aovBindings != aovBindings ||
         _renderer->GetAovBindings().empty()) {
+        HdRenderPassAovBindingVector const& activeBindings =
+            _renderer->GetAovBindings();
+        HdRenderBuffer* const previousColorBuffer =
+            activeBindings.empty()
+                ? nullptr
+                : _GetColorRenderBuffer(activeBindings, nullptr);
+        HdRenderBuffer* const nextColorBuffer =
+            aovBindings.empty()
+                ? &_colorBuffer
+                : _GetColorRenderBuffer(aovBindings, nullptr);
+        if (previousColorBuffer != nextColorBuffer) {
+            if (HdEmbreeRenderBuffer* const previousEmbreeColorBuffer =
+                    dynamic_cast<HdEmbreeRenderBuffer*>(previousColorBuffer)) {
+                previousEmbreeColorBuffer->SetPresentationExposureScale(1.0f);
+            }
+        }
+
         _aovBindings = aovBindings;
 
         _renderThread->StopRender();
@@ -1157,6 +1173,18 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     TF_VERIFY(
         !_renderer->GetAovBindings().empty(),
         "No aov bindings to render into");
+
+    // Exposure is presentation state. Keep progressive HDR accumulation
+    // unchanged so camera exposure edits do not restart rendering.
+    HdRenderBuffer* const colorBuffer =
+        _aovBindings.empty()
+            ? static_cast<HdRenderBuffer*>(&_colorBuffer)
+            : _GetColorRenderBuffer(_aovBindings, nullptr);
+    if (HdEmbreeRenderBuffer* const embreeColorBuffer =
+            dynamic_cast<HdEmbreeRenderBuffer*>(colorBuffer)) {
+        embreeColorBuffer->SetPresentationExposureScale(
+            _GetCameraExposureScale(renderPassState));
+    }
 
     // Only start a new render if something in the scene has changed.
     if (needStartRender) {

@@ -612,8 +612,7 @@ _TestAovOutputDispatch()
     _Scene scene;
     GfRect2i const dataWindow(GfVec2i(0), 1, 1);
 
-    // Ordinary color uses multisampled accumulation and applies exposure to
-    // RGB without changing alpha.
+    // Ordinary color keeps multisampled accumulation in unexposed HDR values.
     {
         _CountingRenderBuffer color(
             SdfPath("/dispatchColor"), 1, 1, HdFormatFloat32Vec4);
@@ -623,7 +622,6 @@ _TestAovOutputDispatch()
         ty::Renderer renderer;
         HdRenderThread renderThread;
         _Configure(&renderer, scene.scene, {binding}, dataWindow);
-        renderer.SetCameraExposureScale(2.0f);
         if (!TF_VERIFY(!color.converged)) {
             return false;
         }
@@ -641,7 +639,7 @@ _TestAovOutputDispatch()
                 "floatOutputWriteCount=%u", color.floatOutputWriteCount) ||
             !TF_VERIFY(
                 color.firstFloatWrite ==
-                GfVec4f(0.5f, 1.0f, 1.5f, 1.0f),
+                GfVec4f(0.25f, 0.5f, 0.75f, 1.0f),
                 "firstFloatWrite=(%g, %g, %g, %g)",
                 color.firstFloatWrite[0],
                 color.firstFloatWrite[1],

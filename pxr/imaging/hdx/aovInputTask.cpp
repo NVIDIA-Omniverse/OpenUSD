@@ -7,6 +7,7 @@
 #include "pxr/imaging/hdx/aovInputTask.h"
 #include "pxr/imaging/hdx/hgiConversions.h"
 
+#include "pxr/base/gf/half.h"
 #include "pxr/imaging/hd/aov.h"
 #include "pxr/imaging/hd/tokens.h"
 #include "pxr/imaging/hdx/tokens.h"
@@ -15,6 +16,7 @@
 #include "pxr/imaging/hgi/blitCmds.h"
 #include "pxr/imaging/hgi/blitCmdsOps.h"
 
+#include <algorithm>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -250,6 +252,69 @@ HdxAovInputTask::_UpdateTexture(
     const HgiFormat bufFormat = HdxHgiConversions::GetHgiFormat(hdFormat);
     const size_t pixelByteSize = HdDataSizeOfFormat(hdFormat);
     const size_t dataByteSize = dim[0] * dim[1] * dim[2] * pixelByteSize;
+
+    // Keep renderer accumulation unexposed and apply camera exposure only to
+    // the private CPU staging data immediately before it is uploaded.
+    const float exposureScale = buffer->GetPresentationExposureScale();
+    const HdFormat componentFormat = HdGetComponentFormat(hdFormat);
+    const size_t componentCount = HdGetComponentCount(hdFormat);
+    const size_t pixelCount =
+        static_cast<size_t>(dim[0]) * dim[1] * dim[2];
+    std::vector<float> exposedFloatData;
+    std::vector<GfHalf> exposedHalfData;
+    std::vector<uint8_t> exposedUNormData;
+    std::vector<int8_t> exposedSNormData;
+    if (exposureScale != 1.0f && componentCount >= 3) {
+        if (componentFormat == HdFormatFloat32) {
+            const float *source = static_cast<const float*>(pixelData);
+            exposedFloatData.assign(
+                source, source + pixelCount * componentCount);
+            for (size_t pixel = 0; pixel < pixelCount; ++pixel) {
+                for (size_t component = 0; component < 3; ++component) {
+                    exposedFloatData[pixel * componentCount + component] *=
+                        exposureScale;
+                }
+            }
+            pixelData = exposedFloatData.data();
+        } else if (componentFormat == HdFormatFloat16) {
+            const GfHalf *source = static_cast<const GfHalf*>(pixelData);
+            exposedHalfData.assign(
+                source, source + pixelCount * componentCount);
+            for (size_t pixel = 0; pixel < pixelCount; ++pixel) {
+                for (size_t component = 0; component < 3; ++component) {
+                    const size_t index = pixel * componentCount + component;
+                    exposedHalfData[index] = GfHalf(
+                        static_cast<float>(exposedHalfData[index]) *
+                        exposureScale);
+                }
+            }
+            pixelData = exposedHalfData.data();
+        } else if (componentFormat == HdFormatUNorm8) {
+            const uint8_t *source = static_cast<const uint8_t*>(pixelData);
+            exposedUNormData.assign(source, source + dataByteSize);
+            for (size_t pixel = 0; pixel < pixelCount; ++pixel) {
+                for (size_t component = 0; component < 3; ++component) {
+                    const size_t index = pixel * componentCount + component;
+                    exposedUNormData[index] = static_cast<uint8_t>(std::clamp(
+                        exposedUNormData[index] * exposureScale,
+                        0.0f, 255.0f));
+                }
+            }
+            pixelData = exposedUNormData.data();
+        } else if (componentFormat == HdFormatSNorm8) {
+            const int8_t *source = static_cast<const int8_t*>(pixelData);
+            exposedSNormData.assign(source, source + dataByteSize);
+            for (size_t pixel = 0; pixel < pixelCount; ++pixel) {
+                for (size_t component = 0; component < 3; ++component) {
+                    const size_t index = pixel * componentCount + component;
+                    exposedSNormData[index] = static_cast<int8_t>(std::clamp(
+                        exposedSNormData[index] * exposureScale,
+                        -127.0f, 127.0f));
+                }
+            }
+            pixelData = exposedSNormData.data();
+        }
+    }
 
     // Update the existing texture if specs are compatible. This is more
     // efficient than re-creating, because the underlying framebuffer that

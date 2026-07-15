@@ -155,12 +155,6 @@ public:
     void SetCamera(GfMatrix4d const& viewMatrix,
                    GfMatrix4d const& projMatrix);
 
-    /// \brief Set the linear exposure multiplier for color samples.
-    ///
-    /// \param cameraExposureScale Finite, normally non-negative scale applied
-    /// after path evaluation.
-    void SetCameraExposureScale(float cameraExposureScale);
-
     /// \brief Set physical depth-of-field parameters for the active camera.
     ///
     /// Depth of field is enabled only for a perspective camera when all three
@@ -1049,7 +1043,6 @@ private:
     // The inverse projection matrix: NDC space to camera space.
     GfMatrix4d _inverseProjMatrix;
     // Linear exposure scale from the active camera.
-    float _cameraExposureScale;
     // Physical depth-of-field state from the active camera.
     CameraDepthOfField _cameraDepthOfField;
 

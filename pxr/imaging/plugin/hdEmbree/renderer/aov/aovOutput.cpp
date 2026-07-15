@@ -543,11 +543,7 @@ ty::Renderer::_WriteAov(
     GfVec3i const pixel(x, y, 1);
     switch (aov.kind) {
         case _AovKind::Color: {
-            GfVec4f exposedColor = result.color;
-            exposedColor[0] *= _cameraExposureScale;
-            exposedColor[1] *= _cameraExposureScale;
-            exposedColor[2] *= _cameraExposureScale;
-            aov.buffer->Write(pixel, 4, exposedColor.data());
+            aov.buffer->Write(pixel, 4, result.color.data());
             break;
         }
         case _AovKind::CameraDepth: {

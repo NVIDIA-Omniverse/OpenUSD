@@ -924,8 +924,11 @@ active mesh wireframe repr to the retained camera hit, then updates the
 per-pixel mean and variance used by adaptive convergence. It then passes each
 classified AOV through `_WriteAov()`'s direct switch:
 
-- color output consumes the returned radiance and applies camera exposure only at
-  output when Hydra enables exposure compensation on the render-pass state;
+- color output stores the returned radiance as unexposed HDR. The render pass
+  records the active camera exposure on the color buffer when Hydra enables
+  exposure compensation, and Hdx applies that scale only to its private CPU
+  staging copy immediately before GPU upload. Exposure edits therefore update
+  presentation without resetting progressive accumulation;
 - depth, normal, ID, and primvar output interprets the retained `primaryHit`;
 - heatmap output consumes adaptive sample counts rather than scene radiance.
   `_UpdateVariance()` advances the count before `_WriteAov()` maps

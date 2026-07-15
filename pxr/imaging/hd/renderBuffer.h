@@ -106,6 +106,11 @@ public:
     /// still adding samples or not).
     virtual bool IsConverged() const = 0;
 
+    /// Return a linear RGB exposure scale to apply when staging this buffer
+    /// for presentation. Render buffers normally return 1.0; delegates that
+    /// keep accumulated color unexposed may override this value.
+    virtual float GetPresentationExposureScale() const { return 1.0f; }
+
     /// This optional API returns a (type-erased) resource that backs this
     /// render buffer. For example, a render buffer implementation may allocate
     /// a gpu texture that holds the data of the buffer. This function allows

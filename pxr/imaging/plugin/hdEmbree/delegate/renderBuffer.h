@@ -116,6 +116,12 @@ public:
     /// Resolve() to turn a sparsely-sampled image into a mosaic preview.
     void BlockFill(unsigned int blockSize);
 
+    /// Set the linear exposure applied when this buffer is presented.
+    void SetPresentationExposureScale(float scale);
+    float GetPresentationExposureScale() const override {
+        return _presentationExposureScale.load();
+    }
+
     // ---------------------------------------------------------------------- //
     /// \name I/O helpers
     // ---------------------------------------------------------------------- //
@@ -187,6 +193,9 @@ private:
     std::vector<uint8_t> _sampleBuffer;
     // For multisampled buffers: the sample count buffer.
     std::vector<uint32_t> _sampleCount;
+
+    // Linear exposure applied by Hdx while staging the buffer for upload.
+    std::atomic<float> _presentationExposureScale;
 
     // The number of callers mapping this buffer.
     std::atomic<int> _mappers;

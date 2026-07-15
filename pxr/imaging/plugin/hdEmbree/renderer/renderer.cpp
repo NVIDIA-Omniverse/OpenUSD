@@ -77,7 +77,6 @@ ty::Renderer::Renderer()
     , _projMatrix(1.0f) // == identity
     , _inverseViewMatrix(1.0f) // == identity
     , _inverseProjMatrix(1.0f) // == identity
-    , _cameraExposureScale(1.0f)
     , _cameraDepthOfField()
     , _scene(nullptr)
     , _settings()
@@ -167,12 +166,6 @@ ty::Renderer::SetCamera(const GfMatrix4d& viewMatrix,
     _projMatrix = projMatrix;
     _inverseViewMatrix = viewMatrix.GetInverse();
     _inverseProjMatrix = projMatrix.GetInverse();
-}
-
-void
-ty::Renderer::SetCameraExposureScale(float cameraExposureScale)
-{
-    _cameraExposureScale = cameraExposureScale;
 }
 
 void

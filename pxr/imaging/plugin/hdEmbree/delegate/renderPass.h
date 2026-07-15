@@ -171,8 +171,6 @@ private:
     GfMatrix4d _subdivisionProjMatrix;
     GfRect2i _subdivisionDataWindow;
 
-    // The linear camera exposure scale applied to color output.
-    float _cameraExposureScale;
     // The active camera's physical depth-of-field state.
     ty::CameraDepthOfField _cameraDepthOfField;
     // Last Hydra lit/unlit presentation state forwarded to the renderer.

@@ -20,6 +20,7 @@ HdEmbreeRenderBuffer::HdEmbreeRenderBuffer(SdfPath const& id)
     , _buffer()
     , _sampleBuffer()
     , _sampleCount()
+    , _presentationExposureScale(1.0f)
     , _mappers(0)
     , _converged(false)
 {
@@ -68,6 +69,7 @@ HdEmbreeRenderBuffer::_Deallocate()
     _buffer.resize(0);
     _sampleBuffer.resize(0);
     _sampleCount.resize(0);
+    _presentationExposureScale.store(1.0f);
 
     _mappers.store(0);
     _converged.store(false);
@@ -131,6 +133,12 @@ HdEmbreeRenderBuffer::Allocate(GfVec3i const& dimensions,
     }
 
     return true;
+}
+
+void
+HdEmbreeRenderBuffer::SetPresentationExposureScale(float scale)
+{
+    _presentationExposureScale.store(scale);
 }
 
 template<typename T>

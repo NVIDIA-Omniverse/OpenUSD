@@ -204,6 +204,13 @@ Selects the renderer working color space. RenderLab exposes
 transforms. This is the standard `UsdRenderSettings` attribute rather than a
 Typhoon-namespaced setting.
 
+### Exposure Compensation (`enableExposureCompensation`)
+
+This standard Hydra setting controls whether the active camera's exposure is
+applied to viewport presentation. Typhoon keeps render buffers and authored
+RenderProduct pixels as unexposed HDR values, so changing exposure updates the
+viewport without restarting progressive accumulation.
+
 ### Hydra Lighting State
 
 Lighting presentation follows `HdRenderPassState::GetLightingEnabled()` rather

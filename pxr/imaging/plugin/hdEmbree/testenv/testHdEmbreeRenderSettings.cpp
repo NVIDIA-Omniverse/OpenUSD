@@ -591,8 +591,11 @@ _TestExposureCompensationRenderPassState()
     }
     const GfVec4f enabledColor = renderAndRead();
     if (!GfIsClose(
-            enabledColor, GfVec4f(0.25f, 0.5f, 0.75f, 1.0f), 1.0e-6f)) {
-        std::printf("enabled exposure output was incorrect\n");
+            enabledColor,
+            GfVec4f(0.125f, 0.25f, 0.375f, 1.0f),
+            1.0e-6f) ||
+        colorBuffer.GetPresentationExposureScale() != 2.0f) {
+        std::printf("enabled exposure changed HDR storage or scale\n");
         return false;
     }
 
@@ -601,15 +604,17 @@ _TestExposureCompensationRenderPassState()
     if (!GfIsClose(
             disabledColor,
             GfVec4f(0.125f, 0.25f, 0.375f, 1.0f),
-            1.0e-6f)) {
-        std::printf("disabled exposure output was incorrect\n");
+            1.0e-6f) ||
+        colorBuffer.GetPresentationExposureScale() != 1.0f) {
+        std::printf("disabled exposure changed HDR storage or scale\n");
         return false;
     }
 
     renderPassState->SetEnableExposureCompensation(true);
     const GfVec4f reenabledColor = renderAndRead();
-    if (!GfIsClose(reenabledColor, enabledColor, 1.0e-6f)) {
-        std::printf("re-enabled exposure output retained stale accumulation\n");
+    if (!GfIsClose(reenabledColor, enabledColor, 1.0e-6f) ||
+        colorBuffer.GetPresentationExposureScale() != 2.0f) {
+        std::printf("re-enabled exposure reset HDR accumulation or scale\n");
         return false;
     }
 
