@@ -22,7 +22,7 @@ target_sources(usdrender PRIVATE
 
 if (PXR_BUILD_EMBREE_PLUGIN AND BUILD_SHARED_LIBS)
     pxr_register_test(testUsdRenderCpuFrames
-        COMMAND "${CMAKE_INSTALL_PREFIX}/bin/usdrender test.usda --disableGpu --renderer Embree --frames 1:2 --outputRoot outputs"
+        COMMAND "${CMAKE_INSTALL_PREFIX}/bin/usdrender test.usda --disableGpu --renderer Embree --enableCameraLight --frames 1:2 --outputRoot outputs"
         IMAGE_DIFF_COMPARE
             outputs/frame.0001.png
             outputs/frame.0002.png

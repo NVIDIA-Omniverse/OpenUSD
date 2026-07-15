@@ -61,7 +61,7 @@ pixi run --clean-env -x /usr/bin/env \
     HDEMBREE_RANDOM_NUMBER_SEED=1 \
     /usr/bin/perf stat -r 5 -d \
     -o /tmp/typhoon-input-coat-darkening-stat.txt -- \
-    usdrender --complexity high --renderer Embree --disableCameraLight \
+    usdrender --complexity high --renderer Embree \
     /home/anders/code/typhoon-tests/material-fidelity/surfaces/open_pbr_surface/input_coat_darkening.usda \
     --outputRoot /tmp/typhoon-profile-stat
 ```
@@ -93,7 +93,7 @@ pixi run --clean-env -x /usr/bin/env \
     /usr/bin/perf record \
     -o /tmp/typhoon-input-coat-darkening.data \
     -F 499 -e cycles:u -g --call-graph fp -- \
-    usdrender --complexity high --renderer Embree --disableCameraLight \
+    usdrender --complexity high --renderer Embree \
     /home/anders/code/typhoon-tests/material-fidelity/surfaces/open_pbr_surface/input_coat_darkening.usda \
     --outputRoot /tmp/typhoon-profile-record
 ```
@@ -131,7 +131,7 @@ Enable OpenUSD's global trace collector for a direct render:
 ```sh
 PXR_ENABLE_GLOBAL_TRACE=1 \
 HDEMBREE_RANDOM_NUMBER_SEED=1 \
-pixi run usdrender --disableCameraLight \
+pixi run usdrender \
     /home/anders/code/typhoon-tests/material-fidelity/surfaces/open_pbr_surface/input_coat_darkening.usda \
     --outputRoot /tmp/typhoon-profile-trace \
     > /tmp/typhoon-input-coat-darkening-trace.txt 2>&1
@@ -230,8 +230,8 @@ Textured assets rendered roughly an order of magnitude slower than the same
 mesh with constant inputs. Because `perf` was unavailable on the test host
 (`perf_event_paranoid=4`), the cause was isolated with A/B render timing on a
 single brass sphere (`ND_UsdPreviewSurface` + two `ND_tiledimage`, 2048x2048
-JPEG color and roughness, `usdrender --renderer Embree --disableCameraLight
---disableGpu`, `HDEMBREE_RANDOM_NUMBER_SEED=1`, 64 logical CPUs, renderer time):
+JPEG color and roughness, `usdrender --renderer Embree --disableGpu`,
+`HDEMBREE_RANDOM_NUMBER_SEED=1`, 64 logical CPUs, renderer time):
 
 | Variant | Time | Isolates |
 | --- | ---: | --- |

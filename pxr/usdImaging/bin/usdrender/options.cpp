@@ -8,13 +8,14 @@ PXR_NAMESPACE_USING_DIRECTIVE
 using namespace pxr_CLI;
 bool ParseOptions(int argc,char**argv,Options*o){
  CLI::App app("Generates images from a USD file");
- bool disableGpu=false,disableDrawMode=false,disableCameraLight=false;
+ bool disableGpu=false,disableDrawMode=false,disableSceneMaterials=false;
  app.add_option("usdFilePath",o->usdFile,"USD file to render")->required();
  app.add_option("--mask",o->mask); app.add_option("--purposes",o->purposes);
  app.add_option("--sessionLayer",o->sessionLayer);
  app.add_flag("--disableGpu",disableGpu);
  app.add_flag("--disableDrawMode",disableDrawMode);
- app.add_flag("--disableCameraLight",disableCameraLight);
+ app.add_flag("--enableCameraLight",o->cameraLight);
+ app.add_flag("--disableSceneMaterials",disableSceneMaterials);
  app.add_option("--resolverContext",o->resolverContext)->check(CLI::IsMember({"root","inherit"}));
  app.add_option("--camera,-c",o->camera); app.add_option("--frames,-f",o->frames);
  app.add_flag("--defaultTime",o->defaultTime);
@@ -30,7 +31,7 @@ bool ParseOptions(int argc,char**argv,Options*o){
  app.add_flag("--memstats",o->memstats);
  for(int i=1;i<argc;++i){if(std::strcmp(argv[i],"-rp")==0)argv[i]=const_cast<char*>("--renderPassPrimPath");else if(std::strcmp(argv[i],"-rs")==0)argv[i]=const_cast<char*>("--renderSettingsPrimPath");}
  try{app.parse(argc,argv);}catch(const CLI::ParseError&e){app.exit(e);return false;}
- o->gpu=!disableGpu;o->drawMode=!disableDrawMode;o->cameraLight=!disableCameraLight;
+ o->gpu=!disableGpu;o->drawMode=!disableDrawMode;o->sceneMaterials=!disableSceneMaterials;
  if(!o->frames.empty()&&o->defaultTime){std::cerr<<"Cannot specify both --frames and --defaultTime\n";return false;}
  if(!o->renderPass.empty()&&!o->renderSettings.empty()){std::cerr<<"Cannot specify both --renderSettingsPrimPath and --renderPassPrimPath\n";return false;}
  static const std::map<std::string,float> levels={{"low",1.0f},{"medium",1.1f},{"high",1.2f},{"veryhigh",1.3f}};

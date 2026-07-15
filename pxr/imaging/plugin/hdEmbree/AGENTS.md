@@ -115,7 +115,7 @@ pixi run --clean-env -x /usr/bin/env \
     PATH="$PWD/.pixi/envs/default/bin:/usr/bin:/bin" \
     HDEMBREE_RANDOM_NUMBER_SEED=1 \
     /usr/bin/perf stat -r 5 -d -o /tmp/hdembree-stat.txt -- \
-    usdrender --complexity high --renderer Embree --disableCameraLight \
+    usdrender --complexity high --renderer Embree \
     <stage.usda> --outputRoot /tmp/hdembree-profile-stat
 ```
 
@@ -127,7 +127,7 @@ pixi run --clean-env -x /usr/bin/env \
     HDEMBREE_RANDOM_NUMBER_SEED=1 \
     /usr/bin/perf record -o /tmp/hdembree.data \
     -F 499 -e cycles:u -g --call-graph fp -- \
-    usdrender --complexity high --renderer Embree --disableCameraLight \
+    usdrender --complexity high --renderer Embree \
     <stage.usda> --outputRoot /tmp/hdembree-profile-record
 
 perf report -i /tmp/hdembree.data
@@ -145,7 +145,7 @@ OpenUSD tracing complements statistical profiling by measuring coarse phases:
 ```sh
 PXR_ENABLE_GLOBAL_TRACE=1 \
 HDEMBREE_RANDOM_NUMBER_SEED=1 \
-pixi run usdrender --disableCameraLight \
+pixi run usdrender \
     <stage.usda> --outputRoot /tmp/hdembree-profile-trace \
     > /tmp/hdembree-trace.txt 2>&1
 ```
