@@ -209,8 +209,13 @@ plugin in the active Pixi environment.
   instance transforms.
 - `delegate/material.*`: `HdEmbreeMaterial`; pulls Hydra material networks and compiles
   them into `mxcpp::EvalGraph` objects for CPU shading.
-- `renderer/materials/mxcppAdapter.*` and `renderer/materials/MaterialXCpp/`: MaterialX/OpenPBR/UsdPreviewSurface
-  conversion and evaluation.
+- `renderer/materials/mxcppAdapter.*` and `renderer/materials/MaterialXCpp/`:
+  MaterialX/OpenPBR/UsdPreviewSurface conversion and evaluation. Coupled
+  dielectric straight shadows use exact Fresnel through alpha 0.002, blend
+  to the BSDL-generated directional transmission LUT through alpha 0.07, and
+  use the LUT directly above that band; regenerate the committed
+  runtime table when its analytic endpoint, quadratic roughness mapping, or MIS
+  bake changes.
 - `renderer/materials/oiioTextureSystem.*`: texture lookup implementation used by MaterialXCpp.
 
 - `delegate/light.*`: Hydra/USD Lux light Sprim adapter. Populates renderer-owned light data for cylinder, disk,

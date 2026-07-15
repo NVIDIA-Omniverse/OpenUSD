@@ -29,6 +29,10 @@ namespace {
 constexpr float _kEpsilon = 1e-7f;
 constexpr float _kMinMicrofacetAlpha = 1.0e-6f;
 constexpr float _kEffectivelySmoothMicrofacetAlpha = 1.0e-3f;
+// The 16-sample cosine LUT cannot preserve the sharp inside critical-angle
+// transition this close to smooth, where exact Fresnel is already accurate.
+constexpr float _kTransmissionExactFresnelMaxAlpha = 2.0e-3f;
+constexpr float _kTransmissionFresnelBlendMaxAlpha = 7.0e-2f;
 constexpr float _kTurquinMicrofacetMsMinAlpha = 0.04f * 0.04f;
 constexpr int _kThinFilmAiryIterations = 2;
 constexpr int _kGgxEnergyCosThetaCount = 16;
@@ -352,7 +356,9 @@ _LookupBsdlDielectricTransmissionSingleScatterAlbedo(
         ior0 + 1, lut::kBsdlDielectricTransmissionIorCount - 1);
     const float iorT = iorCoord - static_cast<float>(ior0);
 
-    const float roughnessCoord = roughness * static_cast<float>(
+    // Transmission rows use quadratic perceptual-roughness spacing so the
+    // narrow lobe and critical-angle transition remain resolved near smooth.
+    const float roughnessCoord = std::sqrt(roughness) * static_cast<float>(
         lut::kBsdlDielectricTransmissionRoughnessCount - 1);
     const int roughness0 = std::clamp(
         static_cast<int>(roughnessCoord),
@@ -1999,17 +2005,21 @@ _UsesCoupledRoughDielectricSampling(
 }
 
 inline bool
-_IsRoughCoupledTransmissionInterfaceForStraightShadow(
+_IsCoupledTransmissionInterfaceForStraightShadow(
     const Bsdf::DielectricInterfaceData& data)
 {
     const bool hasThinFilm =
         data.thinFilmWeight > _kEpsilon &&
         data.thinFilmThickness > _kEpsilon;
-    return _UsesCoupledRoughDielectricSampling(data) && !hasThinFilm;
+    return data.compensateCoupledDielectric &&
+        !data.thinWalled &&
+        data.reflectionWeight > 0.0f &&
+        data.transmissionWeight > 0.0f &&
+        !hasThinFilm;
 }
 
 inline bool
-_CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+_CollectCoupledTransmissionInterfaceForStraightShadow(
     const Bsdf::ClosureTree& tree,
     Bsdf::NodeId nodeId,
     const Bsdf::DielectricInterfaceData** result)
@@ -2023,7 +2033,7 @@ _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
         [&](const auto& data) -> bool {
             using T = std::decay_t<decltype(data)>;
             if constexpr (std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
-                if (!_IsRoughCoupledTransmissionInterfaceForStraightShadow(
+                if (!_IsCoupledTransmissionInterfaceForStraightShadow(
                         data)) {
                     return true;
                 }
@@ -2034,29 +2044,29 @@ _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
                 return true;
             } else if constexpr (std::is_same_v<T, Bsdf::MixData>) {
                 if (data.mix <= _kEpsilon) {
-                    return _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                    return _CollectCoupledTransmissionInterfaceForStraightShadow(
                         tree, data.bg, result);
                 }
                 if (data.mix >= 1.0f - _kEpsilon) {
-                    return _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                    return _CollectCoupledTransmissionInterfaceForStraightShadow(
                         tree, data.fg, result);
                 }
-                return _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                return _CollectCoupledTransmissionInterfaceForStraightShadow(
                            tree, data.fg, result) &&
-                    _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                    _CollectCoupledTransmissionInterfaceForStraightShadow(
                         tree, data.bg, result);
             } else if constexpr (std::is_same_v<T, Bsdf::LayerData>) {
-                return _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                return _CollectCoupledTransmissionInterfaceForStraightShadow(
                            tree, data.top, result) &&
-                    _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                    _CollectCoupledTransmissionInterfaceForStraightShadow(
                         tree, data.base, result);
             } else if constexpr (std::is_same_v<T, Bsdf::AddData>) {
-                return _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                return _CollectCoupledTransmissionInterfaceForStraightShadow(
                            tree, data.in1, result) &&
-                    _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                    _CollectCoupledTransmissionInterfaceForStraightShadow(
                         tree, data.in2, result);
             } else if constexpr (std::is_same_v<T, Bsdf::MultiplyData>) {
-                return _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+                return _CollectCoupledTransmissionInterfaceForStraightShadow(
                     tree, data.input, result);
             } else {
                 return true;
@@ -2066,14 +2076,14 @@ _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
 }
 
 inline const Bsdf::DielectricInterfaceData*
-_FindRoughCoupledTransmissionInterfaceForStraightShadow(
+_FindCoupledTransmissionInterfaceForStraightShadow(
     const SurfaceClosure& closure)
 {
     if (!closure.HasBsdfTree()) {
         return nullptr;
     }
     const Bsdf::DielectricInterfaceData* result = nullptr;
-    return _CollectRoughCoupledTransmissionInterfaceForStraightShadow(
+    return _CollectCoupledTransmissionInterfaceForStraightShadow(
                closure.bsdfTree, closure.bsdfTree.root, &result)
         ? result
         : nullptr;
@@ -4782,6 +4792,19 @@ Bsdf::CoupledRoughDielectricDirectionalTransmissionAlbedo(
     bool backfacing,
     bool compensateMultipleScattering)
 {
+    const float alpha = std::clamp(
+        std::max(roughness[0], roughness[1]), 0.0f, 1.0f);
+    const float safeIor = std::clamp(
+        ior,
+        _kBsdlDielectricIorMin,
+        _kBsdlDielectricIorMax);
+    const float relativeEta = backfacing ? 1.0f / safeIor : safeIor;
+    const float exactAlbedo = 1.0f - _MaterialXDielectricFresnel(
+        cosTheta, relativeEta);
+    if (alpha <= _kTransmissionExactFresnelMaxAlpha) {
+        return exactAlbedo;
+    }
+
     const float perceptualRoughness =
         _BsdlLayerRoughnessFromAlpha(roughness);
     float albedo = _LookupBsdlDielectricTransmissionSingleScatterAlbedo(
@@ -4792,6 +4815,13 @@ Bsdf::CoupledRoughDielectricDirectionalTransmissionAlbedo(
                 cosTheta, perceptualRoughness, ior, backfacing);
         albedo += compensation.missingEnergy *
             (1.0f - compensation.reflectionRatio);
+    }
+    if (alpha < _kTransmissionFresnelBlendMaxAlpha) {
+        float t = (alpha - _kTransmissionExactFresnelMaxAlpha) /
+            (_kTransmissionFresnelBlendMaxAlpha -
+             _kTransmissionExactFresnelMaxAlpha);
+        t = t * t * (3.0f - 2.0f * t);
+        albedo = exactAlbedo * (1.0f - t) + albedo * t;
     }
     return _Clamp01(albedo);
 }
@@ -4804,7 +4834,7 @@ Bsdf::StraightShadowDielectricTransmission(
     const float cosTheta = _Clamp01(std::abs(signedCosTheta));
     const float safeIor = std::max(closure.specularIor, 1.0f);
     const auto* interface =
-        _FindRoughCoupledTransmissionInterfaceForStraightShadow(closure);
+        _FindCoupledTransmissionInterfaceForStraightShadow(closure);
     if (!interface) {
         return _Clamp01(
             1.0f - _SchlickFresnelScalar(safeIor, cosTheta));

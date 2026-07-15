@@ -6,6 +6,12 @@
 //
 #include "../materials/bsdf.h"
 #include "../materials/bsdfDielectricReflFrontLut.h"
+#include "../materials/bsdfDielectricTransmissionLut.h"
+#define BSDL_UNROLL()
+#include <BSDL/MTX/bsdf_dielectric_decl.h>
+#include <BSDL/MTX/bsdf_dielectric_transback_luts.h>
+#include <BSDL/MTX/bsdf_dielectric_transfront_luts.h>
+#undef BSDL_UNROLL
 #include "../materials/openPbr.h"
 #include "../materials/standardSurface.h"
 #include "../materials/usdPreviewSurface.h"
@@ -150,6 +156,32 @@ _IntegrateSurfaceBySampling(
         }
         const float cosTheta = std::max(Dot(N, sample.wi), 0.0f);
         sum += sample.f * (cosTheta / sample.pdf);
+    }
+    return sum * (1.0f / static_cast<float>(sampleCount));
+}
+
+static Vec3f
+_IntegrateTransmissionBySampling(
+    const SurfaceClosure& closure,
+    const Vec3f& N,
+    const Vec3f& wo,
+    int sampleCount)
+{
+    Vec3f sum(0.0f);
+    const float woSide = Dot(N, wo);
+    for (int i = 0; i < sampleCount; ++i) {
+        const float u1 =
+            (static_cast<float>(i) + 0.5f) / static_cast<float>(sampleCount);
+        const float u2 = _RadicalInverseBase2(static_cast<std::uint32_t>(i));
+        const float uChoice =
+            _RadicalInverseBase2(static_cast<std::uint32_t>(i) ^ 0x9E3779B9u);
+        const auto sample =
+            Bsdf::SampleSurface(closure, N, wo, u1, u2, uChoice);
+        if (sample.pdf <= 0.0f || sample.isSpecular || sample.isSubsurface ||
+            Dot(N, sample.wi) * woSide >= 0.0f) {
+            continue;
+        }
+        sum += sample.f * (std::abs(Dot(N, sample.wi)) / sample.pdf);
     }
     return sum * (1.0f / static_cast<float>(sampleCount));
 }
@@ -2059,6 +2091,40 @@ TestOpenPbrInterfaceAddsBsdlDiffuseDielectricCompensation()
 }
 
 static bool
+TestBsdlDielectricTransmissionRuntimeLutMatchesGeneratedTables()
+{
+    constexpr int valueCount =
+        bsdf_luts::kBsdlDielectricTransmissionValueCount;
+    static_assert(valueCount == bsdl::mtx::DielectricTransFront::Nf *
+        bsdl::mtx::DielectricTransFront::Nr *
+        bsdl::mtx::DielectricTransFront::Nc);
+
+    const float* const generatedFront =
+        bsdl::mtx::DielectricTransFront::get_energy().data;
+    const float* const generatedBack =
+        bsdl::mtx::DielectricTransBack::get_energy().data;
+    for (int i = 0; i < valueCount; ++i) {
+        const float runtimeFront =
+            bsdf_luts::kBsdlDielectricTransmissionFrontSingleScatterAlbedo[i];
+        const float runtimeBack =
+            bsdf_luts::kBsdlDielectricTransmissionBackSingleScatterAlbedo[i];
+        if (runtimeFront != generatedFront[i] ||
+            runtimeBack != generatedBack[i]) {
+            printf(
+                "    Runtime transmission LUT differs from generated BSDL "
+                "table at index %d: front=(%g,%g) back=(%g,%g)\n",
+                i,
+                runtimeFront,
+                generatedFront[i],
+                runtimeBack,
+                generatedBack[i]);
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool
 TestCoupledRoughDielectricDirectionalTransmissionAlbedo()
 {
     struct Case {
@@ -2075,6 +2141,31 @@ TestCoupledRoughDielectricDirectionalTransmissionAlbedo()
     const Vec3f N(0.0f, 1.0f, 0.0f);
     constexpr int integrationSamples = 32768;
     bool ok = true;
+
+    // The first roughness interval must converge to exact dielectric Fresnel.
+    // Pin both the analytic endpoint and the AOUSD fixture roughness that
+    // originally exposed dark transparent shadows from the uniform-only bake.
+    for (const float alpha : {0.0f, 0.0016f, 0.002f}) {
+        for (const float cosTheta : {0.2f, 0.45f, 0.7f, 0.9f, 1.0f}) {
+            for (const bool backfacing : {false, true}) {
+                constexpr float ior = 1.5f;
+                const float eta = backfacing ? 1.0f / ior : ior;
+                const float expected =
+                    _DielectricTransmittanceForTest(eta, cosTheta);
+                const float actual =
+                    Bsdf::CoupledRoughDielectricDirectionalTransmissionAlbedo(
+                        cosTheta, Vec2f(alpha, alpha), ior, backfacing, false);
+                const float tolerance = alpha <= 0.002f ? 2.0e-4f : 0.035f;
+                if (!Test_IsClose(actual, expected, tolerance)) {
+                    printf(
+                        "    Smooth-limit transmission mismatch: alpha=%f "
+                        "cos=%f ior=%f backfacing=%d actual=%f exact=%f\n",
+                        alpha, cosTheta, ior, backfacing, actual, expected);
+                    ok = false;
+                }
+            }
+        }
+    }
 
     // Numerically integrate the renderer's Walter GGX BTDF independently of
     // the BSDL bake, for both sides and with compensation both off and on.
@@ -2271,6 +2362,64 @@ TestStraightShadowDielectricTransmissionPolicy()
         ok = false;
     }
 
+    // Exercise the actual AOUSD path, the inclusive exact-Fresnel boundary,
+    // continuity immediately above it, and the first used near-smooth LUT
+    // region. Independent BSDF sampling resolves the narrow lobe around the
+    // IOR=1.5 exit critical angle.
+    {
+        constexpr int sampleCount = 65536;
+        const Vec3f N(0.0f, 1.0f, 0.0f);
+        for (const float alpha :
+                 {0.0016f, 0.002f, 0.002001f, 0.005f, 0.04f}) {
+            for (const float signedCos : {-0.45f, 0.74f, 0.76f}) {
+                SurfaceClosure c;
+                auto lowRoughness = makeInterface();
+                lowRoughness.roughness = Vec2f(alpha, alpha);
+                c.specularIor = ior;
+                c.bsdfTree.root = c.bsdfTree.Add(lowRoughness);
+                Vec3f wo = _DirectionFromCosThetaYUp(std::abs(signedCos));
+                if (signedCos > 0.0f) {
+                    wo = -wo;
+                }
+                const float actual =
+                    Bsdf::StraightShadowDielectricTransmission(c, signedCos);
+                const float integrated = _IntegrateTransmissionBySampling(
+                    c, N, wo, sampleCount)[0];
+                if (!Test_IsClose(actual, integrated, 0.05f)) {
+                    printf(
+                        "    Near-smooth straight-shadow mismatch: alpha=%f "
+                        "signedCos=%f actual=%f sampled=%f\n",
+                        alpha, signedCos, actual, integrated);
+                    ok = false;
+                }
+            }
+        }
+
+        for (const float signedCos : {-0.45f, 0.74f, 0.76f}) {
+            SurfaceClosure atBoundary;
+            auto boundaryInterface = makeInterface();
+            boundaryInterface.roughness = Vec2f(0.002f, 0.002f);
+            atBoundary.bsdfTree.root =
+                atBoundary.bsdfTree.Add(boundaryInterface);
+            SurfaceClosure aboveBoundary;
+            auto aboveInterface = makeInterface();
+            aboveInterface.roughness = Vec2f(0.002001f, 0.002001f);
+            aboveBoundary.bsdfTree.root =
+                aboveBoundary.bsdfTree.Add(aboveInterface);
+            const float boundary = Bsdf::StraightShadowDielectricTransmission(
+                atBoundary, signedCos);
+            const float above = Bsdf::StraightShadowDielectricTransmission(
+                aboveBoundary, signedCos);
+            if (!Test_IsClose(boundary, above, 1.0e-4f)) {
+                printf(
+                    "    Exact-to-LUT transition discontinuity: signedCos=%f "
+                    "boundary=%f above=%f\n",
+                    signedCos, boundary, above);
+                ok = false;
+            }
+        }
+    }
+
     auto expectFallback = [&](const char* label,
                               Bsdf::DielectricInterfaceData fallback) {
         SurfaceClosure c;
@@ -2295,7 +2444,22 @@ TestStraightShadowDielectricTransmissionPolicy()
     expectFallback("thin-film", thinFilm);
     auto smooth = makeInterface();
     smooth.roughness = Vec2f(0.0001f, 0.0001f);
-    expectFallback("effectively smooth", smooth);
+    {
+        SurfaceClosure c;
+        c.specularIor = ior;
+        c.bsdfTree.root = c.bsdfTree.Add(smooth);
+        const float actual = Bsdf::StraightShadowDielectricTransmission(
+            c, -signedCosTheta);
+        const float exact = _DielectricTransmittanceForTest(
+            ior, signedCosTheta);
+        if (!Test_IsClose(actual, exact, 1.0e-6f)) {
+            printf(
+                "    Smooth coupled interface should use exact Fresnel: "
+                "got=%f expected=%f\n",
+                actual, exact);
+            ok = false;
+        }
+    }
     auto uncompensated = makeInterface();
     uncompensated.compensateCoupledDielectric = false;
     expectFallback("uncompensated", uncompensated);
@@ -4231,6 +4395,7 @@ Test_RegisterBsdfTests()
     _REG(TestTreeAddTransmissionPreservesWeight);
     _REG(TestDielectricInterfaceLayerDoesNotDoubleAttenuateTransmission);
     _REG(TestOpenPbrInterfaceAddsBsdlDiffuseDielectricCompensation);
+    _REG(TestBsdlDielectricTransmissionRuntimeLutMatchesGeneratedTables);
     _REG(TestCoupledRoughDielectricDirectionalTransmissionAlbedo);
     _REG(TestStraightShadowDielectricTransmissionPolicy);
     _REG(TestCoupledRoughDielectricTransmissionMatchesFixedWalterReferences);

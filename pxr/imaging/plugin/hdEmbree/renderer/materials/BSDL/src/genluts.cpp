@@ -149,6 +149,69 @@ compute_E(float cos_theta, const BSDF& bsdf, uint32_t fresnel_index,
     return std::min(E, 1.0f);
 }
 
+template<typename BSDF>
+BSDL_INLINE float
+compute_transmission_E(float cos_theta, const BSDF& bsdf,
+                       uint32_t fresnel_index, uint32_t roughness_index)
+{
+    auto fasthash64_mix = [](uint64_t h) -> uint64_t {
+        h ^= h >> 23;
+        h *= 0x2127599bf4325c37ULL;
+        h ^= h >> 47;
+        return h;
+    };
+    auto fasthash64 =
+        [&](const std::initializer_list<uint64_t> buf) -> uint64_t {
+        const uint64_t m = 0x880355f21e6d1965ULL;
+        uint64_t h       = (buf.size() * sizeof(uint64_t)) * m;
+        for (const uint64_t v : buf) {
+            h ^= fasthash64_mix(v);
+            h *= m;
+        }
+        return fasthash64_mix(h);
+    };
+    auto randhash3 = [&](uint32_t x, uint32_t y, uint32_t z) -> uint32_t {
+        return fasthash64({ (uint64_t(x) << 32) + y, uint64_t(z) });
+    };
+
+    assert(cos_theta > 0);
+    if (roughness_index == 0)
+        return 1.0f - bsdf.fresnel().eval(cos_theta).max();
+
+    constexpr int AA            = 128;
+    constexpr int NUM_SAMPLES   = AA * AA;
+    constexpr float uniform_pdf = 1.0f / (2.0f * PI);
+    const Imath::V3f wo = { sqrtf(1 - SQR(cos_theta)), 0, cos_theta };
+    float E             = 0;
+    uint32_t seedx      = randhash3(fresnel_index, roughness_index, 0);
+    uint32_t seedy      = randhash3(fresnel_index, roughness_index, 1);
+    uint32_t seedz      = randhash3(fresnel_index, roughness_index, 2);
+    for (int i = 0; i < NUM_SAMPLES; i++) {
+        const Imath::V3f rnd = get_sample(i, AA, seedx, seedy, seedz);
+
+        // Balance-heuristic MIS between a uniform lower-hemisphere proposal
+        // and the dielectric's microfacet proposal. Uniform sampling covers
+        // broad rough lobes; importance sampling resolves the narrow lobe as
+        // roughness approaches the exact dielectric limit.
+        const Sample uniform = bsdf.sample(wo, rnd.x, rnd.y, rnd.z);
+        float out = uniform.weight.max() * uniform_pdf
+                    / (uniform_pdf + uniform.pdf);
+
+        const Sample importance =
+            bsdf.sample_importance(wo, rnd.y, rnd.z, rnd.x);
+        if (importance.pdf > 0.0f) {
+            out += importance.weight.max() * importance.pdf
+                   / (uniform_pdf + importance.pdf);
+        }
+
+        // Accumulate progressively to minimize error with large sample counts.
+        E = LERP(1.0f / (1.0f + i), E, out);
+    }
+    assert(E >= 0);
+    assert(E <= 1.01f);
+    return std::min(E, 1.0f);
+}
+
 template<typename BSDF, bool store_energy = false>
 BSDL_INLINE void
 bake_emiss_tables(const std::string& output_dir)
@@ -165,10 +228,18 @@ bake_emiss_tables(const std::string& output_dir)
                 = BSDF::Nr > 1 ? float(r) * (1.0f / (BSDF::Nr - 1)) : 0.0f;
             for (int c = 0; c < BSDF::Nc; c++) {
                 int idx = f * BSDF::Nr * BSDF::Nc + r * BSDF::Nc + c;
-                const BSDF bsdf(BSDF::get_cosine(c), roughness_index,
+                const float bsdfRoughness = store_energy
+                    ? SQR(roughness_index)
+                    : roughness_index;
+                const BSDF bsdf(BSDF::get_cosine(c), bsdfRoughness,
                                 fresnel_index);
-                const float energy =
-                    compute_E(BSDF::get_cosine(c), bsdf, f, r);
+                float energy;
+                if constexpr (store_energy) {
+                    energy = compute_transmission_E(
+                        BSDF::get_cosine(c), bsdf, f, r);
+                } else {
+                    energy = compute_E(BSDF::get_cosine(c), bsdf, f, r);
+                }
                 storedE[idx] = store_energy ? energy : 1 - energy;
             }
         }

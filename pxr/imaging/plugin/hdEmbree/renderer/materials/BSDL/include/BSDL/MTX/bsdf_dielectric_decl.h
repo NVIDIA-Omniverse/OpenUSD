@@ -58,6 +58,9 @@ template<typename Fresnel> struct DielectricBSDF {
     static constexpr const char* NS = "mtx";
 
 protected:
+    BSDL_INLINE_METHOD float transmission_vndf_pdf(
+        Imath::V3f wo, Imath::V3f wi) const;
+
     GGXDist d;
     Fresnel f;
     float E_ms;
@@ -107,6 +110,8 @@ struct DielectricTransFront : public DielectricBSDF<DielectricFresnel> {
         float cosNO, float roughness_index, float fresnel_index);
     BSDL_INLINE_METHOD Sample sample(
         Imath::V3f wo, float randu, float randv, float randw) const;
+    BSDL_INLINE_METHOD Sample sample_importance(
+        Imath::V3f wo, float randu, float randv, float randw) const;
     static const char* lut_header()
     {
         return "MTX/bsdf_dielectric_transfront_luts.h";
@@ -119,6 +124,8 @@ struct DielectricTransBack : public DielectricBSDF<DielectricFresnel> {
     explicit BSDL_INLINE_METHOD DielectricTransBack(
         float cosNO, float roughness_index, float fresnel_index);
     BSDL_INLINE_METHOD Sample sample(
+        Imath::V3f wo, float randu, float randv, float randw) const;
+    BSDL_INLINE_METHOD Sample sample_importance(
         Imath::V3f wo, float randu, float randv, float randw) const;
     static const char* lut_header()
     {

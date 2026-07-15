@@ -79,6 +79,34 @@ DielectricBSDF<Fresnel>::DielectricBSDF(const GGXDist& dist,
     }
 }
 
+template<typename Fresnel>
+BSDL_INLINE_METHOD float
+DielectricBSDF<Fresnel>::transmission_vndf_pdf(
+    Imath::V3f wo, Imath::V3f wi) const
+{
+    if (wo.z <= 0.0f || wi.z >= 0.0f)
+        return 0.0f;
+
+    const float eta = f.refraction_eta();
+    Imath::V3f Ht = eta * wi + wo;
+    if (Ht.length() <= FLOAT_MIN)
+        return 0.0f;
+    Ht.normalize();
+    Ht *= eta > 1.0f ? -1.0f : 1.0f;
+
+    const float cosHO = Ht.dot(wo);
+    const float cosHI = Ht.dot(wi);
+    const float denom = cosHI * eta + cosHO;
+    if (Ht.z <= 0.0f || cosHO <= 0.0f || cosHI >= 0.0f ||
+        std::abs(denom) <= FLOAT_MIN) {
+        return 0.0f;
+    }
+
+    const float jacobian =
+        (-cosHI * cosHO * SQR(eta)) / (wo.z * SQR(denom));
+    return jacobian * d.G1(wo) * d.D(Ht);
+}
+
 BSDL_INLINE_METHOD
 DielectricReflFront::DielectricReflFront(float cosNO, float roughness_index,
                                          float fresnel_index)
@@ -132,6 +160,32 @@ DielectricTransFront::sample(
     // the uniform-hemisphere PDF integrates directional transmission energy
     // without inheriting the runtime sampler's reflection-optimized bias.
     s.weight *= s.pdf * (2.0f * PI);
+    // MIS requires both techniques to evaluate the same visible-normal
+    // transmission proposal density at this direction.
+    s.pdf = transmission_vndf_pdf(wo, wi);
+    return s;
+}
+
+BSDL_INLINE_METHOD Sample
+DielectricTransFront::sample_importance(
+    Imath::V3f wo, float randu, float randv, float /*randw*/) const
+{
+    const Imath::V3f m = d.sample(wo, randu, randv);
+    const float cosMO = wo.dot(m);
+    if (cosMO <= 0.0f)
+        return {};
+
+    const Imath::V3f wi = refract(wo, m, f.refraction_eta());
+    if (wi.z >= 0.0f)
+        return {};
+
+    const float pdf = transmission_vndf_pdf(wo, wi);
+    if (pdf <= 0.0f)
+        return {};
+
+    Sample s = DielectricBSDF<DielectricFresnel>::eval(wo, wi);
+    s.weight *= s.pdf / pdf;
+    s.pdf = pdf;
     return s;
 }
 
@@ -158,6 +212,32 @@ DielectricTransBack::sample(
     // the uniform-hemisphere PDF integrates directional transmission energy
     // without inheriting the runtime sampler's reflection-optimized bias.
     s.weight *= s.pdf * (2.0f * PI);
+    // MIS requires both techniques to evaluate the same visible-normal
+    // transmission proposal density at this direction.
+    s.pdf = transmission_vndf_pdf(wo, wi);
+    return s;
+}
+
+BSDL_INLINE_METHOD Sample
+DielectricTransBack::sample_importance(
+    Imath::V3f wo, float randu, float randv, float /*randw*/) const
+{
+    const Imath::V3f m = d.sample(wo, randu, randv);
+    const float cosMO = wo.dot(m);
+    if (cosMO <= 0.0f)
+        return {};
+
+    const Imath::V3f wi = refract(wo, m, f.refraction_eta());
+    if (wi.z >= 0.0f)
+        return {};
+
+    const float pdf = transmission_vndf_pdf(wo, wi);
+    if (pdf <= 0.0f)
+        return {};
+
+    Sample s = DielectricBSDF<DielectricFresnel>::eval(wo, wi);
+    s.weight *= s.pdf / pdf;
+    s.pdf = pdf;
     return s;
 }
 

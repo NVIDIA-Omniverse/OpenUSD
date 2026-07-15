@@ -245,7 +245,13 @@ For each segment, `_IntegratePath()` performs these stages in order:
    UsdPreviewSurface. Missing energy is restored with an additive cosine
    multiple-scattering lobe rather than scaling the glossy lobes. Rough coupled
    glossy events select reflection or refraction from exact Fresnel after
-   sampling the visible microfacet.
+   sampling the visible microfacet. Straight-shadow attenuation for these
+   coupled interfaces uses exact Fresnel through alpha 0.002, blends
+   smoothly to a front/back directional transmission LUT through alpha 0.07,
+   and uses the LUT directly above that band. Its analytic smooth row,
+   quadratic near-zero roughness spacing, and uniform/visible-normal MIS bake
+   preserve the narrow transmission lobe and critical-angle transition near
+   that limit.
    Standard Surface retains separate reflection and transmission lobes; its
    thin-walled transmission uses IOR 1 so the transmitted direction remains
    undeflected.
