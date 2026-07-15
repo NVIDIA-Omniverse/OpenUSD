@@ -67,6 +67,37 @@ def _isLightPrim(prim):
     return False
 
 
+def _photometricAttributes(prim):
+    """Return attributes declared by applied Photometric*API schemas."""
+    attributes = []
+    seenNames = set()
+    for appliedSchema in prim.GetAppliedSchemas():
+        schemaName = str(appliedSchema).split(":", 1)[0]
+        if not (schemaName.startswith("Photometric") and
+                schemaName.endswith("API")):
+            continue
+
+        schemaType = getattr(UsdLux, schemaName, None)
+        if schemaType is None:
+            continue
+
+        for attrName in schemaType.GetSchemaAttributeNames(False):
+            if attrName in seenNames:
+                continue
+            attr = prim.GetAttribute(attrName)
+            if attr:
+                attributes.append(attr)
+                seenNames.add(attrName)
+    return attributes
+
+
+def _attributeLabel(attr):
+    displayName = attr.GetDisplayName()
+    if displayName:
+        return displayName
+    return str(attr.GetBaseName()).replace("_", " ").title()
+
+
 class LightEditor(QtWidgets.QWidget):
 
     def __init__(self, usdviewApi, parent=None):
@@ -228,6 +259,7 @@ class LightEditor(QtWidgets.QWidget):
             100.0,
             light.GetColorTemperatureAttr().GetDisplayGroup() or "Basic")
 
+        self._addPhotometricRows(prim)
         self._addTypeSpecificRows(prim)
         self._syncHeaderRightMargin()
         QtCore.QTimer.singleShot(0, self._syncHeaderRightMargin)
@@ -312,6 +344,22 @@ class LightEditor(QtWidgets.QWidget):
                 180.0,
                 0.1,
                 distant.GetAngleAttr().GetDisplayGroup() or "Basic")
+
+    def _addPhotometricRows(self, prim):
+        for attr in _photometricAttributes(prim):
+            value = attr.Get()
+            if value is None:
+                continue
+            label = _attributeLabel(attr)
+            self._addFloatAttr(
+                label,
+                lambda attr=attr: attr,
+                lambda attr=attr: attr,
+                float(value),
+                0.0,
+                1000000000000.0,
+                1.0,
+                attr.GetDisplayGroup() or "Photometric")
 
     def _newForm(self):
         self._formContainer = QtWidgets.QWidget()
@@ -510,6 +558,8 @@ class LightEditor(QtWidgets.QWidget):
 
     def _labelsForPrim(self, prim):
         labels = list(_BASE_LIGHT_LABELS)
+        labels.extend(
+            _attributeLabel(attr) for attr in _photometricAttributes(prim))
         if _schemaObject(prim, "SphereLight"):
             labels.append("Radius")
         if _schemaObject(prim, "DiskLight"):
