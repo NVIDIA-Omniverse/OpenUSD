@@ -170,6 +170,15 @@ CellNoise3d(float x, float y, float z)
                             static_cast<int>(std::floor(z))));
 }
 
+inline float
+CellNoise4d(float x, float y, float z, float w)
+{
+    return BitsTo01(HashInt(static_cast<int>(std::floor(x)),
+                            static_cast<int>(std::floor(y)),
+                            static_cast<int>(std::floor(z)),
+                            static_cast<int>(std::floor(w))));
+}
+
 inline Vec3f
 CellNoise2dVec3(float x, float y)
 {
@@ -189,6 +198,18 @@ CellNoise3dVec3(float x, float y, float z)
     return Vec3f(BitsTo01(HashInt(ix, iy, iz, 0)),
                  BitsTo01(HashInt(ix, iy, iz, 1)),
                  BitsTo01(HashInt(ix, iy, iz, 2)));
+}
+
+inline Vec3f
+CellNoise4dVec3(float x, float y, float z, float w)
+{
+    const int ix = static_cast<int>(std::floor(x));
+    const int iy = static_cast<int>(std::floor(y));
+    const int iz = static_cast<int>(std::floor(z));
+    const int iw = static_cast<int>(std::floor(w));
+    return Vec3f(BitsTo01(HashInt(ix, iy, iz, iw, 0)),
+                 BitsTo01(HashInt(ix, iy, iz, iw, 1)),
+                 BitsTo01(HashInt(ix, iy, iz, iw, 2)));
 }
 
 inline float
@@ -559,13 +580,15 @@ RotateFlake(const Vec3f& p, const Vec3f& i)
 
     const float sTheta = std::sin(theta);
     const float cTheta = std::cos(theta);
-    const float sx = vx * sTheta - vy * sTheta;
-    const float sy = vx * cTheta + vy * cTheta;
+    const float sx = vx * cTheta - vy * sTheta;
+    const float sy = vx * sTheta + vy * cTheta;
 
     return Vec3f(
-        (vx * sx - sTheta) * p[0] + (vx * sy - sTheta) * p[1] + vx * vz * p[2],
-        (vy * sx + cTheta) * p[0] + (vy * sy - cTheta) * p[1] + vy * vz * p[2],
-        vz * sx * p[0] + vz * sy * p[1] + (1.0f - z) * p[2]);
+        (vx * sx - cTheta) * p[0] + (vy * sx + sTheta) * p[1] +
+            vz * sx * p[2],
+        (vx * sy - sTheta) * p[0] + (vy * sy - cTheta) * p[1] +
+            vz * sy * p[2],
+        vx * vz * p[0] + vy * vz * p[1] + (1.0f - z) * p[2]);
 }
 
 inline float
@@ -592,54 +615,47 @@ EvalFlake(const Vec3f& position,
           float* presence,
           Vec3f* flakeNormal)
 {
-    const float probability =
-        FlakeDensityToProbability(Clamp01(coverage));
+    const float probability = FlakeDensityToProbability(Clamp01(coverage));
     const float flakeDiameter = 1.5f / std::sqrt(3.0f);
 
-    const Vec3f P = position / Vec3f(size);
-    const Vec3f baseP(std::floor(P[0]), std::floor(P[1]), std::floor(P[2]));
-    const int baseX = static_cast<int>(baseP[0]);
-    const int baseY = static_cast<int>(baseP[1]);
-    const int baseZ = static_cast<int>(baseP[2]);
+    const Vec3f p = position / Vec3f(size);
+    const Vec3f baseP(std::floor(p[0]), std::floor(p[1]), std::floor(p[2]));
 
     float flakePriority = 0.0f;
-    uint32_t flakeSeed = 0u;
+    Vec3f flakeCell(0.0f);
 
     for (int i = -1; i < 2; ++i) {
         for (int j = -1; j < 2; ++j) {
             for (int k = -1; k < 2; ++k) {
-                uint32_t seed =
-                    FlakeInitSeed(baseX + i, baseY + j, baseZ + k);
+                const Vec3f cellPos =
+                    baseP + Vec3f(float(i), float(j), float(k));
 
-                seed = FlakeXorShift32(seed);
-                if (UIntTo01(seed) > probability) {
+                Vec3f pp = p - cellPos - Vec3f(0.5f);
+                if (Dot(pp, pp) >=
+                    flakeDiameter * flakeDiameter * 3.0f) {
                     continue;
                 }
 
-                seed = FlakeXorShift32(seed);
-                const float priority = UIntTo01(seed);
+                if (CellNoise3d(cellPos[0], cellPos[1], cellPos[2]) >
+                    probability) {
+                    continue;
+                }
+
+                const float priority = CellNoise4d(
+                    cellPos[0], cellPos[1], cellPos[2], 3.0f);
                 if (priority < flakePriority) {
                     continue;
                 }
 
-                const Vec3f flakeP =
-                    baseP + Vec3f(float(i), float(j), float(k)) + Vec3f(0.5f);
-                Vec3f pp = P - flakeP;
-                if (Dot(pp, pp) >= flakeDiameter * flakeDiameter * 4.0f) {
-                    continue;
-                }
-
-                Vec3f rot(0.0f);
-                seed = FlakeXorShift32(seed); rot[0] = UIntTo01(seed);
-                seed = FlakeXorShift32(seed); rot[1] = UIntTo01(seed);
-                seed = FlakeXorShift32(seed); rot[2] = UIntTo01(seed);
-                pp = RotateFlake(pp, rot);
+                pp = RotateFlake(
+                    pp,
+                    CellNoise3dVec3(cellPos[0], cellPos[1], cellPos[2]));
 
                 if (std::fabs(pp[0]) <= flakeDiameter &&
                     std::fabs(pp[1]) <= flakeDiameter &&
                     std::fabs(pp[2]) <= flakeDiameter) {
                     flakePriority = priority;
-                    flakeSeed = seed;
+                    flakeCell = cellPos;
                 }
             }
         }
@@ -653,17 +669,16 @@ EvalFlake(const Vec3f& position,
         return;
     }
 
-    uint32_t seed = flakeSeed;
-    const float xi0 = UIntTo01(seed);
-    seed = FlakeXorShift32(seed);
-    const float xi1 = UIntTo01(seed);
-    seed = FlakeXorShift32(seed);
+    const Vec3f flakeNoise = CellNoise4dVec3(
+        flakeCell[0], flakeCell[1], flakeCell[2], 2.0f);
+    const float xi0 = flakeNoise[0];
+    const float xi1 = flakeNoise[1];
 
     if (id) {
-        *id = static_cast<int>(seed);
+        *id = static_cast<int>(flakeNoise[2] * 16777215.0f);
     }
     if (rand) {
-        *rand = UIntTo01(seed);
+        *rand = flakeNoise[2];
     }
     if (presence) {
         *presence = flakePriority;

@@ -96,6 +96,21 @@ HashInt(int x, int y, int z, int xx)
     return BJFinal(a, b, c);
 }
 
+inline uint32_t
+HashInt(int x, int y, int z, int xx, int yy)
+{
+    uint32_t a = 0xdeadbeefu + (5u << 2u) + 13u;
+    uint32_t b = a;
+    uint32_t c = a;
+    a += uint32_t(x);
+    b += uint32_t(y);
+    c += uint32_t(z);
+    BJMix(a, b, c);
+    a += uint32_t(xx);
+    b += uint32_t(yy);
+    return BJFinal(a, b, c);
+}
+
 inline UVec3
 HashVec3(int x, int y)
 {
@@ -120,35 +135,6 @@ BitsTo01(uint32_t bits)
         static_cast<double>(1.0) /
         static_cast<double>(std::numeric_limits<uint32_t>::max()));
     return static_cast<float>(bits) * convertFactor;
-}
-
-inline uint32_t
-FlakeHash(uint32_t seed, uint32_t i)
-{
-    return (i ^ seed) * 1075385539u;
-}
-
-inline uint32_t
-FlakeInitSeed(int x, int y, int z)
-{
-    return FlakeHash(FlakeHash(FlakeHash(0u, uint32_t(x)),
-                               uint32_t(y)),
-                     uint32_t(z));
-}
-
-inline uint32_t
-FlakeXorShift32(uint32_t seed)
-{
-    seed ^= seed << 13;
-    seed ^= seed >> 17;
-    seed ^= seed << 5;
-    return seed;
-}
-
-inline float
-UIntTo01(uint32_t x)
-{
-    return float(x) / float(0xFFFFFFFFu);
 }
 
 }  // namespace mxcpp

@@ -178,6 +178,7 @@ _GetImplicitInputDefaults(const std::string& nodeTypeId)
             "ND_cellnoise2d_",
             "ND_worleynoise2d_",
             "ND_unifiednoise2d_",
+            "ND_flake2d",
             "ND_checkerboard_",
             "ND_line_",
             "ND_circle_",
@@ -199,7 +200,8 @@ _GetImplicitInputDefaults(const std::string& nodeTypeId)
             "ND_fractal3d_",
             "ND_cellnoise3d_",
             "ND_worleynoise3d_",
-            "ND_unifiednoise3d_"})) {
+            "ND_unifiednoise3d_",
+            "ND_flake3d"})) {
         defaults.push_back(
             {"position", _ImplicitDefaultKind::PositionObject});
     }
@@ -224,6 +226,8 @@ _GetImplicitInputDefaults(const std::string& nodeTypeId)
             "ND_subsurface_bsdf",
             "ND_sheen_bsdf",
             "ND_chiang_hair_bsdf",
+            "ND_flake2d",
+            "ND_flake3d",
             "ND_conical_edf",
             "ND_measured_edf",
             "ND_facingratio_float"})) {
@@ -237,14 +241,19 @@ _GetImplicitInputDefaults(const std::string& nodeTypeId)
         _MatchesAnyExact(nodeTypeId, {
             "ND_dielectric_bsdf",
             "ND_conductor_bsdf",
-            "ND_generalized_schlick_bsdf"})) {
+            "ND_generalized_schlick_bsdf",
+            "ND_flake2d",
+            "ND_flake3d"})) {
         defaults.push_back({"tangent", _ImplicitDefaultKind::TangentWorld});
     }
 
     if (_MatchesAnyPrefix(nodeTypeId, {
             "ND_bump_",
             "ND_normalmap",
-            "ND_hextilednormalmap"})) {
+            "ND_hextilednormalmap"}) ||
+        _MatchesAnyExact(nodeTypeId, {
+            "ND_flake2d",
+            "ND_flake3d"})) {
         defaults.push_back(
             {"bitangent", _ImplicitDefaultKind::BitangentWorld});
     }
