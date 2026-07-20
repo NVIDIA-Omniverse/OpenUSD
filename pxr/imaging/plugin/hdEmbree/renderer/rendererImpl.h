@@ -17,6 +17,7 @@
 #include "pxr/imaging/hd/meshUtil.h"
 #include "pxr/imaging/hd/tokens.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/geometry/meshSamplers.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampling.h"
 
 #include "pxr/base/gf/matrix3f.h"
 #include "pxr/base/tf/hash.h"
@@ -522,92 +523,40 @@ _SpectralScalarToRgb(float value, const _HeroWavelengthState& hero)
                        : GfVec3f(value);
 }
 
-// Callback data for geompropvalue node — holds references needed to
-// sample an arbitrary primvar at a ray hit point.
-struct _GeomPropCallbackData {
-    const std::unordered_map<std::string, HdEmbreePrimvarSampler*>*
-        primvarMap;
-    unsigned int primID;
-    float u, v;
-};
-
-// Callback function for geompropvalue: sample a primvar by name,
-// trying common types in order.  Returns empty Value on failure.
-// Note: HdEmbreePrimvarSampler::Sample() checks HdTupleType internally
-// and returns false on type mismatch, so the widest-first probing is safe.
-inline mxcpp::Value
-_SampleGeomProp(const void* userData, const std::string& name)
-{
-    auto* data = static_cast<const _GeomPropCallbackData*>(userData);
-    // Look up by string: constructing a TfToken here would take the global
-    // token-table lock on every material input evaluation.
-    auto it = data->primvarMap->find(name);
-    if (it == data->primvarMap->end()) {
-        return mxcpp::Value();
-    }
-
-    auto* sampler = it->second;
-
-    // Sample() only succeeds on an exact tuple-type match, so attempt order
-    // does not change the result — try the types material inputs actually
-    // use (texcoords, colors, scalars) before the rare matrix primvars.
-    {
-        GfVec2f val;
-        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
-            return mxcpp::Value(mxcpp::Vec2f(val[0], val[1]));
-        }
-    }
-    {
-        GfVec3f val;
-        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
-            return mxcpp::Value(mxcpp::Vec3f(val[0], val[1], val[2]));
-        }
-    }
-    {
-        float val;
-        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
-            return mxcpp::Value(val);
-        }
-    }
-    {
-        GfVec4f val;
-        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
-            return mxcpp::Value(mxcpp::Vec4f(val[0], val[1], val[2], val[3]));
-        }
-    }
-    {
-        int val;
-        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
-            return mxcpp::Value(val);
-        }
-    }
-    {
-        bool val;
-        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
-            return mxcpp::Value(val);
-        }
-    }
-    {
-        GfMatrix4f val;
-        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
-            return mxcpp::Value(_ToMx(val));
-        }
-    }
-    {
-        GfMatrix4d val;
-        if (sampler->Sample(data->primID, data->u, data->v, &val)) {
-            return mxcpp::Value(_ToMx(val));
-        }
-    }
-
-    return mxcpp::Value();
-}
-
 /// Returns true if the "points" primvar uses subdivision sampling.
 inline bool
 _IsSubdivMesh(HdEmbreePrototypeContext const* prototypeContext)
 {
     return prototypeContext->refined;
+}
+
+inline void
+_InterpolateSubdivPosition(
+    RTCGeometry geometry,
+    unsigned int primID,
+    float u,
+    float v,
+    GfVec3f* position,
+    GfVec3f* dPdu,
+    GfVec3f* dPdv)
+{
+    // rtcInterpolate1 writes through SIMD-width arrays. Compact GfVec3f
+    // objects are only 12 bytes, so write to padded temporaries first.
+    alignas(16) float sampled[4] = {};
+    alignas(16) float sampledDu[4] = {};
+    alignas(16) float sampledDv[4] = {};
+    rtcInterpolate1(
+        geometry, primID, u, v, RTC_BUFFER_TYPE_VERTEX, 0,
+        sampled, dPdu ? sampledDu : nullptr, dPdv ? sampledDv : nullptr, 3);
+    if (position) {
+        *position = GfVec3f(sampled[0], sampled[1], sampled[2]);
+    }
+    if (dPdu) {
+        *dPdu = GfVec3f(sampledDu[0], sampledDu[1], sampledDu[2]);
+    }
+    if (dPdv) {
+        *dPdv = GfVec3f(sampledDv[0], sampledDv[1], sampledDv[2]);
+    }
 }
 
 /// Try to compute a smooth limit-surface normal for a subdivision hit.
@@ -623,14 +572,9 @@ _TryComputeSubdivLimitNormal(
     GfVec3f posValue;
     GfVec3f dPdu(0.0f);
     GfVec3f dPdv(0.0f);
-    rtcInterpolate1(
+    _InterpolateSubdivPosition(
         rtcGetGeometry(rootScene, geomID),
-        primID, u, v,
-        RTC_BUFFER_TYPE_VERTEX, 0,
-        reinterpret_cast<float*>(&posValue),
-        reinterpret_cast<float*>(&dPdu),
-        reinterpret_cast<float*>(&dPdv),
-        3);
+        primID, u, v, &posValue, &dPdu, &dPdv);
     (void)posValue;
 
     GfVec3f limitNormal = GfCross(dPdu, dPdv);
@@ -652,6 +596,13 @@ _ResolveObjectSpaceNormal(
     RTCRayHit const& rayHit)
 {
     GfVec3f normal(rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
+
+    // rtcInterpolate1 evaluates the undisplaced limit surface. Embree hit Ng
+    // is derived from the tessellated displaced geometry and therefore must
+    // be the geometric shading normal for displaced prototypes.
+    if (prototypeContext->displaced) {
+        return normal;
+    }
 
     auto it = prototypeContext->primvarMap.find(HdTokens->normals);
     if (it != prototypeContext->primvarMap.end() &&
@@ -797,14 +748,9 @@ _ComputeSubdivSurfaceDerivatives(
     bool havePositionDerivs = false;
     {
         GfVec3f posVal;
-        rtcInterpolate1(
+        _InterpolateSubdivPosition(
             rtcGetGeometry(rootScene, geomID),
-            primID, u, v,
-            RTC_BUFFER_TYPE_VERTEX, 0,
-            reinterpret_cast<float*>(&posVal),
-            reinterpret_cast<float*>(outDPdu),
-            reinterpret_cast<float*>(outDPdv),
-            3);
+            primID, u, v, &posVal, outDPdu, outDPdv);
         havePositionDerivs = true;
     }
 

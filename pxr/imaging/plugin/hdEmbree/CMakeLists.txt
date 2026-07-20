@@ -79,6 +79,7 @@ pxr_plugin(hdEmbree
 
     PUBLIC_CLASSES
         renderer/config
+        delegate/adaptiveSubdivision
         delegate/instancer
         delegate/light
         renderer/lights/lightSamplers
@@ -125,6 +126,8 @@ pxr_plugin(hdEmbree
 
     PUBLIC_HEADERS
         renderer/geometry/context.h
+        renderer/geometry/primvarSampling.h
+        delegate/displacement.h
         renderer/lights/light.h
         renderer/lights/lightLinking.h
         renderer/materials/material.h
@@ -186,6 +189,35 @@ pxr_build_test(testHdEmbreeSampling
         tf
     CPPFILES
         testenv/testHdEmbreeSampling.cpp
+)
+
+pxr_build_test(testHdEmbreeSubdivision
+    LIBRARIES
+        gf
+        hd
+        hdEmbree
+        sdf
+        tf
+        usd
+        usdImaging
+        vt
+    CPPFILES
+        testenv/testHdEmbreeSubdivision.cpp
+)
+
+if (TARGET testHdEmbreeSubdivision)
+    _pxr_init_rpath(_hdEmbreeSubdivisionTestRpath "tests")
+    _pxr_add_rpath(
+        _hdEmbreeSubdivisionTestRpath "${CMAKE_INSTALL_PREFIX}/lib")
+    _pxr_add_rpath(
+        _hdEmbreeSubdivisionTestRpath "${CMAKE_INSTALL_PREFIX}/plugin/usd")
+    _pxr_install_rpath(
+        _hdEmbreeSubdivisionTestRpath testHdEmbreeSubdivision)
+endif()
+
+pxr_register_test(testHdEmbreeSubdivision
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdEmbreeSubdivision"
+    EXPECTED_RETURN_CODE 0
 )
 
 pxr_build_test(testHdEmbreeLightLinking

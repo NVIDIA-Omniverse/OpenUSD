@@ -367,6 +367,10 @@ Primvars are pulled into `_primvarSourceMap` by `_UpdatePrimvarSources()` and
 objects in `renderer/geometry/meshSamplers.*`. The sampler map is stored in
 `HdEmbreePrototypeContext` so the renderer can evaluate primvars at ray hits.
 
+For refined primvars, preserve indexed face-varying data rather than flattening it: each face-varying primvar needs an independent Embree attribute topology because different primvars can have different seams. Topology 1 is reserved for linear `varying` data; face-varying topologies start at 2. Embree maps `none` to `SMOOTH_BOUNDARY`, the three OpenSubdiv corner variants to `PIN_CORNERS`, `boundaries` to `PIN_BOUNDARY`, and `all` to `PIN_ALL`. Embree interpolation buffers and outputs must remain 16-byte padded. Low-complexity triangle samplers still need indexed values flattened before triangulation.
+
+At `low` complexity, subdivision meshes use their triangulated control cage. `medium`, `high`, and `veryhigh` use screen-space adaptive subdivision targeting 4, 1, and 0.5 pixel edges. `HdEmbreeRenderPass` triggers `HdEmbreeRenderDelegate::UpdateAdaptiveSubdivision()` after scene, projection, or data-window changes. `delegate/adaptiveSubdivision.*` projects every coarse edge through all instance transforms, clips edges to the homogeneous view volume, writes shared-edge-consistent `RTC_BUFFER_TYPE_LEVEL` values, and `HdEmbreeMesh` recommits the prototype scene. Keep levels in Embree’s `[1, 4096]` range. Surface shading and displacement share `HdEmbreeSamplePrimvar`, so constant, uniform, vertex, varying, and face-varying geomprops use the same production samplers in both paths. Instance primvars cannot vary prototype displacement because Embree tessellates the shared prototype before applying instance transforms.
+
 Sync methods may run in parallel. Only pull data whose dirty bit is set, and
 keep Embree context/object lifetimes valid until corresponding geometry is
 released in `Finalize()`.
@@ -376,7 +380,7 @@ released in `Finalize()`.
 `HdEmbreeMaterial::Sync()` pulls `HdMaterial::GetMaterialResource()` from the
 scene delegate. It accepts modern `HdMaterialNetwork2` and legacy material
 network maps, converts them in `renderer/materials/mxcppAdapter.*`, and compiles an
-`mxcpp::EvalGraph`.
+`mxcpp::EvalGraph`. Surface and optional `displacement` terminals are compiled separately into the stable material handle. `HdEmbreeMesh` registers an Embree subdivision displacement callback; scene commit evaluates `ND_displacement_float` at generated vertices and offsets positions by `displacement * scale` along `Ng`. Bind material state before committing the prototype scene, and force a recommit after displacement material changes. The callback currently supplies object-space position/normal, `st`, and constant string/filename geomprops. Triangle geometry, including meshes with `subdivisionScheme = "none"`, is not displaced.
 
 MaterialXCpp supports EDF-only materials authored as `ND_uniform_edf`
 connected to the `edf` input of `ND_surface`. The uniform EDF is carried
@@ -544,6 +548,10 @@ Common focused checks:
 - `pixi run cmake --build build --target testHdEmbreeSampling`
 - `pixi run cmake --build build --target testHdEmbreeLightSamplers`
 - `pixi run cmake --build build --target testMaterialXCpp`
+- `pixi run cmake --build build --target testHdEmbreeSubdivision`
+- `pixi run ctest --test-dir build -R testHdEmbreeSubdivision --output-on-failure`
+- Collect the AOUSD displacement fixture: `cd /home/anders/code/aousd-materials-test-suite && pixi run pytest test-suite/surfaces/open_pbr_surface/displacement.usda --collect-only -q`
+- Render that fixture with this checkout’s installed `usdrender` when validating displacement or complexity; the test-suite Pixi environment may resolve a separately packaged renderer.
 
 Use broader `ctest` filters when touching shared rendering, material, sampling,
 or USD imaging behavior. If a test executable depends on installed plugins or

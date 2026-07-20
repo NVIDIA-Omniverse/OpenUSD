@@ -12,6 +12,8 @@
 #include "pxr/imaging/hd/enums.h"
 #include "pxr/imaging/hd/vertexAdjacency.h"
 #include "pxr/base/gf/matrix4f.h"
+#include "pxr/base/gf/matrix4d.h"
+#include "pxr/base/gf/rect2i.h"
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/geometry/meshSamplers.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightLinking.h"
@@ -23,6 +25,12 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 struct HdEmbreePrototypeContext;
 struct HdEmbreeInstanceContext;
+
+/// Translate USD/OpenSubdiv face-varying boundary rules to the four modes
+/// Embree can represent. Exposed so the intentional three-to-one corner-rule
+/// approximation has a direct regression test.
+RTCSubdivisionMode HdEmbreeGetFaceVaryingSubdivisionMode(
+    TfToken const& rule);
 
 /// \class HdEmbreeMesh
 ///
@@ -110,6 +118,15 @@ public:
         return _refined;
     }
 
+    /// Keep subdivision edges near the Hydra screen-space complexity target.
+    /// A recommit also refreshes displacement after material changes because
+    /// Embree evaluates its displacement callback only while tessellating.
+    bool UpdateSubdivisionLevels(
+        GfMatrix4d const& viewMatrix,
+        GfMatrix4d const& projectionMatrix,
+        GfRect2i const& dataWindow,
+        bool forceDisplacementRebuild = false);
+
     /// Access cached vertex positions for surface derivative computation.
     VtVec3fArray const& GetPoints() const { return _points; }
 
@@ -192,7 +209,12 @@ private:
     // tuple into the concrete primvar sampler type.
     void _CreatePrimvarSampler(TfToken const& name, VtValue const& data,
                                HdInterpolation interpolation,
-                               bool refined);
+                               bool refined,
+                               unsigned int topologyId = 0);
+
+    // Configure the distinct index topology required by each face-varying
+    // primvar. Different primvars can author different seams.
+    void _ConfigureSubdivAttributeTopologies(RTCGeometry geometry);
 
     // Utility function to call rtcNewSubdivisionMesh and populate topology.
     RTCGeometry _CreateEmbreeSubdivMesh(RTCScene scene, RTCDevice device);
@@ -264,6 +286,11 @@ private:
     struct PrimvarSource {
         VtValue data;
         HdInterpolation interpolation;
+        VtIntArray indices;
+        // Embree binds an attribute to one topology for its entire lifetime.
+        // A stable ID lets newly discovered primvars coexist with samplers
+        // already used by parallel displacement callbacks.
+        unsigned int topologyId = 0;
     };
     TfHashMap<TfToken, PrimvarSource, TfToken::HashFunctor> _primvarSourceMap;
 
@@ -271,10 +298,13 @@ private:
     // primvars.
     HdEmbreeRTCBufferAllocator _embreeBufferAllocator;
 
-    // Face-varying index buffer for Embree subdivision topology 1.
-    // Identity mapping [0, 1, ..., N-1] where N = totalFaceVertices.
-    // Must outlive the geometry (rtcSetSharedGeometryBuffer uses pointer).
+    // Per-face-edge tessellation levels for Embree topology 0.
+    std::vector<float> _subdivisionLevels;
+
+    // Shared identity indices for unindexed face-varying primvars. Indexed
+    // primvars retain their authored arrays in PrimvarSource instead.
     std::vector<unsigned int> _fvarIndices;
+    unsigned int _nextFvarTopologyId;
 
     // Embree recommends after creating one should hold onto the geometry
     //

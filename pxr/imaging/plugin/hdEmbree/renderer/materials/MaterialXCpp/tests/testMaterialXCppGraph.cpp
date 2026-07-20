@@ -548,6 +548,85 @@ TestCompileRejectsCycle()
 }
 
 static bool
+TestCompileMissingDisplacementTerminal()
+{
+    MaterialGraph network;
+    GraphNode surface;
+    surface.nodeTypeId = "UsdPreviewSurface";
+    network.nodes["/Material/Surface"] = surface;
+    network.terminals["surface"] = {"/Material/Surface", "out"};
+
+    auto graph = EvalGraph::Compile(network, "displacement");
+    return graph && !graph->IsValid();
+}
+
+static bool
+TestEvaluateConstantDisplacement()
+{
+    MaterialGraph network;
+    GraphNode terminal;
+    terminal.nodeTypeId = "ND_displacement_float";
+    terminal.parameters["displacement"] = Value(0.2f);
+    terminal.parameters["scale"] = Value(3.0f);
+    network.nodes["/Material/Displacement"] = terminal;
+    network.terminals["displacement"] =
+        {"/Material/Displacement", "out"};
+
+    auto graph = EvalGraph::Compile(network, "displacement");
+    float displacement = 0.0f;
+    return graph && graph->IsValid() &&
+           graph->EvaluateDisplacement(ShadingContext{}, &displacement) &&
+           Test_IsClose(displacement, 0.6f);
+}
+
+static bool
+TestEvaluatePositionSineDisplacement()
+{
+    MaterialGraph network;
+
+    GraphNode position;
+    position.nodeTypeId = "ND_position_vector3";
+    network.nodes["/Material/Position"] = position;
+
+    GraphNode extract;
+    extract.nodeTypeId = "ND_extract_vector3";
+    extract.parameters["index"] = Value(0);
+    extract.inputConnections["in"] =
+        {{"/Material/Position", "out"}};
+    network.nodes["/Material/ExtractX"] = extract;
+
+    GraphNode frequency;
+    frequency.nodeTypeId = "ND_multiply_float";
+    frequency.parameters["in2"] = Value(2.0f);
+    frequency.inputConnections["in1"] =
+        {{"/Material/ExtractX", "out"}};
+    network.nodes["/Material/Frequency"] = frequency;
+
+    GraphNode sine;
+    sine.nodeTypeId = "ND_sin_float";
+    sine.inputConnections["in"] =
+        {{"/Material/Frequency", "out"}};
+    network.nodes["/Material/Sine"] = sine;
+
+    GraphNode terminal;
+    terminal.nodeTypeId = "ND_displacement_float";
+    terminal.parameters["scale"] = Value(0.25f);
+    terminal.inputConnections["displacement"] =
+        {{"/Material/Sine", "out"}};
+    network.nodes["/Material/Displacement"] = terminal;
+    network.terminals["displacement"] =
+        {"/Material/Displacement", "out"};
+
+    auto graph = EvalGraph::Compile(network, "displacement");
+    ShadingContext context;
+    context.position = Vec3f(0.78539816339f, 0.0f, 0.0f);
+    float displacement = 0.0f;
+    return graph && graph->IsValid() &&
+           graph->EvaluateDisplacement(context, &displacement) &&
+           Test_IsClose(displacement, 0.25f, 1.0e-4f);
+}
+
+static bool
 TestInvalidGraphEvaluate()
 {
     MaterialGraph network;
@@ -641,6 +720,9 @@ Test_RegisterGraphTests()
     _REG(TestEvalGeometricInput);
     _REG(TestCompileUnknownNodeTypeFails);
     _REG(TestCompileRejectsCycle);
+    _REG(TestCompileMissingDisplacementTerminal);
+    _REG(TestEvaluateConstantDisplacement);
+    _REG(TestEvaluatePositionSineDisplacement);
     _REG(TestInvalidGraphEvaluate);
     _REG(TestInputReevaluationUsesModifiedContext);
 }

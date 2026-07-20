@@ -5,10 +5,13 @@
 // https://openusd.org/license.
 //
 #include "pxr/base/gf/vec2f.h"
+#include "pxr/base/gf/vec3f.h"
+#include "../graph.h"
 #include "pxr/base/vt/value.h"
 
 #include "../../mxcppAdapter.h"
 
+#include <cmath>
 #include <cstdio>
 #include <functional>
 
@@ -153,11 +156,53 @@ TestConvertMaterialXUsdPrimvarReaderStringToCanonicalNode()
     return true;
 }
 
+static bool
+TestConvertAndCompileSurfaceAndDisplacementTerminals()
+{
+    HdMaterialNetwork2 network;
+
+    const SdfPath surfacePath("/Material/Surface");
+    HdMaterialNode2 surfaceNode;
+    surfaceNode.nodeTypeId = TfToken("UsdPreviewSurface");
+    surfaceNode.parameters[TfToken("diffuseColor")] =
+        VtValue(GfVec3f(0.2f, 0.3f, 0.4f));
+    network.nodes[surfacePath] = surfaceNode;
+
+    const SdfPath displacementPath("/Material/Displacement");
+    HdMaterialNode2 displacementNode;
+    displacementNode.nodeTypeId = TfToken("ND_displacement_float");
+    displacementNode.parameters[TfToken("displacement")] = VtValue(0.25f);
+    displacementNode.parameters[TfToken("scale")] = VtValue(2.0f);
+    network.nodes[displacementPath] = displacementNode;
+
+    network.terminals[TfToken("surface")] =
+        HdMaterialConnection2{surfacePath, TfToken("out")};
+    network.terminals[TfToken("displacement")] =
+        HdMaterialConnection2{displacementPath, TfToken("out")};
+
+    MaterialGraph graph = ConvertHdNetworkToMxcppGraph(network);
+    if (graph.terminals.count("surface") != 1 ||
+        graph.terminals.count("displacement") != 1) {
+        std::printf("    Surface or displacement terminal was lost\n");
+        return false;
+    }
+
+    auto surface = EvalGraph::Compile(graph, "surface");
+    auto displacement = EvalGraph::Compile(graph, "displacement");
+    float value = 0.0f;
+    ShadingContext context;
+    return surface && surface->IsValid() &&
+        displacement && displacement->IsValid() &&
+        displacement->EvaluateDisplacement(context, &value) &&
+        std::abs(value - 0.5f) < 1.0e-6f;
+}
+
 void
 Test_RegisterAdapterTests()
 {
     _REG(TestConvertNativeUsdNodesToCanonicalMxcppNodes);
     _REG(TestConvertMaterialXUsdPrimvarReaderStringToCanonicalNode);
+    _REG(TestConvertAndCompileSurfaceAndDisplacementTerminals);
 }
 
 #undef _REG

@@ -305,10 +305,10 @@ HdEmbreeRenderer::_IntegratePath(
             rayHit, path.rayDiff,
             instanceContext, prototypeContext, hitPos, normal,
             &surfaceDifferentials.dndu, &surfaceDifferentials.dndv);
-        _GeomPropCallbackData cbData{
+        HdEmbreePrimvarLookup cbData{
             &prototypeContext->primvarMapByString,
             rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
-        ctx.geomPropLookup = &_SampleGeomProp;
+        ctx.geomPropLookup = &HdEmbreeSamplePrimvar;
         ctx.geomPropUserData = &cbData;
         ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
 

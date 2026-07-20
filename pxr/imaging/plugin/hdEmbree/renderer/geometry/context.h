@@ -37,6 +37,7 @@ struct HdEmbreePrototypeContext
     HdCullStyle cullStyle = HdCullStyleDontCare;
     bool doubleSided = false;
     bool refined = false;
+    bool displaced = false;
     VtVec3fArray const* triangleDPdu = nullptr;
     VtVec3fArray const* triangleDPdv = nullptr;
     /// A name-indexed map of primvar samplers.

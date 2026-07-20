@@ -46,6 +46,7 @@ private:
     // render-setting context priority changes outside normal dirty tracking.
     HdSceneDelegate *_sceneDelegate = nullptr;
     std::unique_ptr<mxcpp::EvalGraph> _evalGraph;
+    std::unique_ptr<mxcpp::EvalGraph> _displacementGraph;
     HdEmbreeMaterialData _renderMaterial;
 };
 

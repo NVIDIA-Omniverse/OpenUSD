@@ -125,7 +125,8 @@ _TestRenderDelegateSettings()
         HdEmbreeRenderSettingsTokens->enableGgxMicrofacetMultipleScattering,
         HdEmbreeRenderSettingsTokens->materialRenderContext,
         HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
-        HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode
+        HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
+        HdEmbreeRenderSettingsTokens->textureCacheSize
     };
 
     if (descriptors.size() != expectedKeys.size()) {
@@ -259,9 +260,15 @@ _TestAuthoredNamespacedSettings()
     if (!_HasSettingValue<int>(
             allCustomSettings, "ty:maxBounces", 8) ||
         !_HasSettingValue<bool>(
-            allCustomSettings, "ty:disableShadows", true) ||
-        !_HasSettingValue<bool>(
-            allCustomSettings, "domeLightCameraVisibility", false)) {
+            allCustomSettings, "ty:disableShadows", true)) {
+        return false;
+    }
+    // An empty namespace request means all namespaced custom settings, not
+    // unnamespaced Hydra settings. The explicit request below covers the
+    // generic dome-light key.
+    if (allCustomSettings.find("domeLightCameraVisibility") !=
+            allCustomSettings.end()) {
+        std::printf("all namespaced settings included generic dome setting\n");
         return false;
     }
 
@@ -276,9 +283,12 @@ _TestAuthoredNamespacedSettings()
     if (!_HasSettingValue<int>(
             requestedSettings, "ty:maxBounces", 8) ||
         !_HasSettingValue<bool>(
-            requestedSettings, "ty:disableShadows", true) ||
-        !_HasSettingValue<bool>(
-            requestedSettings, "domeLightCameraVisibility", false)) {
+            requestedSettings, "ty:disableShadows", true)) {
+        return false;
+    }
+    if (requestedSettings.find("domeLightCameraVisibility") !=
+            requestedSettings.end()) {
+        std::printf("namespace request included generic dome setting\n");
         return false;
     }
 
@@ -450,7 +460,8 @@ _TestTyphoonRenderSettingsAPI()
         TfToken("ty:enableGgxMicrofacetMultipleScattering"),
         TfToken("ty:materialRenderContext"),
         TfToken("ty:useAdobeOpenPBR"),
-        TfToken("ty:dielectricLayerThroughputMode")
+        TfToken("ty:dielectricLayerThroughputMode"),
+        TfToken("ty:textureCacheSize")
     };
 
     const TfTokenVector apiProperties = apiDef->GetPropertyNames();

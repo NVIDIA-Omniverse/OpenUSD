@@ -38,6 +38,12 @@ public:
         const ShadingContext& ctx,
         const EvalOptions& options = EvalOptions()) const;
 
+    /// Evaluate an ND_displacement_float terminal. Returns false when this
+    /// graph is not a valid displacement graph.
+    bool EvaluateDisplacement(
+        const ShadingContext& ctx,
+        float* displacement) const;
+
     bool IsValid() const { return _isValid; }
 
 private:

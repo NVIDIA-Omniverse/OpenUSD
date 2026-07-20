@@ -5,8 +5,12 @@
 // https://openusd.org/license.
 //
 #include "pxr/imaging/plugin/hdEmbree/delegate/mesh.h"
+#include "pxr/imaging/plugin/hdEmbree/delegate/adaptiveSubdivision.h"
+#include "pxr/imaging/plugin/hdEmbree/delegate/displacement.h"
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/geometry/context.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampling.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graph.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/instancer.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/material.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderParam.h"
@@ -17,6 +21,8 @@
 #include "pxr/imaging/pxOsd/tokens.h"
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/matrix4d.h"
+#include "pxr/base/vt/typeHeaders.h"
+#include "pxr/base/vt/visitValue.h"
 #include "pxr/usd/sdf/assetPath.h"
 
 #include <algorithm> // sort
@@ -65,6 +71,65 @@ _InterpolationName(HdInterpolation interpolation)
     default:
         return "unknown";
     }
+}
+
+struct _FlattenIndexedPrimvar
+{
+    explicit _FlattenIndexedPrimvar(VtIntArray const& indices)
+        : indices(indices)
+    {
+    }
+
+    template <typename T>
+    VtValue operator()(VtArray<T> const& source) const
+    {
+        VtArray<T> flattened(indices.size());
+        bool valid = true;
+        for (size_t i = 0; i < indices.size(); ++i) {
+            int const index = indices[i];
+            if (index < 0 || static_cast<size_t>(index) >= source.size()) {
+                valid = false;
+                continue;
+            }
+            flattened[i] = source[index];
+        }
+        if (!valid) {
+            TF_WARN("Invalid indexed primvar data");
+        }
+        return VtValue(std::move(flattened));
+    }
+
+    VtValue operator()(VtValue const& source) const
+    {
+        TF_WARN("Unsupported indexed primvar type");
+        return source;
+    }
+
+    VtIntArray const& indices;
+};
+
+RTCSubdivisionMode
+_GetFaceVaryingSubdivisionMode(TfToken const& rule)
+{
+    // Embree has fewer face-varying rules than OpenSubdiv. It can represent
+    // smooth boundaries, pinned corners, pinned boundaries, and fully linear
+    // patches, but cannot distinguish OpenSubdiv's three corner-sharpening
+    // variants. Preserve the meaningful classes and use PIN_CORNERS for the
+    // closest available behavior for cornersOnly/cornersPlus1/cornersPlus2.
+    if (rule == PxOsdOpenSubdivTokens->boundaries) {
+        return RTC_SUBDIVISION_MODE_PIN_BOUNDARY;
+    }
+    if (rule == PxOsdOpenSubdivTokens->all) {
+        return RTC_SUBDIVISION_MODE_PIN_ALL;
+    }
+    if (rule == PxOsdOpenSubdivTokens->cornersOnly ||
+        rule == PxOsdOpenSubdivTokens->cornersPlus1 ||
+        rule == PxOsdOpenSubdivTokens->cornersPlus2) {
+        return RTC_SUBDIVISION_MODE_PIN_CORNERS;
+    }
+    // "none" (and the legacy empty default) keeps discontinuity boundaries
+    // smooth. NO_BOUNDARY would drop boundary patches, not make them smooth.
+    return RTC_SUBDIVISION_MODE_SMOOTH_BOUNDARY;
 }
 
 void
@@ -357,6 +422,86 @@ _ComputeTriangulatedCornerIds(HdMeshTopology const& topology)
 
 } // namespace
 
+RTCSubdivisionMode
+HdEmbreeGetFaceVaryingSubdivisionMode(TfToken const& rule)
+{
+    return _GetFaceVaryingSubdivisionMode(rule);
+}
+
+void
+HdEmbreeDisplacementFunction(
+    const RTCDisplacementFunctionNArguments* args)
+{
+    auto* prototypeContext = static_cast<HdEmbreePrototypeContext*>(
+        args->geometryUserPtr);
+    // A missing terminal means the Embree limit surface is already the
+    // desired result. Treat it as a no-op so the same geometry path supports
+    // both displaced and ordinary subdivision materials.
+    mxcpp::EvalGraph* graph =
+        prototypeContext && prototypeContext->material
+        ? prototypeContext->material->displacementGraph
+        : nullptr;
+    if (!graph) {
+        return;
+    }
+
+    for (unsigned int i = 0; i < args->N; ++i) {
+        // These are generated vertices, so there is no Hydra shading record to
+        // reuse. Reconstruct the graph context from Embree data; position and
+        // normal intentionally remain in object space because displacement is
+        // applied before the instance transform.
+        mxcpp::ShadingContext shadingContext;
+        shadingContext.position = mxcpp::Vec3f(
+            args->P_x[i], args->P_y[i], args->P_z[i]);
+        shadingContext.normal = mxcpp::Vec3f(
+            args->Ng_x[i], args->Ng_y[i], args->Ng_z[i]);
+        shadingContext.faceId = static_cast<int>(args->primID);
+        shadingContext.baryU = args->u[i];
+        shadingContext.baryV = args->v[i];
+        // Displacement must see the same constant, uniform, vertex,
+        // varying, and face-varying geomprops as hit-time shading. The sampler
+        // selected during mesh sync owns the interpolation rules.
+        HdEmbreePrimvarLookup primvarLookup{
+            &prototypeContext->primvarMapByString,
+            args->primID, args->u[i], args->v[i]};
+        shadingContext.geomPropLookup = &HdEmbreeSamplePrimvar;
+        shadingContext.geomPropUserData = &primvarLookup;
+        shadingContext.uniformProps =
+            &prototypeContext->uniformPrimvarMap;
+
+        // Sampling at Embree parametric coordinates makes texture-driven
+        // displacement follow the subdivision surface rather than its sparse
+        // control vertices.
+        auto stIt = prototypeContext->primvarMap.find(_tokensSt);
+        if (stIt != prototypeContext->primvarMap.end()) {
+            HdEmbreeSampleTexcoord(
+                stIt->second, args->primID, args->u[i], args->v[i],
+                &shadingContext.texcoord);
+        }
+
+        float displacement = 0.0f;
+        // No C++ exception may cross the Embree C callback boundary. A failed
+        // or non-finite sample therefore leaves this vertex on the limit
+        // surface.
+        try {
+            if (!graph->EvaluateDisplacement(
+                    shadingContext, &displacement) ||
+                !std::isfinite(displacement)) {
+                continue;
+            }
+        } catch (...) {
+            continue;
+        }
+
+        // MaterialX displacement is signed along the subdivision normal;
+        // negative graph values move in the opposite direction.
+        args->P_x[i] += displacement * args->Ng_x[i];
+        args->P_y[i] += displacement * args->Ng_y[i];
+        args->P_z[i] += displacement * args->Ng_z[i];
+    }
+}
+
+
 HdEmbreeMesh::HdEmbreeMesh(SdfPath const& id)
     : HdMesh(id)
     , _rtcMeshId(RTC_INVALID_GEOMETRY_ID)
@@ -369,7 +514,69 @@ HdEmbreeMesh::HdEmbreeMesh(SdfPath const& id)
     , _smoothNormals(false)
     , _doubleSided(false)
     , _cullStyle(HdCullStyleDontCare)
+    , _nextFvarTopologyId(2)
 {
+}
+
+bool
+HdEmbreeMesh::UpdateSubdivisionLevels(
+    GfMatrix4d const& viewMatrix,
+    GfMatrix4d const& projectionMatrix,
+    GfRect2i const& dataWindow,
+    bool forceDisplacementRebuild)
+{
+    if (!_refined || !_geometry || _subdivisionLevels.empty() ||
+        _points.empty() || _rtcInstanceGeometries.empty() ||
+        dataWindow.GetWidth() <= 0 || dataWindow.GetHeight() <= 0) {
+        return false;
+    }
+
+    // One prototype can appear at several screen sizes. Tessellating for
+    // every instance prevents a small instance from making a larger one
+    // coarse.
+    std::vector<GfMatrix4f> instanceTransforms;
+    instanceTransforms.reserve(_rtcInstanceGeometries.size());
+    for (RTCGeometry geometry : _rtcInstanceGeometries) {
+        auto* context = static_cast<HdEmbreeInstanceContext*>(
+            rtcGetGeometryUserData(geometry));
+        if (!context) {
+            return false;
+        }
+        instanceTransforms.push_back(context->objectToWorldMatrix);
+    }
+
+    std::vector<float> newLevels =
+        HdEmbreeComputeAdaptiveSubdivisionLevels(
+            _points, _topology.GetFaceVertexCounts(),
+            _topology.GetFaceVertexIndices(), instanceTransforms,
+            viewMatrix, projectionMatrix, dataWindow,
+            _topology.GetRefineLevel());
+    if (newLevels.size() != _subdivisionLevels.size()) {
+        return false;
+    }
+    HdEmbreePrototypeContext* prototypeContext = _GetPrototypeContext();
+    const bool wasDisplaced = prototypeContext->displaced;
+    prototypeContext->displaced =
+        prototypeContext->material &&
+        prototypeContext->material->displacementGraph;
+    // Equal edge levels do not imply equal geometry: a material edit can
+    // change displacement while the camera stays fixed. Embree evaluates the
+    // callback only during commit, so scene changes must force that commit.
+    const bool rebuildDisplacement =
+        forceDisplacementRebuild &&
+        (wasDisplaced || prototypeContext->displaced);
+    if (newLevels == _subdivisionLevels && !rebuildDisplacement) {
+        return false;
+    }
+
+    // Embree retains the LEVEL buffer pointer. Updating in place avoids
+    // invalidating that pointer while still telling Embree to retessellate.
+    std::copy(newLevels.begin(), newLevels.end(),
+              _subdivisionLevels.begin());
+    rtcUpdateGeometryBuffer(_geometry, RTC_BUFFER_TYPE_LEVEL, 0);
+    rtcCommitGeometry(_geometry);
+    rtcCommitScene(_rtcMeshScene);
+    return true;
 }
 
 void
@@ -584,15 +791,18 @@ HdEmbreeMesh::_CreateEmbreeSubdivMesh(RTCScene scene, RTCDevice device)
         numVertexCreases = 0;
     }
 
-    // Populate an embree subdiv object.
-    // Note this geometry is committed outside this function, but that
-    // is not "enforced"
+    // Medium and higher complexity use Embree subdivision geometry, which is
+    // the only geometry type that supports adaptive levels and displacement.
     RTCGeometry geom = rtcNewGeometry (device, RTC_GEOMETRY_TYPE_SUBDIVISION);
 
-    // Uses a BVH refitting approach when changing only the vertex buffer.
+    // Vertex edits are frequent; refitting preserves unchanged topology.
     rtcSetGeometryBuildQuality(geom, RTC_BUILD_QUALITY_REFIT);
     rtcSetGeometryTimeStepCount(geom,1);
     rtcSetGeometryMask(geom, HdEmbree_RayMask::Scene);
+    // Embree exposes generated vertices only through subdivision callbacks;
+    // triangle geometry intentionally remains undisplaced.
+    rtcSetGeometryDisplacementFunction(
+        geom, HdEmbreeDisplacementFunction);
     _rtcMeshId = rtcAttachGeometry(scene,geom);
 
     // Fill the topology buffers.
@@ -612,6 +822,17 @@ HdEmbreeMesh::_CreateEmbreeSubdivMesh(RTCScene scene, RTCDevice device)
         0, /* size_t byteOffset */
         sizeof(int),  /*must be 4 byte aligned */
         _topology.GetFaceVertexIndices().size());
+
+    _subdivisionLevels.assign(
+        _topology.GetFaceVertexIndices().size(), 1.0f);
+    rtcSetSharedGeometryBuffer(geom,
+        RTC_BUFFER_TYPE_LEVEL,
+        0,
+        RTC_FORMAT_FLOAT,
+        _subdivisionLevels.data(),
+        0,
+        sizeof(float),
+        _subdivisionLevels.size());
 
     if (_topology.GetHoleIndices().size()>0) {
         // PSA : creating a hole buffer with 0 length has very unexpected
@@ -696,55 +917,67 @@ HdEmbreeMesh::_CreateEmbreeSubdivMesh(RTCScene scene, RTCDevice device)
             numVertexCreases);
     }
 
-    // Set up attribute-specific subdivision topologies:
-    // - topology 1: face-varying primvars with seam-preserving PIN_CORNERS
-    // - topology 2: varying primvars with linearly interpolated PIN_ALL
-    //
-    // Embree 4 has no dedicated face-varying/varying attribute buffer type,
-    // so we create extra topologies and bind user vertex attributes to them
-    // via rtcSetGeometryVertexAttributeTopology().
-    {
-        const VtIntArray& faceVertexIndices = _topology.GetFaceVertexIndices();
-        size_t totalFaceVertices = faceVertexIndices.size();
-
-        rtcSetGeometryTopologyCount(geom, 3);
-
-        // PIN_CORNERS: discontinuous interpolation at UV island boundaries.
-        // Default NO_BOUNDARY would incorrectly smooth across UV seams.
-        rtcSetGeometrySubdivisionMode(
-            geom, 1, RTC_SUBDIVISION_MODE_PIN_CORNERS);
-        rtcSetGeometrySubdivisionMode(
-            geom, 2, RTC_SUBDIVISION_MODE_PIN_ALL);
-
-        // Identity index buffer: face-varying data in Hydra is already
-        // laid out per face-vertex in face order.
-        _fvarIndices.resize(totalFaceVertices);
-        std::iota(_fvarIndices.begin(), _fvarIndices.end(), 0u);
-
-        rtcSetSharedGeometryBuffer(
-            geom,
-            RTC_BUFFER_TYPE_INDEX,
-            1, /* topology slot 1 = face-varying */
-            RTC_FORMAT_UINT,
-            _fvarIndices.data(),
-            0,
-            sizeof(unsigned int),
-            totalFaceVertices);
-
-        // Varying primvars use the authored mesh topology, but with PIN_ALL
-        // enabled so Embree linearly interpolates every patch.
-        rtcSetSharedGeometryBuffer(
-            geom,
-            RTC_BUFFER_TYPE_INDEX,
-            2, /* topology slot 2 = varying */
-            RTC_FORMAT_UINT,
-            faceVertexIndices.cdata(),
-            0,
-            sizeof(int),
-            totalFaceVertices);
-    }
+    // Attribute topologies are configured after all dirty primvars have been
+    // pulled, so indexed face-varying data can retain its authored sharing.
 
     return geom;
+}
+
+void
+HdEmbreeMesh::_ConfigureSubdivAttributeTopologies(RTCGeometry geometry)
+{
+    VtIntArray const& meshIndices = _topology.GetFaceVertexIndices();
+    size_t const faceVertexCount = meshIndices.size();
+
+    // Topology 0 is geometry; topology 1 is the shared linear topology for
+    // varying primvars. Face-varying primvars start at 2 because their index
+    // arrays (and therefore seams) are independent.
+    rtcSetGeometryTopologyCount(geometry, _nextFvarTopologyId);
+    rtcSetGeometrySubdivisionMode(
+        geometry, 1, RTC_SUBDIVISION_MODE_PIN_ALL);
+    rtcSetSharedGeometryBuffer(
+        geometry, RTC_BUFFER_TYPE_INDEX, 1, RTC_FORMAT_UINT,
+        meshIndices.cdata(), 0, sizeof(int), faceVertexCount);
+
+    _fvarIndices.resize(faceVertexCount);
+    std::iota(_fvarIndices.begin(), _fvarIndices.end(), 0u);
+
+    RTCSubdivisionMode const faceVaryingMode =
+        HdEmbreeGetFaceVaryingSubdivisionMode(
+            _topology.GetSubdivTags().GetFaceVaryingInterpolationRule());
+    TF_FOR_ALL(it, _primvarSourceMap) {
+        PrimvarSource const& source = it->second;
+        if (source.interpolation != HdInterpolationFaceVarying ||
+            source.topologyId < 2) {
+            continue;
+        }
+
+        void const* indices = source.indices.empty()
+            ? static_cast<void const*>(_fvarIndices.data())
+            : static_cast<void const*>(source.indices.cdata());
+        size_t const indexCount = source.indices.empty()
+            ? faceVertexCount
+            : source.indices.size();
+        if (indexCount != faceVertexCount) {
+            TF_WARN(
+                "Face-varying primvar '%s' has %zu indices for %zu face "
+                "vertices; skipping its subdivision topology",
+                it->first.GetText(), indexCount, faceVertexCount);
+            continue;
+        }
+
+        rtcSetGeometrySubdivisionMode(
+            geometry, source.topologyId, faceVaryingMode);
+        rtcSetSharedGeometryBuffer(
+            geometry,
+            RTC_BUFFER_TYPE_INDEX,
+            source.topologyId,
+            RTC_FORMAT_UINT,
+            indices,
+            0,
+            sizeof(int),
+            indexCount);
+    }
 }
 
 RTCGeometry
@@ -758,7 +991,7 @@ HdEmbreeMesh::_CreateEmbreeTriangleMesh(RTCScene scene, RTCDevice device)
     // Create the new mesh.
     // geometry will be committed in the calling function
     RTCGeometry geom = rtcNewGeometry (device, RTC_GEOMETRY_TYPE_TRIANGLE);
-    // Uses a BVH refitting approach when changing only the vertex buffer.
+    // Vertex edits are frequent; refitting preserves unchanged topology.
     rtcSetGeometryBuildQuality(geom,RTC_BUILD_QUALITY_REFIT);
     rtcSetGeometryTimeStepCount(geom,1);
     rtcSetGeometryMask(geom, HdEmbree_RayMask::Scene);
@@ -805,10 +1038,17 @@ HdEmbreeMesh::_UpdatePrimvarSources(HdSceneDelegate* sceneDelegate,
         for (HdPrimvarDescriptor const& pv: primvars) {
             if (HdChangeTracker::IsPrimvarDirty(dirtyBits, id, pv.name) &&
                 pv.name != HdTokens->points) {
-                _primvarSourceMap[pv.name] = {
-                    GetPrimvar(sceneDelegate, pv.name),
-                    interp
-                };
+                PrimvarSource& source = _primvarSourceMap[pv.name];
+                VtIntArray indices;
+                source.data = pv.indexed
+                    ? GetIndexedPrimvar(sceneDelegate, pv.name, &indices)
+                    : GetPrimvar(sceneDelegate, pv.name);
+                source.interpolation = interp;
+                source.indices = std::move(indices);
+                if (interp == HdInterpolationFaceVarying &&
+                    source.topologyId < 2) {
+                    source.topologyId = _nextFvarTopologyId++;
+                }
             }
         }
     }
@@ -860,8 +1100,14 @@ HdEmbreeMesh::_UpdateComputedPrimvarSources(HdSceneDelegate* sceneDelegate,
             _surfaceDerivativesValid = false;
             _tangentFrameValid = false;
         } else {
-            _primvarSourceMap[compPrimvar.name] = {it->second,
-                                                compPrimvar.interpolation};
+            PrimvarSource& source = _primvarSourceMap[compPrimvar.name];
+            source.data = it->second;
+            source.interpolation = compPrimvar.interpolation;
+            source.indices.clear();
+            if (source.interpolation == HdInterpolationFaceVarying &&
+                source.topologyId < 2) {
+                source.topologyId = _nextFvarTopologyId++;
+            }
             if (compPrimvar.name == HdTokens->normals ||
                 compPrimvar.name == _tokensSt) {
                 _surfaceDerivativesValid = false;
@@ -1115,7 +1361,8 @@ HdEmbreeMesh::_UpdateTangentFrameCache()
 void
 HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
                                     HdInterpolation interpolation,
-                                    bool refined)
+                                    bool refined,
+                                    unsigned int topologyId)
 {
     // Delete the old sampler, if it exists.
     HdEmbreePrototypeContext *ctx = _GetPrototypeContext();
@@ -1151,8 +1398,8 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
             break;
         case HdInterpolationVertex:
             if (refined) {
-                sampler = new HdEmbreeSubdivVertexSampler(name, data,
-                    _rtcMeshScene, _rtcMeshId, &_embreeBufferAllocator );
+                sampler = new HdEmbreeSubdivVertexSampler(
+                    name, data, _geometry, &_embreeBufferAllocator);
             } else {
                 sampler = new HdEmbreeTriangleVertexSampler(name, data,
                     _triangulatedIndices);
@@ -1160,8 +1407,8 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
             break;
         case HdInterpolationVarying:
             if (refined) {
-                sampler = new HdEmbreeSubdivVaryingSampler(name, data,
-                    _rtcMeshScene, _rtcMeshId, &_embreeBufferAllocator);
+                sampler = new HdEmbreeSubdivVaryingSampler(
+                    name, data, _geometry, &_embreeBufferAllocator);
             } else {
                 sampler = new HdEmbreeTriangleVertexSampler(name, data,
                     _triangulatedIndices);
@@ -1169,8 +1416,9 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
             break;
         case HdInterpolationFaceVarying:
             if (refined) {
-                sampler = new HdEmbreeSubdivFaceVaryingSampler(name, data,
-                    _rtcMeshScene, _rtcMeshId, &_embreeBufferAllocator);
+                sampler = new HdEmbreeSubdivFaceVaryingSampler(
+                    name, data, _geometry, topologyId,
+                    &_embreeBufferAllocator);
             } else {
                 HdMeshUtil meshUtil(&_topology, GetId());
                 sampler = new HdEmbreeTriangleFaceVaryingSampler(name, data,
@@ -1230,8 +1478,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         _surfaceDerivativesValid = false;
         _tangentFrameValid = false;
     }
-    if (HdChangeTracker::IsSubdivTagsDirty(*dirtyBits, id) &&
-        _topology.GetRefineLevel() > 0) {
+    if (HdChangeTracker::IsSubdivTagsDirty(*dirtyBits, id)) {
         _topology.SetSubdivTags(sceneDelegate->GetSubdivTags(id));
     }
     if (HdChangeTracker::IsDisplayStyleDirty(*dirtyBits, id)) {
@@ -1277,7 +1524,10 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
     // If the subdivision scheme is "none", force us to not refine.
     doRefine = doRefine && (_topology.GetScheme() != PxOsdOpenSubdivTokens->none);
 
-    // If the refine level is 0, triangulate instead of subdividing.
+    // Low complexity is the control cage, matching Hydra expectations and
+    // avoiding subdivision cost when refinement was explicitly disabled.
+    // Higher levels remain subdivision geometry whose rates are chosen later
+    // from projected edge length.
     doRefine = doRefine && (_topology.GetRefineLevel() > 0);
 
     // The repr defines whether we should compute smooth normals for this mesh:
@@ -1380,26 +1630,6 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         _tangentFrameValid = false;
     }
 
-    // If the refine level changed or the mesh was recreated, we need to pass
-    // the refine level into the embree subdiv object.
-    if (newMesh || HdChangeTracker::IsDisplayStyleDirty(*dirtyBits, id)) {
-        if (doRefine) {
-            // Pass the target number of uniform refinements to Embree.
-            // Embree refinement is specified as the number of quads to generate
-            // per edge, whereas hydra refinement is the number of recursive
-            // splits, so we need to pass embree (2^refineLevel).
-
-            int tessellationRate = (1 << _topology.GetRefineLevel());
-            // XXX: As of Embree 2.9.0, rendering with tessellation level 1
-            // (i.e. coarse mesh) results in weird normals, so force at least
-            // one level of subdivision.
-            if (tessellationRate == 1) {
-                tessellationRate++;
-            }
-            rtcSetGeometryTessellationRate(_geometry,static_cast<float>(tessellationRate));
-        }
-    }
-
     // If the subdiv tags changed or the mesh was recreated, we need to update
     // the subdivision boundary mode.
     if (newMesh || HdChangeTracker::IsSubdivTagsDirty(*dirtyBits, id)) {
@@ -1420,6 +1650,10 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
                 }
             }
         }
+    }
+
+    if (doRefine) {
+        _ConfigureSubdivAttributeTopologies(_geometry);
     }
 
     // Update the smooth normals in steps:
@@ -1477,8 +1711,20 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
                 it->second.interpolation == HdInterpolationFaceVarying) {
                 continue;
             }
-            _CreatePrimvarSampler(it->first, it->second.data,
-                    it->second.interpolation, _refined);
+            // Only refined face-varying samplers consume authored indices
+            // directly through an Embree attribute topology. Triangle-cage
+            // samplers and all other interpolation modes require the
+            // conventional flattened Hydra value stream.
+            VtValue samplerData = it->second.data;
+            if (!it->second.indices.empty() &&
+                (!_refined || it->second.interpolation !=
+                    HdInterpolationFaceVarying)) {
+                samplerData = VtVisitValue(
+                    samplerData, _FlattenIndexedPrimvar(it->second.indices));
+            }
+            _CreatePrimvarSampler(
+                it->first, samplerData, it->second.interpolation,
+                _refined, it->second.topologyId);
         }
     }
 
@@ -1529,6 +1775,28 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         }
     }
 
+    // Bind material before committing the prototype scene: Embree invokes
+    // the displacement callback during scene commit.
+    if ((*dirtyBits & HdChangeTracker::DirtyMaterialId) || newMesh) {
+        if (_geometry) {
+            HdEmbreeMaterial *mat = nullptr;
+            SdfPath materialId = sceneDelegate->GetMaterialId(id);
+            if (!materialId.IsEmpty()) {
+                HdSprim *sprim =
+                    sceneDelegate->GetRenderIndex().GetSprim(
+                        HdPrimTypeTokens->material, materialId);
+                mat = dynamic_cast<HdEmbreeMaterial*>(sprim);
+            }
+            HdEmbreePrototypeContext* prototypeContext =
+                _GetPrototypeContext();
+            prototypeContext->material =
+                mat ? mat->GetRenderMaterial() : nullptr;
+            prototypeContext->displaced =
+                prototypeContext->material &&
+                prototypeContext->material->displacementGraph;
+        }
+    }
+
     // Populate points in the RTC mesh.
     if (newMesh || 
         HdChangeTracker::IsPrimvarDirty(*dirtyBits, id, HdTokens->points)) {
@@ -1542,8 +1810,12 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
             sizeof(GfVec3f),
             _points.size());
 
-        rtcCommitGeometry(_geometry);
     }
+
+    // Primvar samplers and subdivision topology/rule changes also mutate the
+    // geometry. Commit once after all buffers are current so display-style or
+    // primvar-only syncs never leave an uncommitted prototype.
+    rtcCommitGeometry(_geometry);
 
     // Update visibility by pulling the object into/out of the embree BVH.
     if (_sharedData.visible) {
@@ -1652,21 +1924,6 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
     // since there are a bunch of commits to instances of geom
     // in the root scene
     //
-
-    // Bind material (done after geometry creation so prototype context exists).
-    if ((*dirtyBits & HdChangeTracker::DirtyMaterialId) || newMesh) {
-        if (_geometry) {
-            HdEmbreeMaterial *mat = nullptr;
-            SdfPath materialId = sceneDelegate->GetMaterialId(id);
-            if (!materialId.IsEmpty()) {
-                HdSprim *sprim =
-                    sceneDelegate->GetRenderIndex().GetSprim(
-                        HdPrimTypeTokens->material, materialId);
-                mat = dynamic_cast<HdEmbreeMaterial*>(sprim);
-            }
-            _GetPrototypeContext()->material = mat ? mat->GetRenderMaterial() : nullptr;
-        }
-    }
 
     if (_geometry) {
         _GetPrototypeContext()->cullStyle = _cullStyle;

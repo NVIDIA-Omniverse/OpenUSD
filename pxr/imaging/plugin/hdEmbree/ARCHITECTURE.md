@@ -33,10 +33,12 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
 - `renderDelegate.h/.cpp`: central factory and lifetime owner. Declares setting tokens/descriptors; advertises supported Rprim, Sprim, and Bprim types; creates scene adapters, buffers, and passes; owns the Embree device/top-level scene, renderer, render thread, and render param.
 - `renderParam.h`: synchronization bridge. Scene edits stop rendering, acquire the Embree scene for mutation, and increment the scene version used to restart accumulation.
 - `renderPass.h/.cpp`: converts `HdRenderPassState`, camera, framing, AOVs, scene-index render settings/products, and delegate settings into renderer setters. Starts/restarts rendering, reports convergence, and writes active render products.
+  It also asks the render delegate to recompute screen-space subdivision edge levels when the scene, projection, or data window changes.
 - `renderBuffer.h/.cpp`: CPU-backed `HdRenderBuffer` storage, mapping, format conversion, convergence, and renderer write access.
-- `mesh.h/.cpp`: `HdMesh` adapter. Pulls topology, points, transforms, subdivision data, primvars, materials, categories, and instancing; builds/updates Embree prototypes and instances.
+- `mesh.h/.cpp`: `HdMesh` adapter. Pulls topology, points, transforms, subdivision data, primvars, materials, categories, and instancing; builds/updates Embree prototypes and instances. It applies levels computed by `adaptiveSubdivision.*` and supplies the Embree subdivision displacement callback declared in `displacement.h`.
+- `adaptiveSubdivision.h/.cpp`: deterministic screen-space edge projection, homogeneous view-volume clipping, shared-edge/instance maximum selection, complexity targets, and Embree level clamping.
 - `instancer.h/.cpp`: `HdInstancer` adapter; computes instance transforms and per-instance category/light-linking context.
-- `material.h/.cpp`: `HdMaterial` adapter; pulls Hydra networks, normalizes them through `mxcppAdapter`, owns the compiled `mxcpp::EvalGraph`, and updates a stable renderer material-data handle.
+- `material.h/.cpp`: `HdMaterial` adapter; pulls Hydra networks, normalizes them through `mxcppAdapter`, owns separate compiled surface and optional displacement `mxcpp::EvalGraph` objects, and updates a stable renderer material-data handle.
 - `light.h/.cpp`: `HdLight` adapter. Pulls USD Lux parameters, transforms, textures, IES data, shaping, linking, and visible finite-light geometry into renderer-owned light data.
 - `implicitSurfaceSceneIndexPlugin.h/.cpp`: scene-index registration used to convert supported implicit primitives before they reach the mesh adapter.
 
@@ -113,6 +115,9 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
 3. During `HdRenderIndex::SyncAll()`, Hydra calls each adapter's `Sync()`: meshes pull geometry/primvars/bindings/instances; materials compile networks; lights pull Lux/texture/IES/linking data; instancers update transforms and contexts.
 4. Mutating adapters use `HdEmbreeRenderParam::AcquireSceneForEdit()` or `NotifySceneChange()`. This stops background rendering before shared state changes and increments the scene version.
 5. Mesh prototypes/instances are attached to the top-level `RTCScene`. `HdEmbreePrototypeContext` and `HdEmbreeInstanceContext` make synchronized renderer data available at hits without retaining Hydra adapter objects.
+6. At low complexity, subdivision meshes render as triangulated control cages. For medium and higher, the pass projects subdivision control edges through the current view/projection and all instance transforms, clips them against the homogeneous view volume, converts complexity to a pixel-edge target, updates Embree edge-level buffers, and recommits affected prototype scenes. Embree invokes the registered displacement callback while committing subdivision geometry; the callback evaluates the material displacement graph with the same primvar samplers used by surface shading and offsets generated vertices along the normalized subdivision normal.
+
+Refined primvars use Embree vertex attributes. Topology 0 samples smooth vertex data, topology 1 reuses mesh indices with `PIN_ALL` for varying data, and every face-varying primvar owns another topology carrying its authored index array. This per-primvar topology is necessary because UV/color seams need not agree. Embree lacks separate modes for OpenSubdiv's three corner variants; they share `PIN_CORNERS`, while `none`, `boundaries`, and `all` remain distinct. Attribute buffers and interpolation outputs are 16-byte padded because Embree may use SIMD-width loads/stores for scalar and short-vector values.
 
 ### Frame execution
 

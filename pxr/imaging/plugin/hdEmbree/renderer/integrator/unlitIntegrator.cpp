@@ -73,10 +73,10 @@ HdEmbreeRenderer::_IntegrateUnlit(
     // tangent frame all constructed consistently).
     mxcpp::ShadingContext ctx = _BuildShadingContext(
         rayHit, rayDiff, instanceContext, prototypeContext, hitPos, normal);
-    _GeomPropCallbackData cbData{
+    HdEmbreePrimvarLookup cbData{
         &prototypeContext->primvarMapByString,
         rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
-    ctx.geomPropLookup = &_SampleGeomProp;
+    ctx.geomPropLookup = &HdEmbreeSamplePrimvar;
     ctx.geomPropUserData = &cbData;
     ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
 

@@ -49,7 +49,9 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
     SdfPath const& id = GetId();
 
     _evalGraph.reset();
+    _displacementGraph.reset();
     _renderMaterial.evalGraph = nullptr;
+    _renderMaterial.displacementGraph = nullptr;
 
     VtValue networkMapValue;
     try {
@@ -85,21 +87,32 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
 
     if (haveNetwork) {
         try {
-            // Convert pxr network to pxr-independent mxcpp graph,
-            // then compile.
+            // Surface shading runs at ray hits, but Embree requests
+            // displacement while committing subdivision geometry. Compile the
+            // terminals independently so either consumer can run without
+            // evaluating the other (and either terminal may be absent).
             auto mxcppGraph = ConvertHdNetworkToMxcppGraph(network);
             _evalGraph = mxcpp::EvalGraph::Compile(mxcppGraph);
             if (_evalGraph && !_evalGraph->IsValid()) {
                 _evalGraph.reset();
             }
+            _displacementGraph =
+                mxcpp::EvalGraph::Compile(mxcppGraph, "displacement");
+            if (_displacementGraph && !_displacementGraph->IsValid()) {
+                _displacementGraph.reset();
+            }
         } catch (...) {
             TF_WARN("HdEmbreeMaterial: exception compiling graph for %s",
                     id.GetText());
             _evalGraph.reset();
+            _displacementGraph.reset();
         }
     }
 
+    // Mesh prototype contexts retain this material handle, so keep the
+    // handle stable and replace only the graphs it points at.
     _renderMaterial.evalGraph = _evalGraph.get();
+    _renderMaterial.displacementGraph = _displacementGraph.get();
     *dirtyBits = HdMaterial::Clean;
 }
 

@@ -105,21 +105,13 @@ HdEmbreeRenderer::_BuildShadingContext(
     GfVec3f* outDndv,
     _ShadingContextOptions options) const
 {
-    // Texcoord (try GfVec2f first, then GfVec3f)
-    GfVec2f texcoordVal(0.0f);
+    mxcpp::Vec2f texcoordVal(0.0f);
     {
         auto it = prototypeContext->primvarMap.find(_tokensSt);
         if (it != prototypeContext->primvarMap.end()) {
-            if (!it->second->Sample(
-                    rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
-                    &texcoordVal)) {
-                GfVec3f tc3;
-                if (it->second->Sample(
-                        rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
-                        &tc3)) {
-                    texcoordVal = GfVec2f(tc3[0], tc3[1]);
-                }
-            }
+            HdEmbreeSampleTexcoord(
+                it->second, rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
+                &texcoordVal);
         }
     }
 
@@ -243,7 +235,7 @@ HdEmbreeRenderer::_BuildShadingContext(
     // match MaterialX's lower-left UV convention.  Texture backends convert
     // from that convention to their native image-space convention at lookup
     // time.
-    ctx.texcoord = mxcpp::Vec2f(texcoordVal[0], texcoordVal[1]);
+    ctx.texcoord = texcoordVal;
     ctx.displayColor = _ToMx(displayColor);
     ctx.displayOpacity = displayOpacity;
     ctx.textureSystem = _textureSystem.get();
@@ -325,10 +317,10 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
             rayHit, defaultRayDiff,
             instanceContext, prototypeContext, hitPos, normal,
             nullptr, nullptr, options);
-        _GeomPropCallbackData cbData{
+        HdEmbreePrimvarLookup cbData{
             &prototypeContext->primvarMapByString,
             rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
-        ctx.geomPropLookup = &_SampleGeomProp;
+        ctx.geomPropLookup = &HdEmbreeSamplePrimvar;
         ctx.geomPropUserData = &cbData;
         ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
         mxcpp::EvalOptions evalOptions;

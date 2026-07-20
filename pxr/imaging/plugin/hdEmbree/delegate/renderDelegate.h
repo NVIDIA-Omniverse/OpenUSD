@@ -12,14 +12,18 @@
 #include "pxr/imaging/hd/renderThread.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
 #include "pxr/base/tf/staticTokens.h"
+#include "pxr/base/gf/matrix4d.h"
+#include "pxr/base/gf/rect2i.h"
 
 #include <embree4/rtcore.h>
 
 #include <mutex>
+#include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
 class HdEmbreeRenderParam;
+class HdEmbreeMesh;
 
 #define HDEMBREE_RENDER_SETTINGS_TOKENS \
     ((enableAmbientOcclusion, "ty:enableAmbientOcclusion")) \
@@ -173,6 +177,13 @@ public:
     ///   \param rPrim The rprim to be destroyed.
     void DestroyRprim(HdRprim *rPrim) override;
 
+    /// Update camera-adaptive subdivision levels on all live meshes.
+    bool UpdateAdaptiveSubdivision(
+        GfMatrix4d const& viewMatrix,
+        GfMatrix4d const& projectionMatrix,
+        GfRect2i const& dataWindow,
+        bool forceDisplacementRebuild);
+
     /// Create a hydra Sprim, representing scene or viewport state like cameras
     /// or lights.
     ///   \param typeId The sprim type to create. This must be one of the types
@@ -287,6 +298,10 @@ private:
 
     // A list of render setting exports.
     HdRenderSettingDescriptorList _settingDescriptors;
+
+    // Live meshes used for camera-adaptive subdivision updates.
+    std::mutex _meshRegistryMutex;
+    std::vector<HdEmbreeMesh*> _meshes;
 
     // A callback that interprets embree error codes and injects them into
     // the hydra logging system.

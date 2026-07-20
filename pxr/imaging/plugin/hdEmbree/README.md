@@ -12,6 +12,23 @@ sampling live in dedicated subdirectories. See `ARCHITECTURE.md` for the file ma
 The following settings can be configured via `renderSettings` (Hydra render delegate settings API) and/or environment variables. USD `RenderSettings` prim attributes use the `ty:` namespace. Precedence is:
 built-in default < environment variable < USD `RenderSettings` prim < Hydra renderer setting UI.
 
+## Subdivision complexity and MaterialX displacement
+
+At `low` complexity, hdEmbree triangulates the authored subdivision control cage without evaluating subdivision displacement. Higher complexities use screen-space adaptive subdivision rather than fixed recursive subdivision counts:
+
+| Complexity | Geometry / target edge length |
+|------------|-------------------------------|
+| `veryhigh` | subdivision, 0.5 pixel |
+| `high` | subdivision, 1 pixel |
+| `medium` | subdivision, 4 pixels |
+| `low` | triangulated control cage |
+
+For adaptive levels, each coarse edge is projected through every mesh-instance transform and clipped against the camera view volume before its pixel length is measured. Embree receives the largest required tessellation level for each shared edge, clamped to its supported `[1, 4096]` range. Camera, framing, instance, topology, and display-style changes recompute the levels. Meshes authored with `subdivisionScheme = "none"` remain triangles at every complexity.
+
+Subdivision primvars retain Hydra interpolation semantics. Vertex values use the smooth limit basis; varying values use a fully linear attribute topology; uniform values remain per coarse face; and each indexed face-varying primvar gets its own Embree topology so its authored sharing and seams survive tessellation. Embree cannot distinguish OpenSubdiv's `cornersOnly`, `cornersPlus1`, and `cornersPlus2` face-varying rules, so all three use its closest `PIN_CORNERS` mode. `none`, `boundaries`, and `all` map to smooth-boundary, pinned-boundary, and fully linear modes respectively.
+
+A material may connect an `ND_displacement_float` graph to its `displacement` terminal. During Embree subdivision construction, hdEmbree evaluates that MaterialXCpp graph at each generated vertex and offsets the vertex along the normalized subdivision normal by `displacement * scale`. Object-space position and normal, interpolated `st`, constant/uniform/vertex/varying/face-varying numeric geomprops, and constant string/filename geomprops are available to the graph. Vertex, varying, and face-varying subdivision attributes are limited to float-based scalar and vector types by Embree. Displacement applies only at medium or higher complexity to meshes with a subdivision scheme such as `catmullClark`.
+
 | UI Name | Token | Type | Default | Environment Variable |
 |---------|-------|------|---------|---------------------|
 | Enable Scene Colors | `ty:enableSceneColors` | `bool` | `true` | `HDEMBREE_ENABLE_SCENE_COLORS` |

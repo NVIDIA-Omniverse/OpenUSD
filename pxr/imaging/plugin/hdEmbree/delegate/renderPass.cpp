@@ -695,7 +695,8 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     }
 
     int currentSceneVersion = _sceneVersion->load();
-    if (_lastSceneVersion != currentSceneVersion) {
+    const bool sceneChanged = _lastSceneVersion != currentSceneVersion;
+    if (sceneChanged) {
         needStartRender = true;
         _lastSceneVersion = currentSceneVersion;
     }
@@ -891,7 +892,9 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         _GetCameraExposureScale(renderPassState, renderDelegate);
     const HdEmbreeCameraDepthOfField cameraDepthOfField =
         _GetCameraDepthOfField(renderPassState);
-    if (_viewMatrix != view || _projMatrix != proj ||
+    const bool projectionChanged =
+        _viewMatrix != view || _projMatrix != proj;
+    if (projectionChanged ||
         _cameraExposureScale != cameraExposureScale ||
         _cameraDepthOfField != cameraDepthOfField) {
         _viewMatrix = view;
@@ -909,7 +912,8 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
     const GfRect2i dataWindow = _GetDataWindow(renderPassState);
 
-    if (_dataWindow != dataWindow) {
+    const bool dataWindowChanged = _dataWindow != dataWindow;
+    if (dataWindowChanged) {
         _dataWindow = dataWindow;
 
         _renderThread->StopRender();
@@ -938,6 +942,19 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                 /*multiSampled=*/false);
         }
 
+        needStartRender = true;
+    }
+
+    // Camera and viewport changes alter screen-space tessellation. Scene
+    // changes matter too because a displacement graph can change the geometry
+    // without changing any edge level; recommit lets Embree reevaluate it.
+    if (sceneChanged || projectionChanged || dataWindowChanged) {
+        _renderThread->StopRender();
+        if (static_cast<HdEmbreeRenderDelegate*>(renderDelegate)
+                ->UpdateAdaptiveSubdivision(
+                    _viewMatrix, _projMatrix, _dataWindow, sceneChanged)) {
+            _renderer->ResetAccumulation();
+        }
         needStartRender = true;
     }
 

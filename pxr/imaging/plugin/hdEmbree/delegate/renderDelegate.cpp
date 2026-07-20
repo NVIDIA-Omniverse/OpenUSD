@@ -26,6 +26,7 @@
 #include "pxr/imaging/hd/bprim.h"
 //XXX: Add bprim types
 
+#include <algorithm>
 #include <string>
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -462,7 +463,12 @@ HdEmbreeRenderDelegate::CreateRprim(TfToken const& typeId,
                                     SdfPath const& rprimId)
 {
     if (typeId == HdPrimTypeTokens->mesh) {
-        return new HdEmbreeMesh(rprimId);
+        auto* mesh = new HdEmbreeMesh(rprimId);
+        {
+            std::lock_guard<std::mutex> lock(_meshRegistryMutex);
+            _meshes.push_back(mesh);
+        }
+        return mesh;
     } else {
         TF_CODING_ERROR("Unknown Rprim Type %s", typeId.GetText());
     }
@@ -473,7 +479,31 @@ HdEmbreeRenderDelegate::CreateRprim(TfToken const& typeId,
 void
 HdEmbreeRenderDelegate::DestroyRprim(HdRprim *rPrim)
 {
+    if (auto* mesh = dynamic_cast<HdEmbreeMesh*>(rPrim)) {
+        std::lock_guard<std::mutex> lock(_meshRegistryMutex);
+        auto it = std::find(_meshes.begin(), _meshes.end(), mesh);
+        if (it != _meshes.end()) {
+            _meshes.erase(it);
+        }
+    }
     delete rPrim;
+}
+
+bool
+HdEmbreeRenderDelegate::UpdateAdaptiveSubdivision(
+    GfMatrix4d const& viewMatrix,
+    GfMatrix4d const& projectionMatrix,
+    GfRect2i const& dataWindow,
+    bool forceDisplacementRebuild)
+{
+    bool changed = false;
+    std::lock_guard<std::mutex> lock(_meshRegistryMutex);
+    for (HdEmbreeMesh* mesh : _meshes) {
+        changed |= mesh->UpdateSubdivisionLevels(
+            viewMatrix, projectionMatrix, dataWindow,
+            forceDisplacementRebuild);
+    }
+    return changed;
 }
 
 HdSprim *

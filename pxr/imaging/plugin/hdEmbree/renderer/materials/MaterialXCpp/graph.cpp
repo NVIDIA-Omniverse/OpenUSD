@@ -25,6 +25,8 @@ static const std::string _kSurface = "surface";
 static const std::string _kVolume = "volume";
 static const SlotName _kIn("in");
 static const SlotName _kOut("out");
+static const SlotName _kDisplacementInput("displacement");
+static const SlotName _kScale("scale");
 static const std::string _kSurfaceVolumeMaterial =
     "ND_hdembree_surface_volume_material";
 static const std::string _kStandardSurface =
@@ -38,6 +40,7 @@ static const std::string _kGltfPbr =
 static const std::string _kUsdPreviewSurface = "UsdPreviewSurface";
 static const std::string _kMaterialXUsdPreviewSurface =
     "ND_UsdPreviewSurface_surfaceshader";
+static const std::string _kDisplacementFloat = "ND_displacement_float";
 static const std::string _kSurfaceConstructor = "ND_surface";
 static const std::string _kSurfaceUnlit = "ND_surface_unlit";
 static const std::string _kVolumeConstructor = "ND_volume";
@@ -386,11 +389,13 @@ EvalGraph::Compile(
         ? _kSurface : terminalName;
     auto termIt = normalized.terminals.find(terminal);
     if (termIt == normalized.terminals.end()) {
-        if (!normalized.terminals.empty()) {
+        if (terminalName.empty() && !normalized.terminals.empty()) {
             termIt = normalized.terminals.begin();
         } else {
-            fprintf(stderr,
-                "EvalGraph: no terminal found in material network\n");
+            if (terminalName.empty()) {
+                fprintf(stderr,
+                    "EvalGraph: no terminal found in material network\n");
+            }
             return graph;
         }
     }
@@ -720,6 +725,37 @@ EvalGraph::Evaluate(const ShadingContext& ctx, const EvalOptions& options) const
     _BuildParamMap(_terminalInputs, scratch.nodeOutputs, &terminalParams);
 
     return _EvalMaterialModel(_materialModelType, terminalParams, options);
+}
+
+bool
+EvalGraph::EvaluateDisplacement(
+    const ShadingContext& ctx,
+    float* displacement) const
+{
+    if (!_isValid || _materialModelType != _kDisplacementFloat ||
+        !displacement) {
+        return false;
+    }
+
+    thread_local EvalScratch scratch;
+    if (scratch.nodeOutputs.size() < _nodes.size()) {
+        scratch.nodeOutputs.resize(_nodes.size());
+    }
+    if (scratch.nodeInputs.size() < _nodes.size()) {
+        scratch.nodeInputs.resize(_nodes.size());
+    }
+    _EvaluateNodes(ctx, _nodes.size(), &scratch);
+
+    auto& terminalParams = scratch.terminalParams;
+    _BuildParamMap(_terminalInputs, scratch.nodeOutputs, &terminalParams);
+    // Keep ND_displacement_float semantics here rather than in Embree: scale
+    // is part of the MaterialX terminal contract, while Embree only consumes
+    // the resulting signed scalar.
+    *displacement =
+        ValueGetter<float>::Get(
+            terminalParams, _kDisplacementInput, 0.0f) *
+        ValueGetter<float>::Get(terminalParams, _kScale, 1.0f);
+    return true;
 }
 
 // ---------------------------------------------------------------------------
