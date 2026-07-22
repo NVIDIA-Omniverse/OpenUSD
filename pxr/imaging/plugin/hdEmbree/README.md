@@ -23,7 +23,7 @@ At `low` complexity, hdEmbree triangulates the authored subdivision control cage
 | `medium` | subdivision, 4 pixels |
 | `low` | triangulated control cage |
 
-For adaptive levels, each coarse edge is projected through every mesh-instance transform and clipped against the camera view volume before its pixel length is measured. Embree receives the largest required tessellation level for each shared edge, clamped to its supported `[1, 4096]` range. Camera, framing, instance, topology, and display-style changes recompute the levels. Meshes authored with `subdivisionScheme = "none"` remain triangles at every complexity.
+For adaptive levels, each coarse edge is projected through every mesh-instance transform and clipped against the camera view volume before its pixel length is measured. Embree receives the largest required tessellation level for each shared edge, clamped to its supported `[1, 4096]` range. Subdivision builds require an attached `HdCamera`. By default, the first attached camera and valid viewport determine tessellation for the lifetime of the render pass; later scene edits reuse that frozen view once a camera is attached. Set `ty:dynamicSubdvTesselation = true` to recompute levels after camera or viewport changes. Instance, topology, and display-style changes still update affected geometry. Meshes authored with `subdivisionScheme = "none"` remain triangles at every complexity.
 
 Subdivision primvars retain Hydra interpolation semantics. Vertex values use the smooth limit basis; varying values use a fully linear attribute topology; uniform values remain per coarse face; and each indexed face-varying primvar gets its own Embree topology so its authored sharing and seams survive tessellation. Embree cannot distinguish OpenSubdiv's `cornersOnly`, `cornersPlus1`, and `cornersPlus2` face-varying rules, so all three use its closest `PIN_CORNERS` mode. `none`, `boundaries`, and `all` map to smooth-boundary, pinned-boundary, and fully linear modes respectively.
 
@@ -40,6 +40,7 @@ A material may connect an `ND_displacement_float` graph to its `displacement` te
 | Sampler Sequence | `ty:samplerSequence` | `token` | `openqmc_sobolbn` | `HDEMBREE_SAMPLER_SEQUENCE` |
 | Dome Light Camera Visibility | `ty:domeLightCameraVisibility` | `bool` | `true` | `HDEMBREE_DOME_LIGHT_CAMERA_VISIBILITY` |
 | Enable Exposure Compensation | `ty:enableExposureCompensation` | `bool` | `true` | - |
+| Dynamic Subdivision Tessellation | `ty:dynamicSubdvTesselation` | `bool` | `false` | - |
 | Enable Adaptive Sampling | `ty:enableAdaptiveSampling` | `bool` | `true` | `HDEMBREE_ENABLE_ADAPTIVE_SAMPLING` |
 | Adaptive Threshold | `ty:adaptiveThreshold` | `float` | `0.01` | `HDEMBREE_ADAPTIVE_THRESHOLD` |
 | Min Samples Before Adaptive | `ty:minSamplesBeforeAdaptive` | `int` | `64` | `HDEMBREE_MIN_SAMPLES_BEFORE_ADAPTIVE` |

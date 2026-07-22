@@ -342,6 +342,11 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _lastTime(0.0)
     , _viewMatrix(1.0f) // == identity
     , _projMatrix(1.0f) // == identity
+    , _hasSubdivisionCamera(false)
+    , _dynamicSubdivisionTessellation(false)
+    , _subdivisionSceneUpdatePending(false)
+    , _subdivisionViewMatrix(1.0f)
+    , _subdivisionProjMatrix(1.0f)
     , _cameraExposureScale(1.0f)
     , _cameraDepthOfField()
     , _aovBindings()
@@ -945,16 +950,47 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         needStartRender = true;
     }
 
-    // Camera and viewport changes alter screen-space tessellation. Scene
-    // changes matter too because a displacement graph can change the geometry
-    // without changing any edge level; recommit lets Embree reevaluate it.
-    if (sceneChanged || projectionChanged || dataWindowChanged) {
+    const bool dynamicSubdivisionTessellation =
+        renderDelegate->GetRenderSetting<bool>(
+            HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation, false);
+    const bool dynamicSubdivisionTessellationEnabled =
+        dynamicSubdivisionTessellation &&
+        !_dynamicSubdivisionTessellation;
+    _dynamicSubdivisionTessellation = dynamicSubdivisionTessellation;
+
+    // Freeze the first attached camera and valid viewport by default.
+    // Dynamic mode replaces that snapshot whenever either changes.
+    const bool hasAttachedCamera = renderPassState->GetCamera() != nullptr;
+    const bool hasValidDataWindow =
+        _dataWindow.GetWidth() > 0 && _dataWindow.GetHeight() > 0;
+    const bool updateSubdivisionCamera =
+        hasAttachedCamera && hasValidDataWindow &&
+        (!_hasSubdivisionCamera || dynamicSubdivisionTessellationEnabled ||
+         (dynamicSubdivisionTessellation &&
+          (projectionChanged || dataWindowChanged)));
+    if (updateSubdivisionCamera) {
+        _hasSubdivisionCamera = true;
+        _subdivisionViewMatrix = _viewMatrix;
+        _subdivisionProjMatrix = _projMatrix;
+        _subdivisionDataWindow = _dataWindow;
+    }
+
+    // Scene changes can add subdivision meshes or alter displacement without
+    // changing edge levels. Hold that work until a camera is attached, then
+    // recommit it against the frozen subdivision camera unless dynamic updates
+    // are enabled.
+    _subdivisionSceneUpdatePending |= sceneChanged;
+    if (hasAttachedCamera && _hasSubdivisionCamera &&
+        (_subdivisionSceneUpdatePending || updateSubdivisionCamera)) {
         _renderThread->StopRender();
         if (static_cast<HdEmbreeRenderDelegate*>(renderDelegate)
                 ->UpdateAdaptiveSubdivision(
-                    _viewMatrix, _projMatrix, _dataWindow, sceneChanged)) {
+                    _subdivisionViewMatrix, _subdivisionProjMatrix,
+                    _subdivisionDataWindow,
+                    _subdivisionSceneUpdatePending)) {
             _renderer->ResetAccumulation();
         }
+        _subdivisionSceneUpdatePending = false;
         needStartRender = true;
     }
 

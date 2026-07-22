@@ -65,6 +65,10 @@ class "TyphoonRenderSettingsAPI" (
         doc = """Apply camera exposure compensation."""
     )
 
+    uniform bool ty:dynamicSubdvTesselation = false (
+        doc = """Recompute screen-space subdivision tessellation after camera or viewport changes."""
+    )
+
     uniform bool ty:enableAdaptiveSampling = true (
         doc = """Use adaptive sampling to skip converged pixels."""
     )

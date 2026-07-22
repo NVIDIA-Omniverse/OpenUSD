@@ -126,6 +126,7 @@ _TestRenderDelegateSettings()
         HdEmbreeRenderSettingsTokens->materialRenderContext,
         HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
         HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
+        HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
         HdEmbreeRenderSettingsTokens->textureCacheSize
     };
 
@@ -141,6 +142,14 @@ _TestRenderDelegateSettings()
                         key.GetText());
             return false;
         }
+    }
+
+    const VtValue dynamicTessellationDefault = delegate.GetRenderSetting(
+        HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation);
+    if (!dynamicTessellationDefault.IsHolding<bool>() ||
+        dynamicTessellationDefault.UncheckedGet<bool>()) {
+        std::printf("dynamicSubdvTesselation delegate default is not false\n");
+        return false;
     }
 
     if (!delegate.GetRenderSetting(
@@ -215,6 +224,13 @@ _TestAuthoredNamespacedSettings()
         return false;
     }
 
+    UsdAttribute dynamicTessellationAttr = settings.GetPrim().GetAttribute(
+        TfToken("ty:dynamicSubdvTesselation"));
+    if (!dynamicTessellationAttr || !dynamicTessellationAttr.Set(true)) {
+        std::printf("failed to author ty:dynamicSubdvTesselation\n");
+        return false;
+    }
+
     UsdAttribute disableShadowsAttr =
         settings.GetPrim().GetAttribute(TfToken("ty:disableShadows"));
     if (!disableShadowsAttr || !disableShadowsAttr.Set(true)) {
@@ -236,7 +252,9 @@ _TestAuthoredNamespacedSettings()
     if (!_HasSettingValue<int>(
             namespacedSettings, "ty:maxBounces", 8) ||
         !_HasSettingValue<bool>(
-            namespacedSettings, "ty:disableShadows", true)) {
+            namespacedSettings, "ty:disableShadows", true) ||
+        !_HasSettingValue<bool>(
+            namespacedSettings, "ty:dynamicSubdvTesselation", true)) {
         return false;
     }
 
@@ -260,7 +278,9 @@ _TestAuthoredNamespacedSettings()
     if (!_HasSettingValue<int>(
             allCustomSettings, "ty:maxBounces", 8) ||
         !_HasSettingValue<bool>(
-            allCustomSettings, "ty:disableShadows", true)) {
+            allCustomSettings, "ty:disableShadows", true) ||
+        !_HasSettingValue<bool>(
+            allCustomSettings, "ty:dynamicSubdvTesselation", true)) {
         return false;
     }
     // An empty namespace request means all namespaced custom settings, not
@@ -283,7 +303,9 @@ _TestAuthoredNamespacedSettings()
     if (!_HasSettingValue<int>(
             requestedSettings, "ty:maxBounces", 8) ||
         !_HasSettingValue<bool>(
-            requestedSettings, "ty:disableShadows", true)) {
+            requestedSettings, "ty:disableShadows", true) ||
+        !_HasSettingValue<bool>(
+            requestedSettings, "ty:dynamicSubdvTesselation", true)) {
         return false;
     }
     if (requestedSettings.find("domeLightCameraVisibility") !=
@@ -332,6 +354,8 @@ _TestActiveRenderSettingsPrimBridge()
             HdEmbreeRenderSettingsTokens->disableShadows,
             HdRetainedSampledDataSource::New(
                 VtValue(authoredDisableShadows)),
+            HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
+            HdRetainedSampledDataSource::New(VtValue(true)),
             TfToken("ty:domeLightCameraVisibility"),
             HdRetainedSampledDataSource::New(VtValue(true)),
             HdRenderSettingsTokens->domeLightCameraVisibility,
@@ -392,6 +416,12 @@ _TestActiveRenderSettingsPrimBridge()
         HdEmbreeRenderSettingsTokens->disableShadows, defaultDisableShadows);
     if (disableShadows != authoredDisableShadows) {
         std::printf("active RenderSettings ty:disableShadows was not bridged\n");
+        return false;
+    }
+
+    if (!delegate.GetRenderSetting<bool>(
+            HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation, false)) {
+        std::printf("active RenderSettings ty:dynamicSubdvTesselation was not bridged\n");
         return false;
     }
 
@@ -461,6 +491,7 @@ _TestTyphoonRenderSettingsAPI()
         TfToken("ty:materialRenderContext"),
         TfToken("ty:useAdobeOpenPBR"),
         TfToken("ty:dielectricLayerThroughputMode"),
+        TfToken("ty:dynamicSubdvTesselation"),
         TfToken("ty:textureCacheSize")
     };
 
@@ -491,6 +522,15 @@ _TestTyphoonRenderSettingsAPI()
             .GetFallbackValue(&samplerFallback) ||
         samplerFallback != TfToken("openqmc_sobolbn")) {
         std::printf("unexpected samplerSequence fallback\n");
+        return false;
+    }
+
+    bool dynamicTessellationFallback = true;
+    if (!apiDef->GetAttributeDefinition(
+            TfToken("ty:dynamicSubdvTesselation"))
+            .GetFallbackValue(&dynamicTessellationFallback) ||
+        dynamicTessellationFallback != false) {
+        std::printf("unexpected dynamicSubdvTesselation fallback\n");
         return false;
     }
 

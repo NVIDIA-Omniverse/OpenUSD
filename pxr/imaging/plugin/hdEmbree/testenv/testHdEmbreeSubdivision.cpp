@@ -17,7 +17,10 @@
 #include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graph.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/materials/material.h"
 
+#include "pxr/imaging/hd/camera.h"
 #include "pxr/imaging/hd/renderIndex.h"
+#include "pxr/imaging/hd/renderPass.h"
+#include "pxr/imaging/hd/renderPassState.h"
 #include "pxr/imaging/hd/rprim.h"
 #include "pxr/imaging/hd/repr.h"
 #include "pxr/imaging/hd/unitTestDelegate.h"
@@ -774,6 +777,123 @@ TestSubdivisionPrimvarsUseHydraInterpolationModes()
 }
 
 bool
+TestRenderPassRequiresCameraAndGatesDynamicTessellation()
+{
+    _EmbreeTestContext context;
+    HdRenderDelegate* renderDelegate = context.renderDelegate;
+    HdRenderIndex* renderIndex = context.renderIndex.get();
+    if (!renderDelegate || !renderIndex) {
+        return false;
+    }
+
+    HdUnitTestDelegate delegate(
+        renderIndex, SdfPath::AbsoluteRootPath());
+    const SdfPath meshId("/adaptiveQuad");
+    const SdfPath cameraId("/camera");
+    delegate.AddMesh(
+        meshId, GfMatrix4f(1.0f),
+        VtVec3fArray{
+            GfVec3f(-1.0f, -0.5f, -5.0f),
+            GfVec3f(1.0f, -0.5f, -5.0f),
+            GfVec3f(1.0f, 0.5f, -5.0f),
+            GfVec3f(-1.0f, 0.5f, -5.0f)},
+        VtIntArray{4}, VtIntArray{0, 1, 2, 3});
+    delegate.SetRefineLevel(meshId, 2);
+
+    HdRprim* mesh = const_cast<HdRprim*>(renderIndex->GetRprim(meshId));
+    HdDirtyBits meshBits = mesh->GetInitialDirtyBitsMask();
+    mesh->InitRepr(&delegate, HdReprTokens->refined, &meshBits);
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+
+    RTCScene root = static_cast<HdEmbreeRenderParam*>(
+        renderDelegate->GetRenderParam())->AcquireSceneForEdit();
+    rtcCommitScene(root);
+    const auto getFirstLevel = [&]() {
+        RTCGeometry instance = rtcGetGeometry(root, 0);
+        auto* instanceContext = instance
+            ? static_cast<HdEmbreeInstanceContext*>(
+                rtcGetGeometryUserData(instance))
+            : nullptr;
+        RTCGeometry prototype = instanceContext
+            ? rtcGetGeometry(instanceContext->rootScene, 0)
+            : nullptr;
+        float const* levels = prototype
+            ? static_cast<float const*>(rtcGetGeometryBufferData(
+                prototype, RTC_BUFFER_TYPE_LEVEL, 0))
+            : nullptr;
+        return levels ? levels[0] : -1.0f;
+    };
+
+    HdRenderPassSharedPtr renderPass = renderDelegate->CreateRenderPass(
+        renderIndex, HdRprimCollection());
+    HdRenderPassStateSharedPtr state =
+        renderDelegate->CreateRenderPassState();
+    state->SetViewport(GfVec4d(0.0, 0.0, 50.0, 50.0));
+    renderPass->Execute(state, TfTokenVector());
+    const float withoutCamera = getFirstLevel();
+
+    delegate.AddCamera(cameraId);
+    delegate.UpdateCamera(
+        cameraId, HdCameraTokens->horizontalAperture, VtValue(20.0f));
+    delegate.UpdateCamera(
+        cameraId, HdCameraTokens->verticalAperture, VtValue(20.0f));
+    delegate.UpdateCamera(
+        cameraId, HdCameraTokens->focalLength, VtValue(50.0f));
+    delegate.UpdateCamera(
+        cameraId, HdCameraTokens->clippingRange,
+        VtValue(GfRange1f(0.1f, 100.0f)));
+    HdSprim* camera = renderIndex->GetSprim(
+        HdPrimTypeTokens->camera, cameraId);
+    HdDirtyBits cameraBits = camera->GetInitialDirtyBitsMask();
+    camera->Sync(
+        &delegate, renderDelegate->GetRenderParam(), &cameraBits);
+    state->SetCamera(static_cast<HdCamera const*>(camera));
+
+    state->SetViewport(GfVec4d(0.0, 0.0, 100.0, 100.0));
+    renderPass->Execute(state, TfTokenVector());
+    const float initialCamera = getFirstLevel();
+
+    state->SetViewport(GfVec4d(0.0, 0.0, 200.0, 200.0));
+    renderPass->Execute(state, TfTokenVector());
+    const float frozen = getFirstLevel();
+
+    renderDelegate->SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
+        VtValue(true));
+    renderPass->Execute(state, TfTokenVector());
+    const float dynamicEnabled = getFirstLevel();
+
+    state->SetViewport(GfVec4d(0.0, 0.0, 300.0, 300.0));
+    renderPass->Execute(state, TfTokenVector());
+    const float dynamicUpdated = getFirstLevel();
+
+    renderDelegate->SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
+        VtValue(false));
+    state->SetViewport(GfVec4d(0.0, 0.0, 400.0, 400.0));
+    renderPass->Execute(state, TfTokenVector());
+    const float refrozen = getFirstLevel();
+
+    const bool valid =
+        _Close(withoutCamera, 1.0f) &&
+        initialCamera > withoutCamera &&
+        _Close(frozen, initialCamera) &&
+        dynamicEnabled > frozen &&
+        dynamicUpdated > dynamicEnabled &&
+        _Close(refrozen, dynamicUpdated);
+    if (!valid) {
+        std::printf(
+            "    levels noCamera=%g initial=%g frozen=%g "
+            "enabled=%g updated=%g refrozen=%g\n",
+            withoutCamera, initialCamera, frozen,
+            dynamicEnabled, dynamicUpdated, refrozen);
+    }
+    return valid;
+}
+
+bool
 TestProductionAdaptiveLevelsForRefinedComplexities()
 {
     _EmbreeTestContext context;
@@ -1044,6 +1164,8 @@ main()
          &TestMaterialChangeForcesProductionDisplacementRecommit},
         {"Subdivision.TestSubdivisionPrimvarsUseHydraInterpolationModes",
          &TestSubdivisionPrimvarsUseHydraInterpolationModes},
+        {"Subdivision.TestRenderPassRequiresCameraAndGatesDynamicTessellation",
+         &TestRenderPassRequiresCameraAndGatesDynamicTessellation},
         {"Subdivision.TestProductionAdaptiveLevelsForRefinedComplexities",
          &TestProductionAdaptiveLevelsForRefinedComplexities},
         {"Subdivision.TestLowComplexityUsesTriangulatedControlCage",

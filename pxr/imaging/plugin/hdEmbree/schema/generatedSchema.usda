@@ -40,6 +40,11 @@ class "TyphoonRenderSettingsAPI" (
             string userDocBrief = "Rough dielectric top-layer throughput estimate mode."
         }
     )
+    uniform bool ty:dynamicSubdvTesselation = 0 (
+        customData = {
+            string userDocBrief = "Recompute screen-space subdivision tessellation after camera or viewport changes."
+        }
+    )
     uniform bool ty:disableShadows = 0 (
         customData = {
             string userDocBrief = "Disable shadow visibility rays."

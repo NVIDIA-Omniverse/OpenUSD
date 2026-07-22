@@ -130,6 +130,10 @@ _RENDERERS = {
                 "category": "Scene",
                 "order": 40,
             },
+            "ty:dynamicSubdvTesselation": {
+                "category": "Scene",
+                "order": 50,
+            },
             "ty:enableAmbientOcclusion": {
                 "category": "Ambient Occlusion",
                 "order": 10,

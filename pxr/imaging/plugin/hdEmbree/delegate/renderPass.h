@@ -117,6 +117,14 @@ private:
     // The projection matrix: camera space to NDC space (with
     // respect to the data window).
     GfMatrix4d _projMatrix;
+    // Camera state frozen for adaptive subdivision unless dynamic updates are
+    // explicitly enabled.
+    bool _hasSubdivisionCamera;
+    bool _dynamicSubdivisionTessellation;
+    bool _subdivisionSceneUpdatePending;
+    GfMatrix4d _subdivisionViewMatrix;
+    GfMatrix4d _subdivisionProjMatrix;
+    GfRect2i _subdivisionDataWindow;
     // The linear camera exposure scale applied to color output.
     float _cameraExposureScale;
     // The active camera's physical depth-of-field state.
