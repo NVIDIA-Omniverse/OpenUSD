@@ -12,6 +12,14 @@ sampling live in dedicated subdirectories. See `ARCHITECTURE.md` for the file ma
 The following settings can be configured via `renderSettings` (Hydra render delegate settings API) and/or environment variables. USD `RenderSettings` prim attributes use the `ty:` namespace. Precedence is:
 built-in default < environment variable < USD `RenderSettings` prim < Hydra renderer setting UI.
 
+## Render-product output
+
+hdEmbree writes active stage-authored `RenderProduct` files only for offline
+clients that set Hydra's `enableInteractive` render setting to `false`. An
+unset value is treated as interactive, so viewers such as usdview render the
+products into their viewport without writing their `productName` paths.
+`usdrender` explicitly selects offline mode and continues to write products.
+
 ## Subdivision complexity and MaterialX displacement
 
 At `low` complexity, hdEmbree triangulates the authored subdivision control cage without evaluating subdivision displacement. Higher complexities use screen-space adaptive subdivision rather than fixed recursive subdivision counts:

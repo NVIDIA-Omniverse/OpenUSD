@@ -237,7 +237,7 @@ traversal to reduce ray leaks at dense displaced patch boundaries.
 2. The pass compares scene/settings versions, frame/time, camera/framing, data window, and AOV bindings with the previous execution.
 3. Changes are pushed through `HdEmbreeRenderer::Set*`. Values originate in delegate descriptors, scene-index `HdRenderSettingsSchema`, and `HdEmbreeConfig`.
 4. If accumulation-relevant state changed, the pass stops the thread, resets as needed, and starts `HdEmbreeRenderer::Render()` on `HdRenderThread`.
-5. The renderer writes bound `HdEmbreeRenderBuffer` objects. The pass exposes convergence and writes active `RenderProduct` files after convergence.
+5. The renderer writes bound `HdEmbreeRenderBuffer` objects. The pass exposes convergence and, for offline clients with `enableInteractive = false`, writes active `RenderProduct` files after convergence.
 
 ## How a pixel sample becomes a path
 

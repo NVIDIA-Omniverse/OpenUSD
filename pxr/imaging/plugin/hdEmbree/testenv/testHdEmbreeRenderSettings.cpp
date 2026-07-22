@@ -12,10 +12,12 @@
 #include "pxr/imaging/hd/renderPass.h"
 #include "pxr/imaging/hd/renderPassState.h"
 #include "pxr/imaging/hd/renderSettingsSchema.h"
+#include "pxr/imaging/hd/renderProductSchema.h"
 #include "pxr/imaging/hd/retainedDataSource.h"
 #include "pxr/imaging/hd/retainedSceneIndex.h"
 #include "pxr/imaging/hd/sceneGlobalsSchema.h"
 #include "pxr/imaging/hd/tokens.h"
+#include "pxr/base/arch/fileSystem.h"
 #include "pxr/base/arch/systemInfo.h"
 #include "pxr/base/plug/registry.h"
 #include "pxr/base/tf/stringUtils.h"
@@ -29,9 +31,11 @@
 #include "pxr/usd/usdRender/spec.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -203,6 +207,157 @@ _TestRenderDelegateSettings()
     }
 
     return true;
+}
+
+bool
+_FileExists(const char *filename)
+{
+    if (FILE *file = std::fopen(filename, "rb")) {
+        std::fclose(file);
+        return true;
+    }
+    return false;
+}
+
+bool
+_RemoveIfExists(const char *filename)
+{
+    if (!_FileExists(filename)) {
+        return true;
+    }
+    if (std::remove(filename) == 0) {
+        return true;
+    }
+    std::printf("failed to remove temporary RenderProduct: %s\n", filename);
+    return false;
+}
+
+bool
+_RunRenderProductOutputCase(const char *filename,
+                            bool setInteractive,
+                            bool interactive,
+                            bool expectOutput)
+{
+    if (!_RemoveIfExists(filename)) {
+        return false;
+    }
+
+    const SdfPath renderSettingsPath("/RenderSettings");
+    HdRetainedSceneIndexRefPtr sceneIndex = HdRetainedSceneIndex::New();
+
+    HdSceneGlobalsSchema::Builder sceneGlobalsBuilder;
+    sceneGlobalsBuilder.SetActiveRenderSettingsPrim(
+        HdRetainedTypedSampledDataSource<SdfPath>::New(renderSettingsPath));
+
+    HdDataSourceBaseHandle products[] = {
+        HdRenderProductSchema::Builder()
+            .SetPath(HdRetainedTypedSampledDataSource<SdfPath>::New(
+                SdfPath("/RenderProduct")))
+            .SetType(HdRetainedTypedSampledDataSource<TfToken>::New(
+                TfToken("raster")))
+            .SetName(HdRetainedTypedSampledDataSource<TfToken>::New(
+                TfToken(filename)))
+            .SetResolution(HdRetainedTypedSampledDataSource<GfVec2i>::New(
+                GfVec2i(1, 1)))
+            .Build()
+    };
+    HdRenderSettingsSchema::Builder renderSettingsBuilder;
+    renderSettingsBuilder.SetRenderProducts(
+        HdRetainedSmallVectorDataSource::New(1, products));
+
+    sceneIndex->AddPrims({
+        {SdfPath::AbsoluteRootPath(), TfToken(),
+         HdRetainedContainerDataSource::New(
+             HdSceneGlobalsSchema::GetSchemaToken(),
+             sceneGlobalsBuilder.Build())},
+        {renderSettingsPath, HdPrimTypeTokens->renderSettings,
+         HdRetainedContainerDataSource::New(
+             HdRenderSettingsSchema::GetSchemaToken(),
+             renderSettingsBuilder.Build())}
+    });
+
+    HdEmbreeRenderDelegate delegate;
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel, VtValue(1));
+    if (setInteractive) {
+        delegate.SetRenderSetting(
+            HdRenderSettingsTokens->enableInteractive,
+            VtValue(interactive));
+    }
+
+    std::unique_ptr<HdRenderIndex> renderIndex(
+        HdRenderIndex::New(&delegate, HdDriverVector(), sceneIndex));
+    if (!renderIndex) {
+        std::printf("failed to create render-product test index\n");
+        return false;
+    }
+
+    HdEmbreeRenderBuffer colorBuffer(SdfPath("/ColorBuffer"));
+    if (!colorBuffer.Allocate(
+            GfVec3i(1, 1, 1), HdFormatFloat32Vec4,
+            /*multiSampled=*/false)) {
+        std::printf("failed to allocate render-product test buffer\n");
+        return false;
+    }
+
+    HdRenderPassSharedPtr renderPass = delegate.CreateRenderPass(
+        renderIndex.get(), HdRprimCollection());
+    HdRenderPassStateSharedPtr renderPassState =
+        delegate.CreateRenderPassState();
+    renderPassState->SetViewport(GfVec4d(0.0, 0.0, 1.0, 1.0));
+
+    HdRenderPassAovBinding colorAov;
+    colorAov.aovName = HdAovTokens->color;
+    colorAov.renderBuffer = &colorBuffer;
+    colorAov.clearValue = VtValue(GfVec4f(0.0f));
+    renderPassState->SetAovBindings({colorAov});
+
+    renderPass->Execute(renderPassState, TfTokenVector());
+
+    bool converged = false;
+    for (int i = 0; i != 500; ++i) {
+        if (renderPass->IsConverged()) {
+            converged = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    const bool outputExists = _FileExists(filename);
+    if (!_RemoveIfExists(filename)) {
+        return false;
+    }
+
+    if (!converged) {
+        std::printf("render-product test did not converge\n");
+        return false;
+    }
+    if (outputExists != expectOutput) {
+        std::printf("RenderProduct output existence mismatch for %s\n",
+                    filename);
+        return false;
+    }
+
+    return true;
+}
+
+bool
+_TestRenderProductOutputPolicy()
+{
+    const std::string interactiveFilename = ArchMakeTmpFileName(
+        "testHdEmbreeInteractiveRenderProduct", ".png");
+    const std::string offlineFilename = ArchMakeTmpFileName(
+        "testHdEmbreeOfflineRenderProduct", ".png");
+    return _RunRenderProductOutputCase(
+               interactiveFilename.c_str(),
+               /*setInteractive=*/false,
+               /*interactive=*/true,
+               /*expectOutput=*/false) &&
+           _RunRenderProductOutputCase(
+               offlineFilename.c_str(),
+               /*setInteractive=*/true,
+               /*interactive=*/false,
+               /*expectOutput=*/true);
 }
 
 bool
@@ -595,6 +750,9 @@ int
 main()
 {
     if (!_TestRenderDelegateSettings()) {
+        return 1;
+    }
+    if (!_TestRenderProductOutputPolicy()) {
         return 1;
     }
     if (!_TestTyphoonRenderSettingsAPI()) {

@@ -271,10 +271,12 @@ authored-IOR Fresnel.
 7. `HdEmbreeRenderer::Render()` commits or reuses the Embree scene, traces
    tiled samples, evaluates materials/lights/media, writes Hydra AOV buffers,
    and reports convergence.
-8. When the active stage has `RenderSettings`/`RenderProduct` output and the
-   renderer converges, `HdEmbreeRenderPass::_WriteActiveRenderProducts()` reads
-   Hydra `HdRenderSettingsSchema`/`HdRenderProductSchema` data from the
-   terminal scene index and writes color/raw raster products through Hio.
+8. When an offline client sets `enableInteractive = false`, the active stage
+   has `RenderSettings`/`RenderProduct` output, and the renderer converges,
+   `HdEmbreeRenderPass::_WriteActiveRenderProducts()` reads Hydra
+   `HdRenderSettingsSchema`/`HdRenderProductSchema` data from the terminal
+   scene index and writes color/raw raster products through Hio. Unset or true
+   `enableInteractive` values suppress file output for viewers such as usdview.
 
 Hydra fundamentals worth reading when behavior is unclear:
 
@@ -546,8 +548,10 @@ per-proxy data.
 - writing resolved AOV values into `HdEmbreeRenderBuffer`.
 
 The render pass handles Hydra-facing output concerns: camera/data-window/AOV
-state, fallback color/depth buffers, convergence checks, and
-RenderProduct file writing. `usdrender` is the stage-authored output command;
+state, fallback color/depth buffers, convergence checks, and offline
+RenderProduct file writing. It treats an unset `enableInteractive` setting as
+true and writes products only when the client explicitly sets it to false.
+`usdrender` is the stage-authored output command;
 its C++ implementation is under `pxr/usdImaging/bin/usdrender/` and drives
 `UsdImagingGLEngine` directly. It owns output roots and frame-placeholder
 expansion; hdEmbree must not expand placeholders. `UsdAppUtilsFrameRecorder`

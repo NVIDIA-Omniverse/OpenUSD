@@ -549,6 +549,11 @@ HdEmbreeRenderPass::_WriteActiveRenderProducts()
         return;
     }
 
+    if (index->GetRenderDelegate()->GetRenderSetting<bool>(
+            HdRenderSettingsTokens->enableInteractive, true)) {
+        return;
+    }
+
     HdSceneIndexBaseRefPtr si = index->GetTerminalSceneIndex();
     if (!si) {
         return;
