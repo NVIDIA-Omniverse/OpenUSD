@@ -28,6 +28,10 @@ class TestQt(unittest.TestCase):
         self.assertEqual(glFormat.renderableType(), qt.QGLFormat.OpenGL)
         self.assertEqual(
             (glFormat.majorVersion(), glFormat.minorVersion()), (4, 5))
+        self.assertEqual(
+            glFormat.profile(), qt.QGLFormat.CompatibilityProfile)
+        self.assertTrue(
+            glFormat.testOption(qt.QGLFormat.DeprecatedFunctions))
 
     @unittest.skipUnless(qt.PySideModule == 'PySide6',
                          'QSurfaceFormat is only used with PySide6')
@@ -41,6 +45,10 @@ class TestQt(unittest.TestCase):
         self.assertEqual(glFormat.renderableType(), qt.QGLFormat.OpenGL)
         self.assertEqual(
             (glFormat.majorVersion(), glFormat.minorVersion()), (4, 1))
+        self.assertNotEqual(
+            glFormat.profile(), qt.QGLFormat.CompatibilityProfile)
+        self.assertFalse(
+            glFormat.testOption(qt.QGLFormat.DeprecatedFunctions))
 
     @unittest.skipUnless(qt.PySideModule == 'PySide6',
                          'QSurfaceFormat is only used with PySide6')
@@ -55,6 +63,10 @@ class TestQt(unittest.TestCase):
                 self.assertEqual(
                     (glFormat.majorVersion(), glFormat.minorVersion()),
                     (4, 5))
+                self.assertEqual(
+                    glFormat.profile(), qt.QGLFormat.CompatibilityProfile)
+                self.assertTrue(
+                    glFormat.testOption(qt.QGLFormat.DeprecatedFunctions))
         finally:
             qt.QGLFormat.setDefaultFormat(originalFormat)
 

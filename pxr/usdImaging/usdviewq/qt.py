@@ -97,6 +97,8 @@ elif PySideModule == 'PySide6':
         glFormat.setRenderableType(QGLFormat.OpenGL)
         if sys.platform != 'darwin':
             glFormat.setVersion(4, 5)
+            glFormat.setProfile(QGLFormat.CompatibilityProfile)
+            glFormat.setOption(QGLFormat.DeprecatedFunctions)
 
     def initQGLWidget(self, glFormat, parent):
         configureOpenGLFormat(glFormat)
