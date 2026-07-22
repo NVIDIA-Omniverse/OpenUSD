@@ -8,6 +8,7 @@
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_PARAM_H
 
 #include "pxr/pxr.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/materialEvalContext.h"
 #include "pxr/imaging/hd/renderDelegate.h"
 #include "pxr/imaging/hd/renderThread.h"
 
@@ -30,9 +31,14 @@ public:
     HdEmbreeRenderParam(RTCDevice device, RTCScene scene,
                         HdRenderThread *renderThread,
                         HdEmbreeRenderer *renderer,
-                        std::atomic<int> *sceneVersion)
+                        HdEmbreeMaterialEvalServices const* materialEvalServices,
+                        std::atomic<int> *sceneVersion,
+                        std::atomic<int> *displacementVersion)
         : _scene(scene), _device(device)
-        , _renderThread(renderThread), _renderer(renderer), _sceneVersion(sceneVersion)
+        , _renderThread(renderThread), _renderer(renderer)
+        , _materialEvalServices(materialEvalServices)
+        , _sceneVersion(sceneVersion)
+        , _displacementVersion(displacementVersion)
     {}
 
     /// Accessor for the top-level embree scene.
@@ -45,10 +51,21 @@ public:
         _renderThread->StopRender();
         (*_sceneVersion)++;
     }
+    /// Notify both ordinary scene consumers and displacement tessellation.
+    void NotifyDisplacementChange() {
+        _renderThread->StopRender();
+        (*_sceneVersion)++;
+        (*_displacementVersion)++;
+    }
     /// Accessor for the top-level embree device (library handle).
     RTCDevice GetEmbreeDevice() { return _device; }
 
     HdEmbreeRenderer* GetRenderer() { return _renderer; }
+
+    /// Return non-owning renderer services shared by all material evaluation.
+    HdEmbreeMaterialEvalServices const* GetMaterialEvalServices() const {
+        return _materialEvalServices;
+    }
 
 private:
     /// A handle to the top-level embree scene.
@@ -58,8 +75,12 @@ private:
     /// A handle to the global render thread.
     HdRenderThread *_renderThread;
     HdEmbreeRenderer* _renderer;
+    /// Renderer-owned state; valid for this render parameter's lifetime.
+    HdEmbreeMaterialEvalServices const* _materialEvalServices;
     /// A version counter for edits to _scene.
     std::atomic<int> *_sceneVersion;
+    /// A narrower version for edits that can change displaced geometry.
+    std::atomic<int> *_displacementVersion;
 };
 
 PXR_NAMESPACE_CLOSE_SCOPE

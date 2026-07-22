@@ -9,6 +9,7 @@
 
 #include "pxr/pxr.h"
 
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/meshSamplers.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampler.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/value.h"
 
@@ -18,6 +19,7 @@
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/gf/vec4f.h"
 
+#include <cmath>
 #include <string>
 #include <unordered_map>
 
@@ -33,6 +35,91 @@ struct HdEmbreePrimvarLookup
     float u;
     float v;
 };
+
+/// Inverse Jacobian that converts Embree patch-coordinate derivatives to
+/// authored texture-coordinate derivatives.
+struct HdEmbreeSubdivTexcoordJacobian
+{
+    float duDs = 1.0f;
+    float dvDs = 0.0f;
+    float duDt = 0.0f;
+    float dvDt = 1.0f;
+    bool valid = false;
+};
+
+/// Sample a subdivision `st` primvar and build its inverse Jacobian.
+///
+/// Both displacement-time and hit-time material evaluation use this helper so
+/// dPdu/dPdv and object-position derivatives have identical `st` semantics.
+inline HdEmbreeSubdivTexcoordJacobian
+HdEmbreeComputeSubdivTexcoordJacobian(
+    HdEmbreePrimvarSampler const* sampler,
+    unsigned int primId,
+    float u,
+    float v)
+{
+    HdEmbreeSubdivTexcoordJacobian result;
+    auto const* subdivSampler =
+        dynamic_cast<HdEmbreeSubdivSampler const*>(sampler);
+    if (!subdivSampler) {
+        return result;
+    }
+
+    GfVec2f dStdu(0.0f);
+    GfVec2f dStdv(0.0f);
+    bool sampled = false;
+    {
+        GfVec2f value;
+        sampled = subdivSampler->SampleWithDerivatives(
+            primId, u, v, &value, &dStdu, &dStdv);
+    }
+    if (!sampled) {
+        GfVec3f value;
+        GfVec3f dStdu3;
+        GfVec3f dStdv3;
+        sampled = subdivSampler->SampleWithDerivatives(
+            primId, u, v, &value, &dStdu3, &dStdv3);
+        if (sampled) {
+            dStdu = GfVec2f(dStdu3[0], dStdu3[1]);
+            dStdv = GfVec2f(dStdv3[0], dStdv3[1]);
+        }
+    }
+    if (!sampled) {
+        return result;
+    }
+
+    const double determinant =
+        static_cast<double>(dStdu[0]) * dStdv[1] -
+        static_cast<double>(dStdu[1]) * dStdv[0];
+    const double uLength = std::hypot(
+        static_cast<double>(dStdu[0]),
+        static_cast<double>(dStdu[1]));
+    const double vLength = std::hypot(
+        static_cast<double>(dStdv[0]),
+        static_cast<double>(dStdv[1]));
+    if (!std::isfinite(determinant) ||
+        !std::isfinite(uLength) || !std::isfinite(vLength) ||
+        uLength == 0.0 || vLength == 0.0 ||
+        determinant == 0.0) {
+        return result;
+    }
+    const double relativeDeterminant = determinant / (uLength * vLength);
+    if (!std::isfinite(relativeDeterminant) ||
+        std::abs(relativeDeterminant) <= 1.0e-9) {
+        return result;
+    }
+
+    const double inverseDeterminant = 1.0 / determinant;
+    result.duDs = static_cast<float>(dStdv[1] * inverseDeterminant);
+    result.dvDs = static_cast<float>(-dStdu[1] * inverseDeterminant);
+    result.duDt = static_cast<float>(-dStdv[0] * inverseDeterminant);
+    result.dvDt = static_cast<float>(dStdu[0] * inverseDeterminant);
+    result.valid = std::isfinite(result.duDs) &&
+        std::isfinite(result.dvDs) &&
+        std::isfinite(result.duDt) &&
+        std::isfinite(result.dvDt);
+    return result;
+}
 
 namespace HdEmbreePrimvarSamplingDetail {
 

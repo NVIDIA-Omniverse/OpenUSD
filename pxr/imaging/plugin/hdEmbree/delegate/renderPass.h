@@ -47,7 +47,8 @@ public:
                        HdRprimCollection const &collection,
                        HdRenderThread *renderThread,
                        HdEmbreeRenderer *renderer,
-                       std::atomic<int> *sceneVersion);
+                       std::atomic<int> *sceneVersion,
+                       std::atomic<int> *displacementVersion);
 
     /// Renderpass destructor.
     ~HdEmbreeRenderPass() override;
@@ -91,6 +92,10 @@ private:
     // The last scene version we rendered with.
     int _lastSceneVersion;
 
+    // A reference to and the last observed displacement-material version.
+    std::atomic<int> *_displacementVersion;
+    int _lastDisplacementVersion;
+
     // The last settings version we rendered with.
     int _lastSettingsVersion;
 
@@ -117,14 +122,17 @@ private:
     // The projection matrix: camera space to NDC space (with
     // respect to the data window).
     GfMatrix4d _projMatrix;
+
     // Camera state frozen for adaptive subdivision unless dynamic updates are
     // explicitly enabled.
     bool _hasSubdivisionCamera;
     bool _dynamicSubdivisionTessellation;
     bool _subdivisionSceneUpdatePending;
+    bool _subdivisionDisplacementUpdatePending;
     GfMatrix4d _subdivisionViewMatrix;
     GfMatrix4d _subdivisionProjMatrix;
     GfRect2i _subdivisionDataWindow;
+
     // The linear camera exposure scale applied to color output.
     float _cameraExposureScale;
     // The active camera's physical depth-of-field state.

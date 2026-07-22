@@ -70,6 +70,7 @@ pxr_plugin(hdEmbree
     CPPFILES
         renderer/aov/aovOutput.cpp
         renderer/camera/camera.cpp
+        renderer/geometry/displacementEvaluation.cpp
         renderer/integrator/lighting.cpp
         renderer/integrator/pathIntegrator.cpp
         renderer/integrator/surfaceShading.cpp
@@ -126,10 +127,12 @@ pxr_plugin(hdEmbree
 
     PUBLIC_HEADERS
         renderer/geometry/context.h
+        renderer/geometry/displacementEvaluation.h
         renderer/geometry/primvarSampling.h
         delegate/displacement.h
         renderer/lights/light.h
         renderer/lights/lightLinking.h
+        renderer/materials/materialEvalContext.h
         renderer/materials/material.h
         renderer/renderBuffer.h
         delegate/renderParam.h

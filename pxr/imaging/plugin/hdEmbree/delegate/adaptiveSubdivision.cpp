@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <optional>
 #include <unordered_map>
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -19,6 +20,127 @@ PXR_NAMESPACE_OPEN_SCOPE
 namespace {
 
 constexpr double _minW = 1.0e-6;
+constexpr double _viewGuardScale = 1.1;
+constexpr float _minSubdivisionLevel = 1.0f;
+constexpr float _minRequiredSubdivisionLevel = 4.0f;
+constexpr float _maxSubdivisionLevel = 4096.0f;
+
+struct _SharedEdgeGroups
+{
+    std::vector<size_t> cornerGroupIndices;
+    size_t groupCount = 0;
+};
+
+std::optional<_SharedEdgeGroups>
+_BuildSharedEdgeGroups(
+    VtIntArray const& faceVertexCounts,
+    VtIntArray const& faceVertexIndices)
+{
+    _SharedEdgeGroups groups;
+    groups.cornerGroupIndices.resize(faceVertexIndices.size());
+    std::unordered_map<uint64_t, size_t> groupIndices;
+    groupIndices.reserve(faceVertexIndices.size());
+
+    size_t offset = 0;
+    for (const int count : faceVertexCounts) {
+        if (count <= 0 || offset + static_cast<size_t>(count) >
+                faceVertexIndices.size()) {
+            return std::nullopt;
+        }
+        for (int corner = 0; corner < count; ++corner) {
+            const int i0 = faceVertexIndices[offset + corner];
+            const int i1 = faceVertexIndices[
+                offset + ((corner + 1) % count)];
+            if (i0 < 0 || i1 < 0) {
+                return std::nullopt;
+            }
+
+            const uint32_t lo = static_cast<uint32_t>(std::min(i0, i1));
+            const uint32_t hi = static_cast<uint32_t>(std::max(i0, i1));
+            const uint64_t key =
+                (static_cast<uint64_t>(lo) << 32) | hi;
+            const auto [it, inserted] =
+                groupIndices.emplace(key, groups.groupCount);
+            if (inserted) {
+                ++groups.groupCount;
+            }
+            groups.cornerGroupIndices[offset + corner] = it->second;
+        }
+        offset += static_cast<size_t>(count);
+    }
+    if (offset != faceVertexIndices.size()) {
+        return std::nullopt;
+    }
+    return groups;
+}
+
+bool
+_AreValidSubdivisionLevels(std::vector<float> const& levels)
+{
+    return std::all_of(
+        levels.begin(), levels.end(), [](const float level) {
+            return std::isfinite(level) &&
+                level >= _minSubdivisionLevel &&
+                level <= _maxSubdivisionLevel;
+        });
+}
+
+bool
+_ConsolidateSharedEdgesInPlace(
+    _SharedEdgeGroups const& groups,
+    std::vector<float>* const levels)
+{
+    bool changed = false;
+    std::vector<float> maxima(
+        groups.groupCount, _minSubdivisionLevel);
+    for (size_t corner = 0;
+         corner < groups.cornerGroupIndices.size(); ++corner) {
+        const size_t group = groups.cornerGroupIndices[corner];
+        maxima[group] = std::max(maxima[group], (*levels)[corner]);
+    }
+    for (size_t corner = 0;
+         corner < groups.cornerGroupIndices.size(); ++corner) {
+        const float maximum =
+            maxima[groups.cornerGroupIndices[corner]];
+        if ((*levels)[corner] < maximum) {
+            (*levels)[corner] = maximum;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+bool
+_BalanceQuadOppositeEdgesInPlace(
+    VtIntArray const& faceVertexCounts,
+    std::vector<float>* const levels)
+{
+    bool changed = false;
+    size_t offset = 0;
+    for (const int count : faceVertexCounts) {
+        if (count == 4) {
+            const auto balancePair = [&](const size_t firstIndex,
+                                         const size_t secondIndex) {
+                float& first = (*levels)[offset + firstIndex];
+                float& second = (*levels)[offset + secondIndex];
+                const float minimum = static_cast<float>(std::ceil(
+                    static_cast<double>(std::max(first, second)) * 0.5));
+                if (first < minimum) {
+                    first = minimum;
+                    changed = true;
+                }
+                if (second < minimum) {
+                    second = minimum;
+                    changed = true;
+                }
+            };
+            balancePair(0, 2);
+            balancePair(1, 3);
+        }
+        offset += static_cast<size_t>(count);
+    }
+    return changed;
+}
 
 bool
 _IsFinite(GfVec4d const& value)
@@ -35,9 +157,9 @@ _ClipEdgeToViewVolume(GfVec4d* p0, GfVec4d* p1)
     }
 
     // Clip a homogeneous segment against the OpenGL clip volume used by
-    // OpenUSD camera matrices. Doing this before division prevents edges
-    // outside the viewport (or crossing the eye plane) from producing huge
-    // subdivision levels.
+    // OpenUSD camera matrices, with X/Y headroom for displaced patches that
+    // can move into view. Doing this before division prevents remote edges or
+    // eye-plane crossings from producing huge subdivision levels.
     const auto clipToPlane = [&](auto const& distance) {
         double d0 = distance(*p0);
         double d1 = distance(*p1);
@@ -69,10 +191,18 @@ _ClipEdgeToViewVolume(GfVec4d* p0, GfVec4d* p1)
 
     return
         clipToPlane([](GfVec4d const& p) { return p[3] - _minW; }) &&
-        clipToPlane([](GfVec4d const& p) { return p[0] + p[3]; }) &&
-        clipToPlane([](GfVec4d const& p) { return p[3] - p[0]; }) &&
-        clipToPlane([](GfVec4d const& p) { return p[1] + p[3]; }) &&
-        clipToPlane([](GfVec4d const& p) { return p[3] - p[1]; }) &&
+        clipToPlane([](GfVec4d const& p) {
+            return p[0] + _viewGuardScale * p[3];
+        }) &&
+        clipToPlane([](GfVec4d const& p) {
+            return _viewGuardScale * p[3] - p[0];
+        }) &&
+        clipToPlane([](GfVec4d const& p) {
+            return p[1] + _viewGuardScale * p[3];
+        }) &&
+        clipToPlane([](GfVec4d const& p) {
+            return _viewGuardScale * p[3] - p[1];
+        }) &&
         clipToPlane([](GfVec4d const& p) { return p[2] + p[3]; }) &&
         clipToPlane([](GfVec4d const& p) { return p[3] - p[2]; });
 }
@@ -125,51 +255,51 @@ HdEmbreeConsolidateSharedEdgeLevels(
     VtIntArray const& faceVertexIndices,
     std::vector<float> const& candidateLevels)
 {
-    if (candidateLevels.size() != faceVertexIndices.size()) {
+    if (candidateLevels.size() != faceVertexIndices.size() ||
+        !_AreValidSubdivisionLevels(candidateLevels)) {
         return {};
     }
-    // Embree accepts a level per face-edge, but adjacent faces must agree
-    // on their shared edge. Choosing the maximum avoids cracks without making
-    // the better-resolved face coarser.
-    std::vector<uint64_t> edgeKeys(faceVertexIndices.size());
-    std::unordered_map<uint64_t, float> edgeLevels;
-    size_t offset = 0;
-    for (int count : faceVertexCounts) {
-        if (count <= 0 || offset + static_cast<size_t>(count) >
-                faceVertexIndices.size()) {
-            return {};
-        }
-        for (int corner = 0; corner < count; ++corner) {
-            const int i0 = faceVertexIndices[offset + corner];
-            const int i1 = faceVertexIndices[
-                offset + ((corner + 1) % count)];
-            if (i0 < 0 || i1 < 0 ||
-                !std::isfinite(candidateLevels[offset + corner])) {
-                return {};
-            }
-            const uint32_t lo = static_cast<uint32_t>(std::min(i0, i1));
-            const uint32_t hi = static_cast<uint32_t>(std::max(i0, i1));
-            const uint64_t key =
-                (static_cast<uint64_t>(lo) << 32) | hi;
-            edgeKeys[offset + corner] = key;
-            auto [it, inserted] = edgeLevels.emplace(
-                key, candidateLevels[offset + corner]);
-            if (!inserted) {
-                it->second = std::max(
-                    it->second, candidateLevels[offset + corner]);
-            }
-        }
-        offset += static_cast<size_t>(count);
-    }
-    if (offset != faceVertexIndices.size()) {
+    const std::optional<_SharedEdgeGroups> groups =
+        _BuildSharedEdgeGroups(faceVertexCounts, faceVertexIndices);
+    if (!groups) {
         return {};
     }
 
-    std::vector<float> result(edgeKeys.size(), 1.0f);
-    for (size_t i = 0; i < edgeKeys.size(); ++i) {
-        result[i] = edgeLevels[edgeKeys[i]];
-    }
+    // Embree accepts a level per face-edge, but adjacent faces must agree
+    // on their shared edge. Choosing the maximum avoids cracks without making
+    // the better-resolved face coarser.
+    std::vector<float> result(candidateLevels);
+    _ConsolidateSharedEdgesInPlace(*groups, &result);
     return result;
+}
+
+std::vector<float>
+HdEmbreeBalanceSubdivisionLevels(
+    VtIntArray const& faceVertexCounts,
+    VtIntArray const& faceVertexIndices,
+    std::vector<float> const& candidateLevels)
+{
+    if (candidateLevels.size() != faceVertexIndices.size() ||
+        !_AreValidSubdivisionLevels(candidateLevels)) {
+        return {};
+    }
+    const std::optional<_SharedEdgeGroups> groups =
+        _BuildSharedEdgeGroups(faceVertexCounts, faceVertexIndices);
+    if (!groups) {
+        return {};
+    }
+
+    std::vector<float> result(candidateLevels);
+    _ConsolidateSharedEdgesInPlace(*groups, &result);
+    while (true) {
+        bool changed =
+            _BalanceQuadOppositeEdgesInPlace(faceVertexCounts, &result);
+        changed =
+            _ConsolidateSharedEdgesInPlace(*groups, &result) || changed;
+        if (!changed) {
+            return result;
+        }
+    }
 }
 
 std::vector<float>
@@ -202,7 +332,8 @@ HdEmbreeComputeAdaptiveSubdivisionLevels(
             GfMatrix4d(transform) * viewMatrix * projectionMatrix);
     }
 
-    std::vector<float> candidateLevels(faceVertexIndices.size(), 1.0f);
+    std::vector<float> candidateLevels(
+        faceVertexIndices.size(), _minRequiredSubdivisionLevel);
     size_t offset = 0;
     for (int count : faceVertexCounts) {
         if (count <= 0 || offset + static_cast<size_t>(count) >
@@ -233,14 +364,15 @@ HdEmbreeComputeAdaptiveSubdivisionLevels(
             candidateLevels[offset + corner] = static_cast<float>(
                 std::clamp(
                     std::ceil(maxPixelLength / targetPixels),
-                    1.0, 4096.0));
+                    static_cast<double>(_minRequiredSubdivisionLevel),
+                    static_cast<double>(_maxSubdivisionLevel)));
         }
         offset += static_cast<size_t>(count);
     }
     if (offset != faceVertexIndices.size()) {
         return {};
     }
-    return HdEmbreeConsolidateSharedEdgeLevels(
+    return HdEmbreeBalanceSubdivisionLevels(
         faceVertexCounts, faceVertexIndices, candidateLevels);
 }
 

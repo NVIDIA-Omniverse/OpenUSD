@@ -12,9 +12,12 @@
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderParam.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/geometry/context.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/displacementEvaluation.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/geometry/meshSamplers.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampling.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graph.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/textureSystem.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/materialEvalContext.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/materials/material.h"
 
 #include "pxr/imaging/hd/camera.h"
@@ -67,10 +70,62 @@ struct _EmbreeTestContext
     std::unique_ptr<HdRenderIndex> renderIndex;
 };
 
+class _DisplayStyleDelegate : public HdUnitTestDelegate
+{
+public:
+    using HdUnitTestDelegate::HdUnitTestDelegate;
+
+    HdDisplayStyle GetDisplayStyle(SdfPath const& id) override
+    {
+        HdDisplayStyle result = HdUnitTestDelegate::GetDisplayStyle(id);
+        result.displacementEnabled = displacementEnabled;
+        return result;
+    }
+
+    void SetDisplacementEnabled(SdfPath const& id, bool enabled)
+    {
+        displacementEnabled = enabled;
+        MarkRprimDirty(id, HdChangeTracker::DirtyDisplayStyle);
+    }
+
+    bool displacementEnabled = true;
+};
+
+class _PointsOverrideDelegate : public HdUnitTestDelegate
+{
+public:
+    using HdUnitTestDelegate::HdUnitTestDelegate;
+
+    VtValue Get(SdfPath const& id, TfToken const& key) override
+    {
+        if (id == meshId && key == HdTokens->points) {
+            return VtValue(points);
+        }
+        return HdUnitTestDelegate::Get(id, key);
+    }
+
+    void SetPoints(SdfPath const& id, VtVec3fArray const& value)
+    {
+        meshId = id;
+        points = value;
+        MarkRprimDirty(id, HdChangeTracker::DirtyPoints);
+    }
+
+    SdfPath meshId;
+    VtVec3fArray points;
+};
+
 bool
 _Close(float a, float b, float epsilon = 1.0e-3f)
 {
     return std::abs(a - b) <= epsilon;
+}
+
+bool
+_Close(
+    GfVec3f const& a, GfVec3f const& b, float epsilon = 1.0e-3f)
+{
+    return (a - b).GetLength() <= epsilon;
 }
 
 /// Embree has four relevant boundary modes for USD's six authored rules. Test
@@ -158,6 +213,115 @@ TestSharedEdgesUseSameMaximumLevel()
 }
 
 bool
+TestBalancedSubdivisionLevelsUseSharedMaximum()
+{
+    // Face 0 edge 1 and face 1 edge 0 are the same reversed coarse edge.
+    const std::vector<float> levels =
+        HdEmbreeBalanceSubdivisionLevels(
+            VtIntArray{4, 4},
+            VtIntArray{0, 1, 2, 3, 2, 1, 4, 5},
+            std::vector<float>{
+                4.0f, 8.0f, 4.0f, 4.0f,
+                20.0f, 4.0f, 4.0f, 4.0f});
+    return levels.size() == 8 &&
+        levels[1] == 20.0f && levels[4] == 20.0f;
+}
+
+bool
+TestBalancedSubdivisionLevelsReachOppositeTwoToOneFixedPoint()
+{
+    // Each face's edge 2 is the next face's edge 0. The level 64 must decay
+    // through all three quads, which requires alternating opposite balancing
+    // and shared-edge consolidation more than once.
+    const VtIntArray counts{4, 4, 4};
+    const VtIntArray indices{
+        0, 1, 2, 3,
+        3, 2, 4, 5,
+        5, 4, 6, 7};
+    const std::vector<float> levels =
+        HdEmbreeBalanceSubdivisionLevels(
+            counts, indices,
+            std::vector<float>{
+                64.0f, 4.0f, 4.0f, 4.0f,
+                4.0f, 4.0f, 4.0f, 4.0f,
+                4.0f, 4.0f, 4.0f, 4.0f});
+    return levels.size() == 12 &&
+        levels[0] == 64.0f && levels[2] == 32.0f &&
+        levels[4] == 32.0f && levels[6] == 16.0f &&
+        levels[8] == 16.0f && levels[10] == 8.0f;
+}
+
+bool
+TestBalancedSubdivisionLevelsAreRaiseOnlyAndIdempotent()
+{
+    const VtIntArray counts{4, 4};
+    const VtIntArray indices{0, 1, 2, 3, 3, 2, 4, 5};
+    const std::vector<float> candidates{
+        31.0f, 7.0f, 4.0f, 5.0f,
+        9.0f, 6.0f, 4.0f, 8.0f};
+    const std::vector<float> balanced =
+        HdEmbreeBalanceSubdivisionLevels(
+            counts, indices, candidates);
+    if (balanced.size() != candidates.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < candidates.size(); ++i) {
+        if (balanced[i] < candidates[i]) {
+            return false;
+        }
+    }
+    return HdEmbreeBalanceSubdivisionLevels(
+        counts, indices, balanced) == balanced;
+}
+
+bool
+TestBalancedSubdivisionLevelsStayInRangeAndRejectInvalidInputs()
+{
+    const VtIntArray counts{4};
+    const VtIntArray indices{0, 1, 2, 3};
+    const std::vector<float> maximum =
+        HdEmbreeBalanceSubdivisionLevels(
+            counts, indices,
+            std::vector<float>{4096.0f, 1.0f, 1.0f, 1.0f});
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    return maximum ==
+            std::vector<float>({4096.0f, 1.0f, 2048.0f, 1.0f}) &&
+        HdEmbreeBalanceSubdivisionLevels(
+            counts, indices,
+            std::vector<float>{0.0f, 1.0f, 1.0f, 1.0f}).empty() &&
+        HdEmbreeBalanceSubdivisionLevels(
+            counts, indices,
+            std::vector<float>{4097.0f, 1.0f, 1.0f, 1.0f}).empty() &&
+        HdEmbreeBalanceSubdivisionLevels(
+            counts, indices,
+            std::vector<float>{nan, 1.0f, 1.0f, 1.0f}).empty() &&
+        HdEmbreeBalanceSubdivisionLevels(
+            counts, indices,
+            std::vector<float>{1.0f, 1.0f, 1.0f}).empty() &&
+        HdEmbreeBalanceSubdivisionLevels(
+            counts, VtIntArray{0, -1, 2, 3},
+            std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}).empty();
+}
+
+bool
+TestBalancedSubdivisionLevelsSkipNonQuadFaces()
+{
+    // The pentagon shares its first edge with quad edge 1. Shared-edge max
+    // still applies, but the other pentagon edges must not be raised merely
+    // because a notion of "opposite" is ambiguous for non-quads.
+    const std::vector<float> levels =
+        HdEmbreeBalanceSubdivisionLevels(
+            VtIntArray{4, 5},
+            VtIntArray{0, 1, 2, 3, 2, 1, 4, 5, 6},
+            std::vector<float>{
+                32.0f, 8.0f, 4.0f, 4.0f,
+                20.0f, 4.0f, 4.0f, 4.0f, 4.0f});
+    return levels == std::vector<float>({
+        32.0f, 20.0f, 16.0f, 10.0f,
+        20.0f, 4.0f, 4.0f, 4.0f, 4.0f});
+}
+
+bool
 TestLargestInstanceProjectionWins()
 {
     GfMatrix4f twice(1.0f);
@@ -210,7 +374,7 @@ TestLevelsClampToEmbreeRange()
             {GfMatrix4f(1.0f)}, GfMatrix4d(1.0), GfMatrix4d(1.0),
             GfRect2i(GfVec2i(0), 100000, 100000), 3);
     return minimum.size() == 3 && maximum.size() == 3 &&
-        minimum[0] == 1.0f && maximum[0] == 4096.0f;
+        minimum[0] == 4.0f && maximum[0] == 4096.0f;
 }
 
 bool
@@ -247,12 +411,74 @@ TestEdgesAreClippedToViewportSides()
     const std::vector<float> partlyOutside = _Compute(
         VtVec3fArray{
             GfVec3f(-3.0f, 0.0f, 0.0f),
-            GfVec3f(0.0f, 0.0f, 0.0f),
+            // Avoid an exact-in-real-arithmetic integer before ceil: 1.1 is
+            // not exactly representable and would make the expected result
+            // depend on floating-point rounding at the integer boundary.
+            GfVec3f(-0.01f, 0.0f, 0.0f),
             GfVec3f(0.0f, 0.5f, 0.0f)},
         VtIntArray{3}, VtIntArray{0, 1, 2},
         {GfMatrix4f(1.0f)}, 2);
-    return fullyOutside.size() == 3 && fullyOutside[0] == 1.0f &&
-        partlyOutside.size() == 3 && partlyOutside[0] == 50.0f;
+    return fullyOutside.size() == 3 && fullyOutside[0] == 4.0f &&
+        partlyOutside.size() == 3 && partlyOutside[0] == 55.0f;
+}
+
+bool
+TestAdaptiveSubdivisionUsesGuardBandAndRequiredMinimum()
+{
+    const std::vector<GfMatrix4f> transforms{GfMatrix4f(1.0f)};
+    // This edge is wholly outside the visible x=1 plane but inside the 10%
+    // guard. Its 4.5-pixel projected length rounds up to 5, proving that it
+    // was measured rather than replaced by the minimum.
+    const std::vector<float> guardedX = _Compute(
+        VtVec3fArray{
+            GfVec3f(1.005f, 0.0f, 0.0f),
+            GfVec3f(1.095f, 0.0f, 0.0f),
+            GfVec3f(1.05f, 0.05f, 0.0f)},
+        VtIntArray{3}, VtIntArray{0, 1, 2}, transforms, 2);
+    const std::vector<float> guardedY = _Compute(
+        VtVec3fArray{
+            GfVec3f(0.0f, 1.005f, 0.0f),
+            GfVec3f(0.0f, 1.095f, 0.0f),
+            GfVec3f(0.05f, 1.05f, 0.0f)},
+        VtIntArray{3}, VtIntArray{0, 1, 2}, transforms, 2);
+    if (guardedX.size() != 3 || guardedX[0] != 5.0f ||
+        guardedY.size() != 3 || guardedY[0] != 5.0f) {
+        return false;
+    }
+
+    const VtVec3fArray beyondGuardPoints{
+        GfVec3f(1.2f, 0.0f, 0.0f),
+        GfVec3f(1.4f, 0.0f, 0.0f),
+        GfVec3f(1.3f, 0.1f, 0.0f)};
+    for (int refineLevel = 1; refineLevel <= 3; ++refineLevel) {
+        const std::vector<float> required = _Compute(
+            beyondGuardPoints,
+            VtIntArray{3}, VtIntArray{0, 1, 2}, transforms, refineLevel);
+        if (required != std::vector<float>(3, 4.0f)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool
+TestAdaptiveSubdivisionDoesNotGuardDepthPlanes()
+{
+    const auto computeOutsideDepth = [](const float z) {
+        return _Compute(
+            VtVec3fArray{
+                GfVec3f(-1.0f, 0.0f, z),
+                GfVec3f(1.0f, 0.0f, z),
+                GfVec3f(0.0f, 0.5f, z)},
+            VtIntArray{3}, VtIntArray{0, 1, 2},
+            {GfMatrix4f(1.0f)}, 2);
+    };
+    // A Z guard analogous to the X/Y guard would measure these long edges.
+    // Keeping both at the floor proves the ordinary near/far planes remain.
+    const std::vector<float> beyondFar = computeOutsideDepth(1.05f);
+    const std::vector<float> beyondNear = computeOutsideDepth(-1.05f);
+    return beyondFar == std::vector<float>(3, 4.0f) &&
+        beyondNear == std::vector<float>(3, 4.0f);
 }
 
 std::unique_ptr<EvalGraph>
@@ -315,6 +541,104 @@ _CompileTexcoordDisplacement()
     return EvalGraph::Compile(network, "displacement");
 }
 
+std::unique_ptr<EvalGraph>
+_CompileTextureFrameTimeDisplacement()
+{
+    MaterialGraph network;
+
+    GraphNode image;
+    image.nodeTypeId = "ND_image_float";
+    image.parameters["file"] = Value(std::string("memory:test.exr"));
+    // A deliberately different fallback proves callback evaluation reaches
+    // the texture backend instead of using this authored default.
+    image.parameters["default"] = Value(-0.5f);
+    network.nodes["/Material/Image"] = image;
+
+    GraphNode frame;
+    frame.nodeTypeId = "ND_frame_float";
+    network.nodes["/Material/Frame"] = frame;
+
+    GraphNode time;
+    time.nodeTypeId = "ND_time_float";
+    network.nodes["/Material/Time"] = time;
+
+    GraphNode imagePlusFrame;
+    imagePlusFrame.nodeTypeId = "ND_add_float";
+    imagePlusFrame.inputConnections["in1"] =
+        {{"/Material/Image", "out"}};
+    imagePlusFrame.inputConnections["in2"] =
+        {{"/Material/Frame", "out"}};
+    network.nodes["/Material/ImagePlusFrame"] = imagePlusFrame;
+
+    GraphNode sum;
+    sum.nodeTypeId = "ND_add_float";
+    sum.inputConnections["in1"] =
+        {{"/Material/ImagePlusFrame", "out"}};
+    sum.inputConnections["in2"] =
+        {{"/Material/Time", "out"}};
+    network.nodes["/Material/Sum"] = sum;
+
+    GraphNode terminal;
+    terminal.nodeTypeId = "ND_displacement_float";
+    terminal.parameters["scale"] = Value(1.0f);
+    terminal.inputConnections["displacement"] =
+        {{"/Material/Sum", "out"}};
+    network.nodes["/Material/Displacement"] = terminal;
+    network.terminals["displacement"] =
+        {"/Material/Displacement", "out"};
+    return EvalGraph::Compile(network, "displacement");
+}
+
+class _ThreadSafeTexcoordTextureSystem final : public TextureSystem
+{
+public:
+    void Reset(float expectedFrame) noexcept
+    {
+        _expectedFrame.store(expectedFrame, std::memory_order_relaxed);
+        _lastFrame.store(0.0f, std::memory_order_relaxed);
+        _callCount.store(0, std::memory_order_relaxed);
+        _allFramesMatched.store(true, std::memory_order_relaxed);
+    }
+
+    Texture2DResult Sample2D(
+        Texture2DRequest const& request) const override
+    {
+        _callCount.fetch_add(1, std::memory_order_relaxed);
+        _lastFrame.store(request.frame, std::memory_order_relaxed);
+        if (!_Close(
+                request.frame,
+                _expectedFrame.load(std::memory_order_relaxed))) {
+            _allFramesMatched.store(false, std::memory_order_relaxed);
+        }
+
+        Texture2DResult result;
+        result.value = Vec4f(request.st[0], 0.0f, 0.0f, 0.0f);
+        result.status = TextureSampleStatus::Ok;
+        return result;
+    }
+
+    int GetCallCount() const noexcept
+    {
+        return _callCount.load(std::memory_order_relaxed);
+    }
+
+    float GetLastFrame() const noexcept
+    {
+        return _lastFrame.load(std::memory_order_relaxed);
+    }
+
+    bool AllFramesMatched() const noexcept
+    {
+        return _allFramesMatched.load(std::memory_order_relaxed);
+    }
+
+private:
+    std::atomic<float> _expectedFrame{0.0f};
+    mutable std::atomic<float> _lastFrame{0.0f};
+    mutable std::atomic<int> _callCount{0};
+    mutable std::atomic<bool> _allFramesMatched{true};
+};
+
 float
 _TraceCenter(RTCScene scene)
 {
@@ -329,6 +653,56 @@ _TraceCenter(RTCScene scene)
     rayHit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
     rtcIntersect1(scene, &rayHit);
     return rayHit.ray.tfar;
+}
+
+RTCRayHit
+_TraceWithLimit(
+    RTCScene scene, float x, float y, float originZ, float maxDistance)
+{
+    RTCRayHit rayHit{};
+    rayHit.ray.org_x = x;
+    rayHit.ray.org_y = y;
+    rayHit.ray.org_z = originZ;
+    rayHit.ray.dir_z = -1.0f;
+    rayHit.ray.tnear = 0.0f;
+    rayHit.ray.tfar = maxDistance;
+    rayHit.ray.mask = 0xffffffffu;
+    rayHit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+    rtcIntersect1(scene, &rayHit);
+    return rayHit;
+}
+
+RTCGeometry
+_GetPrototypeGeometry(RTCScene root, unsigned int instanceId = 0)
+{
+    RTCGeometry instance = rtcGetGeometry(root, instanceId);
+    auto* instanceContext = instance
+        ? static_cast<HdEmbreeInstanceContext*>(
+            rtcGetGeometryUserData(instance))
+        : nullptr;
+    return instanceContext
+        ? rtcGetGeometry(instanceContext->rootScene, 0)
+        : nullptr;
+}
+
+bool
+_SetPaddedVertexBuffer(
+    RTCGeometry geometry, VtVec3fArray const& points)
+{
+    constexpr size_t vertexStride = 4 * sizeof(float);
+    float* const vertices = static_cast<float*>(rtcSetNewGeometryBuffer(
+        geometry, RTC_BUFFER_TYPE_VERTEX, 0, RTC_FORMAT_FLOAT3,
+        vertexStride, points.size()));
+    if (!vertices && !points.empty()) {
+        return false;
+    }
+    for (size_t i = 0; i < points.size(); ++i) {
+        vertices[4 * i + 0] = points[i][0];
+        vertices[4 * i + 1] = points[i][1];
+        vertices[4 * i + 2] = points[i][2];
+        vertices[4 * i + 3] = 0.0f;
+    }
+    return true;
 }
 
 bool
@@ -347,9 +721,12 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     VtIntArray counts{4};
     VtIntArray indices{0, 1, 2, 3};
     std::vector<float> levels(4, 8.0f);
-    rtcSetSharedGeometryBuffer(
-        geometry, RTC_BUFFER_TYPE_VERTEX, 0, RTC_FORMAT_FLOAT3,
-        points.cdata(), 0, sizeof(GfVec3f), points.size());
+    if (!_SetPaddedVertexBuffer(geometry, points)) {
+        rtcReleaseGeometry(geometry);
+        rtcReleaseScene(scene);
+        rtcReleaseDevice(device);
+        return false;
+    }
     rtcSetSharedGeometryBuffer(
         geometry, RTC_BUFFER_TYPE_FACE, 0, RTC_FORMAT_UINT,
         counts.cdata(), 0, sizeof(int), counts.size());
@@ -364,6 +741,8 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     // including a float3 st primvar. The detached sample below separately
     // proves sampler lifetime does not depend on a scene/id lookup.
     rtcSetGeometryTopologyCount(geometry, 3);
+    rtcSetGeometrySubdivisionMode(
+        geometry, 0, RTC_SUBDIVISION_MODE_PIN_ALL);
     rtcSetGeometrySubdivisionMode(
         geometry, 1, RTC_SUBDIVISION_MODE_PIN_ALL);
     rtcSetGeometrySubdivisionMode(
@@ -392,6 +771,7 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     HdEmbreePrototypeContext context;
     HdEmbreeMaterialData material;
     context.material = &material;
+    context.displaced = true;
     context.primvarMap[TfToken("st")] = &stSampler;
     context.primvarMapByString["height"] = &heightSampler;
     rtcSetGeometryUserData(geometry, &context);
@@ -403,9 +783,11 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     // than merely evaluating graph constants.
     auto positive = _CompileGeomPropDisplacement("height");
     auto texcoord = _CompileTexcoordDisplacement();
+    auto textureFrameTime = _CompileTextureFrameTimeDisplacement();
     auto negative = _CompileConstantDisplacement(-0.25f);
     if (!positive || !positive->IsValid() ||
         !texcoord || !texcoord->IsValid() ||
+        !textureFrameTime || !textureFrameTime->IsValid() ||
         !negative || !negative->IsValid()) {
         rtcReleaseGeometry(geometry);
         rtcReleaseScene(scene);
@@ -425,12 +807,77 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     material.displacementGraph = texcoord.get();
     rebuild();
     const float float3TexcoordHit = _TraceCenter(scene);
+
+    GfVec3f displacedNormal(0.0f);
+    GfVec3f displacedDPdu(0.0f);
+    GfVec3f displacedDPdv(0.0f);
+    const bool displacedFrameComputed =
+        HdEmbreeComputeDisplacedSubdivFrame(
+            geometry, &context, 0, 0.5f, 0.5f,
+            &displacedNormal, &displacedDPdu, &displacedDPdv);
+
+    _ThreadSafeTexcoordTextureSystem textureSystem;
+    HdEmbreeMaterialEvalServices services;
+    services.textureSystem = &textureSystem;
+    context.materialEvalServices = &services;
+    material.displacementGraph = textureFrameTime.get();
+
+    constexpr float firstFrame = 0.1f;
+    constexpr float firstTime = 0.2f;
+    constexpr float centerStX = 0.5f;
+    constexpr float rayOriginZ = 2.0f;
+    constexpr float firstExpectedHit =
+        rayOriginZ - (centerStX + firstFrame + firstTime);
+    services.frame = firstFrame;
+    services.time = firstTime;
+    textureSystem.Reset(firstFrame);
+    rebuild();
+    const float firstServiceHit = _TraceCenter(scene);
+    const int firstTextureCalls = textureSystem.GetCallCount();
+    const bool firstFramesMatched = textureSystem.AllFramesMatched() &&
+        _Close(textureSystem.GetLastFrame(), firstFrame);
+
+    constexpr float secondFrame = 0.3f;
+    constexpr float secondTime = 0.4f;
+    constexpr float secondExpectedHit =
+        rayOriginZ - (centerStX + secondFrame + secondTime);
+    services.frame = secondFrame;
+    services.time = secondTime;
+    textureSystem.Reset(secondFrame);
+    rebuild();
+    const float secondServiceHit = _TraceCenter(scene);
+    const int secondTextureCalls = textureSystem.GetCallCount();
+    const bool secondFramesMatched = textureSystem.AllFramesMatched() &&
+        _Close(textureSystem.GetLastFrame(), secondFrame);
+
     material.displacementGraph = nullptr;
     rebuild();
     const float undisplacedHit = _TraceCenter(scene);
     material.displacementGraph = negative.get();
     rebuild();
     const float negativeHit = _TraceCenter(scene);
+
+    // A small parameterization is not degenerate merely because its absolute
+    // area is tiny. A matching small prototype scale makes the world-space
+    // tangents smaller still while preserving their linear independence;
+    // displacement evaluation must not silently reject either frame using an
+    // absolute cross-product threshold.
+    constexpr float smallTangentLength = 1.0e-6f;
+    GfMatrix4f smallSurfaceToWorld(1.0f);
+    smallSurfaceToWorld.SetScale(
+        GfVec3f(smallTangentLength));
+    context.displacementObjectToWorldMatrix = smallSurfaceToWorld;
+    context.displacementWorldToObjectMatrix =
+        smallSurfaceToWorld.GetInverse();
+    float smallFrameDisplacement =
+        std::numeric_limits<float>::quiet_NaN();
+    const bool smallFrameEvaluated = HdEmbreeEvaluateDisplacement(
+        &context, 0, 0.5f, 0.5f,
+        GfVec3f(0.5f, 0.5f, 0.0f),
+        GfVec3f(0.0f, 0.0f, 1.0f),
+        GfVec3f(smallTangentLength, 0.0f, 0.0f),
+        GfVec3f(0.0f, smallTangentLength, 0.0f),
+        &smallFrameDisplacement);
 
     // A retained geometry remains valid after its scene is gone. Sampling here
     // would fail—or touch released scene state—if callbacks stored scene/id
@@ -442,11 +889,41 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
 
     rtcReleaseGeometry(geometry);
     rtcReleaseDevice(device);
-    return _Close(positiveHit, 1.5f, 0.02f) &&
+    constexpr float inverseSqrtTwo = 0.70710678f;
+    const bool valid = _Close(positiveHit, 1.5f, 0.02f) &&
         _Close(float3TexcoordHit, 1.5f, 0.02f) &&
+        displacedFrameComputed &&
+        _Close(displacedDPdu, GfVec3f(1.0f, 0.0f, 1.0f), 0.02f) &&
+        _Close(displacedDPdv, GfVec3f(0.0f, 1.0f, 0.0f), 0.02f) &&
+        _Close(
+            displacedNormal,
+            GfVec3f(-inverseSqrtTwo, 0.0f, inverseSqrtTwo), 0.02f) &&
+        firstTextureCalls > 0 && firstFramesMatched &&
+        _Close(firstServiceHit, firstExpectedHit, 0.02f) &&
+        secondTextureCalls > 0 && secondFramesMatched &&
+        _Close(secondServiceHit, secondExpectedHit, 0.02f) &&
+        firstServiceHit > secondServiceHit + 0.3f &&
         _Close(undisplacedHit, 2.0f, 0.02f) &&
         _Close(negativeHit, 2.25f, 0.02f) &&
+        smallFrameEvaluated &&
+        _Close(smallFrameDisplacement, -0.25f) &&
         detachedSampled && _Close(detachedHeight, 0.5f, 0.02f);
+    if (!valid) {
+        std::printf(
+            "    callback hits=(%g,%g) services=(%g,%g) calls=(%d,%d) "
+            "frames=(%d,%d) frameOk=%d dPdu=(%g,%g,%g) "
+            "dPdv=(%g,%g,%g) N=(%g,%g,%g) smallFrame=(%d,%g)\n",
+            positiveHit, float3TexcoordHit,
+            firstServiceHit, secondServiceHit,
+            firstTextureCalls, secondTextureCalls,
+            firstFramesMatched, secondFramesMatched,
+            displacedFrameComputed,
+            displacedDPdu[0], displacedDPdu[1], displacedDPdu[2],
+            displacedDPdv[0], displacedDPdv[1], displacedDPdv[2],
+            displacedNormal[0], displacedNormal[1], displacedNormal[2],
+            smallFrameEvaluated, smallFrameDisplacement);
+    }
+    return valid;
 }
 
 HdMaterialNetwork2
@@ -501,9 +978,10 @@ TestMaterialSyncKeepsStableHandleAndReplacesDisplacementGraph()
     RTCScene notificationScene = rtcNewScene(notificationDevice);
     HdRenderThread renderThread;
     std::atomic<int> sceneVersion{0};
+    std::atomic<int> displacementVersion{0};
     HdEmbreeRenderParam renderParam(
         notificationDevice, notificationScene, &renderThread, nullptr,
-        &sceneVersion);
+        nullptr, &sceneVersion, &displacementVersion);
 
     bool valid = false;
     {
@@ -531,7 +1009,7 @@ TestMaterialSyncKeepsStableHandleAndReplacesDisplacementGraph()
             handle->displacementGraph->EvaluateDisplacement(context, &value) &&
             _Close(value, -0.75f);
         valid = firstValid && removed && replaced &&
-            sceneVersion.load() == 3;
+            sceneVersion.load() == 3 && displacementVersion.load() == 3;
     }
 
     rtcReleaseScene(notificationScene);
@@ -610,6 +1088,830 @@ TestMaterialChangeForcesProductionDisplacementRecommit()
             _Close(negativeHit, 2.25f, 0.02f);
     }
 
+    return valid;
+}
+
+bool
+TestMaterialTerminalTransitionsCommitWithInstanceOnlyDirtyBits()
+{
+    _EmbreeTestContext context;
+    HdRenderDelegate* const renderDelegate = context.renderDelegate;
+    HdRenderIndex* const renderIndex = context.renderIndex.get();
+    auto* const embreeDelegate =
+        dynamic_cast<HdEmbreeRenderDelegate*>(renderDelegate);
+    if (!renderIndex || !embreeDelegate) {
+        return false;
+    }
+
+    HdUnitTestDelegate delegate(
+        renderIndex, SdfPath::AbsoluteRootPath());
+    const SdfPath materialId("/transitionMaterial");
+    const SdfPath meshId("/transitionQuad");
+    delegate.AddMaterialResource(
+        materialId,
+        VtValue(_MakeHydraMaterialNetwork(true, 0.5f)));
+    delegate.AddMesh(
+        meshId, GfMatrix4f(1.0f),
+        VtVec3fArray{
+            GfVec3f(0.0f, 0.0f, 0.0f),
+            GfVec3f(1.0f, 0.0f, 0.0f),
+            GfVec3f(1.0f, 1.0f, 0.0f),
+            GfVec3f(0.0f, 1.0f, 0.0f)},
+        VtIntArray{4}, VtIntArray{0, 1, 2, 3});
+    delegate.BindMaterial(meshId, materialId);
+    delegate.SetRefineLevel(meshId, 2);
+
+    HdSprim* const material = renderIndex->GetSprim(
+        HdPrimTypeTokens->material, materialId);
+    HdDirtyBits materialBits = material->GetInitialDirtyBitsMask();
+    material->Sync(
+        &delegate, renderDelegate->GetRenderParam(), &materialBits);
+
+    HdRprim* const mesh =
+        const_cast<HdRprim*>(renderIndex->GetRprim(meshId));
+    HdDirtyBits meshBits = mesh->GetInitialDirtyBitsMask();
+    mesh->InitRepr(&delegate, HdReprTokens->refined, &meshBits);
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+
+    RTCScene const root = static_cast<HdEmbreeRenderParam*>(
+        renderDelegate->GetRenderParam())->AcquireSceneForEdit();
+    rtcCommitScene(root);
+    embreeDelegate->UpdateAdaptiveSubdivision(
+        GfMatrix4d(1.0), GfMatrix4d(1.0),
+        GfRect2i(GfVec2i(0), 100, 100), true);
+    rtcCommitScene(root);
+    const float initiallyDisplacedHit = _TraceCenter(root);
+
+    // The material's stable handle changes in place. A simultaneous
+    // instance-only mesh edit must still remove the callback and recommit the
+    // prototype, rather than leaving stale displaced tessellation behind.
+    delegate.UpdateMaterialResource(
+        materialId, VtValue(_MakeHydraMaterialNetwork(false)));
+    materialBits = HdMaterial::DirtyResource;
+    material->Sync(
+        &delegate, renderDelegate->GetRenderParam(), &materialBits);
+    meshBits = HdChangeTracker::DirtyTransform;
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+    rtcCommitScene(root);
+    const float removedHit = _TraceCenter(root);
+
+    // Exercise the inverse transition with the exact DirtyInstanceIndex path
+    // that otherwise contains no prototype data changes.
+    delegate.UpdateMaterialResource(
+        materialId,
+        VtValue(_MakeHydraMaterialNetwork(true, -0.25f)));
+    materialBits = HdMaterial::DirtyResource;
+    material->Sync(
+        &delegate, renderDelegate->GetRenderParam(), &materialBits);
+    meshBits = HdChangeTracker::DirtyInstanceIndex;
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+    rtcCommitScene(root);
+    const float restoredHit = _TraceCenter(root);
+
+    RTCGeometry const prototype = _GetPrototypeGeometry(root);
+    auto const* prototypeContext = prototype
+        ? static_cast<HdEmbreePrototypeContext const*>(
+            rtcGetGeometryUserData(prototype))
+        : nullptr;
+    const bool valid =
+        _Close(initiallyDisplacedHit, 1.5f, 0.02f) &&
+        _Close(removedHit, 2.0f, 0.02f) &&
+        _Close(restoredHit, 2.25f, 0.02f) &&
+        prototypeContext && prototypeContext->displaced;
+    if (!valid) {
+        std::printf(
+            "    displacement transition hits=(%g,%g,%g) displaced=%d\n",
+            initiallyDisplacedHit, removedHit, restoredHit,
+            prototypeContext && prototypeContext->displaced);
+    }
+    return valid;
+}
+
+bool
+TestLeftHandedSubdivisionDisplacesAlongAuthoredNormal()
+{
+    _EmbreeTestContext context;
+    HdRenderDelegate* renderDelegate = context.renderDelegate;
+    HdRenderIndex* renderIndex = context.renderIndex.get();
+    auto* embreeDelegate =
+        dynamic_cast<HdEmbreeRenderDelegate*>(renderDelegate);
+    if (!renderIndex || !embreeDelegate) {
+        return false;
+    }
+
+    HdUnitTestDelegate delegate(
+        renderIndex, SdfPath::AbsoluteRootPath());
+    const SdfPath materialId("/leftMaterial");
+    const SdfPath meshId("/leftQuad");
+    delegate.AddMaterialResource(
+        materialId,
+        VtValue(_MakeHydraMaterialNetwork(true, 0.5f)));
+    delegate.AddMesh(
+        meshId, GfMatrix4f(1.0f),
+        VtVec3fArray{
+            GfVec3f(0.0f, 0.0f, 0.0f),
+            GfVec3f(1.0f, 0.0f, 0.0f),
+            GfVec3f(1.0f, 1.0f, 0.0f),
+            GfVec3f(0.0f, 1.0f, 0.0f)},
+        VtIntArray{4}, VtIntArray{0, 1, 2, 3},
+        false, SdfPath(), PxOsdOpenSubdivTokens->catmullClark,
+        HdTokens->leftHanded);
+    delegate.BindMaterial(meshId, materialId);
+    delegate.SetRefineLevel(meshId, 2);
+
+    HdSprim* material = renderIndex->GetSprim(
+        HdPrimTypeTokens->material, materialId);
+    HdDirtyBits materialBits = material->GetInitialDirtyBitsMask();
+    material->Sync(
+        &delegate, renderDelegate->GetRenderParam(), &materialBits);
+
+    HdRprim* mesh = const_cast<HdRprim*>(renderIndex->GetRprim(meshId));
+    HdDirtyBits meshBits = mesh->GetInitialDirtyBitsMask();
+    mesh->InitRepr(&delegate, HdReprTokens->refined, &meshBits);
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+
+    RTCScene root = static_cast<HdEmbreeRenderParam*>(
+        renderDelegate->GetRenderParam())->AcquireSceneForEdit();
+    rtcCommitScene(root);
+    embreeDelegate->UpdateAdaptiveSubdivision(
+        GfMatrix4d(1.0), GfMatrix4d(1.0),
+        GfRect2i(GfVec2i(0), 100, 100), true);
+    rtcCommitScene(root);
+
+    RTCGeometry prototype = _GetPrototypeGeometry(root);
+    auto const* prototypeContext = prototype
+        ? static_cast<HdEmbreePrototypeContext const*>(
+            rtcGetGeometryUserData(prototype))
+        : nullptr;
+    const float hit = _TraceCenter(root);
+    if (!prototypeContext ||
+        !_Close(prototypeContext->orientationSign, -1.0f) ||
+        !_Close(hit, 2.5f, 0.02f)) {
+        std::printf(
+            "    left-handed displacement: sign=%g hit=%g expected=2.5\n",
+            prototypeContext ? prototypeContext->orientationSign : 0.0f,
+            hit);
+        return false;
+    }
+    return true;
+}
+
+bool
+TestRprimScalePreservesWorldUnitDisplacement()
+{
+    _EmbreeTestContext context;
+    HdRenderDelegate* const renderDelegate = context.renderDelegate;
+    HdRenderIndex* const renderIndex = context.renderIndex.get();
+    auto* const embreeDelegate =
+        dynamic_cast<HdEmbreeRenderDelegate*>(renderDelegate);
+    if (!renderIndex || !embreeDelegate) {
+        return false;
+    }
+
+    HdUnitTestDelegate delegate(
+        renderIndex, SdfPath::AbsoluteRootPath());
+    const SdfPath materialId("/scaledMaterial");
+    const SdfPath meshId("/scaledQuad");
+    delegate.AddMaterialResource(
+        materialId,
+        VtValue(_MakeHydraMaterialNetwork(true, 0.5f)));
+    GfMatrix4f transform(1.0f);
+    transform.SetScale(GfVec3f(2.0f, 1.0f, 3.0f));
+    delegate.AddMesh(
+        meshId, transform,
+        VtVec3fArray{
+            GfVec3f(0.0f, 0.0f, 0.0f),
+            GfVec3f(1.0f, 0.0f, 0.0f),
+            GfVec3f(1.0f, 1.0f, 0.0f),
+            GfVec3f(0.0f, 1.0f, 0.0f)},
+        VtIntArray{4}, VtIntArray{0, 1, 2, 3});
+    delegate.BindMaterial(meshId, materialId);
+    delegate.SetRefineLevel(meshId, 2);
+
+    HdSprim* const material = renderIndex->GetSprim(
+        HdPrimTypeTokens->material, materialId);
+    HdDirtyBits materialBits = material->GetInitialDirtyBitsMask();
+    material->Sync(
+        &delegate, renderDelegate->GetRenderParam(), &materialBits);
+
+    HdRprim* const mesh =
+        const_cast<HdRprim*>(renderIndex->GetRprim(meshId));
+    HdDirtyBits meshBits = mesh->GetInitialDirtyBitsMask();
+    mesh->InitRepr(&delegate, HdReprTokens->refined, &meshBits);
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+
+    RTCScene const root = static_cast<HdEmbreeRenderParam*>(
+        renderDelegate->GetRenderParam())->AcquireSceneForEdit();
+    rtcCommitScene(root);
+    embreeDelegate->UpdateAdaptiveSubdivision(
+        GfMatrix4d(1.0), GfMatrix4d(1.0),
+        GfRect2i(GfVec2i(0), 100, 100), true);
+    rtcCommitScene(root);
+
+    RTCGeometry const prototype = _GetPrototypeGeometry(root);
+    auto const* prototypeContext = prototype
+        ? static_cast<HdEmbreePrototypeContext const*>(
+            rtcGetGeometryUserData(prototype))
+        : nullptr;
+    GfVec3f objectOffset(0.0f);
+    const bool offsetComputed =
+        HdEmbreeComputeObjectSpaceDisplacementOffset(
+            prototypeContext,
+            GfVec3f(0.0f, 0.0f, 1.0f),
+            0.5f,
+            &objectOffset);
+    const GfVec3f worldOffset = offsetComputed
+        ? prototypeContext->displacementObjectToWorldMatrix.TransformDir(
+            objectOffset)
+        : GfVec3f(0.0f);
+    const RTCRayHit rayHit = _TraceWithLimit(
+        root, 1.0f, 0.5f, 2.0f, 4.0f);
+    const bool valid = prototypeContext && prototypeContext->displaced &&
+        offsetComputed &&
+        _Close(objectOffset, GfVec3f(0.0f, 0.0f, 1.0f / 6.0f)) &&
+        _Close(worldOffset, GfVec3f(0.0f, 0.0f, 0.5f)) &&
+        rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID &&
+        _Close(rayHit.ray.tfar, 1.5f, 0.02f);
+    if (!valid) {
+        std::printf(
+            "    scaled displacement offset=(%g,%g,%g) world=(%g,%g,%g) "
+            "geom=%u t=%g\n",
+            objectOffset[0], objectOffset[1], objectOffset[2],
+            worldOffset[0], worldOffset[1], worldOffset[2],
+            rayHit.hit.geomID, rayHit.ray.tfar);
+    }
+    return valid;
+}
+
+bool
+TestDisplayStyleCanDisableAndRestoreDisplacement()
+{
+    _EmbreeTestContext context;
+    HdRenderDelegate* const renderDelegate = context.renderDelegate;
+    HdRenderIndex* const renderIndex = context.renderIndex.get();
+    auto* const embreeDelegate =
+        dynamic_cast<HdEmbreeRenderDelegate*>(renderDelegate);
+    if (!renderIndex || !embreeDelegate) {
+        return false;
+    }
+
+    _DisplayStyleDelegate delegate(
+        renderIndex, SdfPath::AbsoluteRootPath());
+    const SdfPath materialId("/displayStyleMaterial");
+    const SdfPath meshId("/displayStyleQuad");
+    delegate.AddMaterialResource(
+        materialId,
+        VtValue(_MakeHydraMaterialNetwork(true, 0.5f)));
+    delegate.AddMesh(
+        meshId, GfMatrix4f(1.0f),
+        VtVec3fArray{
+            GfVec3f(0.0f, 0.0f, 0.0f),
+            GfVec3f(1.0f, 0.0f, 0.0f),
+            GfVec3f(1.0f, 1.0f, 0.0f),
+            GfVec3f(0.0f, 1.0f, 0.0f)},
+        VtIntArray{4}, VtIntArray{0, 1, 2, 3});
+    delegate.BindMaterial(meshId, materialId);
+    delegate.SetRefineLevel(meshId, 2);
+
+    HdSprim* const material = renderIndex->GetSprim(
+        HdPrimTypeTokens->material, materialId);
+    HdDirtyBits materialBits = material->GetInitialDirtyBitsMask();
+    material->Sync(
+        &delegate, renderDelegate->GetRenderParam(), &materialBits);
+    HdRprim* const mesh =
+        const_cast<HdRprim*>(renderIndex->GetRprim(meshId));
+    HdDirtyBits meshBits = mesh->GetInitialDirtyBitsMask();
+    mesh->InitRepr(&delegate, HdReprTokens->refined, &meshBits);
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+
+    RTCScene const root = static_cast<HdEmbreeRenderParam*>(
+        renderDelegate->GetRenderParam())->AcquireSceneForEdit();
+    rtcCommitScene(root);
+    embreeDelegate->UpdateAdaptiveSubdivision(
+        GfMatrix4d(1.0), GfMatrix4d(1.0),
+        GfRect2i(GfVec2i(0), 100, 100), true);
+    rtcCommitScene(root);
+    const float enabledHit = _TraceCenter(root);
+
+    delegate.SetDisplacementEnabled(meshId, false);
+    meshBits = HdChangeTracker::DirtyDisplayStyle;
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+    rtcCommitScene(root);
+    const float disabledHit = _TraceCenter(root);
+
+    delegate.SetDisplacementEnabled(meshId, true);
+    meshBits = HdChangeTracker::DirtyDisplayStyle;
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+    rtcCommitScene(root);
+    const float restoredHit = _TraceCenter(root);
+
+    const bool valid =
+        _Close(enabledHit, 1.5f, 0.02f) &&
+        _Close(disabledHit, 2.0f, 0.02f) &&
+        _Close(restoredHit, 1.5f, 0.02f);
+    if (!valid) {
+        std::printf(
+            "    display-style displacement hits=(%g,%g,%g)\n",
+            enabledHit, disabledHit, restoredHit);
+    }
+    return valid;
+}
+
+bool
+TestEmptyPointsDisableAndRestoreGeometry()
+{
+    _EmbreeTestContext context;
+    HdRenderDelegate* const renderDelegate = context.renderDelegate;
+    HdRenderIndex* const renderIndex = context.renderIndex.get();
+    if (!renderDelegate || !renderIndex) {
+        return false;
+    }
+
+    _PointsOverrideDelegate delegate(
+        renderIndex, SdfPath::AbsoluteRootPath());
+    const SdfPath meshId("/mutablePointsTriangle");
+    const VtVec3fArray points{
+        GfVec3f(0.0f, 0.0f, 0.0f),
+        GfVec3f(1.0f, 0.0f, 0.0f),
+        GfVec3f(0.0f, 1.0f, 0.0f)};
+    delegate.AddMesh(
+        meshId, GfMatrix4f(1.0f), points,
+        VtIntArray{3}, VtIntArray{0, 1, 2},
+        false, SdfPath(), PxOsdOpenSubdivTokens->none);
+    delegate.SetRefineLevel(meshId, 0);
+    delegate.SetPoints(meshId, points);
+
+    HdRprim* const mesh =
+        const_cast<HdRprim*>(renderIndex->GetRprim(meshId));
+    HdDirtyBits meshBits = mesh->GetInitialDirtyBitsMask();
+    mesh->InitRepr(&delegate, HdReprTokens->refined, &meshBits);
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+    RTCScene const root = static_cast<HdEmbreeRenderParam*>(
+        renderDelegate->GetRenderParam())->AcquireSceneForEdit();
+    rtcCommitScene(root);
+    const RTCRayHit initial = _TraceWithLimit(
+        root, 0.25f, 0.25f, 2.0f, 4.0f);
+
+    delegate.SetPoints(meshId, VtVec3fArray());
+    meshBits = HdChangeTracker::DirtyPoints;
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+    rtcCommitScene(root);
+    const RTCRayHit empty = _TraceWithLimit(
+        root, 0.25f, 0.25f, 2.0f, 4.0f);
+
+    delegate.SetPoints(meshId, points);
+    meshBits = HdChangeTracker::DirtyPoints;
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+    rtcCommitScene(root);
+    const RTCRayHit restored = _TraceWithLimit(
+        root, 0.25f, 0.25f, 2.0f, 4.0f);
+
+    return initial.hit.geomID != RTC_INVALID_GEOMETRY_ID &&
+        empty.hit.geomID == RTC_INVALID_GEOMETRY_ID &&
+        restored.hit.geomID != RTC_INVALID_GEOMETRY_ID &&
+        _Close(initial.ray.tfar, 2.0f, 0.02f) &&
+        _Close(restored.ray.tfar, 2.0f, 0.02f);
+}
+
+bool
+TestProductionVertexBufferHasFloat3PaddingAndUpdates()
+{
+    _EmbreeTestContext context;
+    HdRenderDelegate* renderDelegate = context.renderDelegate;
+    HdRenderIndex* renderIndex = context.renderIndex.get();
+    if (!renderDelegate || !renderIndex) {
+        return false;
+    }
+
+    HdUnitTestDelegate delegate(
+        renderIndex, SdfPath::AbsoluteRootPath());
+    const SdfPath meshId("/paddedQuad");
+    const VtVec3fArray points{
+        GfVec3f(0.25f, 0.5f, 0.75f),
+        GfVec3f(1.25f, 0.5f, 0.75f),
+        GfVec3f(1.25f, 1.5f, 0.75f),
+        GfVec3f(0.25f, 1.5f, 0.75f)};
+    delegate.AddMesh(
+        meshId, GfMatrix4f(1.0f), points,
+        VtIntArray{4}, VtIntArray{0, 1, 2, 3});
+    delegate.SetRefineLevel(meshId, 0);
+
+    HdRprim* mesh = const_cast<HdRprim*>(renderIndex->GetRprim(meshId));
+    HdDirtyBits bits = mesh->GetInitialDirtyBitsMask();
+    mesh->InitRepr(&delegate, HdReprTokens->refined, &bits);
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &bits, HdReprTokens->refined);
+
+    RTCScene root = static_cast<HdEmbreeRenderParam*>(
+        renderDelegate->GetRenderParam())->AcquireSceneForEdit();
+    rtcCommitScene(root);
+    RTCBounds beforeBounds{};
+    rtcGetSceneBounds(root, &beforeBounds);
+
+    const auto bufferMatches = [&](VtVec3fArray const& expected) {
+        RTCGeometry prototype = _GetPrototypeGeometry(root);
+        float const* data = prototype
+            ? static_cast<float const*>(rtcGetGeometryBufferData(
+                prototype, RTC_BUFFER_TYPE_VERTEX, 0))
+            : nullptr;
+        // Check the first padding slot before indexing the complete 16-byte
+        // layout. With the old packed float3 buffer this slot is point 1.x,
+        // so the test fails without reading beyond that packed allocation.
+        if (!data || !_Close(data[0], expected[0][0]) ||
+            !_Close(data[1], expected[0][1]) ||
+            !_Close(data[2], expected[0][2]) || !_Close(data[3], 0.0f)) {
+            std::printf(
+                "    invalid first padded vertex: ptr=%p value=(%g,%g,%g,%g)\n",
+                static_cast<void const*>(data), data ? data[0] : 0.0f,
+                data ? data[1] : 0.0f, data ? data[2] : 0.0f,
+                data ? data[3] : 0.0f);
+            return false;
+        }
+        for (size_t i = 0; i < expected.size(); ++i) {
+            if (!_Close(data[4 * i + 0], expected[i][0]) ||
+                !_Close(data[4 * i + 1], expected[i][1]) ||
+                !_Close(data[4 * i + 2], expected[i][2]) ||
+                !_Close(data[4 * i + 3], 0.0f)) {
+                std::printf(
+                    "    invalid padded vertex %zu: got=(%g,%g,%g,%g) "
+                    "expected=(%g,%g,%g,0)\n",
+                    i, data[4 * i + 0], data[4 * i + 1],
+                    data[4 * i + 2], data[4 * i + 3], expected[i][0],
+                    expected[i][1], expected[i][2]);
+                return false;
+            }
+        }
+        return true;
+    };
+
+    if (!bufferMatches(points)) {
+        return false;
+    }
+
+    constexpr float time = 0.25f;
+    delegate.UpdatePositions(meshId, time);
+    bits = HdChangeTracker::DirtyPoints;
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &bits, HdReprTokens->refined);
+    rtcCommitScene(root);
+
+    VtVec3fArray updatedPoints = points;
+    for (size_t i = 0; i < updatedPoints.size(); ++i) {
+        updatedPoints[i][0] +=
+            0.5f * std::sin(0.5f * static_cast<float>(i) + time);
+    }
+    RTCBounds afterBounds{};
+    rtcGetSceneBounds(root, &afterBounds);
+    const bool updatedBufferMatches = bufferMatches(updatedPoints);
+    const bool boundsUpdated =
+        afterBounds.upper_x > beforeBounds.upper_x + 0.3f;
+    if (!boundsUpdated) {
+        RTCBounds prototypeBounds{};
+        RTCGeometry instance = rtcGetGeometry(root, 0);
+        auto const* instanceContext = instance
+            ? static_cast<HdEmbreeInstanceContext const*>(
+                rtcGetGeometryUserData(instance))
+            : nullptr;
+        if (instanceContext) {
+            rtcGetSceneBounds(
+                instanceContext->rootScene, &prototypeBounds);
+        }
+        RTCGeometry const prototype = _GetPrototypeGeometry(root);
+        auto const* triangleIndices = prototype
+            ? static_cast<unsigned int const*>(rtcGetGeometryBufferData(
+                prototype, RTC_BUFFER_TYPE_INDEX, 0))
+            : nullptr;
+        std::printf(
+            "    DirtyPoints root x bounds did not update: "
+            "before=%g after=%g prototype=[%g,%g] indices=(%u,%u,%u)\n",
+            beforeBounds.upper_x, afterBounds.upper_x,
+            prototypeBounds.lower_x, prototypeBounds.upper_x,
+            triangleIndices ? triangleIndices[0] : ~0u,
+            triangleIndices ? triangleIndices[1] : ~0u,
+            triangleIndices ? triangleIndices[2] : ~0u);
+    }
+    return updatedBufferMatches && boundsUpdated;
+}
+
+bool
+TestMirroredInstancePreservesBackfaceCulling()
+{
+    _EmbreeTestContext context;
+    HdRenderDelegate* const renderDelegate = context.renderDelegate;
+    HdRenderIndex* const renderIndex = context.renderIndex.get();
+    if (!renderDelegate || !renderIndex) {
+        return false;
+    }
+
+    HdUnitTestDelegate delegate(
+        renderIndex, SdfPath::AbsoluteRootPath());
+    const SdfPath instancerId("/cullInstancer");
+    const SdfPath meshId("/culledTriangle");
+    delegate.AddInstancer(instancerId);
+    delegate.AddMesh(
+        meshId, GfMatrix4f(1.0f),
+        VtVec3fArray{
+            GfVec3f(0.0f, 0.0f, 0.0f),
+            GfVec3f(1.0f, 0.0f, 0.0f),
+            GfVec3f(0.0f, 1.0f, 0.0f)},
+        VtIntArray{3}, VtIntArray{0, 1, 2},
+        false, instancerId);
+    delegate.SetRefineLevel(meshId, 0);
+    delegate.SetMeshCullStyle(meshId, HdCullStyleBack);
+    delegate.SetInstancerProperties(
+        instancerId,
+        VtIntArray{0, 0},
+        VtVec3fArray{
+            GfVec3f(1.0f, 1.0f, 1.0f),
+            GfVec3f(-1.0f, 1.0f, 1.0f)},
+        VtVec4fArray{
+            GfVec4f(1.0f, 0.0f, 0.0f, 0.0f),
+            GfVec4f(1.0f, 0.0f, 0.0f, 0.0f)},
+        VtVec3fArray{
+            GfVec3f(0.0f, 0.0f, 0.0f),
+            GfVec3f(3.0f, 0.0f, 0.0f)});
+
+    HdRprim* const mesh =
+        const_cast<HdRprim*>(renderIndex->GetRprim(meshId));
+    HdDirtyBits bits = mesh->GetInitialDirtyBitsMask();
+    mesh->InitRepr(&delegate, HdReprTokens->refined, &bits);
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &bits, HdReprTokens->refined);
+
+    RTCScene const root = static_cast<HdEmbreeRenderParam*>(
+        renderDelegate->GetRenderParam())->AcquireSceneForEdit();
+    rtcCommitScene(root);
+
+    const auto hitsFromWorldSide = [&](float x, float originZ, float dirZ) {
+        RTCRayHit rayHit{};
+        rayHit.ray.org_x = x;
+        rayHit.ray.org_y = 1.0f / 3.0f;
+        rayHit.ray.org_z = originZ;
+        rayHit.ray.dir_z = dirZ;
+        rayHit.ray.tnear = 0.0f;
+        rayHit.ray.tfar = 4.0f;
+        rayHit.ray.mask = 0xffffffffu;
+        rayHit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+        rtcIntersect1(root, &rayHit);
+        return rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID;
+    };
+
+    constexpr float identityX = 1.0f / 3.0f;
+    constexpr float mirroredX = 3.0f - identityX;
+    const bool identityFromAbove =
+        hitsFromWorldSide(identityX, 2.0f, -1.0f);
+    const bool mirroredFromAbove =
+        hitsFromWorldSide(mirroredX, 2.0f, -1.0f);
+    const bool identityFromBelow =
+        hitsFromWorldSide(identityX, -2.0f, 1.0f);
+    const bool mirroredFromBelow =
+        hitsFromWorldSide(mirroredX, -2.0f, 1.0f);
+
+    const bool valid =
+        identityFromAbove && mirroredFromAbove &&
+        !identityFromBelow && !mirroredFromBelow;
+    if (!valid) {
+        std::printf(
+            "    mirrored culling hits identity=(above:%d below:%d) "
+            "mirrored=(above:%d below:%d)\n",
+            identityFromAbove, identityFromBelow,
+            mirroredFromAbove, mirroredFromBelow);
+    }
+    return valid;
+}
+
+bool
+_AllInstanceCentersHit(
+    RTCScene scene, size_t instanceCount, float spacing,
+    float originZ, float maxDistance, float expectedDistance)
+{
+    for (size_t i = 0; i < instanceCount; ++i) {
+        const RTCRayHit rayHit = _TraceWithLimit(
+            scene, spacing * static_cast<float>(i) + 0.5f,
+            0.5f, originZ, maxDistance);
+        if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID ||
+            !_Close(rayHit.ray.tfar, expectedDistance, 0.02f)) {
+            std::printf(
+                "    instance %zu expected hit t=%g, got geom=%u t=%g\n",
+                i, expectedDistance, rayHit.hit.geomID, rayHit.ray.tfar);
+            return false;
+        }
+    }
+    return true;
+}
+
+bool
+_AllInstanceCentersMiss(
+    RTCScene scene, size_t instanceCount, float spacing,
+    float originZ, float maxDistance)
+{
+    for (size_t i = 0; i < instanceCount; ++i) {
+        const RTCRayHit rayHit = _TraceWithLimit(
+            scene, spacing * static_cast<float>(i) + 0.5f,
+            0.5f, originZ, maxDistance);
+        if (rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID) {
+            std::printf(
+                "    instance %zu expected miss, got geom=%u t=%g\n",
+                i, rayHit.hit.geomID, rayHit.ray.tfar);
+            return false;
+        }
+    }
+    return true;
+}
+
+bool
+TestPrototypeSceneChangesRecommitAllInstances()
+{
+    _EmbreeTestContext context;
+    auto* renderDelegate =
+        dynamic_cast<HdEmbreeRenderDelegate*>(context.renderDelegate);
+    HdRenderIndex* renderIndex = context.renderIndex.get();
+    if (!renderDelegate || !renderIndex) {
+        return false;
+    }
+
+    HdUnitTestDelegate delegate(
+        renderIndex, SdfPath::AbsoluteRootPath());
+    const SdfPath materialId("/instanceMaterial");
+    const SdfPath instancerId("/instancer");
+    const SdfPath meshId("/instancedQuad");
+    constexpr size_t instanceCount = 16;
+    constexpr float spacing = 3.0f;
+
+    delegate.AddMaterialResource(
+        materialId,
+        VtValue(_MakeHydraMaterialNetwork(true, 0.0f)));
+    delegate.AddInstancer(instancerId);
+    delegate.AddMesh(
+        meshId, GfMatrix4f(1.0f),
+        VtVec3fArray{
+            GfVec3f(0.0f, 0.0f, 0.0f),
+            GfVec3f(1.0f, 0.0f, 0.0f),
+            GfVec3f(1.0f, 1.0f, 0.0f),
+            GfVec3f(0.0f, 1.0f, 0.0f)},
+        VtIntArray{4}, VtIntArray{0, 1, 2, 3},
+        false, instancerId);
+    delegate.BindMaterial(meshId, materialId);
+    delegate.SetRefineLevel(meshId, 2);
+
+    VtIntArray prototypeIndices;
+    VtVec3fArray scales;
+    VtVec4fArray rotations;
+    VtVec3fArray translations;
+    for (size_t i = 0; i < instanceCount; ++i) {
+        prototypeIndices.push_back(0);
+        scales.push_back(GfVec3f(1.0f));
+        rotations.push_back(GfVec4f(1.0f, 0.0f, 0.0f, 0.0f));
+        translations.push_back(
+            GfVec3f(spacing * static_cast<float>(i), 0.0f, 0.0f));
+    }
+    delegate.SetInstancerProperties(
+        instancerId, prototypeIndices, scales, rotations, translations);
+
+    HdSprim* material = renderIndex->GetSprim(
+        HdPrimTypeTokens->material, materialId);
+    HdDirtyBits materialBits = material->GetInitialDirtyBitsMask();
+    material->Sync(
+        &delegate, renderDelegate->GetRenderParam(), &materialBits);
+
+    HdRprim* mesh = const_cast<HdRprim*>(renderIndex->GetRprim(meshId));
+    HdDirtyBits meshBits = mesh->GetInitialDirtyBitsMask();
+    mesh->InitRepr(&delegate, HdReprTokens->refined, &meshBits);
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+
+    RTCScene root = static_cast<HdEmbreeRenderParam*>(
+        renderDelegate->GetRenderParam())->AcquireSceneForEdit();
+    rtcCommitScene(root);
+    if (!_AllInstanceCentersMiss(
+            root, instanceCount, spacing, 10.0f, 6.0f)) {
+        std::printf("    failed initial undisplaced finite-ray check\n");
+        return false;
+    }
+
+    // Exercise the normal DirtyMaterialId Sync path, then the renderer's
+    // forced adaptive rebuild that retessellates externally changed
+    // displacement graphs. Every instance must be recommitted before the
+    // root scene.
+    delegate.UpdateMaterialResource(
+        materialId,
+        VtValue(_MakeHydraMaterialNetwork(true, 5.0f)));
+    materialBits = HdMaterial::DirtyResource;
+    material->Sync(
+        &delegate, renderDelegate->GetRenderParam(), &materialBits);
+    meshBits = HdChangeTracker::DirtyMaterialId;
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+    rtcCommitScene(root);
+    const bool materialRebuilt = renderDelegate->UpdateAdaptiveSubdivision(
+        GfMatrix4d(1.0), GfMatrix4d(1.0),
+        GfRect2i(GfVec2i(0), 100, 100), true);
+    rtcCommitScene(root);
+    RTCBounds materialBounds{};
+    rtcGetSceneBounds(root, &materialBounds);
+    if (!materialRebuilt || materialBounds.upper_z < 4.9f ||
+        !_AllInstanceCentersHit(
+            root, instanceCount, spacing, 10.0f, 6.0f, 5.0f)) {
+        std::printf(
+            "    failed material/adaptive check, rebuilt=%d, "
+            "root upper z=%g\n",
+            materialRebuilt, materialBounds.upper_z);
+        return false;
+    }
+
+    // Adaptive subdivision can retessellate without a mesh Sync. Raising the
+    // displacement above the old instance bounds makes a stale BVH miss these
+    // finite-distance rays.
+    delegate.UpdateMaterialResource(
+        materialId,
+        VtValue(_MakeHydraMaterialNetwork(true, 8.0f)));
+    materialBits = HdMaterial::DirtyResource;
+    material->Sync(
+        &delegate, renderDelegate->GetRenderParam(), &materialBits);
+    const bool adaptiveRebuilt = renderDelegate->UpdateAdaptiveSubdivision(
+        GfMatrix4d(1.0), GfMatrix4d(1.0),
+        GfRect2i(GfVec2i(0), 100, 100), true);
+    rtcCommitScene(root);
+    if (!adaptiveRebuilt || !_AllInstanceCentersHit(
+            root, instanceCount, spacing, 10.0f, 3.0f, 2.0f)) {
+        std::printf(
+            "    failed adaptive check, rebuilt=%d\n", adaptiveRebuilt);
+        return false;
+    }
+
+    delegate.SetVisibility(meshId, false);
+    meshBits = HdChangeTracker::DirtyVisibility;
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+    rtcCommitScene(root);
+    if (!_AllInstanceCentersMiss(
+            root, instanceCount, spacing, 10.0f, 3.0f)) {
+        std::printf("    failed hidden visibility check\n");
+        return false;
+    }
+
+    delegate.SetVisibility(meshId, true);
+    meshBits = HdChangeTracker::DirtyVisibility;
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+    rtcCommitScene(root);
+    if (!_AllInstanceCentersHit(
+            root, instanceCount, spacing, 10.0f, 3.0f, 2.0f)) {
+        std::printf("    failed restored visibility check\n");
+        return false;
+    }
+
+    RTCBounds beforeTopologyBounds{};
+    rtcGetSceneBounds(root, &beforeTopologyBounds);
+
+    // DirtyTopology replaces the geometry within the existing prototype
+    // scene. Move its points at the same time so stale instance bounds are
+    // observable rather than accidentally identical to the old geometry.
+    delegate.UpdatePositions(meshId, 0.0f);
+    meshBits = HdChangeTracker::DirtyTopology |
+        HdChangeTracker::DirtyPoints;
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+    rtcCommitScene(root);
+    RTCBounds topologyBounds{};
+    rtcGetSceneBounds(root, &topologyBounds);
+    const bool valid =
+        topologyBounds.upper_x > beforeTopologyBounds.upper_x + 0.2f;
+    if (!valid) {
+        std::printf(
+            "    failed topology check, root upper x before=%g after=%g\n",
+            beforeTopologyBounds.upper_x, topologyBounds.upper_x);
+    }
     return valid;
 }
 
@@ -835,6 +2137,7 @@ TestRenderPassRequiresCameraAndGatesDynamicTessellation()
     const float withoutCamera = getFirstLevel();
 
     delegate.AddCamera(cameraId);
+    delegate.UpdateTransform(cameraId, GfMatrix4f(1.0f));
     delegate.UpdateCamera(
         cameraId, HdCameraTokens->horizontalAperture, VtValue(20.0f));
     delegate.UpdateCamera(
@@ -959,6 +2262,7 @@ TestProductionAdaptiveLevelsForRefinedComplexities()
             !_Close(levels[0], expected[refineLevel])) {
             return false;
         }
+
     }
     return true;
 }
@@ -1113,6 +2417,7 @@ def Mesh "Mesh" (
     {
         UsdImagingDelegate delegate(
             renderIndex, SdfPath::AbsoluteRootPath());
+        delegate.SetRefineLevelFallback(2);
         delegate.Populate(stage->GetPseudoRoot());
         delegate.SetTime(UsdTimeCode::Default());
         delegate.SyncAll(true);
@@ -1128,6 +2433,42 @@ def Mesh "Mesh" (
                 network.nodes.count(SdfPath("/Material/Surface")) == 1 &&
                 network.nodes.count(SdfPath("/Material/Displacement")) == 1;
         }
+
+        // Continue through the production material/mesh Sync path. Terminal
+        // extraction alone would not catch a graph that is present in USD but
+        // never compiled or registered as an Embree callback.
+        HdRenderDelegate* const renderDelegate = context.renderDelegate;
+        HdSprim* const material = renderIndex->GetSprim(
+            HdPrimTypeTokens->material, SdfPath("/Material"));
+        HdRprim* const mesh =
+            const_cast<HdRprim*>(renderIndex->GetRprim(SdfPath("/Mesh")));
+        if (!material || !mesh) {
+            return false;
+        }
+        HdDirtyBits materialBits = material->GetInitialDirtyBitsMask();
+        material->Sync(
+            &delegate, renderDelegate->GetRenderParam(), &materialBits);
+        auto const* embreeMaterial =
+            dynamic_cast<HdEmbreeMaterial const*>(material);
+        valid = valid && embreeMaterial &&
+            embreeMaterial->GetRenderMaterial()->displacementGraph;
+
+        HdDirtyBits meshBits = mesh->GetInitialDirtyBitsMask();
+        mesh->InitRepr(&delegate, HdReprTokens->refined, &meshBits);
+        mesh->Sync(
+            &delegate, renderDelegate->GetRenderParam(),
+            &meshBits, HdReprTokens->refined);
+        RTCScene const root = static_cast<HdEmbreeRenderParam*>(
+            renderDelegate->GetRenderParam())->AcquireSceneForEdit();
+        rtcCommitScene(root);
+        auto* const embreeDelegate =
+            dynamic_cast<HdEmbreeRenderDelegate*>(renderDelegate);
+        valid = valid && embreeDelegate &&
+            embreeDelegate->UpdateAdaptiveSubdivision(
+                GfMatrix4d(1.0), GfMatrix4d(1.0),
+                GfRect2i(GfVec2i(0), 100, 100), true);
+        rtcCommitScene(root);
+        valid = valid && _Close(_TraceCenter(root), 1.75f, 0.02f);
     }
 
     return valid;
@@ -1146,6 +2487,16 @@ main()
          &TestComplexityTargetsExactPixelLengths},
         {"Subdivision.TestSharedEdgesUseSameMaximumLevel",
          &TestSharedEdgesUseSameMaximumLevel},
+        {"Subdivision.TestBalancedSubdivisionLevelsUseSharedMaximum",
+         &TestBalancedSubdivisionLevelsUseSharedMaximum},
+        {"Subdivision.TestBalancedSubdivisionLevelsReachOppositeTwoToOneFixedPoint",
+         &TestBalancedSubdivisionLevelsReachOppositeTwoToOneFixedPoint},
+        {"Subdivision.TestBalancedSubdivisionLevelsAreRaiseOnlyAndIdempotent",
+         &TestBalancedSubdivisionLevelsAreRaiseOnlyAndIdempotent},
+        {"Subdivision.TestBalancedSubdivisionLevelsStayInRangeAndRejectInvalidInputs",
+         &TestBalancedSubdivisionLevelsStayInRangeAndRejectInvalidInputs},
+        {"Subdivision.TestBalancedSubdivisionLevelsSkipNonQuadFaces",
+         &TestBalancedSubdivisionLevelsSkipNonQuadFaces},
         {"Subdivision.TestLargestInstanceProjectionWins",
          &TestLargestInstanceProjectionWins},
         {"Subdivision.TestViewportChangeUpdatesLevels",
@@ -1156,12 +2507,32 @@ main()
          &TestEdgeCrossingNearPlaneIsClippedBeforeProjection},
         {"Subdivision.TestEdgesAreClippedToViewportSides",
          &TestEdgesAreClippedToViewportSides},
+        {"Subdivision.TestAdaptiveSubdivisionUsesGuardBandAndRequiredMinimum",
+         &TestAdaptiveSubdivisionUsesGuardBandAndRequiredMinimum},
+        {"Subdivision.TestAdaptiveSubdivisionDoesNotGuardDepthPlanes",
+         &TestAdaptiveSubdivisionDoesNotGuardDepthPlanes},
         {"Subdivision.TestRealCallbackAddsRemovesAndReplacesDisplacement",
          &TestRealCallbackAddsRemovesAndReplacesDisplacement},
         {"Subdivision.TestMaterialSyncKeepsStableHandleAndReplacesDisplacementGraph",
          &TestMaterialSyncKeepsStableHandleAndReplacesDisplacementGraph},
         {"Subdivision.TestMaterialChangeForcesProductionDisplacementRecommit",
          &TestMaterialChangeForcesProductionDisplacementRecommit},
+        {"Subdivision.TestMaterialTerminalTransitionsCommitWithInstanceOnlyDirtyBits",
+         &TestMaterialTerminalTransitionsCommitWithInstanceOnlyDirtyBits},
+        {"Subdivision.TestLeftHandedSubdivisionDisplacesAlongAuthoredNormal",
+         &TestLeftHandedSubdivisionDisplacesAlongAuthoredNormal},
+        {"Subdivision.TestRprimScalePreservesWorldUnitDisplacement",
+         &TestRprimScalePreservesWorldUnitDisplacement},
+        {"Subdivision.TestDisplayStyleCanDisableAndRestoreDisplacement",
+         &TestDisplayStyleCanDisableAndRestoreDisplacement},
+        {"Subdivision.TestEmptyPointsDisableAndRestoreGeometry",
+         &TestEmptyPointsDisableAndRestoreGeometry},
+        {"Subdivision.TestProductionVertexBufferHasFloat3PaddingAndUpdates",
+         &TestProductionVertexBufferHasFloat3PaddingAndUpdates},
+        {"Subdivision.TestMirroredInstancePreservesBackfaceCulling",
+         &TestMirroredInstancePreservesBackfaceCulling},
+        {"Subdivision.TestPrototypeSceneChangesRecommitAllInstances",
+         &TestPrototypeSceneChangesRecommitAllInstances},
         {"Subdivision.TestSubdivisionPrimvarsUseHydraInterpolationModes",
          &TestSubdivisionPrimvarsUseHydraInterpolationModes},
         {"Subdivision.TestRenderPassRequiresCameraAndGatesDynamicTessellation",

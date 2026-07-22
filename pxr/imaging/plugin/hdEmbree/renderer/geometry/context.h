@@ -13,6 +13,7 @@
 #include "pxr/imaging/hd/enums.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightLinking.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/materials/material.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/materialEvalContext.h"
 
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/vt/array.h"
@@ -24,6 +25,11 @@
 #include <embree4/rtcore.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+/// Reserved ray ID used only by owner-prototype SSS boundary queries. Such
+/// rays must see both sides of the closed surface regardless of display cull
+/// style, while ordinary renderer rays always use ID zero.
+constexpr unsigned int HdEmbreeFaceCullBypassRayId = 0x48444543u;
 
 
 /// \class HdEmbreePrototypeContext
@@ -37,7 +43,21 @@ struct HdEmbreePrototypeContext
     HdCullStyle cullStyle = HdCullStyleDontCare;
     bool doubleSided = false;
     bool refined = false;
+    /// Whether the active repr and display style permit custom displacement.
+    bool displacementEnabled = true;
     bool displaced = false;
+    /// Converts Embree's subdivision winding to the authored USD orientation.
+    /// Coarse triangles are already reordered by HdMeshUtil and stay +1.
+    float orientationSign = 1.0f;
+    /// Renderer-owned material evaluation services. Geometry callbacks borrow
+    /// this state; it is updated only while rendering is stopped and remains
+    /// read-only throughout geometry commits and rendering.
+    HdEmbreeMaterialEvalServices const* materialEvalServices = nullptr;
+    /// Prototype-level transforms used while Embree evaluates displacement.
+    /// Per-instance transforms are unavailable when a shared prototype scene
+    /// is committed, so these default to object-space identity.
+    GfMatrix4f displacementObjectToWorldMatrix = GfMatrix4f(1.0f);
+    GfMatrix4f displacementWorldToObjectMatrix = GfMatrix4f(1.0f);
     VtVec3fArray const* triangleDPdu = nullptr;
     VtVec3fArray const* triangleDPdv = nullptr;
     /// A name-indexed map of primvar samplers.

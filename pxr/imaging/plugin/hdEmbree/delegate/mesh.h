@@ -25,6 +25,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 struct HdEmbreePrototypeContext;
 struct HdEmbreeInstanceContext;
+struct HdEmbreeMaterialEvalServices;
 
 /// Translate USD/OpenSubdiv face-varying boundary rules to the four modes
 /// Embree can represent. Exposed so the intentional three-to-one corner-rule
@@ -174,10 +175,28 @@ private:
     HdEmbreePrototypeContext* _GetPrototypeContext();
     HdEmbreeInstanceContext* _GetInstanceContext(RTCScene scene, size_t i);
 
+    // Embree instance bounds depend on the committed state of the instanced
+    // scene. Recommit every instance after changing that prototype scene.
+    void _CommitPrototypeInstances();
+
+    // Synchronize the cached effective displacement state and Embree callback
+    // pointer. Returns true when a geometry recommit is required.
+    bool _RefreshDisplacementState();
+
+    void _WarnIfInstancedDisplacementIsLimited(
+        HdEmbreePrototypeContext const* prototypeContext);
+
+    std::vector<float> _ComputeAdaptiveSubdivisionLevels(
+        GfMatrix4d const& viewMatrix,
+        GfMatrix4d const& projectionMatrix,
+        GfRect2i const& dataWindow) const;
+
     // Populate the embree geometry object based on scene data.
     void _PopulateRtMesh(HdSceneDelegate *sceneDelegate,
                          RTCScene scene,
                          RTCDevice device,
+                         HdEmbreeMaterialEvalServices const*
+                             materialEvalServices,
                          HdDirtyBits *dirtyBits,
                          HdMeshReprDesc const &desc);
 
@@ -186,12 +205,14 @@ private:
     // Primvars will be turned into samplers in _PopulateRtMesh,
     // through the help of the _CreatePrimvarSampler() method.
     void _UpdatePrimvarSources(HdSceneDelegate* sceneDelegate,
-                               HdDirtyBits dirtyBits);
+                               HdDirtyBits dirtyBits,
+                               bool* requiresRefinedGeometryRebuild);
 
     // Populate _primvarSourceMap with primvars that are computed.
     // Return the names of the primvars that were successfully updated.
     TfTokenVector _UpdateComputedPrimvarSources(HdSceneDelegate* sceneDelegate,
-                                                HdDirtyBits dirtyBits);
+                                                HdDirtyBits dirtyBits,
+                                                bool* requiresRefinedGeometryRebuild);
 
     // Compute cached per-triangle surface derivatives for coarse triangle
     // meshes. The cached values remain in object space and are looked up
@@ -276,6 +297,8 @@ private:
     // Draw styles.
     bool _refined;
     bool _smoothNormals;
+    bool _displacementEnabled;
+    bool _warnedInstancedDisplacementIsLimited;
     bool _doubleSided;
     HdCullStyle _cullStyle;
 

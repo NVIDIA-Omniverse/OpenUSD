@@ -1,0 +1,648 @@
+//
+// Copyright 2026 Pixar
+//
+// Licensed under the terms set forth in the LICENSE.txt file available at
+// https://openusd.org/license.
+//
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/displacementEvaluation.h"
+
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/context.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampling.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graph.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/shadingContext.h"
+
+#include "pxr/base/gf/matrix4f.h"
+#include "pxr/base/gf/vec2f.h"
+#include "pxr/base/gf/vec3d.h"
+#include "pxr/base/tf/token.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+
+PXR_NAMESPACE_OPEN_SCOPE
+
+namespace {
+
+constexpr float _finiteDifferenceStep = 5.0e-4f;
+constexpr float _minimumRelativeAreaSquared = 1.0e-18f;
+static const TfToken _tokensSt("st", TfToken::Immortal);
+
+float
+_GetFiniteDifferenceOffset(float encodedCoordinate, bool isQuad)
+{
+    if (isQuad) {
+        return encodedCoordinate + _finiteDifferenceStep <= 1.0f
+            ? _finiteDifferenceStep
+            : -_finiteDifferenceStep;
+    }
+
+    // Non-quad subdivision faces encode a subpatch ID and a local coordinate
+    // together. Embree guarantees the local coordinate range [-0.5, 1.5),
+    // within which adding a small offset stays on the same subpatch encoding.
+    const float halfCoordinate = 0.5f * encodedCoordinate;
+    const float localCoordinate =
+        2.0f * (halfCoordinate - std::floor(halfCoordinate)) - 0.5f;
+    return localCoordinate + _finiteDifferenceStep < 1.5f
+        ? _finiteDifferenceStep
+        : -_finiteDifferenceStep;
+}
+
+bool
+_IsFinite(GfVec3f const& value)
+{
+    return std::isfinite(value[0]) &&
+           std::isfinite(value[1]) &&
+           std::isfinite(value[2]);
+}
+
+bool
+_IsFinite(GfVec3d const& value)
+{
+    return std::isfinite(value[0]) &&
+           std::isfinite(value[1]) &&
+           std::isfinite(value[2]);
+}
+
+bool
+_TryNormalize(
+    GfVec3d const& value,
+    GfVec3d* result,
+    double* length = nullptr)
+{
+    if (!result || !_IsFinite(value)) {
+        return false;
+    }
+
+    const double maximumComponent = std::max({
+        std::abs(value[0]), std::abs(value[1]), std::abs(value[2])});
+    if (!std::isfinite(maximumComponent) || maximumComponent == 0.0) {
+        return false;
+    }
+
+    const GfVec3d scaled = value / maximumComponent;
+    const double scaledLength = std::sqrt(scaled.GetLengthSq());
+    if (!std::isfinite(scaledLength) || scaledLength == 0.0) {
+        return false;
+    }
+
+    *result = scaled / scaledLength;
+    if (length) {
+        *length = maximumComponent * scaledLength;
+    }
+    return _IsFinite(*result);
+}
+
+bool
+_TryNormalize(GfVec3f const& value, GfVec3f* result)
+{
+    if (!result || !_IsFinite(value)) {
+        return false;
+    }
+
+    GfVec3d normalized;
+    if (!_TryNormalize(
+            GfVec3d(value[0], value[1], value[2]), &normalized)) {
+        return false;
+    }
+    *result = GfVec3f(
+        static_cast<float>(normalized[0]),
+        static_cast<float>(normalized[1]),
+        static_cast<float>(normalized[2]));
+    return _IsFinite(*result);
+}
+
+bool
+_AreTangentsIndependent(
+    GfVec3f const& dPdu,
+    GfVec3f const& dPdv)
+{
+    GfVec3f normalizedU;
+    GfVec3f normalizedV;
+    if (!_TryNormalize(dPdu, &normalizedU) ||
+        !_TryNormalize(dPdv, &normalizedV)) {
+        return false;
+    }
+    const GfVec3f relativeArea = GfCross(normalizedU, normalizedV);
+    const float relativeAreaSquared = relativeArea.GetLengthSq();
+    return std::isfinite(relativeAreaSquared) &&
+        relativeAreaSquared > _minimumRelativeAreaSquared;
+}
+
+bool
+_TryBuildNormalFromTangents(
+    GfVec3f const& dPdu,
+    GfVec3f const& dPdv,
+    GfVec3f* normal)
+{
+    if (!normal || !_AreTangentsIndependent(dPdu, dPdv)) {
+        return false;
+    }
+    const GfVec3d cross = GfCross(
+        GfVec3d(dPdu[0], dPdu[1], dPdu[2]),
+        GfVec3d(dPdv[0], dPdv[1], dPdv[2]));
+    GfVec3d normalized;
+    if (!_TryNormalize(cross, &normalized)) {
+        return false;
+    }
+    *normal = GfVec3f(
+        static_cast<float>(normalized[0]),
+        static_cast<float>(normalized[1]),
+        static_cast<float>(normalized[2]));
+    return _IsFinite(*normal);
+}
+
+bool
+_TryBuildWorldFrame(
+    HdEmbreePrototypeContext const& context,
+    GfVec3f const& objectNormal,
+    GfVec3f const& objectDPdu,
+    GfVec3f const& objectDPdv,
+    GfVec3f* worldNormal,
+    GfVec3f* worldDPdu,
+    GfVec3f* worldDPdv,
+    GfVec3f* worldTangent,
+    GfVec3f* worldBitangent)
+{
+    if (!worldNormal || !worldDPdu || !worldDPdv ||
+        !worldTangent || !worldBitangent ||
+        !_IsFinite(objectNormal) || !_IsFinite(objectDPdu) ||
+        !_IsFinite(objectDPdv) ||
+        !_AreTangentsIndependent(objectDPdu, objectDPdv)) {
+        return false;
+    }
+
+    const double objectToWorldDeterminant =
+        context.displacementObjectToWorldMatrix.GetDeterminant3();
+    if (!std::isfinite(objectToWorldDeterminant) ||
+        objectToWorldDeterminant == 0.0) {
+        return false;
+    }
+
+    const GfMatrix4f normalTransform =
+        context.displacementWorldToObjectMatrix.GetTranspose();
+    if (!_TryNormalize(
+            normalTransform.TransformDir(objectNormal), worldNormal)) {
+        return false;
+    }
+
+    *worldDPdu = context.displacementObjectToWorldMatrix.TransformDir(
+        objectDPdu);
+    *worldDPdv = context.displacementObjectToWorldMatrix.TransformDir(
+        objectDPdv);
+    if (!_IsFinite(*worldDPdu) || !_IsFinite(*worldDPdv) ||
+        !_AreTangentsIndependent(*worldDPdu, *worldDPdv)) {
+        return false;
+    }
+
+    const GfVec3f tangentCandidate =
+        *worldDPdu - *worldNormal * GfDot(*worldNormal, *worldDPdu);
+    if (!_TryNormalize(tangentCandidate, worldTangent)) {
+        return false;
+    }
+
+    const GfVec3f bitangentCandidate =
+        *worldDPdv - *worldNormal * GfDot(*worldNormal, *worldDPdv) -
+        *worldTangent * GfDot(*worldTangent, *worldDPdv);
+    if (!_TryNormalize(bitangentCandidate, worldBitangent)) {
+        // A valid but highly skewed parameterization can lose its independent
+        // component to float precision. The oriented cross product remains a
+        // stable orthogonal fallback.
+        if (!_TryNormalize(
+                GfCross(*worldNormal, *worldTangent), worldBitangent)) {
+            return false;
+        }
+    }
+
+    if (GfDot(*worldBitangent, *worldDPdv) < 0.0f) {
+        *worldBitangent = -*worldBitangent;
+    }
+    return true;
+}
+
+bool
+_InterpolateBaseFrame(
+    RTCGeometry geometry,
+    unsigned int primID,
+    float u,
+    float v,
+    float orientationSign,
+    GfVec3f* position,
+    GfVec3f* normal,
+    GfVec3f* dPdu,
+    GfVec3f* dPdv)
+{
+    if (!geometry || !position || !normal || !dPdu || !dPdv ||
+        !std::isfinite(u) || !std::isfinite(v)) {
+        return false;
+    }
+
+    alignas(16) float sampled[4] = {};
+    alignas(16) float sampledDu[4] = {};
+    alignas(16) float sampledDv[4] = {};
+    rtcInterpolate1(
+        geometry, primID, u, v, RTC_BUFFER_TYPE_VERTEX, 0,
+        sampled, sampledDu, sampledDv, 3);
+
+    *position = GfVec3f(sampled[0], sampled[1], sampled[2]);
+    *dPdu = GfVec3f(sampledDu[0], sampledDu[1], sampledDu[2]);
+    *dPdv = GfVec3f(sampledDv[0], sampledDv[1], sampledDv[2]);
+    if (!_IsFinite(*position) || !_IsFinite(*dPdu) || !_IsFinite(*dPdv) ||
+        !_TryBuildNormalFromTangents(*dPdu, *dPdv, normal)) {
+        return false;
+    }
+    *normal *= orientationSign;
+    return true;
+}
+
+bool
+_EvaluateDisplacementImpl(
+    HdEmbreePrototypeContext const* context,
+    unsigned int primID,
+    float u,
+    float v,
+    GfVec3f const& position,
+    GfVec3f const& normal,
+    GfVec3f const& dPdu,
+    GfVec3f const& dPdv,
+    float* displacement)
+{
+    if (!context || !context->material ||
+        !context->material->displacementGraph || !displacement ||
+        !std::isfinite(u) || !std::isfinite(v) || !_IsFinite(position)) {
+        return false;
+    }
+
+    // MaterialX surface derivatives are expressed in authored `st`, not in
+    // Embree's patch coordinates. Use the same inverse Jacobian as hit-time
+    // shading so geometric nodes see one consistent frame.
+    GfVec3f objectDPdu = dPdu;
+    GfVec3f objectDPdv = dPdv;
+    auto const stIt = context->primvarMap.find(_tokensSt);
+    if (stIt != context->primvarMap.end()) {
+        const HdEmbreeSubdivTexcoordJacobian stJacobian =
+            HdEmbreeComputeSubdivTexcoordJacobian(
+                stIt->second, primID, u, v);
+        if (stJacobian.valid) {
+            objectDPdu =
+                stJacobian.duDs * dPdu + stJacobian.dvDs * dPdv;
+            objectDPdv =
+                stJacobian.duDt * dPdu + stJacobian.dvDt * dPdv;
+        }
+    }
+
+    GfVec3f worldNormal;
+    GfVec3f worldDPdu;
+    GfVec3f worldDPdv;
+    GfVec3f worldTangent;
+    GfVec3f worldBitangent;
+    if (!_TryBuildWorldFrame(
+            *context, normal, objectDPdu, objectDPdv,
+            &worldNormal, &worldDPdu, &worldDPdv,
+            &worldTangent, &worldBitangent)) {
+        return false;
+    }
+
+    mxcpp::ShadingContext shadingContext;
+    shadingContext.position = mxcpp::Vec3f(
+        position[0], position[1], position[2]);
+    shadingContext.normal = mxcpp::Vec3f(
+        worldNormal[0], worldNormal[1], worldNormal[2]);
+    shadingContext.tangent = mxcpp::Vec3f(
+        worldTangent[0], worldTangent[1], worldTangent[2]);
+    shadingContext.bitangent = mxcpp::Vec3f(
+        worldBitangent[0], worldBitangent[1], worldBitangent[2]);
+    shadingContext.faceId = static_cast<int>(primID);
+    shadingContext.baryU = u;
+    shadingContext.baryV = v;
+    shadingContext.dPdu = mxcpp::Vec3f(
+        worldDPdu[0], worldDPdu[1], worldDPdu[2]);
+    shadingContext.dPdv = mxcpp::Vec3f(
+        worldDPdv[0], worldDPdv[1], worldDPdv[2]);
+    shadingContext.dPositiondu = mxcpp::Vec3f(
+        objectDPdu[0], objectDPdu[1], objectDPdu[2]);
+    shadingContext.dPositiondv = mxcpp::Vec3f(
+        objectDPdv[0], objectDPdv[1], objectDPdv[2]);
+
+    // Geometry displacement has no screen-space footprint. Leaving all dx/dy
+    // derivatives at their zero defaults makes callback-time and hit-time
+    // image filtering identical.
+    if (stIt != context->primvarMap.end()) {
+        HdEmbreeSampleTexcoord(
+            stIt->second, primID, u, v, &shadingContext.texcoord);
+    }
+
+    HdEmbreePrimvarLookup primvarLookup{
+        &context->primvarMapByString, primID, u, v};
+    shadingContext.geomPropLookup = &HdEmbreeSamplePrimvar;
+    shadingContext.geomPropUserData = &primvarLookup;
+    shadingContext.uniformProps = &context->uniformPrimvarMap;
+
+    if (context->materialEvalServices) {
+        shadingContext.textureSystem =
+            context->materialEvalServices->textureSystem;
+        shadingContext.frame = context->materialEvalServices->frame;
+        shadingContext.time = context->materialEvalServices->time;
+    }
+
+    shadingContext.objectToWorldMatrix =
+        HdEmbreePrimvarSamplingDetail::ToMxMatrix(
+            context->displacementObjectToWorldMatrix);
+    shadingContext.worldToObjectMatrix =
+        HdEmbreePrimvarSamplingDetail::ToMxMatrix(
+            context->displacementWorldToObjectMatrix);
+    shadingContext.hasObjectToWorldTransform = true;
+    shadingContext.hasWorldToObjectTransform = true;
+
+    float evaluated = 0.0f;
+    if (!context->material->displacementGraph->EvaluateDisplacement(
+            shadingContext, &evaluated) || !std::isfinite(evaluated)) {
+        return false;
+    }
+
+    *displacement = evaluated;
+    return true;
+}
+
+bool
+_ComputeObjectSpaceDisplacementOffsetImpl(
+    HdEmbreePrototypeContext const* context,
+    GfVec3f const& objectNormal,
+    float displacement,
+    GfVec3f* objectOffset)
+{
+    if (!context || !objectOffset || !_IsFinite(objectNormal) ||
+        !std::isfinite(displacement)) {
+        return false;
+    }
+
+    GfVec3f worldNormal;
+    if (!_TryNormalize(
+            context->displacementWorldToObjectMatrix.GetTranspose()
+                .TransformDir(objectNormal),
+            &worldNormal)) {
+        return false;
+    }
+
+    const GfVec3d worldOffset =
+        static_cast<double>(displacement) *
+        GfVec3d(worldNormal[0], worldNormal[1], worldNormal[2]);
+    const GfVec3d offset =
+        GfMatrix4d(context->displacementWorldToObjectMatrix)
+            .TransformDir(worldOffset);
+    constexpr double maxFloat =
+        static_cast<double>(std::numeric_limits<float>::max());
+    if (!_IsFinite(offset) ||
+        std::abs(offset[0]) > maxFloat ||
+        std::abs(offset[1]) > maxFloat ||
+        std::abs(offset[2]) > maxFloat) {
+        return false;
+    }
+
+    *objectOffset = GfVec3f(
+        static_cast<float>(offset[0]),
+        static_cast<float>(offset[1]),
+        static_cast<float>(offset[2]));
+    return _IsFinite(*objectOffset);
+}
+
+bool
+_TryAddOffset(
+    GfVec3f const& position,
+    GfVec3f const& offset,
+    GfVec3f* displacedPosition)
+{
+    if (!displacedPosition || !_IsFinite(position) || !_IsFinite(offset)) {
+        return false;
+    }
+    const GfVec3d sum(
+        static_cast<double>(position[0]) + offset[0],
+        static_cast<double>(position[1]) + offset[1],
+        static_cast<double>(position[2]) + offset[2]);
+    constexpr double maxFloat =
+        static_cast<double>(std::numeric_limits<float>::max());
+    if (!_IsFinite(sum) ||
+        std::abs(sum[0]) > maxFloat ||
+        std::abs(sum[1]) > maxFloat ||
+        std::abs(sum[2]) > maxFloat) {
+        return false;
+    }
+    *displacedPosition = GfVec3f(
+        static_cast<float>(sum[0]),
+        static_cast<float>(sum[1]),
+        static_cast<float>(sum[2]));
+    return true;
+}
+
+bool
+_TryFiniteDifference(
+    GfVec3f const& probe,
+    GfVec3f const& center,
+    float parameterOffset,
+    GfVec3f* derivative)
+{
+    if (!derivative || !_IsFinite(probe) || !_IsFinite(center) ||
+        !std::isfinite(parameterOffset) || parameterOffset == 0.0f) {
+        return false;
+    }
+    const double inverseOffset =
+        1.0 / static_cast<double>(parameterOffset);
+    const GfVec3d result(
+        (static_cast<double>(probe[0]) - center[0]) * inverseOffset,
+        (static_cast<double>(probe[1]) - center[1]) * inverseOffset,
+        (static_cast<double>(probe[2]) - center[2]) * inverseOffset);
+    constexpr double maxFloat =
+        static_cast<double>(std::numeric_limits<float>::max());
+    if (!_IsFinite(result) ||
+        std::abs(result[0]) > maxFloat ||
+        std::abs(result[1]) > maxFloat ||
+        std::abs(result[2]) > maxFloat) {
+        return false;
+    }
+    *derivative = GfVec3f(
+        static_cast<float>(result[0]),
+        static_cast<float>(result[1]),
+        static_cast<float>(result[2]));
+    return true;
+}
+
+bool
+_ComputeDisplacedSubdivFrameImpl(
+    RTCGeometry geometry,
+    HdEmbreePrototypeContext const* context,
+    unsigned int primID,
+    float u,
+    float v,
+    GfVec3f* outNormal,
+    GfVec3f* outDPdu,
+    GfVec3f* outDPdv)
+{
+    if (!geometry || !context || !outNormal || !outDPdu || !outDPdv ||
+        !std::isfinite(u) || !std::isfinite(v)) {
+        return false;
+    }
+
+    const float orientationSign = context->orientationSign < 0.0f
+        ? -1.0f
+        : 1.0f;
+    GfVec3f position;
+    GfVec3f normal;
+    GfVec3f dPdu;
+    GfVec3f dPdv;
+    if (!_InterpolateBaseFrame(
+            geometry, primID, u, v, orientationSign,
+            &position, &normal, &dPdu, &dPdv)) {
+        return false;
+    }
+
+    float displacement = 0.0f;
+    if (!_EvaluateDisplacementImpl(
+            context, primID, u, v,
+            position, normal, dPdu, dPdv, &displacement)) {
+        return false;
+    }
+    GfVec3f objectOffset;
+    if (!_ComputeObjectSpaceDisplacementOffsetImpl(
+            context, normal, displacement, &objectOffset)) {
+        return false;
+    }
+
+    auto const* faceVertexCounts = static_cast<uint32_t const*>(
+        rtcGetGeometryBufferData(geometry, RTC_BUFFER_TYPE_FACE, 0));
+    if (!faceVertexCounts) {
+        return false;
+    }
+    const bool isQuad = faceVertexCounts[primID] == 4;
+    const float du = _GetFiniteDifferenceOffset(u, isQuad);
+    const float dv = _GetFiniteDifferenceOffset(v, isQuad);
+
+    GfVec3f positionU;
+    GfVec3f normalU;
+    GfVec3f dPduU;
+    GfVec3f dPdvU;
+    if (!_InterpolateBaseFrame(
+            geometry, primID, u + du, v,
+            orientationSign,
+            &positionU, &normalU, &dPduU, &dPdvU)) {
+        return false;
+    }
+    float displacementU = 0.0f;
+    if (!_EvaluateDisplacementImpl(
+            context, primID, u + du, v,
+            positionU, normalU, dPduU, dPdvU, &displacementU)) {
+        return false;
+    }
+    GfVec3f objectOffsetU;
+    if (!_ComputeObjectSpaceDisplacementOffsetImpl(
+            context, normalU, displacementU, &objectOffsetU)) {
+        return false;
+    }
+
+    GfVec3f positionV;
+    GfVec3f normalV;
+    GfVec3f dPduV;
+    GfVec3f dPdvV;
+    if (!_InterpolateBaseFrame(
+            geometry, primID, u, v + dv,
+            orientationSign,
+            &positionV, &normalV, &dPduV, &dPdvV)) {
+        return false;
+    }
+    float displacementV = 0.0f;
+    if (!_EvaluateDisplacementImpl(
+            context, primID, u, v + dv,
+            positionV, normalV, dPduV, dPdvV, &displacementV)) {
+        return false;
+    }
+    GfVec3f objectOffsetV;
+    if (!_ComputeObjectSpaceDisplacementOffsetImpl(
+            context, normalV, displacementV, &objectOffsetV)) {
+        return false;
+    }
+
+    GfVec3f objectOffsetDu;
+    GfVec3f objectOffsetDv;
+    GfVec3f displacedDPdu;
+    GfVec3f displacedDPdv;
+    if (!_TryFiniteDifference(
+            objectOffsetU, objectOffset, du, &objectOffsetDu) ||
+        !_TryFiniteDifference(
+            objectOffsetV, objectOffset, dv, &objectOffsetDv) ||
+        !_TryAddOffset(dPdu, objectOffsetDu, &displacedDPdu) ||
+        !_TryAddOffset(dPdv, objectOffsetDv, &displacedDPdv)) {
+        return false;
+    }
+    GfVec3f displacedNormal;
+    if (!_IsFinite(displacedDPdu) || !_IsFinite(displacedDPdv) ||
+        !_TryBuildNormalFromTangents(
+            displacedDPdu, displacedDPdv, &displacedNormal)) {
+        return false;
+    }
+    displacedNormal *= orientationSign;
+
+    *outNormal = displacedNormal;
+    *outDPdu = displacedDPdu;
+    *outDPdv = displacedDPdv;
+    return true;
+}
+
+} // namespace
+
+bool
+HdEmbreeEvaluateDisplacement(
+    HdEmbreePrototypeContext const* context,
+    unsigned int primID,
+    float u,
+    float v,
+    GfVec3f const& position,
+    GfVec3f const& normal,
+    GfVec3f const& dPdu,
+    GfVec3f const& dPdv,
+    float* displacement)
+{
+    try {
+        return _EvaluateDisplacementImpl(
+            context, primID, u, v,
+            position, normal, dPdu, dPdv, displacement);
+    } catch (...) {
+        return false;
+    }
+}
+
+bool
+HdEmbreeComputeObjectSpaceDisplacementOffset(
+    HdEmbreePrototypeContext const* context,
+    GfVec3f const& objectNormal,
+    float displacement,
+    GfVec3f* objectOffset)
+{
+    try {
+        return _ComputeObjectSpaceDisplacementOffsetImpl(
+            context, objectNormal, displacement, objectOffset);
+    } catch (...) {
+        return false;
+    }
+}
+
+bool
+HdEmbreeComputeDisplacedSubdivFrame(
+    RTCGeometry geometry,
+    HdEmbreePrototypeContext const* context,
+    unsigned int primID,
+    float u,
+    float v,
+    GfVec3f* outNormal,
+    GfVec3f* outDPdu,
+    GfVec3f* outDPdv)
+{
+    try {
+        return _ComputeDisplacedSubdivFrameImpl(
+            geometry, context, primID, u, v,
+            outNormal, outDPdu, outDPdv);
+    } catch (...) {
+        return false;
+    }
+}
+
+PXR_NAMESPACE_CLOSE_SCOPE

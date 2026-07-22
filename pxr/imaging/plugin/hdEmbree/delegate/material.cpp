@@ -43,7 +43,8 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
     if (renderParam) {
         // The render thread reads the compiled graph during shading, so stop
         // the current render and bump the scene version before replacing it.
-        static_cast<HdEmbreeRenderParam*>(renderParam)->NotifySceneChange();
+        static_cast<HdEmbreeRenderParam*>(renderParam)
+            ->NotifyDisplacementChange();
     }
 
     SdfPath const& id = GetId();
@@ -125,7 +126,8 @@ HdEmbreeMaterial::Finalize(HdRenderParam *renderParam)
     // Bumping the scene version guarantees the render pass restarts only
     // after the affected rprims have re-synced their material bindings.
     if (renderParam) {
-        static_cast<HdEmbreeRenderParam*>(renderParam)->NotifySceneChange();
+        static_cast<HdEmbreeRenderParam*>(renderParam)
+            ->NotifyDisplacementChange();
     }
 }
 

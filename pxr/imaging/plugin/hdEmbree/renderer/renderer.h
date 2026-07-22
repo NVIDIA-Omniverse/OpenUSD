@@ -16,6 +16,7 @@
 #include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightRegistry.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/integrator/medium.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/integrator/sss.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/materialEvalContext.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/sampling/sampling.h"
 
 #include "pxr/imaging/hd/aov.h"
@@ -169,6 +170,15 @@ public:
     /// \param frame Finite application frame value.
     /// \param time Finite application time value.
     void SetSceneFrameAndTime(float frame, float time);
+
+    /// \brief Return renderer-owned services used for material evaluation.
+    ///
+    /// The returned observer has a stable address for this renderer's
+    /// lifetime. The delegate must stop rendering before changing its frame
+    /// or time values through \ref SetSceneFrameAndTime.
+    HdEmbreeMaterialEvalServices const* GetMaterialEvalServices() const {
+        return &_materialEvalServices;
+    }
 
     /// \brief Bind the AOVs written by subsequent renders.
     ///
@@ -901,6 +911,9 @@ private:
     /// \param prototypeContext Non-null prototype context for the hit.
     /// \param hitPos World-space hit position.
     /// \param normal Normalized world-space shading normal.
+    /// \param precomputedDisplacedDPdu Optional object-space displaced
+    /// position derivative recovered together with \p normal.
+    /// \param precomputedDisplacedDPdv Optional matching v derivative.
     /// \param outDndu Optional world-space normal-u derivative output.
     /// \param outDndv Optional world-space normal-v derivative output.
     /// \param options Controls optional derivative work.
@@ -913,6 +926,8 @@ private:
         HdEmbreePrototypeContext const* prototypeContext,
         GfVec3f const& hitPos,
         GfVec3f const& normal,
+        GfVec3f const* precomputedDisplacedDPdu = nullptr,
+        GfVec3f const* precomputedDisplacedDPdv = nullptr,
         GfVec3f* outDndu = nullptr,
         GfVec3f* outDndv = nullptr,
         _ShadingContextOptions options = _ShadingContextOptions()) const;
@@ -1202,9 +1217,10 @@ private:
     // Shared MaterialX texture backend for the whole renderer.
     std::unique_ptr<mxcpp::TextureSystem> _textureSystem;
 
-    // Application frame/time values propagated into MaterialX shading.
-    float _sceneFrame;
-    float _sceneTime;
+    // Stable-address services shared by geometry-build and hit-time material
+    // evaluation. _textureSystem is declared first so it is initialized before
+    // this non-owning observer is constructed.
+    HdEmbreeMaterialEvalServices _materialEvalServices;
 
     // Per-pixel adaptive sampling state (Welford online variance).
     std::vector<GfVec3f> _pixelMean;

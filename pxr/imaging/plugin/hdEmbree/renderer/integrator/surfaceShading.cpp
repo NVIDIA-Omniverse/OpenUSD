@@ -101,6 +101,8 @@ HdEmbreeRenderer::_BuildShadingContext(
     HdEmbreePrototypeContext const* prototypeContext,
     GfVec3f const& hitPos,
     GfVec3f const& normal,
+    GfVec3f const* precomputedDisplacedDPdu,
+    GfVec3f const* precomputedDisplacedDPdv,
     GfVec3f* outDndu,
     GfVec3f* outDndv,
     _ShadingContextOptions options) const
@@ -141,16 +143,19 @@ HdEmbreeRenderer::_BuildShadingContext(
     // Surface derivatives (dPdu, dPdv) and normal derivatives (dndu, dndv)
     // start in object space and are transformed to world space below.
     GfVec3f dPdu, dPdv, dndu, dndv;
+    const GfVec3f objectNormal =
+        _TransformNormalToObject(instanceContext, normal);
     if (_IsSubdivMesh(prototypeContext)) {
         _ComputeSubdivSurfaceDerivatives(
             prototypeContext,
             instanceContext->rootScene, rayHit.hit.geomID,
             rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
-            normal, &dPdu, &dPdv, &dndu, &dndv);
+            objectNormal, &dPdu, &dPdv, &dndu, &dndv,
+            precomputedDisplacedDPdu, precomputedDisplacedDPdv);
     } else {
         _ComputeTriangleSurfaceDerivatives(
             prototypeContext,
-            rayHit.hit.primID, normal,
+            rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v, objectNormal,
             &dPdu, &dPdv, &dndu, &dndv);
     }
 
@@ -162,8 +167,10 @@ HdEmbreeRenderer::_BuildShadingContext(
     // Object space -> world space
     dPdu = instanceContext->objectToWorldMatrix.TransformDir(dPdu);
     dPdv = instanceContext->objectToWorldMatrix.TransformDir(dPdv);
-    dndu = instanceContext->objectToWorldMatrix.TransformDir(dndu);
-    dndv = instanceContext->objectToWorldMatrix.TransformDir(dndv);
+    dndu = _TransformNormalDerivativeToWorld(
+        instanceContext, objectNormal, dndu);
+    dndv = _TransformNormalDerivativeToWorld(
+        instanceContext, objectNormal, dndv);
 
     if (outDndu) *outDndu = dndu;
     if (outDndv) *outDndv = dndv;
@@ -200,28 +207,26 @@ HdEmbreeRenderer::_BuildShadingContext(
 
     if (haveTangentFrame) {
         tangent -= normal * GfDot(normal, tangent);
-        if (tangent.GetLengthSq() > 1e-18f) {
-            tangent.Normalize();
-        } else {
-            haveTangentFrame = false;
-        }
-
-        bitangent -= normal * GfDot(normal, bitangent);
-        bitangent -= tangent * GfDot(tangent, bitangent);
-        if (haveTangentFrame && bitangent.GetLengthSq() > 1e-18f) {
-            bitangent.Normalize();
-        } else {
-            haveTangentFrame = false;
+        haveTangentFrame =
+            _TryNormalizeDirection(tangent, &tangent);
+        if (haveTangentFrame) {
+            bitangent -= normal * GfDot(normal, bitangent);
+            bitangent -= tangent * GfDot(tangent, bitangent);
+            haveTangentFrame =
+                _TryNormalizeDirection(bitangent, &bitangent);
         }
     }
 
     if (!haveTangentFrame) {
-        bitangent = GfCross(normal, dPdu);
-        if (bitangent.GetLengthSq() < 1e-18f) {
+        tangent = dPdu - normal * GfDot(normal, dPdu);
+        if (_TryNormalizeDirection(tangent, &tangent)) {
+            bitangent =
+                dPdv - normal * GfDot(normal, dPdv) -
+                tangent * GfDot(tangent, dPdv);
+        }
+        if (!_TryNormalizeDirection(tangent, &tangent) ||
+            !_TryNormalizeDirection(bitangent, &bitangent)) {
             GfBuildOrthonormalFrame(normal, &tangent, &bitangent);
-        } else {
-            bitangent.Normalize();
-            tangent = GfCross(bitangent, normal).GetNormalized();
         }
     }
 
@@ -238,9 +243,13 @@ HdEmbreeRenderer::_BuildShadingContext(
     ctx.texcoord = texcoordVal;
     ctx.displayColor = _ToMx(displayColor);
     ctx.displayOpacity = displayOpacity;
-    ctx.textureSystem = _textureSystem.get();
-    ctx.frame = _sceneFrame;
-    ctx.time = _sceneTime;
+    HdEmbreeMaterialEvalServices const* materialEvalServices =
+        prototypeContext->materialEvalServices
+            ? prototypeContext->materialEvalServices
+            : &_materialEvalServices;
+    ctx.textureSystem = materialEvalServices->textureSystem;
+    ctx.frame = materialEvalServices->frame;
+    ctx.time = materialEvalServices->time;
     ctx.faceId = rayHit.hit.primID;
     ctx.baryU = rayHit.hit.u;
     ctx.baryV = rayHit.hit.v;
@@ -301,11 +310,13 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
     if (!evalGraph || !outClosure) return false;
 
     GfVec3f hitPos = _CalculateHitPosition(rayHit);
+    GfVec3f displacedDPdu;
+    GfVec3f displacedDPdv;
+    bool hasDisplacedFrame = false;
     GfVec3f normal = _ResolveObjectSpaceNormal(
         prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
-        rayHit);
-    normal = instanceContext->objectToWorldMatrix.TransformDir(normal);
-    normal.Normalize();
+        rayHit, &displacedDPdu, &displacedDPdv, &hasDisplacedFrame);
+    normal = _TransformNormalToWorld(instanceContext, normal);
     if (outGeometricNormal) {
         *outGeometricNormal = normal;
     }
@@ -316,6 +327,8 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
         mxcpp::ShadingContext ctx = _BuildShadingContext(
             rayHit, defaultRayDiff,
             instanceContext, prototypeContext, hitPos, normal,
+            hasDisplacedFrame ? &displacedDPdu : nullptr,
+            hasDisplacedFrame ? &displacedDPdv : nullptr,
             nullptr, nullptr, options);
         HdEmbreePrimvarLookup cbData{
             &prototypeContext->primvarMapByString,

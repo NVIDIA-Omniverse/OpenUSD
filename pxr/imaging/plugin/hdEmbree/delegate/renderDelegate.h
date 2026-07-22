@@ -285,6 +285,10 @@ private:
     // A version counter for edits to _scene.
     std::atomic<int> _sceneVersion;
 
+    // A narrower version for material edits that require displacement
+    // callbacks to be reevaluated.
+    std::atomic<int> _displacementVersion;
+
     // A shared HdEmbreeRenderParam object that stores top-level embree state;
     // passed to prims during Sync().
     std::shared_ptr<HdEmbreeRenderParam> _renderParam;

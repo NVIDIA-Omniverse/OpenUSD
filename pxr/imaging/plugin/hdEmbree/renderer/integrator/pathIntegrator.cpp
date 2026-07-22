@@ -20,34 +20,6 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-void
-HdEmbreeRenderer::_ApplyPathWeight(
-    GfVec3f const& weight, _PathState* state) const
-{
-    if (!state) {
-        return;
-    }
-    if (state->hero.active) {
-        const _HeroWavelengthState hero{
-            true, state->hero.wavelengthNm, state->hero.pdf};
-        state->spectralThroughput *= _RgbToSpectralValue(weight, hero);
-    } else {
-        state->throughput = GfCompMult(state->throughput, weight);
-    }
-}
-
-GfVec3f
-HdEmbreeRenderer::_GetPathThroughputRgb(_PathState const& state) const
-{
-    const _HeroWavelengthState hero{
-        state.hero.active,
-        state.hero.wavelengthNm,
-        state.hero.pdf};
-    return state.hero.active
-        ? _SpectralScalarToRgb(state.spectralThroughput, hero)
-        : state.throughput;
-}
-
 GfVec3f
 HdEmbreeRenderer::_WeightPathRadiance(
     GfVec3f const& value, _PathState const& state) const
@@ -245,32 +217,34 @@ HdEmbreeRenderer::_IntegratePath(
 
         // Normals.
         //
-        // - `geometricNormal`: unflipped smooth shading normal (interpolated
-        //   vertex / subdiv-limit normal, else face Ng). Kept in its
-        //   world-oriented form because later stages (medium-boundary
-        //   crossing detection, next-ray self-intersection bias) rely on
-        //   its sign relative to world orientation rather than relative
-        //   to the ray direction.
-        // - `faceNg`: the true geometric face normal from Embree, then
-        //   face-forwarded toward `wo`. This is Cycles' `sd->Ng` and is
-        //   used for validity checks that can't tolerate shading-normal
-        //   lies (e.g., rejecting an SSS entry whose refracted direction
-        //   is outward relative to the face).
+        // - `geometricNormal`: the unflipped smooth shading normal
+        //   (interpolated vertex / subdiv-limit normal, or the reconstructed
+        //   displaced normal). It defines the tangent and material frame but
+        //   never classifies a true surface boundary.
+        // - `orientedFaceNg`: the true, unflipped displaced facet normal from
+        //   Embree. Medium crossing, transmission side, visibility-ray
+        //   offset, and continuation-ray bias use this value.
+        // - `faceNg`: a face-forwarded copy of `orientedFaceNg`, used for
+        //   local validity checks such as SSS entry direction.
         // - `normal`: the shading normal used for BSDF evaluation /
         //   sampling. Starts from `geometricNormal`, then face-forwarded
         //   against `wo`, then perturbed by the material's tangent-space
         //   normal map. This is Cycles' `sd->N`.
+        GfVec3f displacedDPdu;
+        GfVec3f displacedDPdv;
+        bool hasDisplacedFrame = false;
         GfVec3f geometricNormal = _ResolveObjectSpaceNormal(
             prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
-            rayHit);
-        geometricNormal =
-            instanceContext->objectToWorldMatrix.TransformDir(geometricNormal);
-        geometricNormal.Normalize();
+            rayHit, &displacedDPdu, &displacedDPdv, &hasDisplacedFrame);
+        geometricNormal = _TransformNormalToWorld(
+            instanceContext, geometricNormal);
 
-        GfVec3f faceNg(rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
-        faceNg =
-            instanceContext->objectToWorldMatrix.TransformDir(faceNg);
-        faceNg.Normalize();
+        GfVec3f orientedFaceNg =
+            prototypeContext->orientationSign * GfVec3f(
+                rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
+        orientedFaceNg = _TransformNormalToWorld(
+            instanceContext, orientedFaceNg);
+        GfVec3f faceNg = orientedFaceNg;
 
         GfVec3f normal = geometricNormal;
 
@@ -289,9 +263,9 @@ HdEmbreeRenderer::_IntegratePath(
         // from wo). Flipping both shading N and face Ng together (Cycles
         // kernel/geom/shader_data.h) also prevents shading-normal
         // terminator artifacts from rejecting SSS entries on otherwise
-        // front-facing hits. `geometricNormal` is intentionally left
-        // unflipped because downstream medium/bias code needs its world
-        // orientation.
+        // front-facing hits. `orientedFaceNg` is intentionally left
+        // unflipped because downstream medium/bias code needs the actual
+        // tessellated surface orientation.
         if (GfDot(faceNg, wo) < 0.0f) {
             faceNg = -faceNg;
         }
@@ -304,6 +278,8 @@ HdEmbreeRenderer::_IntegratePath(
         mxcpp::ShadingContext ctx = _BuildShadingContext(
             rayHit, path.rayDiff,
             instanceContext, prototypeContext, hitPos, normal,
+            hasDisplacedFrame ? &displacedDPdu : nullptr,
+            hasDisplacedFrame ? &displacedDPdv : nullptr,
             &surfaceDifferentials.dndu, &surfaceDifferentials.dndv);
         HdEmbreePrimvarLookup cbData{
             &prototypeContext->primvarMapByString,
@@ -459,7 +435,7 @@ HdEmbreeRenderer::_IntegratePath(
         // Sanitize the material normal against the geometric surface before
         // using it to prepare or sample the BSDF.
         const GfVec3f bsdfNormal = hasClosure
-            ? _GetBsdfNormal(closure, normal, geometricNormal, wo)
+            ? _GetBsdfNormal(closure, normal, orientedFaceNg, wo)
             : normal;
 
         mxcpp::AdobeOpenPbrPreparedSurface adobeOpenPbrSurface;
@@ -540,7 +516,7 @@ HdEmbreeRenderer::_IntegratePath(
             direct = _ComputeDirectLightingMIS(
                 hitPos,
                 bsdfNormal,
-                geometricNormal,
+                orientedFaceNg,
                 wo,
                 bounceDomain.Fork(HdEmbreeSampleDomainKey::DirectLighting),
                 doubleSided,
@@ -568,7 +544,7 @@ HdEmbreeRenderer::_IntegratePath(
             direct = _ComputeDirectLightingMIS(
                 hitPos,
                 normal,
-                geometricNormal,
+                orientedFaceNg,
                 wo,
                 bounceDomain.Fork(HdEmbreeSampleDomainKey::DirectLighting),
                 doubleSided,
@@ -589,7 +565,7 @@ HdEmbreeRenderer::_IntegratePath(
         // Cross a medium-only boundary without scattering: update medium
         // ownership, advance through the surface, and refund the bounce.
         if (volumeOnlyBoundary) {
-            const float wiDotNg = GfDot(path.rayDir, geometricNormal);
+            const float wiDotNg = GfDot(path.rayDir, orientedFaceNg);
             _UpdatePathMedium(
                 closure,
                 prototypeContext,
@@ -599,7 +575,7 @@ HdEmbreeRenderer::_IntegratePath(
 
             const float advance = rayHit.ray.tfar + 1e-4f;
             const float bias = wiDotNg > 0.0f ? 1e-4f : -1e-4f;
-            path.rayOrigin = hitPos + geometricNormal * bias;
+            path.rayOrigin = hitPos + orientedFaceNg * bias;
             if (path.rayDiff.hasDifferentials) {
                 path.rayDiff.rxOrigin += path.rayDir * advance;
                 path.rayDiff.ryOrigin += path.rayDir * advance;
@@ -625,8 +601,8 @@ HdEmbreeRenderer::_IntegratePath(
         if (!hasBsdfClosure || !hasBsdfSample || bs.isSubsurface) break;
 
         const GfVec3f wi = _ToGf(bs.wi);
-        const float woDotNg = GfDot(wo, geometricNormal);
-        const float wiDotNg = GfDot(wi, geometricNormal);
+        const float woDotNg = GfDot(wo, orientedFaceNg);
+        const float wiDotNg = GfDot(wi, orientedFaceNg);
         const bool crossesBoundary =
             (woDotNg > 0.0f && wiDotNg < 0.0f) ||
             (woDotNg < 0.0f && wiDotNg > 0.0f);
@@ -744,8 +720,8 @@ HdEmbreeRenderer::_IntegratePath(
 
         // Bias onto the sampled side of the geometric surface, then publish
         // the sampled direction as the next pending segment.
-        float bias = (GfDot(wi, geometricNormal) > 0.0f) ? 1e-4f : -1e-4f;
-        path.rayOrigin = hitPos + geometricNormal * bias;
+        float bias = (GfDot(wi, orientedFaceNg) > 0.0f) ? 1e-4f : -1e-4f;
+        path.rayOrigin = hitPos + orientedFaceNg * bias;
         path.rayDir = wi;
         ++bounce;
     }

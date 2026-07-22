@@ -327,12 +327,15 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
                                        HdRprimCollection const &collection,
                                        HdRenderThread *renderThread,
                                        HdEmbreeRenderer *renderer,
-                                       std::atomic<int> *sceneVersion)
+                                       std::atomic<int> *sceneVersion,
+                                       std::atomic<int> *displacementVersion)
     : HdRenderPass(index, collection)
     , _renderThread(renderThread)
     , _renderer(renderer)
     , _sceneVersion(sceneVersion)
     , _lastSceneVersion(0)
+    , _displacementVersion(displacementVersion)
+    , _lastDisplacementVersion(0)
     , _lastSettingsVersion(0)
     , _lastRenderSettingsPrimPath()
     , _hasAppliedRenderSettingsPrim(false)
@@ -345,6 +348,7 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _hasSubdivisionCamera(false)
     , _dynamicSubdivisionTessellation(false)
     , _subdivisionSceneUpdatePending(false)
+    , _subdivisionDisplacementUpdatePending(false)
     , _subdivisionViewMatrix(1.0f)
     , _subdivisionProjMatrix(1.0f)
     , _cameraExposureScale(1.0f)
@@ -700,12 +704,19 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     }
 
     int currentSceneVersion = _sceneVersion->load();
-    const bool sceneChanged = _lastSceneVersion != currentSceneVersion;
+    bool sceneChanged = _lastSceneVersion != currentSceneVersion;
     if (sceneChanged) {
         needStartRender = true;
         _lastSceneVersion = currentSceneVersion;
     }
+    int currentDisplacementVersion = _displacementVersion->load();
+    bool displacementChanged =
+        _lastDisplacementVersion != currentDisplacementVersion;
+    if (displacementChanged) {
+        _lastDisplacementVersion = currentDisplacementVersion;
+    }
 
+    bool frameTimeChanged = false;
     {
         HdRenderIndex *index = GetRenderIndex();
         const HdSceneIndexBaseRefPtr si = index->GetTerminalSceneIndex();
@@ -719,6 +730,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                 static_cast<float>(currentTime));
             _lastFrame = currentFrame;
             _lastTime = currentTime;
+            frameTimeChanged = true;
             needStartRender = true;
         }
     }
@@ -885,6 +897,20 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
         if (materialRenderContextsChanged) {
             _ResyncMaterialNetworksForRenderContextChange(GetRenderIndex());
+
+            // The resync can publish a new displacement graph. Observe its
+            // versions in this Execute so we never render one pass with new
+            // shading state but stale displaced tessellation.
+            currentSceneVersion = _sceneVersion->load();
+            if (_lastSceneVersion != currentSceneVersion) {
+                sceneChanged = true;
+                _lastSceneVersion = currentSceneVersion;
+            }
+            currentDisplacementVersion = _displacementVersion->load();
+            if (_lastDisplacementVersion != currentDisplacementVersion) {
+                displacementChanged = true;
+                _lastDisplacementVersion = currentDisplacementVersion;
+            }
         }
 
         needStartRender = true;
@@ -975,11 +1001,15 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         _subdivisionDataWindow = _dataWindow;
     }
 
-    // Scene changes can add subdivision meshes or alter displacement without
-    // changing edge levels. Hold that work until a camera is attached, then
-    // recommit it against the frozen subdivision camera unless dynamic updates
-    // are enabled.
-    _subdivisionSceneUpdatePending |= sceneChanged;
+    // Scene changes can add subdivision meshes. Displacement materials and
+    // animated graph inputs can also change geometry without changing edge
+    // levels. Hold that work until a camera is attached, then recommit it
+    // against the frozen subdivision camera unless dynamic updates are
+    // enabled.
+    _subdivisionSceneUpdatePending |=
+        sceneChanged || displacementChanged || frameTimeChanged;
+    _subdivisionDisplacementUpdatePending |=
+        displacementChanged || frameTimeChanged;
     if (hasAttachedCamera && _hasSubdivisionCamera &&
         (_subdivisionSceneUpdatePending || updateSubdivisionCamera)) {
         _renderThread->StopRender();
@@ -987,10 +1017,11 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                 ->UpdateAdaptiveSubdivision(
                     _subdivisionViewMatrix, _subdivisionProjMatrix,
                     _subdivisionDataWindow,
-                    _subdivisionSceneUpdatePending)) {
+                    _subdivisionDisplacementUpdatePending)) {
             _renderer->ResetAccumulation();
         }
         _subdivisionSceneUpdatePending = false;
+        _subdivisionDisplacementUpdatePending = false;
         needStartRender = true;
     }
 

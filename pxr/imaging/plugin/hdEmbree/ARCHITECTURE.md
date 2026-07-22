@@ -31,12 +31,12 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
 
 - `rendererPlugin.h/.cpp`: `HdRendererPlugin` entry point; reports support and creates/deletes `HdEmbreeRenderDelegate`.
 - `renderDelegate.h/.cpp`: central factory and lifetime owner. Declares setting tokens/descriptors; advertises supported Rprim, Sprim, and Bprim types; creates scene adapters, buffers, and passes; owns the Embree device/top-level scene, renderer, render thread, and render param.
-- `renderParam.h`: synchronization bridge. Scene edits stop rendering, acquire the Embree scene for mutation, and increment the scene version used to restart accumulation.
+- `renderParam.h`: synchronization bridge. Scene edits stop rendering, acquire the Embree scene for mutation, and increment the scene version used to restart accumulation. Edits that can alter generated displacement also increment a narrower displacement version used to schedule prototype retessellation.
 - `renderPass.h/.cpp`: converts `HdRenderPassState`, camera, framing, AOVs, scene-index render settings/products, and delegate settings into renderer setters. Starts/restarts rendering, reports convergence, and writes active render products.
   It requires an attached `HdCamera` and snapshots the first valid camera/data window for screen-space subdivision. Scene edits reuse that snapshot; `ty:dynamicSubdvTesselation` enables resnapshotting and recomputation after projection or data-window changes.
 - `renderBuffer.h/.cpp`: CPU-backed `HdRenderBuffer` storage, mapping, format conversion, convergence, and renderer write access.
 - `mesh.h/.cpp`: `HdMesh` adapter. Pulls topology, points, transforms, subdivision data, primvars, materials, categories, and instancing; builds/updates Embree prototypes and instances. It applies levels computed by `adaptiveSubdivision.*` and supplies the Embree subdivision displacement callback declared in `displacement.h`.
-- `adaptiveSubdivision.h/.cpp`: deterministic screen-space edge projection, homogeneous view-volume clipping, shared-edge/instance maximum selection, complexity targets, and Embree level clamping.
+- `adaptiveSubdivision.h/.cpp`: deterministic screen-space edge projection, guarded homogeneous view-volume clipping, shared-edge/instance maximum selection, complexity targets, Embree level clamping, and quad transition balancing.
 - `instancer.h/.cpp`: `HdInstancer` adapter; computes instance transforms and per-instance category/light-linking context.
 - `material.h/.cpp`: `HdMaterial` adapter; pulls Hydra networks, normalizes them through `mxcppAdapter`, owns separate compiled surface and optional displacement `mxcpp::EvalGraph` objects, and updates a stable renderer material-data handle.
 - `light.h/.cpp`: `HdLight` adapter. Pulls USD Lux parameters, transforms, textures, IES data, shaping, linking, and visible finite-light geometry into renderer-owned light data.
@@ -85,11 +85,16 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
   canonical MaterialXCpp graphs.
 - `materials/oiioTextureSystem.h/.cpp`: OpenImageIO texture implementation for
   MaterialXCpp.
+- `materials/materialEvalContext.h`: stable renderer-owned texture, frame, and
+  time services borrowed by geometry-build and hit-time material evaluation.
 - `materials/MaterialXCpp/`: CPU material graph compiler/evaluator, nodes,
   terminal models, closures, spectral support, and focused tests.
 - `materials/BSDL/`: BSDF support library and generated lookup tables.
 - `geometry/context.h`: Embree prototype and instance hit data: identities,
   properties, primvars, materials, derivatives, transforms, and categories.
+- `geometry/displacementEvaluation.h/.cpp`: shared build-time and hit-time
+  displacement evaluation, transform-correct object-space offsets, and smooth
+  displaced subdivision-frame reconstruction.
 - `geometry/primvarSampler.h/.cpp`: generic Hydra buffer and primvar sampling.
 - `geometry/meshSamplers.h/.cpp`: constant, uniform, triangle,
   face-varying, and subdivision interpolation.
@@ -115,9 +120,61 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
 3. During `HdRenderIndex::SyncAll()`, Hydra calls each adapter's `Sync()`: meshes pull geometry/primvars/bindings/instances; materials compile networks; lights pull Lux/texture/IES/linking data; instancers update transforms and contexts.
 4. Mutating adapters use `HdEmbreeRenderParam::AcquireSceneForEdit()` or `NotifySceneChange()`. This stops background rendering before shared state changes and increments the scene version.
 5. Mesh prototypes/instances are attached to the top-level `RTCScene`. `HdEmbreePrototypeContext` and `HdEmbreeInstanceContext` make synchronized renderer data available at hits without retaining Hydra adapter objects.
-6. At low complexity, subdivision meshes render as triangulated control cages. For medium and higher, the pass projects subdivision control edges through the current view/projection and all instance transforms, clips them against the homogeneous view volume, converts complexity to a pixel-edge target, updates Embree edge-level buffers, and recommits affected prototype scenes. Embree invokes the registered displacement callback while committing subdivision geometry; the callback evaluates the material displacement graph with the same primvar samplers used by surface shading and offsets generated vertices along the normalized subdivision normal.
+6. At low complexity, subdivision meshes render as triangulated control cages.
+   For medium and higher, the pass projects authored control edges through the
+   stored subdivision view/projection and all instance transforms. Projection
+   uses a 10% X/Y view guard for displaced patches, converts complexity to a
+   pixel-edge target, and clamps candidate Embree levels to `[4, 4096]`. A
+   monotone fixed-point pass raises levels until shared authored edges agree
+   and opposite edges of every authored quad differ by at most 2:1. General
+   n-gons participate in shared-edge consolidation but not opposite-edge balancing.
+   The mesh adapter updates persistent level buffers and recommits only the
+   affected prototype and instances.
 
-Refined primvars use Embree vertex attributes. Topology 0 samples smooth vertex data, topology 1 reuses mesh indices with `PIN_ALL` for varying data, and every face-varying primvar owns another topology carrying its authored index array. This per-primvar topology is necessary because UV/color seams need not agree. Embree lacks separate modes for OpenSubdiv's three corner variants; they share `PIN_CORNERS`, while `none`, `boundaries`, and `all` remain distinct. Attribute buffers and interpolation outputs are 16-byte padded because Embree may use SIMD-width loads/stores for scalar and short-vector values.
+Displacement is active only for refined geometry whose display style permits
+it and whose material has a displacement terminal. The Embree callback and
+hit-time frame reconstruction share one evaluator. Renderer-owned texture,
+frame/time, transform, authored `st`, geomprop, and uniform-property state is
+borrowed read-only by the prototype context. A displacement value is a
+world-space distance along the semantic world normal; it is converted back to
+a prototype-object-space offset so direction and magnitude remain correct
+under non-uniform scale and reflection. Graph failures and non-finite results
+leave the generated vertex unchanged.
+
+Material displacement edits and frame/time changes use a dedicated version
+path so displaced prototypes are recommitted even when their level buffers are
+unchanged. Instance-only edits do not force displacement reevaluation when the
+adaptive levels remain unchanged. A shared point-instancer prototype is
+displaced at prototype-scene commit time, so its callback can see the rprim
+transform and prototype primvars but not point-instancer transforms or
+per-instance primvars; the mesh adapter warns when this limitation applies.
+
+Embree interpolation at a hit intentionally returns the undisplaced limit
+surface. For a displaced hit, `displacementEvaluation.*` samples the center and
+neighboring u/v locations, finite-differences the object-space offsets, and
+reconstructs smooth displaced `dPdu`, `dPdv`, and their cross-product normal.
+This frame feeds material shading, while the actual displaced-facet
+`RTCHit::Ng` remains the geometric authority for visibility, medium-boundary
+classification, and ray bias.
+
+Embree position buffers are Embree-owned `FLOAT3` data with a 16-byte stride,
+and triangle index buffers are also Embree-owned so `VtArray` copy-on-write
+cannot invalidate borrowed storage. Refined primvars use Embree vertex
+attributes. Topology 0 samples smooth vertex data, topology 1 reuses mesh
+indices with `PIN_ALL` for varying data, and every face-varying primvar owns
+another topology carrying its authored index array. This per-primvar topology
+is necessary because UV/color seams need not agree. Embree lacks separate
+modes for OpenSubdiv's three corner variants; they share `PIN_CORNERS`, while
+`none`, `boundaries`, and `all` remain distinct. Attribute buffers and
+interpolation outputs are 16-byte padded because Embree may use SIMD-width
+loads/stores for scalar and short-vector values.
+
+Adaptive levels and displacement alter generated primitives, so mesh geometry
+uses low-quality rebuilds rather than vertex-only refits. Prototype mutation
+follows Embree's required order: commit prototype geometry, commit the
+prototype scene, recommit every referencing instance geometry, then commit the
+root scene before rendering. Both prototype and root scenes enable robust
+traversal to reduce ray leaks at dense displaced patch boundaries.
 
 ### Frame execution
 
@@ -230,16 +287,22 @@ For each segment, `_IntegratePath()` performs these stages in order:
 8. **Construct surface state.** Renderer-owned instance and prototype context
    records provide the material, transforms, primvars, derivatives, categories,
    and geometry flags without querying Hydra. The integrator computes the hit
-   position and maintains three normal concepts:
+   position and maintains four distinct normal concepts:
 
-   - the world-oriented smooth `geometricNormal`, used for medium-boundary and
-     ray-offset decisions;
-   - the true Embree face normal, face-forwarded for geometric validity tests;
-   - the face-forwarded shading normal, which may later be changed by the
-     material's normal input.
+   - `geometricNormal`: the unflipped smooth normal, reconstructed from the
+     displaced frame when displacement is active; it defines the tangent and
+     material frame but does not classify a true boundary;
+   - `orientedFaceNg`: the true, unflipped Embree displaced-facet normal, used
+     for medium crossings, transmission-side classification, visibility-ray
+     offsets, and continuation-ray bias;
+   - `faceNg`: a face-forwarded copy used for local geometric validity checks;
+   - `normal`: the face-forwarded smooth shading normal used by the BSDF and
+     modified last by the material's normal input.
 
-   `_BuildShadingContext()` supplies texture coordinates, display color,
-   tangents, geomprop lookup, uniform primvars, and surface/ray derivatives.
+   All normal vectors use inverse-transpose transforms under non-uniform
+   instance transforms. `_BuildShadingContext()` supplies texture coordinates,
+   display color, the reconstructed displaced tangent frame when available,
+   geomprop lookup, uniform primvars, and surface/ray derivatives.
 9. **Evaluate the material.** The bound `mxcpp::EvalGraph` produces a
    `SurfaceClosure`. A missing or failed material evaluation leaves a synthetic
    diffuse fallback available for direct lighting. A synthetic SSS exit replaces
@@ -294,8 +357,9 @@ For each segment, `_IntegratePath()` performs these stages in order:
 17. **Apply roulette and differentials.** After the configured minimum bounce,
     Russian roulette terminates low-throughput paths and compensates survivors.
     `_PropagateRayDifferential()` in `surfaceShading.cpp` propagates specular
-    reflection/refraction differentials; non-specular events discard them. The next origin is biased to the appropriate side of
-    the world-oriented geometric normal, and the loop continues.
+    reflection/refraction differentials; non-specular events discard them. The
+    next origin is biased to the appropriate side of the oriented Embree facet
+    normal, and the loop continues.
 
 When the loop terminates, accumulated radiance is clamped non-negative, packed
 with alpha one, and returned with the retained primary hit. Firefly and caustic

@@ -28,9 +28,19 @@ std::vector<float> HdEmbreeConsolidateSharedEdgeLevels(
     VtIntArray const& faceVertexIndices,
     std::vector<float> const& candidateLevels);
 
-/// Computes one Embree subdivision level per face corner. Shared coarse edges
-/// receive the same maximum level across every face and instance. An empty
-/// result indicates invalid topology or framing inputs.
+/// Raises candidate levels until shared coarse edges agree and opposite edge
+/// pairs of every quad differ by at most 2:1. Shared-edge consolidation
+/// and quad balancing repeat to a fixed point. Non-quad faces are not balanced.
+/// Never lowers a candidate and returns empty for invalid topology or levels.
+std::vector<float> HdEmbreeBalanceSubdivisionLevels(
+    VtIntArray const& faceVertexCounts,
+    VtIntArray const& faceVertexIndices,
+    std::vector<float> const& candidateLevels);
+
+/// Computes one balanced Embree subdivision level per face corner. Candidates
+/// include the viewport guard and minimum required level, then shared edges
+/// and quad opposite edges are balanced. An empty result indicates invalid
+/// topology or framing inputs.
 std::vector<float> HdEmbreeComputeAdaptiveSubdivisionLevels(
     VtVec3fArray const& points,
     VtIntArray const& faceVertexCounts,

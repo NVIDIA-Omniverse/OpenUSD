@@ -280,7 +280,9 @@ _TraceSssBoundary(
     rayHit.ray.time = 0.0f;
     rayHit.ray.tfar = rayTfar;
     rayHit.ray.mask = static_cast<uint32_t>(HdEmbree_RayMask::Camera);
-    rayHit.ray.id = 0;
+    rayHit.ray.id = useOwnerScene
+        ? HdEmbreeFaceCullBypassRayId
+        : 0;
     rayHit.hit.primID = RTC_INVALID_GEOMETRY_ID;
     rayHit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
     rayHit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
@@ -303,10 +305,25 @@ _TraceSssBoundary(
     result.u = rayHit.hit.u;
     result.v = rayHit.hit.v;
 
-    GfVec3f hitNormal(rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
-    result.objectHitNormal = hitNormal;
+    float orientationSign = 1.0f;
     if (useOwnerScene) {
-        hitNormal = in.objectToWorldMatrix.TransformDir(hitNormal);
+        RTCGeometry const hitGeometry =
+            rtcGetGeometry(traceScene, rayHit.hit.geomID);
+        auto const* prototypeContext = hitGeometry
+            ? static_cast<HdEmbreePrototypeContext const*>(
+                rtcGetGeometryUserData(hitGeometry))
+            : nullptr;
+        if (prototypeContext) {
+            orientationSign = prototypeContext->orientationSign;
+        }
+    }
+    const GfVec3f embreeObjectHitNormal(
+        rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
+    result.objectHitNormal = embreeObjectHitNormal;
+    GfVec3f hitNormal = orientationSign * embreeObjectHitNormal;
+    if (useOwnerScene) {
+        hitNormal = _TransformNormalToWorld(
+            in.worldToObjectMatrix, hitNormal);
     }
     if (hitNormal.GetLengthSq() > 1.0e-20f) {
         hitNormal.Normalize();
@@ -804,7 +821,8 @@ HdEmbreeRandomWalkSSS(
                 hitNormal.Normalize();
             } else {
                 hitNormal = -st.rayDir;  // fallback
-                objectHitNormal = in.worldToObjectMatrix.TransformDir(hitNormal);
+                objectHitNormal = _TransformNormalToObject(
+                    in.objectToWorldMatrix, hitNormal);
             }
             // Orient outward: the exit normal should align with the ray direction
             // (the ray leaves the medium, so the outward face's normal is in the

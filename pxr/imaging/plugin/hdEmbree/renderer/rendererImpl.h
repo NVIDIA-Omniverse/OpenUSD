@@ -16,6 +16,7 @@
 
 #include "pxr/imaging/hd/meshUtil.h"
 #include "pxr/imaging/hd/tokens.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/displacementEvaluation.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/geometry/meshSamplers.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampling.h"
 
@@ -67,6 +68,63 @@ _IsFinite(GfVec3f const& value)
     return std::isfinite(value[0]) &&
            std::isfinite(value[1]) &&
            std::isfinite(value[2]);
+}
+
+inline bool
+_TryNormalizeDirection(
+    GfVec3f const& value,
+    GfVec3f* normalized,
+    double* length = nullptr)
+{
+    if (!normalized || !_IsFinite(value)) {
+        return false;
+    }
+
+    const double maximumComponent = std::max({
+        std::abs(static_cast<double>(value[0])),
+        std::abs(static_cast<double>(value[1])),
+        std::abs(static_cast<double>(value[2]))});
+    if (!std::isfinite(maximumComponent) || maximumComponent == 0.0) {
+        return false;
+    }
+
+    const double x = static_cast<double>(value[0]) / maximumComponent;
+    const double y = static_cast<double>(value[1]) / maximumComponent;
+    const double z = static_cast<double>(value[2]) / maximumComponent;
+    const double scaledLength = std::sqrt(x * x + y * y + z * z);
+    if (!std::isfinite(scaledLength) || scaledLength == 0.0) {
+        return false;
+    }
+
+    *normalized = GfVec3f(
+        static_cast<float>(x / scaledLength),
+        static_cast<float>(y / scaledLength),
+        static_cast<float>(z / scaledLength));
+    if (length) {
+        *length = maximumComponent * scaledLength;
+    }
+    return _IsFinite(*normalized);
+}
+
+inline bool
+_TryBuildSurfaceNormal(
+    GfVec3f const& dPdu,
+    GfVec3f const& dPdv,
+    GfVec3f* normal)
+{
+    GfVec3f normalizedU;
+    GfVec3f normalizedV;
+    if (!normal ||
+        !_TryNormalizeDirection(dPdu, &normalizedU) ||
+        !_TryNormalizeDirection(dPdv, &normalizedV)) {
+        return false;
+    }
+
+    const GfVec3f relativeArea = GfCross(normalizedU, normalizedV);
+    const float relativeAreaSquared = relativeArea.GetLengthSq();
+    return std::isfinite(relativeAreaSquared) &&
+        relativeAreaSquared > 1.0e-18f &&
+        _TryNormalizeDirection(relativeArea, normal);
 }
 
 inline bool
@@ -156,6 +214,126 @@ _CalculateHitPosition(RTCRayHit const& rayHit)
     return GfVec3f(rayHit.ray.org_x + rayHit.ray.tfar * rayHit.ray.dir_x,
                    rayHit.ray.org_y + rayHit.ray.tfar * rayHit.ray.dir_y,
                    rayHit.ray.org_z + rayHit.ray.tfar * rayHit.ray.dir_z);
+}
+
+/// Transform a semantic object-space normal to world space.
+///
+/// Normals are covectors, so non-uniform transforms require the inverse
+/// transpose rather than the object-to-world linear transform. Reflections do
+/// not negate a semantic USD normal; Hydra accounts for winding reversal
+/// separately when it classifies faces.
+inline GfVec3f
+_TransformNormalToWorld(
+    GfMatrix4f const& worldToObjectMatrix,
+    GfVec3f const& objectNormal)
+{
+    GfVec3f worldNormal =
+        worldToObjectMatrix.GetTranspose().TransformDir(objectNormal);
+
+    GfVec3f normalizedWorldNormal;
+    if (!_TryNormalizeDirection(worldNormal, &normalizedWorldNormal)) {
+        // A singular transform has no mathematically unique world normal.
+        // Preserve a valid authored/geometric direction rather than replacing
+        // it with an unrelated axis.
+        if (_TryNormalizeDirection(objectNormal, &normalizedWorldNormal)) {
+            return normalizedWorldNormal;
+        }
+        return GfVec3f(0.0f, 0.0f, 1.0f);
+    }
+    return normalizedWorldNormal;
+}
+
+inline GfVec3f
+_TransformNormalToWorld(
+    HdEmbreeInstanceContext const* instanceContext,
+    GfVec3f const& objectNormal)
+{
+    if (!instanceContext) {
+        return objectNormal;
+    }
+    return _TransformNormalToWorld(
+        instanceContext->worldToObjectMatrix,
+        objectNormal);
+}
+
+/// Recover the oriented object-space normal corresponding to a world-space
+/// normal. This is the inverse direction of _TransformNormalToWorld and keeps
+/// a face-forward sign applied by the caller.
+inline GfVec3f
+_TransformNormalToObject(
+    GfMatrix4f const& objectToWorldMatrix,
+    GfVec3f const& worldNormal)
+{
+    GfVec3f objectNormal =
+        objectToWorldMatrix.GetTranspose().TransformDir(worldNormal);
+
+    GfVec3f normalizedObjectNormal;
+    if (!_TryNormalizeDirection(objectNormal, &normalizedObjectNormal)) {
+        if (_TryNormalizeDirection(worldNormal, &normalizedObjectNormal)) {
+            return normalizedObjectNormal;
+        }
+        return GfVec3f(0.0f, 0.0f, 1.0f);
+    }
+    return normalizedObjectNormal;
+}
+
+inline GfVec3f
+_TransformNormalToObject(
+    HdEmbreeInstanceContext const* instanceContext,
+    GfVec3f const& worldNormal)
+{
+    if (!instanceContext) {
+        return worldNormal;
+    }
+    return _TransformNormalToObject(
+        instanceContext->objectToWorldMatrix, worldNormal);
+}
+
+/// Transform the derivative of a normalized normal through an instance.
+/// Applying the inverse transpose to dN alone is insufficient under
+/// non-uniform scale: the result must also include the derivative of the
+/// normalization operation.
+inline GfVec3f
+_TransformNormalDerivativeToWorld(
+    HdEmbreeInstanceContext const* instanceContext,
+    GfVec3f const& objectNormal,
+    GfVec3f const& objectNormalDerivative)
+{
+    if (!instanceContext) {
+        return objectNormalDerivative;
+    }
+
+    const GfMatrix4f normalTransform =
+        instanceContext->worldToObjectMatrix.GetTranspose();
+    GfVec3f transformedNormal =
+        normalTransform.TransformDir(objectNormal);
+    GfVec3f transformedDerivative =
+        normalTransform.TransformDir(objectNormalDerivative);
+
+    GfVec3f worldNormal;
+    double normalLength = 0.0;
+    if (!_IsFinite(transformedDerivative) ||
+        !_TryNormalizeDirection(
+            transformedNormal, &worldNormal, &normalLength) ||
+        !std::isfinite(normalLength) || normalLength == 0.0) {
+        return GfVec3f(0.0f);
+    }
+
+    const double projection =
+        static_cast<double>(worldNormal[0]) * transformedDerivative[0] +
+        static_cast<double>(worldNormal[1]) * transformedDerivative[1] +
+        static_cast<double>(worldNormal[2]) * transformedDerivative[2];
+    const GfVec3f worldDerivative(
+        static_cast<float>(
+            (transformedDerivative[0] - worldNormal[0] * projection) /
+            normalLength),
+        static_cast<float>(
+            (transformedDerivative[1] - worldNormal[1] * projection) /
+            normalLength),
+        static_cast<float>(
+            (transformedDerivative[2] - worldNormal[2] * projection) /
+            normalLength));
+    return _IsFinite(worldDerivative) ? worldDerivative : GfVec3f(0.0f);
 }
 
 // Dot product, but set to 0 if less than 0 - ie, 0 for backward-facing rays
@@ -577,12 +755,11 @@ _TryComputeSubdivLimitNormal(
         primID, u, v, &posValue, &dPdu, &dPdv);
     (void)posValue;
 
-    GfVec3f limitNormal = GfCross(dPdu, dPdv);
-    if (limitNormal.GetLengthSq() <= 1e-18f) {
+    GfVec3f limitNormal;
+    if (!_TryBuildSurfaceNormal(dPdu, dPdv, &limitNormal)) {
         return false;
     }
 
-    limitNormal.Normalize();
     *outNormal = limitNormal;
     return true;
 }
@@ -593,22 +770,59 @@ _ResolveObjectSpaceNormal(
     HdEmbreePrototypeContext const* prototypeContext,
     RTCScene rootScene,
     unsigned int geomID,
-    RTCRayHit const& rayHit)
+    RTCRayHit const& rayHit,
+    GfVec3f* outDisplacedDPdu = nullptr,
+    GfVec3f* outDisplacedDPdv = nullptr,
+    bool* outHasDisplacedFrame = nullptr)
 {
-    GfVec3f normal(rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
+    if (outHasDisplacedFrame) {
+        *outHasDisplacedFrame = false;
+    }
+    GfVec3f normal = prototypeContext->orientationSign * GfVec3f(
+        rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
 
-    // rtcInterpolate1 evaluates the undisplaced limit surface. Embree hit Ng
-    // is derived from the tessellated displaced geometry and therefore must
-    // be the geometric shading normal for displaced prototypes.
+    // rtcInterpolate ignores displacement, so reconstruct the differential
+    // frame of P + D*N explicitly. Embree's hit Ng remains the true facet
+    // orientation and is the fallback for invalid graph/patch evaluations.
     if (prototypeContext->displaced) {
+        GfVec3f displacedNormal;
+        GfVec3f displacedDPdu;
+        GfVec3f displacedDPdv;
+        if (HdEmbreeComputeDisplacedSubdivFrame(
+                rtcGetGeometry(rootScene, geomID),
+                prototypeContext,
+                rayHit.hit.primID,
+                rayHit.hit.u,
+                rayHit.hit.v,
+                &displacedNormal,
+                &displacedDPdu,
+                &displacedDPdv)) {
+            if (GfDot(displacedNormal, normal) < 0.0f) {
+                displacedNormal = -displacedNormal;
+            }
+            if (outDisplacedDPdu) {
+                *outDisplacedDPdu = displacedDPdu;
+            }
+            if (outDisplacedDPdv) {
+                *outDisplacedDPdv = displacedDPdv;
+            }
+            if (outHasDisplacedFrame) {
+                *outHasDisplacedFrame = true;
+            }
+            return displacedNormal;
+        }
         return normal;
     }
 
     auto it = prototypeContext->primvarMap.find(HdTokens->normals);
-    if (it != prototypeContext->primvarMap.end() &&
-        it->second->Sample(rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
-                           &normal)) {
-        return normal;
+    if (it != prototypeContext->primvarMap.end()) {
+        GfVec3f authoredNormal;
+        if (it->second->Sample(
+                rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
+                &authoredNormal) &&
+            _TryNormalizeDirection(authoredNormal, &normal)) {
+            return normal;
+        }
     }
 
     if (_IsSubdivMesh(prototypeContext)) {
@@ -620,7 +834,7 @@ _ResolveObjectSpaceNormal(
                 rayHit.hit.u,
                 rayHit.hit.v,
                 &limitNormal)) {
-            return limitNormal;
+            return prototypeContext->orientationSign * limitNormal;
         }
     }
 
@@ -635,6 +849,8 @@ inline void
 _ComputeTriangleSurfaceDerivatives(
     HdEmbreePrototypeContext const* prototypeContext,
     unsigned int primID,
+    float u,
+    float v,
     GfVec3f const& normal,
     GfVec3f* outDPdu, GfVec3f* outDPdv,
     GfVec3f* outDndu, GfVec3f* outDndv)
@@ -705,8 +921,9 @@ _ComputeTriangleSurfaceDerivatives(
     }
 
     if (haveNormals) {
-        GfVec3f dN1 = N[1] - N[0];
-        GfVec3f dN2 = N[2] - N[0];
+        const GfVec3f dN1 = N[1] - N[0];
+        const GfVec3f dN2 = N[2] - N[0];
+        const GfVec3f sampledNormal = N[0] + u * dN1 + v * dN2;
         if (haveSt) {
             GfVec2f dst1 = st[1] - st[0];
             GfVec2f dst2 = st[2] - st[0];
@@ -724,13 +941,40 @@ _ComputeTriangleSurfaceDerivatives(
             *outDndu = dN1;
             *outDndv = dN2;
         }
+
+        // Primvar interpolation produces an unnormalized vector. Differentiate
+        // its normalization and preserve any face-forward orientation applied
+        // to the shading normal by the caller.
+        const float sampledLengthSquared = sampledNormal.GetLengthSq();
+        if (_IsFinite(sampledNormal) &&
+            std::isfinite(sampledLengthSquared) &&
+            sampledLengthSquared > 1.0e-18f) {
+            const float sampledLength = std::sqrt(sampledLengthSquared);
+            const GfVec3f sampledUnitNormal =
+                sampledNormal / sampledLength;
+            *outDndu =
+                (*outDndu - sampledUnitNormal *
+                    GfDot(sampledUnitNormal, *outDndu)) /
+                sampledLength;
+            *outDndv =
+                (*outDndv - sampledUnitNormal *
+                    GfDot(sampledUnitNormal, *outDndv)) /
+                sampledLength;
+            if (GfDot(sampledUnitNormal, normal) < 0.0f) {
+                *outDndu = -*outDndu;
+                *outDndv = -*outDndv;
+            }
+        } else {
+            *outDndu = GfVec3f(0.0f);
+            *outDndv = GfVec3f(0.0f);
+        }
     } else {
         *outDndu = GfVec3f(0.0f);
         *outDndv = GfVec3f(0.0f);
     }
 }
 
-/// Compute dPdu/dPdv for a subdivision surface hit using rtcInterpolate1.
+/// Compute dPdu/dPdv for a subdivision surface hit.
 inline void
 _ComputeSubdivSurfaceDerivatives(
     HdEmbreePrototypeContext const* prototypeContext,
@@ -739,17 +983,38 @@ _ComputeSubdivSurfaceDerivatives(
     unsigned int primID, float u, float v,
     GfVec3f const& normal,
     GfVec3f* outDPdu, GfVec3f* outDPdv,
-    GfVec3f* outDndu, GfVec3f* outDndv)
+    GfVec3f* outDndu, GfVec3f* outDndv,
+    GfVec3f const* precomputedDisplacedDPdu = nullptr,
+    GfVec3f const* precomputedDisplacedDPdv = nullptr)
 {
-    // 1. Position derivatives via rtcInterpolate1.
-    //    Vertex positions are in Embree's primary vertex buffer
-    //    (RTC_BUFFER_TYPE_VERTEX), NOT in a user vertex attribute buffer.
-    //    We must call rtcInterpolate1 directly.
+    RTCGeometry const geometry = rtcGetGeometry(rootScene, geomID);
+
+    // 1. Position derivatives. Displaced subdivision needs the derivatives
+    //    of P + D*N; rtcInterpolate itself intentionally returns only the
+    //    undisplaced limit surface.
     bool havePositionDerivs = false;
-    {
+    if (prototypeContext->displaced) {
+        if (precomputedDisplacedDPdu && precomputedDisplacedDPdv) {
+            *outDPdu = *precomputedDisplacedDPdu;
+            *outDPdv = *precomputedDisplacedDPdv;
+            havePositionDerivs = true;
+        } else {
+            GfVec3f displacedNormal;
+            havePositionDerivs = HdEmbreeComputeDisplacedSubdivFrame(
+                geometry,
+                prototypeContext,
+                primID,
+                u,
+                v,
+                &displacedNormal,
+                outDPdu,
+                outDPdv);
+        }
+    }
+    if (!havePositionDerivs) {
         GfVec3f posVal;
         _InterpolateSubdivPosition(
-            rtcGetGeometry(rootScene, geomID),
+            geometry,
             primID, u, v, &posVal, outDPdu, outDPdv);
         havePositionDerivs = true;
     }
@@ -764,80 +1029,28 @@ _ComputeSubdivSurfaceDerivatives(
     // 2. If st available, transform from parametric to st space.
     //    Handle both GfVec2f and GfVec3f st buffers.
     //    Support both vertex and face-varying interpolation modes.
-    {
-        auto it = prototypeContext->primvarMap.find(_tokensSt);
-        if (it != prototypeContext->primvarMap.end()) {
-            // Helper: try SampleWithDerivatives on a sampler, handling
-            // both GfVec2f and GfVec3f st buffers.
-            const auto tryStDerivatives =
-                [&](auto* sampler, GfVec2f* dStdu, GfVec2f* dStdv) -> bool {
-                if (!sampler) return false;
-                // Try GfVec2f first
-                {
-                    GfVec2f stVal, dStdu2, dStdv2;
-                    if (sampler->SampleWithDerivatives(
-                            primID, u, v, &stVal, &dStdu2, &dStdv2)) {
-                        *dStdu = dStdu2;
-                        *dStdv = dStdv2;
-                        return true;
-                    }
-                }
-                // Fallback to GfVec3f (ignore z component)
-                {
-                    GfVec3f stVal3, dStdu3, dStdv3;
-                    if (sampler->SampleWithDerivatives(
-                            primID, u, v, &stVal3, &dStdu3, &dStdv3)) {
-                        *dStdu = GfVec2f(dStdu3[0], dStdu3[1]);
-                        *dStdv = GfVec2f(dStdv3[0], dStdv3[1]);
-                        return true;
-                    }
-                }
-                return false;
-            };
-
-            GfVec2f dStdu(0.0f), dStdv(0.0f);
-            bool haveSt = false;
-
-            // Try vertex-interpolated st sampler
-            auto* vertexSampler =
-                dynamic_cast<HdEmbreeSubdivVertexSampler*>(it->second);
-            haveSt = tryStDerivatives(vertexSampler, &dStdu, &dStdv);
-
-            // Try varying-interpolated st sampler
-            if (!haveSt) {
-                auto* varyingSampler =
-                    dynamic_cast<HdEmbreeSubdivVaryingSampler*>(it->second);
-                haveSt = tryStDerivatives(varyingSampler, &dStdu, &dStdv);
-            }
-
-            // Try face-varying st sampler
-            if (!haveSt) {
-                auto* fvarSampler =
-                    dynamic_cast<HdEmbreeSubdivFaceVaryingSampler*>(
-                        it->second);
-                haveSt = tryStDerivatives(fvarSampler, &dStdu, &dStdv);
-            }
-
-            if (haveSt) {
-                float det = _DifferenceOfProducts(
-                    dStdu[0], dStdv[1], dStdu[1], dStdv[0]);
-                if (std::abs(det) > 1e-9f) {
-                    float invDet = 1.0f / det;
-                    GfVec3f dPdu_param = *outDPdu;
-                    GfVec3f dPdv_param = *outDPdv;
-                    // Chain rule: dP/ds = dP/du * du/ds + dP/dv * dv/ds
-                    // Inverse Jacobian: [du/ds, dv/ds] = inv([ds/du, dt/du; ds/dv, dt/dv])
-                    *outDPdu = ( dStdv[1] * dPdu_param
-                               - dStdu[1] * dPdv_param) * invDet;
-                    *outDPdv = (-dStdv[0] * dPdu_param
-                               + dStdu[0] * dPdv_param) * invDet;
-                }
-            }
-        }
+    HdEmbreeSubdivTexcoordJacobian stJacobian;
+    auto const stIt = prototypeContext->primvarMap.find(_tokensSt);
+    if (stIt != prototypeContext->primvarMap.end()) {
+        stJacobian = HdEmbreeComputeSubdivTexcoordJacobian(
+            stIt->second, primID, u, v);
+    }
+    if (stJacobian.valid) {
+        const GfVec3f dPduParam = *outDPdu;
+        const GfVec3f dPdvParam = *outDPdv;
+        // Chain rule through the inverse st Jacobian.
+        *outDPdu =
+            stJacobian.duDs * dPduParam +
+            stJacobian.dvDs * dPdvParam;
+        *outDPdv =
+            stJacobian.duDt * dPduParam +
+            stJacobian.dvDt * dPdvParam;
     }
 
     // Degenerate check
-    if (GfCross(*outDPdu, *outDPdv).GetLengthSq() < 1e-18f) {
+    GfVec3f derivativeNormal;
+    if (!_TryBuildSurfaceNormal(
+            *outDPdu, *outDPdv, &derivativeNormal)) {
         GfBuildOrthonormalFrame(normal, outDPdu, outDPdv);
     }
 
@@ -845,9 +1058,18 @@ _ComputeSubdivSurfaceDerivatives(
     //    Support both vertex and face-varying interpolation modes.
     *outDndu = GfVec3f(0.0f);
     *outDndv = GfVec3f(0.0f);
+    // Computing derivatives of the displaced normal itself requires another
+    // finite-difference ring around the three displacement probes. Zero is a
+    // conservative value for ray differentials and avoids reusing unrelated
+    // authored base-normal derivatives on displaced geometry.
+    if (prototypeContext->displaced) {
+        return;
+    }
     {
         auto it = prototypeContext->primvarMap.find(HdTokens->normals);
         if (it != prototypeContext->primvarMap.end()) {
+            GfVec3f sampledNormal(0.0f);
+            bool haveNormalDerivatives = false;
             auto* vertexSampler =
                 dynamic_cast<HdEmbreeSubdivVertexSampler*>(it->second);
             auto* varyingSampler =
@@ -855,17 +1077,61 @@ _ComputeSubdivSurfaceDerivatives(
             auto* fvarSampler =
                 dynamic_cast<HdEmbreeSubdivFaceVaryingSampler*>(it->second);
             if (vertexSampler) {
-                GfVec3f nVal;
-                vertexSampler->SampleWithDerivatives(
-                    primID, u, v, &nVal, outDndu, outDndv);
+                haveNormalDerivatives =
+                    vertexSampler->SampleWithDerivatives(
+                        primID, u, v, &sampledNormal,
+                        outDndu, outDndv);
             } else if (varyingSampler) {
-                GfVec3f nVal;
-                varyingSampler->SampleWithDerivatives(
-                    primID, u, v, &nVal, outDndu, outDndv);
+                haveNormalDerivatives =
+                    varyingSampler->SampleWithDerivatives(
+                        primID, u, v, &sampledNormal,
+                        outDndu, outDndv);
             } else if (fvarSampler) {
-                GfVec3f nVal;
-                fvarSampler->SampleWithDerivatives(
-                    primID, u, v, &nVal, outDndu, outDndv);
+                haveNormalDerivatives =
+                    fvarSampler->SampleWithDerivatives(
+                        primID, u, v, &sampledNormal,
+                        outDndu, outDndv);
+            }
+
+            if (!haveNormalDerivatives) {
+                *outDndu = GfVec3f(0.0f);
+                *outDndv = GfVec3f(0.0f);
+                return;
+            }
+
+            if (stJacobian.valid) {
+                const GfVec3f dNduParam = *outDndu;
+                const GfVec3f dNdvParam = *outDndv;
+                *outDndu =
+                    stJacobian.duDs * dNduParam +
+                    stJacobian.dvDs * dNdvParam;
+                *outDndv =
+                    stJacobian.duDt * dNduParam +
+                    stJacobian.dvDt * dNdvParam;
+            }
+
+            const float sampledLengthSquared = sampledNormal.GetLengthSq();
+            if (_IsFinite(sampledNormal) &&
+                std::isfinite(sampledLengthSquared) &&
+                sampledLengthSquared > 1.0e-18f) {
+                const float sampledLength = std::sqrt(sampledLengthSquared);
+                const GfVec3f sampledUnitNormal =
+                    sampledNormal / sampledLength;
+                *outDndu =
+                    (*outDndu - sampledUnitNormal *
+                        GfDot(sampledUnitNormal, *outDndu)) /
+                    sampledLength;
+                *outDndv =
+                    (*outDndv - sampledUnitNormal *
+                        GfDot(sampledUnitNormal, *outDndv)) /
+                    sampledLength;
+                if (GfDot(sampledUnitNormal, normal) < 0.0f) {
+                    *outDndu = -*outDndu;
+                    *outDndv = -*outDndv;
+                }
+            } else {
+                *outDndu = GfVec3f(0.0f);
+                *outDndv = GfVec3f(0.0f);
             }
         }
     }
@@ -995,6 +1261,8 @@ _PopulateRay(
 
     ray->tfar = furthest;
     ray->mask = static_cast<uint32_t>(mask);
+    ray->id = 0;
+    ray->flags = 0;
 }
 
 inline GfVec3f
@@ -1093,6 +1361,34 @@ _CosineWeightedDirection(GfVec2f const& uniform_float)
 }
 
 }  // anonymous namespace
+
+inline void
+HdEmbreeRenderer::_ApplyPathWeight(
+    GfVec3f const& weight, _PathState* state) const
+{
+    if (!state) {
+        return;
+    }
+    if (state->hero.active) {
+        const _HeroWavelengthState hero{
+            true, state->hero.wavelengthNm, state->hero.pdf};
+        state->spectralThroughput *= _RgbToSpectralValue(weight, hero);
+    } else {
+        state->throughput = GfCompMult(state->throughput, weight);
+    }
+}
+
+inline GfVec3f
+HdEmbreeRenderer::_GetPathThroughputRgb(_PathState const& state) const
+{
+    const _HeroWavelengthState hero{
+        state.hero.active,
+        state.hero.wavelengthNm,
+        state.hero.pdf};
+    return state.hero.active
+        ? _SpectralScalarToRgb(state.spectralThroughput, hero)
+        : state.throughput;
+}
 
 PXR_NAMESPACE_CLOSE_SCOPE
 

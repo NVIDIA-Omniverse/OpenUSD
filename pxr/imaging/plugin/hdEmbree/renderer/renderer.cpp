@@ -121,8 +121,7 @@ HdEmbreeRenderer::HdEmbreeRenderer()
         TfToken(HdEmbreeConfig::GetInstance().dielectricLayerThroughputMode))
     , _useAdobeOpenPBR(HdEmbreeConfig::GetInstance().useAdobeOpenPBR)
     , _textureSystem(std::make_unique<HdEmbreeOiioTextureSystem>())
-    , _sceneFrame(0.0f)
-    , _sceneTime(0.0f)
+    , _materialEvalServices{_textureSystem.get(), 0.0f, 0.0f}
     , _completedSamples(0)
     , _sssCallCount(0)
     , _sssSuccessCount(0)
@@ -343,8 +342,8 @@ HdEmbreeRenderer::SetCameraDepthOfField(
 void
 HdEmbreeRenderer::SetSceneFrameAndTime(float frame, float time)
 {
-    _sceneFrame = frame;
-    _sceneTime = time;
+    _materialEvalServices.frame = frame;
+    _materialEvalServices.time = time;
 }
 
 int
@@ -476,7 +475,8 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
     // Compute the OpenQMC frame seed once per Render() call. An explicit
     // render setting or environment seed overrides the scene frame.
     const uint32_t baseSeed =
-        HdEmbreeResolveFrameSeed(_randomNumberSeed, _sceneFrame);
+        HdEmbreeResolveFrameSeed(
+            _randomNumberSeed, _materialEvalServices.frame);
 
     const unsigned int tileSize = HdEmbreeConfig::GetInstance().tileSize;
     const unsigned int numTilesX =

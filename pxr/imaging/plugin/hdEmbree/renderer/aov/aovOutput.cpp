@@ -621,7 +621,7 @@ HdEmbreeRenderer::_ComputeNormal(RTCRayHit const& rayHit,
         prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
         rayHit);
 
-    n = instanceContext->objectToWorldMatrix.TransformDir(n);
+    n = _TransformNormalToWorld(instanceContext, n);
     if (eye) {
         n = GfVec3f(_viewMatrix.TransformDir(n));
     }
