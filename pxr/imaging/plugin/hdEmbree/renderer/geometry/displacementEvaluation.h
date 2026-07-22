@@ -48,6 +48,20 @@ bool HdEmbreeComputeObjectSpaceDisplacementOffset(
     float displacement,
     GfVec3f* objectOffset);
 
+/// Evaluate the final object-space position of one displaced subdivision
+/// surface point.
+///
+/// This follows the same limit-surface interpolation, MaterialX evaluation,
+/// orientation, and world-distance conversion as the Embree displacement
+/// callback. The output is written only when the complete result is finite.
+bool HdEmbreeComputeDisplacedSubdivPosition(
+    RTCGeometry geometry,
+    HdEmbreePrototypeContext const* context,
+    unsigned int primID,
+    float u,
+    float v,
+    GfVec3f* outPosition);
+
 /// Compute a smooth object-space frame for the displaced subdivision surface.
 ///
 /// Embree interpolation supplies the undisplaced limit surface and its first

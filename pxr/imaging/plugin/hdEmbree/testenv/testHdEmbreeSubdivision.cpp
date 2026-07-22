@@ -172,6 +172,286 @@ _Compute(
         GfRect2i(GfVec2i(0), 100, 100), refineLevel);
 }
 
+HdEmbreeDisplacedPositionProbe
+_MakeBentQuadProbe(float uBend, float vBend)
+{
+    return [uBend, vBend](
+               unsigned int primID,
+               float u,
+               float v,
+               GfVec3f* position) {
+        if (primID != 0 || !position) {
+            return false;
+        }
+        *position = GfVec3f(
+            -0.125f + 0.25f * u,
+            -0.125f + 0.25f * v,
+            0.0f);
+        if (u == 0.5f) {
+            (*position)[1] += uBend;
+        }
+        if (v == 0.5f) {
+            (*position)[0] += vBend;
+        }
+        return true;
+    };
+}
+
+std::vector<float>
+_ComputeDisplacementAwareQuad(
+    HdEmbreeDisplacedPositionProbe const& probe,
+    int refineLevel = 1,
+    std::vector<GfMatrix4f> const& transforms = {GfMatrix4f(1.0f)})
+{
+    return HdEmbreeComputeAdaptiveSubdivisionLevels(
+        VtVec3fArray{
+            GfVec3f(-0.125f, -0.125f, 0.0f),
+            GfVec3f(0.125f, -0.125f, 0.0f),
+            GfVec3f(0.125f, 0.125f, 0.0f),
+            GfVec3f(-0.125f, 0.125f, 0.0f)},
+        VtIntArray{4}, VtIntArray{0, 1, 2, 3}, transforms,
+        GfMatrix4d(1.0), GfMatrix4d(1.0),
+        GfRect2i(GfVec2i(0), 100, 100), refineLevel, probe);
+}
+
+bool
+TestDisplacementProbeRaisesOnlyCurvedDirection()
+{
+    const std::vector<float> flat =
+        _ComputeDisplacementAwareQuad(_MakeBentQuadProbe(0.0f, 0.0f));
+    const std::vector<float> uBent =
+        _ComputeDisplacementAwareQuad(_MakeBentQuadProbe(0.02f, 0.0f));
+    const std::vector<float> vBent =
+        _ComputeDisplacementAwareQuad(_MakeBentQuadProbe(0.0f, 0.02f));
+    const std::vector<float> repeated =
+        _ComputeDisplacementAwareQuad(_MakeBentQuadProbe(0.02f, 0.0f));
+    return flat == std::vector<float>({4.0f, 4.0f, 4.0f, 4.0f}) &&
+        uBent == std::vector<float>({8.0f, 4.0f, 8.0f, 4.0f}) &&
+        vBent == std::vector<float>({4.0f, 8.0f, 4.0f, 8.0f}) &&
+        repeated == uBent;
+}
+
+bool
+TestDisplacementProbeUsesComplexityAndLargestInstance()
+{
+    constexpr float bend = 0.007f;
+    const HdEmbreeDisplacedPositionProbe probe =
+        _MakeBentQuadProbe(bend, 0.0f);
+    const std::vector<float> medium =
+        _ComputeDisplacementAwareQuad(probe, 1);
+    const std::vector<float> high =
+        _ComputeDisplacementAwareQuad(probe, 2);
+
+    GfMatrix4f twice(1.0f);
+    twice.SetScale(GfVec3f(2.0f));
+    const std::vector<float> largestInstance =
+        _ComputeDisplacementAwareQuad(
+            probe, 1, {GfMatrix4f(1.0f), twice});
+    const bool valid = medium ==
+            std::vector<float>({4.0f, 4.0f, 4.0f, 4.0f}) &&
+        high == std::vector<float>({26.0f, 13.0f, 26.0f, 13.0f}) &&
+        largestInstance ==
+            std::vector<float>({14.0f, 7.0f, 14.0f, 7.0f});
+    if (!valid) {
+        const auto printLevels = [](char const* label,
+                                    std::vector<float> const& levels) {
+            std::printf("    %s:", label);
+            for (const float level : levels) {
+                std::printf(" %g", level);
+            }
+            std::printf("\n");
+        };
+        printLevels("medium", medium);
+        printLevels("high", high);
+        printLevels("largest", largestInstance);
+    }
+    return valid;
+}
+
+bool
+TestDisplacementProbeFailureAndNonQuadKeepBaseline()
+{
+    const HdEmbreeDisplacedPositionProbe failingProbe =
+        [](unsigned int, float u, float v, GfVec3f* position) {
+            if (u == 0.5f && v == 0.5f) {
+                return false;
+            }
+            if (position) {
+                *position = GfVec3f(u, v, 0.0f);
+            }
+            return position != nullptr;
+        };
+    const std::vector<float> failed =
+        _ComputeDisplacementAwareQuad(failingProbe);
+
+    int nonQuadProbeCalls = 0;
+    const std::vector<float> triangle =
+        HdEmbreeComputeAdaptiveSubdivisionLevels(
+            VtVec3fArray{
+                GfVec3f(-0.1f, -0.1f, 0.0f),
+                GfVec3f(0.1f, -0.1f, 0.0f),
+                GfVec3f(0.0f, 0.1f, 0.0f)},
+            VtIntArray{3}, VtIntArray{0, 1, 2},
+            {GfMatrix4f(1.0f)}, GfMatrix4d(1.0), GfMatrix4d(1.0),
+            GfRect2i(GfVec2i(0), 100, 100), 1,
+            [&nonQuadProbeCalls](
+                unsigned int, float, float, GfVec3f*) {
+                ++nonQuadProbeCalls;
+                return false;
+            });
+    return failed == std::vector<float>({4.0f, 4.0f, 4.0f, 4.0f}) &&
+        triangle.size() == 3 && nonQuadProbeCalls == 0;
+}
+
+bool
+TestDisplacementProbePreservesSharedEdgeBalance()
+{
+    const std::vector<float> levels =
+        HdEmbreeComputeAdaptiveSubdivisionLevels(
+            VtVec3fArray{
+                GfVec3f(-0.25f, -0.125f, 0.0f),
+                GfVec3f(0.0f, -0.125f, 0.0f),
+                GfVec3f(0.0f, 0.125f, 0.0f),
+                GfVec3f(-0.25f, 0.125f, 0.0f),
+                GfVec3f(0.25f, -0.125f, 0.0f),
+                GfVec3f(0.25f, 0.125f, 0.0f)},
+            VtIntArray{4, 4},
+            VtIntArray{0, 1, 2, 3, 2, 1, 4, 5},
+            {GfMatrix4f(1.0f)}, GfMatrix4d(1.0), GfMatrix4d(1.0),
+            GfRect2i(GfVec2i(0), 100, 100), 1,
+            [](unsigned int primID,
+               float u,
+               float v,
+               GfVec3f* position) {
+                if (!position || primID > 1) {
+                    return false;
+                }
+                if (primID == 0) {
+                    *position = GfVec3f(
+                        -0.25f + 0.25f * u,
+                        -0.125f + 0.25f * v,
+                        0.0f);
+                    if (v == 0.5f) {
+                        (*position)[0] += 0.02f;
+                    }
+                } else {
+                    *position = GfVec3f(
+                        0.25f * v,
+                        0.125f - 0.25f * u,
+                        0.0f);
+                }
+                return true;
+            });
+    return levels == std::vector<float>({
+        4.0f, 8.0f, 4.0f, 8.0f,
+        8.0f, 4.0f, 8.0f, 4.0f});
+}
+
+bool
+TestDisplacementBoostPropagatesAcrossQuadStrip()
+{
+    const std::vector<float> levels =
+        HdEmbreeComputeAdaptiveSubdivisionLevels(
+            VtVec3fArray{
+                GfVec3f(-0.375f, -0.125f, 0.0f),
+                GfVec3f(-0.125f, -0.125f, 0.0f),
+                GfVec3f(0.125f, -0.125f, 0.0f),
+                GfVec3f(0.375f, -0.125f, 0.0f),
+                GfVec3f(-0.375f, 0.125f, 0.0f),
+                GfVec3f(-0.125f, 0.125f, 0.0f),
+                GfVec3f(0.125f, 0.125f, 0.0f),
+                GfVec3f(0.375f, 0.125f, 0.0f)},
+            VtIntArray{4, 4, 4},
+            VtIntArray{
+                0, 1, 5, 4,
+                1, 2, 6, 5,
+                2, 3, 7, 6},
+            {GfMatrix4f(1.0f)}, GfMatrix4d(1.0), GfMatrix4d(1.0),
+            GfRect2i(GfVec2i(0), 100, 100), 1,
+            [](unsigned int primID,
+               float u,
+               float v,
+               GfVec3f* position) {
+                if (!position || primID > 2) {
+                    return false;
+                }
+                *position = GfVec3f(
+                    -0.375f +
+                        0.25f * (static_cast<float>(primID) + u),
+                    -0.125f + 0.25f * v,
+                    0.0f);
+                if (primID == 0 && v == 0.5f) {
+                    (*position)[0] += 0.02f;
+                }
+                return true;
+            });
+    return levels == std::vector<float>({
+        4.0f, 8.0f, 4.0f, 8.0f,
+        4.0f, 8.0f, 4.0f, 8.0f,
+        4.0f, 8.0f, 4.0f, 8.0f});
+}
+
+bool
+TestDisplacementBoostPreservesBaselineOppositeRatio()
+{
+    const VtVec3fArray points{
+        GfVec3f(-0.125f, -0.125f, 0.0f),
+        GfVec3f(0.125f, -0.125f, 0.0f),
+        GfVec3f(0.25f, 0.125f, 0.0f),
+        GfVec3f(-0.25f, 0.125f, 0.0f)};
+    const auto compute = [&points](
+        HdEmbreeDisplacedPositionProbe const& probe) {
+        return HdEmbreeComputeAdaptiveSubdivisionLevels(
+            points, VtIntArray{4}, VtIntArray{0, 1, 2, 3},
+            {GfMatrix4f(1.0f)}, GfMatrix4d(1.0), GfMatrix4d(1.0),
+            GfRect2i(GfVec2i(0), 100, 100), 1, probe);
+    };
+
+    const std::vector<float> baseline = compute({});
+    const std::vector<float> boosted = compute(
+        [](unsigned int primID,
+           float u,
+           float v,
+           GfVec3f* position) {
+            if (!position || primID != 0) {
+                return false;
+            }
+            const float left = -0.125f - 0.125f * v;
+            const float right = 0.125f + 0.125f * v;
+            *position = GfVec3f(
+                left + (right - left) * u,
+                -0.125f + 0.25f * v,
+                0.0f);
+            if (u == 0.5f) {
+                (*position)[1] += 0.02f;
+            }
+            return true;
+        });
+    return baseline == std::vector<float>({4.0f, 4.0f, 7.0f, 4.0f}) &&
+        boosted == std::vector<float>({8.0f, 4.0f, 14.0f, 4.0f});
+}
+
+bool
+TestDisplacementBoostTouchesOnlySharedNonQuadEdge()
+{
+    const std::vector<float> levels =
+        HdEmbreeComputeAdaptiveSubdivisionLevels(
+            VtVec3fArray{
+                GfVec3f(-0.125f, -0.125f, 0.0f),
+                GfVec3f(0.125f, -0.125f, 0.0f),
+                GfVec3f(0.125f, 0.125f, 0.0f),
+                GfVec3f(-0.125f, 0.125f, 0.0f),
+                GfVec3f(0.375f, 0.0f, 0.0f)},
+            VtIntArray{4, 3},
+            VtIntArray{0, 1, 2, 3, 2, 1, 4},
+            {GfMatrix4f(1.0f)}, GfMatrix4d(1.0), GfMatrix4d(1.0),
+            GfRect2i(GfVec2i(0), 100, 100), 1,
+            _MakeBentQuadProbe(0.0f, 0.02f));
+    return levels == std::vector<float>({
+        4.0f, 8.0f, 4.0f, 8.0f,
+        8.0f, 4.0f, 4.0f});
+}
+
 bool
 TestComplexityTargetsExactPixelLengths()
 {
@@ -811,6 +1091,11 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     GfVec3f displacedNormal(0.0f);
     GfVec3f displacedDPdu(0.0f);
     GfVec3f displacedDPdv(0.0f);
+    GfVec3f displacedPosition(0.0f);
+    const bool displacedPositionComputed =
+        HdEmbreeComputeDisplacedSubdivPosition(
+            geometry, &context, 0, 0.5f, 0.5f,
+            &displacedPosition);
     const bool displacedFrameComputed =
         HdEmbreeComputeDisplacedSubdivFrame(
             geometry, &context, 0, 0.5f, 0.5f,
@@ -892,6 +1177,8 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     constexpr float inverseSqrtTwo = 0.70710678f;
     const bool valid = _Close(positiveHit, 1.5f, 0.02f) &&
         _Close(float3TexcoordHit, 1.5f, 0.02f) &&
+        displacedPositionComputed &&
+        _Close(displacedPosition, GfVec3f(0.5f, 0.5f, 0.5f), 0.02f) &&
         displacedFrameComputed &&
         _Close(displacedDPdu, GfVec3f(1.0f, 0.0f, 1.0f), 0.02f) &&
         _Close(displacedDPdv, GfVec3f(0.0f, 1.0f, 0.0f), 0.02f) &&
@@ -912,7 +1199,8 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
         std::printf(
             "    callback hits=(%g,%g) services=(%g,%g) calls=(%d,%d) "
             "frames=(%d,%d) frameOk=%d dPdu=(%g,%g,%g) "
-            "dPdv=(%g,%g,%g) N=(%g,%g,%g) smallFrame=(%d,%g)\n",
+            "dPdv=(%g,%g,%g) N=(%g,%g,%g) P=(%g,%g,%g) "
+            "smallFrame=(%d,%g)\n",
             positiveHit, float3TexcoordHit,
             firstServiceHit, secondServiceHit,
             firstTextureCalls, secondTextureCalls,
@@ -921,6 +1209,8 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
             displacedDPdu[0], displacedDPdu[1], displacedDPdu[2],
             displacedDPdv[0], displacedDPdv[1], displacedDPdv[2],
             displacedNormal[0], displacedNormal[1], displacedNormal[2],
+            displacedPosition[0], displacedPosition[1],
+            displacedPosition[2],
             smallFrameEvaluated, smallFrameDisplacement);
     }
     return valid;
@@ -2485,6 +2775,20 @@ main()
          &TestFaceVaryingRulesMapToEmbreeModes},
         {"Subdivision.TestComplexityTargetsExactPixelLengths",
          &TestComplexityTargetsExactPixelLengths},
+        {"Subdivision.TestDisplacementProbeRaisesOnlyCurvedDirection",
+         &TestDisplacementProbeRaisesOnlyCurvedDirection},
+        {"Subdivision.TestDisplacementProbeUsesComplexityAndLargestInstance",
+         &TestDisplacementProbeUsesComplexityAndLargestInstance},
+        {"Subdivision.TestDisplacementProbeFailureAndNonQuadKeepBaseline",
+         &TestDisplacementProbeFailureAndNonQuadKeepBaseline},
+        {"Subdivision.TestDisplacementProbePreservesSharedEdgeBalance",
+         &TestDisplacementProbePreservesSharedEdgeBalance},
+        {"Subdivision.TestDisplacementBoostPropagatesAcrossQuadStrip",
+         &TestDisplacementBoostPropagatesAcrossQuadStrip},
+        {"Subdivision.TestDisplacementBoostPreservesBaselineOppositeRatio",
+         &TestDisplacementBoostPreservesBaselineOppositeRatio},
+        {"Subdivision.TestDisplacementBoostTouchesOnlySharedNonQuadEdge",
+         &TestDisplacementBoostTouchesOnlySharedNonQuadEdge},
         {"Subdivision.TestSharedEdgesUseSameMaximumLevel",
          &TestSharedEdgesUseSameMaximumLevel},
         {"Subdivision.TestBalancedSubdivisionLevelsUseSharedMaximum",

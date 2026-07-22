@@ -564,11 +564,28 @@ HdEmbreeMesh::_ComputeAdaptiveSubdivisionLevels(
         instanceTransforms.push_back(context->objectToWorldMatrix);
     }
 
+    HdEmbreeDisplacedPositionProbe displacedPositionProbe;
+    auto const* prototypeContext =
+        static_cast<HdEmbreePrototypeContext const*>(
+            rtcGetGeometryUserData(_geometry));
+    if (prototypeContext && prototypeContext->displaced) {
+        const RTCGeometry geometry = _geometry;
+        displacedPositionProbe =
+            [geometry, prototypeContext](
+                unsigned int primID,
+                float u,
+                float v,
+                GfVec3f* position) {
+                return HdEmbreeComputeDisplacedSubdivPosition(
+                    geometry, prototypeContext, primID, u, v, position);
+            };
+    }
+
     return HdEmbreeComputeAdaptiveSubdivisionLevels(
         _points, _topology.GetFaceVertexCounts(),
         _topology.GetFaceVertexIndices(), instanceTransforms,
         viewMatrix, projectionMatrix, dataWindow,
-        _topology.GetRefineLevel());
+        _topology.GetRefineLevel(), displacedPositionProbe);
 }
 
 bool

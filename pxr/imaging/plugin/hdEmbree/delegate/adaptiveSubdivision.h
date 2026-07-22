@@ -11,12 +11,19 @@
 #include "pxr/base/gf/matrix4d.h"
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/rect2i.h"
+#include "pxr/base/gf/vec3f.h"
 #include "pxr/base/vt/array.h"
 #include "pxr/base/vt/types.h"
 
+#include <functional>
 #include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+/// Evaluates one final object-space position on a displaced subdivision
+/// face. An empty callback disables displacement-aware level refinement.
+using HdEmbreeDisplacedPositionProbe = std::function<bool(
+    unsigned int primID, float u, float v, GfVec3f* position)>;
 
 /// Returns the target screen-space edge length for a Hydra refine level.
 double HdEmbreeGetTargetSubdivisionEdgePixels(int refineLevel);
@@ -39,8 +46,13 @@ std::vector<float> HdEmbreeBalanceSubdivisionLevels(
 
 /// Computes one balanced Embree subdivision level per face corner. Candidates
 /// include the viewport guard and minimum required level, then shared edges
-/// and quad opposite edges are balanced. An empty result indicates invalid
-/// topology or framing inputs.
+/// and quad opposite edges are balanced. When a displacement probe is
+/// supplied, quadrilateral faces are sampled on a fixed 3x3 parameter grid.
+/// A projected chord error above the complexity tolerance doubles only the
+/// affected parametric direction. The boost is propagated along shared quad
+/// edge strips before application so it does not introduce Embree transition
+/// triangles, and remains strictly capped at 2x the fresh camera-based
+/// baseline. An empty result indicates invalid topology or framing inputs.
 std::vector<float> HdEmbreeComputeAdaptiveSubdivisionLevels(
     VtVec3fArray const& points,
     VtIntArray const& faceVertexCounts,
@@ -49,7 +61,8 @@ std::vector<float> HdEmbreeComputeAdaptiveSubdivisionLevels(
     GfMatrix4d const& viewMatrix,
     GfMatrix4d const& projectionMatrix,
     GfRect2i const& dataWindow,
-    int refineLevel);
+    int refineLevel,
+    HdEmbreeDisplacedPositionProbe const& displacedPositionProbe = {});
 
 PXR_NAMESPACE_CLOSE_SCOPE
 

@@ -587,6 +587,52 @@ _ComputeDisplacedSubdivFrameImpl(
     return true;
 }
 
+bool
+_ComputeDisplacedSubdivPositionImpl(
+    RTCGeometry geometry,
+    HdEmbreePrototypeContext const* context,
+    unsigned int primID,
+    float u,
+    float v,
+    GfVec3f* outPosition)
+{
+    if (!geometry || !context || !outPosition ||
+        !std::isfinite(u) || !std::isfinite(v)) {
+        return false;
+    }
+
+    const float orientationSign = context->orientationSign < 0.0f
+        ? -1.0f
+        : 1.0f;
+    GfVec3f position;
+    GfVec3f normal;
+    GfVec3f dPdu;
+    GfVec3f dPdv;
+    if (!_InterpolateBaseFrame(
+            geometry, primID, u, v, orientationSign,
+            &position, &normal, &dPdu, &dPdv)) {
+        return false;
+    }
+
+    float displacement = 0.0f;
+    if (!_EvaluateDisplacementImpl(
+            context, primID, u, v,
+            position, normal, dPdu, dPdv, &displacement)) {
+        return false;
+    }
+
+    GfVec3f objectOffset;
+    GfVec3f displacedPosition;
+    if (!_ComputeObjectSpaceDisplacementOffsetImpl(
+            context, normal, displacement, &objectOffset) ||
+        !_TryAddOffset(position, objectOffset, &displacedPosition)) {
+        return false;
+    }
+
+    *outPosition = displacedPosition;
+    return true;
+}
+
 } // namespace
 
 bool
@@ -620,6 +666,23 @@ HdEmbreeComputeObjectSpaceDisplacementOffset(
     try {
         return _ComputeObjectSpaceDisplacementOffsetImpl(
             context, objectNormal, displacement, objectOffset);
+    } catch (...) {
+        return false;
+    }
+}
+
+bool
+HdEmbreeComputeDisplacedSubdivPosition(
+    RTCGeometry geometry,
+    HdEmbreePrototypeContext const* context,
+    unsigned int primID,
+    float u,
+    float v,
+    GfVec3f* outPosition)
+{
+    try {
+        return _ComputeDisplacedSubdivPositionImpl(
+            geometry, context, primID, u, v, outPosition);
     } catch (...) {
         return false;
     }

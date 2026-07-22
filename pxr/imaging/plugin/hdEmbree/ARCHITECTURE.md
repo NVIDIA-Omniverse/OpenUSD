@@ -36,7 +36,7 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
   It requires an attached `HdCamera` and snapshots the first valid camera/data window for screen-space subdivision. Scene edits reuse that snapshot; `ty:dynamicSubdvTesselation` enables resnapshotting and recomputation after projection or data-window changes.
 - `renderBuffer.h/.cpp`: CPU-backed `HdRenderBuffer` storage, mapping, format conversion, convergence, and renderer write access.
 - `mesh.h/.cpp`: `HdMesh` adapter. Pulls topology, points, transforms, subdivision data, primvars, materials, categories, and instancing; builds/updates Embree prototypes and instances. It applies levels computed by `adaptiveSubdivision.*` and supplies the Embree subdivision displacement callback declared in `displacement.h`.
-- `adaptiveSubdivision.h/.cpp`: deterministic screen-space edge projection, guarded homogeneous view-volume clipping, shared-edge/instance maximum selection, complexity targets, Embree level clamping, and quad transition balancing.
+- `adaptiveSubdivision.h/.cpp`: deterministic screen-space edge projection, guarded homogeneous view-volume clipping, shared-edge/instance maximum selection, complexity targets, fixed 3x3 displaced-quad chord probes, Embree level clamping, and quad transition balancing.
 - `instancer.h/.cpp`: `HdInstancer` adapter; computes instance transforms and per-instance category/light-linking context.
 - `material.h/.cpp`: `HdMaterial` adapter; pulls Hydra networks, normalizes them through `mxcppAdapter`, owns separate compiled surface and optional displacement `mxcpp::EvalGraph` objects, and updates a stable renderer material-data handle.
 - `light.h/.cpp`: `HdLight` adapter. Pulls USD Lux parameters, transforms, textures, IES data, shaping, linking, and visible finite-light geometry into renderer-owned light data.
@@ -93,8 +93,9 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
 - `geometry/context.h`: Embree prototype and instance hit data: identities,
   properties, primvars, materials, derivatives, transforms, and categories.
 - `geometry/displacementEvaluation.h/.cpp`: shared build-time and hit-time
-  displacement evaluation, transform-correct object-space offsets, and smooth
-  displaced subdivision-frame reconstruction.
+  displacement evaluation, transform-correct object-space offsets, final
+  displaced-position probes, and smooth displaced subdivision-frame
+  reconstruction.
 - `geometry/primvarSampler.h/.cpp`: generic Hydra buffer and primvar sampling.
 - `geometry/meshSamplers.h/.cpp`: constant, uniform, triangle,
   face-varying, and subdivision interpolation.
@@ -126,9 +127,19 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
    uses a 10% X/Y view guard for displaced patches, converts complexity to a
    pixel-edge target, and clamps candidate Embree levels to `[4, 4096]`. A
    monotone fixed-point pass raises levels until shared authored edges agree
-   and opposite edges of every authored quad differ by at most 2:1. General
-   n-gons participate in shared-edge consolidation but not opposite-edge balancing.
-   The mesh adapter updates persistent level buffers and recommits only the
+   and opposite edges of every authored quad differ by at most 2:1. Displaced
+   quads then evaluate final object-space positions at the 3x3 product of
+   `u,v={0,0.5,1}`. For every instance, screen-space midpoint-to-chord error is
+   measured along three rows and three columns. Errors above 0.5 pixel at
+   medium or 0.25 pixel at high/very-high double the corresponding u- or
+   v-direction levels, capped at twice the freshly computed camera baseline.
+   The boost factor first propagates through shared edges and quad-opposite
+   pairs along the complete edge strip. This uniformly scales any pre-existing
+   camera transition pattern and prevents a local boost from creating Embree
+   stitch-fan triangles that may fold on the displaced surface. Shared-edge
+   and opposite-edge balancing then run again. Failed probes and general
+   n-gons retain their camera baseline except on a shared boosted edge. The
+   mesh adapter updates persistent level buffers and recommits only the
    affected prototype and instances.
 
 Displacement is active only for refined geometry whose display style permits

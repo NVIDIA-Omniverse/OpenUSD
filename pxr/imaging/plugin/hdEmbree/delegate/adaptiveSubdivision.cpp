@@ -10,8 +10,10 @@
 #include "pxr/base/gf/vec4d.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <unordered_map>
 
@@ -24,12 +26,74 @@ constexpr double _viewGuardScale = 1.1;
 constexpr float _minSubdivisionLevel = 1.0f;
 constexpr float _minRequiredSubdivisionLevel = 4.0f;
 constexpr float _maxSubdivisionLevel = 4096.0f;
+constexpr float _maxDisplacementLevelScale = 2.0f;
+constexpr double _mediumDisplacementChordErrorPixels = 0.5;
+constexpr double _fineDisplacementChordErrorPixels = 0.25;
+constexpr size_t _displacementProbeGridWidth = 3;
+constexpr std::array<float, _displacementProbeGridWidth>
+    _displacementProbeCoordinates{0.0f, 0.5f, 1.0f};
 
 struct _SharedEdgeGroups
 {
     std::vector<size_t> cornerGroupIndices;
     size_t groupCount = 0;
 };
+
+std::optional<std::vector<size_t>>
+_BuildQuadEdgeStripComponents(
+    VtIntArray const& faceVertexCounts,
+    _SharedEdgeGroups const& sharedEdges)
+{
+    std::vector<size_t> parents(sharedEdges.groupCount);
+    for (size_t group = 0; group < parents.size(); ++group) {
+        parents[group] = group;
+    }
+
+    const auto findRoot = [&parents](size_t group) {
+        while (parents[group] != group) {
+            parents[group] = parents[parents[group]];
+            group = parents[group];
+        }
+        return group;
+    };
+    const auto unite = [&parents, &findRoot](size_t first, size_t second) {
+        const size_t firstRoot = findRoot(first);
+        const size_t secondRoot = findRoot(second);
+        if (firstRoot != secondRoot) {
+            parents[secondRoot] = firstRoot;
+        }
+    };
+
+    size_t offset = 0;
+    for (const int count : faceVertexCounts) {
+        if (count <= 0 || offset + static_cast<size_t>(count) >
+                sharedEdges.cornerGroupIndices.size()) {
+            return std::nullopt;
+        }
+        if (count == 4) {
+            // Embree creates transition triangles when opposite levels
+            // differ. Connect opposite shared-edge groups so a displacement
+            // boost can travel along the complete quad edge strip before
+            // levels are changed.
+            unite(
+                sharedEdges.cornerGroupIndices[offset],
+                sharedEdges.cornerGroupIndices[offset + 2]);
+            unite(
+                sharedEdges.cornerGroupIndices[offset + 1],
+                sharedEdges.cornerGroupIndices[offset + 3]);
+        }
+        offset += static_cast<size_t>(count);
+    }
+    if (offset != sharedEdges.cornerGroupIndices.size()) {
+        return std::nullopt;
+    }
+
+    std::vector<size_t> components(sharedEdges.groupCount);
+    for (size_t group = 0; group < components.size(); ++group) {
+        components[group] = findRoot(group);
+    }
+    return components;
+}
 
 std::optional<_SharedEdgeGroups>
 _BuildSharedEdgeGroups(
@@ -150,6 +214,13 @@ _IsFinite(GfVec4d const& value)
 }
 
 bool
+_IsFinite(GfVec3f const& value)
+{
+    return std::isfinite(value[0]) && std::isfinite(value[1]) &&
+        std::isfinite(value[2]);
+}
+
+bool
 _ClipEdgeToViewVolume(GfVec4d* p0, GfVec4d* p1)
 {
     if (!_IsFinite(*p0) || !_IsFinite(*p1)) {
@@ -238,6 +309,107 @@ _ProjectEdge(
     return true;
 }
 
+bool
+_ProjectPoint(
+    GfVec3f const& point,
+    GfMatrix4d const& objectToClip,
+    double width,
+    double height,
+    GfVec2d* pixel)
+{
+    if (!pixel || !_IsFinite(point)) {
+        return false;
+    }
+    const GfVec4d clip =
+        GfVec4d(point[0], point[1], point[2], 1.0) * objectToClip;
+    if (!_IsFinite(clip) || clip[3] <= _minW) {
+        return false;
+    }
+
+    const GfVec2d projected(
+        (clip[0] / clip[3] * 0.5 + 0.5) * width,
+        (clip[1] / clip[3] * 0.5 + 0.5) * height);
+    if (!std::isfinite(projected[0]) ||
+        !std::isfinite(projected[1])) {
+        return false;
+    }
+    *pixel = projected;
+    return true;
+}
+
+double
+_DistanceToLineSegment(
+    GfVec2d const& point,
+    GfVec2d const& start,
+    GfVec2d const& end)
+{
+    const GfVec2d segment = end - start;
+    const double lengthSquared = segment.GetLengthSq();
+    if (!std::isfinite(lengthSquared) || lengthSquared <= 0.0) {
+        return (point - start).GetLength();
+    }
+    const double parameter = std::clamp(
+        GfDot(point - start, segment) / lengthSquared, 0.0, 1.0);
+    return (point - (start + parameter * segment)).GetLength();
+}
+
+bool
+_ComputeProjectedChordError(
+    GfVec3f const& start,
+    GfVec3f const& midpoint,
+    GfVec3f const& end,
+    GfMatrix4d const& objectToClip,
+    double width,
+    double height,
+    double* errorPixels)
+{
+    if (!errorPixels) {
+        return false;
+    }
+
+    // Only measure curves whose first or second half reaches the guarded
+    // view volume. This retains the existing offscreen/near-plane protection
+    // while still detecting a displaced midpoint that bends into view.
+    double ignoredLength = 0.0;
+    if (!_ProjectEdge(
+            start, midpoint, objectToClip,
+            width, height, &ignoredLength) &&
+        !_ProjectEdge(
+            midpoint, end, objectToClip,
+            width, height, &ignoredLength)) {
+        return false;
+    }
+
+    GfVec2d projectedStart;
+    GfVec2d projectedMidpoint;
+    GfVec2d projectedEnd;
+    if (!_ProjectPoint(
+            start, objectToClip, width, height, &projectedStart) ||
+        !_ProjectPoint(
+            midpoint, objectToClip, width, height,
+            &projectedMidpoint) ||
+        !_ProjectPoint(
+            end, objectToClip, width, height, &projectedEnd)) {
+        return false;
+    }
+
+    const double error = _DistanceToLineSegment(
+        projectedMidpoint, projectedStart, projectedEnd);
+    if (!std::isfinite(error)) {
+        return false;
+    }
+    *errorPixels = error;
+    return true;
+}
+
+double
+_GetTargetDisplacementChordErrorPixels(int refineLevel)
+{
+    return refineLevel >= 2
+        ? _fineDisplacementChordErrorPixels
+        : _mediumDisplacementChordErrorPixels;
+}
+
 } // namespace
 
 double
@@ -311,7 +483,8 @@ HdEmbreeComputeAdaptiveSubdivisionLevels(
     GfMatrix4d const& viewMatrix,
     GfMatrix4d const& projectionMatrix,
     GfRect2i const& dataWindow,
-    int refineLevel)
+    int refineLevel,
+    HdEmbreeDisplacedPositionProbe const& displacedPositionProbe)
 {
     if (points.empty() || faceVertexIndices.empty() ||
         instanceTransforms.empty() || dataWindow.GetWidth() <= 0 ||
@@ -372,8 +545,131 @@ HdEmbreeComputeAdaptiveSubdivisionLevels(
     if (offset != faceVertexIndices.size()) {
         return {};
     }
+    const std::vector<float> baselineLevels =
+        HdEmbreeBalanceSubdivisionLevels(
+            faceVertexCounts, faceVertexIndices, candidateLevels);
+    if (baselineLevels.empty() || !displacedPositionProbe) {
+        return baselineLevels;
+    }
+
+    const std::optional<_SharedEdgeGroups> sharedEdges =
+        _BuildSharedEdgeGroups(faceVertexCounts, faceVertexIndices);
+    if (!sharedEdges) {
+        return baselineLevels;
+    }
+    const std::optional<std::vector<size_t>> edgeStripComponents =
+        _BuildQuadEdgeStripComponents(faceVertexCounts, *sharedEdges);
+    if (!edgeStripComponents) {
+        return baselineLevels;
+    }
+
+    std::vector<bool> boostedEdgeStrips(sharedEdges->groupCount, false);
+    const auto markDirectionForBoost =
+        [&sharedEdges, &edgeStripComponents, &boostedEdgeStrips](
+            size_t firstEdge, size_t secondEdge) {
+            for (const size_t edge : {firstEdge, secondEdge}) {
+                const size_t sharedGroup =
+                    sharedEdges->cornerGroupIndices[edge];
+                boostedEdgeStrips[(*edgeStripComponents)[sharedGroup]] = true;
+            }
+        };
+    const double targetErrorPixels =
+        _GetTargetDisplacementChordErrorPixels(refineLevel);
+    constexpr size_t probeCount =
+        _displacementProbeGridWidth * _displacementProbeGridWidth;
+    size_t faceOffset = 0;
+    for (size_t faceIndex = 0;
+         faceIndex < faceVertexCounts.size(); ++faceIndex) {
+        const int count = faceVertexCounts[faceIndex];
+        if (count != 4) {
+            faceOffset += static_cast<size_t>(count);
+            continue;
+        }
+        if (faceIndex > std::numeric_limits<unsigned int>::max()) {
+            return baselineLevels;
+        }
+
+        std::array<GfVec3f, probeCount> samples;
+        bool samplesValid = true;
+        for (size_t vIndex = 0;
+             vIndex < _displacementProbeGridWidth && samplesValid;
+             ++vIndex) {
+            for (size_t uIndex = 0;
+                 uIndex < _displacementProbeGridWidth; ++uIndex) {
+                GfVec3f& sample = samples[
+                    vIndex * _displacementProbeGridWidth + uIndex];
+                if (!displacedPositionProbe(
+                        static_cast<unsigned int>(faceIndex),
+                        _displacementProbeCoordinates[uIndex],
+                        _displacementProbeCoordinates[vIndex],
+                        &sample) ||
+                    !_IsFinite(sample)) {
+                    samplesValid = false;
+                    break;
+                }
+            }
+        }
+        if (!samplesValid) {
+            faceOffset += static_cast<size_t>(count);
+            continue;
+        }
+
+        double maximumUError = 0.0;
+        double maximumVError = 0.0;
+        for (GfMatrix4d const& matrix : objectToClip) {
+            for (size_t row = 0;
+                 row < _displacementProbeGridWidth; ++row) {
+                const size_t rowStart =
+                    row * _displacementProbeGridWidth;
+                double error = 0.0;
+                if (_ComputeProjectedChordError(
+                        samples[rowStart], samples[rowStart + 1],
+                        samples[rowStart + 2], matrix,
+                        width, height, &error)) {
+                    maximumUError = std::max(maximumUError, error);
+                }
+            }
+            for (size_t column = 0;
+                 column < _displacementProbeGridWidth; ++column) {
+                double error = 0.0;
+                if (_ComputeProjectedChordError(
+                        samples[column],
+                        samples[column + _displacementProbeGridWidth],
+                        samples[column +
+                            2 * _displacementProbeGridWidth],
+                        matrix, width, height, &error)) {
+                    maximumVError = std::max(maximumVError, error);
+                }
+            }
+        }
+
+        // For a quad, edges 0/2 control segments in the u direction and
+        // edges 1/3 control segments in the v direction. Record the boost on
+        // the complete edge strip rather than changing this face immediately:
+        // a one-sided change would make Embree stitch unequal opposite levels
+        // with large transition triangles that can fold after displacement.
+        if (maximumUError > targetErrorPixels) {
+            markDirectionForBoost(faceOffset, faceOffset + 2);
+        }
+        if (maximumVError > targetErrorPixels) {
+            markDirectionForBoost(faceOffset + 1, faceOffset + 3);
+        }
+        faceOffset += static_cast<size_t>(count);
+    }
+
+    std::vector<float> displacementLevels = baselineLevels;
+    for (size_t edge = 0; edge < displacementLevels.size(); ++edge) {
+        const size_t sharedGroup =
+            sharedEdges->cornerGroupIndices[edge];
+        if (boostedEdgeStrips[(*edgeStripComponents)[sharedGroup]]) {
+            displacementLevels[edge] = std::min(
+                _maxSubdivisionLevel,
+                baselineLevels[edge] * _maxDisplacementLevelScale);
+        }
+    }
+
     return HdEmbreeBalanceSubdivisionLevels(
-        faceVertexCounts, faceVertexIndices, candidateLevels);
+        faceVertexCounts, faceVertexIndices, displacementLevels);
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE
