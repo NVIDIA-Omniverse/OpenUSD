@@ -25,7 +25,12 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 namespace {
 
-constexpr float _finiteDifferenceStep = 5.0e-4f;
+// The displaced normal derivative is a second finite difference of a
+// float-valued material graph. A smaller patch step visibly amplifies graph
+// rounding; 2e-3 keeps the curvature stable while remaining local enough for
+// the existing first-derivative frame reconstruction.
+constexpr float _finiteDifferenceStep = 2.0e-3f;
+constexpr float _normalDerivativeRingSpan = 2.0f * _finiteDifferenceStep;
 constexpr float _minimumRelativeAreaSquared = 1.0e-18f;
 static const TfToken _tokensSt("st", TfToken::Immortal);
 
@@ -33,7 +38,7 @@ float
 _GetFiniteDifferenceOffset(float encodedCoordinate, bool isQuad)
 {
     if (isQuad) {
-        return encodedCoordinate + _finiteDifferenceStep <= 1.0f
+        return encodedCoordinate + _normalDerivativeRingSpan <= 1.0f
             ? _finiteDifferenceStep
             : -_finiteDifferenceStep;
     }
@@ -44,7 +49,7 @@ _GetFiniteDifferenceOffset(float encodedCoordinate, bool isQuad)
     const float halfCoordinate = 0.5f * encodedCoordinate;
     const float localCoordinate =
         2.0f * (halfCoordinate - std::floor(halfCoordinate)) - 0.5f;
-    return localCoordinate + _finiteDifferenceStep < 1.5f
+    return localCoordinate + _normalDerivativeRingSpan < 1.5f
         ? _finiteDifferenceStep
         : -_finiteDifferenceStep;
 }
@@ -468,24 +473,22 @@ _TryFiniteDifference(
 }
 
 bool
-_ComputeDisplacedSubdivFrameImpl(
+_EvaluateDisplacedSubdivProbe(
     RTCGeometry geometry,
     HdEmbreePrototypeContext const* context,
     unsigned int primID,
     float u,
     float v,
-    GfVec3f* outNormal,
-    GfVec3f* outDPdu,
-    GfVec3f* outDPdv)
+    float orientationSign,
+    GfVec3f* outObjectOffset,
+    GfVec3f* outBaseDPdu,
+    GfVec3f* outBaseDPdv)
 {
-    if (!geometry || !context || !outNormal || !outDPdu || !outDPdv ||
+    if (!geometry || !context || !outObjectOffset ||
         !std::isfinite(u) || !std::isfinite(v)) {
         return false;
     }
 
-    const float orientationSign = context->orientationSign < 0.0f
-        ? -1.0f
-        : 1.0f;
     GfVec3f position;
     GfVec3f normal;
     GfVec3f dPdu;
@@ -502,9 +505,109 @@ _ComputeDisplacedSubdivFrameImpl(
             position, normal, dPdu, dPdv, &displacement)) {
         return false;
     }
-    GfVec3f objectOffset;
     if (!_ComputeObjectSpaceDisplacementOffsetImpl(
-            context, normal, displacement, &objectOffset)) {
+            context, normal, displacement, outObjectOffset)) {
+        return false;
+    }
+
+    if (outBaseDPdu) {
+        *outBaseDPdu = dPdu;
+    }
+    if (outBaseDPdv) {
+        *outBaseDPdv = dPdv;
+    }
+    return true;
+}
+
+bool
+_TryBuildDisplacedNormal(
+    GfVec3f const& baseDPdu,
+    GfVec3f const& baseDPdv,
+    GfVec3f const& centerObjectOffset,
+    GfVec3f const& uObjectOffset,
+    GfVec3f const& vObjectOffset,
+    float du,
+    float dv,
+    float orientationSign,
+    GfVec3f* outNormal,
+    GfVec3f* outDPdu,
+    GfVec3f* outDPdv)
+{
+    if (!outNormal || !outDPdu || !outDPdv) {
+        return false;
+    }
+
+    GfVec3f objectOffsetDu;
+    GfVec3f objectOffsetDv;
+    GfVec3f displacedDPdu;
+    GfVec3f displacedDPdv;
+    if (!_TryFiniteDifference(
+            uObjectOffset, centerObjectOffset, du, &objectOffsetDu) ||
+        !_TryFiniteDifference(
+            vObjectOffset, centerObjectOffset, dv, &objectOffsetDv) ||
+        !_TryAddOffset(baseDPdu, objectOffsetDu, &displacedDPdu) ||
+        !_TryAddOffset(baseDPdv, objectOffsetDv, &displacedDPdv)) {
+        return false;
+    }
+
+    GfVec3f displacedNormal;
+    if (!_TryBuildNormalFromTangents(
+            displacedDPdu, displacedDPdv, &displacedNormal)) {
+        return false;
+    }
+    displacedNormal *= orientationSign;
+    if (!_IsFinite(displacedNormal)) {
+        return false;
+    }
+
+    *outNormal = displacedNormal;
+    *outDPdu = displacedDPdu;
+    *outDPdv = displacedDPdv;
+    return true;
+}
+
+bool
+_TryProjectNormalDerivative(
+    GfVec3f const& normal,
+    GfVec3f const& derivative,
+    GfVec3f* outDerivative)
+{
+    if (!outDerivative || !_IsFinite(normal) || !_IsFinite(derivative)) {
+        return false;
+    }
+    const GfVec3f projected =
+        derivative - normal * GfDot(normal, derivative);
+    if (!_IsFinite(projected)) {
+        return false;
+    }
+    *outDerivative = projected;
+    return true;
+}
+
+bool
+_ComputeDisplacedSubdivFrameImpl(
+    RTCGeometry geometry,
+    HdEmbreePrototypeContext const* context,
+    unsigned int primID,
+    float u,
+    float v,
+    HdEmbreeDisplacedSubdivFrame* outFrame)
+{
+    if (!geometry || !context || !outFrame ||
+        !std::isfinite(u) || !std::isfinite(v)) {
+        return false;
+    }
+
+    const float orientationSign = context->orientationSign < 0.0f
+        ? -1.0f
+        : 1.0f;
+
+    GfVec3f centerObjectOffset;
+    GfVec3f centerBaseDPdu;
+    GfVec3f centerBaseDPdv;
+    if (!_EvaluateDisplacedSubdivProbe(
+            geometry, context, primID, u, v, orientationSign,
+            &centerObjectOffset, &centerBaseDPdu, &centerBaseDPdv)) {
         return false;
     }
 
@@ -517,73 +620,140 @@ _ComputeDisplacedSubdivFrameImpl(
     const float du = _GetFiniteDifferenceOffset(u, isQuad);
     const float dv = _GetFiniteDifferenceOffset(v, isQuad);
 
-    GfVec3f positionU;
-    GfVec3f normalU;
-    GfVec3f dPduU;
-    GfVec3f dPdvU;
-    if (!_InterpolateBaseFrame(
-            geometry, primID, u + du, v,
-            orientationSign,
-            &positionU, &normalU, &dPduU, &dPdvU)) {
-        return false;
-    }
-    float displacementU = 0.0f;
-    if (!_EvaluateDisplacementImpl(
-            context, primID, u + du, v,
-            positionU, normalU, dPduU, dPdvU, &displacementU)) {
-        return false;
-    }
-    GfVec3f objectOffsetU;
-    if (!_ComputeObjectSpaceDisplacementOffsetImpl(
-            context, normalU, displacementU, &objectOffsetU)) {
+    GfVec3f uObjectOffset;
+    GfVec3f uBaseDPdu;
+    GfVec3f uBaseDPdv;
+    if (!_EvaluateDisplacedSubdivProbe(
+            geometry, context, primID, u + du, v, orientationSign,
+            &uObjectOffset, &uBaseDPdu, &uBaseDPdv)) {
         return false;
     }
 
-    GfVec3f positionV;
-    GfVec3f normalV;
-    GfVec3f dPduV;
-    GfVec3f dPdvV;
-    if (!_InterpolateBaseFrame(
-            geometry, primID, u, v + dv,
-            orientationSign,
-            &positionV, &normalV, &dPduV, &dPdvV)) {
-        return false;
-    }
-    float displacementV = 0.0f;
-    if (!_EvaluateDisplacementImpl(
-            context, primID, u, v + dv,
-            positionV, normalV, dPduV, dPdvV, &displacementV)) {
-        return false;
-    }
-    GfVec3f objectOffsetV;
-    if (!_ComputeObjectSpaceDisplacementOffsetImpl(
-            context, normalV, displacementV, &objectOffsetV)) {
+    GfVec3f vObjectOffset;
+    GfVec3f vBaseDPdu;
+    GfVec3f vBaseDPdv;
+    if (!_EvaluateDisplacedSubdivProbe(
+            geometry, context, primID, u, v + dv, orientationSign,
+            &vObjectOffset, &vBaseDPdu, &vBaseDPdv)) {
         return false;
     }
 
-    GfVec3f objectOffsetDu;
-    GfVec3f objectOffsetDv;
+    GfVec3f displacedNormal;
     GfVec3f displacedDPdu;
     GfVec3f displacedDPdv;
-    if (!_TryFiniteDifference(
-            objectOffsetU, objectOffset, du, &objectOffsetDu) ||
-        !_TryFiniteDifference(
-            objectOffsetV, objectOffset, dv, &objectOffsetDv) ||
-        !_TryAddOffset(dPdu, objectOffsetDu, &displacedDPdu) ||
-        !_TryAddOffset(dPdv, objectOffsetDv, &displacedDPdv)) {
+    if (!_TryBuildDisplacedNormal(
+            centerBaseDPdu, centerBaseDPdv,
+            centerObjectOffset, uObjectOffset, vObjectOffset,
+            du, dv, orientationSign,
+            &displacedNormal, &displacedDPdu, &displacedDPdv)) {
         return false;
     }
-    GfVec3f displacedNormal;
-    if (!_IsFinite(displacedDPdu) || !_IsFinite(displacedDPdv) ||
-        !_TryBuildNormalFromTangents(
-            displacedDPdu, displacedDPdv, &displacedNormal)) {
-        return false;
-    }
-    displacedNormal *= orientationSign;
 
-    *outNormal = displacedNormal;
-    *outDPdu = displacedDPdu;
-    *outDPdv = displacedDPdv;
+    HdEmbreeDisplacedSubdivFrame result;
+    result.normal = displacedNormal;
+    result.dPdu = displacedDPdu;
+    result.dPdv = displacedDPdv;
+    result.uObjectOffset = uObjectOffset;
+    result.vObjectOffset = vObjectOffset;
+    result.uBaseDPdu = uBaseDPdu;
+    result.uBaseDPdv = uBaseDPdv;
+    result.vBaseDPdu = vBaseDPdu;
+    result.vBaseDPdv = vBaseDPdv;
+    result.primID = primID;
+    result.u = u;
+    result.v = v;
+    result.du = du;
+    result.dv = dv;
+    result.valid = true;
+    *outFrame = result;
+    return true;
+}
+
+bool
+_ComputeDisplacedSubdivNormalDerivativesImpl(
+    RTCGeometry geometry,
+    HdEmbreePrototypeContext const* context,
+    HdEmbreeDisplacedSubdivFrame const& frame,
+    GfVec3f* outDndu,
+    GfVec3f* outDndv)
+{
+    if (!geometry || !context || !frame.valid || !outDndu || !outDndv ||
+        !std::isfinite(frame.u) || !std::isfinite(frame.v) ||
+        !std::isfinite(frame.du) || !std::isfinite(frame.dv) ||
+        frame.du == 0.0f || frame.dv == 0.0f ||
+        !_IsFinite(frame.normal) ||
+        !_IsFinite(frame.uObjectOffset) ||
+        !_IsFinite(frame.vObjectOffset) ||
+        !_IsFinite(frame.uBaseDPdu) || !_IsFinite(frame.uBaseDPdv) ||
+        !_IsFinite(frame.vBaseDPdu) || !_IsFinite(frame.vBaseDPdv)) {
+        return false;
+    }
+
+    const float orientationSign = context->orientationSign < 0.0f
+        ? -1.0f
+        : 1.0f;
+    GfVec3f uuObjectOffset;
+    if (!_EvaluateDisplacedSubdivProbe(
+            geometry, context, frame.primID,
+            frame.u + 2.0f * frame.du, frame.v, orientationSign,
+            &uuObjectOffset, nullptr, nullptr)) {
+        return false;
+    }
+
+    GfVec3f uvObjectOffset;
+    if (!_EvaluateDisplacedSubdivProbe(
+            geometry, context, frame.primID,
+            frame.u + frame.du, frame.v + frame.dv, orientationSign,
+            &uvObjectOffset, nullptr, nullptr)) {
+        return false;
+    }
+
+    GfVec3f vvObjectOffset;
+    if (!_EvaluateDisplacedSubdivProbe(
+            geometry, context, frame.primID,
+            frame.u, frame.v + 2.0f * frame.dv, orientationSign,
+            &vvObjectOffset, nullptr, nullptr)) {
+        return false;
+    }
+
+    GfVec3f normalU;
+    GfVec3f unusedDPdu;
+    GfVec3f unusedDPdv;
+    if (!_TryBuildDisplacedNormal(
+            frame.uBaseDPdu, frame.uBaseDPdv,
+            frame.uObjectOffset, uuObjectOffset, uvObjectOffset,
+            frame.du, frame.dv, orientationSign,
+            &normalU, &unusedDPdu, &unusedDPdv)) {
+        return false;
+    }
+
+    GfVec3f normalV;
+    if (!_TryBuildDisplacedNormal(
+            frame.vBaseDPdu, frame.vBaseDPdv,
+            frame.vObjectOffset, uvObjectOffset, vvObjectOffset,
+            frame.du, frame.dv, orientationSign,
+            &normalV, &unusedDPdu, &unusedDPdv)) {
+        return false;
+    }
+
+    if (GfDot(normalU, frame.normal) < 0.0f) {
+        normalU = -normalU;
+    }
+    if (GfDot(normalV, frame.normal) < 0.0f) {
+        normalV = -normalV;
+    }
+
+    GfVec3f dNdu;
+    GfVec3f dNdv;
+    if (!_TryFiniteDifference(normalU, frame.normal, frame.du, &dNdu) ||
+        !_TryFiniteDifference(normalV, frame.normal, frame.dv, &dNdv) ||
+        !_TryProjectNormalDerivative(frame.normal, dNdu, &dNdu) ||
+        !_TryProjectNormalDerivative(frame.normal, dNdv, &dNdv)) {
+        return false;
+    }
+
+    *outDndu = dNdu;
+    *outDndv = dNdv;
     return true;
 }
 
@@ -695,14 +865,53 @@ HdEmbreeComputeDisplacedSubdivFrame(
     unsigned int primID,
     float u,
     float v,
+    HdEmbreeDisplacedSubdivFrame* outFrame)
+{
+    try {
+        return _ComputeDisplacedSubdivFrameImpl(
+            geometry, context, primID, u, v, outFrame);
+    } catch (...) {
+        return false;
+    }
+}
+
+bool
+HdEmbreeComputeDisplacedSubdivFrame(
+    RTCGeometry geometry,
+    HdEmbreePrototypeContext const* context,
+    unsigned int primID,
+    float u,
+    float v,
     GfVec3f* outNormal,
     GfVec3f* outDPdu,
     GfVec3f* outDPdv)
 {
+    if (!outNormal || !outDPdu || !outDPdv) {
+        return false;
+    }
+
+    HdEmbreeDisplacedSubdivFrame frame;
+    if (!HdEmbreeComputeDisplacedSubdivFrame(
+            geometry, context, primID, u, v, &frame)) {
+        return false;
+    }
+    *outNormal = frame.normal;
+    *outDPdu = frame.dPdu;
+    *outDPdv = frame.dPdv;
+    return true;
+}
+
+bool
+HdEmbreeComputeDisplacedSubdivNormalDerivatives(
+    RTCGeometry geometry,
+    HdEmbreePrototypeContext const* context,
+    HdEmbreeDisplacedSubdivFrame const& frame,
+    GfVec3f* outDndu,
+    GfVec3f* outDndv)
+{
     try {
-        return _ComputeDisplacedSubdivFrameImpl(
-            geometry, context, primID, u, v,
-            outNormal, outDPdu, outDPdv);
+        return _ComputeDisplacedSubdivNormalDerivativesImpl(
+            geometry, context, frame, outDndu, outDndv);
     } catch (...) {
         return false;
     }

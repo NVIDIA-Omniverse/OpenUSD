@@ -17,6 +17,34 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 struct HdEmbreePrototypeContext;
 
+/// Hit-local displaced subdivision frame and the three probes needed to
+/// complete its normal derivatives lazily.
+///
+/// The public frame values are in object space and Embree patch coordinates.
+/// The remaining fields cache the center/U/V displacement evaluations so a
+/// later derivative request needs only the outer UU/UV/VV ring. This is a
+/// short-lived value; it does not retain or own the geometry or context.
+struct HdEmbreeDisplacedSubdivFrame
+{
+    GfVec3f normal = GfVec3f(0.0f);
+    GfVec3f dPdu = GfVec3f(0.0f);
+    GfVec3f dPdv = GfVec3f(0.0f);
+
+    GfVec3f uObjectOffset = GfVec3f(0.0f);
+    GfVec3f vObjectOffset = GfVec3f(0.0f);
+    GfVec3f uBaseDPdu = GfVec3f(0.0f);
+    GfVec3f uBaseDPdv = GfVec3f(0.0f);
+    GfVec3f vBaseDPdu = GfVec3f(0.0f);
+    GfVec3f vBaseDPdv = GfVec3f(0.0f);
+
+    unsigned int primID = 0;
+    float u = 0.0f;
+    float v = 0.0f;
+    float du = 0.0f;
+    float dv = 0.0f;
+    bool valid = false;
+};
+
 /// Evaluate the prototype's scalar displacement graph at one undisplaced
 /// subdivision-surface location.
 ///
@@ -76,9 +104,32 @@ bool HdEmbreeComputeDisplacedSubdivFrame(
     unsigned int primID,
     float u,
     float v,
+    HdEmbreeDisplacedSubdivFrame* outFrame);
+
+/// Compatibility overload returning only the immediately needed frame.
+bool HdEmbreeComputeDisplacedSubdivFrame(
+    RTCGeometry geometry,
+    HdEmbreePrototypeContext const* context,
+    unsigned int primID,
+    float u,
+    float v,
     GfVec3f* outNormal,
     GfVec3f* outDPdu,
     GfVec3f* outDPdv);
+
+/// Complete the object-space derivatives of a displaced smooth normal.
+///
+/// \p frame must be the successful result for this geometry and context. The
+/// cached C/U/V probes are reused and only the outer UU/UV/VV displacement
+/// samples are evaluated. The derivatives are returned in Embree patch
+/// coordinates and aligned with `frame.normal`. Outputs are written only when
+/// both derivatives are finite and all displaced probe frames are valid.
+bool HdEmbreeComputeDisplacedSubdivNormalDerivatives(
+    RTCGeometry geometry,
+    HdEmbreePrototypeContext const* context,
+    HdEmbreeDisplacedSubdivFrame const& frame,
+    GfVec3f* outDndu,
+    GfVec3f* outDndv);
 
 PXR_NAMESPACE_CLOSE_SCOPE
 

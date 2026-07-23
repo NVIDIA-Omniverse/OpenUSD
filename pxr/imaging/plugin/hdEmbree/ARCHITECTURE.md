@@ -94,8 +94,8 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
   properties, primvars, materials, derivatives, transforms, and categories.
 - `geometry/displacementEvaluation.h/.cpp`: shared build-time and hit-time
   displacement evaluation, transform-correct object-space offsets, final
-  displaced-position probes, and smooth displaced subdivision-frame
-  reconstruction.
+  displaced-position probes, smooth displaced subdivision-frame
+  reconstruction, and lazy displaced-normal curvature evaluation.
 - `geometry/primvarSampler.h/.cpp`: generic Hydra buffer and primvar sampling.
 - `geometry/meshSamplers.h/.cpp`: constant, uniform, triangle,
   face-varying, and subdivision interpolation.
@@ -167,6 +167,18 @@ reconstructs smooth displaced `dPdu`, `dPdv`, and their cross-product normal.
 This frame feeds material shading, while the actual displaced-facet
 `RTCHit::Ng` remains the geometric authority for visibility, medium-boundary
 classification, and ray bias.
+
+The hit-local displaced frame retains its center/U/V probes. If a surviving
+BSDF sample is delta-specular and still carries ray differentials, the path
+integrator evaluates only the outer UU/UV/VV ring and finite-differences the
+final normalized smooth normals to obtain `dNdu` and `dNdv`. It remaps those
+patch derivatives through the authored `st` inverse Jacobian and transforms
+the normalized-normal derivative with the inverse transpose, including the
+normalization derivative required by non-uniform instance scale. Diffuse,
+glossy, differential-free, and undisplaced hits do not evaluate the outer
+ring. A failed or degenerate ring conservatively keeps zero curvature.
+These derivatives describe the smooth displaced geometry; derivatives of a
+material normal-map input remain a separate concern.
 
 Embree position buffers are Embree-owned `FLOAT3` data with a 16-byte stride,
 and triangle index buffers are also Embree-owned so `VtArray` copy-on-write
@@ -367,6 +379,9 @@ For each segment, `_IntegratePath()` performs these stages in order:
     the next segment.
 17. **Apply roulette and differentials.** After the configured minimum bounce,
     Russian roulette terminates low-throughput paths and compensates survivors.
+    A surviving displaced delta event with an active ray footprint lazily
+    completes its smooth-normal curvature from three additional displacement
+    graph probes; all other events skip that work.
     `_PropagateRayDifferential()` in `surfaceShading.cpp` propagates specular
     reflection/refraction differentials; non-specular events discard them. The
     next origin is biased to the appropriate side of the oriented Embree facet

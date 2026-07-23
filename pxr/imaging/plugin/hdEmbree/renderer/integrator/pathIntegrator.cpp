@@ -230,12 +230,10 @@ HdEmbreeRenderer::_IntegratePath(
         //   sampling. Starts from `geometricNormal`, then face-forwarded
         //   against `wo`, then perturbed by the material's tangent-space
         //   normal map. This is Cycles' `sd->N`.
-        GfVec3f displacedDPdu;
-        GfVec3f displacedDPdv;
-        bool hasDisplacedFrame = false;
+        HdEmbreeDisplacedSubdivFrame displacedFrame;
         GfVec3f geometricNormal = _ResolveObjectSpaceNormal(
             prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
-            rayHit, &displacedDPdu, &displacedDPdv, &hasDisplacedFrame);
+            rayHit, &displacedFrame);
         geometricNormal = _TransformNormalToWorld(
             instanceContext, geometricNormal);
 
@@ -272,14 +270,14 @@ HdEmbreeRenderer::_IntegratePath(
         if (GfDot(normal, wo) < 0.0f) {
             normal = -normal;
         }
+        const GfVec3f differentialNormal = normal;
 
         // Build material inputs: interpolated primvars, texture derivatives,
         // tangent frame, and normal derivatives needed after sampling.
         mxcpp::ShadingContext ctx = _BuildShadingContext(
             rayHit, path.rayDiff,
             instanceContext, prototypeContext, hitPos, normal,
-            hasDisplacedFrame ? &displacedDPdu : nullptr,
-            hasDisplacedFrame ? &displacedDPdv : nullptr,
+            displacedFrame.valid ? &displacedFrame : nullptr,
             &surfaceDifferentials.dndu, &surfaceDifferentials.dndv);
         HdEmbreePrimvarLookup cbData{
             &prototypeContext->primvarMapByString,
@@ -703,6 +701,31 @@ HdEmbreeRenderer::_IntegratePath(
                 path.spectralThroughput /= q;
             } else {
                 path.throughput /= q;
+            }
+        }
+
+        // Displaced normal curvature is only needed when a deterministic
+        // delta continuation will carry an active camera footprint. Complete
+        // the cached C/U/V frame here, after all path-termination decisions,
+        // so other displaced hits retain the existing three graph samples.
+        if (prototypeContext->displaced &&
+            displacedFrame.valid &&
+            path.rayDiff.hasDifferentials &&
+            bs.isSpecular &&
+            !traceEmitterOnlySample) {
+            GfVec3f displacedDndu;
+            GfVec3f displacedDndv;
+            if (_TryComputeDisplacedSubdivNormalDerivativesToWorld(
+                    prototypeContext,
+                    instanceContext,
+                    instanceContext->rootScene,
+                    rayHit.hit.geomID,
+                    displacedFrame,
+                    differentialNormal,
+                    &displacedDndu,
+                    &displacedDndv)) {
+                surfaceDifferentials.dndu = displacedDndu;
+                surfaceDifferentials.dndv = displacedDndv;
             }
         }
 

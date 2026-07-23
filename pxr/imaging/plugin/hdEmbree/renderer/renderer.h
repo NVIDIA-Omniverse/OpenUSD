@@ -51,6 +51,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 TF_DECLARE_PUBLIC_TOKENS(HdEmbreeAovTokens, HDEMBREE_AOV_TOKENS);
 
 class HdEmbreeRenderBufferInterface;
+struct HdEmbreeDisplacedSubdivFrame;
 
 enum HdEmbree_RayMask : uint32_t {
     None = 0,
@@ -911,9 +912,8 @@ private:
     /// \param prototypeContext Non-null prototype context for the hit.
     /// \param hitPos World-space hit position.
     /// \param normal Normalized world-space shading normal.
-    /// \param precomputedDisplacedDPdu Optional object-space displaced
-    /// position derivative recovered together with \p normal.
-    /// \param precomputedDisplacedDPdv Optional matching v derivative.
+    /// \param displacedFrame Optional object-space displaced frame recovered
+    /// together with \p normal.
     /// \param outDndu Optional world-space normal-u derivative output.
     /// \param outDndv Optional world-space normal-v derivative output.
     /// \param options Controls optional derivative work.
@@ -926,8 +926,7 @@ private:
         HdEmbreePrototypeContext const* prototypeContext,
         GfVec3f const& hitPos,
         GfVec3f const& normal,
-        GfVec3f const* precomputedDisplacedDPdu = nullptr,
-        GfVec3f const* precomputedDisplacedDPdv = nullptr,
+        HdEmbreeDisplacedSubdivFrame const* displacedFrame = nullptr,
         GfVec3f* outDndu = nullptr,
         GfVec3f* outDndv = nullptr,
         _ShadingContextOptions options = _ShadingContextOptions()) const;

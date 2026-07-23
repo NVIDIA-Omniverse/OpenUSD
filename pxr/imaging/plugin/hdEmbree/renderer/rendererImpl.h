@@ -771,12 +771,10 @@ _ResolveObjectSpaceNormal(
     RTCScene rootScene,
     unsigned int geomID,
     RTCRayHit const& rayHit,
-    GfVec3f* outDisplacedDPdu = nullptr,
-    GfVec3f* outDisplacedDPdv = nullptr,
-    bool* outHasDisplacedFrame = nullptr)
+    HdEmbreeDisplacedSubdivFrame* outDisplacedFrame = nullptr)
 {
-    if (outHasDisplacedFrame) {
-        *outHasDisplacedFrame = false;
+    if (outDisplacedFrame) {
+        *outDisplacedFrame = HdEmbreeDisplacedSubdivFrame{};
     }
     GfVec3f normal = prototypeContext->orientationSign * GfVec3f(
         rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
@@ -785,31 +783,21 @@ _ResolveObjectSpaceNormal(
     // frame of P + D*N explicitly. Embree's hit Ng remains the true facet
     // orientation and is the fallback for invalid graph/patch evaluations.
     if (prototypeContext->displaced) {
-        GfVec3f displacedNormal;
-        GfVec3f displacedDPdu;
-        GfVec3f displacedDPdv;
+        HdEmbreeDisplacedSubdivFrame displacedFrame;
         if (HdEmbreeComputeDisplacedSubdivFrame(
                 rtcGetGeometry(rootScene, geomID),
                 prototypeContext,
                 rayHit.hit.primID,
                 rayHit.hit.u,
                 rayHit.hit.v,
-                &displacedNormal,
-                &displacedDPdu,
-                &displacedDPdv)) {
-            if (GfDot(displacedNormal, normal) < 0.0f) {
-                displacedNormal = -displacedNormal;
+                &displacedFrame)) {
+            if (GfDot(displacedFrame.normal, normal) < 0.0f) {
+                displacedFrame.normal = -displacedFrame.normal;
             }
-            if (outDisplacedDPdu) {
-                *outDisplacedDPdu = displacedDPdu;
+            if (outDisplacedFrame) {
+                *outDisplacedFrame = displacedFrame;
             }
-            if (outDisplacedDPdv) {
-                *outDisplacedDPdv = displacedDPdv;
-            }
-            if (outHasDisplacedFrame) {
-                *outHasDisplacedFrame = true;
-            }
-            return displacedNormal;
+            return displacedFrame.normal;
         }
         return normal;
     }
@@ -984,8 +972,7 @@ _ComputeSubdivSurfaceDerivatives(
     GfVec3f const& normal,
     GfVec3f* outDPdu, GfVec3f* outDPdv,
     GfVec3f* outDndu, GfVec3f* outDndv,
-    GfVec3f const* precomputedDisplacedDPdu = nullptr,
-    GfVec3f const* precomputedDisplacedDPdv = nullptr)
+    HdEmbreeDisplacedSubdivFrame const* displacedFrame = nullptr)
 {
     RTCGeometry const geometry = rtcGetGeometry(rootScene, geomID);
 
@@ -994,9 +981,9 @@ _ComputeSubdivSurfaceDerivatives(
     //    undisplaced limit surface.
     bool havePositionDerivs = false;
     if (prototypeContext->displaced) {
-        if (precomputedDisplacedDPdu && precomputedDisplacedDPdv) {
-            *outDPdu = *precomputedDisplacedDPdu;
-            *outDPdv = *precomputedDisplacedDPdv;
+        if (displacedFrame && displacedFrame->valid) {
+            *outDPdu = displacedFrame->dPdu;
+            *outDPdv = displacedFrame->dPdv;
             havePositionDerivs = true;
         } else {
             GfVec3f displacedNormal;
@@ -1135,6 +1122,75 @@ _ComputeSubdivSurfaceDerivatives(
             }
         }
     }
+}
+
+/// Complete the lazily sampled displaced-normal derivatives, remap them from
+/// Embree patch coordinates to authored st, and transform the normalized
+/// normal derivative through the instance transform.
+inline bool
+_TryComputeDisplacedSubdivNormalDerivativesToWorld(
+    HdEmbreePrototypeContext const* prototypeContext,
+    HdEmbreeInstanceContext const* instanceContext,
+    RTCScene rootScene,
+    unsigned int geomID,
+    HdEmbreeDisplacedSubdivFrame const& frame,
+    GfVec3f const& faceForwardedWorldNormal,
+    GfVec3f* outDndu,
+    GfVec3f* outDndv)
+{
+    if (!prototypeContext || !rootScene || !frame.valid ||
+        !outDndu || !outDndv) {
+        return false;
+    }
+
+    GfVec3f objectDndu;
+    GfVec3f objectDndv;
+    if (!HdEmbreeComputeDisplacedSubdivNormalDerivatives(
+            rtcGetGeometry(rootScene, geomID),
+            prototypeContext,
+            frame,
+            &objectDndu,
+            &objectDndv)) {
+        return false;
+    }
+
+    auto const stIt = prototypeContext->primvarMap.find(_tokensSt);
+    if (stIt != prototypeContext->primvarMap.end()) {
+        const HdEmbreeSubdivTexcoordJacobian stJacobian =
+            HdEmbreeComputeSubdivTexcoordJacobian(
+                stIt->second, frame.primID, frame.u, frame.v);
+        if (stJacobian.valid) {
+            const GfVec3f dNduParam = objectDndu;
+            const GfVec3f dNdvParam = objectDndv;
+            objectDndu =
+                stJacobian.duDs * dNduParam +
+                stJacobian.dvDs * dNdvParam;
+            objectDndv =
+                stJacobian.duDt * dNduParam +
+                stJacobian.dvDt * dNdvParam;
+        }
+    }
+
+    GfVec3f objectNormal = frame.normal;
+    const GfVec3f frameWorldNormal =
+        _TransformNormalToWorld(instanceContext, objectNormal);
+    if (GfDot(frameWorldNormal, faceForwardedWorldNormal) < 0.0f) {
+        objectNormal = -objectNormal;
+        objectDndu = -objectDndu;
+        objectDndv = -objectDndv;
+    }
+
+    const GfVec3f worldDndu = _TransformNormalDerivativeToWorld(
+        instanceContext, objectNormal, objectDndu);
+    const GfVec3f worldDndv = _TransformNormalDerivativeToWorld(
+        instanceContext, objectNormal, objectDndv);
+    if (!_IsFinite(worldDndu) || !_IsFinite(worldDndv)) {
+        return false;
+    }
+
+    *outDndu = worldDndu;
+    *outDndv = worldDndv;
+    return true;
 }
 
 /// Compute screen-space derivatives from ray differentials and surface

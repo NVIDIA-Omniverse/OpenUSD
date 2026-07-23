@@ -101,8 +101,7 @@ HdEmbreeRenderer::_BuildShadingContext(
     HdEmbreePrototypeContext const* prototypeContext,
     GfVec3f const& hitPos,
     GfVec3f const& normal,
-    GfVec3f const* precomputedDisplacedDPdu,
-    GfVec3f const* precomputedDisplacedDPdv,
+    HdEmbreeDisplacedSubdivFrame const* displacedFrame,
     GfVec3f* outDndu,
     GfVec3f* outDndv,
     _ShadingContextOptions options) const
@@ -151,7 +150,7 @@ HdEmbreeRenderer::_BuildShadingContext(
             instanceContext->rootScene, rayHit.hit.geomID,
             rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
             objectNormal, &dPdu, &dPdv, &dndu, &dndv,
-            precomputedDisplacedDPdu, precomputedDisplacedDPdv);
+            displacedFrame);
     } else {
         _ComputeTriangleSurfaceDerivatives(
             prototypeContext,
@@ -310,12 +309,10 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
     if (!evalGraph || !outClosure) return false;
 
     GfVec3f hitPos = _CalculateHitPosition(rayHit);
-    GfVec3f displacedDPdu;
-    GfVec3f displacedDPdv;
-    bool hasDisplacedFrame = false;
+    HdEmbreeDisplacedSubdivFrame displacedFrame;
     GfVec3f normal = _ResolveObjectSpaceNormal(
         prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
-        rayHit, &displacedDPdu, &displacedDPdv, &hasDisplacedFrame);
+        rayHit, &displacedFrame);
     normal = _TransformNormalToWorld(instanceContext, normal);
     if (outGeometricNormal) {
         *outGeometricNormal = normal;
@@ -327,8 +324,7 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
         mxcpp::ShadingContext ctx = _BuildShadingContext(
             rayHit, defaultRayDiff,
             instanceContext, prototypeContext, hitPos, normal,
-            hasDisplacedFrame ? &displacedDPdu : nullptr,
-            hasDisplacedFrame ? &displacedDPdv : nullptr,
+            displacedFrame.valid ? &displacedFrame : nullptr,
             nullptr, nullptr, options);
         HdEmbreePrimvarLookup cbData{
             &prototypeContext->primvarMapByString,

@@ -61,12 +61,10 @@ HdEmbreeRenderer::_IntegrateUnlit(
 
     // Prefer an authored/smoothed normal primvar; for subdivision hits without
     // one, fall back to a smooth limit-surface normal derived from dP/du,dP/dv.
-    GfVec3f displacedDPdu;
-    GfVec3f displacedDPdv;
-    bool hasDisplacedFrame = false;
+    HdEmbreeDisplacedSubdivFrame displacedFrame;
     GfVec3f normal = _ResolveObjectSpaceNormal(
         prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
-        rayHit, &displacedDPdu, &displacedDPdv, &hasDisplacedFrame);
+        rayHit, &displacedFrame);
 
     // Transform the normal from object space to world space.
     normal = _TransformNormalToWorld(instanceContext, normal);
@@ -75,8 +73,7 @@ HdEmbreeRenderer::_IntegrateUnlit(
     // tangent frame all constructed consistently).
     mxcpp::ShadingContext ctx = _BuildShadingContext(
         rayHit, rayDiff, instanceContext, prototypeContext, hitPos, normal,
-        hasDisplacedFrame ? &displacedDPdu : nullptr,
-        hasDisplacedFrame ? &displacedDPdv : nullptr);
+        displacedFrame.valid ? &displacedFrame : nullptr);
     HdEmbreePrimvarLookup cbData{
         &prototypeContext->primvarMapByString,
         rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};

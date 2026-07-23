@@ -869,6 +869,58 @@ _CompileTextureFrameTimeDisplacement()
     return EvalGraph::Compile(network, "displacement");
 }
 
+std::unique_ptr<EvalGraph>
+_CompileQuadraticTextureDisplacement()
+{
+    MaterialGraph network;
+
+    // The test texture backend returns st.x. Combine its square with st.y^2 to
+    // produce analytic, non-zero derivatives in both parameter directions
+    // while keeping one texture-system call per graph evaluation.
+    GraphNode image;
+    image.nodeTypeId = "ND_image_float";
+    image.parameters["file"] = Value(std::string("memory:test.exr"));
+    network.nodes["/Material/Image"] = image;
+
+    GraphNode squareU;
+    squareU.nodeTypeId = "ND_multiply_float";
+    squareU.inputConnections["in1"] = {{"/Material/Image", "out"}};
+    squareU.inputConnections["in2"] = {{"/Material/Image", "out"}};
+    network.nodes["/Material/SquareU"] = squareU;
+
+    GraphNode texcoord;
+    texcoord.nodeTypeId = "ND_texcoord_vector2";
+    network.nodes["/Material/Texcoord"] = texcoord;
+
+    GraphNode extractV;
+    extractV.nodeTypeId = "ND_extract_vector2";
+    extractV.parameters["index"] = Value(1);
+    extractV.inputConnections["in"] = {{"/Material/Texcoord", "out"}};
+    network.nodes["/Material/ExtractV"] = extractV;
+
+    GraphNode squareV;
+    squareV.nodeTypeId = "ND_multiply_float";
+    squareV.inputConnections["in1"] = {{"/Material/ExtractV", "out"}};
+    squareV.inputConnections["in2"] = {{"/Material/ExtractV", "out"}};
+    network.nodes["/Material/SquareV"] = squareV;
+
+    GraphNode sum;
+    sum.nodeTypeId = "ND_add_float";
+    sum.inputConnections["in1"] = {{"/Material/SquareU", "out"}};
+    sum.inputConnections["in2"] = {{"/Material/SquareV", "out"}};
+    network.nodes["/Material/Sum"] = sum;
+
+    GraphNode terminal;
+    terminal.nodeTypeId = "ND_displacement_float";
+    terminal.parameters["scale"] = Value(1.0f);
+    terminal.inputConnections["displacement"] =
+        {{"/Material/Sum", "out"}};
+    network.nodes["/Material/Displacement"] = terminal;
+    network.terminals["displacement"] =
+        {"/Material/Displacement", "out"};
+    return EvalGraph::Compile(network, "displacement");
+}
+
 class _ThreadSafeTexcoordTextureSystem final : public TextureSystem
 {
 public:
@@ -1064,10 +1116,12 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     auto positive = _CompileGeomPropDisplacement("height");
     auto texcoord = _CompileTexcoordDisplacement();
     auto textureFrameTime = _CompileTextureFrameTimeDisplacement();
+    auto quadraticTexture = _CompileQuadraticTextureDisplacement();
     auto negative = _CompileConstantDisplacement(-0.25f);
     if (!positive || !positive->IsValid() ||
         !texcoord || !texcoord->IsValid() ||
         !textureFrameTime || !textureFrameTime->IsValid() ||
+        !quadraticTexture || !quadraticTexture->IsValid() ||
         !negative || !negative->IsValid()) {
         rtcReleaseGeometry(geometry);
         rtcReleaseScene(scene);
@@ -1105,6 +1159,49 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     HdEmbreeMaterialEvalServices services;
     services.textureSystem = &textureSystem;
     context.materialEvalServices = &services;
+
+    material.displacementGraph = quadraticTexture.get();
+    textureSystem.Reset(0.0f);
+    HdEmbreeDisplacedSubdivFrame quadraticFrame;
+    const bool quadraticFrameComputed =
+        HdEmbreeComputeDisplacedSubdivFrame(
+            geometry, &context, 0, 0.5f, 0.5f, &quadraticFrame);
+    const int quadraticFrameCalls = textureSystem.GetCallCount();
+    GfVec3f quadraticDndu(0.0f);
+    GfVec3f quadraticDndv(0.0f);
+    const bool quadraticDerivativesComputed =
+        HdEmbreeComputeDisplacedSubdivNormalDerivatives(
+            geometry, &context, quadraticFrame,
+            &quadraticDndu, &quadraticDndv);
+    const int quadraticDerivativeCalls = textureSystem.GetCallCount();
+
+    // At this coordinate one positive step fits but the two-step outer ring
+    // does not. The initial frame must therefore choose one negative step and
+    // retain that direction; reselecting at U would erase the curvature.
+    constexpr float boundaryU = 0.997f;
+    textureSystem.Reset(0.0f);
+    HdEmbreeDisplacedSubdivFrame boundaryFrame;
+    const bool boundaryFrameComputed =
+        HdEmbreeComputeDisplacedSubdivFrame(
+            geometry, &context, 0, boundaryU, 0.5f, &boundaryFrame);
+    GfVec3f boundaryDndu(0.0f);
+    GfVec3f boundaryDndv(0.0f);
+    const bool boundaryDerivativesComputed =
+        HdEmbreeComputeDisplacedSubdivNormalDerivatives(
+            geometry, &context, boundaryFrame,
+            &boundaryDndu, &boundaryDndv);
+    const int boundaryDerivativeCalls = textureSystem.GetCallCount();
+
+    textureSystem.Reset(0.0f);
+    const HdEmbreeDisplacedSubdivFrame invalidFrame;
+    GfVec3f invalidDndu(7.0f);
+    GfVec3f invalidDndv(11.0f);
+    const bool invalidDerivativesComputed =
+        HdEmbreeComputeDisplacedSubdivNormalDerivatives(
+            geometry, &context, invalidFrame,
+            &invalidDndu, &invalidDndv);
+    const int invalidDerivativeCalls = textureSystem.GetCallCount();
+
     material.displacementGraph = textureFrameTime.get();
 
     constexpr float firstFrame = 0.1f;
@@ -1175,6 +1272,46 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     rtcReleaseGeometry(geometry);
     rtcReleaseDevice(device);
     constexpr float inverseSqrtTwo = 0.70710678f;
+    const auto expectedNormalDerivative = [](
+            float u, float v, bool uDirection) {
+        const GfVec3f unnormalizedNormal(-2.0f * u, -2.0f * v, 1.0f);
+        const float normalLength = unnormalizedNormal.GetLength();
+        const GfVec3f normal = unnormalizedNormal / normalLength;
+        const GfVec3f unnormalizedDerivative = uDirection
+            ? GfVec3f(-2.0f, 0.0f, 0.0f)
+            : GfVec3f(0.0f, -2.0f, 0.0f);
+        return (unnormalizedDerivative - normal *
+            GfDot(normal, unnormalizedDerivative)) / normalLength;
+    };
+    const GfVec3f expectedCenterDndu =
+        expectedNormalDerivative(0.5f, 0.5f, true);
+    const GfVec3f expectedCenterDndv =
+        expectedNormalDerivative(0.5f, 0.5f, false);
+    const GfVec3f expectedBoundaryDndu =
+        expectedNormalDerivative(boundaryU, 0.5f, true);
+    const GfVec3f expectedBoundaryDndv =
+        expectedNormalDerivative(boundaryU, 0.5f, false);
+    GfVec3f expectedCenterNormal(-1.0f, -1.0f, 1.0f);
+    expectedCenterNormal.Normalize();
+    const bool curvatureValid =
+        quadraticFrameComputed && quadraticFrame.valid &&
+        quadraticFrameCalls == 3 &&
+        _Close(quadraticFrame.normal, expectedCenterNormal, 0.005f) &&
+        _Close(quadraticFrame.dPdu, GfVec3f(1.0f, 0.0f, 1.0f), 0.005f) &&
+        _Close(quadraticFrame.dPdv, GfVec3f(0.0f, 1.0f, 1.0f), 0.005f) &&
+        quadraticDerivativesComputed && quadraticDerivativeCalls == 6 &&
+        _Close(quadraticDndu, expectedCenterDndu, 0.01f) &&
+        _Close(quadraticDndv, expectedCenterDndv, 0.01f) &&
+        std::abs(GfDot(quadraticFrame.normal, quadraticDndu)) < 1.0e-4f &&
+        std::abs(GfDot(quadraticFrame.normal, quadraticDndv)) < 1.0e-4f &&
+        boundaryFrameComputed && boundaryFrame.valid &&
+        boundaryFrame.du < 0.0f && boundaryFrame.dv > 0.0f &&
+        boundaryDerivativesComputed && boundaryDerivativeCalls == 6 &&
+        _Close(boundaryDndu, expectedBoundaryDndu, 0.01f) &&
+        _Close(boundaryDndv, expectedBoundaryDndv, 0.01f) &&
+        !invalidDerivativesComputed && invalidDerivativeCalls == 0 &&
+        _Close(invalidDndu, GfVec3f(7.0f), 0.0f) &&
+        _Close(invalidDndv, GfVec3f(11.0f), 0.0f);
     const bool valid = _Close(positiveHit, 1.5f, 0.02f) &&
         _Close(float3TexcoordHit, 1.5f, 0.02f) &&
         displacedPositionComputed &&
@@ -1194,7 +1331,8 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
         _Close(negativeHit, 2.25f, 0.02f) &&
         smallFrameEvaluated &&
         _Close(smallFrameDisplacement, -0.25f) &&
-        detachedSampled && _Close(detachedHeight, 0.5f, 0.02f);
+        detachedSampled && _Close(detachedHeight, 0.5f, 0.02f) &&
+        curvatureValid;
     if (!valid) {
         std::printf(
             "    callback hits=(%g,%g) services=(%g,%g) calls=(%d,%d) "
@@ -1212,6 +1350,16 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
             displacedPosition[0], displacedPosition[1],
             displacedPosition[2],
             smallFrameEvaluated, smallFrameDisplacement);
+        std::printf(
+            "    curvature frame=(%d,%d,%g) deriv=(%d,%d,%g,%g,%g;"
+            "%g,%g,%g) boundary=(%d,%d,%g,%g,%g,%g) invalid=(%d,%d)\n",
+            quadraticFrameComputed, quadraticFrameCalls, quadraticFrame.du,
+            quadraticDerivativesComputed, quadraticDerivativeCalls,
+            quadraticDndu[0], quadraticDndu[1], quadraticDndu[2],
+            quadraticDndv[0], quadraticDndv[1], quadraticDndv[2],
+            boundaryFrameComputed, boundaryDerivativeCalls, boundaryFrame.du,
+            boundaryDndu[0], boundaryDndu[1], boundaryDndu[2],
+            invalidDerivativesComputed, invalidDerivativeCalls);
     }
     return valid;
 }
