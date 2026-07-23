@@ -102,6 +102,12 @@ HdEmbreeRenderer::_IntegratePath(
         // intersections must not replace it.
         if (pathEvent == 0) {
             result.primaryHit = rayHit;
+            if (_IsEdgeOnlyWireframeHit(rayHit)) {
+                // Wireframe-only is a display diagnostic, not a shaded
+                // surface. Retain the hit for wire coverage and geometric
+                // AOVs, but skip materials, lights, volumes, and path bounces.
+                return result;
+            }
         }
 
         // Resolve competing endpoints. Analytic finite lights are searched

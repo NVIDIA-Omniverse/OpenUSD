@@ -20,6 +20,7 @@
 
 #include <unordered_map>
 #include <string>
+#include <vector>
 #include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/value.h"
 
 #include <embree4/rtcore.h>
@@ -30,6 +31,14 @@ PXR_NAMESPACE_OPEN_SCOPE
 /// rays must see both sides of the closed surface regardless of display cull
 /// style, while ordinary renderer rays always use ID zero.
 constexpr unsigned int HdEmbreeFaceCullBypassRayId = 0x48444543u;
+
+/// Surface display mode selected by the active Hydra mesh representation.
+enum class HdEmbreeWireframeMode
+{
+    disabled,
+    edgeOnly,
+    edgeOnSurface
+};
 
 
 /// \class HdEmbreePrototypeContext
@@ -43,6 +52,16 @@ struct HdEmbreePrototypeContext
     HdCullStyle cullStyle = HdCullStyleDontCare;
     bool doubleSided = false;
     bool refined = false;
+    HdEmbreeWireframeMode wireframeMode =
+        HdEmbreeWireframeMode::disabled;
+    bool blendWireframeColor = true;
+    float wireframeLineWidth = 0.0f;
+    /// Coarse-face layout and live Embree edge levels used to reconstruct the
+    /// final diced subdivision grid at a hit. Offsets has face-count + 1
+    /// entries; subdivisionLevels remains owned by HdEmbreeMesh.
+    VtIntArray faceVertexCounts;
+    std::vector<size_t> faceVertexOffsets;
+    std::vector<float> const* subdivisionLevels = nullptr;
     /// Whether the active repr and display style permit custom displacement.
     bool displacementEnabled = true;
     bool displaced = false;

@@ -255,6 +255,14 @@ public:
     /// \param enableSceneColors True to use scene colors; false to shade white.
     void SetEnableSceneColors(bool enableSceneColors);
 
+    /// \brief Set Hydra's display wire color and default line width.
+    ///
+    /// Mesh repr descriptors decide whether a hit uses these values. A zero
+    /// color retains Hydra's default edge-on-surface dimming behavior.
+    /// \param color Linear render-space RGB and blend amount in alpha.
+    /// \param lineWidth Positive screen-space width in pixels.
+    void SetWireframeStyle(GfVec4f const& color, float lineWidth);
+
     /// \brief Set the sampler's frame seed override.
     ///
     /// \param randomNumberSeed -1 derives the seed from the scene frame;
@@ -525,6 +533,15 @@ private:
         GfVec3f const& dir,
         HdEmbreeRayDifferential const& rayDiff,
         HdEmbreeSampleDomain const& domain);
+
+    /// Return true when the camera hit requests unlit edge-only display.
+    bool _IsEdgeOnlyWireframeHit(RTCRayHit const& primaryHit) const;
+
+    /// Composite the active mesh repr's display wire over one camera sample.
+    void _ApplyWireframe(
+        RTCRayHit const& primaryHit,
+        HdEmbreeRayDifferential const& rayDiff,
+        GfVec4f* color) const;
 
     /// \brief Compute camera or normalized clip depth for a hit.
     ///
@@ -1164,6 +1181,9 @@ private:
     int _ambientOcclusionSamples;
     // Should we enable scene colors?
     bool _enableSceneColors;
+    // Hydra display wire style. Per-mesh reprs decide whether it is active.
+    GfVec4f _wireframeColor;
+    float _wireframeLineWidth;
     // Should we sample dome lights on ray miss?
     bool _domeLightCameraVisibility;
     // If other than -1, use this as the OpenQMC frame seed.

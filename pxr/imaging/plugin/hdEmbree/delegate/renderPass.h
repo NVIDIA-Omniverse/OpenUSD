@@ -73,12 +73,16 @@ protected:
                   TfTokenVector const &renderTags) override;
 
     /// Update internal tracking to reflect a dirty collection.
-    void _MarkCollectionDirty() override {}
+    void _MarkCollectionDirty() override;
 
 private:
     bool _HasConverged() const;
     bool _UpdateRenderSettingsFromActiveRenderSettingsPrim();
     void _WriteActiveRenderProducts();
+
+    // The collection repr state whose resolved mesh modes were last synced.
+    HdReprSelector _lastCollectionReprSelector;
+    bool _lastCollectionForcedRepr;
 
     // A handle to the render thread.
     HdRenderThread *_renderThread;
@@ -137,6 +141,9 @@ private:
     float _cameraExposureScale;
     // The active camera's physical depth-of-field state.
     HdEmbreeCameraDepthOfField _cameraDepthOfField;
+    // Last Hydra display wire style forwarded to the renderer.
+    GfVec4f _wireframeColor;
+    float _wireframeLineWidth;
 
     // The list of aov buffers this renderpass should write to.
     HdRenderPassAovBindingVector _aovBindings;

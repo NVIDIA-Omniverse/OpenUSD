@@ -27,6 +27,12 @@ HdEmbreeRenderer::_IntegrateUnlit(
         HdEmbree_RayMask::Camera);
     rtcIntersect1(_scene, &rayHit);
 
+    if (_IsEdgeOnlyWireframeHit(rayHit)) {
+        // Skip the camera headlight, material evaluation, and ambient
+        // occlusion. _ApplyWireframe() will draw solid black coverage.
+        return result;
+    }
+
     if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
         result.color = GfVec4f(
             _colorClearValue[0],

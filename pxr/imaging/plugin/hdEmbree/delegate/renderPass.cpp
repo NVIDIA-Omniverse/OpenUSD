@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/imaging/hd/camera.h"
+#include "pxr/imaging/hd/changeTracker.h"
 #include "pxr/imaging/hd/renderPassState.h"
 #include "pxr/imaging/hd/material.h"
 #include "pxr/imaging/hd/renderProductSchema.h"
@@ -330,6 +331,8 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
                                        std::atomic<int> *sceneVersion,
                                        std::atomic<int> *displacementVersion)
     : HdRenderPass(index, collection)
+    , _lastCollectionReprSelector(collection.GetReprSelector())
+    , _lastCollectionForcedRepr(collection.IsForcedRepr())
     , _renderThread(renderThread)
     , _renderer(renderer)
     , _sceneVersion(sceneVersion)
@@ -353,12 +356,38 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _subdivisionProjMatrix(1.0f)
     , _cameraExposureScale(1.0f)
     , _cameraDepthOfField()
+    , _wireframeColor(0.0f)
+    , _wireframeLineWidth(1.0f)
     , _aovBindings()
     , _colorBuffer(SdfPath::EmptyPath())
     , _depthBuffer(SdfPath::EmptyPath())
     , _converged(false)
     , _renderProductsWritten(false)
 {
+}
+
+void
+HdEmbreeRenderPass::_MarkCollectionDirty()
+{
+    HdRprimCollection const& collection = GetRprimCollection();
+    HdReprSelector const& reprSelector = collection.GetReprSelector();
+    const bool forcedRepr = collection.IsForcedRepr();
+    if (_lastCollectionReprSelector == reprSelector &&
+        _lastCollectionForcedRepr == forcedRepr) {
+        return;
+    }
+
+    _lastCollectionReprSelector = reprSelector;
+    _lastCollectionForcedRepr = forcedRepr;
+
+    // HdDirtyList only rebuilds when it encounters a repr selector for the
+    // first time. Marking DirtyRepr makes previously initialized selectors
+    // take the same InitRepr/Sync path when a viewer switches back to them.
+    HdRenderIndex* const index = GetRenderIndex();
+    if (index) {
+        index->GetChangeTracker().MarkAllRprimsDirty(
+            HdChangeTracker::DirtyRepr);
+    }
 }
 
 HdEmbreeRenderPass::~HdEmbreeRenderPass()
@@ -733,6 +762,19 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             frameTimeChanged = true;
             needStartRender = true;
         }
+    }
+
+    const GfVec4f wireframeColor = renderPassState->GetWireframeColor();
+    const float wireframeLineWidth = renderPassState->GetLineWidth();
+    if (_wireframeColor != wireframeColor ||
+        _wireframeLineWidth != wireframeLineWidth) {
+        _wireframeColor = wireframeColor;
+        _wireframeLineWidth = wireframeLineWidth;
+        _renderThread->StopRender();
+        _renderer->SetWireframeStyle(
+            _wireframeColor, _wireframeLineWidth);
+        _renderer->ResetAccumulation();
+        needStartRender = true;
     }
 
     // Likewise the render settings.

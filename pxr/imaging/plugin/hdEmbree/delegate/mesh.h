@@ -295,6 +295,7 @@ private:
     bool _tangentFrameValid;
 
     // Draw styles.
+    TfToken _lastRequestedReprToken;
     bool _refined;
     bool _smoothNormals;
     bool _displacementEnabled;

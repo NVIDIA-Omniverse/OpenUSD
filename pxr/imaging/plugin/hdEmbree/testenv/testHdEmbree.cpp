@@ -40,6 +40,8 @@ public:
         : _smooth(false)
         , _instance(false)
         , _refined(false)
+        , _wireframeOnSurface(false)
+        , _wireframeOnly(false)
         , _ao(false)
         , _outputName("color1.png")
     {
@@ -106,6 +108,8 @@ private:
     bool _smooth;
     bool _instance;
     bool _refined;
+    bool _wireframeOnSurface;
+    bool _wireframeOnly;
     bool  _ao;
 
     // For offscreen tests, which AOV should we output?
@@ -161,7 +165,10 @@ void HdEmbree_TestGLDrawing::InitTest()
         if (_aov == "color") {
             format = HdFormatUNorm8Vec4;
             aovBinding.aovName = HdAovTokens->color;
-            aovBinding.clearValue = VtValue(GfVec4f(0.0f, 0.0f, 0.0f, 1.0f));
+            aovBinding.clearValue = VtValue(
+                _wireframeOnly
+                    ? GfVec4f(1.0f)
+                    : GfVec4f(0.0f, 0.0f, 0.0f, 1.0f));
         } else if (_aov == "cameraDepth") {
             format = HdFormatFloat32;
             aovBinding.aovName = HdAovTokens->cameraDepth;
@@ -185,6 +192,9 @@ void HdEmbree_TestGLDrawing::InitTest()
     HdxRenderTaskParams params;
     params.camera = camera;
     params.viewport = GfVec4f(0, 0, GetWidth(), GetHeight());
+    if (_wireframeOnSurface) {
+        params.wireframeColor = GfVec4f(0.0f, 0.0f, 0.0f, 1.0f);
+    }
     if (_aov.size() > 0) {
         params.aovBindings.push_back(aovBinding);
     }
@@ -202,16 +212,28 @@ void HdEmbree_TestGLDrawing::InitTest()
     // - HdReprTokens->smoothHull is the smooth-shaded, unrefined mesh.
     // - HdReprTokens->refined is the smooth-shaded, refined mesh.
 
-    if (_refined) {
-        _sceneDelegate->UpdateTask(renderTask, HdTokens->collection,
-                VtValue(HdRprimCollection(HdTokens->geometry, 
-                HdReprSelector(HdReprTokens->refined))));
-    } else {
-        _sceneDelegate->UpdateTask(renderTask, HdTokens->collection,
-                VtValue(HdRprimCollection(HdTokens->geometry, 
-                HdReprSelector(_smooth ? HdReprTokens->smoothHull 
-                                       : HdReprTokens->hull))));
-    }
+    const TfToken reprToken = [this] {
+        if (_refined) {
+            if (_wireframeOnly) {
+                return HdReprTokens->refinedWire;
+            }
+            return _wireframeOnSurface
+                ? HdReprTokens->refinedWireOnSurf
+                : HdReprTokens->refined;
+        }
+        if (_wireframeOnly) {
+            return HdReprTokens->wire;
+        }
+        if (_wireframeOnSurface) {
+            return HdReprTokens->wireOnSurf;
+        }
+        return _smooth ? HdReprTokens->smoothHull : HdReprTokens->hull;
+    }();
+    _sceneDelegate->UpdateTask(
+        renderTask,
+        HdTokens->collection,
+        VtValue(HdRprimCollection(
+            HdTokens->geometry, HdReprSelector(reprToken))));
 
     if(_ao) {
         //
@@ -447,6 +469,12 @@ void HdEmbree_TestGLDrawing::ParseArgs(int argc, char *argv[])
             _instance = true;
         } else if (std::string(argv[i]) == "--refined") {
             _refined = true;
+        } else if (std::string(argv[i]) == "--wireframe-on-surface") {
+            _wireframeOnSurface = true;
+            _wireframeOnly = false;
+        } else if (std::string(argv[i]) == "--wireframe-only") {
+            _wireframeOnly = true;
+            _wireframeOnSurface = false;
         } else if (std::string(argv[i]) == "--aov" &&
                    (i+1) < argc) {
             _aov = std::string(argv[i+1]);

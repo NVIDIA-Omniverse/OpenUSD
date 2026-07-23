@@ -31,6 +31,49 @@ Subdivision primvars retain Hydra interpolation semantics. Vertex values use the
 
 A material may connect an `ND_displacement_float` graph to its `displacement` terminal. During Embree subdivision construction, hdEmbree evaluates that MaterialXCpp graph at each generated vertex and offsets the vertex along the normalized subdivision normal by `displacement * scale`. Object-space position and normal, interpolated `st`, constant/uniform/vertex/varying/face-varying numeric geomprops, and constant string/filename geomprops are available to the graph. Vertex, varying, and face-varying subdivision attributes are limited to float-based scalar and vector types by Embree. Displacement applies only at medium or higher complexity to meshes with a subdivision scheme such as `catmullClark`.
 
+## Hydra wireframe display
+
+hdEmbree honors the standard mesh `wireOnSurf`, `refinedWireOnSurf`, `wire`,
+and `refinedWire` reprs selected by clients such as usdview. Wire-on-surface is
+the recommended mode: it composites a screen-space line over the final shaded
+camera result, using `HdRenderPassState`'s wire color, alpha, and line width. An
+unset zero wire color follows Storm's convention and dims the shaded surface
+along edges. Changing usdview's render mode resynchronizes existing meshes, so
+switching between smooth, wire, and wire-on-surface takes effect immediately.
+Wire-only mode performs only the camera intersection and geometric wire
+coverage evaluation. It skips material evaluation, lighting, ambient
+occlusion, volumes, and secondary bounces, and draws opaque black lines over
+the clear color regardless of the render-pass wire color.
+
+At low complexity, the overlay shows the triangles actually intersected by
+Embree, including triangulation diagonals. At medium and higher complexity it
+uses the live `RTC_BUFFER_TYPE_LEVEL` values to reconstruct Embree's diced
+quad grid in subdivision parameter space. The lines therefore follow adaptive
+density and the final displaced surface instead of the authored control cage.
+Every regular diced U/V edge and triangle diagonal is evaluated; the diagnostic
+does not substitute a coarser display LOD for the final mesh. Cells below one
+pixel cannot be individually resolved at the current image resolution, so
+their filtered coverage appears as a dense tone. Zoom in or increase the
+render resolution to inspect those individual micro-polygons.
+
+Wire coverage is analytic rather than a binary sample discard, so partially
+covered edge pixels remain stable during progressive rendering. Wire
+derivatives also undo the renderer's `1/sqrt(samples-per-pixel)` texture-filter
+footprint adjustment, keeping the requested line width independent of the
+convergence sample count. Measured screen derivatives always determine
+coverage, so line width remains in framebuffer pixels rather than following
+world- or grid-space edge spacing. These derivatives come from Embree's
+geometric hit parameterization, independently of any authored MaterialX `st`
+transform.
+
+Embree does not expose the private micro-triangle identifier in an
+`RTCRayHit`. Regular-grid edges and diagonals are reconstructed exactly, while
+transition-fan diagonals created where opposing levels differ are an
+approximation of Embree's internal stitch pattern. Wire-only reprs discard the
+nearest surface's interiors and draw the retained front-surface edges as
+unlit, opaque black. They do not trace rear-facing edges through that surface;
+use wire-on-surface for deterministic final-render diagnostics.
+
 | UI Name | Token | Type | Default | Environment Variable |
 |---------|-------|------|---------|---------------------|
 | Enable Scene Colors | `ty:enableSceneColors` | `bool` | `true` | `HDEMBREE_ENABLE_SCENE_COLORS` |

@@ -8,17 +8,244 @@
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
 #include "../rendererImpl.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/wireframe.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
 
 #include "pxr/imaging/hd/perfLog.h"
 #include "pxr/base/work/loops.h"
 #include "pxr/base/work/threadLimits.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <optional>
 #include <thread>
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+namespace {
+
+struct _WireframeParametricFrame
+{
+    GfVec3f dPdu;
+    GfVec3f dPdv;
+};
+
+std::optional<_WireframeParametricFrame>
+_GetWireframeParametricFrame(
+    RTCGeometry prototypeGeometry,
+    RTCRayHit const& primaryHit,
+    HdEmbreeInstanceContext const* instanceContext,
+    HdEmbreeDisplacedSubdivFrame const* displacedFrame)
+{
+    if (!prototypeGeometry || !instanceContext) {
+        return std::nullopt;
+    }
+
+    GfVec3f objectDPdu;
+    GfVec3f objectDPdv;
+    if (displacedFrame && displacedFrame->valid) {
+        objectDPdu = displacedFrame->dPdu;
+        objectDPdv = displacedFrame->dPdv;
+    } else {
+        // rtcInterpolate1 returns derivatives in the geometry's own hit
+        // parameterization. Unlike the material shading frame, these values
+        // are deliberately not transformed into authored st space.
+        alignas(16) float sampled[4] = {};
+        alignas(16) float sampledDu[4] = {};
+        alignas(16) float sampledDv[4] = {};
+        rtcInterpolate1(
+            prototypeGeometry,
+            primaryHit.hit.primID,
+            primaryHit.hit.u,
+            primaryHit.hit.v,
+            RTC_BUFFER_TYPE_VERTEX,
+            0,
+            sampled,
+            sampledDu,
+            sampledDv,
+            3);
+        objectDPdu = GfVec3f(
+            sampledDu[0], sampledDu[1], sampledDu[2]);
+        objectDPdv = GfVec3f(
+            sampledDv[0], sampledDv[1], sampledDv[2]);
+    }
+
+    const GfVec3f worldDPdu =
+        instanceContext->objectToWorldMatrix.TransformDir(objectDPdu);
+    const GfVec3f worldDPdv =
+        instanceContext->objectToWorldMatrix.TransformDir(objectDPdv);
+    if (!_IsFinite(worldDPdu) || !_IsFinite(worldDPdv) ||
+        GfCross(worldDPdu, worldDPdv).GetLengthSq() <= 1.0e-18f) {
+        return std::nullopt;
+    }
+    return _WireframeParametricFrame{worldDPdu, worldDPdv};
+}
+
+} // anonymous namespace
+
+bool
+HdEmbreeRenderer::_IsEdgeOnlyWireframeHit(
+    RTCRayHit const& primaryHit) const
+{
+    if (primaryHit.hit.geomID == RTC_INVALID_GEOMETRY_ID ||
+        primaryHit.hit.instID[0] == RTC_INVALID_GEOMETRY_ID ||
+        _GetLightGeometryHit(primaryHit)) {
+        return false;
+    }
+
+    RTCGeometry const instanceGeometry =
+        rtcGetGeometry(_scene, primaryHit.hit.instID[0]);
+    auto const* const instanceContext = instanceGeometry
+        ? static_cast<HdEmbreeInstanceContext const*>(
+            rtcGetGeometryUserData(instanceGeometry))
+        : nullptr;
+    RTCGeometry const prototypeGeometry = instanceContext
+        ? rtcGetGeometry(instanceContext->rootScene, primaryHit.hit.geomID)
+        : nullptr;
+    auto const* const prototypeContext = prototypeGeometry
+        ? static_cast<HdEmbreePrototypeContext const*>(
+            rtcGetGeometryUserData(prototypeGeometry))
+        : nullptr;
+    return prototypeContext &&
+        prototypeContext->wireframeMode ==
+            HdEmbreeWireframeMode::edgeOnly;
+}
+
+void
+HdEmbreeRenderer::_ApplyWireframe(
+    RTCRayHit const& primaryHit,
+    HdEmbreeRayDifferential const& rayDiff,
+    GfVec4f* color) const
+{
+    if (!color ||
+        primaryHit.hit.geomID == RTC_INVALID_GEOMETRY_ID ||
+        primaryHit.hit.instID[0] == RTC_INVALID_GEOMETRY_ID ||
+        _GetLightGeometryHit(primaryHit)) {
+        return;
+    }
+
+    RTCGeometry const instanceGeometry =
+        rtcGetGeometry(_scene, primaryHit.hit.instID[0]);
+    if (!instanceGeometry) {
+        return;
+    }
+    auto const* const instanceContext =
+        static_cast<HdEmbreeInstanceContext const*>(
+            rtcGetGeometryUserData(instanceGeometry));
+    if (!instanceContext) {
+        return;
+    }
+
+    RTCGeometry const prototypeGeometry = rtcGetGeometry(
+        instanceContext->rootScene, primaryHit.hit.geomID);
+    if (!prototypeGeometry) {
+        return;
+    }
+    auto const* const prototypeContext =
+        static_cast<HdEmbreePrototypeContext const*>(
+            rtcGetGeometryUserData(prototypeGeometry));
+    if (!prototypeContext ||
+        prototypeContext->wireframeMode ==
+            HdEmbreeWireframeMode::disabled) {
+        return;
+    }
+
+    const GfVec3f hitPos = _CalculateHitPosition(primaryHit);
+    HdEmbreeDisplacedSubdivFrame displacedFrame;
+    GfVec3f normal = _ResolveObjectSpaceNormal(
+        prototypeContext, instanceContext->rootScene,
+        primaryHit.hit.geomID, primaryHit,
+        &displacedFrame);
+    normal = _TransformNormalToWorld(instanceContext, normal);
+
+    const std::optional<_WireframeParametricFrame> parametricFrame =
+        _GetWireframeParametricFrame(
+            prototypeGeometry,
+            primaryHit,
+            instanceContext,
+            &displacedFrame);
+    if (!parametricFrame) {
+        return;
+    }
+    mxcpp::ShadingContext wireframeContext;
+    _ComputeScreenSpaceDerivatives(
+        rayDiff,
+        hitPos,
+        normal,
+        parametricFrame->dPdu,
+        parametricFrame->dPdv,
+        _viewMatrix,
+        _inverseProjMatrix,
+        static_cast<float>(_dataWindow.GetWidth()),
+        static_cast<float>(_dataWindow.GetHeight()),
+        _samplesToConvergence,
+        wireframeContext);
+    const float derivativeScale =
+        HdEmbreeComputeWireframeDerivativeScale(_samplesToConvergence);
+    const HdEmbreeWireframeSample sample{
+        primaryHit.hit.u,
+        primaryHit.hit.v,
+        wireframeContext.dudx * derivativeScale,
+        wireframeContext.dvdx * derivativeScale,
+        wireframeContext.dudy * derivativeScale,
+        wireframeContext.dvdy * derivativeScale};
+    const float lineWidth = prototypeContext->wireframeLineWidth > 0.0f
+        ? prototypeContext->wireframeLineWidth
+        : _wireframeLineWidth;
+
+    float opacity = 0.0f;
+    if (prototypeContext->refined) {
+        auto const* const levels = prototypeContext->subdivisionLevels;
+        HdEmbreeSubdivWireframeTopology const topology{
+            prototypeContext->faceVertexCounts.empty()
+                ? nullptr
+                : prototypeContext->faceVertexCounts.cdata(),
+            prototypeContext->faceVertexCounts.size(),
+            prototypeContext->faceVertexOffsets.empty()
+                ? nullptr
+                : prototypeContext->faceVertexOffsets.data(),
+            prototypeContext->faceVertexOffsets.size(),
+            !levels || levels->empty() ? nullptr : levels->data(),
+            levels ? levels->size() : 0};
+        opacity = HdEmbreeComputeSubdivisionWireframeOpacity(
+            sample, primaryHit.hit.primID, topology, lineWidth);
+    } else {
+        opacity = HdEmbreeComputeTriangleWireframeOpacity(
+            sample, lineWidth);
+    }
+    opacity = std::clamp(opacity, 0.0f, 1.0f);
+
+    if (prototypeContext->wireframeMode ==
+            HdEmbreeWireframeMode::edgeOnly) {
+        *color = HdEmbreeCompositeEdgeOnlyWireframe(
+            _colorClearValue, opacity);
+        return;
+    }
+    if (!prototypeContext->blendWireframeColor || opacity <= 0.0f) {
+        return;
+    }
+
+    if (_wireframeColor == GfVec4f(0.0f)) {
+        // Match Storm's unset edge-on-surface color: dim the shaded result.
+        if (prototypeContext->wireframeMode ==
+                HdEmbreeWireframeMode::edgeOnSurface) {
+            const float scale = 1.0f - 0.5f * opacity;
+            (*color)[0] *= scale;
+            (*color)[1] *= scale;
+            (*color)[2] *= scale;
+        }
+        return;
+    }
+
+    const float blend =
+        opacity * std::clamp(_wireframeColor[3], 0.0f, 1.0f);
+    for (int channel = 0; channel < 3; ++channel) {
+        (*color)[channel] =
+            (1.0f - blend) * (*color)[channel] +
+            blend * _wireframeColor[channel];
+    }
+}
 
 void
 HdEmbreeRenderer::_PropagateRayDifferential(

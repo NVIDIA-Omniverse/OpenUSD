@@ -32,10 +32,10 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
 - `rendererPlugin.h/.cpp`: `HdRendererPlugin` entry point; reports support and creates/deletes `HdEmbreeRenderDelegate`.
 - `renderDelegate.h/.cpp`: central factory and lifetime owner. Declares setting tokens/descriptors; advertises supported Rprim, Sprim, and Bprim types; creates scene adapters, buffers, and passes; owns the Embree device/top-level scene, renderer, render thread, and render param.
 - `renderParam.h`: synchronization bridge. Scene edits stop rendering, acquire the Embree scene for mutation, and increment the scene version used to restart accumulation. Edits that can alter generated displacement also increment a narrower displacement version used to schedule prototype retessellation.
-- `renderPass.h/.cpp`: converts `HdRenderPassState`, camera, framing, AOVs, scene-index render settings/products, and delegate settings into renderer setters. Starts/restarts rendering, reports convergence, and writes active render products.
+- `renderPass.h/.cpp`: converts `HdRenderPassState`, camera, framing, AOVs, wire color/width, scene-index render settings/products, and delegate settings into renderer setters. Starts/restarts rendering, reports convergence, and writes active render products.
   It requires an attached `HdCamera` and snapshots the first valid camera/data window for screen-space subdivision. Scene edits reuse that snapshot; `ty:dynamicSubdvTesselation` enables resnapshotting and recomputation after projection or data-window changes.
 - `renderBuffer.h/.cpp`: CPU-backed `HdRenderBuffer` storage, mapping, format conversion, convergence, and renderer write access.
-- `mesh.h/.cpp`: `HdMesh` adapter. Pulls topology, points, transforms, subdivision data, primvars, materials, categories, and instancing; builds/updates Embree prototypes and instances. It applies levels computed by `adaptiveSubdivision.*` and supplies the Embree subdivision displacement callback declared in `displacement.h`.
+- `mesh.h/.cpp`: `HdMesh` adapter. Pulls topology, points, transforms, subdivision data, primvars, materials, categories, active repr, and instancing; builds/updates Embree prototypes and instances. It applies levels computed by `adaptiveSubdivision.*`, stores wireframe topology/display state in the prototype context, and supplies the Embree subdivision displacement callback declared in `displacement.h`.
 - `adaptiveSubdivision.h/.cpp`: deterministic screen-space edge projection, guarded homogeneous view-volume clipping, shared-edge/instance maximum selection, complexity targets, fixed 3x3 displaced-quad chord probes, Embree level clamping, and quad transition balancing.
 - `instancer.h/.cpp`: `HdInstancer` adapter; computes instance transforms and per-instance category/light-linking context.
 - `material.h/.cpp`: `HdMaterial` adapter; pulls Hydra networks, normalizes them through `mxcppAdapter`, owns separate compiled surface and optional displacement `mxcpp::EvalGraph` objects, and updates a stable renderer material-data handle.
@@ -61,7 +61,8 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
 - `integrator/unlitIntegrator.cpp`: the single-hit unlit integrator. It owns its
   camera intersection, MaterialX base color, camera-light shading, and AO.
 - `integrator/surfaceShading.cpp`: shared hit-normal, MaterialX shading-context,
-  visibility-closure, and ray-differential propagation helpers.
+  visibility-closure, display-wire composition, and ray-differential
+  propagation helpers.
 - `integrator/lighting.cpp`: surface and participating-medium direct-light MIS,
   plus camera-background and indirect-environment evaluation.
 - `integrator/visibility.cpp`: linked and transparent shadow traversal plus
@@ -99,6 +100,9 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
 - `geometry/primvarSampler.h/.cpp`: generic Hydra buffer and primvar sampling.
 - `geometry/meshSamplers.h/.cpp`: constant, uniform, triangle,
   face-varying, and subdivision interpolation.
+- `geometry/wireframe.h/.cpp`: screen-space triangle-edge coverage and
+  reconstruction of Embree's final diced subdivision grid from coarse-face
+  layout, hit UVs, ray differentials, and live edge levels.
 - `sampling/sampling.h`: OpenQMC sequence selection, stable sample-domain keys,
   and `Fork`, `Split`, `Distrib`, and `Chain` operations.
 - `renderBuffer.h`: narrow AOV output interface implemented by the delegate.
@@ -141,6 +145,34 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
    n-gons retain their camera baseline except on a shared boosted edge. The
    mesh adapter updates persistent level buffers and recommits only the
    affected prototype and instances.
+
+The active Hydra mesh repr is copied into each prototype context. After the
+selected lit or unlit integrator returns, `_ApplyWireframe()` interprets the
+retained camera hit, reconstructs parametric pixel derivatives, and composites
+`wireOnSurf`/`refinedWireOnSurf` before adaptive variance and color AOV
+accumulation. Coarse geometry uses hit-triangle barycentrics. Refined geometry
+uses the live edge-level buffer, including n-gon's encoded subdivision
+sub-patches, to reproduce the diced grid on the displaced surface. The
+wireframe path converts the texture-filter derivatives back to a one-pixel
+footprint and uses continuous analytic coverage. Measured derivatives determine
+line coverage, and use Embree's geometric hit parameterization directly rather
+than the material shading context's authored `st` domain. Every regular diced
+U/V edge and cell diagonal participates in coverage, including subpixel cells;
+there is no coarser display LOD. Embree's public hit record does not identify a
+private
+transition-fan micro-triangle, so unequal-edge stitch diagonals remain an
+approximation. Edge-only reprs return immediately after the primary camera hit,
+skipping material evaluation, lighting, volumes, ambient occlusion, and path
+bounces. They composite opaque black coverage over the clear color, blend
+non-edge camera samples back to that clear color, and intentionally do not
+perform a second traversal for rear edges.
+`HdEmbreeRenderPass::_MarkCollectionDirty()` marks rprims `DirtyRepr` whenever
+the collection repr selector or forced-repr state changes. This is required
+because Hydra only rebuilds its dirty list the first time it encounters a
+selector; a later return to that selector would otherwise skip the mesh.
+`HdEmbreeMesh::_InitRepr()` then marks every resolved repr transition with
+`NewRepr`, including a return to a previously registered repr. `Sync()` clears
+that bit after the prototype context receives its new wireframe mode.
 
 Displacement is active only for refined geometry whose display style permits
 it and whose material has a displacement terminal. The Embree callback and
@@ -413,7 +445,8 @@ participating-medium transport, or Russian roulette.
 
 ### Accumulation and AOV output
 
-After the selected integrator returns, `_EvaluatePixelSample()` updates the
+After the selected integrator returns, `_EvaluatePixelSample()` applies any
+active mesh wireframe repr to the retained camera hit, then updates the
 per-pixel mean and variance used by adaptive convergence. It then dispatches the
 prebuilt AOV writers:
 

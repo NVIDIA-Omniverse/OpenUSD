@@ -71,6 +71,7 @@ pxr_plugin(hdEmbree
         renderer/aov/aovOutput.cpp
         renderer/camera/camera.cpp
         renderer/geometry/displacementEvaluation.cpp
+        renderer/geometry/wireframe.cpp
         renderer/integrator/lighting.cpp
         renderer/integrator/pathIntegrator.cpp
         renderer/integrator/surfaceShading.cpp
@@ -129,6 +130,7 @@ pxr_plugin(hdEmbree
         renderer/geometry/context.h
         renderer/geometry/displacementEvaluation.h
         renderer/geometry/primvarSampling.h
+        renderer/geometry/wireframe.h
         delegate/displacement.h
         renderer/lights/light.h
         renderer/lights/lightLinking.h
@@ -192,6 +194,29 @@ pxr_build_test(testHdEmbreeSampling
         tf
     CPPFILES
         testenv/testHdEmbreeSampling.cpp
+)
+
+pxr_build_test(testHdEmbreeWireframe
+    LIBRARIES
+        hd
+        hdEmbree
+    CPPFILES
+        testenv/testHdEmbreeWireframe.cpp
+)
+
+if (TARGET testHdEmbreeWireframe)
+    _pxr_init_rpath(_hdEmbreeWireframeTestRpath "tests")
+    _pxr_add_rpath(
+        _hdEmbreeWireframeTestRpath "${CMAKE_INSTALL_PREFIX}/lib")
+    _pxr_add_rpath(
+        _hdEmbreeWireframeTestRpath "${CMAKE_INSTALL_PREFIX}/plugin/usd")
+    _pxr_install_rpath(
+        _hdEmbreeWireframeTestRpath testHdEmbreeWireframe)
+endif()
+
+pxr_register_test(testHdEmbreeWireframe
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdEmbreeWireframe"
+    EXPECTED_RETURN_CODE 0
 )
 
 pxr_build_test(testHdEmbreeSubdivision

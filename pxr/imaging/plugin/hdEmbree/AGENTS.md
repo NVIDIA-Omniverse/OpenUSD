@@ -371,6 +371,35 @@ For refined primvars, preserve indexed face-varying data rather than flattening 
 
 At `low` complexity, subdivision meshes use their triangulated control cage. `medium`, `high`, and `veryhigh` use screen-space adaptive subdivision targeting 4, 1, and 0.5 pixel edges. `HdEmbreeRenderPass` requires an attached `HdCamera` and snapshots the first valid camera/data window and triggers `HdEmbreeRenderDelegate::UpdateAdaptiveSubdivision()` for initial geometry and later scene edits using that frozen view. `ty:dynamicSubdvTesselation = true` additionally refreshes the snapshot and levels after projection or data-window changes. `delegate/adaptiveSubdivision.*` projects every coarse edge through all instance transforms and clips edges to the homogeneous view volume. Displaced quads additionally evaluate final positions on a fixed 3x3 `(u,v)` grid; midpoint-to-chord errors above 0.5 pixel at medium or 0.25 pixel at high/very-high can raise only the affected parametric direction, capped at 2x the fresh camera baseline. Propagate the 2x factor through shared edges and quad-opposite pairs along the complete edge strip before changing levels; a one-sided propagated level creates Embree transition-fan triangles that can fold after displacement. Non-quads and failed probes retain the baseline except where they share a boosted edge. Always run shared-edge consolidation and quad 2:1 balancing after displacement refinement, write shared-edge-consistent `RTC_BUFFER_TYPE_LEVEL` values, and let `HdEmbreeMesh` recommit the prototype scene. Keep levels in Embree’s `[1, 4096]` range and never multiply the previously cached levels, which would ratchet across updates. Surface shading, displacement callbacks, and dicing probes share `HdEmbreeSamplePrimvar`, so constant, uniform, vertex, varying, and face-varying geomprops use the same production samplers in all paths. Instance primvars cannot vary prototype displacement because Embree tessellates the shared prototype before applying instance transforms.
 
+Hydra `wireOnSurf`/`refinedWireOnSurf` and `wire`/`refinedWire` reprs are
+carried through `HdEmbreePrototypeContext`. `renderer/geometry/wireframe.*`
+computes screen-space edge coverage: coarse hits use triangle barycentrics;
+refined hits decode quad or n-gon sub-patch UVs and the live subdivision level
+buffer to reconstruct the final diced grid. Restore the one-pixel derivative
+footprint after texture filtering's sample-count scaling, and use continuous
+coverage rather than a binary sample discard. Derive coverage in Embree's
+geometric hit parameterization, never from MaterialX `st` derivatives. Final
+mesh diagnostics must evaluate every regular diced U/V edge and cell diagonal;
+do not replace subpixel topology with a coarser display LOD. Subpixel cells
+should contribute filtered dense coverage and require zoom or higher output
+resolution to resolve individually. Compose the wire before adaptive
+variance/AOV accumulation. Wire-on-surface runs after the selected integrator
+so the overlay follows final shading and displacement. Edge-only returns after
+the primary camera hit, before material, light, volume, AO, or secondary-ray
+evaluation, then composites opaque black coverage over the clear color.
+Embree does not expose internal transition-fan primitive IDs, so do not claim
+exact stitch diagonals where opposing edge levels differ. Edge-only mode
+ignores Hydra's wire color, blends nearest-surface interiors to the clear
+color, and does not reveal rear edges; wire-on-surface is the
+authoritative diagnostic path. `HdEmbreeRenderPass::_MarkCollectionDirty()`
+must mark rprims `DirtyRepr` whenever the collection repr selector or its
+forced-repr state changes. Hydra's dirty list only rebuilds automatically the
+first time it encounters a selector, so returning to a previously used mode
+otherwise skips `_InitRepr()` and `Sync()`. `_InitRepr()` must then set
+`HdChangeTracker::NewRepr` whenever the resolved requested repr changes,
+including a return to an already registered repr, and mesh `Sync()` must clear
+`NewRepr` after publishing the new mode to the prototype context.
+
 Sync methods may run in parallel. Only pull data whose dirty bit is set, and
 keep Embree context/object lifetimes valid until corresponding geometry is
 released in `Finalize()`.
@@ -513,6 +542,7 @@ per-proxy data.
 - path depth, Russian Roulette, direct light sampling, MIS, caustic policy,
   transparent-shadow approximation, media, and SSS;
 - MaterialXCpp graph evaluation and primvar sampling;
+- Hydra mesh repr wireframe composition on the retained primary hit;
 - writing resolved AOV values into `HdEmbreeRenderBuffer`.
 
 The render pass handles Hydra-facing output concerns: camera/data-window/AOV
@@ -546,6 +576,8 @@ Common focused checks:
 - `pixi run cmake --build build --target testHdEmbreeRenderSettings`
 - `pixi run ctest --test-dir build -R testHdEmbreeRenderSettings --output-on-failure`
 - `pixi run cmake --build build --target testHdEmbreeSampling`
+- `pixi run cmake --build build --target testHdEmbreeWireframe`
+- `pixi run ctest --test-dir build -R testHdEmbreeWireframe --output-on-failure`
 - `pixi run cmake --build build --target testHdEmbreeLightSamplers`
 - `pixi run cmake --build build --target testMaterialXCpp`
 - `pixi run cmake --build build --target testHdEmbreeSubdivision`

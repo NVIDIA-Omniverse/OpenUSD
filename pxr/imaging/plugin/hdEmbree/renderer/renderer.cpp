@@ -91,6 +91,8 @@ HdEmbreeRenderer::HdEmbreeRenderer()
             ? HdEmbreeConfig::GetInstance().ambientOcclusionSamples
             : 0)
     , _enableSceneColors(HdEmbreeConfig::GetInstance().enableSceneColors)
+    , _wireframeColor(0.0f)
+    , _wireframeLineWidth(1.0f)
     , _domeLightCameraVisibility(
         HdEmbreeConfig::GetInstance().domeLightCameraVisibility)
     , _enableLighting(HdEmbreeConfig::GetInstance().enableLighting)
@@ -154,6 +156,15 @@ void
 HdEmbreeRenderer::SetEnableSceneColors(bool enableSceneColors)
 {
     _enableSceneColors = enableSceneColors;
+}
+
+void
+HdEmbreeRenderer::SetWireframeStyle(
+    GfVec4f const& color,
+    float lineWidth)
+{
+    _wireframeColor = color;
+    _wireframeLineWidth = std::max(1.0f, lineWidth);
 }
 
 void
@@ -745,6 +756,7 @@ HdEmbreeRenderer::_EvaluatePixelSample(
         result = _enableLighting
             ? _IntegratePath(origin, dir, rayDiff, sampler.RootDomain())
             : _IntegrateUnlit(origin, dir, rayDiff, sampler.RootDomain());
+        _ApplyWireframe(result.primaryHit, rayDiff, &result.color);
     } else {
         // Geometric AOV-only renders need the primary hit but no radiance.
         result.primaryHit.ray.flags = 0;
