@@ -1,6 +1,6 @@
 # hdEmbree Agent Guide
 
-This directory contains the `hdEmbree` Hydra render delegate plugin. It is a
+This directory contains the `hdEmbree` Hydra render delegate plugin also known as `Typhoon`. It is a
 CPU path tracer built on Embree 4 with MaterialX/OpenPBR shading, USD Lux light
 support, Hydra render settings, and stage-authored `UsdRender` product output.
 
@@ -11,6 +11,16 @@ Important maintenance rule: agents MUST keep `AGENTS.md`, `README.md`, and
 tests, or surrounding USD/Hydra integration change. Update all affected
 documents in the same change whenever behavior, architecture, extension
 points, or workflow knowledge changes.
+
+## Project Goals
+
+Typhoon is a **reference path tracer**. It should be easily readable by a human (and agents) above all other concerns.
+
+1. Keep it simple. Don't add unneccesary complexity via abstractions. Don't add an abstraction unless it results in a net reduction in code size of at least twice what the abstraction adds. Avoid "fancy" C++-isms. Use simple, readable code.
+2. Prefer linear flow. Don't add lots of tiny helper functions that mean the reader has to jump around in the codebase to see what the code is doing, even if doing so adds more code.
+3. Variable naming must stay consistent for common quantities - normals, incident/exitant directions (wi/wo), etaI, etaO must be named identically everywhere their meaning is the same.
+4. Comment everything with WHAT the code is intended to do, not HOW. Ensure function declarations contain details of expected invariants on inputs and possible failure modes plus errors returned/raised. Comment each logical section of a definition with WHAT and WHY the code is doing what it is.
+5. Always name variable types correctly. Do not use `auto` except in a range-for loop where the loop variable is an iterator or other trivial, extremely long type.
 
 ## Current Build And Run Workflow
 
@@ -485,6 +495,16 @@ textures use a dedicated OIIO texture system with `unassociatedalpha` enabled
 so alpha is not premultiplied into RGB before hdEmbree applies texture
 color-space conversion to RGB only. Do not enable this globally; non-PNG
 formats should retain OIIO's default alpha handling.
+
+Surface hits use one central interaction contract. The normalized,
+orientation-correct Embree `Ng` remains outward and immutable; it alone owns
+boundary classification, medium transitions, and offsets. Smooth/displaced
+base shading is aligned outward once, then side-transformed into one
+incident-facing material frame. The side transform flips N and dN, preserves
+dP and tangent orientation, and reconstructs B from recorded handedness.
+Material normals outside the incident `Ng` hemisphere fall back to the base
+incident normal. Never infer topology from a shading normal or reintroduce
+closure-dependent normal orientation.
 
 `ShadingContext::texcoord` preserves authored USD `st` values in MaterialX's
 lower-left UV convention. Do not pre-flip V when building the shading context.
