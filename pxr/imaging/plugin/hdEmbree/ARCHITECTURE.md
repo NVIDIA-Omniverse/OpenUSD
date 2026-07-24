@@ -209,8 +209,12 @@ the normalized-normal derivative with the inverse transpose, including the
 normalization derivative required by non-uniform instance scale. Diffuse,
 glossy, differential-free, and undisplaced hits do not evaluate the outer
 ring. A failed or degenerate ring conservatively keeps zero curvature.
-These derivatives describe the smooth displaced geometry; derivatives of a
-material normal-map input remain a separate concern.
+These derivatives describe the smooth displaced geometry. Their lifecycle is
+tracked separately from resolved-normal derivative provenance: smooth base
+normals may use the ready base approximation, displaced curvature remains
+lazy, and a materially changed normal has no derivatives until the material
+normal graph is differentiated. Base dN is never silently paired with a mapped
+normal.
 
 Embree position buffers are Embree-owned `FLOAT3` data with a 16-byte stride,
 and triangle index buffers are also Embree-owned so `VtArray` copy-on-write
@@ -342,20 +346,24 @@ For each segment, `_IntegratePath()` performs these stages in order:
 8. **Construct surface state.** Renderer-owned instance and prototype context
    records provide the material, transforms, primvars, derivatives, categories,
    and geometry flags without querying Hydra. The integrator computes the hit
-   position and maintains four distinct normal concepts:
+   position and constructs one central surface interaction with distinct
+   topology and shading state:
 
-   - `geometricNormal`: the unflipped smooth normal, reconstructed from the
-     displaced frame when displacement is active; it defines the tangent and
-     material frame but does not classify a true boundary;
-   - `orientedFaceNg`: the true, unflipped Embree displaced-facet normal, used
-     for medium crossings, transmission-side classification, visibility-ray
-     offsets, and continuation-ray bias;
-   - `faceNg`: a face-forwarded copy used for local geometric validity checks;
-   - `normal`: the face-forwarded smooth shading normal used by the BSDF and
-     modified last by the material's normal input.
+   - `Ng` is the normalized, orientation-correct Embree facet normal. It always
+     points toward the authored outside and alone controls boundary crossings,
+     medium ownership, ray offsets, and geometric reflection/transmission;
+   - `baseNormalOut` is the view-independent smooth/displaced material normal,
+     aligned into the `Ng` hemisphere once;
+   - `frontFacing` is computed once from `dot(Ng, wo)`;
+   - the material and BSDF consume one incident-facing copy of the base frame.
+     Invalid or wrong-`Ng`-hemisphere material normals fall back to that base
+     incident normal instead of being negated.
 
-   All normal vectors use inverse-transpose transforms under non-uniform
-   instance transforms. `_BuildShadingContext()` supplies texture coordinates,
+   The side transform flips N and dN on back faces, preserves dP and the
+   authored tangent orientation, and reconstructs the bitangent from recorded
+   outward-frame handedness. All normal vectors use inverse-transpose
+   transforms under non-uniform instance transforms. `_BuildShadingContext()`
+   supplies texture coordinates,
    display color, the reconstructed displaced tangent frame when available,
    geomprop lookup, uniform primvars, and surface/ray derivatives.
 9. **Evaluate the material.** The bound `mxcpp::EvalGraph` produces a

@@ -48,38 +48,28 @@ HdEmbreeRenderer::_IntegrateUnlit(
         return result;
     }
 
-    // Get the instance and prototype context structures for the hit prim.
-    // We don't use embree's multi-level instancing; we
-    // flatten everything in hydra. So instID[0] should always be correct.
-    const HdEmbreeInstanceContext *instanceContext =
-        static_cast<HdEmbreeInstanceContext*>(
-                rtcGetGeometryUserData(rtcGetGeometry(_scene,
-                                                      rayHit.hit.instID[0])));
-
-    const HdEmbreePrototypeContext *prototypeContext =
-        static_cast<HdEmbreePrototypeContext*>(
-                rtcGetGeometryUserData(
-                    rtcGetGeometry(instanceContext->rootScene,
-                                   rayHit.hit.geomID)));
-
-    // Compute the worldspace location of the rayHit hit.
-    GfVec3f hitPos = _CalculateHitPosition(rayHit);
-
-    // Prefer an authored/smoothed normal primvar; for subdivision hits without
-    // one, fall back to a smooth limit-surface normal derived from dP/du,dP/dv.
-    HdEmbreeDisplacedSubdivFrame displacedFrame;
-    GfVec3f normal = _ResolveObjectSpaceNormal(
-        prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
-        rayHit, &displacedFrame);
-
-    // Transform the normal from object space to world space.
-    normal = _TransformNormalToWorld(instanceContext, normal);
-
+    // Construct the same outward topology and incident material frame used
+    // by the path and visibility integrators.
+    const GfVec3f wo = -GfVec3f(
+        rayHit.ray.dir_x, rayHit.ray.dir_y, rayHit.ray.dir_z);
+    _SurfaceInteraction interaction;
+    HdEmbreeInstanceContext const* instanceContext = nullptr;
+    HdEmbreePrototypeContext const* prototypeContext = nullptr;
+    if (!_TryBuildSurfaceInteraction(
+            rayHit,
+            wo,
+            &interaction,
+            &instanceContext,
+            &prototypeContext)) {
+        result.color = GfVec4f(0.0f, 0.0f, 0.0f, 1.0f);
+        return result;
+    }
+    const GfVec3f hitPos = interaction.p;
+    GfVec3f normal = interaction.GetIncidentBaseNormal();
     // Build shading context via shared helper (texcoord, displayColor,
     // tangent frame all constructed consistently).
     mxcpp::ShadingContext ctx = _BuildShadingContext(
-        rayHit, rayDiff, instanceContext, prototypeContext, hitPos, normal,
-        displacedFrame.valid ? &displacedFrame : nullptr);
+        rayHit, rayDiff, instanceContext, prototypeContext, interaction);
     HdEmbreePrimvarLookup cbData{
         &prototypeContext->primvarMapByString,
         rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
@@ -115,10 +105,18 @@ HdEmbreeRenderer::_IntegrateUnlit(
                 _ToMx(bitangent),
                 _ToMx(normal),
                 &resolvedNormal)) {
-            normal = _ToGf(resolvedNormal);
-            const GfVec3f wo = -GfVec3f(
-                rayHit.ray.dir_x, rayHit.ray.dir_y, rayHit.ray.dir_z);
-            if (GfDot(normal, wo) < 0.0f) normal = -normal;
+            GfVec3f candidate;
+            const bool valid =
+                _TryNormalizeDirection(_ToGf(resolvedNormal), &candidate) &&
+                GfDot(
+                    candidate,
+                    interaction.GetIncidentGeometricNormal()) > 0.0f &&
+                GfDot(candidate, wo) > 0.0f;
+            if (valid) {
+                normal = candidate;
+            } else {
+                ++_invalidMaterialNormalCount;
+            }
         }
     }
 
@@ -141,6 +139,7 @@ HdEmbreeRenderer::_IntegrateUnlit(
         _ComputeAmbientOcclusion(
             hitPos,
             normal,
+            interaction.Ng,
             domain.Fork(HdEmbreeSampleDomainKey::AmbientOcclusion));
 
     const GfVec3f lightingColor = materialColor * diffuseLight * aoLightIntensity;
@@ -157,6 +156,7 @@ HdEmbreeRenderer::_IntegrateUnlit(
 float
 HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& position,
                                             GfVec3f const& normal,
+                                            GfVec3f const& Ng,
                                             HdEmbreeSampleDomain const& domain)
 {
     // 0 ambient occlusion samples means disable the ambient occlusion term.
@@ -221,7 +221,7 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& position,
     // the hemisphere that's occluded when rays are traced to infinity,
     // computed by random sampling over the hemisphere.
     const GfVec3f rayOrigin =
-        _OffsetRayOrigin(position, normal, normal, 1e-4f);
+        _OffsetRayOrigin(position, Ng, normal, 1e-4f);
     for (int i = 0; i < _ambientOcclusionSamples; i++)
     {
         // Sample in the hemisphere centered on the face normal. Use

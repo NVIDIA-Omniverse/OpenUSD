@@ -116,10 +116,15 @@ HdEmbreeRenderer::_Visibility(
         }
 
         mxcpp::SurfaceClosure closure;
-        GfVec3f hitNormal(0.0f);
+        GfVec3f hitNg = normal;
         HdEmbreePrototypeContext const* hitMesh = nullptr;
         const bool hasClosure = _TryEvalSurfaceClosureAtHit(
-            rayHit, &closure, &hitNormal, &hitMesh);
+            rayHit,
+            -direction,
+            &closure,
+            nullptr,
+            &hitNg,
+            &hitMesh);
 
         const bool exitsCurrentMedium =
             shadowMedium.active && hitMesh == shadowMedium.ownerGeometry;
@@ -149,7 +154,7 @@ HdEmbreeRenderer::_Visibility(
                          !exitsCurrentMedium &&
                          !exitsStraightTransparent);
                     transmissionVisibility = _TransparentShadowTransmission(
-                        closure, direction, hitNormal, includeSurfaceTint);
+                        closure, direction, hitNg, includeSurfaceTint);
                 }
                 surfaceVisibility =
                     _CombinePresenceAndTransmissionVisibility(
@@ -180,14 +185,14 @@ HdEmbreeRenderer::_Visibility(
         } else if (exitsStraightTransparent) {
             straightTransparentOwner = nullptr;
         } else if (volumeOnlyBoundary && !shadowMedium.active && hitMesh &&
-                   GfDot(direction, hitNormal) < 0.0f) {
+                   GfDot(direction, hitNg) < 0.0f) {
             shadowMedium.active = true;
             shadowMedium.medium = closure.interiorMedium;
             shadowMedium.ownerGeometry = hitMesh;
         } else if (_approxTransparentShadows && !shadowMedium.active &&
                    hasClosure && !closure.thinWalled &&
                    closure.transmission > 0.0f && hitMesh &&
-                   GfDot(direction, hitNormal) < 0.0f) {
+                   GfDot(direction, hitNg) < 0.0f) {
             if (closure.hasInteriorMedium) {
                 shadowMedium.active = true;
                 shadowMedium.medium = closure.interiorMedium;
@@ -203,7 +208,7 @@ HdEmbreeRenderer::_Visibility(
             rayHit.ray.org_z + hitDist * rayHit.ray.dir_z);
         rayOrigin = _OffsetRayOrigin(
             hitPos,
-            hasClosure ? hitNormal : normal,
+            hitNg,
             direction,
             kRayBias);
     }

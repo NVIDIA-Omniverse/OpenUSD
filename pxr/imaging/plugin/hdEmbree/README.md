@@ -189,6 +189,16 @@ When this AOV is bound (and `ty:enableAdaptiveSampling` is active), it outputs a
 
 ## Material Interpretation Notes
 
+### Normal orientation and double-sided shading
+
+hdEmbree keeps the authored-outside Embree facet normal separate from smooth,
+displaced, and material-mapped shading normals. Boundary crossings, media, and
+ray offsets use only the outward facet normal. Materials evaluate in one
+incident-facing frame on either mesh side; invalid or boundary-crossing normal
+map results fall back to the smooth/displaced incident normal. Thick dielectric
+side selection is recorded before material evaluation, while thin-walled
+transmission never changes persistent medium state.
+
 ### Rough and thin-walled transmission
 
 Rough-transmission transport is selected by the material model. OpenPBR and

@@ -1921,6 +1921,77 @@ TestEvalSurfaceTransmissionFromInterior()
 }
 
 static bool
+TestIncidentFrameExplicitBackFaceMatchesOutwardInterface()
+{
+    SurfaceClosure closure;
+    Bsdf::DielectricData transmission;
+    transmission.weight = 1.0f;
+    transmission.tint = Vec3f(0.95f, 0.97f, 1.0f);
+    transmission.ior = 1.5f;
+    transmission.roughness = Vec2f(0.2f, 0.2f);
+    transmission.scatterMode = Bsdf::ScatterMode::Transmission;
+    closure.bsdfTree.root = closure.bsdfTree.Add(transmission);
+
+    const Vec3f outwardN(0.0f, 1.0f, 0.0f);
+    const Vec3f incidentN = -outwardN;
+    const Vec3f wo = Vec3f(0.2f, -0.98f, 0.0f).normalized();
+    const Bsdf::BsdfSample outwardSample = Bsdf::SampleSurface(
+        closure, outwardN, wo, 0.3f, 0.7f, 0.5f);
+    const Bsdf::BsdfSample incidentSample = Bsdf::SampleSurface(
+        closure, incidentN, wo, 0.3f, 0.7f, 0.5f, 0.0f, false);
+
+    if (incidentSample.pdf <= 0.0f ||
+        Dot(incidentSample.wi, outwardN) <= 0.0f ||
+        !Test_IsClose(incidentSample.eta, 1.5f, 1.0e-5f)) {
+        printf("    Explicit back-face context did not select glass-to-air eta\n");
+        return false;
+    }
+    if (!Test_IsClose(outwardSample.wi, incidentSample.wi, 1.0e-6f) ||
+        !Test_IsClose(outwardSample.f, incidentSample.f, 1.0e-6f) ||
+        !Test_IsClose(outwardSample.pdf, incidentSample.pdf, 1.0e-6f) ||
+        !Test_IsClose(outwardSample.eta, incidentSample.eta, 1.0e-6f)) {
+        printf("    Explicit back-face context changed dielectric sampling\n");
+        return false;
+    }
+
+    const Vec3f outwardEval = Bsdf::EvalSurface(
+        closure, outwardN, outwardSample.wi, wo);
+    const Vec3f incidentEval = Bsdf::EvalSurface(
+        closure, incidentN, outwardSample.wi, wo, 0.0f, false);
+    const float outwardPdf = Bsdf::PdfSurface(
+        closure, outwardN, outwardSample.wi, wo);
+    const float incidentPdf = Bsdf::PdfSurface(
+        closure, incidentN, outwardSample.wi, wo, 0.0f, false);
+    if (!Test_IsClose(outwardEval, incidentEval, 1.0e-6f) ||
+        !Test_IsClose(outwardPdf, incidentPdf, 1.0e-6f)) {
+        printf("    Explicit back-face context changed eval/PDF\n");
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestIncidentFrameBackFaceDiffuseStaysVisible()
+{
+    SurfaceClosure closure;
+    Bsdf::OrenNayarDiffuseData diffuse;
+    diffuse.color = Vec3f(0.8f);
+    diffuse.weight = 1.0f;
+    closure.bsdfTree.root = closure.bsdfTree.Add(diffuse);
+
+    const Vec3f incidentN(0.0f, -1.0f, 0.0f);
+    const Vec3f wo(0.0f, -1.0f, 0.0f);
+    const Bsdf::BsdfSample sample = Bsdf::SampleSurface(
+        closure, incidentN, wo, 0.3f, 0.7f, 0.5f, 0.0f, false);
+    if (sample.pdf <= 0.0f || Dot(sample.wi, incidentN) <= 0.0f ||
+        sample.f.length() <= 0.0f) {
+        printf("    Back-face diffuse did not use the incident frame\n");
+        return false;
+    }
+    return true;
+}
+
+static bool
 TestTreeAddTransmissionPreservesWeight()
 {
     SurfaceClosure c;
@@ -4392,6 +4463,8 @@ Test_RegisterBsdfTests()
     _REG(TestSharpConductorEvalPdfRatioBoundedForLightSamples);
     _REG(TestTreeTransmissionPreservesWeightFromInterior);
     _REG(TestEvalSurfaceTransmissionFromInterior);
+    _REG(TestIncidentFrameExplicitBackFaceMatchesOutwardInterface);
+    _REG(TestIncidentFrameBackFaceDiffuseStaysVisible);
     _REG(TestTreeAddTransmissionPreservesWeight);
     _REG(TestDielectricInterfaceLayerDoesNotDoubleAttenuateTransmission);
     _REG(TestOpenPbrInterfaceAddsBsdlDiffuseDielectricCompensation);

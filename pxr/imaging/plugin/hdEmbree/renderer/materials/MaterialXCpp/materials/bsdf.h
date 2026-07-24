@@ -88,7 +88,8 @@ namespace Bsdf
         const Vec3f& N,
         const Vec3f& wi,
         const Vec3f& wo,
-        float heroWavelengthNm = 0.0f);
+        float heroWavelengthNm = 0.0f,
+        bool frontFacing = true);
 
     // ------------------------------------------------------------------
     // Sampling & PDF (Phase 9)
@@ -188,14 +189,16 @@ namespace Bsdf
         const Vec3f& N,
         const Vec3f& wo,
         float u1, float u2, float uLobe,
-        float heroWavelengthNm = 0.0f);
+        float heroWavelengthNm = 0.0f,
+        bool frontFacing = true);
 
     float PdfSurface(
         const SurfaceClosure& closure,
         const Vec3f& N,
         const Vec3f& wi,
         const Vec3f& wo,
-        float heroWavelengthNm = 0.0f);
+        float heroWavelengthNm = 0.0f,
+        bool frontFacing = true);
 
     /// Return a copy of `closure` with lobes that would be discarded by the
     /// caustic-class path heuristic removed from the BSDF tree.

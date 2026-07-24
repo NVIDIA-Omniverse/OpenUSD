@@ -573,98 +573,11 @@ _IsReflectionOnlyClosure(mxcpp::SurfaceClosure const& closure)
 }
 
 inline bool
-_HasTransmissionNode(
-    mxcpp::Bsdf::ClosureTree const& tree,
-    mxcpp::Bsdf::NodeId nodeId)
-{
-    const mxcpp::Bsdf::Node* const node = tree.Get(nodeId);
-    if (!node) {
-        return false;
-    }
-
-    return std::visit(
-        [&](auto const& data) -> bool {
-            using T = std::decay_t<decltype(data)>;
-            if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::DielectricData>) {
-                return !_IsEffectivelyZero(data.weight) &&
-                       data.scatterMode !=
-                           mxcpp::Bsdf::ScatterMode::Reflection;
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::DielectricInterfaceData>) {
-                return !_IsEffectivelyZero(data.transmissionWeight);
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::GeneralizedSchlickData>) {
-                return !_IsEffectivelyZero(data.weight) &&
-                       data.scatterMode !=
-                           mxcpp::Bsdf::ScatterMode::Reflection;
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::AdobeOpenPbrData>) {
-                return !_IsEffectivelyZero(data.transmissionWeight);
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::MixData>) {
-                if (_IsEffectivelyZero(data.mix)) {
-                    return _HasTransmissionNode(tree, data.bg);
-                }
-                if (_IsEffectivelyOpaque(data.mix)) {
-                    return _HasTransmissionNode(tree, data.fg);
-                }
-                return _HasTransmissionNode(tree, data.fg) ||
-                       _HasTransmissionNode(tree, data.bg);
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::LayerData>) {
-                return _HasTransmissionNode(tree, data.top) ||
-                       _HasTransmissionNode(tree, data.base);
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::AddData>) {
-                return _HasTransmissionNode(tree, data.in1) ||
-                       _HasTransmissionNode(tree, data.in2);
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::MultiplyData>) {
-                return _HasTransmissionNode(tree, data.input);
-            } else {
-                return false;
-            }
-        },
-        node->data);
-}
-
-inline bool
-_HasTransmissionClosure(mxcpp::SurfaceClosure const& closure)
-{
-    if (closure.HasBsdfTree()) {
-        return _HasTransmissionNode(closure.bsdfTree, closure.bsdfTree.root);
-    }
-
-    return !_IsEffectivelyZero(closure.transmission);
-}
-
-inline bool
 _IsVolumeOnlyBoundary(mxcpp::SurfaceClosure const& closure)
 {
     return closure.hasInteriorMedium &&
            !closure.HasBsdfTree() &&
            _IsEffectivelyZero(closure.opacity);
-}
-
-inline GfVec3f
-_GetBsdfNormal(
-    mxcpp::SurfaceClosure const& closure,
-    GfVec3f const& faceForwardedNormal,
-    GfVec3f const& geometricNormal,
-    GfVec3f const& wo)
-{
-    if (!_HasTransmissionClosure(closure)) {
-        return faceForwardedNormal;
-    }
-
-    // Reflection and diffuse lobes want the shading normal face-forwarded to
-    // wo, but thick transmission needs the interface side. Re-flip only for
-    // transmissive closures when the ray is on the geometric back side, so
-    // exit hits refract from the interior medium into the exterior medium.
-    return GfDot(geometricNormal, wo) < 0.0f
-        ? -faceForwardedNormal
-        : faceForwardedNormal;
 }
 
 inline mxcpp::Mat4f

@@ -2595,7 +2595,8 @@ _EvalLegacySurface(
     const Vec3f& wi,
     const Vec3f& wo)
 {
-    float NdotL = Dot(N, wi);
+    const Vec3f shadingN = _FaceForwardNormal(N, wo);
+    float NdotL = Dot(shadingN, wi);
 
     Vec3f reflected(0.0f);
     if (NdotL > 0.0f) {
@@ -2614,19 +2615,19 @@ _EvalLegacySurface(
             Vec3f kD = CompMul(Vec3f(1.0f) - fresnel,
                                Vec3f(1.0f - c.metallic));
             kD = kD * (1.0f - c.transmission);
-            diffuse = CompMul(kD, Bsdf::EvalLambertian(c.baseColor, N, wi, wo));
+            diffuse = CompMul(kD, Bsdf::EvalLambertian(c.baseColor, shadingN, wi, wo));
 
             specular = Bsdf::EvalGGXSpecular(
                 c.roughness, c.specularIor,
-                CompMul(c.specularColor, F0), N, wi, wo);
+                CompMul(c.specularColor, F0), shadingN, wi, wo);
         } else {
             Vec3f kD = Vec3f(1.0f - c.metallic) * (1.0f - c.transmission);
-            diffuse = CompMul(kD, Bsdf::EvalLambertian(c.baseColor, N, wi, wo));
+            diffuse = CompMul(kD, Bsdf::EvalLambertian(c.baseColor, shadingN, wi, wo));
         }
 
         Vec3f sheen(0.0f);
         if (c.sheen > 0.0f) {
-            sheen = Bsdf::EvalSheen(c.sheenColor, c.sheenRoughness, N, wi, wo) *
+            sheen = Bsdf::EvalSheen(c.sheenColor, c.sheenRoughness, shadingN, wi, wo) *
                     c.sheen;
         }
 
@@ -2634,7 +2635,7 @@ _EvalLegacySurface(
         float coatAttenuation = 1.0f;
         if (c.coat > 0.0f) {
             coatContrib = Bsdf::EvalCoat(
-                c.coat, c.coatRoughness, c.coatIor, N, wi, wo);
+                c.coat, c.coatRoughness, c.coatIor, shadingN, wi, wo);
             float coatFresnel = _SchlickFresnelScalar(c.coatIor, VdotH);
             coatAttenuation = 1.0f - c.coat * coatFresnel;
         }
@@ -2645,7 +2646,7 @@ _EvalLegacySurface(
 
     Vec3f transmitted(0.0f);
     if (c.transmission > 0.0f && NdotL < 0.0f) {
-        float absNdotV = std::max(std::abs(Dot(N, wo)), _kEpsilon);
+        float absNdotV = std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
         float fresnel = _SchlickFresnelScalar(c.specularIor, absNdotV);
         transmitted = c.transmissionColor *
             ((1.0f - fresnel) * c.transmission * kInvPi);
@@ -2661,6 +2662,7 @@ _PdfLegacySurface(
     const Vec3f& wi,
     const Vec3f& wo)
 {
+    const Vec3f shadingN = _FaceForwardNormal(N, wo);
     Vec3f F0 = _ComputeLegacyF0(
         c.baseColor, c.metallic, c.specular, c.specularIor);
     bool hasSpecularLobe = (_Luminance(F0) > _kEpsilon);
@@ -2683,10 +2685,10 @@ _PdfLegacySurface(
     float pCoat = wCoat / total;
 
     float pdf = 0.0f;
-    pdf += pDiffuse * Bsdf::PdfLambertian(N, wi);
-    pdf += pSpecular * Bsdf::PdfGGXSpecular(c.roughness, N, wi, wo);
+    pdf += pDiffuse * Bsdf::PdfLambertian(shadingN, wi);
+    pdf += pSpecular * Bsdf::PdfGGXSpecular(c.roughness, shadingN, wi, wo);
     if (c.coat > 0.0f) {
-        pdf += pCoat * Bsdf::PdfGGXSpecular(c.coatRoughness, N, wi, wo);
+        pdf += pCoat * Bsdf::PdfGGXSpecular(c.coatRoughness, shadingN, wi, wo);
     }
     return pdf;
 }
@@ -2700,6 +2702,7 @@ _SampleLegacySurface(
     float u2,
     float uLobe)
 {
+    const Vec3f shadingN = _FaceForwardNormal(N, wo);
     Vec3f F0 = _ComputeLegacyF0(
         c.baseColor, c.metallic, c.specular, c.specularIor);
     bool hasSpecularLobe = (_Luminance(F0) > _kEpsilon);
@@ -2725,7 +2728,7 @@ _SampleLegacySurface(
     float cumCoat = cumSpecular + pCoat;
 
     if (uLobe < cumDiffuse) {
-        auto sample = Bsdf::SampleLambertian(c.baseColor, N, wo, u1, u2);
+        auto sample = Bsdf::SampleLambertian(c.baseColor, shadingN, wo, u1, u2);
         if (sample.pdf <= 0.0f) {
             return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
@@ -2736,7 +2739,7 @@ _SampleLegacySurface(
     if (uLobe < cumSpecular) {
         Vec3f specCol = CompMul(c.specularColor, F0);
         auto sample = Bsdf::SampleGGXSpecular(
-            c.roughness, c.specularIor, specCol, N, wo, u1, u2);
+            c.roughness, c.specularIor, specCol, shadingN, wo, u1, u2);
         if (sample.pdf <= 0.0f) {
             return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
@@ -2747,7 +2750,7 @@ _SampleLegacySurface(
     if (uLobe < cumCoat) {
         float coatF0 = _SchlickFresnelScalar(c.coatIor, 1.0f);
         auto sample = Bsdf::SampleGGXSpecular(
-            c.coatRoughness, c.coatIor, Vec3f(coatF0), N, wo, u1, u2);
+            c.coatRoughness, c.coatIor, Vec3f(coatF0), shadingN, wo, u1, u2);
         if (sample.pdf <= 0.0f) {
             return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
@@ -4665,17 +4668,19 @@ Bsdf::EvalSurface(
     const Vec3f& N,
     const Vec3f& wi,
     const Vec3f& wo,
-    float heroWavelengthNm)
+    float heroWavelengthNm,
+    bool frontFacing)
 {
+    const Vec3f interfaceN = frontFacing ? N : -N;
     Vec3f f = closure.HasBsdfTree()
         ? _EvalNode(
             closure.bsdfTree,
             closure.bsdfTree.root,
-            N,
+            interfaceN,
             wi,
             wo,
             heroWavelengthNm)
-        : _EvalLegacySurface(closure, N, wi, wo);
+        : _EvalLegacySurface(closure, interfaceN, wi, wo);
     return _SafeVec(f * closure.presence);
 }
 
@@ -4975,17 +4980,19 @@ Bsdf::SampleSurface(
     const Vec3f& N,
     const Vec3f& wo,
     float u1, float u2, float uLobe,
-    float heroWavelengthNm)
+    float heroWavelengthNm,
+    bool frontFacing)
 {
+    const Vec3f interfaceN = frontFacing ? N : -N;
     if (closure.HasBsdfTree()) {
         auto sample = _SampleNode(closure.bsdfTree, closure.bsdfTree.root,
-                                  N, wo, u1, u2, uLobe, heroWavelengthNm);
+                                  interfaceN, wo, u1, u2, uLobe, heroWavelengthNm);
         if (!sample.isSpecular) {
             sample.f *= closure.presence;
         }
         return sample;
     }
-    return _SampleLegacySurface(closure, N, wo, u1, u2, uLobe);
+    return _SampleLegacySurface(closure, interfaceN, wo, u1, u2, uLobe);
 }
 
 float
@@ -4994,18 +5001,20 @@ Bsdf::PdfSurface(
     const Vec3f& N,
     const Vec3f& wi,
     const Vec3f& wo,
-    float heroWavelengthNm)
+    float heroWavelengthNm,
+    bool frontFacing)
 {
+    const Vec3f interfaceN = frontFacing ? N : -N;
     if (closure.HasBsdfTree()) {
         return _PdfNode(
             closure.bsdfTree,
             closure.bsdfTree.root,
-            N,
+            interfaceN,
             wi,
             wo,
             heroWavelengthNm);
     }
-    return _PdfLegacySurface(closure, N, wi, wo);
+    return _PdfLegacySurface(closure, interfaceN, wi, wo);
 }
 
 SurfaceClosure

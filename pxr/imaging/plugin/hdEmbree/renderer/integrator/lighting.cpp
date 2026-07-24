@@ -120,10 +120,10 @@ GfVec3f
 HdEmbreeRenderer::_ComputeDirectLightingMIS(
     GfVec3f const& position,
     GfVec3f const& normal,
-    GfVec3f const& visibilityNormal,
+    GfVec3f const& Ng,
     GfVec3f const& wo,
     HdEmbreeSampleDomain const& domain,
-    bool /*doubleSided*/,
+    bool frontFacing,
     bool includeBsdfSamplingMis,
     mxcpp::SurfaceClosure const* closure,
     HdEmbreeCategorySet const& receiverCategories,
@@ -136,7 +136,6 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
     const _HeroWavelengthState hero{
         spectralActive, heroWavelengthNm, heroWavelengthPdf};
     GfVec3f finalColor(0.0f);
-
     const int N = _lightSamplesPerHit;
     const float invN = 1.0f / static_cast<float>(N);
     const HdEmbreeLightSampler::SamplingMode lightSamplingMode =
@@ -204,10 +203,17 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
             if (absDotNL <= 0.0f) {
                 continue;
             }
+            const bool shadingReflection =
+                GfDot(wo, normal) * GfDot(ls.wI, normal) > 0.0f;
+            const bool geometricReflection =
+                GfDot(wo, Ng) * GfDot(ls.wI, Ng) > 0.0f;
+            if (shadingReflection != geometricReflection) {
+                continue;
+            }
 
             GfVec3f vis = _Visibility(
                 position,
-                visibilityNormal,
+                Ng,
                 ls.wI,
                 ls.dist * 0.99f,
                 light.shadowLink,
@@ -219,6 +225,8 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
             GfVec3f sampleContrib(0.0f);
             if (closure) {
                 const mxcpp::Vec3f normalMx = _ToMx(normal);
+                const mxcpp::Vec3f interfaceNormalMx =
+                    frontFacing ? normalMx : -normalMx;
                 const mxcpp::Vec3f wiMx = _ToMx(ls.wI);
                 const mxcpp::Vec3f woMx = _ToMx(wo);
                 const mxcpp::AdobeOpenPbrEvalPdfResult adobeEvalPdf =
@@ -228,7 +236,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                           wiMx)
                     : mxcpp::TryEvalPdfAdobeOpenPbrSurface(
                           *closure,
-                          normalMx,
+                          interfaceNormalMx,
                           wiMx,
                           woMx);
 
@@ -243,13 +251,15 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                         normalMx,
                         wiMx,
                         woMx,
-                        heroWavelengthNm));
+                        heroWavelengthNm,
+                        frontFacing));
                     bsdfPdf = mxcpp::Bsdf::PdfSurface(
                         *closure,
                         normalMx,
                         wiMx,
                         woMx,
-                        heroWavelengthNm);
+                        heroWavelengthNm,
+                        frontFacing);
                 }
 
                 for (int i = 0; i < 3; ++i) {

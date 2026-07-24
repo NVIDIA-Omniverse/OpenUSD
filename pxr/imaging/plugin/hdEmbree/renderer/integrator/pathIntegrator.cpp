@@ -205,85 +205,35 @@ HdEmbreeRenderer::_IntegratePath(
         // Ordinary surface: recover instance/prototype data, construct
         // shading geometry, evaluate material, add radiance, and continue.
         // -----------------------------------------------------------------
-        const HdEmbreeInstanceContext *instanceContext =
-            static_cast<HdEmbreeInstanceContext*>(
-                rtcGetGeometryUserData(
-                    rtcGetGeometry(_scene, rayHit.hit.instID[0])));
-
-        const HdEmbreePrototypeContext *prototypeContext =
-            static_cast<HdEmbreePrototypeContext*>(
-                rtcGetGeometryUserData(
-                    rtcGetGeometry(instanceContext->rootScene,
-                                   rayHit.hit.geomID)));
-
-        GfVec3f hitPos = GfVec3f(
-            rayHit.ray.org_x + rayHit.ray.tfar * rayHit.ray.dir_x,
-            rayHit.ray.org_y + rayHit.ray.tfar * rayHit.ray.dir_y,
-            rayHit.ray.org_z + rayHit.ray.tfar * rayHit.ray.dir_z);
-
-        // Normals.
-        //
-        // - `geometricNormal`: the unflipped smooth shading normal
-        //   (interpolated vertex / subdiv-limit normal, or the reconstructed
-        //   displaced normal). It defines the tangent and material frame but
-        //   never classifies a true surface boundary.
-        // - `orientedFaceNg`: the true, unflipped displaced facet normal from
-        //   Embree. Medium crossing, transmission side, visibility-ray
-        //   offset, and continuation-ray bias use this value.
-        // - `faceNg`: a face-forwarded copy of `orientedFaceNg`, used for
-        //   local validity checks such as SSS entry direction.
-        // - `normal`: the shading normal used for BSDF evaluation /
-        //   sampling. Starts from `geometricNormal`, then face-forwarded
-        //   against `wo`, then perturbed by the material's tangent-space
-        //   normal map. This is Cycles' `sd->N`.
-        HdEmbreeDisplacedSubdivFrame displacedFrame;
-        GfVec3f geometricNormal = _ResolveObjectSpaceNormal(
-            prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
-            rayHit, &displacedFrame);
-        geometricNormal = _TransformNormalToWorld(
-            instanceContext, geometricNormal);
-
-        GfVec3f orientedFaceNg =
-            prototypeContext->orientationSign * GfVec3f(
-                rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
-        orientedFaceNg = _TransformNormalToWorld(
-            instanceContext, orientedFaceNg);
-        GfVec3f faceNg = orientedFaceNg;
-
-        GfVec3f normal = geometricNormal;
-
-        GfVec3f wo = -path.rayDir;
-
-        // Read authored sidedness for direct-light visibility. The path
-        // still face-forwards normals to form a valid BSDF frame.
-        const bool doubleSided = prototypeContext->doubleSided;
-
-        // Face-forward the shading normal and the face Ng against the
-        // incoming ray, matching pbrt-v4 and Cycles. USD's doubleSided=
-        // false doesn't prescribe back-face behavior in a path tracer;
-        // without flipping here, back-face hits would leak light (BSDF
-        // sampling would continue through an opaque surface since the
-        // sampled hemisphere is oriented around a normal pointing away
-        // from wo). Flipping both shading N and face Ng together (Cycles
-        // kernel/geom/shader_data.h) also prevents shading-normal
-        // terminator artifacts from rejecting SSS entries on otherwise
-        // front-facing hits. `orientedFaceNg` is intentionally left
-        // unflipped because downstream medium/bias code needs the actual
-        // tessellated surface orientation.
-        if (GfDot(faceNg, wo) < 0.0f) {
-            faceNg = -faceNg;
+        const GfVec3f wo = -path.rayDir;
+        _SurfaceInteraction interaction;
+        HdEmbreeInstanceContext const* instanceContext = nullptr;
+        HdEmbreePrototypeContext const* prototypeContext = nullptr;
+        if (!_TryBuildSurfaceInteraction(
+                rayHit,
+                wo,
+                &interaction,
+                &instanceContext,
+                &prototypeContext)) {
+            break;
         }
-        if (GfDot(normal, wo) < 0.0f) {
-            normal = -normal;
-        }
+
+        // Ng remains outward and immutable. Material evaluation uses the
+        // separate incident-facing base normal on both mesh sides.
+        const GfVec3f hitPos = interaction.p;
+        const GfVec3f Ng = interaction.Ng;
+        const GfVec3f incidentNg =
+            interaction.GetIncidentGeometricNormal();
+        GfVec3f normal = interaction.GetIncidentBaseNormal();
         const GfVec3f differentialNormal = normal;
+        HdEmbreeDisplacedSubdivFrame& displacedFrame =
+            interaction.displacedFrame;
 
         // Build material inputs: interpolated primvars, texture derivatives,
         // tangent frame, and normal derivatives needed after sampling.
         mxcpp::ShadingContext ctx = _BuildShadingContext(
             rayHit, path.rayDiff,
-            instanceContext, prototypeContext, hitPos, normal,
-            displacedFrame.valid ? &displacedFrame : nullptr,
+            instanceContext, prototypeContext, interaction,
             &surfaceDifferentials.dndu, &surfaceDifferentials.dndv);
         HdEmbreePrimvarLookup cbData{
             &prototypeContext->primvarMapByString,
@@ -300,6 +250,13 @@ HdEmbreeRenderer::_IntegratePath(
         surfaceDifferentials.dvdx = ctx.dvdx;
         surfaceDifferentials.dudy = ctx.dudy;
         surfaceDifferentials.dvdy = ctx.dvdy;
+        surfaceDifferentials.baseNormalStatus = prototypeContext->displaced
+            ? _BaseNormalDerivativeStatus::Deferred
+            : _BaseNormalDerivativeStatus::Ready;
+        surfaceDifferentials.resolvedNormalProvenance =
+            prototypeContext->displaced
+                ? _ResolvedNormalDerivativeProvenance::None
+                : _ResolvedNormalDerivativeProvenance::BaseApproximation;
 
         GfVec3f tangent = _ToGf(ctx.tangent);
         GfVec3f bitangent = _ToGf(ctx.bitangent);
@@ -351,8 +308,10 @@ HdEmbreeRenderer::_IntegratePath(
             path.syntheticLambertianExit = HdEmbreeSssOutput{};
         }
 
-        // Apply the material normal after graph evaluation; keep the
-        // geometric normal unchanged for boundaries and ray bias.
+        // Resolve every material normal in the incident frame. Invalid,
+        // degenerate, or wrong-geometric-hemisphere values deterministically
+        // fall back to the incident base normal; they are never negated.
+        bool resolvedNormalUsesBase = true;
         mxcpp::Vec3f resolvedNormal;
         if (hasClosure &&
             closure.ResolveNormal(
@@ -360,11 +319,20 @@ HdEmbreeRenderer::_IntegratePath(
                 _ToMx(bitangent),
                 _ToMx(normal),
                 &resolvedNormal)) {
-            normal = _ToGf(resolvedNormal);
-            // Re-orient toward the ray (face-forward, matches the geometric
-            // normal treatment above).
-            if (GfDot(normal, wo) < 0.0f) {
-                normal = -normal;
+            GfVec3f candidate;
+            const bool valid =
+                _TryNormalizeDirection(_ToGf(resolvedNormal), &candidate) &&
+                GfDot(candidate, incidentNg) > 0.0f &&
+                GfDot(candidate, wo) > 0.0f;
+            if (valid) {
+                resolvedNormalUsesBase = GfIsClose(candidate, normal, 1e-6f);
+                normal = candidate;
+                if (!resolvedNormalUsesBase) {
+                    surfaceDifferentials.resolvedNormalProvenance =
+                        _ResolvedNormalDerivativeProvenance::None;
+                }
+            } else {
+                ++_invalidMaterialNormalCount;
             }
         }
 
@@ -436,17 +404,17 @@ HdEmbreeRenderer::_IntegratePath(
             path.spectralThroughput = _RgbToSpectralValue(path.throughput, path.hero);
         }
 
-        // Sanitize the material normal against the geometric surface before
-        // using it to prepare or sample the BSDF.
-        const GfVec3f bsdfNormal = hasClosure
-            ? _GetBsdfNormal(closure, normal, orientedFaceNg, wo)
-            : normal;
+        // Every lobe consumes the same incident-facing shading normal.
+        // Interface side and transport classification remain separate state.
+        const GfVec3f bsdfNormal = normal;
 
         mxcpp::AdobeOpenPbrPreparedSurface adobeOpenPbrSurface;
         if (hasBsdfClosure) {
             adobeOpenPbrSurface = mxcpp::PrepareAdobeOpenPbrSurface(
                 *bsdfClosure,
-                _ToMx(bsdfNormal),
+                _ToMx(interaction.frontFacing
+                    ? bsdfNormal
+                    : -bsdfNormal),
                 _ToMx(wo));
         }
 
@@ -469,7 +437,8 @@ HdEmbreeRenderer::_IntegratePath(
                 bs = mxcpp::Bsdf::SampleSurface(
                     *bsdfClosure, _ToMx(bsdfNormal), _ToMx(wo),
                     bsdfSample[0], bsdfSample[1], bsdfSample[2],
-                    path.hero.wavelengthNm);
+                    path.hero.wavelengthNm,
+                    interaction.frontFacing);
             }
             hasBsdfSample = bs.isSubsurface || bs.pdf > 0.0f;
         }
@@ -487,7 +456,7 @@ HdEmbreeRenderer::_IntegratePath(
             subsurfaceInput.closure = bsdfClosure;
             subsurfaceInput.hitPos = hitPos;
             subsurfaceInput.normal = normal;
-            subsurfaceInput.faceNormal = faceNg;
+            subsurfaceInput.faceNormal = incidentNg;
             subsurfaceInput.wo = wo;
             subsurfaceInput.sampledEntryDirection = _ToGf(bs.wi);
             subsurfaceInput.entryWeight = _ToGf(bs.f);
@@ -520,10 +489,10 @@ HdEmbreeRenderer::_IntegratePath(
             direct = _ComputeDirectLightingMIS(
                 hitPos,
                 bsdfNormal,
-                orientedFaceNg,
+                Ng,
                 wo,
                 bounceDomain.Fork(HdEmbreeSampleDomainKey::DirectLighting),
-                doubleSided,
+                interaction.frontFacing,
                 true,
                 bsdfClosure,
                 instanceContext->categories,
@@ -548,10 +517,10 @@ HdEmbreeRenderer::_IntegratePath(
             direct = _ComputeDirectLightingMIS(
                 hitPos,
                 normal,
-                orientedFaceNg,
+                Ng,
                 wo,
                 bounceDomain.Fork(HdEmbreeSampleDomainKey::DirectLighting),
-                doubleSided,
+                interaction.frontFacing,
                 false,
                 &fallback,
                 instanceContext->categories,
@@ -569,7 +538,7 @@ HdEmbreeRenderer::_IntegratePath(
         // Cross a medium-only boundary without scattering: update medium
         // ownership, advance through the surface, and refund the bounce.
         if (volumeOnlyBoundary) {
-            const float wiDotNg = GfDot(path.rayDir, orientedFaceNg);
+            const float wiDotNg = GfDot(path.rayDir, Ng);
             _UpdatePathMedium(
                 closure,
                 prototypeContext,
@@ -579,7 +548,7 @@ HdEmbreeRenderer::_IntegratePath(
 
             const float advance = rayHit.ray.tfar + 1e-4f;
             const float bias = wiDotNg > 0.0f ? 1e-4f : -1e-4f;
-            path.rayOrigin = hitPos + orientedFaceNg * bias;
+            path.rayOrigin = hitPos + Ng * bias;
             if (path.rayDiff.hasDifferentials) {
                 path.rayDiff.rxOrigin += path.rayDir * advance;
                 path.rayDiff.ryOrigin += path.rayDir * advance;
@@ -605,11 +574,30 @@ HdEmbreeRenderer::_IntegratePath(
         if (!hasBsdfClosure || !hasBsdfSample || bs.isSubsurface) break;
 
         const GfVec3f wi = _ToGf(bs.wi);
-        const float woDotNg = GfDot(wo, orientedFaceNg);
-        const float wiDotNg = GfDot(wi, orientedFaceNg);
+        const float woDotNg = GfDot(wo, Ng);
+        const float wiDotNg = GfDot(wi, Ng);
         const bool crossesBoundary =
             (woDotNg > 0.0f && wiDotNg < 0.0f) ||
             (woDotNg < 0.0f && wiDotNg > 0.0f);
+        const bool shadingReflection =
+            GfDot(wo, bsdfNormal) * GfDot(wi, bsdfNormal) > 0.0f;
+        const bool geometricReflection = woDotNg * wiDotNg > 0.0f;
+        if (shadingReflection != geometricReflection) {
+            break;
+        }
+
+        // Preserve the sampled interface as an explicit absolute IOR pair.
+        // The current single-owner model has air outside; future medium
+        // tracking can replace this resolver without changing propagation.
+        float etaIncident = 1.0f;
+        float etaTransmitted = 1.0f;
+        if (crossesBoundary && bs.eta > 0.0f && bs.eta != 1.0f) {
+            if (interaction.frontFacing) {
+                etaTransmitted = 1.0f / bs.eta;
+            } else {
+                etaIncident = bs.eta;
+            }
+        }
         // Classify caustics from ancestry plus this event. Boundary
         // crossings count alongside explicitly specular samples.
         const bool sampledCausticEvent =
@@ -671,14 +659,15 @@ HdEmbreeRenderer::_IntegratePath(
             (!bs.isSpecular && _IsReflectionOnlyClosure(closure))
                 ? HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere
                 : HdEmbreeLightSampler::SamplingMode::FullSphere;
-        path.lastLightSamplingNormal = normal;
+        path.lastLightSamplingNormal = bsdfNormal;
         if (bs.isDiffuseLike) {
             path.hasDiffuseLikeAncestor = true;
         }
         path.isFirstBounce = false;
         // Transmission enters or leaves the interior medium; only one
         // active owner is currently modeled.
-        if (crossesBoundary && hasClosure) {
+        if (crossesBoundary && hasClosure && !closure.thinWalled &&
+            bs.eta > 0.0f && bs.eta != 1.0f) {
             _UpdatePathMedium(
                 closure,
                 prototypeContext,
@@ -732,6 +721,17 @@ HdEmbreeRenderer::_IntegratePath(
                     &displacedDndv)) {
                 surfaceDifferentials.dndu = displacedDndu;
                 surfaceDifferentials.dndv = displacedDndv;
+                surfaceDifferentials.baseNormalStatus =
+                    _BaseNormalDerivativeStatus::Ready;
+                surfaceDifferentials.resolvedNormalProvenance =
+                    resolvedNormalUsesBase
+                        ? _ResolvedNormalDerivativeProvenance::BaseApproximation
+                        : _ResolvedNormalDerivativeProvenance::None;
+            } else {
+                surfaceDifferentials.baseNormalStatus =
+                    _BaseNormalDerivativeStatus::Failed;
+                surfaceDifferentials.resolvedNormalProvenance =
+                    _ResolvedNormalDerivativeProvenance::None;
             }
         }
 
@@ -740,17 +740,17 @@ HdEmbreeRenderer::_IntegratePath(
         _PropagateRayDifferential(
             surfaceDifferentials,
             hitPos,
-            normal,
+            bsdfNormal,
             wo,
             wi,
-            bs.eta,
+            etaIncident / etaTransmitted,
             bs.isSpecular,
             &path.rayDiff);
 
         // Bias onto the sampled side of the geometric surface, then publish
         // the sampled direction as the next pending segment.
-        float bias = (GfDot(wi, orientedFaceNg) > 0.0f) ? 1e-4f : -1e-4f;
-        path.rayOrigin = hitPos + orientedFaceNg * bias;
+        float bias = (GfDot(wi, Ng) > 0.0f) ? 1e-4f : -1e-4f;
+        path.rayOrigin = hitPos + Ng * bias;
         path.rayDir = wi;
         ++bounce;
     }

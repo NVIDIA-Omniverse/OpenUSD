@@ -10,6 +10,7 @@
 #include "pxr/pxr.h"
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/geometry/context.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/displacementEvaluation.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/lights/light.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightSamplers.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightLinking.h"
@@ -51,7 +52,6 @@ PXR_NAMESPACE_OPEN_SCOPE
 TF_DECLARE_PUBLIC_TOKENS(HdEmbreeAovTokens, HDEMBREE_AOV_TOKENS);
 
 class HdEmbreeRenderBufferInterface;
-struct HdEmbreeDisplacedSubdivFrame;
 
 enum HdEmbree_RayMask : uint32_t {
     None = 0,
@@ -590,6 +590,7 @@ private:
     /// \return Unoccluded fraction in [0,1], or one when AO is disabled.
     float _ComputeAmbientOcclusion(GfVec3f const& position,
                                    GfVec3f const& normal,
+                                   GfVec3f const& Ng,
                                    HdEmbreeSampleDomain const& domain);
 
     /// \brief Estimate direct surface lighting from all linked scene lights.
@@ -598,10 +599,10 @@ private:
     /// otherwise it evaluates a synthetic Lambertian response.
     /// \param position World-space shading position.
     /// \param normal Normalized world-space BSDF normal.
-    /// \param visibilityNormal Normal used only to offset visibility rays.
+    /// \param Ng Immutable outward normal used for topology and ray offsets.
     /// \param wo Normalized world-space direction toward the previous vertex.
     /// \param domain Sample domain reserved for this lighting event.
-    /// \param doubleSided Whether both surface sides may receive light.
+    /// \param frontFacing Side determined once from Ng and wo.
     /// \param includeBsdfSamplingMis Whether to weight light samples against
     /// the competing BSDF-sampling technique.
     /// \param closure Optional borrowed closure valid for the call.
@@ -616,10 +617,10 @@ private:
     GfVec3f _ComputeDirectLightingMIS(
         GfVec3f const& position,
         GfVec3f const& normal,
-        GfVec3f const& visibilityNormal,
+        GfVec3f const& Ng,
         GfVec3f const& wo,
         HdEmbreeSampleDomain const& domain,
-        bool doubleSided,
+        bool frontFacing,
         bool includeBsdfSamplingMis,
         mxcpp::SurfaceClosure const* closure,
         HdEmbreeCategorySet const& receiverCategories,
@@ -791,6 +792,18 @@ private:
         HdEmbreeSampleDomain const& domain,
         _PathState* state) const;
 
+    enum class _BaseNormalDerivativeStatus {
+        Deferred,
+        Ready,
+        Failed
+    };
+
+    enum class _ResolvedNormalDerivativeProvenance {
+        None,
+        ExactMaterial,
+        BaseApproximation
+    };
+
     struct _SurfaceDifferentials {
         GfVec3f dndu = GfVec3f(0.0f);
         GfVec3f dndv = GfVec3f(0.0f);
@@ -800,6 +813,32 @@ private:
         float dvdx = 0.0f;
         float dudy = 0.0f;
         float dvdy = 0.0f;
+        _BaseNormalDerivativeStatus baseNormalStatus =
+            _BaseNormalDerivativeStatus::Failed;
+        _ResolvedNormalDerivativeProvenance resolvedNormalProvenance =
+            _ResolvedNormalDerivativeProvenance::None;
+    };
+
+    /// Hit-local surface data with topology and shading meanings kept
+    /// separate. Ng and baseNormalOut are normalized world-space values.
+    /// Ng always points toward the authored outside and is never faced to wo.
+    struct _SurfaceInteraction {
+        GfVec3f p = GfVec3f(0.0f);
+        GfVec3f Ng = GfVec3f(0.0f);
+        GfVec3f baseNormalOut = GfVec3f(0.0f);
+        HdEmbreeDisplacedSubdivFrame displacedFrame;
+        bool frontFacing = true;
+        bool doubleSided = false;
+
+        GfVec3f GetIncidentGeometricNormal() const
+        {
+            return frontFacing ? Ng : -Ng;
+        }
+
+        GfVec3f GetIncidentBaseNormal() const
+        {
+            return frontFacing ? baseNormalOut : -baseNormalOut;
+        }
     };
 
     /// \brief Propagate or discard ray differentials after a BSDF sample.
@@ -809,7 +848,7 @@ private:
     /// \param normal Face-forwarded world-space shading normal.
     /// \param wo Normalized direction toward the previous path vertex.
     /// \param wi Normalized sampled continuation direction.
-    /// \param eta Sampled relative IOR; one denotes reflection.
+    /// \param eta Explicit event etaIncident/etaTransmitted ratio; one denotes reflection.
     /// \param specular Whether the sampled event is delta/specular.
     /// \param rayDifferential Non-null in/out differential state.
     void _PropagateRayDifferential(
@@ -927,10 +966,8 @@ private:
     /// \param rayDiff Differential state for the incident ray.
     /// \param instanceContext Non-null instance context for the hit.
     /// \param prototypeContext Non-null prototype context for the hit.
-    /// \param hitPos World-space hit position.
-    /// \param normal Normalized world-space shading normal.
-    /// \param displacedFrame Optional object-space displaced frame recovered
-    /// together with \p normal.
+    /// \param interaction Valid central hit state. Its outward base frame
+    /// is side-transformed exactly once for material evaluation.
     /// \param outDndu Optional world-space normal-u derivative output.
     /// \param outDndv Optional world-space normal-v derivative output.
     /// \param options Controls optional derivative work.
@@ -941,12 +978,21 @@ private:
         HdEmbreeRayDifferential const& rayDiff,
         HdEmbreeInstanceContext const* instanceContext,
         HdEmbreePrototypeContext const* prototypeContext,
-        GfVec3f const& hitPos,
-        GfVec3f const& normal,
-        HdEmbreeDisplacedSubdivFrame const* displacedFrame = nullptr,
+        _SurfaceInteraction const& interaction,
         GfVec3f* outDndu = nullptr,
         GfVec3f* outDndv = nullptr,
         _ShadingContextOptions options = _ShadingContextOptions()) const;
+
+    /// \brief Construct topology and outward base shading state for a hit.
+    ///
+    /// Reuses the shared smooth/displaced normal resolver. Ng comes only from
+    /// the orientation-correct Embree facet normal. Invalid normals fail.
+    bool _TryBuildSurfaceInteraction(
+        RTCRayHit const& rayHit,
+        GfVec3f const& wo,
+        _SurfaceInteraction* outInteraction,
+        HdEmbreeInstanceContext const** outInstance = nullptr,
+        HdEmbreePrototypeContext const** outPrototype = nullptr) const;
 
     /// \brief Evaluate the visibility-only material closure at a hit.
     ///
@@ -961,8 +1007,10 @@ private:
     /// \return True only when a bound graph evaluates successfully.
     bool _TryEvalSurfaceClosureAtHit(
         RTCRayHit const& rayHit,
+        GfVec3f const& wo,
         mxcpp::SurfaceClosure* outClosure,
-        GfVec3f* outGeometricNormal = nullptr,
+        GfVec3f* outShadingNormal = nullptr,
+        GfVec3f* outNg = nullptr,
         HdEmbreePrototypeContext const** outGeometry = nullptr) const;
 
     // ---- AOV dispatch table (built once per frame in _PreRenderSetup) ----
@@ -1255,6 +1303,9 @@ private:
     mutable std::atomic<uint64_t> _sssSuccessCount;
     mutable std::atomic<uint64_t> _sssWalkStepCount;
     mutable std::atomic<uint64_t> _sssIntersectionCount;
+
+    // Material normals rejected by finite/length/geometric-hemisphere checks.
+    mutable std::atomic<uint64_t> _invalidMaterialNormalCount = 0;
 
     // Render start time for elapsed time tracking.
     std::chrono::steady_clock::time_point _renderStartTime;
