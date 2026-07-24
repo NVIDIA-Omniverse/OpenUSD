@@ -286,7 +286,8 @@ _RunRenderProductOutputCase(const char *filename,
     }
 
     std::unique_ptr<HdRenderIndex> renderIndex(
-        HdRenderIndex::New(&delegate, HdDriverVector(), sceneIndex));
+        HdRenderIndex::NewForBackendEmulation(
+            &delegate, HdDriverVector(), sceneIndex));
     if (!renderIndex) {
         std::printf("failed to create render-product test index\n");
         return false;
@@ -531,7 +532,8 @@ _TestActiveRenderSettingsPrimBridge()
     });
 
     std::unique_ptr<HdRenderIndex> renderIndex(
-        HdRenderIndex::New(&delegate, HdDriverVector(), sceneIndex));
+        HdRenderIndex::NewForBackendEmulation(
+            &delegate, HdDriverVector(), sceneIndex));
     if (!renderIndex) {
         std::printf("failed to create render index\n");
         return false;
