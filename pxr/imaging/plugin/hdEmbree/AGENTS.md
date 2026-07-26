@@ -18,9 +18,37 @@ Typhoon is a **reference path tracer**. It should be easily readable by a human 
 
 1. Keep it simple. Don't add unneccesary complexity via abstractions. Don't add an abstraction unless it results in a net reduction in code size of at least twice what the abstraction adds. Avoid "fancy" C++-isms. Use simple, readable code.
 2. Prefer linear flow. Don't add lots of tiny helper functions that mean the reader has to jump around in the codebase to see what the code is doing, even if doing so adds more code.
-3. Variable naming must stay consistent for common quantities - normals, incident/exitant directions (wi/wo), etaI, etaO must be named identically everywhere their meaning is the same.
+3. Variable naming must stay consistent for common quantities - normals, incident/exitant directions (wi/wo), etaI, etaO must be named identically everywhere their meaning is the same. Derivatives should be named with the `d<Quantity>d<Variable>` convention - e.g. `dPdu`/`dPdv` for surface parameterization derivatives and `dPdx`/`dPdy` for screen-space (ray differential) derivatives - as this is clearer than offset-style names.
 4. Comment everything with WHAT the code is intended to do, not HOW. Ensure function declarations contain details of expected invariants on inputs and possible failure modes plus errors returned/raised. Comment each logical section of a definition with WHAT and WHY the code is doing what it is.
-5. Always name variable types correctly. Do not use `auto` except in a range-for loop where the loop variable is an iterator or other trivial, extremely long type.
+5. Always name variable types correctly. Prefer an explicit type whenever it is
+   reasonably short and meaningful. Do not use `auto` except in these cases:
+
+   - A range-for loop variable.
+   - A ridiculous standard-library iterator type returned by `.find()` and
+     similar lookup operations. This exists to keep container implementation
+     types from obscuring the algorithm; it does not license `auto` for a
+     lookup result whose type is short and meaningful.
+   - A `std::visit` visitor lambda parameter. The project builds at C++17,
+     which has no syntax for naming a lambda parameter's type, and the
+     alternatives - a visitor functor struct, or one explicit `operator()`
+     overload per variant alternative - add more machinery than they remove.
+     Keep such lambdas to one per dispatch site and comment them as this
+     exception. This covers the parameter only; `auto` locals inside the
+     visitor body are not exempt. A generic `auto` parameter on a lambda that
+     is not a `std::visit` visitor is not covered - give it a concrete type,
+     or a function pointer type if every argument is captureless.
+   - Binding a lambda closure object. A closure type is unnameable, and the
+     alternatives - `std::function`, a named functor struct, or a free
+     function with the captures passed explicitly - all add indirection or
+     machinery, some of it on per-path-vertex code.
+   - A structured binding declaration. C++17 has no typed form; spelling the
+     underlying `std::pair` or `std::tuple` reintroduces the long iterator
+     type the lookup exception exists to hide, and loses the names that make
+     the site readable.
+
+   When replacing an `auto`, preserve the deduced type exactly: reference
+   category, top-level constness, and pointee constness. Never substitute a
+   merely convertible type or a base class.
 
 ## Current Build And Run Workflow
 
