@@ -609,6 +609,21 @@ Common focused checks:
 - Collect the AOUSD displacement fixture: `cd /home/anders/code/aousd-materials-test-suite && pixi run pytest test-suite/surfaces/open_pbr_surface/displacement.usda --collect-only -q`
 - Render that fixture with this checkout’s installed `usdrender` when validating displacement or complexity; the test-suite Pixi environment may resolve a separately packaged renderer.
 
+The external `/home/anders/code/typhoon-test-suite` Goldeneye repository has
+two renderer regression suites:
+
+- `pixi run pytest materials` runs 67 renderer-focused material,
+  transport, primvar, geometry, and texture fixtures imported from the AOUSD
+  materials suite.
+- `pixi run pytest usdlux` runs 328 active direct-lighting frames across the
+  USD Lux light types, shaping/IES controls, and visible light geometry.
+
+Initialize its shaderball assets with
+`git submodule update --init --depth 1`. Use the material subtree for transport
+or shading changes and `usdlux` for light-adapter/sampling changes. Broad
+MaterialX node evaluation remains covered by `testMaterialXCpp`, not by the
+render suite.
+
 Use broader `ctest` filters when touching shared rendering, material, sampling,
 or USD imaging behavior. If a test executable depends on installed plugins or
 resources, prefer CTest through Pixi over running the binary directly.

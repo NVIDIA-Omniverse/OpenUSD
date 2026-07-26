@@ -229,3 +229,19 @@ Cycles, in contrast, multiplies the incoming radius by `1 / (4π) ≈ 0.0796` in
 - **hdEmbree radius → Cycles radius**: multiply by `4π` (~12.6).
 
 Everything else (the Chiang albedo → α polynomial remap, the random-walk step cap of 256, Dwivedi guided sampling, MIS channel selection) matches Cycles directly.
+
+## Render regression tests
+
+The external `typhoon-test-suite` Goldeneye repository contains the rendered
+regression coverage:
+
+- `materials/`: 67 focused closure, transport, geometry, primvar,
+  and texture fixtures;
+- `usdlux/`: 328 active frames covering light types, LightAPI attributes,
+  shaping/IES, and camera-visible light geometry.
+
+Run those subtrees from that repository with `pixi run pytest
+materials` or `pixi run pytest usdlux`. Initialize the pinned
+shaderball dependency first with `git submodule update --init --depth 1`.
+MaterialX value/node coverage remains in `testMaterialXCpp`; the rendered suite
+deliberately selects only cases that exercise renderer behavior.

@@ -507,7 +507,7 @@ Read `renderer.h` for persistent state and function contracts,
 - New MaterialX node: add an evaluator to the matching `nodes/*Nodes.cpp` and register every supported type signature in `Register*Nodes()`.
 - Extend `renderer/materials/mxcppAdapter.cpp` when Hydra network normalization is needed.
 - Transport changes must update value, PDF, sampling, lobe classification, MIS, and delta behavior consistently.
-- Add focused graph/node/material tests and a rendered fixture when integration is significant.
+- Add focused graph/node/material tests and a rendered fixture when integration is significant. Renderer-level material and transport regressions live under the root-level `materials/` suite in the external `typhoon-test-suite` repository; broad node-value coverage stays in `testMaterialXCpp`.
 
 ### Lights
 
@@ -516,7 +516,7 @@ Read `renderer.h` for persistent state and function contracts,
 - Add sampling and directional PDF logic in `renderer/lights/lightSamplers.*`.
 - Add visible Embree geometry for finite camera-visible lights.
 - Keep radiance evaluation, sampling PDF, normalization, shaping, IES, texture orientation, and linking consistent.
-- Extend light-sampler tests and add a render fixture for visibility/synchronization.
+- Extend light-sampler tests and add a render fixture for visibility/synchronization. Use the external `typhoon-test-suite/usdlux` frame sweeps for LightAPI and sampler regressions.
 
 ### Sampling
 
