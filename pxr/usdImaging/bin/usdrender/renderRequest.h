@@ -10,9 +10,26 @@
 #include "pxr/usd/usd/stage.h"
 #include <string>
 #include <vector>
-struct StageData{pxr::UsdStageRefPtr stage;pxr::SdfLayerRefPtr session;};
-struct RenderProduct{pxr::SdfPath path,camera;pxr::GfVec2i resolution;pxr::GfRange2f dataWindow;float pixelAspectRatio;std::string name;};
-struct RenderRequest{pxr::SdfPath settings,pass,camera;pxr::TfToken renderer;std::vector<RenderProduct>products;pxr::VtDictionary customSettings;};
-bool LoadStage(const Options&,StageData*);
-bool BuildRenderRequest(const Options&,const StageData&,RenderRequest*);
+struct StageData
+{
+    pxr::UsdStageRefPtr stage;
+    pxr::SdfLayerRefPtr session;
+};
+struct RenderProduct
+{
+    pxr::SdfPath path, camera;
+    pxr::GfVec2i resolution;
+    pxr::GfRange2f dataWindow;
+    float pixelAspectRatio;
+    std::string name;
+};
+struct RenderRequest
+{
+    pxr::SdfPath settings, pass, camera;
+    pxr::TfToken renderer;
+    std::vector<RenderProduct> products;
+    pxr::VtDictionary customSettings;
+};
+bool LoadStage(const Options &, StageData *);
+bool BuildRenderRequest(const Options &, const StageData &, RenderRequest *);
 #endif
