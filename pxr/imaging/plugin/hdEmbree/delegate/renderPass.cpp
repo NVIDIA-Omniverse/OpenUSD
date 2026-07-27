@@ -1138,7 +1138,9 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         needStartRender = true;
     }
 
-    TF_VERIFY(!_aovBindings.empty(), "No aov bindings to render into");
+    TF_VERIFY(
+        !_renderer->GetAovBindings().empty(),
+        "No aov bindings to render into");
 
     // Only start a new render if something in the scene has changed.
     if (needStartRender) {
