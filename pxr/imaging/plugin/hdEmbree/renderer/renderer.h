@@ -408,7 +408,7 @@ public:
 
     /// \brief Mark every currently bound AOV buffer unconverged.
     ///
-    /// All binding pointers must be non-null HdEmbree buffer interfaces.
+    /// Null bindings and buffers of another implementation are skipped.
     void MarkAovBuffersUnconverged();
 
     /// \brief Get the completed full-resolution sample-pass count.
@@ -454,14 +454,23 @@ private:
 
     /// \brief Prepare shared state immediately before tracing.
     ///
-    /// Resets counters, commits the borrowed scene, validates and maps AOVs,
-    /// allocates adaptive state, and builds the per-frame AOV dispatch table.
-    void _PreRenderSetup();
+    /// The borrowed scene must be non-null. At least one AOV must be bound;
+    /// every binding must expose HdEmbreeRenderBufferInterface, have a
+    /// supported format and matching non-zero dimensions, and contain the
+    /// non-empty data window.
+    ///
+    /// On success, commits the scene, allocates adaptive state, builds AOV
+    /// dispatch, maps every binding exactly once, and returns true. On
+    /// failure, emits a specific diagnostic, marks each usable bound buffer
+    /// converged, leaves every buffer unmapped, clears invocation-derived
+    /// state, and returns false.
+    bool _PreRenderSetup();
 
     /// \brief Validate the current bindings for rendering and clearing.
     ///
-    /// Emits warnings for unsupported formats and caches the result until the
-    /// data window or bindings change.
+    /// Rechecks buffer implementation, format, dimensions, clear values, and
+    /// data-window containment on every call because buffer properties can
+    /// change without replacing the binding.
     /// \return True when every required buffer, format, and clear value is
     /// compatible; false when Render must stop early.
     bool _ValidateAovBindings();
@@ -1201,11 +1210,6 @@ private:
     HdRenderPassAovBindingVector _aovBindings;
     // Parsed AOV name tokens.
     HdParsedAovTokenVector _aovNames;
-
-    // Do the aov bindings need to be re-validated?
-    bool _aovBindingsNeedValidation;
-    // Are the aov bindings valid?
-    bool _aovBindingsValid;
 
     // Data window - as in CameraUtilFraming.
     GfRect2i _dataWindow;

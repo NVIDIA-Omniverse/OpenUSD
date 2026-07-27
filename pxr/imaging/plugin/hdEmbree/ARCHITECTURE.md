@@ -265,7 +265,19 @@ traversal to reduce ray leaks at dense displaced patch boundaries.
 2. The pass compares scene/settings versions, frame/time, camera/framing, data window, and AOV bindings with the previous execution.
 3. Changes are pushed through `HdEmbreeRenderer::Set*`. Values originate in delegate descriptors, scene-index `HdRenderSettingsSchema`, and `HdEmbreeConfig`.
 4. If accumulation-relevant state changed, the pass stops the thread, resets as needed, and starts `HdEmbreeRenderer::Render()` on `HdRenderThread`.
-5. The renderer writes bound `HdEmbreeRenderBuffer` objects. The pass exposes convergence and, for offline clients with `enableInteractive = false`, writes active `RenderProduct` files after convergence.
+5. Before scene commit or buffer mapping, the renderer validates that the
+   scene exists, every AOV is an hdEmbree buffer with a supported format and
+   matching non-zero dimensions, and the data window is non-empty and
+   contained. Failure maps no buffers, traces no tiles, marks usable buffers
+   converged to park Hydra, and returns from `Render()`.
+6. Successful setup commits the scene, builds frame/AOV state, and maps every
+   buffer exactly once. Rendering resolves the buffers, then unmaps each one
+   exactly once and marks it converged.
+7. The pass exposes convergence and, for offline clients with
+   `enableInteractive = false`, writes active `RenderProduct` files after
+   convergence. Setup failure is not yet distinguishable from genuine
+   convergence at this boundary, so suppressing stale offline output requires
+   a separate renderer-to-pass failure signal.
 
 ## How a pixel sample becomes a path
 
@@ -477,6 +489,10 @@ participating-medium transport, or Russian roulette.
 
 ### Accumulation and AOV output
 
+`_PreRenderSetup()` rebuilds AOV validation and dispatch state every render;
+it does not cache validation because a bound buffer can change format or
+dimensions without changing its pointer.
+
 After the selected integrator returns, `_EvaluatePixelSample()` applies any
 active mesh wireframe repr to the retained camera hit, then updates the
 per-pixel mean and variance used by adaptive convergence. It then dispatches the
@@ -532,6 +548,13 @@ Read `renderer.h` for persistent state and function contracts,
 - Extend `renderer/materials/mxcppAdapter.cpp` when Hydra network normalization is needed.
 - Transport changes must update value, PDF, sampling, lobe classification, MIS, and delta behavior consistently.
 - Add focused graph/node/material tests and a rendered fixture when integration is significant. Renderer-level material and transport regressions live under the root-level `materials/` suite in the external `typhoon-test-suite` repository; broad node-value coverage stays in `testMaterialXCpp`.
+
+Run rendered regression suites through
+`powerprofilesctl launch --profile performance --` to reduce laptop power-state
+variance. The complete gate is `pixi run pytest --renderer typhoon-local`
+under that launcher, with an expected baseline of approximately 235 seconds;
+failures or runtimes of 250 seconds or above require stopping and checking with
+Anders.
 
 ### Lights
 

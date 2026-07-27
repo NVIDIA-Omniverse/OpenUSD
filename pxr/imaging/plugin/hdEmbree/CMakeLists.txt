@@ -302,6 +302,30 @@ pxr_register_test(testHdEmbreeRenderSettings
     EXPECTED_RETURN_CODE 0
 )
 
+pxr_build_test(testHdEmbreeRenderSetup
+    LIBRARIES
+        hd
+        hdEmbree
+        tf
+    CPPFILES
+        testenv/testHdEmbreeRenderSetup.cpp
+)
+
+if (TARGET testHdEmbreeRenderSetup)
+    _pxr_init_rpath(_hdEmbreeRenderSetupTestRpath "tests")
+    _pxr_add_rpath(
+        _hdEmbreeRenderSetupTestRpath "${CMAKE_INSTALL_PREFIX}/lib")
+    _pxr_add_rpath(
+        _hdEmbreeRenderSetupTestRpath "${CMAKE_INSTALL_PREFIX}/plugin/usd")
+    _pxr_install_rpath(
+        _hdEmbreeRenderSetupTestRpath testHdEmbreeRenderSetup)
+endif()
+
+pxr_register_test(testHdEmbreeRenderSetup
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdEmbreeRenderSetup"
+    EXPECTED_RETURN_CODE 0
+)
+
 if (Imath_FOUND)
     set(__MXCPP_TEST_IMATH_LIBS "Imath::Imath")
 else()

@@ -306,9 +306,14 @@ authored-IOR Fresnel.
    version, frame/time, camera state, data window, and AOV binding changes. It
    pushes updated state into `HdEmbreeRenderer` and starts or restarts the
    background `HdRenderThread`.
-7. `HdEmbreeRenderer::Render()` commits or reuses the Embree scene, traces
-   tiled samples, evaluates materials/lights/media, writes Hydra AOV buffers,
-   and reports convergence.
+7. `HdEmbreeRenderer::Render()` first validates the scene, AOV interface types,
+   formats, dimensions, and data-window containment before scene commit or
+   buffer mapping. Failure maps no buffers, traces no tiles, marks usable
+   buffers converged, and returns. Successful setup commits or reuses the
+   Embree scene, maps every buffer exactly once, traces tiled samples,
+   evaluates materials/lights/media, writes Hydra AOV buffers, then unmaps each
+   buffer exactly once and reports convergence. AOV validation is deliberately
+   uncached because buffer properties can change without rebinding.
 8. When an offline client sets `enableInteractive = false`, the active stage
    has `RenderSettings`/`RenderProduct` output, and the renderer converges,
    `HdEmbreeRenderPass::_WriteActiveRenderProducts()` reads Hydra
@@ -625,6 +630,8 @@ For stage-authored render data, read these before changing output behavior:
 
 Common focused checks:
 
+- `pixi run cmake --build build --target testHdEmbreeRenderSetup`
+- `pixi run ctest --test-dir build -R testHdEmbreeRenderSetup --output-on-failure`
 - `pixi run cmake --build build --target testHdEmbreeRenderSettings`
 - `pixi run ctest --test-dir build -R testHdEmbreeRenderSettings --output-on-failure`
 - `pixi run cmake --build build --target testHdEmbreeSampling`
@@ -640,11 +647,24 @@ Common focused checks:
 The external `/home/anders/code/typhoon-test-suite` Goldeneye repository has
 two renderer regression suites:
 
-- `pixi run pytest materials` runs 67 renderer-focused material,
+- `powerprofilesctl launch --profile performance -- pixi run pytest materials`
+  runs 67 renderer-focused material,
   transport, primvar, geometry, and texture fixtures imported from the AOUSD
   materials suite.
-- `pixi run pytest usdlux` runs 328 active direct-lighting frames across the
-  USD Lux light types, shaping/IES controls, and visible light geometry.
+- `powerprofilesctl launch --profile performance -- pixi run pytest usdlux`
+  runs 328 active direct-lighting frames across the USD Lux light types,
+  shaping/IES controls, and visible light geometry.
+
+The mandatory complete-suite command is:
+
+```sh
+powerprofilesctl launch --profile performance -- \
+    pixi run pytest --renderer typhoon-local
+```
+
+Its expected laptop baseline is approximately 235 seconds. If any test fails
+or runtime is 250 seconds or above, stop and check with Anders before
+continuing or landing the change.
 
 Initialize its shaderball assets with
 `git submodule update --init --depth 1`. Use the material subtree for transport

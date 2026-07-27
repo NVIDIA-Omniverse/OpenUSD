@@ -61,20 +61,9 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 TF_DEFINE_PUBLIC_TOKENS(HdEmbreeAovTokens, HDEMBREE_AOV_TOKENS);
 
-static
-bool
-_IsContained(const GfRect2i& rect, int width, int height)
-{
-    return
-        rect.GetMinX() >= 0 && rect.GetMaxX() < width &&
-        rect.GetMinY() >= 0 && rect.GetMaxY() < height;
-}
-
 HdEmbreeRenderer::HdEmbreeRenderer()
     : _aovBindings()
     , _aovNames()
-    , _aovBindingsNeedValidation(false)
-    , _aovBindingsValid(false)
     , _width(0)
     , _height(0)
     , _viewMatrix(1.0f) // == identity
@@ -324,13 +313,6 @@ void
 HdEmbreeRenderer::SetDataWindow(const GfRect2i& dataWindow)
 {
     _dataWindow = dataWindow;
-
-    // Here for clients that do not use camera framing but the
-    // viewport.
-    //
-    // Re-validate the attachments, since attachment viewport and
-    // render viewport need to match.
-    _aovBindingsNeedValidation = true;
 }
 
 void
@@ -413,71 +395,59 @@ HdEmbreeRenderer::GetSssIntersectionCount() const
     return _sssIntersectionCount.load();
 }
 
-void
+bool
 HdEmbreeRenderer::_PreRenderSetup()
 {
     HD_TRACE_FUNCTION();
 
+    // Reset state derived from this invocation so setup failure cannot expose
+    // the previous frame's dimensions, adaptive data, or AOV dispatch.
+    _width = 0;
+    _height = 0;
+    _needColor = false;
+    _colorClearValue = GfVec4f(0.0f);
+    _aovWriters.clear();
+    _pixelMean.clear();
+    _pixelM2.clear();
+    _pixelSampleCount.clear();
+    _pixelConverged.clear();
     _completedSamples.store(0);
     _sssCallCount.store(0);
     _sssSuccessCount.store(0);
     _sssWalkStepCount.store(0);
     _sssIntersectionCount.store(0);
 
+    // Validate every observable failure before committing the scene or
+    // mapping a buffer, so setup failure needs no partial cleanup.
+    bool setupValid = true;
+    if (_scene == nullptr) {
+        TF_WARN("Cannot render without an Embree scene");
+        setupValid = false;
+    }
+    if (!_ValidateAovBindings()) {
+        setupValid = false;
+    }
+    if (!setupValid) {
+        // Mark usable buffers converged so Hydra parks instead of retrying a
+        // terminal setup failure.
+        for (size_t i = 0; i < _aovBindings.size(); ++i) {
+            HdEmbreeRenderBufferInterface *rb =
+                dynamic_cast<HdEmbreeRenderBufferInterface*>(
+                    _aovBindings[i].renderBuffer);
+            if (rb != nullptr) {
+                rb->SetConverged(true);
+            }
+        }
+        return false;
+    }
+
     {
         HD_TRACE_SCOPE("HdEmbreeRenderer::CommitScene");
-        // Commit any pending changes to the scene.
+        // Commit pending changes only after setup is known to be valid.
         rtcCommitScene(_scene);
     }
 
-    if (!_ValidateAovBindings()) {
-        // We aren't going to render anything. Just mark all AOVs as converged
-        // so that we will stop rendering.
-        for (size_t i = 0; i < _aovBindings.size(); ++i) {
-            HdEmbreeRenderBufferInterface *rb = dynamic_cast<HdEmbreeRenderBufferInterface*>(
-                _aovBindings[i].renderBuffer);
-            rb->SetConverged(true);
-        }
-        // XXX:validation
-        TF_WARN("Could not validate Aovs. Render will not complete");
-        return;
-    }
-
-    _width  = 0;
-    _height = 0;
-
-    // Map all of the attachments.
-    for (size_t i = 0; i < _aovBindings.size(); ++i) {
-        //
-        // XXX
-        //
-        // A scene delegate might specify the path to a
-        // render buffer instead of a pointer to the
-        // render buffer.
-        //
-        dynamic_cast<HdEmbreeRenderBufferInterface*>(
-            _aovBindings[i].renderBuffer)->Map();
-
-        if (i == 0) {
-            _width  = _aovBindings[i].renderBuffer->GetWidth();
-            _height = _aovBindings[i].renderBuffer->GetHeight();
-        } else {
-            if (_width  != _aovBindings[i].renderBuffer->GetWidth() ||
-                 _height != _aovBindings[i].renderBuffer->GetHeight()) {
-                TF_CODING_ERROR(
-                    "Embree render buffers have inconsistent sizes");
-            }
-        }
-    }
-
-    if (_width > 0 || _height > 0) {
-        if (!_IsContained(_dataWindow, _width, _height)) {
-            TF_CODING_ERROR(
-                "dataWindow is larger than render buffer");
-        }
-    }
-
-    // Allocate adaptive sampling arrays if enabled.
+    // Build all per-frame state before mapping validated buffers.
     if (_enableAdaptiveSampling && _width > 0 && _height > 0) {
         const size_t numPixels = _width * _height;
         _pixelMean.resize(numPixels, GfVec3f(0.0f));
@@ -487,6 +457,16 @@ HdEmbreeRenderer::_PreRenderSetup()
     }
 
     _BuildAovDispatchTable();
+
+    // A validated interface Map is non-failing aside from allocation failure,
+    // which is outside this non-exception setup contract.
+    for (size_t i = 0; i < _aovBindings.size(); ++i) {
+        HdEmbreeRenderBufferInterface *rb =
+            dynamic_cast<HdEmbreeRenderBufferInterface*>(
+                _aovBindings[i].renderBuffer);
+        rb->Map();
+    }
+    return true;
 }
 
 void
@@ -498,9 +478,10 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
     _ScopedThreadScheduler scheduler;
 #endif
 
-    _PreRenderSetup();
-
     _renderStartTime = std::chrono::steady_clock::now();
+    if (!_PreRenderSetup()) {
+        return;
+    }
 
     // Compute the OpenQMC frame seed once per Render() call. An explicit
     // render setting or environment seed overrides the scene frame.

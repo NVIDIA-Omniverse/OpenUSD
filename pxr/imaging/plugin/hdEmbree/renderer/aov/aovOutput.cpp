@@ -58,20 +58,19 @@ HdEmbreeRenderer::SetAovBindings(
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
         _aovNames[i] = HdParsedAovToken(_aovBindings[i].aovName);
     }
-
-    // Re-validate the attachments.
-    _aovBindingsNeedValidation = true;
 }
 
 bool
 HdEmbreeRenderer::_ValidateAovBindings()
 {
-    if (!_aovBindingsNeedValidation) {
-        return _aovBindingsValid;
+    if (_aovBindings.empty()) {
+        TF_WARN("Cannot render without an AOV binding");
+        return false;
     }
 
-    _aovBindingsNeedValidation = false;
-    _aovBindingsValid = true;
+    bool bindingsValid = true;
+    unsigned int bufferWidth = 0;
+    unsigned int bufferHeight = 0;
 
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
         // By the time the attachment gets here, there should be a bound
@@ -79,7 +78,17 @@ HdEmbreeRenderer::_ValidateAovBindings()
         if (_aovBindings[i].renderBuffer == nullptr) {
             TF_WARN("Aov '%s' doesn't have any renderbuffer bound",
                     _aovNames[i].name.GetText());
-            _aovBindingsValid = false;
+            bindingsValid = false;
+            continue;
+        }
+
+        HdEmbreeRenderBufferInterface *rb =
+            dynamic_cast<HdEmbreeRenderBufferInterface*>(
+                _aovBindings[i].renderBuffer);
+        if (rb == nullptr) {
+            TF_WARN("Aov '%s' renderbuffer is not an hdEmbree render buffer",
+                    _aovNames[i].name.GetText());
+            bindingsValid = false;
             continue;
         }
 
@@ -97,7 +106,7 @@ HdEmbreeRenderer::_ValidateAovBindings()
                     _aovNames[i].name.GetText());
         }
 
-        HdFormat format = _aovBindings[i].renderBuffer->GetFormat();
+        HdFormat format = rb->GetFormat();
 
         // depth is only supported for float32 attachments
         if ((_aovNames[i].name == HdAovTokens->cameraDepth ||
@@ -106,7 +115,7 @@ HdEmbreeRenderer::_ValidateAovBindings()
             TF_WARN("Aov '%s' has unsupported format '%s'",
                     _aovNames[i].name.GetText(),
                     TfEnum::GetName(format).c_str());
-            _aovBindingsValid = false;
+            bindingsValid = false;
         }
 
         // ids are only supported for int32 attachments
@@ -117,7 +126,7 @@ HdEmbreeRenderer::_ValidateAovBindings()
             TF_WARN("Aov '%s' has unsupported format '%s'",
                     _aovNames[i].name.GetText(),
                     TfEnum::GetName(format).c_str());
-            _aovBindingsValid = false;
+            bindingsValid = false;
         }
 
         // Normal is only supported for vec3 attachments of float.
@@ -127,7 +136,7 @@ HdEmbreeRenderer::_ValidateAovBindings()
             TF_WARN("Aov '%s' has unsupported format '%s'",
                     _aovNames[i].name.GetText(),
                     TfEnum::GetName(format).c_str());
-            _aovBindingsValid = false;
+            bindingsValid = false;
         }
 
         // Primvars support vec3 output (though some channels may not be used).
@@ -136,7 +145,16 @@ HdEmbreeRenderer::_ValidateAovBindings()
             TF_WARN("Aov 'primvars:%s' has unsupported format '%s'",
                     _aovNames[i].name.GetText(),
                     TfEnum::GetName(format).c_str());
-            _aovBindingsValid = false;
+            bindingsValid = false;
+        }
+
+        // The adaptive heatmap writes four float color components.
+        if (_aovNames[i].name == HdEmbreeAovTokens->adaptiveHeatmap &&
+            format != HdFormatFloat32Vec4) {
+            TF_WARN("Aov '%s' has unsupported format '%s'",
+                    _aovNames[i].name.GetText(),
+                    TfEnum::GetName(format).c_str());
+            bindingsValid = false;
         }
 
         // color is only supported for vec3/vec4 attachments of float,
@@ -154,7 +172,7 @@ HdEmbreeRenderer::_ValidateAovBindings()
                     TF_WARN("Aov '%s' has unsupported format '%s'",
                         _aovNames[i].name.GetText(),
                         TfEnum::GetName(format).c_str());
-                    _aovBindingsValid = false;
+                    bindingsValid = false;
                     break;
             }
         }
@@ -170,7 +188,7 @@ HdEmbreeRenderer::_ValidateAovBindings()
                 TF_WARN("Aov '%s' clear value type '%s' is an array",
                         _aovNames[i].name.GetText(),
                         _aovBindings[i].clearValue.GetTypeName().c_str());
-                _aovBindingsValid = false;
+                bindingsValid = false;
             }
 
             // color only supports float/double vec3/4
@@ -182,7 +200,7 @@ HdEmbreeRenderer::_ValidateAovBindings()
                 TF_WARN("Aov '%s' clear value type '%s' isn't compatible",
                         _aovNames[i].name.GetText(),
                         _aovBindings[i].clearValue.GetTypeName().c_str());
-                _aovBindingsValid = false;
+                bindingsValid = false;
             }
 
             // only clear float formats with float, int with int, float3 with
@@ -196,12 +214,48 @@ HdEmbreeRenderer::_ValidateAovBindings()
                         _aovNames[i].name.GetText(),
                         _aovBindings[i].clearValue.GetTypeName().c_str(),
                         TfEnum::GetName(format).c_str());
-                _aovBindingsValid = false;
+                bindingsValid = false;
             }
+        }
+
+        const unsigned int width = rb->GetWidth();
+        const unsigned int height = rb->GetHeight();
+        if (width == 0 || height == 0) {
+            TF_WARN("Aov '%s' renderbuffer has zero size %u x %u",
+                    _aovNames[i].name.GetText(), width, height);
+            bindingsValid = false;
+        } else if (bufferWidth == 0 && bufferHeight == 0) {
+            bufferWidth = width;
+            bufferHeight = height;
+        } else if (bufferWidth != width || bufferHeight != height) {
+            TF_WARN(
+                "Aov '%s' renderbuffer size %u x %u does not match %u x %u",
+                _aovNames[i].name.GetText(),
+                width,
+                height,
+                bufferWidth,
+                bufferHeight);
+            bindingsValid = false;
         }
     }
 
-    return _aovBindingsValid;
+    if (_dataWindow.GetWidth() <= 0 || _dataWindow.GetHeight() <= 0) {
+        TF_WARN("Cannot render an empty data window");
+        bindingsValid = false;
+    } else if (bufferWidth > 0 && bufferHeight > 0 &&
+               (_dataWindow.GetMinX() < 0 ||
+                _dataWindow.GetMaxX() >= static_cast<int>(bufferWidth) ||
+                _dataWindow.GetMinY() < 0 ||
+                _dataWindow.GetMaxY() >= static_cast<int>(bufferHeight))) {
+        TF_WARN("dataWindow is not contained by the render buffers");
+        bindingsValid = false;
+    }
+
+    if (bindingsValid) {
+        _width = bufferWidth;
+        _height = bufferHeight;
+    }
+    return bindingsValid;
 }
 
 GfVec4f
@@ -309,7 +363,9 @@ HdEmbreeRenderer::MarkAovBuffersUnconverged()
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
         HdEmbreeRenderBufferInterface *rb =
             dynamic_cast<HdEmbreeRenderBufferInterface*>(_aovBindings[i].renderBuffer);
-        rb->SetConverged(false);
+        if (rb != nullptr) {
+            rb->SetConverged(false);
+        }
     }
 }
 

@@ -187,6 +187,11 @@ A value of `-1` (default) chooses a non-deterministic OpenQMC frame seed for eac
 ### Adaptive Heatmap (`adaptiveHeatmap`)
 When this AOV is bound (and `ty:enableAdaptiveSampling` is active), it outputs a heatmap visualizing per-pixel sample counts. The color ramp maps the ratio `sampleCount / convergedSamplesPerPixel`: blue (few samples) -> cyan -> green -> yellow -> red (many samples). In usdview, select "adaptiveHeatmap" from the AOV dropdown to display it. The color AOV continues to render normally — the heatmap is written to its own separate buffer.
 
+Before rendering, hdEmbree requires at least one hdEmbree-owned AOV buffer,
+supported AOV formats, matching non-zero buffer dimensions, and a non-empty
+data window contained by every buffer. Invalid setup emits a specific warning,
+performs no sampling or buffer mapping, and terminates that render invocation.
+
 ## Material Interpretation Notes
 
 ### Normal orientation and double-sided shading
@@ -240,8 +245,18 @@ regression coverage:
 - `usdlux/`: 328 active frames covering light types, LightAPI attributes,
   shaping/IES, and camera-visible light geometry.
 
-Run those subtrees from that repository with `pixi run pytest
-materials` or `pixi run pytest usdlux`. Initialize the pinned
-shaderball dependency first with `git submodule update --init --depth 1`.
+Run the complete suite from that repository under the laptop's performance
+power profile:
+
+```sh
+powerprofilesctl launch --profile performance -- \
+    pixi run pytest --renderer typhoon-local
+```
+
+The expected baseline is approximately 235 seconds. If any test fails or
+runtime is 250 seconds or above, stop and check with Anders. Apply the same
+`powerprofilesctl launch --profile performance --` prefix when running only
+`materials` or `usdlux`. Initialize the pinned shaderball dependency first with
+`git submodule update --init --depth 1`.
 MaterialX value/node coverage remains in `testMaterialXCpp`; the rendered suite
 deliberately selects only cases that exercise renderer behavior.
