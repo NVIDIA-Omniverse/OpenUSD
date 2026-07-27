@@ -672,6 +672,7 @@ Common focused checks:
 - `pixi run ctest --test-dir build -R testHdEmbreeWireframe --output-on-failure`
 - `pixi run cmake --build build --target testHdEmbreeLightSamplers`
 - `pixi run cmake --build build --target testMaterialXCpp`
+- `pixi run build/pxr/imaging/plugin/hdEmbree/testMaterialXCpp`
 - `pixi run cmake --build build --target testHdEmbreeSubdivision`
 - `pixi run ctest --test-dir build -R testHdEmbreeSubdivision --output-on-failure`
 - Collect the AOUSD displacement fixture: `cd /home/anders/code/aousd-materials-test-suite && pixi run pytest test-suite/surfaces/open_pbr_surface/displacement.usda --collect-only -q`

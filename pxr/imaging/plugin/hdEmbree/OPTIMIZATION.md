@@ -361,6 +361,23 @@ returns that retained hit with its radiance for AOV evaluation. This removes the
 remaining duplicate primary intersection from the lit path; the names above
 describe the historical implementation measured by this optimization.
 
+## Cache Reflection-Only Closure Classification (2026-07-27)
+
+`_IsReflectionOnlyClosure()` recursively classifies an immutable BSDF closure
+tree at every path vertex that needs direct-light or path policy. A future
+performance change could classify the tree once when the closure is built and
+store the result with the compiled closure. Keep that separate from dispatch
+readability changes because it changes closure state and ownership.
+
+The `std::visit` to `std::get_if` readability refactor was measured on the
+OpenPBR carpaint material-fidelity scene at 256x256, 64 spp, 16 bounces, fixed
+seed, and adaptive sampling disabled. Five-run means were 1.084 s versus
+1.094 s wall time, 0.7194 s versus 0.7266 s renderer time, and 5.830 versus
+5.775 million samples/s before versus after. The approximately 1% difference
+was within the observed run-to-run spread, and the images were bit-identical.
+Hardware-counter measurements were unavailable because
+`kernel.perf_event_paranoid=4` and passwordless sudo was not configured.
+
 ## Validation Rules
 
 For each optimization:

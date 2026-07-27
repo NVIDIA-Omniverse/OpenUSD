@@ -32,7 +32,6 @@
 #include <iterator>
 #include <limits>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <variant>
 
@@ -497,61 +496,93 @@ _IsReflectionOnlyNode(
         return false;
     }
 
-    return std::visit(
-        [&](auto const& data) -> bool {
-            using T = std::decay_t<decltype(data)>;
-            if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::OrenNayarDiffuseData> ||
-                std::is_same_v<T, mxcpp::Bsdf::BurleyDiffuseData> ||
-                std::is_same_v<T, mxcpp::Bsdf::ConductorData> ||
-                std::is_same_v<T, mxcpp::Bsdf::SheenData>) {
-                return true;
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::DielectricData>) {
-                return _IsEffectivelyZero(data.weight) ||
-                       data.scatterMode == mxcpp::Bsdf::ScatterMode::Reflection;
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::DielectricInterfaceData>) {
-                return _IsEffectivelyZero(data.transmissionWeight);
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::GeneralizedSchlickData>) {
-                return _IsEffectivelyZero(data.weight) ||
-                       data.scatterMode == mxcpp::Bsdf::ScatterMode::Reflection;
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::AdobeOpenPbrData>) {
-                return _IsEffectivelyOpaque(data.geometryOpacity) &&
-                       _IsEffectivelyZero(data.transmissionWeight) &&
-                       _IsEffectivelyZero(data.subsurfaceWeight);
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::TranslucentData> ||
-                std::is_same_v<T, mxcpp::Bsdf::SubsurfaceData>) {
-                return _IsEffectivelyZero(data.weight);
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::MixData>) {
-                if (_IsEffectivelyZero(data.mix)) {
-                    return _IsReflectionOnlyNode(tree, data.bg);
-                }
-                if (_IsEffectivelyOpaque(data.mix)) {
-                    return _IsReflectionOnlyNode(tree, data.fg);
-                }
-                return _IsReflectionOnlyNode(tree, data.fg) &&
-                       _IsReflectionOnlyNode(tree, data.bg);
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::LayerData>) {
-                return _IsReflectionOnlyNode(tree, data.top) &&
-                       _IsReflectionOnlyNode(tree, data.base);
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::AddData>) {
-                return _IsReflectionOnlyNode(tree, data.in1) &&
-                       _IsReflectionOnlyNode(tree, data.in2);
-            } else if constexpr (
-                std::is_same_v<T, mxcpp::Bsdf::MultiplyData>) {
-                return _IsReflectionOnlyNode(tree, data.input);
-            } else {
-                return false;
-            }
-        },
-        node->data);
+    const mxcpp::Bsdf::NodeData& data = node->data;
+
+    // Whole OpenPBR closures are reflection-only when transport exits are off.
+    if (const mxcpp::Bsdf::AdobeOpenPbrData* const openPbr =
+            std::get_if<mxcpp::Bsdf::AdobeOpenPbrData>(&data)) {
+        return _IsEffectivelyOpaque(openPbr->geometryOpacity) &&
+               _IsEffectivelyZero(openPbr->transmissionWeight) &&
+               _IsEffectivelyZero(openPbr->subsurfaceWeight);
+    }
+
+    // Pure reflection lobes are always reflection-only.
+    if (std::get_if<mxcpp::Bsdf::OrenNayarDiffuseData>(&data) ||
+        std::get_if<mxcpp::Bsdf::BurleyDiffuseData>(&data) ||
+        std::get_if<mxcpp::Bsdf::ConductorData>(&data) ||
+        std::get_if<mxcpp::Bsdf::SheenData>(&data)) {
+        return true;
+    }
+
+    // Dielectrics are reflection-only when disabled or authored that way.
+    if (const mxcpp::Bsdf::DielectricData* const dielectric =
+            std::get_if<mxcpp::Bsdf::DielectricData>(&data)) {
+        return _IsEffectivelyZero(dielectric->weight) ||
+               dielectric->scatterMode == mxcpp::Bsdf::ScatterMode::Reflection;
+    }
+
+    // Coupled dielectric interfaces are reflection-only without transmission.
+    if (const mxcpp::Bsdf::DielectricInterfaceData* const dielectricInterface =
+            std::get_if<mxcpp::Bsdf::DielectricInterfaceData>(&data)) {
+        return _IsEffectivelyZero(dielectricInterface->transmissionWeight);
+    }
+
+    // Schlick lobes are reflection-only when disabled or authored that way.
+    if (const mxcpp::Bsdf::GeneralizedSchlickData* const schlick =
+            std::get_if<mxcpp::Bsdf::GeneralizedSchlickData>(&data)) {
+        return _IsEffectivelyZero(schlick->weight) ||
+               schlick->scatterMode == mxcpp::Bsdf::ScatterMode::Reflection;
+    }
+
+    // Translucent lobes classify as reflection-only when disabled.
+    if (const mxcpp::Bsdf::TranslucentData* const translucent =
+            std::get_if<mxcpp::Bsdf::TranslucentData>(&data)) {
+        return _IsEffectivelyZero(translucent->weight);
+    }
+
+    // Subsurface lobes classify as reflection-only when disabled.
+    if (const mxcpp::Bsdf::SubsurfaceData* const subsurface =
+            std::get_if<mxcpp::Bsdf::SubsurfaceData>(&data)) {
+        return _IsEffectivelyZero(subsurface->weight);
+    }
+
+    // Endpoint mixes classify the surviving branch; others require both.
+    if (const mxcpp::Bsdf::MixData* const mix =
+            std::get_if<mxcpp::Bsdf::MixData>(&data)) {
+        if (_IsEffectivelyZero(mix->mix)) {
+            return _IsReflectionOnlyNode(tree, mix->bg);
+        }
+        if (_IsEffectivelyOpaque(mix->mix)) {
+            return _IsReflectionOnlyNode(tree, mix->fg);
+        }
+        return _IsReflectionOnlyNode(tree, mix->fg) &&
+               _IsReflectionOnlyNode(tree, mix->bg);
+    }
+
+    // A layer is reflection-only when both children are reflection-only.
+    if (const mxcpp::Bsdf::LayerData* const layer =
+            std::get_if<mxcpp::Bsdf::LayerData>(&data)) {
+        return _IsReflectionOnlyNode(tree, layer->top) &&
+               _IsReflectionOnlyNode(tree, layer->base);
+    }
+
+    // An add is reflection-only when both inputs are reflection-only.
+    if (const mxcpp::Bsdf::AddData* const add =
+            std::get_if<mxcpp::Bsdf::AddData>(&data)) {
+        return _IsReflectionOnlyNode(tree, add->in1) &&
+               _IsReflectionOnlyNode(tree, add->in2);
+    }
+
+    // Multiplication preserves its input classification.
+    if (const mxcpp::Bsdf::MultiplyData* const multiply =
+            std::get_if<mxcpp::Bsdf::MultiplyData>(&data)) {
+        return _IsReflectionOnlyNode(tree, multiply->input);
+    }
+
+    static_assert(
+        std::variant_size_v<mxcpp::Bsdf::NodeData> == 15,
+        "A closure node kind was added: classify it above.");
+    return false;
 }
 
 inline bool
