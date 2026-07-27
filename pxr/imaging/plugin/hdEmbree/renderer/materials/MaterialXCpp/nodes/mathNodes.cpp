@@ -133,48 +133,49 @@ _EvalDivideFA(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(b != 0.0f ? a / b : Zero<T>());
 }
 
-template<typename MatrixT, int N>
+template<typename MatrixT, int matrixDimension>
 static MatrixT
 _MatrixAddScalar(MatrixT matrix, float value)
 {
-    for (int row = 0; row < N; ++row) {
-        for (int col = 0; col < N; ++col) {
+    for (int row = 0; row < matrixDimension; ++row) {
+        for (int col = 0; col < matrixDimension; ++col) {
             matrix[row][col] += value;
         }
     }
     return matrix;
 }
 
-template<typename MatrixT, int N>
+template<typename MatrixT, int matrixDimension>
 static MatrixT
 _MatrixSubtractScalar(MatrixT matrix, float value)
 {
-    for (int row = 0; row < N; ++row) {
-        for (int col = 0; col < N; ++col) {
+    for (int row = 0; row < matrixDimension; ++row) {
+        for (int col = 0; col < matrixDimension; ++col) {
             matrix[row][col] -= value;
         }
     }
     return matrix;
 }
 
-template<typename MatrixT, int N>
+template<typename MatrixT, int matrixDimension>
 static void
 _EvalMatrixAddFA(const ParamMap& inputs, const ShadingContext&,
                  NodeOutputMap* outputs)
 {
     const MatrixT a = Get<MatrixT>(inputs, _kIn1, One<MatrixT>());
     const float b = Get<float>(inputs, _kIn2, 0.0f);
-    (*outputs)[_kOut] = Value(_MatrixAddScalar<MatrixT, N>(a, b));
+    (*outputs)[_kOut] = Value(_MatrixAddScalar<MatrixT, matrixDimension>(a, b));
 }
 
-template<typename MatrixT, int N>
+template<typename MatrixT, int matrixDimension>
 static void
 _EvalMatrixSubtractFA(const ParamMap& inputs, const ShadingContext&,
                       NodeOutputMap* outputs)
 {
     const MatrixT a = Get<MatrixT>(inputs, _kIn1, One<MatrixT>());
     const float b = Get<float>(inputs, _kIn2, 0.0f);
-    (*outputs)[_kOut] = Value(_MatrixSubtractScalar<MatrixT, N>(a, b));
+    (*outputs)[_kOut] =
+        Value(_MatrixSubtractScalar<MatrixT, matrixDimension>(a, b));
 }
 
 template<typename MatrixT>
@@ -248,18 +249,18 @@ _MakeMultiplyBsdfClosure(
 static float
 _MediumScatterWeight(const MediumProperties& medium)
 {
-    return std::max(0.0f,
-        medium.sigmaS[0] + medium.sigmaS[1] + medium.sigmaS[2]);
+    return std::max(0.0f, medium.scattering[0] + medium.scattering[1] +
+                              medium.scattering[2]);
 }
 
 static VdfClosure
 _AddVdfClosures(const VdfClosure& in1Closure, const VdfClosure& in2Closure)
 {
     VdfClosure closure;
-    closure.medium.sigmaA =
-        in1Closure.medium.sigmaA + in2Closure.medium.sigmaA;
-    closure.medium.sigmaS =
-        in1Closure.medium.sigmaS + in2Closure.medium.sigmaS;
+    closure.medium.absorption =
+        in1Closure.medium.absorption + in2Closure.medium.absorption;
+    closure.medium.scattering =
+        in1Closure.medium.scattering + in2Closure.medium.scattering;
 
     const float weight1 = _MediumScatterWeight(in1Closure.medium);
     const float weight2 = _MediumScatterWeight(in2Closure.medium);
@@ -280,8 +281,8 @@ static VdfClosure
 _MultiplyVdfClosure(const VdfClosure& inClosure, const Vec3f& weight)
 {
     VdfClosure closure = inClosure;
-    closure.medium.sigmaA = CompMul(closure.medium.sigmaA, weight);
-    closure.medium.sigmaS = CompMul(closure.medium.sigmaS, weight);
+    closure.medium.absorption = CompMul(closure.medium.absorption, weight);
+    closure.medium.scattering = CompMul(closure.medium.scattering, weight);
     return closure;
 }
 
@@ -938,8 +939,8 @@ _EvalReflect(const ParamMap& inputs, const ShadingContext& ctx,
              NodeOutputMap* outputs)
 {
     Vec3f I = Get<Vec3f>(inputs, _kIn, Vec3f(1.0f, 0.0f, 0.0f));
-    Vec3f N = Get<Vec3f>(inputs, _kNormal, ctx.normal);
-    (*outputs)[_kOut] = Value(I - 2.0f * Dot(I, N) * N);
+    const Vec3f normalInput = Get<Vec3f>(inputs, _kNormal, ctx.normal);
+    (*outputs)[_kOut] = Value(I - 2.0f * Dot(I, normalInput) * normalInput);
 }
 
 // ---- refract -------------------------------------------------------------
@@ -950,14 +951,15 @@ _EvalRefract(const ParamMap& inputs, const ShadingContext& ctx,
              NodeOutputMap* outputs)
 {
     Vec3f I = Get<Vec3f>(inputs, _kIn, Vec3f(1.0f, 0.0f, 0.0f));
-    Vec3f N = Get<Vec3f>(inputs, _kNormal, ctx.normal);
+    const Vec3f normalInput = Get<Vec3f>(inputs, _kNormal, ctx.normal);
     float ior = Get<float>(inputs, _kIor, 1.0f);
-    float NdotI = Dot(N, I);
-    float k = 1.0f - ior * ior * (1.0f - NdotI * NdotI);
+    const float normalDotIncident = Dot(normalInput, I);
+    float k = 1.0f - ior * ior * (1.0f - normalDotIncident * normalDotIncident);
     if (k < 0.0f) {
         (*outputs)[_kOut] = Value(Vec3f(0.0f));
     } else {
-        (*outputs)[_kOut] = Value(ior * I - (ior * NdotI + std::sqrt(k)) * N);
+        (*outputs)[_kOut] = Value(
+            ior * I - (ior * normalDotIncident + std::sqrt(k)) * normalInput);
     }
 }
 

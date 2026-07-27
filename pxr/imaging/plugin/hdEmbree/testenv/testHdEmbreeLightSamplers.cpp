@@ -127,7 +127,7 @@ TestDomeTextureConvertsToRenderColorSpace()
             light,
             direction,
             HdEmbreeRenderColorSpace::Data);
-    if (!raw.valid || !_IsClose(raw.Li, source)) {
+    if (!raw.valid || !_IsClose(raw.radianceIn, source)) {
         std::printf("    raw dome texture values were transformed\n");
         return false;
     }
@@ -140,7 +140,7 @@ TestDomeTextureConvertsToRenderColorSpace()
     const GfVec3f expected = GfColorSpace(
         GfColorSpaceNames->LinearAP1).Convert(
             GfColorSpace(GfColorSpaceNames->LinearRec709), source).GetRGB();
-    if (!ap1.valid || !_IsClose(ap1.Li, expected, 1.0e-5f)) {
+    if (!ap1.valid || !_IsClose(ap1.radianceIn, expected, 1.0e-5f)) {
         std::printf("    dome texture was not converted to Linear AP1\n");
         return false;
     }
@@ -258,8 +258,12 @@ TestDomeDirectionalPdfPrefersBrightTexel()
     const auto dark =
         HdEmbreeLightSampler::EvaluateDomeLightDirection(light, darkDir);
 
-    const float brightPdf = (bright.invPdfW > 0.0f) ? (1.0f / bright.invPdfW) : 0.0f;
-    const float darkPdf = (dark.invPdfW > 0.0f) ? (1.0f / dark.invPdfW) : 0.0f;
+    const float brightPdf = (bright.pdfSolidAngleInverse > 0.0f)
+                                ? (1.0f / bright.pdfSolidAngleInverse)
+                                : 0.0f;
+    const float darkPdf = (dark.pdfSolidAngleInverse > 0.0f)
+                              ? (1.0f / dark.pdfSolidAngleInverse)
+                              : 0.0f;
     if (!(brightPdf > darkPdf * 10.0f)) {
         std::printf("    expected bright texel PDF to dominate: bright=%f dark=%f\n",
                     brightPdf, darkPdf);
@@ -291,15 +295,17 @@ TestDomeSampleMatchesDirectionalEvaluation()
         const auto sampled = HdEmbreeLightSampler::GetLightSample(
             light, GfVec3f(0.0f), GfVec3f::YAxis(), u[0], u[1]);
         const auto evaluated = HdEmbreeLightSampler::EvaluateDomeLightDirection(
-            light, sampled.wI);
+            light, sampled.omegaInWld);
 
-        if (!_IsClose(sampled.Li, evaluated.Li, 1e-5f)) {
-            std::printf("    sampled/evaluated Li mismatch\n");
+        if (!_IsClose(sampled.radianceIn, evaluated.radianceIn, 1e-5f)) {
+            std::printf("    sampled/evaluated radianceIn mismatch\n");
             return false;
         }
-        if (!_IsClose(sampled.invPdfW, evaluated.invPdfW, 1e-4f)) {
+        if (!_IsClose(sampled.pdfSolidAngleInverse,
+                      evaluated.pdfSolidAngleInverse, 1e-4f)) {
             std::printf("    sampled/evaluated invPdf mismatch: %f vs %f\n",
-                        sampled.invPdfW, evaluated.invPdfW);
+                        sampled.pdfSolidAngleInverse,
+                        evaluated.pdfSolidAngleInverse);
             return false;
         }
     }
@@ -324,17 +330,18 @@ TestDomeReflectionHemisphereSampleUsesHemispherePdf()
         std::printf("    expected valid hemisphere sample\n");
         return false;
     }
-    if (!(GfDot(sampled.wI, normal) > 0.0f)) {
+    if (!(GfDot(sampled.omegaInWld, normal) > 0.0f)) {
         std::printf("    sample was outside the reflection hemisphere\n");
         return false;
     }
 
-    const float pdfW =
-        (sampled.invPdfW > 0.0f) ? (1.0f / sampled.invPdfW) : 0.0f;
+    const float pdfSolidAngle = (sampled.pdfSolidAngleInverse > 0.0f)
+                                    ? (1.0f / sampled.pdfSolidAngleInverse)
+                                    : 0.0f;
     const float expectedPdf = 1.0f / (2.0f * static_cast<float>(M_PI));
-    if (!_IsClose(pdfW, expectedPdf, 1e-6f)) {
-        std::printf("    expected hemisphere pdf %f, got %f\n",
-                    expectedPdf, pdfW);
+    if (!_IsClose(pdfSolidAngle, expectedPdf, 1e-6f)) {
+        std::printf("    expected hemisphere pdf %f, got %f\n", expectedPdf,
+                    pdfSolidAngle);
         return false;
     }
 
@@ -361,15 +368,16 @@ TestDomeReflectionHemisphereDirectionalPdf()
         std::printf("    expected direction above the surface to be valid\n");
         return false;
     }
-    const float abovePdf =
-        (above.invPdfW > 0.0f) ? (1.0f / above.invPdfW) : 0.0f;
+    const float abovePdf = (above.pdfSolidAngleInverse > 0.0f)
+                               ? (1.0f / above.pdfSolidAngleInverse)
+                               : 0.0f;
     const float expectedPdf = 1.0f / (2.0f * static_cast<float>(M_PI));
     if (!_IsClose(abovePdf, expectedPdf, 1e-6f)) {
         std::printf("    expected hemisphere directional pdf %f, got %f\n",
                     expectedPdf, abovePdf);
         return false;
     }
-    if (below.valid || below.invPdfW != 0.0f) {
+    if (below.valid || below.pdfSolidAngleInverse != 0.0f) {
         std::printf("    expected direction below the surface to have zero pdf\n");
         return false;
     }
@@ -404,24 +412,23 @@ TestDomeReflectionHemisphereSampleMatchesDirectionalEvaluation()
             u[1],
             HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere);
         const auto evaluated = HdEmbreeLightSampler::EvaluateDomeLightDirection(
-            light,
-            sampled.wI,
-            normal,
+            light, sampled.omegaInWld, normal,
             HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere);
 
-        if (!sampled.valid || !(GfDot(sampled.wI, normal) > 0.0f)) {
+        if (!sampled.valid || !(GfDot(sampled.omegaInWld, normal) > 0.0f)) {
             std::printf("    expected valid hemisphere sample\n");
             return false;
         }
-        if (!_IsClose(sampled.Li, evaluated.Li, 1e-5f)) {
-            std::printf("    sampled/evaluated hemisphere Li mismatch\n");
+        if (!_IsClose(sampled.radianceIn, evaluated.radianceIn, 1e-5f)) {
+            std::printf(
+                "    sampled/evaluated hemisphere radianceIn mismatch\n");
             return false;
         }
-        if (!_IsClose(sampled.invPdfW, evaluated.invPdfW, 1e-4f)) {
+        if (!_IsClose(sampled.pdfSolidAngleInverse,
+                      evaluated.pdfSolidAngleInverse, 1e-4f)) {
             std::printf(
                 "    sampled/evaluated hemisphere invPdf mismatch: %f vs %f\n",
-                sampled.invPdfW,
-                evaluated.invPdfW);
+                sampled.pdfSolidAngleInverse, evaluated.pdfSolidAngleInverse);
             return false;
         }
     }
@@ -443,30 +450,32 @@ TestSphereSampleMatchesDirectionalEvaluation()
     };
 
     const float cosThetaMax = std::sqrt(1.0f - 1.0f / 16.0f);
-    const float expectedInvPdfW =
+    const float pdfSolidAngleInverseExpected =
         2.0f * static_cast<float>(M_PI) * (1.0f - cosThetaMax);
 
     for (const GfVec2f& u : samples) {
         const auto sampled = HdEmbreeLightSampler::GetLightSample(
             light, position, normal, u[0], u[1]);
         const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
-            light, position, sampled.wI);
+            light, position, sampled.omegaInWld);
 
         if (!sampled.valid || !evaluated.valid) {
             std::printf("    expected valid sphere light samples\n");
             return false;
         }
-        if (!_IsClose(sampled.Li, evaluated.Li, 1e-5f)) {
-            std::printf("    sampled/evaluated sphere Li mismatch\n");
+        if (!_IsClose(sampled.radianceIn, evaluated.radianceIn, 1e-5f)) {
+            std::printf("    sampled/evaluated sphere radianceIn mismatch\n");
             return false;
         }
-        if (!_IsClose(sampled.invPdfW, expectedInvPdfW, 1e-5f) ||
-            !_IsClose(evaluated.invPdfW, expectedInvPdfW, 1e-5f)) {
-            std::printf(
-                "    sphere invPdf mismatch: sampled=%f evaluated=%f expected=%f\n",
-                sampled.invPdfW,
-                evaluated.invPdfW,
-                expectedInvPdfW);
+        if (!_IsClose(sampled.pdfSolidAngleInverse,
+                      pdfSolidAngleInverseExpected, 1e-5f) ||
+            !_IsClose(evaluated.pdfSolidAngleInverse,
+                      pdfSolidAngleInverseExpected, 1e-5f)) {
+            std::printf("    sphere invPdf mismatch: sampled=%f evaluated=%f "
+                        "expected=%f\n",
+                        sampled.pdfSolidAngleInverse,
+                        evaluated.pdfSolidAngleInverse,
+                        pdfSolidAngleInverseExpected);
             return false;
         }
     }
@@ -500,7 +509,7 @@ TestDirectionalShapingDistributionPdfNormalizes()
             static_cast<float>(numPhi);
         for (int h = 0; h < numPhi; ++h) {
             integral +=
-                distribution.cellPdfW[v * numPhi + h] * cellSolidAngle;
+                distribution.cellPdfSolidAngle[v * numPhi + h] * cellSolidAngle;
         }
     }
     if (!_IsClose(integral, 1.0f, 1e-4f)) {
@@ -546,17 +555,16 @@ TestIesDirectionalDistributionBuildsAndSamples()
 
     const HdEmbree_DirectionalShapingSample sample =
         HdEmbreeSampleDirectionalShaping(shaping, 0.25f, 0.75f);
-    if (!sample.valid || sample.pdfW <= 0.0f) {
+    if (!sample.valid || sample.pdfSolidAngle <= 0.0f) {
         std::printf("    expected valid IES directional sample\n");
         return false;
     }
 
     const float evaluatedPdf =
         HdEmbreeDirectionalShapingPdf(shaping, sample.localDirection);
-    if (!_IsClose(sample.pdfW, evaluatedPdf, 1e-5f)) {
+    if (!_IsClose(sample.pdfSolidAngle, evaluatedPdf, 1e-5f)) {
         std::printf("    sampled/evaluated IES pdf mismatch: %f vs %f\n",
-                    sample.pdfW,
-                    evaluatedPdf);
+                    sample.pdfSolidAngle, evaluatedPdf);
         return false;
     }
 
@@ -581,7 +589,7 @@ _CheckDirectionalSamplesConfined(
             const float u2 = (j + 0.5f) / numU2;
             const HdEmbree_DirectionalShapingSample sample =
                 HdEmbreeSampleDirectionalShaping(shaping, u1, u2);
-            if (!sample.valid || sample.pdfW <= 0.0f) {
+            if (!sample.valid || sample.pdfSolidAngle <= 0.0f) {
                 std::printf("    %s: expected valid sample at u1=%f u2=%f\n",
                             label, u1, u2);
                 return false;
@@ -594,11 +602,11 @@ _CheckDirectionalSamplesConfined(
             }
             const float evaluatedPdf = HdEmbreeDirectionalShapingPdf(
                 shaping, sample.localDirection);
-            if (!_IsClose(sample.pdfW, evaluatedPdf,
-                          1e-4f * sample.pdfW)) {
+            if (!_IsClose(sample.pdfSolidAngle, evaluatedPdf,
+                          1e-4f * sample.pdfSolidAngle)) {
                 std::printf("    %s: sampled/evaluated pdf mismatch: "
                             "%f vs %f\n",
-                            label, sample.pdfW, evaluatedPdf);
+                            label, sample.pdfSolidAngle, evaluatedPdf);
                 return false;
             }
         }
@@ -846,20 +854,20 @@ TestRectShapingAwareSampleMatchesDirectionalEvaluation()
         }
 
         const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
-            light, position, sampled.wI);
+            light, position, sampled.omegaInWld);
         if (!evaluated.valid) {
             std::printf("    expected rect sample direction to evaluate\n");
             return false;
         }
-        if (!_IsClose(sampled.Li, evaluated.Li, 1e-5f)) {
-            std::printf("    sampled/evaluated rect Li mismatch\n");
+        if (!_IsClose(sampled.radianceIn, evaluated.radianceIn, 1e-5f)) {
+            std::printf("    sampled/evaluated rect radianceIn mismatch\n");
             return false;
         }
-        if (!_IsClose(sampled.invPdfW, evaluated.invPdfW, 1e-4f)) {
+        if (!_IsClose(sampled.pdfSolidAngleInverse,
+                      evaluated.pdfSolidAngleInverse, 1e-4f)) {
             std::printf(
                 "    sampled/evaluated rect invPdf mismatch: %f vs %f\n",
-                sampled.invPdfW,
-                evaluated.invPdfW);
+                sampled.pdfSolidAngleInverse, evaluated.pdfSolidAngleInverse);
             return false;
         }
     }
@@ -911,15 +919,12 @@ TestRectTextureOriginUsesLocalPositiveXY()
             std::printf("    expected textured rect direction to evaluate\n");
             return false;
         }
-        if (!_IsClose(evaluated.Li, testCase.expectedLi, 1e-5f)) {
-            std::printf(
-                "    expected evaluated Li (%f, %f, %f), got (%f, %f, %f)\n",
-                testCase.expectedLi[0],
-                testCase.expectedLi[1],
-                testCase.expectedLi[2],
-                evaluated.Li[0],
-                evaluated.Li[1],
-                evaluated.Li[2]);
+        if (!_IsClose(evaluated.radianceIn, testCase.expectedLi, 1e-5f)) {
+            std::printf("    expected evaluated radianceIn (%f, %f, %f), got "
+                        "(%f, %f, %f)\n",
+                        testCase.expectedLi[0], testCase.expectedLi[1],
+                        testCase.expectedLi[2], evaluated.radianceIn[0],
+                        evaluated.radianceIn[1], evaluated.radianceIn[2]);
             return false;
         }
 
@@ -929,15 +934,12 @@ TestRectTextureOriginUsesLocalPositiveXY()
             std::printf("    expected textured rect sample to be valid\n");
             return false;
         }
-        if (!_IsClose(sampled.Li, testCase.expectedLi, 1e-5f)) {
-            std::printf(
-                "    expected sampled Li (%f, %f, %f), got (%f, %f, %f)\n",
-                testCase.expectedLi[0],
-                testCase.expectedLi[1],
-                testCase.expectedLi[2],
-                sampled.Li[0],
-                sampled.Li[1],
-                sampled.Li[2]);
+        if (!_IsClose(sampled.radianceIn, testCase.expectedLi, 1e-5f)) {
+            std::printf("    expected sampled radianceIn (%f, %f, %f), got "
+                        "(%f, %f, %f)\n",
+                        testCase.expectedLi[0], testCase.expectedLi[1],
+                        testCase.expectedLi[2], sampled.radianceIn[0],
+                        sampled.radianceIn[1], sampled.radianceIn[2]);
             return false;
         }
     }
@@ -973,26 +975,26 @@ TestRectFocusDirectionalSampleFoldsToEmissionHemisphere()
     const GfVec3f position(0.0f);
     const auto sampled = HdEmbreeLightSampler::GetLightSample(
         light, position, GfVec3f::ZAxis(), samplerU1, 0.37f);
-    if (!sampled.valid || sampled.wI[2] <= 0.0f) {
+    if (!sampled.valid || sampled.omegaInWld[2] <= 0.0f) {
         std::printf("    expected folded rect focus sample to hit +Z side\n");
         return false;
     }
 
     const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
-        light, position, sampled.wI);
+        light, position, sampled.omegaInWld);
     if (!evaluated.valid) {
         std::printf("    expected folded rect focus direction to evaluate\n");
         return false;
     }
-    if (!_IsClose(sampled.Li, evaluated.Li, 1e-5f)) {
-        std::printf("    sampled/evaluated folded rect Li mismatch\n");
+    if (!_IsClose(sampled.radianceIn, evaluated.radianceIn, 1e-5f)) {
+        std::printf("    sampled/evaluated folded rect radianceIn mismatch\n");
         return false;
     }
-    if (!_IsClose(sampled.invPdfW, evaluated.invPdfW, 1e-4f)) {
+    if (!_IsClose(sampled.pdfSolidAngleInverse, evaluated.pdfSolidAngleInverse,
+                  1e-4f)) {
         std::printf(
             "    sampled/evaluated folded rect invPdf mismatch: %f vs %f\n",
-            sampled.invPdfW,
-            evaluated.invPdfW);
+            sampled.pdfSolidAngleInverse, evaluated.pdfSolidAngleInverse);
         return false;
     }
 
@@ -1024,20 +1026,20 @@ TestDiskShapingAwareSampleMatchesDirectionalEvaluation()
         }
 
         const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
-            light, position, sampled.wI);
+            light, position, sampled.omegaInWld);
         if (!evaluated.valid) {
             std::printf("    expected disk sample direction to evaluate\n");
             return false;
         }
-        if (!_IsClose(sampled.Li, evaluated.Li, 1e-5f)) {
-            std::printf("    sampled/evaluated disk Li mismatch\n");
+        if (!_IsClose(sampled.radianceIn, evaluated.radianceIn, 1e-5f)) {
+            std::printf("    sampled/evaluated disk radianceIn mismatch\n");
             return false;
         }
-        if (!_IsClose(sampled.invPdfW, evaluated.invPdfW, 1e-4f)) {
+        if (!_IsClose(sampled.pdfSolidAngleInverse,
+                      evaluated.pdfSolidAngleInverse, 1e-4f)) {
             std::printf(
                 "    sampled/evaluated disk invPdf mismatch: %f vs %f\n",
-                sampled.invPdfW,
-                evaluated.invPdfW);
+                sampled.pdfSolidAngleInverse, evaluated.pdfSolidAngleInverse);
             return false;
         }
     }
@@ -1060,14 +1062,16 @@ TestDistantDeltaSamplesLocalPositiveZ()
         std::printf("    expected valid delta distant light sample\n");
         return false;
     }
-    if (!_IsClose(sampled.wI, GfVec3f::ZAxis(), 1e-6f)) {
-        std::printf("    expected local +Z sample direction, got (%f, %f, %f)\n",
-                    sampled.wI[0], sampled.wI[1], sampled.wI[2]);
+    if (!_IsClose(sampled.omegaInWld, GfVec3f::ZAxis(), 1e-6f)) {
+        std::printf(
+            "    expected local +Z sample direction, got (%f, %f, %f)\n",
+            sampled.omegaInWld[0], sampled.omegaInWld[1],
+            sampled.omegaInWld[2]);
         return false;
     }
-    if (!_IsClose(sampled.invPdfW, 1.0f, 1e-6f)) {
+    if (!_IsClose(sampled.pdfSolidAngleInverse, 1.0f, 1e-6f)) {
         std::printf("    expected unit delta inverse pdf, got %f\n",
-                    sampled.invPdfW);
+                    sampled.pdfSolidAngleInverse);
         return false;
     }
 
@@ -1089,7 +1093,7 @@ TestDistantConeSampleMatchesDirectionalEvaluation()
     const HdEmbree_LightData light = _MakeDistantLight(60.0f);
     const float thetaMax = 0.5f * 60.0f *
         static_cast<float>(M_PI) / 180.0f;
-    const float expectedInvPdfW =
+    const float pdfSolidAngleInverseExpected =
         2.0f * static_cast<float>(M_PI) * (1.0f - std::cos(thetaMax));
 
     const std::vector<GfVec2f> samples = {
@@ -1102,24 +1106,26 @@ TestDistantConeSampleMatchesDirectionalEvaluation()
         const auto sampled = HdEmbreeLightSampler::GetLightSample(
             light, GfVec3f(0.0f), GfVec3f::ZAxis(), u[0], u[1]);
         const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
-            light, GfVec3f(0.0f), sampled.wI);
+            light, GfVec3f(0.0f), sampled.omegaInWld);
 
         if (!sampled.valid || sampled.delta || !evaluated.valid ||
             evaluated.delta) {
             std::printf("    expected valid non-delta distant cone samples\n");
             return false;
         }
-        if (!_IsClose(sampled.Li, evaluated.Li, 1e-5f)) {
-            std::printf("    sampled/evaluated distant Li mismatch\n");
+        if (!_IsClose(sampled.radianceIn, evaluated.radianceIn, 1e-5f)) {
+            std::printf("    sampled/evaluated distant radianceIn mismatch\n");
             return false;
         }
-        if (!_IsClose(sampled.invPdfW, expectedInvPdfW, 1e-5f) ||
-            !_IsClose(evaluated.invPdfW, expectedInvPdfW, 1e-5f)) {
-            std::printf(
-                "    distant invPdf mismatch: sampled=%f evaluated=%f expected=%f\n",
-                sampled.invPdfW,
-                evaluated.invPdfW,
-                expectedInvPdfW);
+        if (!_IsClose(sampled.pdfSolidAngleInverse,
+                      pdfSolidAngleInverseExpected, 1e-5f) ||
+            !_IsClose(evaluated.pdfSolidAngleInverse,
+                      pdfSolidAngleInverseExpected, 1e-5f)) {
+            std::printf("    distant invPdf mismatch: sampled=%f evaluated=%f "
+                        "expected=%f\n",
+                        sampled.pdfSolidAngleInverse,
+                        evaluated.pdfSolidAngleInverse,
+                        pdfSolidAngleInverseExpected);
             return false;
         }
     }
@@ -1143,13 +1149,11 @@ TestDistantNormalizeUsesUsdLuxSizeFactor()
     const float sizeFactor =
         sinTheta * sinTheta * static_cast<float>(M_PI);
     const GfVec3f expected(10.0f / sizeFactor);
-    if (!sampled.valid || !_IsClose(sampled.Li, expected, 1e-5f)) {
+    if (!sampled.valid || !_IsClose(sampled.radianceIn, expected, 1e-5f)) {
         std::printf(
-            "    expected normalized distant Li %f, got (%f, %f, %f)\n",
-            expected[0],
-            sampled.Li[0],
-            sampled.Li[1],
-            sampled.Li[2]);
+            "    expected normalized distant radianceIn %f, got (%f, %f, %f)\n",
+            expected[0], sampled.radianceIn[0], sampled.radianceIn[1],
+            sampled.radianceIn[2]);
         return false;
     }
 
@@ -1182,9 +1186,11 @@ TestDomePdfApproximatelyNormalizes()
             const GfVec3f dir = _LatLongUvToDirection(u, v);
             const auto evaluated =
                 HdEmbreeLightSampler::EvaluateDomeLightDirection(light, dir);
-            const float pdfW =
-                (evaluated.invPdfW > 0.0f) ? (1.0f / evaluated.invPdfW) : 0.0f;
-            integral += pdfW * jacobian;
+            const float pdfSolidAngle =
+                (evaluated.pdfSolidAngleInverse > 0.0f)
+                    ? (1.0f / evaluated.pdfSolidAngleInverse)
+                    : 0.0f;
+            integral += pdfSolidAngle * jacobian;
         }
     }
 

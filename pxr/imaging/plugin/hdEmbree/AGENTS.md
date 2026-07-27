@@ -18,7 +18,14 @@ Typhoon is a **reference path tracer**. It should be easily readable by a human 
 
 1. Keep it simple. Don't add unneccesary complexity via abstractions. Don't add an abstraction unless it results in a net reduction in code size of at least twice what the abstraction adds. Avoid "fancy" C++-isms. Use simple, readable code.
 2. Prefer linear flow. Don't add lots of tiny helper functions that mean the reader has to jump around in the codebase to see what the code is doing, even if doing so adds more code.
-3. Variable naming must stay consistent for common quantities - normals, incident/exitant directions (wi/wo), etaI, etaO must be named identically everywhere their meaning is the same. Derivatives should be named with the `d<Quantity>d<Variable>` convention - e.g. `dPdu`/`dPdv` for surface parameterization derivatives and `dPdx`/`dPdy` for screen-space (ray differential) derivatives - as this is clearer than offset-style names.
+3. Variable naming must stay consistent for common quantities. Use the
+   `normal`, `omegaIn`/`omegaOut`, `radiance`, `iorIn`/`iorOut`, `eta`,
+   `absorption`, `scattering`, and `extinction` roots defined by the
+   authoritative naming table in `ARCHITECTURE.md`; IOR sides use the optics
+   incident/transmitted convention, and `eta` means only `iorIn / iorOut`.
+   Derivatives use `d<Quantity>d<Variable>`, such as
+   `dPdu`/`dPdv` for surface parameterization and `dPdx`/`dPdy` for
+   screen-space ray differentials.
 4. Comment everything with WHAT the code is intended to do, not HOW. Ensure function declarations contain details of expected invariants on inputs and possible failure modes plus errors returned/raised. Comment each logical section of a definition with WHAT and WHY the code is doing what it is.
 5. Always name variable types correctly. Prefer an explicit type whenever it is
    reasonably short and meaningful. Do not use `auto` except in these cases:
@@ -455,7 +462,7 @@ released in `Finalize()`.
 `HdEmbreeMaterial::Sync()` pulls `HdMaterial::GetMaterialResource()` from the
 scene delegate. It accepts modern `HdMaterialNetwork2` and legacy material
 network maps, converts them in `renderer/materials/mxcppAdapter.*`, and compiles an
-`mxcpp::EvalGraph`. Surface and optional `displacement` terminals are compiled separately into the stable material handle. `HdEmbreeMesh` registers an Embree subdivision displacement callback; scene commit evaluates `ND_displacement_float` at generated vertices and offsets positions by `displacement * scale` along `Ng`. Bind material state before committing the prototype scene, and force a recommit after displacement material changes. The callback currently supplies object-space position/normal, `st`, and constant string/filename geomprops. Triangle geometry, including meshes with `subdivisionScheme = "none"`, is not displaced.
+`mxcpp::EvalGraph`. Surface and optional `displacement` terminals are compiled separately into the stable material handle. `HdEmbreeMesh` registers an Embree subdivision displacement callback; scene commit evaluates `ND_displacement_float` at generated vertices and offsets positions by `displacement * scale` along the normalized object-space geometric normal. Bind material state before committing the prototype scene, and force a recommit after displacement material changes. The callback currently supplies object-space position/normal, `st`, and constant string/filename geomprops. Triangle geometry, including meshes with `subdivisionScheme = "none"`, is not displaced.
 
 `EvalGraph::Compile()` returns an explicit valid, invalid, or absent-terminal
 result. Valid results alone own a graph; invalid results carry one actionable
@@ -556,14 +563,13 @@ so alpha is not premultiplied into RGB before hdEmbree applies texture
 color-space conversion to RGB only. Do not enable this globally; non-PNG
 formats should retain OIIO's default alpha handling.
 
-Surface hits use one central interaction contract. The normalized,
-orientation-correct Embree `Ng` remains outward and immutable; it alone owns
-boundary classification, medium transitions, and offsets. Smooth/displaced
-base shading is aligned outward once, then side-transformed into one
-incident-facing material frame. The side transform flips N and dN, preserves
-dP and tangent orientation, and reconstructs B from recorded handedness.
-Material normals outside the incident `Ng` hemisphere fall back to the base
-incident normal. Never infer topology from a shading normal or reintroduce
+Surface hits use one central interaction contract. `normalGeomWldExt` remains
+outward and immutable; it alone owns boundary classification, medium
+transitions, and offsets. `normalGeomWldOut` is faced toward `omegaOutWld`.
+Smooth/displaced `normalSrfWldExt` is aligned outward once, then transformed
+to `normalSrfWldOut`; material resolution produces `normalShdWldOut`.
+Material normals outside the `normalGeomWldOut` hemisphere fall back to
+`normalSrfWldOut`. Never infer topology from a shading normal or reintroduce
 closure-dependent normal orientation.
 
 `ShadingContext::texcoord` preserves authored USD `st` values in MaterialX's

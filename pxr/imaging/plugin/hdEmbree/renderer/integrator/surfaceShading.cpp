@@ -151,13 +151,12 @@ HdEmbreeRenderer::_ApplyWireframe(
         return;
     }
 
-    const GfVec3f hitPos = _CalculateHitPosition(primaryHit);
+    const GfVec3f positionHitWld = _CalculateHitPosition(primaryHit);
     HdEmbreeDisplacedSubdivFrame displacedFrame;
-    GfVec3f normal = _ResolveObjectSpaceNormal(
-        prototypeContext, instanceContext->rootScene,
-        primaryHit.hit.geomID, primaryHit,
-        &displacedFrame);
-    normal = _TransformNormalToWorld(instanceContext, normal);
+    GfVec3f normalSrfWldExt = _ResolveObjectSpaceNormal(
+        prototypeContext, instanceContext->rootScene, primaryHit.hit.geomID,
+        primaryHit, &displacedFrame);
+    normalSrfWldExt = _TransformNormalToWorld(instanceContext, normalSrfWldExt);
 
     const std::optional<_WireframeParametricFrame> parametricFrame =
         _GetWireframeParametricFrame(
@@ -169,18 +168,12 @@ HdEmbreeRenderer::_ApplyWireframe(
         return;
     }
     mxcpp::ShadingContext wireframeContext;
-    _ComputeScreenSpaceDerivatives(
-        rayDiff,
-        hitPos,
-        normal,
-        parametricFrame->dPdu,
-        parametricFrame->dPdv,
-        _viewMatrix,
-        _inverseProjMatrix,
-        static_cast<float>(_dataWindow.GetWidth()),
-        static_cast<float>(_dataWindow.GetHeight()),
-        _samplesToConvergence,
-        wireframeContext);
+    _ComputeScreenSpaceDerivatives(rayDiff, positionHitWld, normalSrfWldExt,
+                                   parametricFrame->dPdu, parametricFrame->dPdv,
+                                   _viewMatrix, _inverseProjMatrix,
+                                   static_cast<float>(_dataWindow.GetWidth()),
+                                   static_cast<float>(_dataWindow.GetHeight()),
+                                   _samplesToConvergence, wireframeContext);
     const float derivativeScale =
         HdEmbreeComputeWireframeDerivativeScale(_samplesToConvergence);
     const HdEmbreeWireframeSample sample{
@@ -249,13 +242,9 @@ HdEmbreeRenderer::_ApplyWireframe(
 
 void
 HdEmbreeRenderer::_PropagateRayDifferential(
-    _SurfaceDifferentials const& surface,
-    GfVec3f const& hitPos,
-    GfVec3f const& normal,
-    GfVec3f const& wo,
-    GfVec3f const& wi,
-    float eta,
-    bool specular,
+    _SurfaceDifferentials const& surface, GfVec3f const& positionHitWld,
+    GfVec3f const& normalShdWldOut, GfVec3f const& omegaOutWld,
+    GfVec3f const& omegaInWld, float eta, bool specular,
     HdEmbreeRayDifferential* rayDifferential) const
 {
     if (!rayDifferential) {
@@ -284,35 +273,40 @@ HdEmbreeRenderer::_PropagateRayDifferential(
     const GfVec3f dndy = hasResolvedNormalDerivatives
         ? surface.dndu * surface.dudy + surface.dndv * surface.dvdy
         : GfVec3f(0.0f);
-    rayDifferential->rxOrigin = hitPos + surface.dpdx;
-    rayDifferential->ryOrigin = hitPos + surface.dpdy;
+    rayDifferential->rxOrigin = positionHitWld + surface.dpdx;
+    rayDifferential->ryOrigin = positionHitWld + surface.dpdy;
 
-    const GfVec3f dwodx = -rayDifferential->rxDirection - wo;
-    const GfVec3f dwody = -rayDifferential->ryDirection - wo;
-    const float dwoDotnDx = GfDot(dwodx, normal) + GfDot(wo, dndx);
-    const float dwoDotnDy = GfDot(dwody, normal) + GfDot(wo, dndy);
+    const GfVec3f dwodx = -rayDifferential->rxDirection - omegaOutWld;
+    const GfVec3f dwody = -rayDifferential->ryDirection - omegaOutWld;
+    const float dwoDotnDx =
+        GfDot(dwodx, normalShdWldOut) + GfDot(omegaOutWld, dndx);
+    const float dwoDotnDy =
+        GfDot(dwody, normalShdWldOut) + GfDot(omegaOutWld, dndy);
 
     if (eta == 1.0f) {
         rayDifferential->rxDirection =
-            wi - dwodx +
-            2.0f * (GfDot(wo, normal) * dndx + dwoDotnDx * normal);
+            omegaInWld - dwodx +
+            2.0f * (GfDot(omegaOutWld, normalShdWldOut) * dndx +
+                    dwoDotnDx * normalShdWldOut);
         rayDifferential->ryDirection =
-            wi - dwody +
-            2.0f * (GfDot(wo, normal) * dndy + dwoDotnDy * normal);
+            omegaInWld - dwody +
+            2.0f * (GfDot(omegaOutWld, normalShdWldOut) * dndy +
+                    dwoDotnDy * normalShdWldOut);
     } else if (eta != 0.0f) {
-        const float wiDotN = GfDot(wi, normal);
-        const float safeWiDotN = wiDotN != 0.0f ? wiDotN : 1.0f;
-        const float mu =
-            GfDot(wo, normal) / eta - std::abs(wiDotN);
+        const float omegaInDotNormalShd = GfDot(omegaInWld, normalShdWldOut);
+        const float omegaInDotNormalShdSafe =
+            omegaInDotNormalShd != 0.0f ? omegaInDotNormalShd : 1.0f;
+        const float mu = GfDot(omegaOutWld, normalShdWldOut) / eta -
+                         std::abs(omegaInDotNormalShd);
         const float derivativeScale =
-            1.0f / eta +
-            GfDot(wo, normal) / (eta * eta * safeWiDotN);
+            1.0f / eta + GfDot(omegaOutWld, normalShdWldOut) /
+                             (eta * eta * omegaInDotNormalShdSafe);
         const float dmuDx = dwoDotnDx * derivativeScale;
         const float dmuDy = dwoDotnDy * derivativeScale;
         rayDifferential->rxDirection =
-            wi - eta * dwodx + mu * dndx + dmuDx * normal;
+            omegaInWld - eta * dwodx + mu * dndx + dmuDx * normalShdWldOut;
         rayDifferential->ryDirection =
-            wi - eta * dwody + mu * dndy + dmuDy * normal;
+            omegaInWld - eta * dwody + mu * dndy + dmuDy * normalShdWldOut;
     } else {
         rayDifferential->hasDifferentials = false;
         return;
@@ -333,8 +327,7 @@ HdEmbreeRenderer::_PropagateRayDifferential(
 
 bool
 HdEmbreeRenderer::_TryBuildSurfaceInteraction(
-    RTCRayHit const& rayHit,
-    GfVec3f const& wo,
+    RTCRayHit const& rayHit, GfVec3f const& omegaOutWld,
     _SurfaceInteraction* outInteraction,
     HdEmbreeInstanceContext const** outInstance,
     HdEmbreePrototypeContext const** outPrototype) const
@@ -361,36 +354,35 @@ HdEmbreeRenderer::_TryBuildSurfaceInteraction(
         return false;
     }
 
-    // Ng is the immutable authored-outside boundary authority.
-    GfVec3f Ng = prototypeContext->orientationSign * GfVec3f(
-        rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
-    Ng = _TransformNormalToWorld(instanceContext, Ng);
-    if (!_TryNormalizeDirection(Ng, &Ng)) {
+    // Preserve Embree's authored-outside normal as immutable boundary state.
+    GfVec3f normalGeomWldExt =
+        prototypeContext->orientationSign *
+        GfVec3f(rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
+    normalGeomWldExt =
+        _TransformNormalToWorld(instanceContext, normalGeomWldExt);
+    if (!_TryNormalizeDirection(normalGeomWldExt, &normalGeomWldExt)) {
         return false;
     }
 
     // The shared resolver remains the only smooth/displaced normal source.
     HdEmbreeDisplacedSubdivFrame displacedFrame;
-    GfVec3f baseNormalOut = _ResolveObjectSpaceNormal(
-        prototypeContext,
-        instanceContext->rootScene,
-        rayHit.hit.geomID,
-        rayHit,
-        &displacedFrame);
-    baseNormalOut = _TransformNormalToWorld(instanceContext, baseNormalOut);
-    if (!_TryNormalizeDirection(baseNormalOut, &baseNormalOut)) {
+    GfVec3f normalSrfWldExt =
+        _ResolveObjectSpaceNormal(prototypeContext, instanceContext->rootScene,
+                                  rayHit.hit.geomID, rayHit, &displacedFrame);
+    normalSrfWldExt = _TransformNormalToWorld(instanceContext, normalSrfWldExt);
+    if (!_TryNormalizeDirection(normalSrfWldExt, &normalSrfWldExt)) {
         return false;
     }
-    if (GfDot(baseNormalOut, Ng) < 0.0f) {
-        baseNormalOut = -baseNormalOut;
+    if (GfDot(normalSrfWldExt, normalGeomWldExt) < 0.0f) {
+        normalSrfWldExt = -normalSrfWldExt;
     }
 
     _SurfaceInteraction interaction;
-    interaction.p = _CalculateHitPosition(rayHit);
-    interaction.Ng = Ng;
-    interaction.baseNormalOut = baseNormalOut;
+    interaction.positionHitWld = _CalculateHitPosition(rayHit);
+    interaction.normalGeomWldExt = normalGeomWldExt;
+    interaction.normalSrfWldExt = normalSrfWldExt;
     interaction.displacedFrame = displacedFrame;
-    interaction.frontFacing = GfDot(Ng, wo) > 0.0f;
+    interaction.frontFacing = GfDot(normalGeomWldExt, omegaOutWld) > 0.0f;
     interaction.doubleSided = prototypeContext->doubleSided;
 
     *outInteraction = interaction;
@@ -414,9 +406,9 @@ HdEmbreeRenderer::_BuildShadingContext(
     GfVec3f* outDndv,
     _ShadingContextOptions options) const
 {
-    const GfVec3f hitPos = interaction.p;
-    const GfVec3f normal = interaction.GetIncidentBaseNormal();
-    const GfVec3f baseNormalOut = interaction.baseNormalOut;
+    const GfVec3f positionHitWld = interaction.positionHitWld;
+    const GfVec3f normalSrfWldOut = interaction.GetNormalSrfWldOut();
+    const GfVec3f normalSrfWldExt = interaction.normalSrfWldExt;
     HdEmbreeDisplacedSubdivFrame const* displacedFrame =
         interaction.displacedFrame.valid ? &interaction.displacedFrame : nullptr;
     const float sideSign = interaction.frontFacing ? 1.0f : -1.0f;
@@ -458,7 +450,7 @@ HdEmbreeRenderer::_BuildShadingContext(
     // start in object space and are transformed to world space below.
     GfVec3f dPdu, dPdv, dndu, dndv;
     const GfVec3f objectNormal =
-        _TransformNormalToObject(instanceContext, baseNormalOut);
+        _TransformNormalToObject(instanceContext, normalSrfWldExt);
     if (_IsSubdivMesh(prototypeContext)) {
         _ComputeSubdivSurfaceDerivatives(
             prototypeContext,
@@ -474,7 +466,7 @@ HdEmbreeRenderer::_BuildShadingContext(
     }
 
     const GfVec3f objectHitPos =
-        instanceContext->worldToObjectMatrix.Transform(hitPos);
+        instanceContext->worldToObjectMatrix.Transform(positionHitWld);
     const GfVec3f objectDPdu = dPdu;
     const GfVec3f objectDPdv = dPdv;
 
@@ -526,49 +518,49 @@ HdEmbreeRenderer::_BuildShadingContext(
     float handedness = 1.0f;
     if (haveTangentFrame) {
         GfVec3f tangentOut =
-            tangent - baseNormalOut * GfDot(baseNormalOut, tangent);
+            tangent - normalSrfWldExt * GfDot(normalSrfWldExt, tangent);
         GfVec3f bitangentOut =
-            bitangent - baseNormalOut * GfDot(baseNormalOut, bitangent);
+            bitangent - normalSrfWldExt * GfDot(normalSrfWldExt, bitangent);
         haveTangentFrame =
             _TryNormalizeDirection(tangentOut, &tangentOut) &&
             _TryNormalizeDirection(bitangentOut, &bitangentOut);
         if (haveTangentFrame) {
-            handedness = GfDot(
-                GfCross(tangentOut, bitangentOut), baseNormalOut) < 0.0f
-                ? -1.0f
-                : 1.0f;
+            handedness =
+                GfDot(GfCross(tangentOut, bitangentOut), normalSrfWldExt) < 0.0f
+                    ? -1.0f
+                    : 1.0f;
             tangent = tangentOut;
         }
     }
 
     if (!haveTangentFrame) {
-        tangent = dPdu - baseNormalOut * GfDot(baseNormalOut, dPdu);
+        tangent = dPdu - normalSrfWldExt * GfDot(normalSrfWldExt, dPdu);
         GfVec3f parameterBitangent =
-            dPdv - baseNormalOut * GfDot(baseNormalOut, dPdv);
+            dPdv - normalSrfWldExt * GfDot(normalSrfWldExt, dPdv);
         haveTangentFrame =
             _TryNormalizeDirection(tangent, &tangent) &&
             _TryNormalizeDirection(parameterBitangent, &parameterBitangent);
         if (haveTangentFrame) {
-            handedness = GfDot(
-                GfCross(tangent, parameterBitangent), baseNormalOut) < 0.0f
-                ? -1.0f
-                : 1.0f;
+            handedness = GfDot(GfCross(tangent, parameterBitangent),
+                               normalSrfWldExt) < 0.0f
+                             ? -1.0f
+                             : 1.0f;
         }
     }
 
-    tangent -= normal * GfDot(normal, tangent);
+    tangent -= normalSrfWldOut * GfDot(normalSrfWldOut, tangent);
     if (!_TryNormalizeDirection(tangent, &tangent)) {
-        GfBuildOrthonormalFrame(normal, &tangent, &bitangent);
+        GfBuildOrthonormalFrame(normalSrfWldOut, &tangent, &bitangent);
     } else {
-        bitangent = handedness * GfCross(normal, tangent);
+        bitangent = handedness * GfCross(normalSrfWldOut, tangent);
         if (!_TryNormalizeDirection(bitangent, &bitangent)) {
-            GfBuildOrthonormalFrame(normal, &tangent, &bitangent);
+            GfBuildOrthonormalFrame(normalSrfWldOut, &tangent, &bitangent);
         }
     }
 
     mxcpp::ShadingContext ctx;
     ctx.position = _ToMx(objectHitPos);
-    ctx.normal = _ToMx(normal);
+    ctx.normal = _ToMx(normalSrfWldOut);
     ctx.tangent = _ToMx(tangent);
     ctx.bitangent = _ToMx(bitangent);
     ctx.viewPosition = _ToMx(GfVec3f(_inverseViewMatrix.Transform(GfVec3f(0.0f))));
@@ -604,13 +596,10 @@ HdEmbreeRenderer::_BuildShadingContext(
 
     if (options.computeScreenSpaceDerivatives) {
         _ComputeScreenSpaceDerivatives(
-            rayDiff, hitPos, normal, dPdu, dPdv,
-            _viewMatrix, _inverseProjMatrix,
-            static_cast<float>(_dataWindow.GetWidth()),
-            static_cast<float>(_dataWindow.GetHeight()),
-            _samplesToConvergence,
+            rayDiff, positionHitWld, normalSrfWldOut, dPdu, dPdv, _viewMatrix,
+            _inverseProjMatrix, static_cast<float>(_dataWindow.GetWidth()),
+            static_cast<float>(_dataWindow.GetHeight()), _samplesToConvergence,
             ctx);
-
     }
 
     ctx.dPositiondx = _ToMx(
@@ -623,30 +612,24 @@ HdEmbreeRenderer::_BuildShadingContext(
 
 bool
 HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
-    RTCRayHit const& rayHit,
-    GfVec3f const& wo,
-    mxcpp::SurfaceClosure* outClosure,
-    GfVec3f* outShadingNormal,
-    GfVec3f* outNg,
+    RTCRayHit const& rayHit, GfVec3f const& omegaOutWld,
+    mxcpp::SurfaceClosure* outClosure, GfVec3f* normalShdWldOutOutput,
+    GfVec3f* normalGeomWldExtOutput,
     HdEmbreePrototypeContext const** outGeometry) const
 {
     _SurfaceInteraction interaction;
     HdEmbreeInstanceContext const* instanceContext = nullptr;
     HdEmbreePrototypeContext const* prototypeContext = nullptr;
-    if (!_TryBuildSurfaceInteraction(
-            rayHit,
-            wo,
-            &interaction,
-            &instanceContext,
-            &prototypeContext)) {
+    if (!_TryBuildSurfaceInteraction(rayHit, omegaOutWld, &interaction,
+                                     &instanceContext, &prototypeContext)) {
         return false;
     }
 
     if (outGeometry) {
         *outGeometry = prototypeContext;
     }
-    if (outNg) {
-        *outNg = interaction.Ng;
+    if (normalGeomWldExtOutput) {
+        *normalGeomWldExtOutput = interaction.normalGeomWldExt;
     }
 
     mxcpp::EvalGraph* surfaceGraph = prototypeContext->material
@@ -656,9 +639,8 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
         return false;
     }
 
-    const GfVec3f baseNormalIncident =
-        interaction.GetIncidentBaseNormal();
-    GfVec3f shadingNormal = baseNormalIncident;
+    const GfVec3f normalSrfWldOut = interaction.GetNormalSrfWldOut();
+    GfVec3f normalShdWldOut = normalSrfWldOut;
     HdEmbreeRayDifferential defaultRayDiff;
     const _ShadingContextOptions options(false);
     mxcpp::ShadingContext ctx = _BuildShadingContext(
@@ -693,18 +675,17 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
         GfVec3f normalizedCandidate;
         const bool valid =
             _TryNormalizeDirection(candidate, &normalizedCandidate) &&
-            GfDot(
-                normalizedCandidate,
-                interaction.GetIncidentGeometricNormal()) > 0.0f &&
-            GfDot(normalizedCandidate, wo) > 0.0f;
+            GfDot(normalizedCandidate, interaction.GetNormalGeomWldOut()) >
+                0.0f &&
+            GfDot(normalizedCandidate, omegaOutWld) > 0.0f;
         if (valid) {
-            shadingNormal = normalizedCandidate;
+            normalShdWldOut = normalizedCandidate;
         } else {
             ++_invalidMaterialNormalCount;
         }
     }
-    if (outShadingNormal) {
-        *outShadingNormal = shadingNormal;
+    if (normalShdWldOutOutput) {
+        *normalShdWldOutOutput = normalShdWldOut;
     }
     return true;
 }

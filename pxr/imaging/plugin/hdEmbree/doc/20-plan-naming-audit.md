@@ -32,11 +32,10 @@ Audit these families explicitly:
 - test fixture, helper, and assertion-local identifiers in `testenv/`, while
   preserving external API names and authored tokens used by the tests.
 
-Known rename families include `_SurfaceInteraction::p`, all `hitPos` /
-`entryPos` / `exitPos`, `_PathState::rayDir`, SSS `entryDir` / `exitDir`,
-`LightSample::dist`, `_Visibility::dist`, and bare helper parameters such as
-`dir`. Choose semantic replacements from their actual consumers; do not
-perform blind substitutions. For example, ray `t` becomes
+Known remaining rename families include `_SurfaceInteraction::p`, residual
+`hitPos` names outside the integrator-core pass, and bare helper parameters
+such as `dir`. Choose semantic replacements from their actual consumers; do
+not perform blind substitutions. For example, ray `t` becomes
 `distanceAlongRayWld`, a Russian-roulette `q` becomes
 `probabilitySurvival`, and a channel loop `i` becomes `indexChannel`.
 

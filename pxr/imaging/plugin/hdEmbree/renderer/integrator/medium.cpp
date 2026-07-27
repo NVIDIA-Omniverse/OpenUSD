@@ -70,18 +70,17 @@ EvalBeerTransmittance(const MediumProperties& medium, float distance) noexcept
         return Vec3f(1.0f);
     }
 
-    const Vec3f sigmaT = medium.SigmaT();
-    return Vec3f(
-        std::exp(-sigmaT[0] * distance),
-        std::exp(-sigmaT[1] * distance),
-        std::exp(-sigmaT[2] * distance));
+    const Vec3f extinction = medium.Extinction();
+    return Vec3f(std::exp(-extinction[0] * distance),
+                 std::exp(-extinction[1] * distance),
+                 std::exp(-extinction[2] * distance));
 }
 
 float
 MajorantExtinction(const MediumProperties& medium) noexcept
 {
-    const Vec3f sigmaT = medium.SigmaT();
-    return std::max({sigmaT[0], sigmaT[1], sigmaT[2], 0.0f});
+    const Vec3f extinction = medium.Extinction();
+    return std::max({extinction[0], extinction[1], extinction[2], 0.0f});
 }
 
 Vec3f
@@ -93,16 +92,15 @@ EvalMajorantTransmittanceWeight(
         return Vec3f(1.0f);
     }
 
-    const float sigmaMaj = MajorantExtinction(medium);
-    if (sigmaMaj <= _kEpsilon) {
+    const float extinctionMajorant = MajorantExtinction(medium);
+    if (extinctionMajorant <= _kEpsilon) {
         return Vec3f(1.0f);
     }
 
-    const Vec3f sigmaT = medium.SigmaT();
-    return Vec3f(
-        std::exp((sigmaMaj - sigmaT[0]) * distance),
-        std::exp((sigmaMaj - sigmaT[1]) * distance),
-        std::exp((sigmaMaj - sigmaT[2]) * distance));
+    const Vec3f extinction = medium.Extinction();
+    return Vec3f(std::exp((extinctionMajorant - extinction[0]) * distance),
+                 std::exp((extinctionMajorant - extinction[1]) * distance),
+                 std::exp((extinctionMajorant - extinction[2]) * distance));
 }
 
 Vec3f
@@ -110,57 +108,59 @@ EvalFreeFlightScatterWeight(
     const MediumProperties& medium,
     float distance) noexcept
 {
-    const float sigmaMaj = MajorantExtinction(medium);
-    if (sigmaMaj <= _kEpsilon) {
+    const float extinctionMajorant = MajorantExtinction(medium);
+    if (extinctionMajorant <= _kEpsilon) {
         return Vec3f(0.0f);
     }
 
     const Vec3f transmittanceWeight =
         EvalMajorantTransmittanceWeight(medium, distance);
-    const Vec3f sigmaMajVec(sigmaMaj);
-    return CompMul(
-        transmittanceWeight,
-        CompDiv(_ClampNonNegative(medium.sigmaS), sigmaMajVec));
+    const Vec3f extinctionMajorantVector(extinctionMajorant);
+    return CompMul(transmittanceWeight,
+                   CompDiv(_ClampNonNegative(medium.scattering),
+                           extinctionMajorantVector));
 }
 
 float
-SampleFreeFlight(const MediumProperties& medium, float u) noexcept
+SampleFreeFlight(const MediumProperties& medium, float u1) noexcept
 {
-    const float sigmaTMajor = MajorantExtinction(medium);
-    if (sigmaTMajor <= _kEpsilon) {
+    const float extinctionMajorant = MajorantExtinction(medium);
+    if (extinctionMajorant <= _kEpsilon) {
         return std::numeric_limits<float>::infinity();
     }
 
-    const float clampedU = std::clamp(u, _kEpsilon, 1.0f - _kEpsilon);
-    return -std::log(1.0f - clampedU) / sigmaTMajor;
+    const float u1Clamped = std::clamp(u1, _kEpsilon, 1.0f - _kEpsilon);
+    return -std::log(1.0f - u1Clamped) / extinctionMajorant;
 }
 
 float
 PhaseHG(float cosTheta, float anisotropy) noexcept
 {
-    const float g = std::clamp(anisotropy, -0.999f, 0.999f);
-    const float denom = 1.0f + g * g + 2.0f * g * cosTheta;
-    return (1.0f - g * g) / (4.0f * _kPi * denom * std::sqrt(denom));
+    const float anisotropyClamped = std::clamp(anisotropy, -0.999f, 0.999f);
+    const float denominator = 1.0f + anisotropyClamped * anisotropyClamped +
+                              2.0f * anisotropyClamped * cosTheta;
+    return (1.0f - anisotropyClamped * anisotropyClamped) /
+           (4.0f * _kPi * denominator * std::sqrt(denominator));
 }
 
 Vec3f
-SampleHenyeyGreenstein(
-    const Vec3f& wo,
-    float anisotropy,
-    float u1,
-    float u2) noexcept
+SampleHenyeyGreenstein(const Vec3f& omegaOutWld, float anisotropy, float u1,
+                       float u2) noexcept
 {
-    const float g = std::clamp(anisotropy, -0.999f, 0.999f);
+    const float anisotropyClamped = std::clamp(anisotropy, -0.999f, 0.999f);
     const float sampleU1 = std::clamp(u1, _kEpsilon, 1.0f - _kEpsilon);
     const float sampleU2 = std::clamp(u2, 0.0f, 1.0f);
 
     float cosTheta = 0.0f;
-    if (std::abs(g) < 1.0e-3f) {
+    if (std::abs(anisotropyClamped) < 1.0e-3f) {
         cosTheta = 1.0f - 2.0f * sampleU1;
     } else {
         const float sqrTerm =
-            (1.0f - g * g) / (1.0f - g + 2.0f * g * sampleU1);
-        cosTheta = (1.0f + g * g - sqrTerm * sqrTerm) / (2.0f * g);
+            (1.0f - anisotropyClamped * anisotropyClamped) /
+            (1.0f - anisotropyClamped + 2.0f * anisotropyClamped * sampleU1);
+        cosTheta =
+            (1.0f + anisotropyClamped * anisotropyClamped - sqrTerm * sqrTerm) /
+            (2.0f * anisotropyClamped);
         cosTheta = std::clamp(cosTheta, -1.0f, 1.0f);
     }
 
@@ -170,30 +170,29 @@ SampleHenyeyGreenstein(
     const float sinPhi = std::sin(phi);
     const float cosPhi = std::cos(phi);
 
-    const Vec3f zAxis = _SafeNormalized(-wo, Vec3f(0.0f, 0.0f, 1.0f));
+    const Vec3f zAxis = _SafeNormalized(-omegaOutWld, Vec3f(0.0f, 0.0f, 1.0f));
     Vec3f xAxis(1.0f, 0.0f, 0.0f);
     Vec3f yAxis(0.0f, 1.0f, 0.0f);
     _CoordinateSystem(zAxis, &xAxis, &yAxis);
 
-    Vec3f wi = xAxis * (sinTheta * cosPhi) +
-               yAxis * (sinTheta * sinPhi) +
-               zAxis * cosTheta;
-    if (wi.length2() <= _kEpsilon * _kEpsilon) {
+    Vec3f omegaInWld = xAxis * (sinTheta * cosPhi) +
+                       yAxis * (sinTheta * sinPhi) + zAxis * cosTheta;
+    if (omegaInWld.length2() <= _kEpsilon * _kEpsilon) {
         return zAxis;
     }
-    wi.normalize();
-    return wi;
+    omegaInWld.normalize();
+    return omegaInWld;
 }
 
 float
-PdfHenyeyGreenstein(
-    const Vec3f& wi,
-    const Vec3f& wo,
-    float anisotropy) noexcept
+PdfHenyeyGreenstein(const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
+                    float anisotropy) noexcept
 {
-    const Vec3f safeWi = _SafeNormalized(wi, Vec3f(0.0f, 0.0f, 1.0f));
-    const Vec3f safeWo = _SafeNormalized(wo, Vec3f(0.0f, 0.0f, 1.0f));
-    return PhaseHG(safeWi.dot(safeWo), anisotropy);
+    const Vec3f omegaInWldSafe =
+        _SafeNormalized(omegaInWld, Vec3f(0.0f, 0.0f, 1.0f));
+    const Vec3f omegaOutWldSafe =
+        _SafeNormalized(omegaOutWld, Vec3f(0.0f, 0.0f, 1.0f));
+    return PhaseHG(omegaInWldSafe.dot(omegaOutWldSafe), anisotropy);
 }
 
 MediumProperties
@@ -219,11 +218,10 @@ MakeTransmissionMedium(
         -std::log(safeColor[0]) / transmissionDepth,
         -std::log(safeColor[1]) / transmissionDepth,
         -std::log(safeColor[2]) / transmissionDepth);
-    medium.sigmaS = scatter / transmissionDepth;
-    Vec3f absorption(
-        extinction[0] - medium.sigmaS[0],
-        extinction[1] - medium.sigmaS[1],
-        extinction[2] - medium.sigmaS[2]);
+    medium.scattering = scatter / transmissionDepth;
+    Vec3f absorption(extinction[0] - medium.scattering[0],
+                     extinction[1] - medium.scattering[1],
+                     extinction[2] - medium.scattering[2]);
 
     // Match the MaterialX volume graph: if scattering pushes any absorption
     // channel below zero, shift the full absorption vector so the minimum
@@ -234,7 +232,7 @@ MakeTransmissionMedium(
         absorption -= Vec3f(minAbsorption);
     }
 
-    medium.sigmaA = _ClampNonNegative(absorption);
+    medium.absorption = _ClampNonNegative(absorption);
     medium.anisotropy = std::clamp(transmissionScatterAnisotropy, -1.0f, 1.0f);
     return medium;
 }
@@ -242,30 +240,29 @@ MakeTransmissionMedium(
 int
 MinExtinctionChannel(const MediumProperties& medium) noexcept
 {
-    const Vec3f sigmaT = medium.SigmaT();
-    int minCh = 0;
-    float minVal = sigmaT[0];
-    for (int i = 1; i < 3; ++i) {
-        if (sigmaT[i] > _kEpsilon && sigmaT[i] < minVal) {
-            minVal = sigmaT[i];
-            minCh = i;
+    const Vec3f extinction = medium.Extinction();
+    int indexChannelMinimum = 0;
+    float extinctionMinimum = extinction[0];
+    for (int indexChannel = 1; indexChannel < 3; ++indexChannel) {
+        if (extinction[indexChannel] > _kEpsilon &&
+            extinction[indexChannel] < extinctionMinimum) {
+            extinctionMinimum = extinction[indexChannel];
+            indexChannelMinimum = indexChannel;
         }
     }
-    return minCh;
+    return indexChannelMinimum;
 }
 
 float
-SampleFreeFlightChannel(
-    const MediumProperties& medium,
-    int channel,
-    float u) noexcept
+SampleFreeFlightChannel(const MediumProperties& medium, int channel,
+                        float u1) noexcept
 {
-    const float sigmaT = medium.SigmaT()[std::clamp(channel, 0, 2)];
-    if (sigmaT <= _kEpsilon) {
+    const float extinction = medium.Extinction()[std::clamp(channel, 0, 2)];
+    if (extinction <= _kEpsilon) {
         return std::numeric_limits<float>::infinity();
     }
-    const float clampedU = std::clamp(u, _kEpsilon, 1.0f - _kEpsilon);
-    return -std::log(1.0f - clampedU) / sigmaT;
+    const float u1Clamped = std::clamp(u1, _kEpsilon, 1.0f - _kEpsilon);
+    return -std::log(1.0f - u1Clamped) / extinction;
 }
 
 Vec3f
@@ -274,19 +271,18 @@ EvalChannelScatterWeight(
     int channel,
     float distance) noexcept
 {
-    const Vec3f sigmaT = medium.SigmaT();
-    const float trackSigmaT = sigmaT[std::clamp(channel, 0, 2)];
-    if (trackSigmaT <= _kEpsilon) {
+    const Vec3f extinction = medium.Extinction();
+    const float extinctionTracking = extinction[std::clamp(channel, 0, 2)];
+    if (extinctionTracking <= _kEpsilon) {
         return Vec3f(0.0f);
     }
-    const Vec3f sigmaS = _ClampNonNegative(medium.sigmaS);
-    return Vec3f(
-        sigmaS[0] / trackSigmaT *
-            std::exp((trackSigmaT - sigmaT[0]) * distance),
-        sigmaS[1] / trackSigmaT *
-            std::exp((trackSigmaT - sigmaT[1]) * distance),
-        sigmaS[2] / trackSigmaT *
-            std::exp((trackSigmaT - sigmaT[2]) * distance));
+    const Vec3f scattering = _ClampNonNegative(medium.scattering);
+    return Vec3f(scattering[0] / extinctionTracking *
+                     std::exp((extinctionTracking - extinction[0]) * distance),
+                 scattering[1] / extinctionTracking *
+                     std::exp((extinctionTracking - extinction[1]) * distance),
+                 scattering[2] / extinctionTracking *
+                     std::exp((extinctionTracking - extinction[2]) * distance));
 }
 
 Vec3f
@@ -298,38 +294,35 @@ EvalChannelTransmittanceWeight(
     if (distance <= 0.0f) {
         return Vec3f(1.0f);
     }
-    const Vec3f sigmaT = medium.SigmaT();
-    const float trackSigmaT = sigmaT[std::clamp(channel, 0, 2)];
-    return Vec3f(
-        std::exp((trackSigmaT - sigmaT[0]) * distance),
-        std::exp((trackSigmaT - sigmaT[1]) * distance),
-        std::exp((trackSigmaT - sigmaT[2]) * distance));
+    const Vec3f extinction = medium.Extinction();
+    const float extinctionTracking = extinction[std::clamp(channel, 0, 2)];
+    return Vec3f(std::exp((extinctionTracking - extinction[0]) * distance),
+                 std::exp((extinctionTracking - extinction[1]) * distance),
+                 std::exp((extinctionTracking - extinction[2]) * distance));
 }
 
 int
-ChannelMIS(
-    const Vec3f& throughput,
-    const Vec3f& weights,
-    float u,
-    Vec3f* channelPdf)
+ChannelMIS(const Vec3f& throughputRgb, const Vec3f& weights, float u1,
+           Vec3f* pdfChannel)
 {
-    Vec3f raw(
-        std::max(throughput[0] * weights[0], 0.0f),
-        std::max(throughput[1] * weights[1], 0.0f),
-        std::max(throughput[2] * weights[2], 0.0f));
+    Vec3f raw(std::max(throughputRgb[0] * weights[0], 0.0f),
+              std::max(throughputRgb[1] * weights[1], 0.0f),
+              std::max(throughputRgb[2] * weights[2], 0.0f));
     const float sum = raw[0] + raw[1] + raw[2];
 
     if (sum <= 1.0e-12f) {
         // Uniform fallback.
-        *channelPdf = Vec3f(1.0f / 3.0f);
-        const float scaled = std::clamp(u * 3.0f, 0.0f, 3.0f - 1.0e-6f);
+        *pdfChannel = Vec3f(1.0f / 3.0f);
+        const float scaled = std::clamp(u1 * 3.0f, 0.0f, 3.0f - 1.0e-6f);
         return static_cast<int>(scaled);
     }
 
-    *channelPdf = raw * (1.0f / sum);
-    const float u01 = std::clamp(u, 0.0f, 1.0f - 1.0e-6f);
-    if (u01 < (*channelPdf)[0]) return 0;
-    if (u01 < (*channelPdf)[0] + (*channelPdf)[1]) return 1;
+    *pdfChannel = raw * (1.0f / sum);
+    const float u01 = std::clamp(u1, 0.0f, 1.0f - 1.0e-6f);
+    if (u01 < (*pdfChannel)[0])
+        return 0;
+    if (u01 < (*pdfChannel)[0] + (*pdfChannel)[1])
+        return 1;
     return 2;
 }
 

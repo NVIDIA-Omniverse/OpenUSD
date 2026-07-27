@@ -50,22 +50,18 @@ HdEmbreeRenderer::_IntegrateUnlit(
 
     // Construct the same outward topology and incident material frame used
     // by the path and visibility integrators.
-    const GfVec3f wo = -GfVec3f(
-        rayHit.ray.dir_x, rayHit.ray.dir_y, rayHit.ray.dir_z);
+    const GfVec3f omegaOutWld =
+        -GfVec3f(rayHit.ray.dir_x, rayHit.ray.dir_y, rayHit.ray.dir_z);
     _SurfaceInteraction interaction;
     HdEmbreeInstanceContext const* instanceContext = nullptr;
     HdEmbreePrototypeContext const* prototypeContext = nullptr;
-    if (!_TryBuildSurfaceInteraction(
-            rayHit,
-            wo,
-            &interaction,
-            &instanceContext,
-            &prototypeContext)) {
+    if (!_TryBuildSurfaceInteraction(rayHit, omegaOutWld, &interaction,
+                                     &instanceContext, &prototypeContext)) {
         result.color = GfVec4f(0.0f, 0.0f, 0.0f, 1.0f);
         return result;
     }
-    const GfVec3f hitPos = interaction.p;
-    GfVec3f normal = interaction.GetIncidentBaseNormal();
+    const GfVec3f positionHitWld = interaction.positionHitWld;
+    GfVec3f normalShdWldOut = interaction.GetNormalSrfWldOut();
     // Build shading context via shared helper (texcoord, displayColor,
     // tangent frame all constructed consistently).
     mxcpp::ShadingContext ctx = _BuildShadingContext(
@@ -77,7 +73,7 @@ HdEmbreeRenderer::_IntegrateUnlit(
     ctx.geomPropUserData = &cbData;
     ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
 
-    // Recover tangent frame from context for normal map application.
+    // Recover the tangent frame used to apply a material normal map.
     GfVec3f tangent = _ToGf(ctx.tangent);
     GfVec3f bitangent = _ToGf(ctx.bitangent);
 
@@ -98,20 +94,15 @@ HdEmbreeRenderer::_IntegrateUnlit(
 
     if (hasMaterialClosure) {
         mxcpp::Vec3f resolvedNormal;
-        if (closure.ResolveNormal(
-                _ToMx(tangent),
-                _ToMx(bitangent),
-                _ToMx(normal),
-                &resolvedNormal)) {
+        if (closure.ResolveNormal(_ToMx(tangent), _ToMx(bitangent),
+                                  _ToMx(normalShdWldOut), &resolvedNormal)) {
             GfVec3f candidate;
             const bool valid =
                 _TryNormalizeDirection(_ToGf(resolvedNormal), &candidate) &&
-                GfDot(
-                    candidate,
-                    interaction.GetIncidentGeometricNormal()) > 0.0f &&
-                GfDot(candidate, wo) > 0.0f;
+                GfDot(candidate, interaction.GetNormalGeomWldOut()) > 0.0f &&
+                GfDot(candidate, omegaOutWld) > 0.0f;
             if (valid) {
-                normal = candidate;
+                normalShdWldOut = candidate;
             } else {
                 ++_invalidMaterialNormalCount;
             }
@@ -130,15 +121,12 @@ HdEmbreeRenderer::_IntegrateUnlit(
     // attenuated by ambient occlusion, with the resolved material normal.
     const GfVec3f rawDir(
         rayHit.ray.dir_x, rayHit.ray.dir_y, rayHit.ray.dir_z);
-    float diffuseLight = fabs(GfDot(-rawDir, normal)) *
-        HdEmbreeConfig::GetInstance().cameraLightIntensity;
+    float diffuseLight = fabs(GfDot(-rawDir, normalShdWldOut)) *
+                         HdEmbreeConfig::GetInstance().cameraLightIntensity;
 
-    float aoLightIntensity =
-        _ComputeAmbientOcclusion(
-            hitPos,
-            normal,
-            interaction.Ng,
-            domain.Fork(HdEmbreeSampleDomainKey::AmbientOcclusion));
+    float aoLightIntensity = _ComputeAmbientOcclusion(
+        positionHitWld, normalShdWldOut, interaction.normalGeomWldExt,
+        domain.Fork(HdEmbreeSampleDomainKey::AmbientOcclusion));
 
     const GfVec3f lightingColor = materialColor * diffuseLight * aoLightIntensity;
 
@@ -152,10 +140,10 @@ HdEmbreeRenderer::_IntegrateUnlit(
 }
 
 float
-HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& position,
-                                            GfVec3f const& normal,
-                                            GfVec3f const& Ng,
-                                            HdEmbreeSampleDomain const& domain)
+HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
+                                           GfVec3f const& normalShdWldOut,
+                                           GfVec3f const& normalGeomWldExt,
+                                           HdEmbreeSampleDomain const& domain)
 {
     // 0 ambient occlusion samples means disable the ambient occlusion term.
     if (_ambientOcclusionSamples < 1) {
@@ -165,20 +153,19 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& position,
     float occlusionFactor = 0.0f;
 
     // For hemisphere sampling we need to choose a coordinate frame at this
-    // point. For the purposes of _CosineWeightedDirection, the normal needs
-    // to map to (0,0,1), but since the distribution is radially symmetric
-    // we don't care about the other axes.
+    // point. For _CosineWeightedDirection, normalShdWldOut must map to
+    // (0,0,1), but radial symmetry makes the other axes arbitrary.
     GfMatrix3f basis(1.0f);
     GfVec3f xAxis;
-    if (fabsf(GfDot(normal, GfVec3f(0.0f,0.0f,1.0f))) < 0.9f) {
-        xAxis = GfCross(normal, GfVec3f(0.0f,0.0f,1.0f));
+    if (fabsf(GfDot(normalShdWldOut, GfVec3f(0.0f, 0.0f, 1.0f))) < 0.9f) {
+        xAxis = GfCross(normalShdWldOut, GfVec3f(0.0f, 0.0f, 1.0f));
     } else {
-        xAxis = GfCross(normal, GfVec3f(0.0f,1.0f,0.0f));
+        xAxis = GfCross(normalShdWldOut, GfVec3f(0.0f, 1.0f, 0.0f));
     }
-    GfVec3f yAxis = GfCross(normal, xAxis);
+    GfVec3f yAxis = GfCross(normalShdWldOut, xAxis);
     basis.SetColumn(0, xAxis.GetNormalized());
     basis.SetColumn(1, yAxis.GetNormalized());
-    basis.SetColumn(2, normal);
+    basis.SetColumn(2, normalShdWldOut);
 
     // Generate random samples, stratified with Latin Hypercube Sampling.
     // https://en.wikipedia.org/wiki/Latin_hypercube_sampling
@@ -219,12 +206,11 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& position,
     // the hemisphere that's occluded when rays are traced to infinity,
     // computed by random sampling over the hemisphere.
     const GfVec3f rayOrigin =
-        _OffsetRayOrigin(position, Ng, normal, 1e-4f);
+        _OffsetRayOrigin(positionWld, normalGeomWldExt, normalShdWldOut, 1e-4f);
     for (int i = 0; i < _ambientOcclusionSamples; i++)
     {
-        // Sample in the hemisphere centered on the face normal. Use
-        // cosine-weighted hemisphere sampling to bias towards samples which
-        // will have a bigger effect on the occlusion term.
+        // Sample in the hemisphere centered on normalShdWldOut. Use
+        // cosine-weighting to favor directions with more influence on AO.
         GfVec3f shadowDir = basis * _CosineWeightedDirection(samples[i]);
 
         // Trace shadow ray, using the fast interface (rtcOccluded) since

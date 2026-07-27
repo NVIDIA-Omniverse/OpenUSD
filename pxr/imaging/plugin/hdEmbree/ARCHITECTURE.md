@@ -37,6 +37,80 @@ than authoring USD. Its explicit metadata covers 25 of the 27 `ty:` attributes;
 `ty:disableShadows` and `ty:textureCacheSize` use the default category. Its key
 set must remain a subset of the delegate descriptors.
 
+## Common-quantity naming
+
+First-party identifiers compose semantic suffixes in this order:
+
+`<quantity><kind><transport/event role><coordinate space><orientation><representation or measure><reciprocal>`
+
+Use full quantity roots: `normal`, `omega`, `radiance`, `position`, `distance`,
+`anisotropy`, and role-specific `index`. The exceptions are uniform random
+samples `u1`/`u2` and derivatives such as `dPdu`, `dPdv`, `dPdx`, and `dPdy`.
+Use the fixed abbreviations `Geom`, `Srf`, `Shd`, `Wld`, `Obj`, and `Ext`;
+other suffixes remain unabbreviated. `pdf`, `bsdf`, `rgb`, and `ior` are the
+standard multi-letter acronym roots. The quantity always comes first:
+`positionHitWld`, not `hitPositionWorld`; an output parameter appends
+`Output` or `Result` rather than using an `Out` prefix.
+
+A spatial value in shared state or a function interface states its coordinate
+space. Transforms use `<from>To<to>`, such as `objToWld`. Omit a suffix only
+when that semantic dimension does not apply, not because a function currently
+uses only one space or normal kind.
+
+For directional quantities, `In` and `Out` identify transport sides:
+`omegaIn` points toward the next
+vertex or light and `omegaOut` points toward the previous vertex or camera.
+They do not mean an object's interior/exterior or an outward normal. Normal
+orientation uses `Ext` for the authored exterior and `Out`/`In` only when
+faced toward the corresponding transport direction. IOR names are the explicit
+optics exception: `iorIn` is the incident medium before a crossing and
+`iorOut` is the transmitted medium after it, independent of `omegaIn` and
+`omegaOut`. `eta` is reserved for the ratio `iorIn / iorOut`.
+Probability-density names state their measure and append `Inverse` for a
+reciprocal.
+
+External, generated, and authored names are boundaries. Embree fields such as
+`RTCHit::Ng`, MaterialX port tokens, and vendored BSDL identifiers retain their
+external spelling; first-party code copies them immediately into a name below.
+Types below are renderer-native; first-party MaterialXCpp uses its
+corresponding type without changing the semantic name.
+
+| Name | Type | Meaning and invariants |
+| --- | --- | --- |
+| `positionWld` | `GfVec3f` | World-space point. Add event/usage suffixes before space, such as `positionHitWld`, `positionEntryWld`, or `positionRayOriginWld`, when multiple positions coexist. |
+| `positionObj` | `GfVec3f` | Object-space point belonging to the current prototype. |
+| `normalGeomWldExt` | `GfVec3f` | Normalized geometric normal transformed from Embree `RTCHit::Ng`, corrected for authored orientation, and pointing toward the authored exterior. Immutable topology and boundary authority. |
+| `normalGeomWldOut` | `GfVec3f` | Geometric exterior normal faced toward `omegaOutWld`. Never material-resolved. |
+| `normalGeomObjExt` | `GfVec3f` | Object-space counterpart used only where object and world geometric normals coexist. |
+| `normalSrfWldExt` | `GfVec3f` | Normalized smooth/displaced shading normal, view independent, aligned with `normalGeomWldExt`, and containing no material normal-map result. |
+| `normalSrfWldOut` | `GfVec3f` | Surface normal faced toward `omegaOutWld`; material-normal fallback and differential source. |
+| `normalShdWldOut` | `GfVec3f` | Material-resolved shading normal faced toward `omegaOutWld`; falls back to `normalSrfWldOut` and never owns topology or medium transitions. |
+| `tangentWld`, `bitangentWld` | `GfVec3f` | World-space material frame paired with `normalShdWldOut`; use `Obj` or `Tangent` suffixes for other spaces. |
+| `omegaInWld` | `GfVec3f` | Normalized incident direction from the interaction toward the sampled next vertex or light. Replaces `wi`, `wI`, and ambiguous `direction` when this meaning applies. |
+| `omegaOutWld` | `GfVec3f` | Normalized exitant direction from the interaction toward the previous path vertex or camera. Replaces `wo` and `wO`. |
+| `positionRayOriginWld`, `directionRayWld` | `GfVec3f` | Origin and forward travel direction of a generic ray segment. Use `directionShadowWld`, `directionEntryWld`, etc. when it is not a local scattering omega. |
+| `iorIn`, `iorOut` | `float` | Absolute IORs in the optics convention: incident medium before a crossing and transmitted medium after it. They do not name the `omegaIn`/`omegaOut` sides. `1.0f` represents vacuum/air and glass is commonly about `1.5f`. |
+| `eta` | `float` | Explicit ratio `iorIn / iorOut`. `1.0f` means no IOR change; special sentinel behavior such as zero must be documented by the owning API. |
+| `radianceIn` | `GfVec3f` | Incident RGB radiance carried from a sampled/evaluated light. Replaces `Li`. Use `radianceInSpectral` for a hero-wavelength scalar. |
+| `radianceEmitted` | `GfVec3f` | RGB radiance emitted by a light or surface. Replaces `Le`. |
+| `radianceAccumulated` | `GfVec3f` | RGB radiance accumulated for the current camera path/sample. Qualify direct, indirect, or spectral variants when they coexist. |
+| `throughputRgb` | `GfVec3f` | RGB path-throughput multiplier accumulated from the camera to the current segment. |
+| `throughputSpectral` | `float` | Hero-wavelength counterpart to `throughputRgb`. Use `throughputWeight` only for an unapplied local returned multiplier. |
+| `bsdfValue` | `GfVec3f` or `mxcpp::Vec3f` | Evaluated or sampled BSDF value. Replaces bare `f`; qualify spectral/scalar forms when required. |
+| `pdf` | `float` | Non-negative probability density whose measure is explicit in its suffix or declaration contract. |
+| `pdfSolidAngle`, `pdfSolidAngleInverse` | `float` | Density and reciprocal density with respect to solid angle. Replace `pdfW` / `invPdfW`. |
+| `pdfArea`, `pdfAreaInverse` | `float` | Density and reciprocal density with respect to surface area. Replace `pdfA` / `invPdfA`. |
+| `distanceWld` | `float` | World-space distance. Add roles such as `distanceRemainingWld`, `distanceScatterWld`, or `distanceOppositeWld`. Replace `dist` and ray-parameter `t` where they represent distance. |
+| `u1`, `u2` | `float` | Independent uniform random samples in `[0, 1)`. These are the explicit short-name exception. Use `coordinateParametricU` / `coordinateParametricV` or `coordinateTextureU` / `coordinateTextureV` for coordinates rather than random samples. |
+| `absorption` | `GfVec3f` | Per-channel absorption coefficient in inverse world units. Replaces `sigmaA`. |
+| `scattering` | `GfVec3f` | Per-channel scattering coefficient in inverse world units. Replaces `sigmaS`. |
+| `extinction` | `GfVec3f` | Per-channel extinction coefficient: `absorption + scattering`. Replaces `sigmaT`; do not call this transmission. |
+| `absorptionIndex` | `GfVec3f` | Dimensionless imaginary part of a conductor's complex IOR. Replaces the optics symbol `kappa`; it is not a medium absorption or extinction coefficient. |
+| `anisotropy` | `float` | Henyey-Greenstein anisotropy, clamped to the owning model's documented range. Replaces bare `g`. |
+| `albedo` | `GfVec3f` | Unitless per-channel scattering/reflectance ratio, normally in `[0, 1]`; qualify surface or volume variants when both coexist. |
+| `cosTheta` | `float` | Cosine of the relevant angle. Add a role suffix such as `cosThetaIn`, `cosThetaOut`, or `cosThetaLight` when multiple angles coexist. Keep bare `cosTheta` only when the role is unambiguous. |
+| `index` | `int` or unsigned index type | Generic collection index. Prefer `indexBounce`, `indexChannel`, `indexLight`, etc.; replace loop variables `i`, `j`, and `k`. |
+
 ## Repository map
 
 ### Plugin root
@@ -399,17 +473,21 @@ For each segment, `_IntegratePath()` performs these stages in order:
    position and constructs one central surface interaction with distinct
    topology and shading state:
 
-   - `Ng` is the normalized, orientation-correct Embree facet normal. It always
-     points toward the authored outside and alone controls boundary crossings,
-     medium ownership, ray offsets, and geometric reflection/transmission;
-   - `baseNormalOut` is the view-independent smooth/displaced material normal,
-     aligned into the `Ng` hemisphere once;
-   - `frontFacing` is computed once from `dot(Ng, wo)`;
-   - the material and BSDF consume one incident-facing copy of the base frame.
-     Invalid or wrong-`Ng`-hemisphere material normals fall back to that base
-     incident normal instead of being negated.
+   - `normalGeomWldExt` is the normalized, orientation-correct Embree facet
+     normal. It points toward the authored exterior and alone controls boundary
+     crossings, medium ownership, ray offsets, and geometric
+     reflection/transmission;
+   - `normalGeomWldOut` is its copy faced toward `omegaOutWld`;
+   - `normalSrfWldExt` is the view-independent smooth/displaced pre-material
+     normal aligned with `normalGeomWldExt`;
+   - `normalSrfWldOut` is its exitant-facing copy and material-normal fallback;
+   - `normalShdWldOut` is the resolved material normal, or
+     `normalSrfWldOut` when resolution fails;
+   - `frontFacing` is computed once from
+     `dot(normalGeomWldExt, omegaOutWld)`.
 
-   The side transform flips N and dN on back faces, preserves dP and the
+   The side transform flips the surface normal and its derivatives on back
+   faces, preserves `dP` and the
    authored tangent orientation, and reconstructs the bitangent from recorded
    outward-frame handedness. All normal vectors use inverse-transpose
    transforms under non-uniform instance transforms. `_BuildShadingContext()`

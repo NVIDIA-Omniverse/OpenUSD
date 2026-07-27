@@ -98,7 +98,7 @@ struct HdEmbree_DirectionalShapingDistribution
     // features narrower than a base row always span whole cells.
     std::vector<float> rowCosThetaBounds;
     std::vector<float> cdf;
-    std::vector<float> cellPdfW;
+    std::vector<float> cellPdfSolidAngle;
     float weightSum = 0.0f;
     float averageWeight = 1.0f;
     float peakWeight = 1.0f;
@@ -116,17 +116,15 @@ struct HdEmbree_DirectionalShapingDistribution
     {
         const size_t numCells =
             static_cast<size_t>(NumRows()) * static_cast<size_t>(NumPhi);
-        return numCells > 0 &&
-               cdf.size() == numCells + 1 &&
-               cellPdfW.size() == numCells &&
-               weightSum > 0.0f;
+        return numCells > 0 && cdf.size() == numCells + 1 &&
+               cellPdfSolidAngle.size() == numCells && weightSum > 0.0f;
     }
 };
 
 struct HdEmbree_DirectionalShapingSample
 {
     GfVec3f localDirection = GfVec3f(0.0f, 0.0f, 1.0f);
-    float pdfW = 0.0f;
+    float pdfSolidAngle = 0.0f;
     float importance = 0.0f;
     bool valid = false;
 };

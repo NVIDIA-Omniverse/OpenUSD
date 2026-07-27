@@ -353,8 +353,8 @@ Commit 2 must run the same check over the rest of `mathPrimitives.h` and
 `surfaceShaderUtils.h` before promoting anything. Record the result.
 
 `05-plan-naming-core.md` owns the *quantity* names inside these functions
-(`Ng`/`wi`/`wo`/`eta`). This plan does not rename parameters or locals; the
-two passes touch disjoint identifiers.
+(`normalGeomWldExt`/`omegaInWld`/`omegaOutWld`/`eta`). Preserve those names
+while moving definitions; this plan does not rename parameters or locals.
 
 ### Why `mathPrimitives.h`, and not `math.h` or `mathHelpers.h`
 
@@ -380,7 +380,7 @@ just a one-line file responsibility. At minimum, each declaration states:
   must lie in the upper hemisphere of the supplied normal, valid ranges for
   roughness (`[0,1]` perceptual) and alpha (`[kMinMicrofacetAlpha, 1]`),
   whether an IOR is a ratio or an absolute index, and which side of the
-  surface `wo` is assumed to be on.
+  surface `omegaOutWld` is assumed to be on.
 - **Output guarantees** — non-negativity, whether a returned PDF is solid
   angle or area measure, and whether a returned reflectance is already
   weighted.

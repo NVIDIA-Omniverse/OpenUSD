@@ -8,8 +8,9 @@ should carry no dead code).
 These are behavior-preserving edits that are independent of each other and land
 together as one commit, after `05-plan-naming-core.md` (see *Sequencing*). Three
 issues edit code tokens — a function-local rename (Issue 1), an uncalled
-declaration deleted (Issue 2), a redundant `||` term removed (Issue 6) — but all
-three are behavior-preserving. The rest are comments and whitespace.
+declaration deleted (Issue 2), an unused SSS field and its sole write deleted
+(Issue 2c), and a redundant `||` term removed (Issue 6) — but all four are
+behavior-preserving. The rest are comments and whitespace.
 
 ## Issue 1: the ambient-occlusion accumulator is documented backwards
 
@@ -87,6 +88,24 @@ does consume it by then, leave it and let `19-plan-ty-namespace.md` move it to
 Coordinate with `19`, which otherwise renames this namespace, and with `23`,
 whose `_pi<T>` item counts `pxr_pbrt::pi<T>` as one of the definitions to
 collapse — deleting the file removes that item rather than completing it.
+
+## Issue 2c: dead field — `HdEmbreeSssInput::iorInterior`
+
+`renderer/integrator/sss.h:34` declares `HdEmbreeSssInput::iorInterior`.
+`renderer/integrator/sss.cpp` assigns it while preparing `walkInput`, but no
+code reads it. The SSS walk obtains every IOR value it uses through other
+state, so the field and assignment add a false input contract without affecting
+transport.
+
+Verify before acting, since an intervening change could add a consumer:
+
+```sh
+rg -n '\biorInterior\b' renderer -g '*.{cpp,h}'
+```
+
+**Fix:** if the only matches remain the declaration and assignment, delete
+both. Do not redirect the value into another IOR field; this issue removes
+dead state and does not change the SSS IOR policy.
 
 ## Issue 3: procedural step numbers in the derivative helper
 

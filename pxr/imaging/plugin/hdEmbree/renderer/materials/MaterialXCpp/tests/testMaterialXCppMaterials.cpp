@@ -183,9 +183,10 @@ TestStandardSurfaceMetallic()
 static bool
 TestStandardSurfaceGoldMetallicSharpRoughnessStaysStable()
 {
-    const Vec3f N(0.0f, 1.0f, 0.0f);
-    const Vec3f wo = Vec3f(0.2f, 0.9797959f, 0.0f).normalized();
-    const Vec3f wiMirror = Vec3f(-0.2f, 0.9797959f, 0.0f).normalized();
+    const Vec3f normalShdWldOut(0.0f, 1.0f, 0.0f);
+    const Vec3f omegaOutWld = Vec3f(0.2f, 0.9797959f, 0.0f).normalized();
+    const Vec3f omegaInMirroredWld =
+        Vec3f(-0.2f, 0.9797959f, 0.0f).normalized();
     const float roughnessValues[] = {0.0f, 0.01f, 0.02f, 0.03f, 0.04f};
 
     for (const float roughness : roughnessValues) {
@@ -225,8 +226,10 @@ TestStandardSurfaceGoldMetallicSharpRoughnessStaysStable()
             return false;
         }
 
-        const Vec3f directEval = Bsdf::EvalSurface(c, N, wiMirror, wo);
-        const float directPdf = Bsdf::PdfSurface(c, N, wiMirror, wo);
+        const Vec3f directEval = Bsdf::EvalSurface(
+            c, normalShdWldOut, omegaInMirroredWld, omegaOutWld);
+        const float directPdf = Bsdf::PdfSurface(
+            c, normalShdWldOut, omegaInMirroredWld, omegaOutWld);
         const bool effectivelySmooth = expectedAlpha < 1.0e-3f;
         if (effectivelySmooth) {
             if (!Test_IsClose(directEval, Vec3f(0.0f), 1.0e-7f) ||
@@ -240,21 +243,20 @@ TestStandardSurfaceGoldMetallicSharpRoughnessStaysStable()
                 return false;
             }
 
-            const auto sample =
-                Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.4f);
-            if (!sample.isSpecular || sample.pdf <= 0.0f ||
-                !Test_IsClose(sample.wi, wiMirror, 1.0e-6f) ||
-                !IsFiniteNonNegative(sample.f) ||
-                sample.f.length() <= 0.0f) {
-                printf(
-                    "    Smooth Standard Surface metal should sample delta: "
-                    "roughness=%f specular=%d wi=(%f,%f,%f) "
-                    "f=(%f,%f,%f) pdf=%f\n",
-                    roughness,
-                    sample.isSpecular ? 1 : 0,
-                    sample.wi[0], sample.wi[1], sample.wi[2],
-                    sample.f[0], sample.f[1], sample.f[2],
-                    sample.pdf);
+            const auto sample = Bsdf::SampleSurface(
+                c, normalShdWldOut, omegaOutWld, 0.3f, 0.7f, 0.4f);
+            if (!sample.isSpecular || sample.pdfSolidAngle <= 0.0f ||
+                !Test_IsClose(sample.omegaInWld, omegaInMirroredWld, 1.0e-6f) ||
+                !IsFiniteNonNegative(sample.bsdfValue) ||
+                sample.bsdfValue.length() <= 0.0f) {
+                printf("    Smooth Standard Surface metal should sample delta: "
+                       "roughness=%f specular=%d omegaInWld=(%f,%f,%f) "
+                       "f=(%f,%f,%f) pdf=%f\n",
+                       roughness, sample.isSpecular ? 1 : 0,
+                       sample.omegaInWld[0], sample.omegaInWld[1],
+                       sample.omegaInWld[2], sample.bsdfValue[0],
+                       sample.bsdfValue[1], sample.bsdfValue[2],
+                       sample.pdfSolidAngle);
                 return false;
             }
             continue;
@@ -272,41 +274,38 @@ TestStandardSurfaceGoldMetallicSharpRoughnessStaysStable()
             return false;
         }
 
-        const auto sample = Bsdf::SampleSurface(c, N, wo, 0.3f, 0.7f, 0.4f);
-        const float pdf = Bsdf::PdfSurface(c, N, sample.wi, wo);
-        const float ratio = sample.pdf / std::max(pdf, 1.0e-20f);
-        if (sample.isSpecular || sample.pdf <= 0.0f || pdf <= 0.0f ||
+        const auto sample = Bsdf::SampleSurface(c, normalShdWldOut, omegaOutWld,
+                                                0.3f, 0.7f, 0.4f);
+        const float pdf = Bsdf::PdfSurface(c, normalShdWldOut,
+                                           sample.omegaInWld, omegaOutWld);
+        const float ratio = sample.pdfSolidAngle / std::max(pdf, 1.0e-20f);
+        if (sample.isSpecular || sample.pdfSolidAngle <= 0.0f || pdf <= 0.0f ||
             ratio < 0.8f || ratio > 1.2f) {
-            printf(
-                "    Sharp Standard Surface metal sample invalid: "
-                "roughness=%f specular=%d samplePdf=%f pdf=%f\n",
-                roughness,
-                sample.isSpecular ? 1 : 0,
-                sample.pdf,
-                pdf);
+            printf("    Sharp Standard Surface metal sample invalid: "
+                   "roughness=%f specular=%d samplePdf=%f pdf=%f\n",
+                   roughness, sample.isSpecular ? 1 : 0, sample.pdfSolidAngle,
+                   pdf);
             return false;
         }
 
-        const float cosTheta = std::max(sample.wi[1], 0.0f);
-        const Vec3f throughput = sample.f * (cosTheta / sample.pdf);
-        if (!IsFiniteNonNegative(sample.f) ||
-            !IsFiniteNonNegative(throughput)) {
-            printf(
-                "    Sharp Standard Surface metal sample non-finite: "
-                "roughness=%f f=(%f,%f,%f) throughput=(%f,%f,%f)\n",
-                roughness,
-                sample.f[0], sample.f[1], sample.f[2],
-                throughput[0], throughput[1], throughput[2]);
+        const float cosTheta = std::max(sample.omegaInWld[1], 0.0f);
+        const Vec3f throughputRgb =
+            sample.bsdfValue * (cosTheta / sample.pdfSolidAngle);
+        if (!IsFiniteNonNegative(sample.bsdfValue) ||
+            !IsFiniteNonNegative(throughputRgb)) {
+            printf("    Sharp Standard Surface metal sample non-finite: "
+                   "roughness=%f f=(%f,%f,%f) throughputRgb=(%f,%f,%f)\n",
+                   roughness, sample.bsdfValue[0], sample.bsdfValue[1],
+                   sample.bsdfValue[2], throughputRgb[0], throughputRgb[1],
+                   throughputRgb[2]);
             return false;
         }
         for (int i = 0; i < 3; ++i) {
-            if (throughput[i] > 1.25f) {
+            if (throughputRgb[i] > 1.25f) {
                 printf(
-                    "    Sharp Standard Surface metal throughput too high: "
-                    "roughness=%f channel=%d throughput=%f\n",
-                    roughness,
-                    i,
-                    throughput[i]);
+                    "    Sharp Standard Surface metal throughputRgb too high: "
+                    "roughness=%f channel=%d throughputRgb=%f\n",
+                    roughness, i, throughputRgb[i]);
                 return false;
             }
         }
@@ -409,8 +408,10 @@ TestStandardSurfaceVolumeParametersReachClosure()
         0.35f);
 
     return c.hasInteriorMedium &&
-           Test_IsClose(c.interiorMedium.sigmaA, expectedTransmission.sigmaA, 1e-5f) &&
-           Test_IsClose(c.interiorMedium.sigmaS, expectedTransmission.sigmaS, 1e-5f) &&
+           Test_IsClose(c.interiorMedium.absorption,
+                        expectedTransmission.absorption, 1e-5f) &&
+           Test_IsClose(c.interiorMedium.scattering,
+                        expectedTransmission.scattering, 1e-5f) &&
            Test_IsClose(c.interiorMedium.anisotropy, 0.35f, 1e-5f) &&
            Test_IsClose(c.subsurfaceWeight, 0.75f, 1e-5f) &&
            Test_IsClose(c.subsurfaceColor, Vec3f(0.25f, 0.5f, 0.75f), 1e-5f) &&
@@ -505,18 +506,18 @@ TestStandardSurfaceThinWalledUsesUnitIorTransmission()
     SurfaceClosure transmissionOnly;
     transmissionOnly.bsdfTree.root =
         transmissionOnly.bsdfTree.Add(*transmission);
-    const Vec3f N(0.0f, 1.0f, 0.0f);
-    const Vec3f wo = Vec3f(0.3f, 0.953939f, 0.0f).normalized();
+    const Vec3f normalShdWldOut(0.0f, 1.0f, 0.0f);
+    const Vec3f omegaOutWld = Vec3f(0.3f, 0.953939f, 0.0f).normalized();
     for (const Vec2f& u : {Vec2f(0.2f, 0.3f), Vec2f(0.7f, 0.8f)}) {
         const auto sample = Bsdf::SampleSurface(
-            transmissionOnly, N, wo, u[0], u[1], 0.5f);
-        if (sample.pdf <= 0.0f ||
-            !Test_IsClose(sample.wi, -wo, 1.0e-5f)) {
-            printf(
-                "    Rough IOR-1 thin-wall transmission bent: "
-                "wi=(%f,%f,%f), expected=(%f,%f,%f), pdf=%f\n",
-                sample.wi[0], sample.wi[1], sample.wi[2],
-                -wo[0], -wo[1], -wo[2], sample.pdf);
+            transmissionOnly, normalShdWldOut, omegaOutWld, u[0], u[1], 0.5f);
+        if (sample.pdfSolidAngle <= 0.0f ||
+            !Test_IsClose(sample.omegaInWld, -omegaOutWld, 1.0e-5f)) {
+            printf("    Rough IOR-1 thin-wall transmission bent: "
+                   "omegaInWld=(%f,%f,%f), expected=(%f,%f,%f), pdf=%f\n",
+                   sample.omegaInWld[0], sample.omegaInWld[1],
+                   sample.omegaInWld[2], -omegaOutWld[0], -omegaOutWld[1],
+                   -omegaOutWld[2], sample.pdfSolidAngle);
             return false;
         }
     }
@@ -623,12 +624,14 @@ TestStandardSurfaceMetalThinFilmChangesReflectionColor()
     const SurfaceClosure standardClosure = EvalStandardSurface(standardParams);
     const SurfaceClosure openPbrClosure = EvalOpenPbr(openPbrParams);
 
-    const Vec3f N(0.0f, 1.0f, 0.0f);
-    const Vec3f wo = Vec3f(0.25f, 0.96f, 0.1f).normalized();
-    const Vec3f wi = Vec3f(-0.1f, 0.99f, 0.05f).normalized();
+    const Vec3f normalShdWldOut(0.0f, 1.0f, 0.0f);
+    const Vec3f omegaOutWld = Vec3f(0.25f, 0.96f, 0.1f).normalized();
+    const Vec3f omegaInWld = Vec3f(-0.1f, 0.99f, 0.05f).normalized();
 
-    const Vec3f standardEval = Bsdf::EvalSurface(standardClosure, N, wi, wo);
-    const Vec3f openPbrEval = Bsdf::EvalSurface(openPbrClosure, N, wi, wo);
+    const Vec3f standardEval = Bsdf::EvalSurface(
+        standardClosure, normalShdWldOut, omegaInWld, omegaOutWld);
+    const Vec3f openPbrEval = Bsdf::EvalSurface(openPbrClosure, normalShdWldOut,
+                                                omegaInWld, omegaOutWld);
 
     const bool chromatic =
         std::abs(standardEval[0] - standardEval[1]) > 1e-5f;
@@ -673,14 +676,14 @@ TestStandardSurfaceThinFilmUsesNanometerUnits()
     const SurfaceClosure subNanometerClosure =
         EvalStandardSurface(subNanometerParams);
 
-    const Vec3f N(0.0f, 1.0f, 0.0f);
-    const Vec3f wo = Vec3f(0.25f, 0.96f, 0.1f).normalized();
-    const Vec3f wi = Vec3f(-0.1f, 0.99f, 0.05f).normalized();
+    const Vec3f normalShdWldOut(0.0f, 1.0f, 0.0f);
+    const Vec3f omegaOutWld = Vec3f(0.25f, 0.96f, 0.1f).normalized();
+    const Vec3f omegaInWld = Vec3f(-0.1f, 0.99f, 0.05f).normalized();
 
-    const Vec3f nanometerEval =
-        Bsdf::EvalSurface(nanometerClosure, N, wi, wo);
-    const Vec3f subNanometerEval =
-        Bsdf::EvalSurface(subNanometerClosure, N, wi, wo);
+    const Vec3f nanometerEval = Bsdf::EvalSurface(
+        nanometerClosure, normalShdWldOut, omegaInWld, omegaOutWld);
+    const Vec3f subNanometerEval = Bsdf::EvalSurface(
+        subNanometerClosure, normalShdWldOut, omegaInWld, omegaOutWld);
 
     const bool nanometerChromatic =
         std::abs(nanometerEval[0] - nanometerEval[1]) > 1e-6f ||
@@ -1194,13 +1197,13 @@ TestAdobeOpenPbrEvalPdfSurfaceMatchesSeparateCalls()
     params["transmission_weight"] = Value(0.25f);
 
     const SurfaceClosure closure = EvalAdobeOpenPbr(params);
-    const Vec3f normal(0.0f, 0.0f, 1.0f);
-    Vec3f wi(0.2f, -0.1f, 0.97f);
-    wi.normalize();
-    const Vec3f wo(0.0f, 0.0f, 1.0f);
+    const Vec3f normalShdWldOut(0.0f, 0.0f, 1.0f);
+    Vec3f omegaInWld(0.2f, -0.1f, 0.97f);
+    omegaInWld.normalize();
+    const Vec3f omegaOutWld(0.0f, 0.0f, 1.0f);
 
-    const AdobeOpenPbrEvalPdfResult combined =
-        TryEvalPdfAdobeOpenPbrSurface(closure, normal, wi, wo);
+    const AdobeOpenPbrEvalPdfResult combined = TryEvalPdfAdobeOpenPbrSurface(
+        closure, normalShdWldOut, omegaInWld, omegaOutWld);
 #ifdef PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR
     if (!combined.evaluated) {
         printf("    Expected combined Adobe OpenPBR eval/pdf path\n");
@@ -1216,25 +1219,30 @@ TestAdobeOpenPbrEvalPdfSurfaceMatchesSeparateCalls()
         return false;
     }
 
-    const Vec3f separateValue = EvalAdobeOpenPbr(*data, normal, wi, wo);
-    const float separatePdf = PdfAdobeOpenPbr(*data, normal, wi, wo);
+    const Vec3f separateValue =
+        EvalAdobeOpenPbr(*data, normalShdWldOut, omegaInWld, omegaOutWld);
+    const float separatePdf =
+        PdfAdobeOpenPbr(*data, normalShdWldOut, omegaInWld, omegaOutWld);
     const AdobeOpenPbrPreparedSurface prepared =
-        PrepareAdobeOpenPbrSurface(closure, normal, wo);
+        PrepareAdobeOpenPbrSurface(closure, normalShdWldOut, omegaOutWld);
     const AdobeOpenPbrEvalPdfResult preparedEvalPdf =
-        EvalPdfPreparedAdobeOpenPbrSurface(prepared, wi);
-    const Bsdf::BsdfSample separateSample =
-        SampleAdobeOpenPbr(*data, normal, wo, 0.23f, 0.47f, 0.61f);
+        EvalPdfPreparedAdobeOpenPbrSurface(prepared, omegaInWld);
+    const Bsdf::BsdfSample separateSample = SampleAdobeOpenPbr(
+        *data, normalShdWldOut, omegaOutWld, 0.23f, 0.47f, 0.61f);
     const Bsdf::BsdfSample preparedSample =
         SamplePreparedAdobeOpenPbrSurface(prepared, 0.23f, 0.47f, 0.61f);
 
     return prepared.valid &&
            Test_IsClose(combined.value, separateValue, 1e-5f) &&
-           Test_IsClose(combined.pdf, separatePdf, 1e-5f) &&
+           Test_IsClose(combined.pdfSolidAngle, separatePdf, 1e-5f) &&
            Test_IsClose(preparedEvalPdf.value, separateValue, 1e-5f) &&
-           Test_IsClose(preparedEvalPdf.pdf, separatePdf, 1e-5f) &&
-           Test_IsClose(preparedSample.wi, separateSample.wi, 1e-5f) &&
-           Test_IsClose(preparedSample.f, separateSample.f, 1e-5f) &&
-           Test_IsClose(preparedSample.pdf, separateSample.pdf, 1e-5f) &&
+           Test_IsClose(preparedEvalPdf.pdfSolidAngle, separatePdf, 1e-5f) &&
+           Test_IsClose(preparedSample.omegaInWld, separateSample.omegaInWld,
+                        1e-5f) &&
+           Test_IsClose(preparedSample.bsdfValue, separateSample.bsdfValue,
+                        1e-5f) &&
+           Test_IsClose(preparedSample.pdfSolidAngle,
+                        separateSample.pdfSolidAngle, 1e-5f) &&
            preparedSample.isSpecular == separateSample.isSpecular &&
            Test_IsClose(preparedSample.eta, separateSample.eta, 1e-5f);
 #else
@@ -1288,22 +1296,20 @@ TestAdobeOpenPbrPureSubsurfaceUsesRandomWalkPayload()
     const Vec3f expectedAlbedo =
         ExpectedAdobeOpenPbrSubsurfaceAlbedo(
             Vec3f(0.8f, 0.45f, 0.25f), 0.2f);
-    const Vec3f expectedSigmaS = CompMul(expectedExtinction, expectedAlbedo);
-    const Vec3f expectedSigmaA =
+    const Vec3f expectedScattering =
+        CompMul(expectedExtinction, expectedAlbedo);
+    const Vec3f expectedAbsorption =
         CompMul(expectedExtinction, Vec3f(1.0f) - expectedAlbedo);
-    if (!Test_IsClose(
-            closure.precomputedSubsurfaceMedium.adobeOpenPbrVolume.
-                extinctionCoefficient,
-            expectedExtinction, 1e-4f) ||
+    if (!Test_IsClose(closure.precomputedSubsurfaceMedium.adobeOpenPbrVolume
+                          .extinctionCoefficient,
+                      expectedExtinction, 1e-4f) ||
         !Test_IsClose(
             closure.precomputedSubsurfaceMedium.adobeOpenPbrVolume.albedo,
             expectedAlbedo, 1e-4f) ||
-        !Test_IsClose(
-            closure.precomputedSubsurfaceMedium.sigmaS,
-            expectedSigmaS, 1e-4f) ||
-        !Test_IsClose(
-            closure.precomputedSubsurfaceMedium.sigmaA,
-            expectedSigmaA, 1e-4f)) {
+        !Test_IsClose(closure.precomputedSubsurfaceMedium.scattering,
+                      expectedScattering, 1e-4f) ||
+        !Test_IsClose(closure.precomputedSubsurfaceMedium.absorption,
+                      expectedAbsorption, 1e-4f)) {
         printf("    Expected Adobe van-de-Hulst SSS volume coefficients\n");
         return false;
     }
@@ -1318,17 +1324,17 @@ TestAdobeOpenPbrPureSubsurfaceUsesRandomWalkPayload()
         return false;
     }
 
-    const Vec3f normal(0.0f, 0.0f, 1.0f);
-    const Vec3f wo(0.0f, 0.0f, 1.0f);
+    const Vec3f normalShdWldOut(0.0f, 0.0f, 1.0f);
+    const Vec3f omegaOutWld(0.0f, 0.0f, 1.0f);
     const AdobeOpenPbrPreparedSurface prepared =
-        PrepareAdobeOpenPbrSurface(closure, normal, wo);
+        PrepareAdobeOpenPbrSurface(closure, normalShdWldOut, omegaOutWld);
     const Bsdf::BsdfSample sample =
         SamplePreparedAdobeOpenPbrSurface(prepared, 0.23f, 0.47f, 0.61f);
     if (!prepared.valid || !sample.isSubsurface) {
         printf("    Expected pure Adobe SSS to synthesize subsurface marker\n");
         return false;
     }
-    return Test_IsClose(sample.f, Vec3f(1.0f), 1e-5f);
+    return Test_IsClose(sample.bsdfValue, Vec3f(1.0f), 1e-5f);
 #else
     return !closure.hasPrecomputedSubsurfaceMedium;
 #endif
@@ -1584,11 +1590,14 @@ TestOpenPbrVolumeParametersReachClosure()
         -0.25f);
 
     return c.hasInteriorMedium &&
-           Test_IsClose(c.interiorMedium.sigmaA, expectedTransmission.sigmaA, 1e-5f) &&
-           Test_IsClose(c.interiorMedium.sigmaS, expectedTransmission.sigmaS, 1e-5f) &&
+           Test_IsClose(c.interiorMedium.absorption,
+                        expectedTransmission.absorption, 1e-5f) &&
+           Test_IsClose(c.interiorMedium.scattering,
+                        expectedTransmission.scattering, 1e-5f) &&
            Test_IsClose(c.interiorMedium.anisotropy, -0.25f, 1e-5f) &&
            Test_IsClose(c.subsurfaceWeight, 0.6f, 1e-5f) &&
-           Test_IsClose(c.subsurfaceRadiusScale, Vec3f(1.0f, 0.5f, 0.25f), 1e-5f) &&
+           Test_IsClose(c.subsurfaceRadiusScale, Vec3f(1.0f, 0.5f, 0.25f),
+                        1e-5f) &&
            Test_IsClose(c.subsurfaceAnisotropy, 0.2f, 1e-5f);
 }
 
@@ -1611,9 +1620,9 @@ TestTransmissionMediumShiftsNegativeAbsorptionLikeMaterialX()
         {rawAbsorption[0], rawAbsorption[1], rawAbsorption[2]});
     const Vec3f expected = rawAbsorption - Vec3f(minAbsorption);
 
-    return Test_IsClose(medium.sigmaA[0], expected[0], 1e-5f) &&
-           Test_IsClose(medium.sigmaA[1], expected[1], 1e-5f) &&
-           Test_IsClose(medium.sigmaA[2], expected[2], 1e-5f);
+    return Test_IsClose(medium.absorption[0], expected[0], 1e-5f) &&
+           Test_IsClose(medium.absorption[1], expected[1], 1e-5f) &&
+           Test_IsClose(medium.absorption[2], expected[2], 1e-5f);
 }
 
 static bool
@@ -2294,12 +2303,13 @@ TestUsdPreviewSurfaceIorOneKeepsGrazingSpecular()
         return false;
     }
 
-    const Vec3f N(0.0f, 0.0f, 1.0f);
-    Vec3f wo(1.0f, 0.0f, 0.1f);
-    Vec3f wi(-1.0f, 0.0f, 0.1f);
-    wo.normalize();
-    wi.normalize();
-    const Vec3f f = Bsdf::EvalSurface(c, N, wi, wo);
+    const Vec3f normalShdWldOut(0.0f, 0.0f, 1.0f);
+    Vec3f omegaOutWld(1.0f, 0.0f, 0.1f);
+    Vec3f omegaInWld(-1.0f, 0.0f, 0.1f);
+    omegaOutWld.normalize();
+    omegaInWld.normalize();
+    const Vec3f f =
+        Bsdf::EvalSurface(c, normalShdWldOut, omegaInWld, omegaOutWld);
     return IsFiniteNonNegative(f) &&
            (f[0] + f[1] + f[2]) > 1.0e-5f;
 }

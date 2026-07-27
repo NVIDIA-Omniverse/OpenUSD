@@ -14,8 +14,8 @@ namespace mxcpp {
 /// Standalone BSDF evaluation functions.
 ///
 /// Each function evaluates a single BSDF lobe for a given pair of
-/// incident (wi) and outgoing (wo) directions. Directions point away
-/// from the surface.
+/// incident (omegaInWld) and outgoing (omegaOutWld) directions. Directions
+/// point away from the surface.
 namespace Bsdf
 {
     /// Enables Turquin-style multiple-scattering compensation for GGX
@@ -39,66 +39,48 @@ namespace Bsdf
     // ------------------------------------------------------------------
 
     /// Lambertian diffuse BRDF: f = albedo / pi.
-    Vec3f EvalLambertian(
-        const Vec3f& baseColor,
-        const Vec3f& N,
-        const Vec3f& wi,
-        const Vec3f& wo);
+    Vec3f EvalLambertian(const Vec3f& baseColor, const Vec3f& normalShdWldOut,
+                         const Vec3f& omegaInWld, const Vec3f& omegaOutWld);
 
     /// GGX microfacet specular BRDF (Cook-Torrance).
-    Vec3f EvalGGXSpecular(
-        float roughness,
-        float ior,
-        const Vec3f& specularColor,
-        const Vec3f& N,
-        const Vec3f& wi,
-        const Vec3f& wo);
+    Vec3f EvalGGXSpecular(float roughness, float ior,
+                          const Vec3f& specularColor,
+                          const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+                          const Vec3f& omegaOutWld);
 
     /// GGX microfacet transmission BTDF.
-    Vec3f EvalGGXTransmission(
-        float roughness,
-        float ior,
-        const Vec3f& transmissionColor,
-        const Vec3f& N,
-        const Vec3f& wi,
-        const Vec3f& wo);
+    Vec3f EvalGGXTransmission(float roughness, float ior,
+                              const Vec3f& transmissionColor,
+                              const Vec3f& normalShdWldOut,
+                              const Vec3f& omegaInWld,
+                              const Vec3f& omegaOutWld);
 
     /// Charlie sheen BRDF (Imageworks model).
-    Vec3f EvalSheen(
-        const Vec3f& sheenColor,
-        float roughness,
-        const Vec3f& N,
-        const Vec3f& wi,
-        const Vec3f& wo);
+    Vec3f EvalSheen(const Vec3f& sheenColor, float roughness,
+                    const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+                    const Vec3f& omegaOutWld);
 
     /// Clear-coat GGX specular lobe.
-    Vec3f EvalCoat(
-        float coatWeight,
-        float coatRoughness,
-        float coatIor,
-        const Vec3f& N,
-        const Vec3f& wi,
-        const Vec3f& wo);
+    Vec3f EvalCoat(float coatWeight, float coatRoughness, float coatIor,
+                   const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+                   const Vec3f& omegaOutWld);
 
     /// Evaluate the full layered surface model from a closure.
     /// Combines all BSDF lobes with proper energy conservation.
     /// Returns the outgoing radiance contribution for one light sample.
-    Vec3f EvalSurface(
-        const SurfaceClosure& closure,
-        const Vec3f& N,
-        const Vec3f& wi,
-        const Vec3f& wo,
-        float heroWavelengthNm = 0.0f,
-        bool frontFacing = true);
+    Vec3f EvalSurface(const SurfaceClosure& closure,
+                      const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+                      const Vec3f& omegaOutWld, float heroWavelengthNm = 0.0f,
+                      bool frontFacing = true);
 
     // ------------------------------------------------------------------
     // Sampling & PDF (Phase 9)
     // ------------------------------------------------------------------
 
     struct BsdfSample {
-        Vec3f wi;
-        Vec3f f;
-        float   pdf;
+        Vec3f omegaInWld;
+        Vec3f bsdfValue;
+        float pdfSolidAngle;
         bool    isSpecular;
         bool    isSubsurface = false;
         bool    hasSubsurfaceEntryDirection = false;
@@ -111,31 +93,21 @@ namespace Bsdf
     };
 
     /// Cosine-weighted hemisphere sampling for Lambertian diffuse.
-    BsdfSample SampleLambertian(
-        const Vec3f& baseColor,
-        const Vec3f& N,
-        const Vec3f& wo,
-        float u1, float u2);
+    BsdfSample SampleLambertian(const Vec3f& baseColor,
+                                const Vec3f& normalShdWldOut,
+                                const Vec3f& omegaOutWld, float u1, float u2);
 
-    float PdfLambertian(
-        const Vec3f& N,
-        const Vec3f& wi);
+    float PdfLambertian(const Vec3f& normalShdWldOut, const Vec3f& omegaInWld);
 
     /// GGX visible-normal distribution function (VNDF) sampling for
     /// microfacet specular reflection.
-    BsdfSample SampleGGXSpecular(
-        float roughness,
-        float ior,
-        const Vec3f& specularColor,
-        const Vec3f& N,
-        const Vec3f& wo,
-        float u1, float u2);
+    BsdfSample SampleGGXSpecular(float roughness, float ior,
+                                 const Vec3f& specularColor,
+                                 const Vec3f& normalShdWldOut,
+                                 const Vec3f& omegaOutWld, float u1, float u2);
 
-    float PdfGGXSpecular(
-        float roughness,
-        const Vec3f& N,
-        const Vec3f& wi,
-        const Vec3f& wo);
+    float PdfGGXSpecular(float roughness, const Vec3f& normalShdWldOut,
+                         const Vec3f& omegaInWld, const Vec3f& omegaOutWld);
 
     /// Directional energy helpers for the isotropic GGX reflection lobe.
     /// alphaRoughness is the GGX alpha parameter, not perceptual roughness.
@@ -166,39 +138,29 @@ namespace Bsdf
         float signedCosTheta);
 
     /// GGX VNDF-based transmission sampling.
-    BsdfSample SampleGGXTransmission(
-        float roughness,
-        float ior,
-        const Vec3f& transmissionColor,
-        const Vec3f& N,
-        const Vec3f& wo,
-        float u1, float u2);
+    BsdfSample SampleGGXTransmission(float roughness, float ior,
+                                     const Vec3f& transmissionColor,
+                                     const Vec3f& normalShdWldOut,
+                                     const Vec3f& omegaOutWld, float u1,
+                                     float u2);
 
-    float PdfGGXTransmission(
-        float roughness,
-        float ior,
-        const Vec3f& N,
-        const Vec3f& wi,
-        const Vec3f& wo);
+    float PdfGGXTransmission(float roughness, float ior,
+                             const Vec3f& normalShdWldOut,
+                             const Vec3f& omegaInWld, const Vec3f& omegaOutWld);
 
     /// Unified surface sampler: selects a lobe proportional to its
     /// approximate energy contribution, then importance-samples that lobe.
     /// The PDF accounts for all lobes (mixed PDF).
-    BsdfSample SampleSurface(
-        const SurfaceClosure& closure,
-        const Vec3f& N,
-        const Vec3f& wo,
-        float u1, float u2, float uLobe,
-        float heroWavelengthNm = 0.0f,
-        bool frontFacing = true);
+    BsdfSample SampleSurface(const SurfaceClosure& closure,
+                             const Vec3f& normalShdWldOut,
+                             const Vec3f& omegaOutWld, float u1, float u2,
+                             float uLobe, float heroWavelengthNm = 0.0f,
+                             bool frontFacing = true);
 
-    float PdfSurface(
-        const SurfaceClosure& closure,
-        const Vec3f& N,
-        const Vec3f& wi,
-        const Vec3f& wo,
-        float heroWavelengthNm = 0.0f,
-        bool frontFacing = true);
+    float PdfSurface(const SurfaceClosure& closure,
+                     const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+                     const Vec3f& omegaOutWld, float heroWavelengthNm = 0.0f,
+                     bool frontFacing = true);
 
     /// Return a copy of `closure` with lobes that would be discarded by the
     /// caustic-class path heuristic removed from the BSDF tree.
@@ -213,29 +175,32 @@ namespace Bsdf
     /// Sample a direction entering a subsurface medium using the surface's
     /// specular dielectric parameters (roughness + IOR).
     ///
-    /// - Smooth surface (roughness < threshold): deterministic Snell refraction.
-    /// - Rough surface: GGX VNDF samples microfacet normal H, then Snell about H.
+    /// - Smooth surface (roughness < threshold): deterministic Snell
+    /// refraction.
+    /// - Rough surface: GGX VNDF samples microfacet normal H, then Snell about
+    /// H.
     /// - IOR is clamped to >= 1.0 so there is no TIR at entry (matches Cycles).
-    /// - Returns false only on degenerate input (e.g. Dot(N, wo) <= 0).
+    /// - Returns false only on degenerate input (e.g. Dot(normalShdWldOut,
+    /// omegaOutWld) <= 0).
     ///
     /// Source: influenced by Cycles `subsurface_entry_bounce` in
     /// intern/cycles/kernel/integrator/subsurface.h (Apache 2.0).
-    bool SampleSubsurfaceEntry(
-        const SurfaceClosure& closure,
-        const Vec3f& N,
-        const Vec3f& wo,
-        float u1, float u2,
-        Vec3f& wi_into_medium);
+    bool SampleSubsurfaceEntry(const SurfaceClosure& closure,
+                               const Vec3f& normalShdWldOut,
+                               const Vec3f& omegaOutWld, float u1, float u2,
+                               Vec3f& directionEntryWldOutput);
 
     // ------------------------------------------------------------------
     // MIS utilities
     // ------------------------------------------------------------------
 
     /// Power heuristic with exponent 2 (following Veach).
-    inline float PowerHeuristic(float pdfA, float pdfB) {
-        float a2 = pdfA * pdfA;
-        float b2 = pdfB * pdfB;
-        return a2 / (a2 + b2 + 1e-10f);
+    inline float
+    PowerHeuristic(float pdfFirst, float pdfSecond)
+    {
+        const float pdfFirstSquared = pdfFirst * pdfFirst;
+        const float pdfSecondSquared = pdfSecond * pdfSecond;
+        return pdfFirstSquared / (pdfFirstSquared + pdfSecondSquared + 1e-10f);
     }
 }
 

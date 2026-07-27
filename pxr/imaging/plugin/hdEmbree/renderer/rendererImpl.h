@@ -157,32 +157,31 @@ _SampleUniformDiskConcentric(GfVec2f const& sample)
     }
 
     float r;
-    float theta;
+    float angleAzimuth;
     if (std::abs(x) > std::abs(y)) {
         r = x;
-        theta = (_pi<float> / 4.0f) * (y / x);
+        angleAzimuth = (_pi<float> / 4.0f) * (y / x);
     } else {
         r = y;
-        theta = (_pi<float> / 2.0f) -
-                (_pi<float> / 4.0f) * (x / y);
+        angleAzimuth = (_pi<float> / 2.0f) - (_pi<float> / 4.0f) * (x / y);
     }
 
-    return GfVec2f(r * std::cos(theta), r * std::sin(theta));
+    return GfVec2f(r * std::cos(angleAzimuth), r * std::sin(angleAzimuth));
 }
 
 inline bool
 _ApplyCameraDepthOfField(HdEmbreeCameraDepthOfField const& dof,
-                         GfVec2f const& lensPoint,
-                         GfVec3f *origin,
-                         GfVec3f *dir)
+                         GfVec2f const& lensPoint, GfVec3f* origin,
+                         GfVec3f* directionLocal)
 {
     constexpr float eps = 1.0e-7f;
 
-    if (!origin || !dir || !_IsFinite(*origin) || !_IsFinite(*dir)) {
+    if (!origin || !directionLocal || !_IsFinite(*origin) ||
+        !_IsFinite(*directionLocal)) {
         return false;
     }
 
-    const float dz = (*dir)[2];
+    const float dz = (*directionLocal)[2];
     if (!std::isfinite(dz) || std::abs(dz) < eps) {
         return false;
     }
@@ -192,7 +191,7 @@ _ApplyCameraDepthOfField(HdEmbreeCameraDepthOfField const& dof,
         return false;
     }
 
-    const GfVec3f focusPoint = *origin + (*dir) * focusT;
+    const GfVec3f focusPoint = *origin + (*directionLocal) * focusT;
     const GfVec3f lensOrigin(lensPoint[0], lensPoint[1], 0.0f);
     const GfVec3f dofDir = focusPoint - lensOrigin;
     if (!_IsFinite(dofDir) || dofDir.GetLengthSq() <= eps * eps) {
@@ -200,7 +199,7 @@ _ApplyCameraDepthOfField(HdEmbreeCameraDepthOfField const& dof,
     }
 
     *origin = lensOrigin;
-    *dir = dofDir;
+    *directionLocal = dofDir;
     return true;
 }
 
@@ -453,11 +452,10 @@ _Clamp01(GfVec3f const& value)
 }
 
 inline GfVec3f
-_TransparentShadowTransmission(
-    mxcpp::SurfaceClosure const& closure,
-    GfVec3f const& direction,
-    GfVec3f const& hitNormal,
-    bool includeSurfaceTint)
+_TransparentShadowTransmission(mxcpp::SurfaceClosure const& closure,
+                               GfVec3f const& directionShadowWld,
+                               GfVec3f const& normalGeomWldExt,
+                               bool includeSurfaceTint)
 {
     const float transmission = _Clamp01(closure.transmission);
     if (transmission <= 0.0f) {
@@ -466,7 +464,7 @@ _TransparentShadowTransmission(
 
     const float interfaceTransmission =
         mxcpp::Bsdf::StraightShadowDielectricTransmission(
-            closure, GfDot(direction, hitNormal));
+            closure, GfDot(directionShadowWld, normalGeomWldExt));
     GfVec3f attenuation(transmission * interfaceTransmission);
     if (includeSurfaceTint) {
         attenuation = GfCompMult(
@@ -1136,50 +1134,58 @@ _TryComputeDisplacedSubdivNormalDerivativesToWorld(
 /// samplesPerPixel are only used for the fallback path. They come from
 /// HdEmbreeRenderer member variables, accessed by the caller.
 inline void
-_ComputeScreenSpaceDerivatives(
-    HdEmbreeRayDifferential const& rayDiff,
-    GfVec3f const& hitPos,
-    GfVec3f const& normal,
-    GfVec3f const& dPdu,
-    GfVec3f const& dPdv,
-    GfMatrix4d const& viewMatrix,
-    GfMatrix4d const& inverseProjMatrix,
-    float imageWidth,
-    float imageHeight,
-    int samplesPerPixel,
-    mxcpp::ShadingContext& ctx)
+_ComputeScreenSpaceDerivatives(HdEmbreeRayDifferential const& rayDifferential,
+                               GfVec3f const& positionHitWld,
+                               GfVec3f const& normalTangentPlaneWld,
+                               GfVec3f const& dPdu, GfVec3f const& dPdv,
+                               GfMatrix4d const& viewMatrix,
+                               GfMatrix4d const& inverseProjMatrix,
+                               float imageWidth, float imageHeight,
+                               int samplesPerPixel, mxcpp::ShadingContext& ctx)
 {
     GfVec3f dPdx(0.0f);
     GfVec3f dPdy(0.0f);
 
-    if (rayDiff.hasDifferentials) {
-        // Intersect differential rays with the tangent plane at hitPos.
-        float d = -GfDot(normal, hitPos);
-        float rxDotN = GfDot(normal, rayDiff.rxDirection);
+    if (rayDifferential.hasDifferentials) {
+        // Intersect differential rays with the tangent plane at positionHitWld.
+        float planeOffset = -GfDot(normalTangentPlaneWld, positionHitWld);
+        float rxDotN =
+            GfDot(normalTangentPlaneWld, rayDifferential.rxDirection);
         if (std::abs(rxDotN) > 1e-10f) {
-            float tx = -(GfDot(normal, rayDiff.rxOrigin) + d) / rxDotN;
-            GfVec3f px = rayDiff.rxOrigin + tx * rayDiff.rxDirection;
-            dPdx = px - hitPos;
+            float tx =
+                -(GfDot(normalTangentPlaneWld, rayDifferential.rxOrigin) +
+                  planeOffset) /
+                rxDotN;
+            GfVec3f px =
+                rayDifferential.rxOrigin + tx * rayDifferential.rxDirection;
+            dPdx = px - positionHitWld;
         }
-        float ryDotN = GfDot(normal, rayDiff.ryDirection);
+        float ryDotN =
+            GfDot(normalTangentPlaneWld, rayDifferential.ryDirection);
         if (std::abs(ryDotN) > 1e-10f) {
-            float ty = -(GfDot(normal, rayDiff.ryOrigin) + d) / ryDotN;
-            GfVec3f py = rayDiff.ryOrigin + ty * rayDiff.ryDirection;
-            dPdy = py - hitPos;
+            float ty =
+                -(GfDot(normalTangentPlaneWld, rayDifferential.ryOrigin) +
+                  planeOffset) /
+                ryDotN;
+            GfVec3f py =
+                rayDifferential.ryOrigin + ty * rayDifferential.ryDirection;
+            dPdy = py - positionHitWld;
         }
     } else {
         // Fallback: approximate dPdx/dPdy from camera projection.
-        GfVec3f hitCamera = GfVec3f(viewMatrix.Transform(hitPos));
-        float dist = hitCamera.GetLength();
-        if (dist > 1e-6f) {
+        GfVec3f hitCamera = GfVec3f(viewMatrix.Transform(positionHitWld));
+        float distanceCameraWld = hitCamera.GetLength();
+        if (distanceCameraWld > 1e-6f) {
             GfVec3f ndcCenter(0.0f, 0.0f, -1.0f);
             GfVec3f ndcDx(2.0f / imageWidth, 0.0f, -1.0f);
             GfVec3f ndcDy(0.0f, 2.0f / imageHeight, -1.0f);
             GfVec3f camCenter = GfVec3f(inverseProjMatrix.Transform(ndcCenter));
             GfVec3f camDx = GfVec3f(inverseProjMatrix.Transform(ndcDx));
             GfVec3f camDy = GfVec3f(inverseProjMatrix.Transform(ndcDy));
-            float pixelScaleX = (camDx - camCenter).GetLength() * dist;
-            float pixelScaleY = (camDy - camCenter).GetLength() * dist;
+            float pixelScaleX =
+                (camDx - camCenter).GetLength() * distanceCameraWld;
+            float pixelScaleY =
+                (camDy - camCenter).GetLength() * distanceCameraWld;
 
             float sppScale = (samplesPerPixel > 1)
                 ? 1.0f / std::sqrt(static_cast<float>(samplesPerPixel))
@@ -1187,10 +1193,11 @@ _ComputeScreenSpaceDerivatives(
             pixelScaleX *= sppScale;
             pixelScaleY *= sppScale;
 
-            GfVec3f t, b;
-            GfBuildOrthonormalFrame(normal, &t, &b);
-            dPdx = t * pixelScaleX;
-            dPdy = b * pixelScaleY;
+            GfVec3f tangentWld, bitangentWld;
+            GfBuildOrthonormalFrame(normalTangentPlaneWld, &tangentWld,
+                                    &bitangentWld);
+            dPdx = tangentWld * pixelScaleX;
+            dPdy = bitangentWld * pixelScaleY;
         }
     }
 
@@ -1231,22 +1238,19 @@ namespace {
 
 /// Fill in an RTCRay structure from the given parameters.
 inline void
-_PopulateRay(
-    RTCRay *ray,
-    GfVec3f const& origin,
-    GfVec3f const& dir,
-    float nearest,
-    float furthest = std::numeric_limits<float>::infinity(),
-    HdEmbree_RayMask mask = HdEmbree_RayMask::All)
+_PopulateRay(RTCRay* ray, GfVec3f const& origin, GfVec3f const& directionLocal,
+             float nearest,
+             float furthest = std::numeric_limits<float>::infinity(),
+             HdEmbree_RayMask mask = HdEmbree_RayMask::All)
 {
     ray->org_x = origin[0];
     ray->org_y = origin[1];
     ray->org_z = origin[2];
     ray->tnear = nearest;
 
-    ray->dir_x = dir[0];
-    ray->dir_y = dir[1];
-    ray->dir_z = dir[2];
+    ray->dir_x = directionLocal[0];
+    ray->dir_y = directionLocal[1];
+    ray->dir_z = directionLocal[2];
     ray->time = 0.0f;
 
     ray->tfar = furthest;
@@ -1255,37 +1259,45 @@ _PopulateRay(
     ray->flags = 0;
 }
 
+/// \brief Bias a ray origin off a surface to avoid self-intersection.
+///
+/// \param positionWld World-space point to offset.
+/// \param directionOffsetReferenceWld Axis to push along, faced toward
+/// \p directionRayWld. Surface events supply their geometric normal. A
+/// zero-length value is a supported input meaning "no surface frame is
+/// known"; callers rely on it, so keep that branch.
+/// \param directionRayWld Normalized direction the offset ray travels.
+/// \param bias Positive offset distance.
+/// \return The biased origin; \p positionWld advanced along
+/// \p directionRayWld when no reference axis is available.
 inline GfVec3f
 _OffsetRayOrigin(
-    GfVec3f const& position,
-    GfVec3f const& normal,
-    GfVec3f const& direction,
+    GfVec3f const& positionWld,
+    GfVec3f const& directionOffsetReferenceWld,
+    GfVec3f const& directionRayWld,
     float bias = 1.0e-4f)
 {
-    if (normal.GetLengthSq() < 1e-18f) {
-        return position + direction * bias;
+    if (directionOffsetReferenceWld.GetLengthSq() < 1e-18f) {
+        return positionWld + directionRayWld * bias;
     }
 
-    GfVec3f offsetNormal = normal.GetNormalized();
-    if (GfDot(offsetNormal, direction) < 0.0f) {
+    GfVec3f offsetNormal = directionOffsetReferenceWld.GetNormalized();
+    if (GfDot(offsetNormal, directionRayWld) < 0.0f) {
         offsetNormal = -offsetNormal;
     }
-    return position + offsetNormal * bias;
+    return positionWld + offsetNormal * bias;
 }
 
 /// Fill in an RTCRayHit structure from the given parameters.
 // note this containts a Ray and a RayHit
 inline void
-_PopulateRayHit(
-    RTCRayHit* rayHit,
-    GfVec3f const& origin,
-    GfVec3f const& dir,
-    float nearest,
-    float furthest = std::numeric_limits<float>::infinity(),
-    HdEmbree_RayMask mask = HdEmbree_RayMask::All)
+_PopulateRayHit(RTCRayHit* rayHit, GfVec3f const& origin,
+                GfVec3f const& directionLocal, float nearest,
+                float furthest = std::numeric_limits<float>::infinity(),
+                HdEmbree_RayMask mask = HdEmbree_RayMask::All)
 {
     // Fill in defaults for the ray
-    _PopulateRay(&rayHit->ray, origin, dir, nearest, furthest, mask);
+    _PopulateRay(&rayHit->ray, origin, directionLocal, nearest, furthest, mask);
 
     // Fill in defaults for the hit
     rayHit->hit.primID = RTC_INVALID_GEOMETRY_ID;
@@ -1306,28 +1318,23 @@ _PopulateSssExitRayHit(
         return false;
     }
 
-    GfVec3f rayDir = -sssOut.exitDir;
+    GfVec3f rayDir = -sssOut.directionExitWld;
     if (rayDir.GetLengthSq() <= 1.0e-20f) {
         return false;
     }
     rayDir.Normalize();
 
-    _PopulateRayHit(
-        rayHit,
-        sssOut.exitPos,
-        rayDir,
-        0.0f,
-        0.0f,
-        HdEmbree_RayMask::Camera);
+    _PopulateRayHit(rayHit, sssOut.positionExitWld, rayDir, 0.0f, 0.0f,
+                    HdEmbree_RayMask::Camera);
 
     rayHit->hit.primID = sssOut.exitPrimId;
     rayHit->hit.geomID = sssOut.exitGeomId;
     rayHit->hit.instID[0] = sssOut.exitInstanceId;
-    rayHit->hit.u = sssOut.exitU;
-    rayHit->hit.v = sssOut.exitV;
-    rayHit->hit.Ng_x = sssOut.exitObjectGeomNormal[0];
-    rayHit->hit.Ng_y = sssOut.exitObjectGeomNormal[1];
-    rayHit->hit.Ng_z = sssOut.exitObjectGeomNormal[2];
+    rayHit->hit.u = sssOut.coordinateParametricExitU;
+    rayHit->hit.v = sssOut.coordinateParametricExitV;
+    rayHit->hit.Ng_x = sssOut.normalGeomExitObjExt[0];
+    rayHit->hit.Ng_y = sssOut.normalGeomExitObjExt[1];
+    rayHit->hit.Ng_z = sssOut.normalGeomExitObjExt[2];
     return true;
 }
 
@@ -1338,16 +1345,16 @@ _PopulateSssExitRayHit(
 /// The algorithm here is to generate a random point on the disk, and project
 /// that point to the unit hemisphere.
 inline GfVec3f
-_CosineWeightedDirection(GfVec2f const& uniform_float)
+_CosineWeightedDirection(GfVec2f const& uniformSamples)
 {
-    GfVec3f dir;
-    float theta = 2.0f * _pi<float> * uniform_float[0];
-    float eta = uniform_float[1];
-    float sqrteta = sqrtf(eta);
-    dir[0] = cosf(theta) * sqrteta;
-    dir[1] = sinf(theta) * sqrteta;
-    dir[2] = sqrtf(1.0f-eta);
-    return dir;
+    GfVec3f directionLocal;
+    float angleAzimuth = 2.0f * _pi<float> * uniformSamples[0];
+    float u2 = uniformSamples[1];
+    float radiusDisk = sqrtf(u2);
+    directionLocal[0] = cosf(angleAzimuth) * radiusDisk;
+    directionLocal[1] = sinf(angleAzimuth) * radiusDisk;
+    directionLocal[2] = sqrtf(1.0f - u2);
+    return directionLocal;
 }
 
 }  // anonymous namespace
@@ -1362,10 +1369,10 @@ HdEmbreeRenderer::_ApplyPathWeight(
     if (state->hero.active) {
         const _HeroWavelengthState hero{
             true, state->hero.wavelengthNm, state->hero.pdf};
-        state->spectralThroughput *=
+        state->throughputSpectral *=
             _RgbToSpectralValue(weight, hero, _renderColorSpace);
     } else {
-        state->throughput = GfCompMult(state->throughput, weight);
+        state->throughputRgb = GfCompMult(state->throughputRgb, weight);
     }
 }
 
@@ -1377,9 +1384,9 @@ HdEmbreeRenderer::_GetPathThroughputRgb(_PathState const& state) const
         state.hero.wavelengthNm,
         state.hero.pdf};
     return state.hero.active
-        ? _SpectralScalarToRgb(
-            state.spectralThroughput, hero, _renderColorSpace)
-        : state.throughput;
+               ? _SpectralScalarToRgb(
+                     state.throughputSpectral, hero, _renderColorSpace)
+               : state.throughputRgb;
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

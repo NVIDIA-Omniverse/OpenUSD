@@ -730,32 +730,24 @@ TestCompileVolumeOnlyMaterial()
     const SurfaceClosure vacuumClosure =
         vacuumResult.graph->Evaluate(ShadingContext{});
 
-    return closure.opacity == 0.0f &&
-        closure.isVolumeBoundary &&
-        closure.hasInteriorMedium &&
-        Test_IsClose(
-            closure.interiorMedium.sigmaA,
-            Vec3f(0.1f, 0.2f, 0.3f)) &&
-        Test_IsClose(
-            closure.interiorMedium.sigmaS,
-            Vec3f(0.4f, 0.5f, 0.6f)) &&
-        Test_IsClose(closure.interiorMedium.anisotropy, 0.25f) &&
-        explicitClosure.opacity == closure.opacity &&
-        explicitClosure.isVolumeBoundary &&
-        explicitClosure.hasInteriorMedium ==
-            closure.hasInteriorMedium &&
-        Test_IsClose(
-            explicitClosure.interiorMedium.sigmaA,
-            closure.interiorMedium.sigmaA) &&
-        Test_IsClose(
-            explicitClosure.interiorMedium.sigmaS,
-            closure.interiorMedium.sigmaS) &&
-        Test_IsClose(
-            explicitClosure.interiorMedium.anisotropy,
-            closure.interiorMedium.anisotropy) &&
-        vacuumClosure.opacity == 0.0f &&
-        vacuumClosure.isVolumeBoundary &&
-        !vacuumClosure.hasInteriorMedium;
+    return closure.opacity == 0.0f && closure.isVolumeBoundary &&
+           closure.hasInteriorMedium &&
+           Test_IsClose(closure.interiorMedium.absorption,
+                        Vec3f(0.1f, 0.2f, 0.3f)) &&
+           Test_IsClose(closure.interiorMedium.scattering,
+                        Vec3f(0.4f, 0.5f, 0.6f)) &&
+           Test_IsClose(closure.interiorMedium.anisotropy, 0.25f) &&
+           explicitClosure.opacity == closure.opacity &&
+           explicitClosure.isVolumeBoundary &&
+           explicitClosure.hasInteriorMedium == closure.hasInteriorMedium &&
+           Test_IsClose(explicitClosure.interiorMedium.absorption,
+                        closure.interiorMedium.absorption) &&
+           Test_IsClose(explicitClosure.interiorMedium.scattering,
+                        closure.interiorMedium.scattering) &&
+           Test_IsClose(explicitClosure.interiorMedium.anisotropy,
+                        closure.interiorMedium.anisotropy) &&
+           vacuumClosure.opacity == 0.0f && vacuumClosure.isVolumeBoundary &&
+           !vacuumClosure.hasInteriorMedium;
 }
 
 static bool
@@ -843,21 +835,16 @@ TestMixSurfaceClosuresPreservesVolumeBoundaryIdentity()
         MixSurfaceClosures(volume, opaque, 0.5f);
 
     return graphVolumeMix.isVolumeBoundary &&
-        graphBgEndpoint.isVolumeBoundary &&
-        !graphBgEndpoint.HasBsdfTree() &&
-        graphBgEndpoint.opacity == 0.0f &&
-        !graphBgEndpoint.hasInteriorMedium &&
-        graphFgEndpoint.isVolumeBoundary &&
-        !graphFgEndpoint.HasBsdfTree() &&
-        graphFgEndpoint.opacity == 0.0f &&
-        graphFgEndpoint.hasInteriorMedium &&
-        Test_IsClose(
-            graphFgEndpoint.interiorMedium.sigmaA,
-            Vec3f(0.25f)) &&
-        volumeMix.isVolumeBoundary &&
-        bgEndpoint.isVolumeBoundary &&
-        fgEndpoint.isVolumeBoundary &&
-        !surfaceMix.isVolumeBoundary;
+           graphBgEndpoint.isVolumeBoundary && !graphBgEndpoint.HasBsdfTree() &&
+           graphBgEndpoint.opacity == 0.0f &&
+           !graphBgEndpoint.hasInteriorMedium &&
+           graphFgEndpoint.isVolumeBoundary && !graphFgEndpoint.HasBsdfTree() &&
+           graphFgEndpoint.opacity == 0.0f &&
+           graphFgEndpoint.hasInteriorMedium &&
+           Test_IsClose(graphFgEndpoint.interiorMedium.absorption,
+                        Vec3f(0.25f)) &&
+           volumeMix.isVolumeBoundary && bgEndpoint.isVolumeBoundary &&
+           fgEndpoint.isVolumeBoundary && !surfaceMix.isVolumeBoundary;
 }
 
 static bool

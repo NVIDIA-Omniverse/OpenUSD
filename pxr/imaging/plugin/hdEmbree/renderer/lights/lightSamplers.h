@@ -25,51 +25,53 @@ public:
     };
 
     struct LightSample {
-        GfVec3f Li;
-        GfVec3f wI;
-        float dist;
-        float invPdfW;
+        /// Incident radiance arriving from the sampled light.
+        GfVec3f radianceIn;
+        /// Normalized world-space direction from the shading point to light.
+        GfVec3f omegaInWld;
+        /// Non-negative world-space distance; infinity for infinite lights.
+        float distanceWld;
+        /// Reciprocal solid-angle PDF for the selected sampling technique.
+        float pdfSolidAngleInverse;
+        /// True only when every field above describes a usable sample.
         bool valid;
+        /// True when the light has a delta directional distribution.
         bool delta = false;
     };
 
-    static LightSample GetLightSample(
-            HdEmbree_LightData const& lightData,
-            GfVec3f const& hitPosition,
-            GfVec3f const& normal,
-            float u1,
-            float u2,
-            SamplingMode samplingMode = SamplingMode::FullSphere,
-            HdEmbreeRenderColorSpace renderColorSpace =
-                HdEmbreeRenderColorSpace::LinearRec709);
+    static LightSample
+    GetLightSample(HdEmbree_LightData const& lightData,
+                   GfVec3f const& positionHitWld,
+                   GfVec3f const& normalShdWldOut, float u1, float u2,
+                   SamplingMode samplingMode = SamplingMode::FullSphere,
+                   HdEmbreeRenderColorSpace renderColorSpace =
+                       HdEmbreeRenderColorSpace::LinearRec709);
 
     /// Evaluates a dome light along a fixed direction and returns the
     /// corresponding radiance and directional PDF.
-    static LightSample EvaluateDomeLightDirection(
-            HdEmbree_LightData const& lightData,
-            GfVec3f const& direction,
-            HdEmbreeRenderColorSpace renderColorSpace =
-                HdEmbreeRenderColorSpace::LinearRec709);
+    static LightSample
+    EvaluateDomeLightDirection(HdEmbree_LightData const& lightData,
+                               GfVec3f const& omegaInWld,
+                               HdEmbreeRenderColorSpace renderColorSpace =
+                                   HdEmbreeRenderColorSpace::LinearRec709);
 
     /// Evaluates a dome light along a fixed direction with the PDF used by
     /// the selected dome-light sampling mode.
     static LightSample EvaluateDomeLightDirection(
-            HdEmbree_LightData const& lightData,
-            GfVec3f const& direction,
-            GfVec3f const& normal,
-            SamplingMode samplingMode,
-            HdEmbreeRenderColorSpace renderColorSpace =
-                HdEmbreeRenderColorSpace::LinearRec709);
+        HdEmbree_LightData const& lightData, GfVec3f const& omegaInWld,
+        GfVec3f const& normalShdWldOut, SamplingMode samplingMode,
+        HdEmbreeRenderColorSpace renderColorSpace =
+            HdEmbreeRenderColorSpace::LinearRec709);
 
     /// Evaluates a light along a fixed direction from a point and returns the
     /// corresponding radiance, distance, and directional PDF when the ray
     /// intersects the light shape.
-    static LightSample EvaluateLightDirection(
-            HdEmbree_LightData const& lightData,
-            GfVec3f const& hitPosition,
-            GfVec3f const& direction,
-            HdEmbreeRenderColorSpace renderColorSpace =
-                HdEmbreeRenderColorSpace::LinearRec709);
+    static LightSample
+    EvaluateLightDirection(HdEmbree_LightData const& lightData,
+                           GfVec3f const& positionHitWld,
+                           GfVec3f const& omegaInWld,
+                           HdEmbreeRenderColorSpace renderColorSpace =
+                               HdEmbreeRenderColorSpace::LinearRec709);
 
     // callables to be used with std::visit
     LightSample operator()(HdEmbree_UnknownLight const& rect);
@@ -82,24 +84,19 @@ public:
 
 private:
     HdEmbreeLightSampler(HdEmbree_LightData const& lightData,
-                         GfVec3f const& hitPosition,
-                         GfVec3f const& normal,
-                         float u1,
-                         float u2,
+                         GfVec3f const& positionHitWld,
+                         GfVec3f const& normalShdWldOut, float u1, float u2,
                          SamplingMode samplingMode,
-                         HdEmbreeRenderColorSpace renderColorSpace) :
-        _lightData(lightData),
-        _hitPosition(hitPosition),
-        _normal(normal),
-        _u1(u1),
-        _u2(u2),
-        _samplingMode(samplingMode),
-        _renderColorSpace(renderColorSpace)
-    {}
+                         HdEmbreeRenderColorSpace renderColorSpace)
+        : _lightData(lightData), _positionHitWld(positionHitWld),
+          _normalShdWldOut(normalShdWldOut), _u1(u1), _u2(u2),
+          _samplingMode(samplingMode), _renderColorSpace(renderColorSpace)
+    {
+    }
 
     HdEmbree_LightData const& _lightData;
-    GfVec3f const& _hitPosition;
-    GfVec3f const& _normal;
+    GfVec3f const& _positionHitWld;
+    GfVec3f const& _normalShdWldOut;
     float _u1;
     float _u2;
     SamplingMode _samplingMode;

@@ -143,23 +143,22 @@ _ComputeEffectiveSpecularIor(float specularIor,
                              float coatIor,
                              float coatWeight)
 {
-    const float etaSpecular = std::max(specularIor, 1.0f);
-    const float etaCoat = std::max(coatIor, 1.0f);
-    const float specularToCoat = etaSpecular / etaCoat;
-    const float coatToSpecular = etaCoat / etaSpecular;
+    const float iorSpecular = std::max(specularIor, 1.0f);
+    const float iorCoat = std::max(coatIor, 1.0f);
+    const float specularToCoat = iorSpecular / iorCoat;
+    const float coatToSpecular = iorCoat / iorSpecular;
     const float coatRelativeIor = std::max(specularToCoat, coatToSpecular);
     const float clampedCoatWeight = _Clamp01(coatWeight);
-    const float eta = etaSpecular * (1.0f - clampedCoatWeight) +
-        coatRelativeIor * clampedCoatWeight;
+    const float iorEffective = iorSpecular * (1.0f - clampedCoatWeight) +
+                               coatRelativeIor * clampedCoatWeight;
 
-    const float epsilon = (eta - 1.0f) / (eta + 1.0f);
+    const float epsilon = (iorEffective - 1.0f) / (iorEffective + 1.0f);
     const float scaledF0 = std::clamp(
         specularWeight * epsilon * epsilon,
         0.0f,
         0.99999f);
-    const float modulatedEpsilon = std::copysign(
-        std::sqrt(scaledF0),
-        eta - 1.0f);
+    const float modulatedEpsilon =
+        std::copysign(std::sqrt(scaledF0), iorEffective - 1.0f);
     return (1.0f + modulatedEpsilon) /
         std::max(1.0f - modulatedEpsilon, 1.0e-6f);
 }

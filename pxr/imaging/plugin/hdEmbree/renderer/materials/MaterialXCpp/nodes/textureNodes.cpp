@@ -870,8 +870,8 @@ _EvalGltfNormalMap(const ParamMap& inputs,
     }
 
     // Match the generated OSL normalmap implementation: Bworld is dPdv,
-    // then the normalmap function Gram-Schmidt orthogonalizes it against N
-    // and the normalized tangent.
+    // then the normalmap function Gram-Schmidt orthogonalizes it against
+    // Nworld and the normalized tangent.
     Vec3f bitangent =
         ctx.dPdv -
         normal * Dot(ctx.dPdv, normal) -

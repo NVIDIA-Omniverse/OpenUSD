@@ -64,22 +64,21 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
                  input.finiteLightLink, *state->lastScatterCategories))) {
             return _VolumeTransmissionResult::Terminate;
         }
-        GfVec3f lightContrib = input.finiteLightHit.Li;
+        GfVec3f radianceLight = input.finiteLightHit.radianceIn;
         if (state->lastBsdfPdf > 0.0f &&
-            input.finiteLightHit.invPdfW > 0.0f) {
-            const float lightPdf = 1.0f / input.finiteLightHit.invPdfW;
+            input.finiteLightHit.pdfSolidAngleInverse > 0.0f) {
+            const float lightPdf =
+                1.0f / input.finiteLightHit.pdfSolidAngleInverse;
             const float effectiveLightPdf = _GetMultiSampleMisLightPdf(
                 lightPdf,
                 _lightSamplesPerHit);
             if (effectiveLightPdf > 0.0f) {
-                lightContrib *= mxcpp::Bsdf::PowerHeuristic(
-                    state->lastBsdfPdf,
-                    effectiveLightPdf);
+                radianceLight *= mxcpp::Bsdf::PowerHeuristic(state->lastBsdfPdf,
+                                                             effectiveLightPdf);
             }
         }
 
-        _AddPathRadiance(
-            _WeightPathRadiance(lightContrib, *state), state);
+        _AddPathRadiance(_WeightPathRadiance(radianceLight, *state), state);
 
         return _VolumeTransmissionResult::Terminate;
     };
@@ -90,19 +89,19 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
         medium.transportModel == mxcpp::MediumTransportModel::AdobeOpenPBR;
 
     if (!medium.IsAbsorbingOnly()) {
-        GfVec3f sigmaT(0.0f);
-        GfVec3f sigmaS(0.0f);
+        GfVec3f extinction(0.0f);
+        GfVec3f scattering(0.0f);
         GfVec3f channelPdf(0.0f);
         int channel = 0;
 
         if (!useAdobeVolumeTransport) {
-            sigmaT = _ToGf(medium.SigmaT());
-            sigmaS = _ToGf(medium.sigmaS);
+            extinction = _ToGf(medium.Extinction());
+            scattering = _ToGf(medium.scattering);
             GfVec3f albedo(0.0f);
             for (int i = 0; i < 3; ++i) {
-                if (sigmaT[i] > 1.0e-6f) {
+                if (extinction[i] > 1.0e-6f) {
                     albedo[i] =
-                        std::clamp(sigmaS[i] / sigmaT[i], 0.0f, 1.0f);
+                        std::clamp(scattering[i] / extinction[i], 0.0f, 1.0f);
                 }
             }
 
@@ -134,9 +133,8 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
                         distance));
             }
             const GfVec3f transmittance = evalTransmittance(distance);
-            const GfVec3f pdf = GfCompMult(sigmaT, transmittance);
-            const GfVec3f sampleContrib =
-                GfCompMult(sigmaS, transmittance);
+            const GfVec3f pdf = GfCompMult(extinction, transmittance);
+            const GfVec3f sampleContrib = GfCompMult(scattering, transmittance);
             const float denom = GfDot(channelPdf, pdf);
             if (!std::isfinite(denom) || denom <= _volumePdfEps) {
                 return GfVec3f(0.0f);
@@ -183,47 +181,42 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
                 return _VolumeTransmissionResult::Terminate;
             }
 
-            const GfVec3f scatterPos =
-                state->rayOrigin + state->rayDir * scatterDist;
-            const GfVec3f wo = -state->rayDir;
+            const GfVec3f scatterPos = state->positionRayOriginWld +
+                                       state->directionRayWld * scatterDist;
+            const GfVec3f omegaOutWld = -state->directionRayWld;
             const GfVec3f direct = _ComputeMediumDirectLighting(
-                scatterPos,
-                wo,
-                mediumState,
+                scatterPos, omegaOutWld, mediumState,
                 domain.Fork(HdEmbreeSampleDomainKey::MediumDirectLighting),
-                input.bounce < _maxBounces,
-                hero.active,
-                hero.wavelengthNm,
+                input.bounce < _maxBounces, hero.active, hero.wavelengthNm,
                 hero.pdf);
-            _AddPathRadiance(
-                state->hero.active
-                    ? direct * state->spectralThroughput
-                    : GfCompMult(state->throughput, direct),
-                state);
+            _AddPathRadiance(state->hero.active
+                                 ? direct * state->throughputSpectral
+                                 : GfCompMult(state->throughputRgb, direct),
+                             state);
 
             if (input.bounce >= _maxBounces) {
                 return _VolumeTransmissionResult::Terminate;
             }
 
             if (input.bounce >= _minBouncesBeforeRR) {
-                float q = hero.active
-                    ? std::max({
-                        _SpectralScalarToRgb(
-                            state->spectralThroughput,
-                            hero,
-                            _renderColorSpace)[0],
-                        _SpectralScalarToRgb(
-                            state->spectralThroughput,
-                            hero,
-                            _renderColorSpace)[1],
-                        _SpectralScalarToRgb(
-                            state->spectralThroughput,
-                            hero,
-                            _renderColorSpace)[2]})
-                    : std::max({
-                        state->throughput[0],
-                        state->throughput[1],
-                        state->throughput[2]});
+                float q =
+                    hero.active
+                        ? std::max({
+                            _SpectralScalarToRgb(
+                                state->throughputSpectral,
+                                hero,
+                                _renderColorSpace)[0],
+                            _SpectralScalarToRgb(
+                                state->throughputSpectral,
+                                hero,
+                                _renderColorSpace)[1],
+                            _SpectralScalarToRgb(
+                                state->throughputSpectral,
+                                hero,
+                                _renderColorSpace)[2]})
+                        : std::max({state->throughputRgb[0],
+                                    state->throughputRgb[1],
+                                    state->throughputRgb[2]});
                 q = std::min(q, 0.95f);
                 if (q <= 0.0f ||
                     domain
@@ -232,42 +225,37 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
                     return _VolumeTransmissionResult::Terminate;
                 }
                 if (hero.active) {
-                    state->spectralThroughput /= q;
+                    state->throughputSpectral /= q;
                 } else {
-                    state->throughput /= q;
+                    state->throughputRgb /= q;
                 }
             }
 
             const GfVec2f phaseSample =
                 domain.Fork(HdEmbreeSampleDomainKey::MediumPhase).Draw2D();
-            const GfVec3f wi = _ToGf(useAdobeVolumeTransport
-                ? mxcpp::AdobeOpenPbrSampleVolumePhase(
-                      medium,
-                      _ToMx(wo),
-                      phaseSample[0],
-                      phaseSample[1])
-                : mxcpp::SampleHenyeyGreenstein(
-                      _ToMx(wo),
-                      medium.anisotropy,
-                      phaseSample[0],
-                      phaseSample[1]));
-            const float phasePdf = useAdobeVolumeTransport
-                ? mxcpp::AdobeOpenPbrEvalVolumePhasePdf(
-                      medium,
-                      _ToMx(wi),
-                      _ToMx(wo))
-                : mxcpp::PdfHenyeyGreenstein(
-                      _ToMx(wi),
-                      _ToMx(wo),
-                      medium.anisotropy);
+            const GfVec3f omegaInWld =
+                _ToGf(useAdobeVolumeTransport
+                          ? mxcpp::AdobeOpenPbrSampleVolumePhase(
+                                medium, _ToMx(omegaOutWld), phaseSample[0],
+                                phaseSample[1])
+                          : mxcpp::SampleHenyeyGreenstein(
+                                _ToMx(omegaOutWld), medium.anisotropy,
+                                phaseSample[0], phaseSample[1]));
+            const float phasePdf =
+                useAdobeVolumeTransport
+                    ? mxcpp::AdobeOpenPbrEvalVolumePhasePdf(
+                          medium, _ToMx(omegaInWld), _ToMx(omegaOutWld))
+                    : mxcpp::PdfHenyeyGreenstein(_ToMx(omegaInWld),
+                                                 _ToMx(omegaOutWld),
+                                                 medium.anisotropy);
             if (phasePdf <= 0.0f || !std::isfinite(phasePdf)) {
                 return _VolumeTransmissionResult::Terminate;
             }
 
-            state->rayOrigin =
-                _OffsetRayOrigin(scatterPos, wi, wi, 1e-4f);
-            state->rayDir = wi;
-            state->rayDiff.hasDifferentials = false;
+            state->positionRayOriginWld =
+                _OffsetRayOrigin(scatterPos, omegaInWld, omegaInWld, 1e-4f);
+            state->directionRayWld = omegaInWld;
+            state->rayDifferential.hasDifferentials = false;
             state->lastBsdfPdf = phasePdf;
             state->lastScatterWasMedium = true;
             state->lastScatterCategories = mediumState.categories;

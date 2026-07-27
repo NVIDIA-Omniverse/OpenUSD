@@ -218,10 +218,12 @@ performs no sampling or buffer mapping, and terminates that render invocation.
 hdEmbree keeps the authored-outside Embree facet normal separate from smooth,
 displaced, and material-mapped shading normals. Boundary crossings, media, and
 ray offsets use only the outward facet normal. Materials evaluate in one
-incident-facing frame on either mesh side; invalid or boundary-crossing normal
-map results fall back to the smooth/displaced incident normal. Thick dielectric
-side selection is recorded before material evaluation, while thin-walled
-transmission never changes persistent medium state.
+exitant-facing frame on either mesh side: `normalGeomWldExt` owns topology,
+`normalSrfWldOut` is the smooth/displaced fallback, and
+`normalShdWldOut` is the material-resolved normal. Invalid or
+boundary-crossing normal-map results fall back to `normalSrfWldOut`. Thick
+dielectric side selection is recorded before material evaluation, while
+thin-walled transmission never changes persistent medium state.
 
 ### Rough and thin-walled transmission
 

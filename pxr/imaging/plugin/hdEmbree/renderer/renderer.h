@@ -620,25 +620,30 @@ private:
 
     /// \brief Estimate hemispherical ambient visibility at a surface point.
     ///
-    /// \param position World-space surface position.
-    /// \param normal Normalized world-space hemisphere normal.
+    /// \param positionWld World-space surface position.
+    /// \param normalShdWldOut Normalized material-resolved hemisphere normal.
+    /// \param normalGeomWldExt Authored-exterior geometric normal used for the
+    /// ray-origin offset.
     /// \param domain Deterministic sample domain reserved for AO draws.
     /// \return Unoccluded fraction in [0,1], or one when AO is disabled.
-    float _ComputeAmbientOcclusion(GfVec3f const& position,
-                                   GfVec3f const& normal,
-                                   GfVec3f const& Ng,
+    float _ComputeAmbientOcclusion(GfVec3f const& positionWld,
+                                   GfVec3f const& normalShdWldOut,
+                                   GfVec3f const& normalGeomWldExt,
                                    HdEmbreeSampleDomain const& domain);
 
     /// \brief Estimate direct surface lighting from all linked scene lights.
     ///
     /// Uses MIS and MaterialXCpp BSDF evaluation when a closure is supplied;
     /// otherwise it evaluates a synthetic Lambertian response.
-    /// \param position World-space shading position.
-    /// \param normal Normalized world-space BSDF normal.
-    /// \param Ng Immutable outward normal used for topology and ray offsets.
-    /// \param wo Normalized world-space direction toward the previous vertex.
+    /// \param positionWld World-space shading position.
+    /// \param normalShdWldOut Normalized material-resolved shading normal.
+    /// \param normalGeomWldExt Immutable authored-exterior geometric normal
+    /// used for topology and ray offsets.
+    /// \param omegaOutWld Normalized world-space direction toward the previous
+    /// vertex.
     /// \param domain Sample domain reserved for this lighting event.
-    /// \param frontFacing Side determined once from Ng and wo.
+    /// \param frontFacing Side determined once from \p normalGeomWldExt and
+    /// \p omegaOutWld.
     /// \param includeBsdfSamplingMis Whether to weight light samples against
     /// the competing BSDF-sampling technique.
     /// \param closure Optional borrowed closure valid for the call.
@@ -651,27 +656,22 @@ private:
     /// valid for the call and corresponding to \p closure.
     /// \return Linear RGB direct-light contribution before path throughput.
     GfVec3f _ComputeDirectLightingMIS(
-        GfVec3f const& position,
-        GfVec3f const& normal,
-        GfVec3f const& Ng,
-        GfVec3f const& wo,
-        HdEmbreeSampleDomain const& domain,
-        bool frontFacing,
-        bool includeBsdfSamplingMis,
-        mxcpp::SurfaceClosure const* closure,
+        GfVec3f const& positionWld, GfVec3f const& normalShdWldOut,
+        GfVec3f const& normalGeomWldExt, GfVec3f const& omegaOutWld,
+        HdEmbreeSampleDomain const& domain, bool frontFacing,
+        bool includeBsdfSamplingMis, mxcpp::SurfaceClosure const* closure,
         HdEmbreeCategorySet const& receiverCategories,
         HdEmbreeMediumState const& mediumState = HdEmbreeMediumState(),
-        bool spectralActive = false,
-        float heroWavelengthNm = 0.0f,
+        bool spectralActive = false, float heroWavelengthNm = 0.0f,
         float heroWavelengthPdf = 0.0f,
-        mxcpp::AdobeOpenPbrPreparedSurface const*
-            adobeOpenPbrSurface = nullptr) const;
+        mxcpp::AdobeOpenPbrPreparedSurface const* adobeOpenPbrSurface =
+            nullptr) const;
 
     /// \brief Estimate direct lighting at a participating-medium event.
     ///
     /// Samples every linked light and evaluates the active volume phase model.
-    /// \param position World-space scattering position.
-    /// \param wo Normalized direction toward the previous path vertex.
+    /// \param positionWld World-space scattering position.
+    /// \param omegaOutWld Normalized direction toward the previous path vertex.
     /// \param mediumState Active, scattering medium and receiver categories.
     /// \param domain Sample domain reserved for this medium-lighting event.
     /// \param includePhaseSamplingMis Whether to weight light samples against
@@ -681,27 +681,26 @@ private:
     /// \param heroWavelengthPdf Positive wavelength PDF when active.
     /// \return Linear RGB direct-light contribution before path throughput;
     /// black when the medium is inactive or absorption-only.
-    GfVec3f _ComputeMediumDirectLighting(
-        GfVec3f const& position,
-        GfVec3f const& wo,
-        HdEmbreeMediumState const& mediumState,
-        HdEmbreeSampleDomain const& domain,
-        bool includePhaseSamplingMis,
-        bool spectralActive = false,
-        float heroWavelengthNm = 0.0f,
-        float heroWavelengthPdf = 0.0f) const;
+    GfVec3f _ComputeMediumDirectLighting(GfVec3f const& positionWld,
+                                         GfVec3f const& omegaOutWld,
+                                         HdEmbreeMediumState const& mediumState,
+                                         HdEmbreeSampleDomain const& domain,
+                                         bool includePhaseSamplingMis,
+                                         bool spectralActive = false,
+                                         float heroWavelengthNm = 0.0f,
+                                         float heroWavelengthPdf = 0.0f) const;
 
     /// Mutable transport state shared by the main loop and focused event
     /// handlers. Borrowed category and geometry pointers remain scene-owned.
     struct _PathState {
-        GfVec3f radiance = GfVec3f(0.0f);
-        GfVec3f throughput = GfVec3f(1.0f);
-        float spectralThroughput = 1.0f;
+        GfVec3f radianceAccumulated = GfVec3f(0.0f);
+        GfVec3f throughputRgb = GfVec3f(1.0f);
+        float throughputSpectral = 1.0f;
         _HeroWavelengthState hero;
 
-        GfVec3f rayOrigin = GfVec3f(0.0f);
-        GfVec3f rayDir = GfVec3f(0.0f);
-        HdEmbreeRayDifferential rayDiff;
+        GfVec3f positionRayOriginWld = GfVec3f(0.0f);
+        GfVec3f directionRayWld = GfVec3f(0.0f);
+        HdEmbreeRayDifferential rayDifferential;
         HdEmbreeMediumState medium;
 
         float lastBsdfPdf = 0.0f;
@@ -748,18 +747,19 @@ private:
 
     /// \brief Weight RGB radiance by current path throughput.
     ///
-    /// \param value Linear RGB radiance at the current path vertex.
+    /// \param radiance Linear RGB radiance at the current path vertex.
     /// \param state Current path throughput and spectral representation.
     /// \return Throughput-weighted linear RGB radiance.
-    GfVec3f _WeightPathRadiance(
-        GfVec3f const& value, _PathState const& state) const;
+    GfVec3f _WeightPathRadiance(GfVec3f const& radiance,
+                                _PathState const& state) const;
 
     /// \brief Accumulate a pre-weighted path contribution with firefly clamps.
     ///
-    /// \param contribution Linear RGB contribution after path throughput.
+    /// \param radianceContribution Linear RGB contribution after path
+    /// throughput.
     /// \param state Non-null state whose radiance accumulator is updated.
-    void _AddPathRadiance(
-        GfVec3f contribution, _PathState* state) const;
+    void _AddPathRadiance(GfVec3f radianceContribution,
+                          _PathState* state) const;
 
     /// \brief Transport a path segment through the current medium.
     ///
@@ -806,11 +806,11 @@ private:
         RTCRayHit const* rayHit = nullptr;
         HdEmbreeInstanceContext const* instanceContext = nullptr;
         mxcpp::SurfaceClosure const* closure = nullptr;
-        GfVec3f hitPos = GfVec3f(0.0f);
-        GfVec3f normal = GfVec3f(0.0f);
-        GfVec3f faceNormal = GfVec3f(0.0f);
-        GfVec3f wo = GfVec3f(0.0f);
-        GfVec3f sampledEntryDirection = GfVec3f(0.0f);
+        GfVec3f positionHitWld = GfVec3f(0.0f);
+        GfVec3f normalShdWldOut = GfVec3f(0.0f);
+        GfVec3f normalGeomWldOut = GfVec3f(0.0f);
+        GfVec3f omegaOutWld = GfVec3f(0.0f);
+        GfVec3f directionEntryWld = GfVec3f(0.0f);
         GfVec3f entryWeight = GfVec3f(0.0f);
         bool hasSampledEntryDirection = false;
     };
@@ -856,45 +856,44 @@ private:
     };
 
     /// Hit-local surface data with topology and shading meanings kept
-    /// separate. Ng and baseNormalOut are normalized world-space values.
-    /// Ng always points toward the authored outside and is never faced to wo.
+    /// separate. Both normals are normalized world-space values with authored
+    /// exterior orientation and are never faced toward the current path.
     struct _SurfaceInteraction {
-        GfVec3f p = GfVec3f(0.0f);
-        GfVec3f Ng = GfVec3f(0.0f);
-        GfVec3f baseNormalOut = GfVec3f(0.0f);
+        GfVec3f positionHitWld = GfVec3f(0.0f);
+        GfVec3f normalGeomWldExt = GfVec3f(0.0f);
+        GfVec3f normalSrfWldExt = GfVec3f(0.0f);
         HdEmbreeDisplacedSubdivFrame displacedFrame;
         bool frontFacing = true;
         bool doubleSided = false;
 
-        GfVec3f GetIncidentGeometricNormal() const
+        GfVec3f
+        GetNormalGeomWldOut() const
         {
-            return frontFacing ? Ng : -Ng;
+            return frontFacing ? normalGeomWldExt : -normalGeomWldExt;
         }
 
-        GfVec3f GetIncidentBaseNormal() const
+        GfVec3f
+        GetNormalSrfWldOut() const
         {
-            return frontFacing ? baseNormalOut : -baseNormalOut;
+            return frontFacing ? normalSrfWldExt : -normalSrfWldExt;
         }
     };
 
     /// \brief Propagate or discard ray differentials after a BSDF sample.
     ///
     /// \param surface Differential geometry at the sampled surface.
-    /// \param hitPos World-space surface position.
-    /// \param normal Face-forwarded world-space shading normal.
-    /// \param wo Normalized direction toward the previous path vertex.
-    /// \param wi Normalized sampled continuation direction.
-    /// \param eta Explicit event etaIncident/etaTransmitted ratio; one denotes reflection.
+    /// \param positionHitWld World-space surface position.
+    /// \param normalShdWldOut Face-forwarded world-space shading normal.
+    /// \param omegaOutWld Normalized direction toward the previous path vertex.
+    /// \param omegaInWld Normalized sampled continuation direction.
+    /// \param eta Explicit iorIn/iorOut ratio. One denotes reflection; zero
+    /// disables refracted differential propagation.
     /// \param specular Whether the sampled event is delta/specular.
     /// \param rayDifferential Non-null in/out differential state.
     void _PropagateRayDifferential(
-        _SurfaceDifferentials const& surface,
-        GfVec3f const& hitPos,
-        GfVec3f const& normal,
-        GfVec3f const& wo,
-        GfVec3f const& wi,
-        float eta,
-        bool specular,
+        _SurfaceDifferentials const& surface, GfVec3f const& positionHitWld,
+        GfVec3f const& normalShdWldOut, GfVec3f const& omegaOutWld,
+        GfVec3f const& omegaInWld, float eta, bool specular,
         HdEmbreeRayDifferential* rayDifferential) const;
 
     /// \brief Integrate a complete multi-bounce camera path with MIS.
@@ -915,19 +914,19 @@ private:
     /// \brief Trace colored shadow visibility along a segment.
     ///
     /// Accounts for linking, transparent surfaces, and participating media.
-    /// \param position World-space segment origin at a surface or medium event.
-    /// \param normal Normal used to bias the origin; may equal the direction
-    /// for a medium event.
-    /// \param direction Normalized world-space direction toward the light.
-    /// \param dist Positive maximum trace distance.
+    /// \param positionWld World-space segment origin at a surface or medium
+    /// event.
+    /// \param directionOffsetReferenceWld Direction used to bias the origin.
+    /// Surface events supply their geometric normal; medium events supply
+    /// \p directionShadowWld because no surface frame exists.
+    /// \param directionShadowWld Normalized direction toward the light.
+    /// \param distanceWld Positive maximum trace distance.
     /// \param shadowLink Light shadow-link token to test against blockers.
     /// \param mediumState Medium initially containing the shadow segment.
     /// \return Per-channel visibility in [0,1].
     GfVec3f _Visibility(
-        GfVec3f const& position,
-        GfVec3f const& normal,
-        GfVec3f const& direction,
-        float dist,
+        GfVec3f const& positionWld, GfVec3f const& directionOffsetReferenceWld,
+        GfVec3f const& directionShadowWld, float distanceWld,
         TfToken const& shadowLink,
         HdEmbreeMediumState const& mediumState = HdEmbreeMediumState()) const;
 
@@ -1021,11 +1020,11 @@ private:
 
     /// \brief Construct topology and outward base shading state for a hit.
     ///
-    /// Reuses the shared smooth/displaced normal resolver. Ng comes only from
-    /// the orientation-correct Embree facet normal. Invalid normals fail.
+    /// Reuses the shared smooth/displaced normal resolver.
+    /// `normalGeomWldExt` comes only from the orientation-correct Embree facet
+    /// normal. Invalid normals fail.
     bool _TryBuildSurfaceInteraction(
-        RTCRayHit const& rayHit,
-        GfVec3f const& wo,
+        RTCRayHit const& rayHit, GfVec3f const& omegaOutWld,
         _SurfaceInteraction* outInteraction,
         HdEmbreeInstanceContext const** outInstance = nullptr,
         HdEmbreePrototypeContext const** outPrototype = nullptr) const;
@@ -1036,17 +1035,19 @@ private:
     /// \param rayHit Valid renderer geometry hit; misses and lights fail.
     /// \param outClosure Non-null output written only after successful graph
     /// evaluation.
-    /// \param outGeometricNormal Optional normalized world-space normal output.
+    /// \param normalShdWldOutOutput Optional normalized material-resolved
+    /// shading normal output.
+    /// \param normalGeomWldExtOutput Optional normalized authored-exterior
+    /// geometric normal output.
     /// \param outGeometry Optional borrowed prototype pointer output, valid
     /// while the scene geometry user data remains registered; it may be set
     /// even when no material graph is bound.
     /// \return True only when a bound graph evaluates successfully.
     bool _TryEvalSurfaceClosureAtHit(
-        RTCRayHit const& rayHit,
-        GfVec3f const& wo,
+        RTCRayHit const& rayHit, GfVec3f const& omegaOutWld,
         mxcpp::SurfaceClosure* outClosure,
-        GfVec3f* outShadingNormal = nullptr,
-        GfVec3f* outNg = nullptr,
+        GfVec3f* normalShdWldOutOutput = nullptr,
+        GfVec3f* normalGeomWldExtOutput = nullptr,
         HdEmbreePrototypeContext const** outGeometry = nullptr) const;
 
     // ---- AOV dispatch table (built once per frame in _PreRenderSetup) ----

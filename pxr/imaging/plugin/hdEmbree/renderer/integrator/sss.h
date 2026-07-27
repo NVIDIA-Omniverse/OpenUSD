@@ -23,16 +23,18 @@ PXR_NAMESPACE_OPEN_SCOPE
 struct HdEmbreeSampleDomain;
 
 struct HdEmbreeSssInput {
-    GfVec3f entryPos;
-    GfVec3f entryGeomNormal;     // outward
-    GfVec3f entryDir;            // into medium (from Bsdf::SampleSubsurfaceEntry)
-    GfVec3f albedo;              // = subsurface_color (target reflectance)
-    GfVec3f radius;              // = subsurface_radius * radius_scale (world units, per channel)
-    float anisotropy;            // clamp to [-0.99, 0.99]
-    float ior;                   // clamp to >= 1.0
+    GfVec3f positionEntryWld;
+    // Material-resolved, exitant-facing guide used by Dwivedi sampling. It is
+    // not geometric boundary state.
+    GfVec3f normalShdEntryGuideWldOut;
+    GfVec3f directionEntryWld; // Into the medium from the entry point.
+    GfVec3f albedo;            // Target per-channel diffuse reflectance.
+    GfVec3f radius;            // Per-channel world-space scattering radius.
+    float anisotropy;          // Clamped to [-0.99, 0.99].
+    float iorInterior;         // Absolute material IOR, clamped to >= 1.0.
     bool usePrecomputedCoefficients = false;
-    GfVec3f precomputedSigmaA = GfVec3f(0.0f);
-    GfVec3f precomputedSigmaS = GfVec3f(0.0f);
+    GfVec3f precomputedAbsorption = GfVec3f(0.0f);
+    GfVec3f precomputedScattering = GfVec3f(0.0f);
     unsigned int ownerInstanceId;
     unsigned int ownerGeomId;
     RTCScene ownerScene = nullptr;  // prototype scene containing ownerGeomId
@@ -41,50 +43,44 @@ struct HdEmbreeSssInput {
 };
 
 struct HdEmbreeSssOutput {
-    bool success = false;                        // false: no exit found
-    GfVec3f exitPos = GfVec3f(0.0f);
-    GfVec3f exitGeomNormal = GfVec3f(0.0f);      // outward
-    GfVec3f exitDir = GfVec3f(0.0f);             // internal -> outside
-    GfVec3f exitObjectGeomNormal = GfVec3f(0.0f);
+    bool success = false; // False when no exit was found.
+    GfVec3f positionExitWld = GfVec3f(0.0f);
+    GfVec3f normalGeomExitWldExt = GfVec3f(0.0f);
+    GfVec3f directionExitWld = GfVec3f(0.0f); // Interior to exterior.
+    GfVec3f normalGeomExitObjExt = GfVec3f(0.0f);
     unsigned int exitInstanceId = RTC_INVALID_GEOMETRY_ID;
     unsigned int exitGeomId = RTC_INVALID_GEOMETRY_ID;
     unsigned int exitPrimId = RTC_INVALID_GEOMETRY_ID;
-    float exitU = 0.0f;
-    float exitV = 0.0f;
+    float coordinateParametricExitU = 0.0f;
+    float coordinateParametricExitV = 0.0f;
     GfVec3f throughputWeight = GfVec3f(0.0f);    // multiplier applied by caller
     uint32_t walkSteps = 0;                      // random-walk loop iterations
     uint32_t intersectionTests = 0;              // Embree rtcIntersect1 calls
 };
 
-HdEmbreeSssOutput
-HdEmbreeRandomWalkSSS(
-    HdEmbreeSssInput const& in,
-    HdEmbreeSampleDomain const& domain,
-    RTCScene scene);
+HdEmbreeSssOutput HdEmbreeRandomWalkSSS(HdEmbreeSssInput const& input,
+                                        HdEmbreeSampleDomain const& domain,
+                                        RTCScene scene);
 
 /// Chiang 2016 random-walk SSS coefficient remap.
 ///
-/// Converts (albedo, radius, anisotropy) to (sigma_t, alpha) using the
+/// Converts (albedo, radius, anisotropy) to (extinction, alpha) using the
 /// polynomial fit from Chiang et al. 2016 (as implemented in Cycles).
 /// The remap ensures that a random walk with these coefficients reproduces
 /// the target diffuse reflectance specified by `albedo`.
 ///
-/// If `rawAlphaOut != nullptr`, also writes the pre-clamp alpha (needed
+/// If `rawAlphaOutput != nullptr`, also writes the pre-clamp alpha (needed
 /// for min-alpha throughput correction in the random walk).
 ///
 /// Alpha is clamped to [0.2, 0.999999] for numerical stability; the pre-clamp
-/// value lives in `*rawAlphaOut`.
+/// value lives in `*rawAlphaOutput`.
 ///
 /// Visible here for unit testing (Phase 2 Task 2.3-2.4).
 /// Source: Blender Cycles `subsurface_random_walk_remap` (Apache 2.0).
-void
-HdEmbreeChiangRemap(
-    const GfVec3f& albedo,
-    const GfVec3f& radius,
-    float anisotropy,
-    GfVec3f* sigma_t,
-    GfVec3f* alpha,
-    GfVec3f* rawAlphaOut = nullptr);
+void HdEmbreeChiangRemap(const GfVec3f& albedo, const GfVec3f& radius,
+                         float anisotropy, GfVec3f* extinctionOutput,
+                         GfVec3f* alphaOutput,
+                         GfVec3f* rawAlphaOutput = nullptr);
 
 /// Dwivedi sampling helpers (Phase 3; visible for testing).
 ///
@@ -101,21 +97,24 @@ HdEmbreeChiangRemap(
 /// d'Eon-Křivánek 2020, via Cycles.)
 float HdEmbreeDiffusionLengthDwivedi(float alpha);
 
-/// Evaluate the Dwivedi phase function at cos_theta given the precomputed
-/// `phase_log = log((L+1)/(L-1))`. (Eq. 9 from Meng et al 2016.)
-float HdEmbreeEvalPhaseDwivedi(float L, float phase_log, float cos_theta);
+/// Evaluate the Dwivedi phase function at cosTheta given the precomputed
+/// `phaseLog = log((L+1)/(L-1))`, where L is diffusion length.
+/// (Eq. 9 from Meng et al 2016.)
+float HdEmbreeEvalPhaseDwivedi(float diffusionLength, float phaseLog,
+                               float cosTheta);
 
-/// Sample cos_theta from the Dwivedi distribution given phase_log. Inverse CDF.
+/// Sample cosTheta from the Dwivedi distribution given phaseLog. Inverse CDF.
 /// (Eq. 10 from Meng et al 2016.)
-float HdEmbreeSamplePhaseDwivedi(float L, float phase_log, float u);
+float HdEmbreeSamplePhaseDwivedi(float diffusionLength, float phaseLog,
+                                 float u1);
 
 /// Probability of using the backward Dwivedi guide when an opposite interface
-/// is known. `x` is the clamped distance from the entry tangent plane toward
-/// that interface. Visible for unit testing ticket #403.
-float HdEmbreeBackwardDwivediFraction(
-    float oppositeDistance,
-    float x,
-    float diffusionLength);
+/// is known. `distanceFromEntryPlaneWld` is the clamped distance from the
+/// entry tangent plane toward that interface. Visible for unit testing
+/// ticket #403.
+float HdEmbreeBackwardDwivediFraction(float distanceOppositeWld,
+                                      float distanceFromEntryPlaneWld,
+                                      float diffusionLength);
 
 PXR_NAMESPACE_CLOSE_SCOPE
 

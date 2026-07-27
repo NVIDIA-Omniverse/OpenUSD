@@ -99,8 +99,8 @@ _EvalMixEdf(const ParamMap& inputs, const ShadingContext&,
 static float
 _MediumScatterWeight(const MediumProperties& medium)
 {
-    return std::max(0.0f,
-        medium.sigmaS[0] + medium.sigmaS[1] + medium.sigmaS[2]);
+    return std::max(0.0f, medium.scattering[0] + medium.scattering[1] +
+                              medium.scattering[2]);
 }
 
 static void
@@ -113,10 +113,10 @@ _EvalMixVdf(const ParamMap& inputs, const ShadingContext&,
     const float bgScale = 1.0f - mix;
 
     VdfClosure result;
-    result.medium.sigmaA = bg.medium.sigmaA * bgScale +
-                           fg.medium.sigmaA * mix;
-    result.medium.sigmaS = bg.medium.sigmaS * bgScale +
-                           fg.medium.sigmaS * mix;
+    result.medium.absorption =
+        bg.medium.absorption * bgScale + fg.medium.absorption * mix;
+    result.medium.scattering =
+        bg.medium.scattering * bgScale + fg.medium.scattering * mix;
 
     const float bgScatterWeight = std::max(
         0.0f, _MediumScatterWeight(bg.medium) * bgScale);

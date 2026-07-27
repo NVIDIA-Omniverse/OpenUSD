@@ -353,7 +353,7 @@ _EvalAbsorptionVdf(
     NodeOutputMap* outputs)
 {
     VdfClosure closure;
-    closure.medium.sigmaA = Get<Vec3f>(inputs, _kAbsorption, Vec3f(0.0f));
+    closure.medium.absorption = Get<Vec3f>(inputs, _kAbsorption, Vec3f(0.0f));
     (*outputs)[_kOut] = Value(closure);
 }
 
@@ -364,8 +364,8 @@ _EvalAnisotropicVdf(
     NodeOutputMap* outputs)
 {
     VdfClosure closure;
-    closure.medium.sigmaA = Get<Vec3f>(inputs, _kAbsorption, Vec3f(0.0f));
-    closure.medium.sigmaS = Get<Vec3f>(inputs, _kScattering, Vec3f(0.0f));
+    closure.medium.absorption = Get<Vec3f>(inputs, _kAbsorption, Vec3f(0.0f));
+    closure.medium.scattering = Get<Vec3f>(inputs, _kScattering, Vec3f(0.0f));
     closure.medium.anisotropy = Get<float>(inputs, _kAnisotropy, 0.0f);
     (*outputs)[_kOut] = Value(closure);
 }

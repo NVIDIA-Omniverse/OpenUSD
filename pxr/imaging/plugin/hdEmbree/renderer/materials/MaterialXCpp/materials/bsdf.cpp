@@ -536,8 +536,8 @@ inline float
 _MaterialXDielectricFresnel(float cosTheta, float ior)
 {
     const float c = _Clamp01(cosTheta);
-    const float eta = std::max(ior, _kEpsilon);
-    const float g2 = eta * eta + c * c - 1.0f;
+    const float iorClamped = std::max(ior, _kEpsilon);
+    const float g2 = iorClamped * iorClamped + c * c - 1.0f;
     if (g2 < 0.0f) {
         return 1.0f;
     }
@@ -759,43 +759,58 @@ _ApproxSheenDirAlbedo(float NdotV, float roughness)
 }
 
 struct _Frame {
-    Vec3f T, B, N;
+    Vec3f tangentWld;
+    Vec3f bitangentWld;
+    Vec3f normalShdWldOut;
 
-    Vec3f ToLocal(const Vec3f& v) const {
-        return Vec3f(Dot(v, T), Dot(v, B), Dot(v, N));
+    Vec3f
+    ToLocal(const Vec3f& directionWld) const
+    {
+        return Vec3f(Dot(directionWld, tangentWld),
+                     Dot(directionWld, bitangentWld),
+                     Dot(directionWld, normalShdWldOut));
     }
 
-    Vec3f ToWorld(const Vec3f& v) const {
-        return T * v[0] + B * v[1] + N * v[2];
+    Vec3f
+    ToWorld(const Vec3f& directionLocal) const
+    {
+        return tangentWld * directionLocal[0] +
+               bitangentWld * directionLocal[1] +
+               normalShdWldOut * directionLocal[2];
     }
 
-    static _Frame FromNormal(const Vec3f& n) {
-        _Frame f;
-        f.N = n;
-        const Vec3f helper =
-            (std::abs(n[0]) < 0.9f) ? Vec3f(1.0f, 0.0f, 0.0f)
-                                    : Vec3f(0.0f, 1.0f, 0.0f);
-        f.T = n.cross(helper).normalized();
-        f.B = n.cross(f.T);
-        return f;
+    static _Frame
+    FromNormal(const Vec3f& normalShdWldOut)
+    {
+        _Frame frame;
+        frame.normalShdWldOut = normalShdWldOut;
+        const Vec3f helper = (std::abs(normalShdWldOut[0]) < 0.9f)
+                                 ? Vec3f(1.0f, 0.0f, 0.0f)
+                                 : Vec3f(0.0f, 1.0f, 0.0f);
+        frame.tangentWld = normalShdWldOut.cross(helper).normalized();
+        frame.bitangentWld = normalShdWldOut.cross(frame.tangentWld);
+        return frame;
     }
 
-    static _Frame FromNormalAndTangent(const Vec3f& n, const Vec3f& tangent) {
-        const Vec3f projectedTangent = tangent - n * Dot(tangent, n);
-        if (projectedTangent.length() < _kEpsilon) {
-            return FromNormal(n);
+    static _Frame
+    FromNormalAndTangent(const Vec3f& normalShdWldOut, const Vec3f& tangentWld)
+    {
+        const Vec3f tangentProjectedWld =
+            tangentWld - normalShdWldOut * Dot(tangentWld, normalShdWldOut);
+        if (tangentProjectedWld.length() < _kEpsilon) {
+            return FromNormal(normalShdWldOut);
         }
 
-        _Frame f;
-        f.N = n;
-        f.T = projectedTangent.normalized();
-        f.B = Cross(f.N, f.T);
-        if (f.B.length() < _kEpsilon) {
-            return FromNormal(n);
+        _Frame frame;
+        frame.normalShdWldOut = normalShdWldOut;
+        frame.tangentWld = tangentProjectedWld.normalized();
+        frame.bitangentWld = Cross(frame.normalShdWldOut, frame.tangentWld);
+        if (frame.bitangentWld.length() < _kEpsilon) {
+            return FromNormal(normalShdWldOut);
         }
-        f.B.normalize();
-        f.T = Cross(f.B, f.N);
-        return f;
+        frame.bitangentWld.normalize();
+        frame.tangentWld = Cross(frame.bitangentWld, frame.normalShdWldOut);
+        return frame;
     }
 };
 
@@ -817,9 +832,10 @@ _CosineHemispherePdf(float cosTheta)
 }
 
 Vec3f
-_SampleGGX_VNDF(const Vec3f& woLocal, float alpha, float u1, float u2)
+_SampleGGX_VNDF(const Vec3f& omegaOutLocal, float alpha, float u1, float u2)
 {
-    Vec3f wh(alpha * woLocal[0], alpha * woLocal[1], woLocal[2]);
+    Vec3f wh(alpha * omegaOutLocal[0], alpha * omegaOutLocal[1],
+             omegaOutLocal[2]);
     float whLen = wh.length();
     if (whLen < _kEpsilon) {
         return Vec3f(0.0f, 0.0f, 1.0f);
@@ -851,15 +867,15 @@ _SampleGGX_VNDF(const Vec3f& woLocal, float alpha, float u1, float u2)
 }
 
 float
-_PdfGGX_VNDF(const Vec3f& woLocal, const Vec3f& wmLocal, float alpha)
+_PdfGGX_VNDF(const Vec3f& omegaOutLocal, const Vec3f& wmLocal, float alpha)
 {
-    float cosThetaO = std::max(woLocal[2], _kEpsilon);
+    float cosThetaO = std::max(omegaOutLocal[2], _kEpsilon);
     float G1 = _SmithG1(alpha, cosThetaO);
     float NdotH = std::max(wmLocal[2], 0.0f);
-    float VdotH = std::max(Dot(woLocal, wmLocal), _kEpsilon);
+    float VdotH = std::max(Dot(omegaOutLocal, wmLocal), _kEpsilon);
     float D = _GGX_D(alpha, NdotH);
-    float pdfWm = G1 * D * VdotH / cosThetaO;
-    return pdfWm / (4.0f * VdotH);
+    float pdfMicrofacetNormalSolidAngle = G1 * D * VdotH / cosThetaO;
+    return pdfMicrofacetNormalSolidAngle / (4.0f * VdotH);
 }
 
 inline float
@@ -937,22 +953,19 @@ _GGX_G1_Anisotropic(const Vec2f& alpha, const Vec3f& wLocal)
 }
 
 inline float
-_GGX_G_Anisotropic(const Vec2f& alpha,
-                   const Vec3f& woLocal,
-                   const Vec3f& wiLocal)
+_GGX_G_Anisotropic(const Vec2f& alpha, const Vec3f& omegaOutLocal,
+                   const Vec3f& omegaInLocal)
 {
-    return 1.0f / (1.0f +
-        _GGX_Lambda_Anisotropic(alpha, woLocal) +
-        _GGX_Lambda_Anisotropic(alpha, wiLocal));
+    return 1.0f / (1.0f + _GGX_Lambda_Anisotropic(alpha, omegaOutLocal) +
+                   _GGX_Lambda_Anisotropic(alpha, omegaInLocal));
 }
 
 Vec3f
-_SampleGGX_VNDF_Anisotropic(const Vec3f& woLocal,
-                            const Vec2f& alpha,
-                            float u1,
-                            float u2)
+_SampleGGX_VNDF_Anisotropic(const Vec3f& omegaOutLocal, const Vec2f& alpha,
+                            float u1, float u2)
 {
-    Vec3f wh(alpha[0] * woLocal[0], alpha[1] * woLocal[1], woLocal[2]);
+    Vec3f wh(alpha[0] * omegaOutLocal[0], alpha[1] * omegaOutLocal[1],
+             omegaOutLocal[2]);
     const float whLen = wh.length();
     if (whLen < _kEpsilon) {
         return Vec3f(0.0f, 0.0f, 1.0f);
@@ -985,18 +998,18 @@ _SampleGGX_VNDF_Anisotropic(const Vec3f& woLocal,
 }
 
 float
-_PdfGGX_VNDF_Anisotropic(const Vec3f& woLocal,
-                         const Vec3f& wmLocal,
+_PdfGGX_VNDF_Anisotropic(const Vec3f& omegaOutLocal, const Vec3f& wmLocal,
                          const Vec2f& alpha)
 {
-    const float cosThetaO = _AbsCosTheta(woLocal);
+    const float cosThetaO = _AbsCosTheta(omegaOutLocal);
     if (cosThetaO <= _kEpsilon) {
         return 0.0f;
     }
 
-    const float G1 = _GGX_G1_Anisotropic(alpha, woLocal);
+    const float G1 = _GGX_G1_Anisotropic(alpha, omegaOutLocal);
     const float D = _GGX_D_Anisotropic(alpha, wmLocal);
-    const float VdotH = std::max(std::abs(Dot(woLocal, wmLocal)), _kEpsilon);
+    const float VdotH =
+        std::max(std::abs(Dot(omegaOutLocal, wmLocal)), _kEpsilon);
     return G1 * D * VdotH / cosThetaO;
 }
 
@@ -1412,55 +1425,50 @@ _FresnelConductorPolarized(
 }
 
 inline void
-_FresnelConductorPhasePolarized(
-    float cosTheta,
-    float eta1,
-    const Vec3f& eta2,
-    const Vec3f& kappa2,
-    Vec3f* phiP,
-    Vec3f* phiS)
+_FresnelConductorPhasePolarized(float cosTheta, float iorIn,
+                                const Vec3f& iorOut,
+                                const Vec3f& absorptionIndexOut, Vec3f* phiP,
+                                Vec3f* phiS)
 {
-    const Vec3f k2 = CompDiv(kappa2, eta2);
-    const Vec3f eta2Squared = CompMul(eta2, eta2);
+    const Vec3f k2 = CompDiv(absorptionIndexOut, iorOut);
+    const Vec3f iorOutSquared = CompMul(iorOut, iorOut);
     const Vec3f sinThetaSqr(1.0f - cosTheta * cosTheta);
-    const Vec3f A =
-        eta2Squared * (Vec3f(1.0f) - CompMul(k2, k2)) -
-        eta1 * eta1 * sinThetaSqr;
-    const Vec3f twoEta2SquaredK2 = 2.0f * CompMul(eta2Squared, k2);
-    const Vec3f B = _SqrtVec(
-        CompMul(A, A) + CompMul(twoEta2SquaredK2, twoEta2SquaredK2));
+    const Vec3f A = iorOutSquared * (Vec3f(1.0f) - CompMul(k2, k2)) -
+                    iorIn * iorIn * sinThetaSqr;
+    const Vec3f twoIorOutSquaredK2 = 2.0f * CompMul(iorOutSquared, k2);
+    const Vec3f B = _SqrtVec(CompMul(A, A) +
+                             CompMul(twoIorOutSquaredK2, twoIorOutSquaredK2));
     const Vec3f U = _SqrtVec((A + B) * 0.5f);
     const Vec3f V = _MaxVec(_SqrtVec((B - A) * 0.5f), 0.0f);
 
-    *phiS = Vec3f(
-        std::atan2(2.0f * eta1 * V[0] * cosTheta,
-                   U[0] * U[0] + V[0] * V[0] - eta1 * eta1 * cosTheta * cosTheta),
-        std::atan2(2.0f * eta1 * V[1] * cosTheta,
-                   U[1] * U[1] + V[1] * V[1] - eta1 * eta1 * cosTheta * cosTheta),
-        std::atan2(2.0f * eta1 * V[2] * cosTheta,
-                   U[2] * U[2] + V[2] * V[2] - eta1 * eta1 * cosTheta * cosTheta));
+    *phiS = Vec3f(std::atan2(2.0f * iorIn * V[0] * cosTheta,
+                             U[0] * U[0] + V[0] * V[0] -
+                                 iorIn * iorIn * cosTheta * cosTheta),
+                  std::atan2(2.0f * iorIn * V[1] * cosTheta,
+                             U[1] * U[1] + V[1] * V[1] -
+                                 iorIn * iorIn * cosTheta * cosTheta),
+                  std::atan2(2.0f * iorIn * V[2] * cosTheta,
+                             U[2] * U[2] + V[2] * V[2] -
+                                 iorIn * iorIn * cosTheta * cosTheta));
 
     const Vec3f oneMinusK2 = Vec3f(1.0f) - CompMul(k2, k2);
     const Vec3f onePlusK2 = Vec3f(1.0f) + CompMul(k2, k2);
-    *phiP = Vec3f(
-        std::atan2(
-            2.0f * eta1 * eta2Squared[0] * cosTheta *
-                (2.0f * k2[0] * U[0] - oneMinusK2[0] * V[0]),
-            eta2Squared[0] * eta2Squared[0] * onePlusK2[0] * onePlusK2[0] *
-                    cosTheta * cosTheta -
-                eta1 * eta1 * (U[0] * U[0] + V[0] * V[0])),
-        std::atan2(
-            2.0f * eta1 * eta2Squared[1] * cosTheta *
-                (2.0f * k2[1] * U[1] - oneMinusK2[1] * V[1]),
-            eta2Squared[1] * eta2Squared[1] * onePlusK2[1] * onePlusK2[1] *
-                    cosTheta * cosTheta -
-                eta1 * eta1 * (U[1] * U[1] + V[1] * V[1])),
-        std::atan2(
-            2.0f * eta1 * eta2Squared[2] * cosTheta *
-                (2.0f * k2[2] * U[2] - oneMinusK2[2] * V[2]),
-            eta2Squared[2] * eta2Squared[2] * onePlusK2[2] * onePlusK2[2] *
-                   cosTheta * cosTheta -
-                eta1 * eta1 * (U[2] * U[2] + V[2] * V[2])));
+    *phiP =
+        Vec3f(std::atan2(2.0f * iorIn * iorOutSquared[0] * cosTheta *
+                             (2.0f * k2[0] * U[0] - oneMinusK2[0] * V[0]),
+                         iorOutSquared[0] * iorOutSquared[0] * onePlusK2[0] *
+                                 onePlusK2[0] * cosTheta * cosTheta -
+                             iorIn * iorIn * (U[0] * U[0] + V[0] * V[0])),
+              std::atan2(2.0f * iorIn * iorOutSquared[1] * cosTheta *
+                             (2.0f * k2[1] * U[1] - oneMinusK2[1] * V[1]),
+                         iorOutSquared[1] * iorOutSquared[1] * onePlusK2[1] *
+                                 onePlusK2[1] * cosTheta * cosTheta -
+                             iorIn * iorIn * (U[1] * U[1] + V[1] * V[1])),
+              std::atan2(2.0f * iorIn * iorOutSquared[2] * cosTheta *
+                             (2.0f * k2[2] * U[2] - oneMinusK2[2] * V[2]),
+                         iorOutSquared[2] * iorOutSquared[2] * onePlusK2[2] *
+                                 onePlusK2[2] * cosTheta * cosTheta -
+                             iorIn * iorIn * (U[2] * U[2] + V[2] * V[2])));
 }
 
 inline Vec3f
@@ -1512,21 +1520,21 @@ _ThinFilmAiryReflectance(
     const _ThinFilmParams& params)
 {
     const float clampedCos = _Clamp01(cosTheta);
-    const float eta1 = 1.0f;
-    const float eta2 = std::max(thinFilmIor, eta1);
-    const Vec3f eta3 = (params.model == _ThinFilmModel::Schlick)
-        ? _F0ToIor(params.F0)
-        : params.ior;
-    const Vec3f kappa3 = (params.model == _ThinFilmModel::Schlick)
-        ? Vec3f(0.0f)
-        : params.extinction;
+    const float iorIn = 1.0f;
+    const float iorThinFilm = std::max(thinFilmIor, iorIn);
+    const Vec3f iorSubstrate = (params.model == _ThinFilmModel::Schlick)
+                                   ? _F0ToIor(params.F0)
+                                   : params.ior;
+    const Vec3f absorptionIndexSubstrate =
+        (params.model == _ThinFilmModel::Schlick) ? Vec3f(0.0f)
+                                                  : params.extinction;
 
     const float sinTheta2 = std::max(1.0f - clampedCos * clampedCos, 0.0f);
-    const float eta = eta1 / eta2;
+    const float eta = iorIn / iorThinFilm;
     const float cosThetaTSqr = 1.0f - sinTheta2 * eta * eta;
     const float cosThetaT = (cosThetaTSqr > 0.0f) ? std::sqrt(cosThetaTSqr) : 0.0f;
 
-    Vec2f R12 = _FresnelDielectricPolarized(clampedCos, eta2 / eta1);
+    Vec2f R12 = _FresnelDielectricPolarized(clampedCos, iorThinFilm / iorIn);
     if (cosThetaT <= 0.0f) {
         R12 = Vec2f(1.0f, 1.0f);
     }
@@ -1535,30 +1543,31 @@ _ThinFilmAiryReflectance(
     Vec3f R23p(0.0f), R23s(0.0f);
     Vec3f phi23p(0.0f), phi23s(0.0f);
     if (params.model == _ThinFilmModel::Schlick) {
-        const Vec3f f = _GeneralizedSchlickFresnel(
+        const Vec3f fresnel = _GeneralizedSchlickFresnel(
             params.F0, params.F82, params.F90, params.exponent, cosThetaT);
-        R23p = f * 0.5f;
-        R23s = f * 0.5f;
-        phi23p = Vec3f(
-            eta3[0] < eta2 ? kPi : 0.0f,
-            eta3[1] < eta2 ? kPi : 0.0f,
-            eta3[2] < eta2 ? kPi : 0.0f);
+        R23p = fresnel * 0.5f;
+        R23s = fresnel * 0.5f;
+        phi23p = Vec3f(iorSubstrate[0] < iorThinFilm ? kPi : 0.0f,
+                       iorSubstrate[1] < iorThinFilm ? kPi : 0.0f,
+                       iorSubstrate[2] < iorThinFilm ? kPi : 0.0f);
         phi23s = phi23p;
     } else {
         _FresnelConductorPolarized(
-            cosThetaT, CompDiv(eta3, Vec3f(eta2)), CompDiv(kappa3, Vec3f(eta2)),
-            &R23p, &R23s);
-        _FresnelConductorPhasePolarized(
-            cosThetaT, eta2, eta3, kappa3, &phi23p, &phi23s);
+            cosThetaT, CompDiv(iorSubstrate, Vec3f(iorThinFilm)),
+            CompDiv(absorptionIndexSubstrate, Vec3f(iorThinFilm)), &R23p,
+            &R23s);
+        _FresnelConductorPhasePolarized(cosThetaT, iorThinFilm, iorSubstrate,
+                                        absorptionIndexSubstrate, &phi23p,
+                                        &phi23s);
     }
 
-    const float cosB = std::cos(std::atan(eta2 / eta1));
+    const float cosB = std::cos(std::atan(iorThinFilm / iorIn));
     const Vec2f phi21(clampedCos < cosB ? 0.0f : kPi, kPi);
     const Vec3f r123p = _SqrtVec(_MaxVec(R23p * R12[0], 0.0f));
     const Vec3f r123s = _SqrtVec(_MaxVec(R23s * R12[1], 0.0f));
 
     const float distMeters = thinFilmThickness * 1.0e-9f;
-    const float opd = 2.0f * eta2 * cosThetaT * distMeters;
+    const float opd = 2.0f * iorThinFilm * cosThetaT * distMeters;
 
     Vec3f I(0.0f);
     Vec3f Rs = (T121[0] * T121[0]) *
@@ -1614,33 +1623,32 @@ _ApplyThinFilm(
 }
 
 inline float
-_ReflectionFresnelCosTheta(const Vec3f& wi, const Vec3f& wo)
+_ReflectionFresnelCosTheta(const Vec3f& omegaInWld, const Vec3f& omegaOutWld)
 {
-    const Vec3f halfVector = wi + wo;
+    const Vec3f halfVector = omegaInWld + omegaOutWld;
     if (halfVector.length() < _kEpsilon) {
         return 1.0f;
     }
-    return std::max(Dot(wo, halfVector.normalized()), 0.0f);
+    return std::max(Dot(omegaOutWld, halfVector.normalized()), 0.0f);
 }
 
 inline float
-_TransmissionFresnelCosTheta(
-    float ior,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo)
+_TransmissionFresnelCosTheta(float ior, const Vec3f& normalShdWldOut,
+                             const Vec3f& omegaInWld, const Vec3f& omegaOutWld)
 {
-    _Frame frame = _Frame::FromNormal(N);
-    const Vec3f woLocal = frame.ToLocal(wo);
-    const Vec3f wiLocal = frame.ToLocal(wi);
-    const float etap = (woLocal[2] > 0.0f) ? ior : (1.0f / ior);
+    _Frame frame = _Frame::FromNormal(normalShdWldOut);
+    const Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
+    const Vec3f omegaInLocal = frame.ToLocal(omegaInWld);
+    // Walter/pbrt uses transmitted/incident, the reciprocal of this
+    // renderer's eta convention.
+    const float etaPbrt = (omegaOutLocal[2] > 0.0f) ? ior : (1.0f / ior);
 
-    Vec3f wm = wiLocal * etap + woLocal;
+    Vec3f wm = omegaInLocal * etaPbrt + omegaOutLocal;
     if (wm.length() < _kEpsilon) {
-        return std::max(std::abs(Dot(N, wo)), 0.0f);
+        return std::max(std::abs(Dot(normalShdWldOut, omegaOutWld)), 0.0f);
     }
     wm.normalize();
-    return std::abs(Dot(woLocal, wm));
+    return std::abs(Dot(omegaOutLocal, wm));
 }
 
 inline Vec3f
@@ -1830,9 +1838,10 @@ _GeneralizedSchlickReflectionFresnel(
 }
 
 inline Vec3f
-_FaceForwardNormal(const Vec3f& N, const Vec3f& wo)
+_FaceForwardNormal(const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld)
 {
-    return (Dot(N, wo) < 0.0f) ? -N : N;
+    return (Dot(normalShdWldOut, omegaOutWld) < 0.0f) ? -normalShdWldOut
+                                                      : normalShdWldOut;
 }
 
 inline Vec3f
@@ -1847,47 +1856,47 @@ _NormalizeOrFallback(const Vec3f& v, const Vec3f& fallback)
 
 template<typename DataT>
 inline Vec3f
-_ResolveReflectionNormal(const DataT& data,
-                         const Vec3f& N,
-                         const Vec3f& wo)
+_ResolveReflectionNormal(const DataT& data, const Vec3f& normalShdWldOut,
+                         const Vec3f& omegaOutWld)
 {
     if (!data.hasShadingNormal) {
-        return _FaceForwardNormal(N, wo);
+        return _FaceForwardNormal(normalShdWldOut, omegaOutWld);
     }
 
     return _FaceForwardNormal(
-        _NormalizeOrFallback(data.normal, _FaceForwardNormal(N, wo)),
-        wo);
+        _NormalizeOrFallback(data.normal,
+                             _FaceForwardNormal(normalShdWldOut, omegaOutWld)),
+        omegaOutWld);
 }
 
 inline bool
-_IsSameSide(const Vec3f& N, const Vec3f& wi, const Vec3f& wo)
+_IsSameSide(const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+            const Vec3f& omegaOutWld)
 {
-    return Dot(N, wi) * Dot(N, wo) > 0.0f;
+    return Dot(normalShdWldOut, omegaInWld) *
+               Dot(normalShdWldOut, omegaOutWld) >
+           0.0f;
 }
 
 Vec3f
-_EvalMicrofacetReflectionAnisotropic(
-    const Vec2f& roughness,
-    const Vec3f& tangent,
-    const Vec3f& fresnel,
-    float weight,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo,
-    bool compensateMissingEnergy = true)
+_EvalMicrofacetReflectionAnisotropic(const Vec2f& roughness,
+                                     const Vec3f& tangent, const Vec3f& fresnel,
+                                     float weight, const Vec3f& normalShdWldOut,
+                                     const Vec3f& omegaInWld,
+                                     const Vec3f& omegaOutWld,
+                                     bool compensateMissingEnergy = true)
 {
-    const _Frame frame = _Frame::FromNormalAndTangent(N, tangent);
-    const Vec3f woLocal = frame.ToLocal(wo);
-    const Vec3f wiLocal = frame.ToLocal(wi);
-    const float cosThetaO = _AbsCosTheta(woLocal);
-    const float cosThetaI = _AbsCosTheta(wiLocal);
-    if (cosThetaI <= 0.0f || cosThetaO <= 0.0f ||
-        wiLocal[2] <= 0.0f || woLocal[2] <= 0.0f) {
+    const _Frame frame = _Frame::FromNormalAndTangent(normalShdWldOut, tangent);
+    const Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
+    const Vec3f omegaInLocal = frame.ToLocal(omegaInWld);
+    const float cosThetaO = _AbsCosTheta(omegaOutLocal);
+    const float cosThetaI = _AbsCosTheta(omegaInLocal);
+    if (cosThetaI <= 0.0f || cosThetaO <= 0.0f || omegaInLocal[2] <= 0.0f ||
+        omegaOutLocal[2] <= 0.0f) {
         return Vec3f(0.0f);
     }
 
-    Vec3f wmLocal = wiLocal + woLocal;
+    Vec3f wmLocal = omegaInLocal + omegaOutLocal;
     if (wmLocal.length() < _kEpsilon) {
         return Vec3f(0.0f);
     }
@@ -1898,7 +1907,7 @@ _EvalMicrofacetReflectionAnisotropic(
 
     const Vec2f alpha = _ClampAlpha(roughness);
     const float D = _GGX_D_Anisotropic(alpha, wmLocal);
-    const float G = _GGX_G_Anisotropic(alpha, woLocal, wiLocal);
+    const float G = _GGX_G_Anisotropic(alpha, omegaOutLocal, omegaInLocal);
     const Vec3f compensatedFresnel = compensateMissingEnergy
         ? CompMul(
               fresnel,
@@ -1911,29 +1920,26 @@ _EvalMicrofacetReflectionAnisotropic(
 }
 
 Vec3f
-_EvalMicrofacetReflectionIsotropic(
-    float alpha,
-    const Vec3f& fresnel,
-    float weight,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo,
-    bool compensateMissingEnergy = true)
+_EvalMicrofacetReflectionIsotropic(float alpha, const Vec3f& fresnel,
+                                   float weight, const Vec3f& normalShdWldOut,
+                                   const Vec3f& omegaInWld,
+                                   const Vec3f& omegaOutWld,
+                                   bool compensateMissingEnergy = true)
 {
     const float clampedAlpha =
         std::clamp(alpha, _kMinMicrofacetAlpha, 1.0f);
-    const float NdotL = std::max(Dot(N, wi), 0.0f);
-    const float NdotV = std::max(Dot(N, wo), _kEpsilon);
+    const float NdotL = std::max(Dot(normalShdWldOut, omegaInWld), 0.0f);
+    const float NdotV = std::max(Dot(normalShdWldOut, omegaOutWld), _kEpsilon);
     if (NdotL <= 0.0f || NdotV <= 0.0f) {
         return Vec3f(0.0f);
     }
 
-    Vec3f H = wi + wo;
+    Vec3f H = omegaInWld + omegaOutWld;
     if (H.length() < _kEpsilon) {
         return Vec3f(0.0f);
     }
     H.normalize();
-    const float NdotH = std::max(Dot(N, H), 0.0f);
+    const float NdotH = std::max(Dot(normalShdWldOut, H), 0.0f);
     const float D = _GGX_D(clampedAlpha, NdotH);
     const float G = _GGX_G(clampedAlpha, NdotV, NdotL);
     const Vec3f compensatedFresnel = compensateMissingEnergy
@@ -1947,20 +1953,18 @@ _EvalMicrofacetReflectionIsotropic(
 }
 
 float
-_PdfGGXSpecularAnisotropic(const Vec2f& roughness,
-                           const Vec3f& tangent,
-                           const Vec3f& N,
-                           const Vec3f& wi,
-                           const Vec3f& wo)
+_PdfGGXSpecularAnisotropic(const Vec2f& roughness, const Vec3f& tangent,
+                           const Vec3f& normalShdWldOut,
+                           const Vec3f& omegaInWld, const Vec3f& omegaOutWld)
 {
-    const _Frame frame = _Frame::FromNormalAndTangent(N, tangent);
-    const Vec3f woLocal = frame.ToLocal(wo);
-    const Vec3f wiLocal = frame.ToLocal(wi);
-    if (woLocal[2] <= 0.0f || wiLocal[2] <= 0.0f) {
+    const _Frame frame = _Frame::FromNormalAndTangent(normalShdWldOut, tangent);
+    const Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
+    const Vec3f omegaInLocal = frame.ToLocal(omegaInWld);
+    if (omegaOutLocal[2] <= 0.0f || omegaInLocal[2] <= 0.0f) {
         return 0.0f;
     }
 
-    Vec3f wmLocal = woLocal + wiLocal;
+    Vec3f wmLocal = omegaOutLocal + omegaInLocal;
     if (wmLocal.length() < _kEpsilon) {
         return 0.0f;
     }
@@ -1970,42 +1974,41 @@ _PdfGGXSpecularAnisotropic(const Vec2f& roughness,
     }
 
     const Vec2f alpha = _ClampAlpha(roughness);
-    const float pdfWm =
-        _PdfGGX_VNDF_Anisotropic(woLocal, wmLocal, alpha);
-    const float VdotH = std::max(std::abs(Dot(woLocal, wmLocal)), _kEpsilon);
-    return pdfWm / (4.0f * VdotH);
+    const float pdfMicrofacetNormalSolidAngle =
+        _PdfGGX_VNDF_Anisotropic(omegaOutLocal, wmLocal, alpha);
+    const float VdotH =
+        std::max(std::abs(Dot(omegaOutLocal, wmLocal)), _kEpsilon);
+    return pdfMicrofacetNormalSolidAngle / (4.0f * VdotH);
 }
 
 Bsdf::BsdfSample
-_SampleGGXSpecularAnisotropic(const Vec2f& roughness,
-                              const Vec3f& tangent,
-                              const Vec3f& N,
-                              const Vec3f& wo,
-                              float u1,
-                              float u2)
+_SampleGGXSpecularAnisotropic(const Vec2f& roughness, const Vec3f& tangent,
+                              const Vec3f& normalShdWldOut,
+                              const Vec3f& omegaOutWld, float u1, float u2)
 {
-    const _Frame frame = _Frame::FromNormalAndTangent(N, tangent);
-    const Vec3f woLocal = frame.ToLocal(wo);
-    if (woLocal[2] <= 0.0f) {
+    const _Frame frame = _Frame::FromNormalAndTangent(normalShdWldOut, tangent);
+    const Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
+    if (omegaOutLocal[2] <= 0.0f) {
         return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
 
     const Vec2f alpha = _ClampAlpha(roughness);
-    const Vec3f wmLocal = _SampleGGX_VNDF_Anisotropic(woLocal, alpha, u1, u2);
-    const Vec3f wiLocal = 2.0f * Dot(woLocal, wmLocal) * wmLocal - woLocal;
-    if (wiLocal[2] <= 0.0f) {
+    const Vec3f wmLocal =
+        _SampleGGX_VNDF_Anisotropic(omegaOutLocal, alpha, u1, u2);
+    const Vec3f omegaInLocal =
+        2.0f * Dot(omegaOutLocal, wmLocal) * wmLocal - omegaOutLocal;
+    if (omegaInLocal[2] <= 0.0f) {
         return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
 
-    const Vec3f wi = frame.ToWorld(wiLocal);
-    const float pdfWm =
-        _PdfGGX_VNDF_Anisotropic(woLocal, wmLocal, alpha);
-    const float VdotH = std::max(std::abs(Dot(woLocal, wmLocal)), _kEpsilon);
-    return Bsdf::BsdfSample{
-        wi,
-        Vec3f(0.0f),
-        pdfWm / (4.0f * VdotH),
-        false};
+    const Vec3f omegaInWld = frame.ToWorld(omegaInLocal);
+    const float pdfMicrofacetNormalSolidAngle =
+        _PdfGGX_VNDF_Anisotropic(omegaOutLocal, wmLocal, alpha);
+    const float VdotH =
+        std::max(std::abs(Dot(omegaOutLocal, wmLocal)), _kEpsilon);
+    return Bsdf::BsdfSample{omegaInWld, Vec3f(0.0f),
+                            pdfMicrofacetNormalSolidAngle / (4.0f * VdotH),
+                            false};
 }
 
 inline bool
@@ -2105,47 +2108,42 @@ _FindCoupledTransmissionInterfaceForStraightShadow(
 }
 
 inline _CoupledDielectricCompensation
-_GetCoupledDielectricCompensation(
-    const Bsdf::DielectricInterfaceData& data,
-    float effectiveIor,
-    const Vec3f& geometricN,
-    const Vec3f& shadingN,
-    const Vec3f& wo)
+_GetCoupledDielectricCompensation(const Bsdf::DielectricInterfaceData& data,
+                                  float effectiveIor,
+                                  const Vec3f& normalShdInterfaceWldOut,
+                                  const Vec3f& normalShdLobeWldOut,
+                                  const Vec3f& omegaOutWld)
 {
     if (!_UsesCoupledRoughDielectricSampling(data)) {
         return {};
     }
     return _BsdlCoupledDielectricCompensation(
-        std::max(std::abs(Dot(shadingN, wo)), _kEpsilon),
-        _BsdlLayerRoughnessFromAlpha(data.roughness),
-        effectiveIor,
-        Dot(geometricN, wo) < 0.0f);
+        std::max(std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon),
+        _BsdlLayerRoughnessFromAlpha(data.roughness), effectiveIor,
+        Dot(normalShdInterfaceWldOut, omegaOutWld) < 0.0f);
 }
 
 Vec3f
 _EvalCoupledRoughDielectricTransmission(
-    const Bsdf::DielectricInterfaceData& data,
-    float effectiveIor,
-    const Vec3f& geometricN,
-    const Vec3f& shadingN,
-    const Vec3f& wi,
-    const Vec3f& wo)
+    const Bsdf::DielectricInterfaceData& data, float effectiveIor,
+    const Vec3f& normalShdInterfaceWldOut, const Vec3f& normalShdLobeWldOut,
+    const Vec3f& omegaInWld, const Vec3f& omegaOutWld)
 {
-    const _Frame frame = _Frame::FromNormalAndTangent(
-        shadingN, data.tangent);
-    const Vec3f woLocal = frame.ToLocal(wo);
-    const Vec3f wiLocal = frame.ToLocal(wi);
-    const float cosThetaO = woLocal[2];
-    const float cosThetaI = -wiLocal[2];
+    const _Frame frame =
+        _Frame::FromNormalAndTangent(normalShdLobeWldOut, data.tangent);
+    const Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
+    const Vec3f omegaInLocal = frame.ToLocal(omegaInWld);
+    const float cosThetaO = omegaOutLocal[2];
+    const float cosThetaI = -omegaInLocal[2];
     if (cosThetaO <= _kEpsilon || cosThetaI <= _kEpsilon) {
         return Vec3f(0.0f);
     }
 
-    const bool backside = Dot(geometricN, wo) < 0.0f;
-    const float etap = backside
-        ? 1.0f / std::max(effectiveIor, _kEpsilon)
-        : std::max(effectiveIor, _kEpsilon);
-    Vec3f wmLocal = wiLocal * etap + woLocal;
+    const bool backside = Dot(normalShdInterfaceWldOut, omegaOutWld) < 0.0f;
+    // The Walter half-vector convention uses transmitted/incident IOR.
+    const float etaPbrt = backside ? 1.0f / std::max(effectiveIor, _kEpsilon)
+                                   : std::max(effectiveIor, _kEpsilon);
+    Vec3f wmLocal = omegaInLocal * etaPbrt + omegaOutLocal;
     if (wmLocal.length() < _kEpsilon) {
         return Vec3f(0.0f);
     }
@@ -2154,12 +2152,12 @@ _EvalCoupledRoughDielectricTransmission(
         wmLocal = -wmLocal;
     }
 
-    const float cosMO = Dot(woLocal, wmLocal);
-    const float cosMI = Dot(wiLocal, wmLocal);
+    const float cosMO = Dot(omegaOutLocal, wmLocal);
+    const float cosMI = Dot(omegaInLocal, wmLocal);
     if (cosMO <= _kEpsilon || cosMI >= -_kEpsilon) {
         return Vec3f(0.0f);
     }
-    const float denom = cosMI + cosMO / etap;
+    const float denom = cosMI + cosMO / etaPbrt;
     const float denom2 = denom * denom;
     if (denom2 <= _kEpsilon) {
         return Vec3f(0.0f);
@@ -2167,10 +2165,10 @@ _EvalCoupledRoughDielectricTransmission(
 
     const Vec2f alpha = _ClampAlpha(data.roughness);
     const float D = _GGX_D_Anisotropic(alpha, wmLocal);
-    const Vec3f wiReflectionSide(
-        wiLocal[0], wiLocal[1], -wiLocal[2]);
-    const float G = _GGX_G_Anisotropic(
-        alpha, woLocal, wiReflectionSide);
+    const Vec3f omegaInReflectionSideWld(omegaInLocal[0], omegaInLocal[1],
+                                         -omegaInLocal[2]);
+    const float G =
+        _GGX_G_Anisotropic(alpha, omegaOutLocal, omegaInReflectionSideWld);
     const Vec3f transmission =
         _DielectricInterfaceTransmissionCoefficient(
             data, cosMO, effectiveIor, backside);
@@ -2180,31 +2178,29 @@ _EvalCoupledRoughDielectricTransmission(
 }
 
 float
-_PdfCoupledRoughDielectric(
-    const Bsdf::DielectricInterfaceData& data,
-    float effectiveIor,
-    const Vec3f& geometricN,
-    const Vec3f& shadingN,
-    const Vec3f& wi,
-    const Vec3f& wo)
+_PdfCoupledRoughDielectric(const Bsdf::DielectricInterfaceData& data,
+                           float effectiveIor,
+                           const Vec3f& normalShdInterfaceWldOut,
+                           const Vec3f& normalShdLobeWldOut,
+                           const Vec3f& omegaInWld, const Vec3f& omegaOutWld)
 {
-    const _Frame frame = _Frame::FromNormalAndTangent(
-        shadingN, data.tangent);
-    const Vec3f woLocal = frame.ToLocal(wo);
-    const Vec3f wiLocal = frame.ToLocal(wi);
-    if (woLocal[2] <= 0.0f || std::abs(wiLocal[2]) <= _kEpsilon) {
+    const _Frame frame =
+        _Frame::FromNormalAndTangent(normalShdLobeWldOut, data.tangent);
+    const Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
+    const Vec3f omegaInLocal = frame.ToLocal(omegaInWld);
+    if (omegaOutLocal[2] <= 0.0f || std::abs(omegaInLocal[2]) <= _kEpsilon) {
         return 0.0f;
     }
 
-    const bool backside = Dot(geometricN, wo) < 0.0f;
-    const bool reflection = _IsSameSide(geometricN, wi, wo);
-    const float etap = backside
-        ? 1.0f / std::max(effectiveIor, _kEpsilon)
-        : std::max(effectiveIor, _kEpsilon);
+    const bool backside = Dot(normalShdInterfaceWldOut, omegaOutWld) < 0.0f;
+    const bool reflection =
+        _IsSameSide(normalShdInterfaceWldOut, omegaInWld, omegaOutWld);
+    // The Walter half-vector convention uses transmitted/incident IOR.
+    const float etaPbrt = backside ? 1.0f / std::max(effectiveIor, _kEpsilon)
+                                   : std::max(effectiveIor, _kEpsilon);
 
-    Vec3f wmLocal = reflection
-        ? wiLocal + woLocal
-        : wiLocal * etap + woLocal;
+    Vec3f wmLocal = reflection ? omegaInLocal + omegaOutLocal
+                               : omegaInLocal * etaPbrt + omegaOutLocal;
     if (wmLocal.length() < _kEpsilon) {
         return 0.0f;
     }
@@ -2213,7 +2209,7 @@ _PdfCoupledRoughDielectric(
         wmLocal = -wmLocal;
     }
 
-    const float cosMO = std::abs(Dot(woLocal, wmLocal));
+    const float cosMO = std::abs(Dot(omegaOutLocal, wmLocal));
     if (cosMO <= _kEpsilon) {
         return 0.0f;
     }
@@ -2221,70 +2217,71 @@ _PdfCoupledRoughDielectric(
         _DielectricInterfaceSelectionProbabilities(
             data, cosMO, effectiveIor, backside);
     const Vec2f alpha = _ClampAlpha(data.roughness);
-    const float pdfWm = _PdfGGX_VNDF_Anisotropic(
-        woLocal, wmLocal, alpha);
+    const float pdfMicrofacetNormalSolidAngle =
+        _PdfGGX_VNDF_Anisotropic(omegaOutLocal, wmLocal, alpha);
     float specularPdf = 0.0f;
     if (reflection) {
-        specularPdf = selection.reflection * pdfWm / (4.0f * cosMO);
-    } else if (Dot(wiLocal, wmLocal) * Dot(woLocal, wmLocal) < 0.0f) {
+        specularPdf = selection.reflection * pdfMicrofacetNormalSolidAngle /
+                      (4.0f * cosMO);
+    } else if (Dot(omegaInLocal, wmLocal) * Dot(omegaOutLocal, wmLocal) <
+               0.0f) {
         const float denom =
-            Dot(wiLocal, wmLocal) + Dot(woLocal, wmLocal) / etap;
+            Dot(omegaInLocal, wmLocal) + Dot(omegaOutLocal, wmLocal) / etaPbrt;
         const float denom2 = denom * denom;
         if (denom2 > _kEpsilon) {
-            const float dwmDwi =
-                std::abs(Dot(wiLocal, wmLocal)) / denom2;
-            specularPdf = selection.transmission * pdfWm * dwmDwi;
+            const float dwmDwi = std::abs(Dot(omegaInLocal, wmLocal)) / denom2;
+            specularPdf =
+                selection.transmission * pdfMicrofacetNormalSolidAngle * dwmDwi;
         }
     }
 
     const _CoupledDielectricCompensation compensation =
-        _GetCoupledDielectricCompensation(
-            data, effectiveIor, geometricN, shadingN, wo);
+        _GetCoupledDielectricCompensation(data, effectiveIor,
+                                          normalShdInterfaceWldOut,
+                                          normalShdLobeWldOut, omegaOutWld);
     const float specularProbability = 1.0f - compensation.missingEnergy;
     const float compensationSideRatio = reflection
         ? compensation.reflectionRatio
         : 1.0f - compensation.reflectionRatio;
-    const float compensationPdf = compensation.missingEnergy *
-        compensationSideRatio *
-        _CosineHemispherePdf(std::abs(wiLocal[2]));
+    const float compensationPdf =
+        compensation.missingEnergy * compensationSideRatio *
+        _CosineHemispherePdf(std::abs(omegaInLocal[2]));
     return specularProbability * specularPdf + compensationPdf;
 }
 
 Bsdf::BsdfSample
-_SampleCoupledRoughDielectric(
-    const Bsdf::DielectricInterfaceData& data,
-    float effectiveIor,
-    const Vec3f& geometricN,
-    const Vec3f& shadingN,
-    const Vec3f& wo,
-    float u1,
-    float u2,
-    float uChoice)
+_SampleCoupledRoughDielectric(const Bsdf::DielectricInterfaceData& data,
+                              float effectiveIor,
+                              const Vec3f& normalShdInterfaceWldOut,
+                              const Vec3f& normalShdLobeWldOut,
+                              const Vec3f& omegaOutWld, float u1, float u2,
+                              float uChoice)
 {
-    const _Frame frame = _Frame::FromNormalAndTangent(
-        shadingN, data.tangent);
-    const Vec3f woLocal = frame.ToLocal(wo);
-    if (woLocal[2] <= 0.0f) {
+    const _Frame frame =
+        _Frame::FromNormalAndTangent(normalShdLobeWldOut, data.tangent);
+    const Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
+    if (omegaOutLocal[2] <= 0.0f) {
         return Bsdf::BsdfSample{
             Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
 
-    const bool backside = Dot(geometricN, wo) < 0.0f;
+    const bool backside = Dot(normalShdInterfaceWldOut, omegaOutWld) < 0.0f;
     const _CoupledDielectricCompensation compensation =
-        _GetCoupledDielectricCompensation(
-            data, effectiveIor, geometricN, shadingN, wo);
+        _GetCoupledDielectricCompensation(data, effectiveIor,
+                                          normalShdInterfaceWldOut,
+                                          normalShdLobeWldOut, omegaOutWld);
     const float specularProbability = 1.0f - compensation.missingEnergy;
     if (compensation.missingEnergy > 0.0f && u1 >= specularProbability) {
         const float remappedU1 = (u1 - specularProbability) /
             compensation.missingEnergy;
-        Vec3f wiLocal = _SampleCosineHemisphere(remappedU1, u2);
+        Vec3f omegaInLocal = _SampleCosineHemisphere(remappedU1, u2);
         const bool sampleReflection =
             uChoice < compensation.reflectionRatio;
         if (!sampleReflection) {
-            wiLocal[2] = -wiLocal[2];
+            omegaInLocal[2] = -omegaInLocal[2];
         }
-        Bsdf::BsdfSample sample{
-            frame.ToWorld(wiLocal), Vec3f(0.0f), 1.0f, false};
+        Bsdf::BsdfSample sample{frame.ToWorld(omegaInLocal), Vec3f(0.0f), 1.0f,
+                                false};
         sample.eta = sampleReflection
             ? 1.0f
             : (backside
@@ -2299,9 +2296,9 @@ _SampleCoupledRoughDielectric(
     }
     u1 /= specularProbability;
     const Vec2f alpha = _ClampAlpha(data.roughness);
-    const Vec3f wmLocal = _SampleGGX_VNDF_Anisotropic(
-        woLocal, alpha, u1, u2);
-    const float cosMO = std::abs(Dot(woLocal, wmLocal));
+    const Vec3f wmLocal =
+        _SampleGGX_VNDF_Anisotropic(omegaOutLocal, alpha, u1, u2);
+    const float cosMO = std::abs(Dot(omegaOutLocal, wmLocal));
     const _DielectricInterfaceSelection selection =
         _DielectricInterfaceSelectionProbabilities(
             data, cosMO, effectiveIor, backside);
@@ -2319,74 +2316,72 @@ _SampleCoupledRoughDielectric(
     const bool chooseReflection = totalInternalReflection ||
         uChoice < selection.reflection;
 
-    Vec3f wiLocal;
+    Vec3f omegaInLocal;
     if (chooseReflection) {
-        wiLocal = 2.0f * Dot(woLocal, wmLocal) * wmLocal - woLocal;
-        if (wiLocal[2] <= 0.0f) {
+        omegaInLocal =
+            2.0f * Dot(omegaOutLocal, wmLocal) * wmLocal - omegaOutLocal;
+        if (omegaInLocal[2] <= 0.0f) {
             return Bsdf::BsdfSample{
                 Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
     } else {
         float cosT = std::sqrt(std::max(0.0f, 1.0f - sin2T));
-        wiLocal = -eta * woLocal +
-            (eta * cosMO - cosT) * wmLocal;
-        if (wiLocal.length() < _kEpsilon) {
+        omegaInLocal = -eta * omegaOutLocal + (eta * cosMO - cosT) * wmLocal;
+        if (omegaInLocal.length() < _kEpsilon) {
             return Bsdf::BsdfSample{
                 Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
-        wiLocal.normalize();
-        if (wiLocal[2] >= 0.0f) {
+        omegaInLocal.normalize();
+        if (omegaInLocal[2] >= 0.0f) {
             return Bsdf::BsdfSample{
                 Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
     }
 
-    Bsdf::BsdfSample sample{
-        frame.ToWorld(wiLocal), Vec3f(0.0f), 1.0f, false};
+    Bsdf::BsdfSample sample{frame.ToWorld(omegaInLocal), Vec3f(0.0f), 1.0f,
+                            false};
     sample.eta = chooseReflection ? 1.0f : eta;
     return sample;
 }
 
 float
-_PdfTranslucent(const Vec3f& N, const Vec3f& wi)
+_PdfTranslucent(const Vec3f& normalShdWldOut, const Vec3f& omegaInWld)
 {
-    if (Dot(N, wi) >= 0.0f) {
+    if (Dot(normalShdWldOut, omegaInWld) >= 0.0f) {
         return 0.0f;
     }
-    return _CosineHemispherePdf(std::abs(Dot(N, wi)));
+    return _CosineHemispherePdf(std::abs(Dot(normalShdWldOut, omegaInWld)));
 }
 
 Vec3f
-_EvalTranslucent(const Vec3f& color, float weight, const Vec3f& N,
-                 const Vec3f& wi)
+_EvalTranslucent(const Vec3f& color, float weight, const Vec3f& normalShdWldOut,
+                 const Vec3f& omegaInWld)
 {
-    if (Dot(N, wi) >= 0.0f || weight <= 0.0f) {
+    if (Dot(normalShdWldOut, omegaInWld) >= 0.0f || weight <= 0.0f) {
         return Vec3f(0.0f);
     }
     return color * (weight * kInvPi);
 }
 
 Bsdf::BsdfSample
-_SampleDeltaTotalInternalReflection(
-    float weight,
-    const Vec3f& N,
-    const Vec3f& wo)
+_SampleDeltaTotalInternalReflection(float weight, const Vec3f& normalShdWldOut,
+                                    const Vec3f& omegaOutWld)
 {
-    const Vec3f n = Dot(N, wo) >= 0.0f ? N : -N;
-    Vec3f wi = 2.0f * Dot(n, wo) * n - wo;
-    wi.normalize();
-    Bsdf::BsdfSample sample{wi, Vec3f(weight), 1.0f, true};
+    const Vec3f n = Dot(normalShdWldOut, omegaOutWld) >= 0.0f
+                        ? normalShdWldOut
+                        : -normalShdWldOut;
+    Vec3f omegaInWld = 2.0f * Dot(n, omegaOutWld) * n - omegaOutWld;
+    omegaInWld.normalize();
+    Bsdf::BsdfSample sample{omegaInWld, Vec3f(weight), 1.0f, true};
     sample.eta = 1.0f;
     return sample;
 }
 
 inline bool
-_WouldTotalInternalReflect(
-    float ior,
-    const Vec3f& N,
-    const Vec3f& wo)
+_WouldTotalInternalReflect(float ior, const Vec3f& normalShdWldOut,
+                           const Vec3f& omegaOutWld)
 {
-    float cosI = Dot(N, wo);
+    float cosI = Dot(normalShdWldOut, omegaOutWld);
     float eta = 1.0f / std::max(ior, _kEpsilon);
     if (cosI < 0.0f) {
         eta = std::max(ior, _kEpsilon);
@@ -2397,39 +2392,32 @@ _WouldTotalInternalReflect(
 }
 
 Bsdf::BsdfSample
-_SampleDeltaTransmission(
-    float ior,
-    const Vec3f& tint,
-    float weight,
-    const Vec3f& N,
-    const Vec3f& wo)
+_SampleDeltaTransmission(float ior, const Vec3f& tint, float weight,
+                         const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld)
 {
-    float cosI = Dot(N, wo);
+    float cosI = Dot(normalShdWldOut, omegaOutWld);
     float eta = 1.0f;
-    Vec3f n = N;
+    Vec3f n = normalShdWldOut;
     if (cosI > 0.0f) {
         eta = 1.0f / ior;
     } else {
         eta = ior;
-        n = -N;
+        n = -normalShdWldOut;
         cosI = -cosI;
     }
 
     float sin2T = eta * eta * (1.0f - cosI * cosI);
     if (sin2T >= 1.0f) {
-        return _SampleDeltaTotalInternalReflection(weight, N, wo);
+        return _SampleDeltaTotalInternalReflection(weight, normalShdWldOut,
+                                                   omegaOutWld);
     }
 
     float cosT = std::sqrt(1.0f - sin2T);
-    Vec3f wi = -eta * wo + (eta * cosI - cosT) * n;
-    wi.normalize();
+    Vec3f omegaInWld = -eta * omegaOutWld + (eta * cosI - cosT) * n;
+    omegaInWld.normalize();
     float fresnel = _SchlickFresnelScalar(ior, cosI);
-    Bsdf::BsdfSample sample{
-        wi,
-        tint * ((1.0f - fresnel) * weight),
-        1.0f,
-        true
-    };
+    Bsdf::BsdfSample sample{omegaInWld, tint * ((1.0f - fresnel) * weight),
+                            1.0f, true};
     sample.eta = eta;
     return sample;
 }
@@ -2439,46 +2427,40 @@ _ScaleDiscreteSpecularSample(
     Bsdf::BsdfSample sample,
     float selectionProb)
 {
-    if (sample.isSpecular && sample.pdf > 0.0f && selectionProb > 0.0f) {
-        sample.f /= selectionProb;
+    if (sample.isSpecular && sample.pdfSolidAngle > 0.0f &&
+        selectionProb > 0.0f) {
+        sample.bsdfValue /= selectionProb;
     }
     return sample;
 }
 
 inline Bsdf::BsdfSample
-_SampleDeltaReflection(
-    const Vec3f& reflectance,
-    float weight,
-    const Vec3f& shadingN,
-    const Vec3f& wo)
+_SampleDeltaReflection(const Vec3f& reflectance, float weight,
+                       const Vec3f& normalShdLobeWldOut,
+                       const Vec3f& omegaOutWld)
 {
-    Vec3f wi = 2.0f * Dot(shadingN, wo) * shadingN - wo;
-    wi.normalize();
+    Vec3f omegaInWld =
+        2.0f * Dot(normalShdLobeWldOut, omegaOutWld) * normalShdLobeWldOut -
+        omegaOutWld;
+    omegaInWld.normalize();
 
-    Bsdf::BsdfSample sample{
-        wi,
-        _SafeVec(reflectance * weight),
-        1.0f,
-        true
-    };
+    Bsdf::BsdfSample sample{omegaInWld, _SafeVec(reflectance * weight), 1.0f,
+                            true};
     sample.eta = 1.0f;
     return sample;
 }
 
 inline Bsdf::BsdfSample
-_SampleDeltaDielectricReflection(
-    const Bsdf::DielectricData& data,
-    float effectiveIor,
-    const Vec3f& shadingN,
-    const Vec3f& wo)
+_SampleDeltaDielectricReflection(const Bsdf::DielectricData& data,
+                                 float effectiveIor,
+                                 const Vec3f& normalShdLobeWldOut,
+                                 const Vec3f& omegaOutWld)
 {
     const float cosTheta =
-        std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+        std::max(std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
     return _SampleDeltaReflection(
-        _DielectricReflectionFresnel(data, cosTheta, effectiveIor),
-        data.weight,
-        shadingN,
-        wo);
+        _DielectricReflectionFresnel(data, cosTheta, effectiveIor), data.weight,
+        normalShdLobeWldOut, omegaOutWld);
 }
 
 inline Bsdf::BsdfSample
@@ -2486,12 +2468,13 @@ _SampleDeltaDielectricTransmission(
     const Bsdf::DielectricData& data,
     float effectiveIor,
     float fresnelCos,
-    const Vec3f& N,
-    const Vec3f& wo,
+    const Vec3f& normalShdWldOut,
+    const Vec3f& omegaOutWld,
     const Vec3f& luminanceCoefficients =
         _DefaultLuminanceCoefficients())
 {
-    if (_WouldTotalInternalReflect(effectiveIor, N, wo)) {
+    if (_WouldTotalInternalReflect(effectiveIor, normalShdWldOut,
+                                   omegaOutWld)) {
         // A transmission-only lobe is paired with a separate reflection lobe
         // that keeps contributing its Schlick reflectance from inside the
         // medium, so a full-weight TIR sample here would double-count
@@ -2502,122 +2485,98 @@ _SampleDeltaDielectricTransmission(
                 data, fresnelCos, effectiveIor),
             luminanceCoefficients));
         return _SampleDeltaTotalInternalReflection(
-            data.weight * (1.0f - pairedReflectance), N, wo);
+            data.weight * (1.0f - pairedReflectance), normalShdWldOut,
+            omegaOutWld);
     }
 
-    auto sample = _SampleDeltaTransmission(
-        effectiveIor, data.tint, data.weight, N, wo);
+    auto sample = _SampleDeltaTransmission(effectiveIor, data.tint, data.weight,
+                                           normalShdWldOut, omegaOutWld);
     const float baseReflectance =
         _SchlickFresnelScalar(effectiveIor, fresnelCos);
-    sample.f = CompMul(
-        sample.f,
-        _TransmissionScale(
-            baseReflectance,
-            _DielectricReflectionFresnelUntinted(
-                data, fresnelCos, effectiveIor)));
+    sample.bsdfValue =
+        CompMul(sample.bsdfValue,
+                _TransmissionScale(baseReflectance,
+                                   _DielectricReflectionFresnelUntinted(
+                                       data, fresnelCos, effectiveIor)));
     return sample;
 }
 
 inline Bsdf::BsdfSample
 _SampleDeltaDielectricInterfaceReflection(
-    const Bsdf::DielectricInterfaceData& data,
-    float effectiveIor,
-    const Vec3f& shadingN,
-    const Vec3f& wo,
-    bool backside)
+    const Bsdf::DielectricInterfaceData& data, float effectiveIor,
+    const Vec3f& normalShdLobeWldOut, const Vec3f& omegaOutWld, bool backside)
 {
     const float cosTheta =
-        std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
-    return _SampleDeltaReflection(
-        _DielectricInterfaceReflectionCoefficient(
-            data, cosTheta, effectiveIor, backside),
-        1.0f,
-        shadingN,
-        wo);
+        std::max(std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
+    return _SampleDeltaReflection(_DielectricInterfaceReflectionCoefficient(
+                                      data, cosTheta, effectiveIor, backside),
+                                  1.0f, normalShdLobeWldOut, omegaOutWld);
 }
 
 inline Bsdf::BsdfSample
 _SampleDeltaDielectricInterfaceTransmission(
-    const Bsdf::DielectricInterfaceData& data,
-    float effectiveIor,
-    float fresnelCos,
-    const Vec3f& N,
-    const Vec3f& wo)
+    const Bsdf::DielectricInterfaceData& data, float effectiveIor,
+    float fresnelCos, const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld)
 {
-    const bool backside = Dot(N, wo) < 0.0f;
+    const bool backside = Dot(normalShdWldOut, omegaOutWld) < 0.0f;
     if (data.thinWalled) {
-        Vec3f wi = -wo;
-        wi.normalize();
-        Bsdf::BsdfSample sample{
-            wi,
-            _DielectricInterfaceTransmissionCoefficient(
-                data, fresnelCos, effectiveIor, backside),
-            1.0f,
-            true
-        };
+        Vec3f omegaInWld = -omegaOutWld;
+        omegaInWld.normalize();
+        Bsdf::BsdfSample sample{omegaInWld,
+                                _DielectricInterfaceTransmissionCoefficient(
+                                    data, fresnelCos, effectiveIor, backside),
+                                1.0f, true};
         sample.eta = 1.0f;
         return sample;
     }
 
-    auto sample = _SampleDeltaTransmission(
-        effectiveIor,
-        data.transmissionTint,
-        _Clamp01(data.transmissionWeight),
-        N,
-        wo);
+    auto sample = _SampleDeltaTransmission(effectiveIor, data.transmissionTint,
+                                           _Clamp01(data.transmissionWeight),
+                                           normalShdWldOut, omegaOutWld);
     const float baseReflectance =
         _SchlickFresnelScalar(effectiveIor, fresnelCos);
-    sample.f = CompMul(
-        sample.f,
-        _TransmissionScale(
-            baseReflectance,
-            _DielectricInterfaceReflectanceUntinted(
-                data, fresnelCos, effectiveIor, backside)));
+    sample.bsdfValue = CompMul(
+        sample.bsdfValue,
+        _TransmissionScale(baseReflectance,
+                           _DielectricInterfaceReflectanceUntinted(
+                               data, fresnelCos, effectiveIor, backside)));
     return sample;
 }
 
 inline Bsdf::BsdfSample
-_SampleDeltaConductorReflection(
-    const Bsdf::ConductorData& data,
-    const Vec3f& shadingN,
-    const Vec3f& wo)
+_SampleDeltaConductorReflection(const Bsdf::ConductorData& data,
+                                const Vec3f& normalShdLobeWldOut,
+                                const Vec3f& omegaOutWld)
 {
     const float cosTheta =
-        std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
-    return _SampleDeltaReflection(
-        _ConductorReflectionFresnel(data, cosTheta),
-        data.weight,
-        shadingN,
-        wo);
+        std::max(std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
+    return _SampleDeltaReflection(_ConductorReflectionFresnel(data, cosTheta),
+                                  data.weight, normalShdLobeWldOut,
+                                  omegaOutWld);
 }
 
 inline Bsdf::BsdfSample
 _SampleDeltaGeneralizedSchlickReflection(
-    const Bsdf::GeneralizedSchlickData& data,
-    const Vec3f& shadingN,
-    const Vec3f& wo)
+    const Bsdf::GeneralizedSchlickData& data, const Vec3f& normalShdLobeWldOut,
+    const Vec3f& omegaOutWld)
 {
     const float cosTheta =
-        std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+        std::max(std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
     return _SampleDeltaReflection(
-        _GeneralizedSchlickReflectionFresnel(data, cosTheta),
-        data.weight,
-        shadingN,
-        wo);
+        _GeneralizedSchlickReflectionFresnel(data, cosTheta), data.weight,
+        normalShdLobeWldOut, omegaOutWld);
 }
 
 Vec3f
-_EvalLegacySurface(
-    const SurfaceClosure& c,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo)
+_EvalLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
+                   const Vec3f& omegaInWld, const Vec3f& omegaOutWld)
 {
     const auto _Luminance = [&](const Vec3f& value) {
         return mxcpp::_Luminance(value, c.luminanceCoefficients);
     };
-    const Vec3f shadingN = _FaceForwardNormal(N, wo);
-    float NdotL = Dot(shadingN, wi);
+    const Vec3f normalShdLobeWldOut =
+        _FaceForwardNormal(normalShdWldOut, omegaOutWld);
+    float NdotL = Dot(normalShdLobeWldOut, omegaInWld);
 
     Vec3f reflected(0.0f);
     if (NdotL > 0.0f) {
@@ -2625,8 +2584,8 @@ _EvalLegacySurface(
             c.baseColor, c.metallic, c.specular, c.specularIor);
         bool hasSpecularLobe = (_Luminance(F0) > _kEpsilon);
 
-        Vec3f H = (wi + wo).normalized();
-        float VdotH = std::max(Dot(wo, H), 0.0f);
+        Vec3f H = (omegaInWld + omegaOutWld).normalized();
+        float VdotH = std::max(Dot(omegaOutWld, H), 0.0f);
 
         Vec3f diffuse(0.0f);
         Vec3f specular(0.0f);
@@ -2636,27 +2595,34 @@ _EvalLegacySurface(
             Vec3f kD = CompMul(Vec3f(1.0f) - fresnel,
                                Vec3f(1.0f - c.metallic));
             kD = kD * (1.0f - c.transmission);
-            diffuse = CompMul(kD, Bsdf::EvalLambertian(c.baseColor, shadingN, wi, wo));
+            diffuse = CompMul(
+                kD, Bsdf::EvalLambertian(c.baseColor, normalShdLobeWldOut,
+                                         omegaInWld, omegaOutWld));
 
             specular = Bsdf::EvalGGXSpecular(
-                c.roughness, c.specularIor,
-                CompMul(c.specularColor, F0), shadingN, wi, wo);
+                c.roughness, c.specularIor, CompMul(c.specularColor, F0),
+                normalShdLobeWldOut, omegaInWld, omegaOutWld);
         } else {
             Vec3f kD = Vec3f(1.0f - c.metallic) * (1.0f - c.transmission);
-            diffuse = CompMul(kD, Bsdf::EvalLambertian(c.baseColor, shadingN, wi, wo));
+            diffuse = CompMul(
+                kD, Bsdf::EvalLambertian(c.baseColor, normalShdLobeWldOut,
+                                         omegaInWld, omegaOutWld));
         }
 
         Vec3f sheen(0.0f);
         if (c.sheen > 0.0f) {
-            sheen = Bsdf::EvalSheen(c.sheenColor, c.sheenRoughness, shadingN, wi, wo) *
-                    c.sheen;
+            sheen =
+                Bsdf::EvalSheen(c.sheenColor, c.sheenRoughness,
+                                normalShdLobeWldOut, omegaInWld, omegaOutWld) *
+                c.sheen;
         }
 
         Vec3f coatContrib(0.0f);
         float coatAttenuation = 1.0f;
         if (c.coat > 0.0f) {
-            coatContrib = Bsdf::EvalCoat(
-                c.coat, c.coatRoughness, c.coatIor, shadingN, wi, wo);
+            coatContrib =
+                Bsdf::EvalCoat(c.coat, c.coatRoughness, c.coatIor,
+                               normalShdLobeWldOut, omegaInWld, omegaOutWld);
             float coatFresnel = _SchlickFresnelScalar(c.coatIor, VdotH);
             coatAttenuation = 1.0f - c.coat * coatFresnel;
         }
@@ -2667,7 +2633,8 @@ _EvalLegacySurface(
 
     Vec3f transmitted(0.0f);
     if (c.transmission > 0.0f && NdotL < 0.0f) {
-        float absNdotV = std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+        float absNdotV = std::max(
+            std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
         float fresnel = _SchlickFresnelScalar(c.specularIor, absNdotV);
         transmitted = c.transmissionColor *
             ((1.0f - fresnel) * c.transmission * kInvPi);
@@ -2677,16 +2644,14 @@ _EvalLegacySurface(
 }
 
 float
-_PdfLegacySurface(
-    const SurfaceClosure& c,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo)
+_PdfLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
+                  const Vec3f& omegaInWld, const Vec3f& omegaOutWld)
 {
     const auto _Luminance = [&](const Vec3f& value) {
         return mxcpp::_Luminance(value, c.luminanceCoefficients);
     };
-    const Vec3f shadingN = _FaceForwardNormal(N, wo);
+    const Vec3f normalShdLobeWldOut =
+        _FaceForwardNormal(normalShdWldOut, omegaOutWld);
     Vec3f F0 = _ComputeLegacyF0(
         c.baseColor, c.metallic, c.specular, c.specularIor);
     bool hasSpecularLobe = (_Luminance(F0) > _kEpsilon);
@@ -2708,28 +2673,29 @@ _PdfLegacySurface(
     float pSpecular = wSpecular / total;
     float pCoat = wCoat / total;
 
-    float pdf = 0.0f;
-    pdf += pDiffuse * Bsdf::PdfLambertian(shadingN, wi);
-    pdf += pSpecular * Bsdf::PdfGGXSpecular(c.roughness, shadingN, wi, wo);
+    float pdfSolidAngle = 0.0f;
+    pdfSolidAngle +=
+        pDiffuse * Bsdf::PdfLambertian(normalShdLobeWldOut, omegaInWld);
+    pdfSolidAngle +=
+        pSpecular * Bsdf::PdfGGXSpecular(c.roughness, normalShdLobeWldOut,
+                                         omegaInWld, omegaOutWld);
     if (c.coat > 0.0f) {
-        pdf += pCoat * Bsdf::PdfGGXSpecular(c.coatRoughness, shadingN, wi, wo);
+        pdfSolidAngle +=
+            pCoat * Bsdf::PdfGGXSpecular(c.coatRoughness, normalShdLobeWldOut,
+                                         omegaInWld, omegaOutWld);
     }
-    return pdf;
+    return pdfSolidAngle;
 }
 
 Bsdf::BsdfSample
-_SampleLegacySurface(
-    const SurfaceClosure& c,
-    const Vec3f& N,
-    const Vec3f& wo,
-    float u1,
-    float u2,
-    float uLobe)
+_SampleLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
+                     const Vec3f& omegaOutWld, float u1, float u2, float uLobe)
 {
     const auto _Luminance = [&](const Vec3f& value) {
         return mxcpp::_Luminance(value, c.luminanceCoefficients);
     };
-    const Vec3f shadingN = _FaceForwardNormal(N, wo);
+    const Vec3f normalShdLobeWldOut =
+        _FaceForwardNormal(normalShdWldOut, omegaOutWld);
     Vec3f F0 = _ComputeLegacyF0(
         c.baseColor, c.metallic, c.specular, c.specularIor);
     bool hasSpecularLobe = (_Luminance(F0) > _kEpsilon);
@@ -2755,69 +2721,70 @@ _SampleLegacySurface(
     float cumCoat = cumSpecular + pCoat;
 
     if (uLobe < cumDiffuse) {
-        auto sample = Bsdf::SampleLambertian(c.baseColor, shadingN, wo, u1, u2);
-        if (sample.pdf <= 0.0f) {
+        auto sample = Bsdf::SampleLambertian(c.baseColor, normalShdLobeWldOut,
+                                             omegaOutWld, u1, u2);
+        if (sample.pdfSolidAngle <= 0.0f) {
             return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
-        sample.f = _EvalLegacySurface(c, N, sample.wi, wo);
-        sample.pdf = _PdfLegacySurface(c, N, sample.wi, wo);
+        sample.bsdfValue = _EvalLegacySurface(c, normalShdWldOut,
+                                              sample.omegaInWld, omegaOutWld);
+        sample.pdfSolidAngle = _PdfLegacySurface(
+            c, normalShdWldOut, sample.omegaInWld, omegaOutWld);
         return sample;
     }
     if (uLobe < cumSpecular) {
         Vec3f specCol = CompMul(c.specularColor, F0);
-        auto sample = Bsdf::SampleGGXSpecular(
-            c.roughness, c.specularIor, specCol, shadingN, wo, u1, u2);
-        if (sample.pdf <= 0.0f) {
+        auto sample =
+            Bsdf::SampleGGXSpecular(c.roughness, c.specularIor, specCol,
+                                    normalShdLobeWldOut, omegaOutWld, u1, u2);
+        if (sample.pdfSolidAngle <= 0.0f) {
             return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
-        sample.f = _EvalLegacySurface(c, N, sample.wi, wo);
-        sample.pdf = _PdfLegacySurface(c, N, sample.wi, wo);
+        sample.bsdfValue = _EvalLegacySurface(c, normalShdWldOut,
+                                              sample.omegaInWld, omegaOutWld);
+        sample.pdfSolidAngle = _PdfLegacySurface(
+            c, normalShdWldOut, sample.omegaInWld, omegaOutWld);
         return sample;
     }
     if (uLobe < cumCoat) {
         float coatF0 = _SchlickFresnelScalar(c.coatIor, 1.0f);
-        auto sample = Bsdf::SampleGGXSpecular(
-            c.coatRoughness, c.coatIor, Vec3f(coatF0), shadingN, wo, u1, u2);
-        if (sample.pdf <= 0.0f) {
+        auto sample =
+            Bsdf::SampleGGXSpecular(c.coatRoughness, c.coatIor, Vec3f(coatF0),
+                                    normalShdLobeWldOut, omegaOutWld, u1, u2);
+        if (sample.pdfSolidAngle <= 0.0f) {
             return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
-        sample.f = _EvalLegacySurface(c, N, sample.wi, wo);
-        sample.pdf = _PdfLegacySurface(c, N, sample.wi, wo);
+        sample.bsdfValue = _EvalLegacySurface(c, normalShdWldOut,
+                                              sample.omegaInWld, omegaOutWld);
+        sample.pdfSolidAngle = _PdfLegacySurface(
+            c, normalShdWldOut, sample.omegaInWld, omegaOutWld);
         return sample;
     }
     return _SampleDeltaTransmission(
-        c.specularIor,
-        c.transmissionColor * (c.transmission * c.presence),
-        1.0f,
-        N,
-        wo);
+        c.specularIor, c.transmissionColor * (c.transmission * c.presence),
+        1.0f, normalShdWldOut, omegaOutWld);
 }
 
-Vec3f
-_EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-          const Vec3f& N, const Vec3f& wi, const Vec3f& wo,
-          float heroWavelengthNm);
+Vec3f _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
+                const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+                const Vec3f& omegaOutWld, float heroWavelengthNm);
 
-Vec3f
-_EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-                const Vec3f& N, const Vec3f& wo,
-                float heroWavelengthNm);
+Vec3f _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
+                      const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld,
+                      float heroWavelengthNm);
 
-float
-_ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-              const Vec3f& N, const Vec3f& wo,
-              float heroWavelengthNm);
+float _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
+                    const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld,
+                    float heroWavelengthNm);
 
-float
-_PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-         const Vec3f& N, const Vec3f& wi, const Vec3f& wo,
-         float heroWavelengthNm);
+float _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
+               const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+               const Vec3f& omegaOutWld, float heroWavelengthNm);
 
-Bsdf::BsdfSample
-_SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-            const Vec3f& N, const Vec3f& wo,
-            float u1, float u2, float uChoice,
-            float heroWavelengthNm);
+Bsdf::BsdfSample _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
+                             const Vec3f& normalShdWldOut,
+                             const Vec3f& omegaOutWld, float u1, float u2,
+                             float uChoice, float heroWavelengthNm);
 
 float
 _PerceptualRoughnessToAlpha(float roughness)
@@ -3013,19 +2980,18 @@ private:
 };
 
 Vec3f
-_EvalLayerBaseThroughput(const Bsdf::ClosureTree& tree,
-                         Bsdf::NodeId topNodeId,
-                         const Vec3f& N,
-                         const Vec3f& wo,
+_EvalLayerBaseThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId topNodeId,
+                         const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld,
                          float heroWavelengthNm)
 {
-    return _EvalThroughput(tree, topNodeId, N, wo, heroWavelengthNm);
+    return _EvalThroughput(tree, topNodeId, normalShdWldOut, omegaOutWld,
+                           heroWavelengthNm);
 }
 
 Vec3f
 _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-          const Vec3f& N, const Vec3f& wi, const Vec3f& wo,
-          float heroWavelengthNm)
+          const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+          const Vec3f& omegaOutWld, float heroWavelengthNm)
 {
     const auto _Luminance = [&](const Vec3f& value) {
         return mxcpp::_Luminance(value, tree.luminanceCoefficients);
@@ -3038,13 +3004,16 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
     return std::visit([&](const auto& data) -> Vec3f {
         using T = std::decay_t<decltype(data)>;
         if constexpr (std::is_same_v<T, Bsdf::OrenNayarDiffuseData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            if (Dot(shadingN, wi) <= 0.0f || data.weight <= 0.0f) {
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            if (Dot(normalShdLobeWldOut, omegaInWld) <= 0.0f ||
+                data.weight <= 0.0f) {
                 return Vec3f(0.0f);
             }
-            float NdotL = std::max(Dot(shadingN, wi), 0.0f);
-            float NdotV = std::max(Dot(shadingN, wo), _kEpsilon);
-            float LdotV = Dot(wi, wo);
+            float NdotL = std::max(Dot(normalShdLobeWldOut, omegaInWld), 0.0f);
+            float NdotV =
+                std::max(Dot(normalShdLobeWldOut, omegaOutWld), _kEpsilon);
+            float LdotV = Dot(omegaInWld, omegaOutWld);
             if (data.energyCompensation) {
                 return _SafeVec(
                     _EvalEonDiffuse(
@@ -3055,26 +3024,32 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 NdotV, NdotL, LdotV, data.roughness);
             return _SafeVec(data.color * (data.weight * factor * kInvPi));
         } else if constexpr (std::is_same_v<T, Bsdf::BurleyDiffuseData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            if (Dot(shadingN, wi) <= 0.0f || data.weight <= 0.0f) {
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            if (Dot(normalShdLobeWldOut, omegaInWld) <= 0.0f ||
+                data.weight <= 0.0f) {
                 return Vec3f(0.0f);
             }
-            float NdotL = std::max(Dot(shadingN, wi), 0.0f);
-            float NdotV = std::max(Dot(shadingN, wo), _kEpsilon);
-            Vec3f H = (wi + wo).normalized();
-            float LdotH = std::max(Dot(wi, H), 0.0f);
+            float NdotL = std::max(Dot(normalShdLobeWldOut, omegaInWld), 0.0f);
+            float NdotV =
+                std::max(Dot(normalShdLobeWldOut, omegaOutWld), _kEpsilon);
+            Vec3f H = (omegaInWld + omegaOutWld).normalized();
+            float LdotH = std::max(Dot(omegaInWld, H), 0.0f);
             float factor = _BurleyFactor(NdotV, NdotL, LdotH, data.roughness);
             return _SafeVec(data.color * (data.weight * factor * kInvPi));
         } else if constexpr (std::is_same_v<T, Bsdf::TranslucentData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            return _SafeVec(
-                _EvalTranslucent(data.color, data.weight, shadingN, wi));
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            return _SafeVec(_EvalTranslucent(data.color, data.weight,
+                                             normalShdLobeWldOut, omegaInWld));
         } else if constexpr (std::is_same_v<T, Bsdf::SubsurfaceData>) {
             return Vec3f(0.0f);
         } else if constexpr (std::is_same_v<T, Bsdf::DielectricData>) {
             Vec3f result(0.0f);
-            bool sameSide = _IsSameSide(N, wi, wo);
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            bool sameSide =
+                _IsSameSide(normalShdWldOut, omegaInWld, omegaOutWld);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
             const float effectiveIor =
                 _ResolveDielectricIor(data, heroWavelengthNm);
             if (_IsEffectivelyDeltaAlpha(data.roughness)) {
@@ -3083,55 +3058,45 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             if (sameSide &&
                 data.scatterMode != Bsdf::ScatterMode::Transmission) {
                 const Vec3f fresnel = _DielectricReflectionFresnel(
-                    data,
-                    _ReflectionFresnelCosTheta(wi, wo),
+                    data, _ReflectionFresnelCosTheta(omegaInWld, omegaOutWld),
                     effectiveIor);
                 if (_IsEffectivelyIsotropic(data.roughness)) {
                     result += _EvalMicrofacetReflectionIsotropic(
-                        std::clamp(
-                            data.roughness[0], _kMinMicrofacetAlpha, 1.0f),
-                        fresnel,
-                        data.weight,
-                        shadingN,
-                        wi,
-                        wo);
+                        std::clamp(data.roughness[0], _kMinMicrofacetAlpha,
+                                   1.0f),
+                        fresnel, data.weight, normalShdLobeWldOut, omegaInWld,
+                        omegaOutWld);
                 } else {
                     result += _EvalMicrofacetReflectionAnisotropic(
-                        data.roughness,
-                        data.tangent,
-                        fresnel,
-                        data.weight,
-                        shadingN,
-                        wi,
-                        wo);
+                        data.roughness, data.tangent, fresnel, data.weight,
+                        normalShdLobeWldOut, omegaInWld, omegaOutWld);
                 }
             }
             if (!sameSide &&
                 data.scatterMode != Bsdf::ScatterMode::Reflection) {
-                const float fresnelCos =
-                    _TransmissionFresnelCosTheta(effectiveIor, N, wi, wo);
+                const float fresnelCos = _TransmissionFresnelCosTheta(
+                    effectiveIor, normalShdWldOut, omegaInWld, omegaOutWld);
                 const float baseReflectance =
                     _SchlickFresnelScalar(effectiveIor, fresnelCos);
                 const Vec3f transmissionScale = _TransmissionScale(
                     baseReflectance,
                     _DielectricReflectionFresnelUntinted(
                         data, fresnelCos, effectiveIor));
-                result += CompMul(
-                    Bsdf::EvalGGXTransmission(
-                        _AverageAlphaAsRoughness(data.roughness),
-                        effectiveIor,
-                        data.tint,
-                        N,
-                        wi,
-                        wo) * data.weight,
-                    transmissionScale);
+                result += CompMul(Bsdf::EvalGGXTransmission(
+                                      _AverageAlphaAsRoughness(data.roughness),
+                                      effectiveIor, data.tint, normalShdWldOut,
+                                      omegaInWld, omegaOutWld) *
+                                      data.weight,
+                                  transmissionScale);
             }
             return _SafeVec(result);
         } else if constexpr (
             std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
             Vec3f result(0.0f);
-            const bool sameSide = _IsSameSide(N, wi, wo);
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            const bool sameSide =
+                _IsSameSide(normalShdWldOut, omegaInWld, omegaOutWld);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
             const float effectiveIor =
                 _ResolveDielectricIor(data, heroWavelengthNm);
             if (_IsEffectivelyDeltaAlpha(data.roughness)) {
@@ -3141,96 +3106,76 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 _UsesCoupledRoughDielectricSampling(data);
             if (sameSide && data.reflectionWeight > 0.0f) {
                 const Vec3f fresnel = _DielectricInterfaceReflectionCoefficient(
-                    data,
-                    _ReflectionFresnelCosTheta(wi, wo),
-                    effectiveIor,
-                    Dot(N, wo) < 0.0f);
+                    data, _ReflectionFresnelCosTheta(omegaInWld, omegaOutWld),
+                    effectiveIor, Dot(normalShdWldOut, omegaOutWld) < 0.0f);
                 if (_IsEffectivelyIsotropic(data.roughness)) {
                     result += _EvalMicrofacetReflectionIsotropic(
-                        std::clamp(
-                            data.roughness[0], _kMinMicrofacetAlpha, 1.0f),
-                        fresnel,
-                        1.0f,
-                        shadingN,
-                        wi,
-                        wo,
-                        !compensateCoupledDielectric);
+                        std::clamp(data.roughness[0], _kMinMicrofacetAlpha,
+                                   1.0f),
+                        fresnel, 1.0f, normalShdLobeWldOut, omegaInWld,
+                        omegaOutWld, !compensateCoupledDielectric);
                 } else {
                     result += _EvalMicrofacetReflectionAnisotropic(
-                        data.roughness,
-                        data.tangent,
-                        fresnel,
-                        1.0f,
-                        shadingN,
-                        wi,
-                        wo,
+                        data.roughness, data.tangent, fresnel, 1.0f,
+                        normalShdLobeWldOut, omegaInWld, omegaOutWld,
                         !compensateCoupledDielectric);
                 }
             }
             if (!sameSide && data.transmissionWeight > 0.0f) {
                 if (data.thinWalled) {
-                    const float NdotV =
-                        std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+                    const float NdotV = std::max(
+                        std::abs(Dot(normalShdLobeWldOut, omegaOutWld)),
+                        _kEpsilon);
                     const Vec3f transmission =
                         _DielectricInterfaceTransmissionCoefficient(
                             data, NdotV, effectiveIor,
                             /* backside = */ false);
-                    const Vec3f transmissionN = -shadingN;
-                    Vec3f mirroredWo = _MirrorAcrossSurface(wo, shadingN);
-                    mirroredWo.normalize();
+                    const Vec3f transmissionN = -normalShdLobeWldOut;
+                    Vec3f omegaOutMirroredWld =
+                        _MirrorAcrossSurface(omegaOutWld, normalShdLobeWldOut);
+                    omegaOutMirroredWld.normalize();
                     if (_IsEffectivelyIsotropic(data.roughness)) {
                         result += _EvalMicrofacetReflectionIsotropic(
-                            std::clamp(
-                                data.roughness[0],
-                                _kMinMicrofacetAlpha,
-                                1.0f),
-                            transmission,
-                            1.0f,
-                            transmissionN,
-                            wi,
-                            mirroredWo);
+                            std::clamp(data.roughness[0], _kMinMicrofacetAlpha,
+                                       1.0f),
+                            transmission, 1.0f, transmissionN, omegaInWld,
+                            omegaOutMirroredWld);
                     } else {
                         result += _EvalMicrofacetReflectionAnisotropic(
-                            data.roughness,
-                            data.tangent,
-                            transmission,
-                            1.0f,
-                            transmissionN,
-                            wi,
-                            mirroredWo);
+                            data.roughness, data.tangent, transmission, 1.0f,
+                            transmissionN, omegaInWld, omegaOutMirroredWld);
                     }
                     return _SafeVec(result);
                 }
 
                 if (compensateCoupledDielectric) {
                     result += _EvalCoupledRoughDielectricTransmission(
-                        data, effectiveIor, N, shadingN, wi, wo);
+                        data, effectiveIor, normalShdWldOut,
+                        normalShdLobeWldOut, omegaInWld, omegaOutWld);
                 } else {
-                    const float fresnelCos =
-                        _TransmissionFresnelCosTheta(
-                            effectiveIor, N, wi, wo);
+                    const float fresnelCos = _TransmissionFresnelCosTheta(
+                        effectiveIor, normalShdWldOut, omegaInWld, omegaOutWld);
                     const float baseReflectance =
                         _SchlickFresnelScalar(effectiveIor, fresnelCos);
                     const Vec3f transmissionScale = _TransmissionScale(
                         baseReflectance,
                         _DielectricInterfaceReflectanceUntinted(
                             data, fresnelCos, effectiveIor,
-                            Dot(N, wo) < 0.0f));
-                    result += CompMul(
-                        Bsdf::EvalGGXTransmission(
-                            _AverageAlphaAsRoughness(data.roughness),
-                            effectiveIor,
-                            data.transmissionTint,
-                            N,
-                            wi,
-                            wo) * _Clamp01(data.transmissionWeight),
-                        transmissionScale);
+                            Dot(normalShdWldOut, omegaOutWld) < 0.0f));
+                    result +=
+                        CompMul(Bsdf::EvalGGXTransmission(
+                                    _AverageAlphaAsRoughness(data.roughness),
+                                    effectiveIor, data.transmissionTint,
+                                    normalShdWldOut, omegaInWld, omegaOutWld) *
+                                    _Clamp01(data.transmissionWeight),
+                                transmissionScale);
                 }
             }
             if (compensateCoupledDielectric) {
                 const _CoupledDielectricCompensation compensation =
                     _GetCoupledDielectricCompensation(
-                        data, effectiveIor, N, shadingN, wo);
+                        data, effectiveIor, normalShdWldOut,
+                        normalShdLobeWldOut, omegaOutWld);
                 if (compensation.missingEnergy > 0.0f) {
                     const float sideRatio = sameSide
                         ? compensation.reflectionRatio
@@ -3246,64 +3191,49 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             }
             return _SafeVec(result);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            if (Dot(shadingN, wi) <= 0.0f || data.weight <= 0.0f) {
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            if (Dot(normalShdLobeWldOut, omegaInWld) <= 0.0f ||
+                data.weight <= 0.0f) {
                 return Vec3f(0.0f);
             }
             if (_IsEffectivelyDeltaAlpha(data.roughness)) {
                 return Vec3f(0.0f);
             }
             const Vec3f fresnel = _ConductorReflectionFresnel(
-                data,
-                _ReflectionFresnelCosTheta(wi, wo));
+                data, _ReflectionFresnelCosTheta(omegaInWld, omegaOutWld));
             if (_IsEffectivelyIsotropic(data.roughness)) {
                 return _EvalMicrofacetReflectionIsotropic(
-                    std::clamp(
-                        data.roughness[0], _kMinMicrofacetAlpha, 1.0f),
-                    fresnel,
-                    data.weight,
-                    shadingN,
-                    wi,
-                    wo);
+                    std::clamp(data.roughness[0], _kMinMicrofacetAlpha, 1.0f),
+                    fresnel, data.weight, normalShdLobeWldOut, omegaInWld,
+                    omegaOutWld);
             }
             return _EvalMicrofacetReflectionAnisotropic(
-                data.roughness,
-                data.tangent,
-                fresnel,
-                data.weight,
-                shadingN,
-                wi,
-                wo);
+                data.roughness, data.tangent, fresnel, data.weight,
+                normalShdLobeWldOut, omegaInWld, omegaOutWld);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
             Vec3f result(0.0f);
-            bool sameSide = _IsSameSide(N, wi, wo);
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            bool sameSide =
+                _IsSameSide(normalShdWldOut, omegaInWld, omegaOutWld);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
             if (_IsEffectivelyDeltaAlpha(data.roughness)) {
                 return Vec3f(0.0f);
             }
             if (sameSide &&
                 data.scatterMode != Bsdf::ScatterMode::Transmission) {
                 const Vec3f fresnel = _GeneralizedSchlickReflectionFresnel(
-                    data,
-                    _ReflectionFresnelCosTheta(wi, wo));
+                    data, _ReflectionFresnelCosTheta(omegaInWld, omegaOutWld));
                 if (_IsEffectivelyIsotropic(data.roughness)) {
                     result += _EvalMicrofacetReflectionIsotropic(
-                        std::clamp(
-                            data.roughness[0], _kMinMicrofacetAlpha, 1.0f),
-                        fresnel,
-                        data.weight,
-                        shadingN,
-                        wi,
-                        wo);
+                        std::clamp(data.roughness[0], _kMinMicrofacetAlpha,
+                                   1.0f),
+                        fresnel, data.weight, normalShdLobeWldOut, omegaInWld,
+                        omegaOutWld);
                 } else {
                     result += _EvalMicrofacetReflectionAnisotropic(
-                        data.roughness,
-                        data.tangent,
-                        fresnel,
-                        data.weight,
-                        shadingN,
-                        wi,
-                        wo);
+                        data.roughness, data.tangent, fresnel, data.weight,
+                        normalShdLobeWldOut, omegaInWld, omegaOutWld);
                 }
             }
             if (!sameSide &&
@@ -3311,56 +3241,65 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 float avgF0 = _Clamp01(_Luminance(_SaturateVec(data.color0)));
                 float ior = (1.0f + std::sqrt(std::max(avgF0, 0.01f))) /
                             (1.0f - std::sqrt(std::max(avgF0, 0.01f)));
-                const float fresnelCos =
-                    _TransmissionFresnelCosTheta(ior, N, wi, wo);
+                const float fresnelCos = _TransmissionFresnelCosTheta(
+                    ior, normalShdWldOut, omegaInWld, omegaOutWld);
                 const float baseReflectance =
                     _SchlickFresnelScalar(ior, fresnelCos);
                 const Vec3f transmissionScale = _TransmissionScale(
                     baseReflectance,
                     _GeneralizedSchlickReflectionFresnel(data, fresnelCos));
-                result += CompMul(
-                    Bsdf::EvalGGXTransmission(
-                        _AverageAlphaAsRoughness(data.roughness),
-                        ior,
-                        Vec3f(1.0f),
-                        N,
-                        wi,
-                        wo) * data.weight,
-                    transmissionScale);
+                result += CompMul(Bsdf::EvalGGXTransmission(
+                                      _AverageAlphaAsRoughness(data.roughness),
+                                      ior, Vec3f(1.0f), normalShdWldOut,
+                                      omegaInWld, omegaOutWld) *
+                                      data.weight,
+                                  transmissionScale);
             }
             return _SafeVec(result);
         } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            if (Dot(shadingN, wi) <= 0.0f || data.weight <= 0.0f) {
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            if (Dot(normalShdLobeWldOut, omegaInWld) <= 0.0f ||
+                data.weight <= 0.0f) {
                 return Vec3f(0.0f);
             }
-            return _SafeVec(Bsdf::EvalSheen(
-                data.color, data.roughness, shadingN, wi, wo) * data.weight);
+            return _SafeVec(Bsdf::EvalSheen(data.color, data.roughness,
+                                            normalShdLobeWldOut, omegaInWld,
+                                            omegaOutWld) *
+                            data.weight);
         } else if constexpr (std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
-            return _SafeVec(EvalAdobeOpenPbr(data, N, wi, wo));
+            return _SafeVec(EvalAdobeOpenPbr(data, normalShdWldOut, omegaInWld,
+                                             omegaOutWld));
         } else if constexpr (std::is_same_v<T, Bsdf::UnsupportedData>) {
             return Vec3f(0.0f);
         } else if constexpr (std::is_same_v<T, Bsdf::MixData>) {
             return _LerpVec(
-                _EvalNode(tree, data.bg, N, wi, wo, heroWavelengthNm),
-                _EvalNode(tree, data.fg, N, wi, wo, heroWavelengthNm),
+                _EvalNode(tree, data.bg, normalShdWldOut, omegaInWld,
+                          omegaOutWld, heroWavelengthNm),
+                _EvalNode(tree, data.fg, normalShdWldOut, omegaInWld,
+                          omegaOutWld, heroWavelengthNm),
                 _Clamp01(data.mix));
         } else if constexpr (std::is_same_v<T, Bsdf::LayerData>) {
-            Vec3f topEval = _EvalNode(
-                tree, data.top, N, wi, wo, heroWavelengthNm);
-            Vec3f baseEval = _EvalNode(
-                tree, data.base, N, wi, wo, heroWavelengthNm);
-            return topEval + CompMul(
-                baseEval,
-                _EvalLayerBaseThroughput(
-                    tree, data.top, N, wo, heroWavelengthNm));
+            Vec3f topEval =
+                _EvalNode(tree, data.top, normalShdWldOut, omegaInWld,
+                          omegaOutWld, heroWavelengthNm);
+            Vec3f baseEval =
+                _EvalNode(tree, data.base, normalShdWldOut, omegaInWld,
+                          omegaOutWld, heroWavelengthNm);
+            return topEval +
+                   CompMul(baseEval, _EvalLayerBaseThroughput(
+                                         tree, data.top, normalShdWldOut,
+                                         omegaOutWld, heroWavelengthNm));
         } else if constexpr (std::is_same_v<T, Bsdf::AddData>) {
-            return _EvalNode(tree, data.in1, N, wi, wo, heroWavelengthNm) +
-                   _EvalNode(tree, data.in2, N, wi, wo, heroWavelengthNm);
+            return _EvalNode(tree, data.in1, normalShdWldOut, omegaInWld,
+                             omegaOutWld, heroWavelengthNm) +
+                   _EvalNode(tree, data.in2, normalShdWldOut, omegaInWld,
+                             omegaOutWld, heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::MultiplyData>) {
-            return CompMul(
-                data.weight,
-                _EvalNode(tree, data.input, N, wi, wo, heroWavelengthNm));
+            return CompMul(data.weight,
+                           _EvalNode(tree, data.input, normalShdWldOut,
+                                     omegaInWld, omegaOutWld,
+                                     heroWavelengthNm));
         } else {
             return Vec3f(0.0f);
         }
@@ -3369,7 +3308,7 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
 
 Vec3f
 _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-                const Vec3f& N, const Vec3f& wo,
+                const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld,
                 float heroWavelengthNm)
 {
     const Bsdf::Node* node = tree.Get(nodeId);
@@ -3386,12 +3325,13 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                       std::is_same_v<T, Bsdf::UnsupportedData>) {
             return Vec3f(0.0f);
         } else if constexpr (std::is_same_v<T, Bsdf::DielectricData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            const float NdotV =
-                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            const float NdotV = std::max(
+                std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
             const float effectiveIor =
                 _ResolveDielectricIor(data, heroWavelengthNm);
-            Vec3f throughput(1.0f);
+            Vec3f throughputRgb(1.0f);
             if (data.scatterMode != Bsdf::ScatterMode::Transmission) {
                 const bool useDirectionalLayerThroughput =
                     _IsGgxMicrofacetMultipleScatteringEnabled() &&
@@ -3407,17 +3347,15 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                                 _AverageAlphaForEnergy(data.roughness),
                                 NdotV,
                                 effectiveIor);
-                        throughput -= reflectance * data.weight;
+                        throughputRgb -= reflectance * data.weight;
                     } else {
                         const float filter =
                             _LookupBsdlDielectricReflFrontFilter(
                                 NdotV,
                                 _BsdlLayerRoughnessFromAlpha(data.roughness),
                                 effectiveIor);
-                        throughput = _LerpVec(
-                            Vec3f(1.0f),
-                            Vec3f(filter),
-                            _Clamp01(data.weight));
+                        throughputRgb = _LerpVec(Vec3f(1.0f), Vec3f(filter),
+                                                 _Clamp01(data.weight));
                     }
                 } else {
                     const Vec3f reflectance = _LayerThroughputReflectance(
@@ -3425,18 +3363,19 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                         NdotV,
                         _DielectricReflectionFresnelUntinted(
                             data, NdotV, effectiveIor));
-                    throughput -= reflectance * data.weight;
+                    throughputRgb -= reflectance * data.weight;
                 }
             }
-            return _SaturateVec(throughput);
+            return _SaturateVec(throughputRgb);
         } else if constexpr (
             std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            const float NdotV =
-                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            const float NdotV = std::max(
+                std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
             const float effectiveIor =
                 _ResolveDielectricIor(data, heroWavelengthNm);
-            Vec3f throughput(1.0f);
+            Vec3f throughputRgb(1.0f);
             if (data.reflectionWeight > 0.0f) {
                 const bool useDirectionalLayerThroughput =
                     _IsGgxMicrofacetMultipleScatteringEnabled() &&
@@ -3452,7 +3391,7 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                                 _AverageAlphaForEnergy(data.roughness),
                                 NdotV,
                                 effectiveIor);
-                        throughput -=
+                        throughputRgb -=
                             reflectance * _Clamp01(data.reflectionWeight);
                     } else {
                         const float filter =
@@ -3460,27 +3399,26 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                                 NdotV,
                                 _BsdlLayerRoughnessFromAlpha(data.roughness),
                                 effectiveIor);
-                        throughput = _LerpVec(
-                            Vec3f(1.0f),
-                            Vec3f(filter),
-                            _Clamp01(data.reflectionWeight));
+                        throughputRgb =
+                            _LerpVec(Vec3f(1.0f), Vec3f(filter),
+                                     _Clamp01(data.reflectionWeight));
                     }
                 } else {
                     const Vec3f reflectance = _LayerThroughputReflectance(
-                        _AverageAlphaForEnergy(data.roughness),
-                        NdotV,
+                        _AverageAlphaForEnergy(data.roughness), NdotV,
                         _DielectricInterfaceReflectanceUntinted(
                             data, NdotV, effectiveIor,
-                            Dot(N, wo) < 0.0f));
-                    throughput -=
+                            Dot(normalShdWldOut, omegaOutWld) < 0.0f));
+                    throughputRgb -=
                         reflectance * _Clamp01(data.reflectionWeight);
                 }
             }
-            return _SaturateVec(throughput);
+            return _SaturateVec(throughputRgb);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            const float NdotV =
-                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            const float NdotV = std::max(
+                std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
             const Vec3f reflectance = _LayerThroughputReflectance(
                 _AverageAlphaForEnergy(data.roughness),
                 NdotV,
@@ -3489,9 +3427,10 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 Vec3f(1.0f) -
                 reflectance * data.weight);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            const float NdotV =
-                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            const float NdotV = std::max(
+                std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
             const Vec3f reflectance = _LayerThroughputReflectance(
                 _AverageAlphaForEnergy(data.roughness),
                 NdotV,
@@ -3500,32 +3439,37 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 Vec3f(1.0f) -
                 reflectance * data.weight);
         } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            float NdotV = std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            float NdotV = std::max(
+                std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
             float dirAlbedo = _ApproxSheenDirAlbedo(NdotV, data.roughness);
             return _SaturateVec(Vec3f(1.0f - dirAlbedo * data.weight));
         } else if constexpr (std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
             return Vec3f(1.0f);
         } else if constexpr (std::is_same_v<T, Bsdf::MixData>) {
-            return _LerpVec(
-                _EvalThroughput(tree, data.bg, N, wo, heroWavelengthNm),
-                _EvalThroughput(tree, data.fg, N, wo, heroWavelengthNm),
-                _Clamp01(data.mix));
+            return _LerpVec(_EvalThroughput(tree, data.bg, normalShdWldOut,
+                                            omegaOutWld, heroWavelengthNm),
+                            _EvalThroughput(tree, data.fg, normalShdWldOut,
+                                            omegaOutWld, heroWavelengthNm),
+                            _Clamp01(data.mix));
         } else if constexpr (std::is_same_v<T, Bsdf::LayerData>) {
-            return CompMul(
-                _EvalThroughput(tree, data.top, N, wo, heroWavelengthNm),
-                _EvalThroughput(tree, data.base, N, wo, heroWavelengthNm));
+            return CompMul(_EvalThroughput(tree, data.top, normalShdWldOut,
+                                           omegaOutWld, heroWavelengthNm),
+                           _EvalThroughput(tree, data.base, normalShdWldOut,
+                                           omegaOutWld, heroWavelengthNm));
         } else if constexpr (std::is_same_v<T, Bsdf::AddData>) {
-            Vec3f t = _EvalThroughput(
-                          tree, data.in1, N, wo, heroWavelengthNm) +
-                      _EvalThroughput(
-                          tree, data.in2, N, wo, heroWavelengthNm) -
+            Vec3f t = _EvalThroughput(tree, data.in1, normalShdWldOut,
+                                      omegaOutWld, heroWavelengthNm) +
+                      _EvalThroughput(tree, data.in2, normalShdWldOut,
+                                      omegaOutWld, heroWavelengthNm) -
                       Vec3f(1.0f);
             return Vec3f(std::max(t[0], 0.0f),
                          std::max(t[1], 0.0f),
                          std::max(t[2], 0.0f));
         } else if constexpr (std::is_same_v<T, Bsdf::MultiplyData>) {
-            return _EvalThroughput(tree, data.input, N, wo, heroWavelengthNm);
+            return _EvalThroughput(tree, data.input, normalShdWldOut,
+                                   omegaOutWld, heroWavelengthNm);
         } else {
             return Vec3f(0.0f);
         }
@@ -3534,7 +3478,7 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
 
 float
 _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-              const Vec3f& N, const Vec3f& wo,
+              const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld,
               float heroWavelengthNm)
 {
     const auto _Luminance = [&](const Vec3f& value) {
@@ -3555,9 +3499,10 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
         } else if constexpr (std::is_same_v<T, Bsdf::SubsurfaceData>) {
             return data.weight * std::max(_Luminance(data.color), 0.0f);
         } else if constexpr (std::is_same_v<T, Bsdf::DielectricData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            const float NdotV =
-                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            const float NdotV = std::max(
+                std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
             const float effectiveIor =
                 _ResolveDielectricIor(data, heroWavelengthNm);
             const Vec3f reflectance =
@@ -3584,34 +3529,36 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 0.05f);
         } else if constexpr (
             std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            const float NdotV =
-                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            const float NdotV = std::max(
+                std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
             const float effectiveIor =
                 _ResolveDielectricIor(data, heroWavelengthNm);
-            const Vec3f reflection =
-                _DielectricInterfaceReflectionCoefficient(
-                    data, NdotV, effectiveIor,
-                    Dot(N, wo) < 0.0f);
+            const Vec3f reflection = _DielectricInterfaceReflectionCoefficient(
+                data, NdotV, effectiveIor,
+                Dot(normalShdWldOut, omegaOutWld) < 0.0f);
             const Vec3f transmission =
                 _DielectricInterfaceTransmissionCoefficient(
                     data, NdotV, effectiveIor,
-                    Dot(N, wo) < 0.0f);
+                    Dot(normalShdWldOut, omegaOutWld) < 0.0f);
             const float weight =
                 _Luminance(reflection) + _Luminance(transmission);
             return weight > 0.0f ? std::max(weight, 0.05f) : 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
             return data.weight *
-                std::max(
-                    _Luminance(_ConductorReflectionFresnel(
-                        data,
-                        std::max(std::abs(Dot(shadingN, wo)), _kEpsilon))),
-                    0.05f);
+                   std::max(_Luminance(_ConductorReflectionFresnel(
+                                data, std::max(std::abs(Dot(normalShdLobeWldOut,
+                                                            omegaOutWld)),
+                                               _kEpsilon))),
+                            0.05f);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            const float NdotV =
-                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            const float NdotV = std::max(
+                std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
             const Vec3f reflectance = _GeneralizedSchlickReflectionFresnel(
                 data,
                 NdotV);
@@ -3649,20 +3596,27 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
         } else if constexpr (std::is_same_v<T, Bsdf::UnsupportedData>) {
             return 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::MixData>) {
-            return _LerpVec(
-                Vec3f(_ApproxWeight(tree, data.bg, N, wo, heroWavelengthNm)),
-                Vec3f(_ApproxWeight(tree, data.fg, N, wo, heroWavelengthNm)),
-                _Clamp01(data.mix))[0];
+            return _LerpVec(Vec3f(_ApproxWeight(tree, data.bg, normalShdWldOut,
+                                                omegaOutWld, heroWavelengthNm)),
+                            Vec3f(_ApproxWeight(tree, data.fg, normalShdWldOut,
+                                                omegaOutWld, heroWavelengthNm)),
+                            _Clamp01(data.mix))[0];
         } else if constexpr (std::is_same_v<T, Bsdf::LayerData>) {
-            return _ApproxWeight(tree, data.top, N, wo, heroWavelengthNm) +
-                _ApproxWeight(tree, data.base, N, wo, heroWavelengthNm) *
-                _Luminance(
-                    _EvalThroughput(tree, data.top, N, wo, heroWavelengthNm));
+            return _ApproxWeight(tree, data.top, normalShdWldOut, omegaOutWld,
+                                 heroWavelengthNm) +
+                   _ApproxWeight(tree, data.base, normalShdWldOut, omegaOutWld,
+                                 heroWavelengthNm) *
+                       _Luminance(_EvalThroughput(tree, data.top,
+                                                  normalShdWldOut, omegaOutWld,
+                                                  heroWavelengthNm));
         } else if constexpr (std::is_same_v<T, Bsdf::AddData>) {
-            return _ApproxWeight(tree, data.in1, N, wo, heroWavelengthNm) +
-                   _ApproxWeight(tree, data.in2, N, wo, heroWavelengthNm);
+            return _ApproxWeight(tree, data.in1, normalShdWldOut, omegaOutWld,
+                                 heroWavelengthNm) +
+                   _ApproxWeight(tree, data.in2, normalShdWldOut, omegaOutWld,
+                                 heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::MultiplyData>) {
-            return _ApproxWeight(tree, data.input, N, wo, heroWavelengthNm) *
+            return _ApproxWeight(tree, data.input, normalShdWldOut, omegaOutWld,
+                                 heroWavelengthNm) *
                    std::max(_Luminance(data.weight), 0.0f);
         } else {
             return 0.0f;
@@ -3672,8 +3626,8 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
 
 float
 _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-         const Vec3f& N, const Vec3f& wi, const Vec3f& wo,
-         float heroWavelengthNm)
+         const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+         const Vec3f& omegaOutWld, float heroWavelengthNm)
 {
     const auto _Luminance = [&](const Vec3f& value) {
         return mxcpp::_Luminance(value, tree.luminanceCoefficients);
@@ -3687,18 +3641,22 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
         using T = std::decay_t<decltype(data)>;
         if constexpr (std::is_same_v<T, Bsdf::OrenNayarDiffuseData> ||
                       std::is_same_v<T, Bsdf::BurleyDiffuseData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            return (Dot(shadingN, wi) > 0.0f)
-                ? Bsdf::PdfLambertian(shadingN, wi)
-                : 0.0f;
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            return (Dot(normalShdLobeWldOut, omegaInWld) > 0.0f)
+                       ? Bsdf::PdfLambertian(normalShdLobeWldOut, omegaInWld)
+                       : 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::TranslucentData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            return _PdfTranslucent(shadingN, wi);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            return _PdfTranslucent(normalShdLobeWldOut, omegaInWld);
         } else if constexpr (std::is_same_v<T, Bsdf::SubsurfaceData>) {
             return 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::DielectricData>) {
-            bool sameSide = _IsSameSide(N, wi, wo);
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            bool sameSide =
+                _IsSameSide(normalShdWldOut, omegaInWld, omegaOutWld);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
             const float effectiveIor =
                 _ResolveDielectricIor(data, heroWavelengthNm);
             if (_IsEffectivelyDeltaAlpha(data.roughness)) {
@@ -3709,31 +3667,25 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 if (_IsEffectivelyIsotropic(data.roughness)) {
                     return Bsdf::PdfGGXSpecular(
                         _AverageAlphaAsRoughness(data.roughness),
-                        shadingN,
-                        wi,
-                        wo);
+                        normalShdLobeWldOut, omegaInWld, omegaOutWld);
                 }
-                return _PdfGGXSpecularAnisotropic(
-                    data.roughness,
-                    data.tangent,
-                    shadingN,
-                    wi,
-                    wo);
+                return _PdfGGXSpecularAnisotropic(data.roughness, data.tangent,
+                                                  normalShdLobeWldOut,
+                                                  omegaInWld, omegaOutWld);
             }
             if (!sameSide &&
                 data.scatterMode != Bsdf::ScatterMode::Reflection) {
                 return Bsdf::PdfGGXTransmission(
-                    _AverageAlphaAsRoughness(data.roughness),
-                    effectiveIor,
-                    N,
-                    wi,
-                    wo);
+                    _AverageAlphaAsRoughness(data.roughness), effectiveIor,
+                    normalShdWldOut, omegaInWld, omegaOutWld);
             }
             return 0.0f;
         } else if constexpr (
             std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
-            const bool sameSide = _IsSameSide(N, wi, wo);
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            const bool sameSide =
+                _IsSameSide(normalShdWldOut, omegaInWld, omegaOutWld);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
             const float effectiveIor =
                 _ResolveDielectricIor(data, heroWavelengthNm);
             if (_IsEffectivelyDeltaAlpha(data.roughness)) {
@@ -3741,83 +3693,74 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             }
             if (_UsesCoupledRoughDielectricSampling(data)) {
                 return _PdfCoupledRoughDielectric(
-                    data, effectiveIor, N, shadingN, wi, wo);
+                    data, effectiveIor, normalShdWldOut, normalShdLobeWldOut,
+                    omegaInWld, omegaOutWld);
             }
-            const float NdotV =
-                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const float NdotV = std::max(
+                std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
             const _DielectricInterfaceSelection selection =
                 _DielectricInterfaceSelectionProbabilities(
                     data, NdotV, effectiveIor,
-                    Dot(N, wo) < 0.0f,
+                    Dot(normalShdWldOut, omegaOutWld) < 0.0f,
                     tree.luminanceCoefficients);
             if (sameSide && data.reflectionWeight > 0.0f) {
                 const float branchPdf =
                     _IsEffectivelyIsotropic(data.roughness)
-                    ? Bsdf::PdfGGXSpecular(
-                        _AverageAlphaAsRoughness(data.roughness),
-                        shadingN,
-                        wi,
-                        wo)
-                    : _PdfGGXSpecularAnisotropic(
-                        data.roughness,
-                        data.tangent,
-                        shadingN,
-                        wi,
-                        wo);
+                        ? Bsdf::PdfGGXSpecular(
+                              _AverageAlphaAsRoughness(data.roughness),
+                              normalShdLobeWldOut, omegaInWld, omegaOutWld)
+                        : _PdfGGXSpecularAnisotropic(
+                              data.roughness, data.tangent, normalShdLobeWldOut,
+                              omegaInWld, omegaOutWld);
                 return selection.reflection * branchPdf;
             }
             if (!sameSide && data.transmissionWeight > 0.0f) {
                 if (data.thinWalled) {
-                    const Vec3f transmissionN = -shadingN;
-                    Vec3f mirroredWo = _MirrorAcrossSurface(wo, shadingN);
-                    mirroredWo.normalize();
+                    const Vec3f transmissionN = -normalShdLobeWldOut;
+                    Vec3f omegaOutMirroredWld =
+                        _MirrorAcrossSurface(omegaOutWld, normalShdLobeWldOut);
+                    omegaOutMirroredWld.normalize();
                     const float branchPdf =
                         _IsEffectivelyIsotropic(data.roughness)
-                        ? Bsdf::PdfGGXSpecular(
-                            _AverageAlphaAsRoughness(data.roughness),
-                            transmissionN,
-                            wi,
-                            mirroredWo)
-                        : _PdfGGXSpecularAnisotropic(
-                            data.roughness,
-                            data.tangent,
-                            transmissionN,
-                            wi,
-                            mirroredWo);
+                            ? Bsdf::PdfGGXSpecular(
+                                  _AverageAlphaAsRoughness(data.roughness),
+                                  transmissionN, omegaInWld,
+                                  omegaOutMirroredWld)
+                            : _PdfGGXSpecularAnisotropic(
+                                  data.roughness, data.tangent, transmissionN,
+                                  omegaInWld, omegaOutMirroredWld);
                     return selection.transmission * branchPdf;
                 }
 
                 return selection.transmission *
-                    Bsdf::PdfGGXTransmission(
-                        _AverageAlphaAsRoughness(data.roughness),
-                        effectiveIor,
-                        N,
-                        wi,
-                        wo);
+                       Bsdf::PdfGGXTransmission(
+                           _AverageAlphaAsRoughness(data.roughness),
+                           effectiveIor, normalShdWldOut, omegaInWld,
+                           omegaOutWld);
             }
             return 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
             if (_IsEffectivelyDeltaAlpha(data.roughness)) {
                 return 0.0f;
             }
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            return (Dot(shadingN, wi) > 0.0f)
-                ? (_IsEffectivelyIsotropic(data.roughness)
-                    ? Bsdf::PdfGGXSpecular(
-                        _AverageAlphaAsRoughness(data.roughness),
-                        shadingN,
-                        wi,
-                        wo)
-                    : _PdfGGXSpecularAnisotropic(
-                        data.roughness,
-                        data.tangent,
-                        shadingN,
-                        wi,
-                        wo))
-                : 0.0f;
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            return (Dot(normalShdLobeWldOut, omegaInWld) > 0.0f)
+                       ? (_IsEffectivelyIsotropic(data.roughness)
+                              ? Bsdf::PdfGGXSpecular(
+                                    _AverageAlphaAsRoughness(data.roughness),
+                                    normalShdLobeWldOut, omegaInWld,
+                                    omegaOutWld)
+                              : _PdfGGXSpecularAnisotropic(
+                                    data.roughness, data.tangent,
+                                    normalShdLobeWldOut, omegaInWld,
+                                    omegaOutWld))
+                       : 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
-            bool sameSide = _IsSameSide(N, wi, wo);
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            bool sameSide =
+                _IsSameSide(normalShdWldOut, omegaInWld, omegaOutWld);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
             if (_IsEffectivelyDeltaAlpha(data.roughness)) {
                 return 0.0f;
             }
@@ -3826,16 +3769,11 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 if (_IsEffectivelyIsotropic(data.roughness)) {
                     return Bsdf::PdfGGXSpecular(
                         _AverageAlphaAsRoughness(data.roughness),
-                        shadingN,
-                        wi,
-                        wo);
+                        normalShdLobeWldOut, omegaInWld, omegaOutWld);
                 }
-                return _PdfGGXSpecularAnisotropic(
-                    data.roughness,
-                    data.tangent,
-                    shadingN,
-                    wi,
-                    wo);
+                return _PdfGGXSpecularAnisotropic(data.roughness, data.tangent,
+                                                  normalShdLobeWldOut,
+                                                  omegaInWld, omegaOutWld);
             }
             if (!sameSide &&
                 data.scatterMode != Bsdf::ScatterMode::Reflection) {
@@ -3843,57 +3781,64 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 float sqrtF0 = std::sqrt(std::max(avgF0, 0.01f));
                 float ior = (1.0f + sqrtF0) / (1.0f - sqrtF0);
                 return Bsdf::PdfGGXTransmission(
-                    _AverageAlphaAsRoughness(data.roughness),
-                    ior,
-                    N,
-                    wi,
-                    wo);
+                    _AverageAlphaAsRoughness(data.roughness), ior,
+                    normalShdWldOut, omegaInWld, omegaOutWld);
             }
             return 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            return (Dot(shadingN, wi) > 0.0f)
-                ? Bsdf::PdfLambertian(shadingN, wi)
-                : 0.0f;
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            return (Dot(normalShdLobeWldOut, omegaInWld) > 0.0f)
+                       ? Bsdf::PdfLambertian(normalShdLobeWldOut, omegaInWld)
+                       : 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
-            return PdfAdobeOpenPbr(data, N, wi, wo);
+            return PdfAdobeOpenPbr(data, normalShdWldOut, omegaInWld,
+                                   omegaOutWld);
         } else if constexpr (std::is_same_v<T, Bsdf::UnsupportedData>) {
             return 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::MixData>) {
             float mix = _Clamp01(data.mix);
-            return (1.0f - mix) *
-                       _PdfNode(tree, data.bg, N, wi, wo, heroWavelengthNm) +
-                   mix *
-                       _PdfNode(tree, data.fg, N, wi, wo, heroWavelengthNm);
+            return (1.0f - mix) * _PdfNode(tree, data.bg, normalShdWldOut,
+                                           omegaInWld, omegaOutWld,
+                                           heroWavelengthNm) +
+                   mix * _PdfNode(tree, data.fg, normalShdWldOut, omegaInWld,
+                                  omegaOutWld, heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::LayerData>) {
-            float topWeight = _ApproxWeight(
-                tree, data.top, N, wo, heroWavelengthNm);
-            float baseWeight = _ApproxWeight(
-                tree, data.base, N, wo, heroWavelengthNm) *
-                _Luminance(
-                    _EvalThroughput(tree, data.top, N, wo, heroWavelengthNm));
+            float topWeight = _ApproxWeight(tree, data.top, normalShdWldOut,
+                                            omegaOutWld, heroWavelengthNm);
+            float baseWeight =
+                _ApproxWeight(tree, data.base, normalShdWldOut, omegaOutWld,
+                              heroWavelengthNm) *
+                _Luminance(_EvalThroughput(tree, data.top, normalShdWldOut,
+                                           omegaOutWld, heroWavelengthNm));
             float total = topWeight + baseWeight;
             if (total <= 0.0f) {
                 return 0.0f;
             }
             return (topWeight / total) *
-                       _PdfNode(tree, data.top, N, wi, wo, heroWavelengthNm) +
+                       _PdfNode(tree, data.top, normalShdWldOut, omegaInWld,
+                                omegaOutWld, heroWavelengthNm) +
                    (baseWeight / total) *
-                       _PdfNode(
-                           tree, data.base, N, wi, wo, heroWavelengthNm);
+                       _PdfNode(tree, data.base, normalShdWldOut, omegaInWld,
+                                omegaOutWld, heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::AddData>) {
-            float w1 = _ApproxWeight(tree, data.in1, N, wo, heroWavelengthNm);
-            float w2 = _ApproxWeight(tree, data.in2, N, wo, heroWavelengthNm);
+            float w1 = _ApproxWeight(tree, data.in1, normalShdWldOut,
+                                     omegaOutWld, heroWavelengthNm);
+            float w2 = _ApproxWeight(tree, data.in2, normalShdWldOut,
+                                     omegaOutWld, heroWavelengthNm);
             float total = w1 + w2;
             if (total <= 0.0f) {
                 return 0.0f;
             }
-            return (w1 / total) *
-                       _PdfNode(tree, data.in1, N, wi, wo, heroWavelengthNm) +
-                   (w2 / total) *
-                       _PdfNode(tree, data.in2, N, wi, wo, heroWavelengthNm);
+            return (w1 / total) * _PdfNode(tree, data.in1, normalShdWldOut,
+                                           omegaInWld, omegaOutWld,
+                                           heroWavelengthNm) +
+                   (w2 / total) * _PdfNode(tree, data.in2, normalShdWldOut,
+                                           omegaInWld, omegaOutWld,
+                                           heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::MultiplyData>) {
-            return _PdfNode(tree, data.input, N, wi, wo, heroWavelengthNm);
+            return _PdfNode(tree, data.input, normalShdWldOut, omegaInWld,
+                            omegaOutWld, heroWavelengthNm);
         } else {
             return 0.0f;
         }
@@ -3901,36 +3846,34 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
 }
 
 Bsdf::BsdfSample
-_FinalizeSubtreeSample(const Bsdf::ClosureTree& tree,
-                       Bsdf::NodeId nodeId,
-                       const Vec3f& N,
-                       const Vec3f& wo,
-                       Bsdf::BsdfSample sample,
-                       float heroWavelengthNm)
+_FinalizeSubtreeSample(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
+                       const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld,
+                       Bsdf::BsdfSample sample, float heroWavelengthNm)
 {
     if (sample.isSubsurface) {
-        sample.pdf = std::max(sample.pdf, 1.0f);
+        sample.pdfSolidAngle = std::max(sample.pdfSolidAngle, 1.0f);
         return sample;
     }
-    if (sample.pdf <= 0.0f) {
+    if (sample.pdfSolidAngle <= 0.0f) {
         return sample;
     }
     if (sample.isSpecular) {
-        sample.pdf = std::max(sample.pdf, 1.0f);
+        sample.pdfSolidAngle = std::max(sample.pdfSolidAngle, 1.0f);
         return sample;
     }
-    sample.f = _EvalNode(
-        tree, nodeId, N, sample.wi, wo, heroWavelengthNm);
-    sample.pdf = _PdfNode(
-        tree, nodeId, N, sample.wi, wo, heroWavelengthNm);
+    sample.bsdfValue =
+        _EvalNode(tree, nodeId, normalShdWldOut, sample.omegaInWld, omegaOutWld,
+                  heroWavelengthNm);
+    sample.pdfSolidAngle =
+        _PdfNode(tree, nodeId, normalShdWldOut, sample.omegaInWld, omegaOutWld,
+                 heroWavelengthNm);
     return sample;
 }
 
 Bsdf::BsdfSample
 _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-            const Vec3f& N, const Vec3f& wo,
-            float u1, float u2, float uChoice,
-            float heroWavelengthNm)
+            const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld, float u1,
+            float u2, float uChoice, float heroWavelengthNm)
 {
     const auto _Luminance = [&](const Vec3f& value) {
         return mxcpp::_Luminance(value, tree.luminanceCoefficients);
@@ -3943,31 +3886,38 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
     return std::visit([&](const auto& data) -> Bsdf::BsdfSample {
         using T = std::decay_t<decltype(data)>;
         if constexpr (std::is_same_v<T, Bsdf::OrenNayarDiffuseData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            auto sample = Bsdf::SampleLambertian(
-                data.color * data.weight, shadingN, wo, u1, u2);
-            return _FinalizeSubtreeSample(
-                tree, nodeId, N, wo, sample, heroWavelengthNm);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            auto sample = Bsdf::SampleLambertian(data.color * data.weight,
+                                                 normalShdLobeWldOut,
+                                                 omegaOutWld, u1, u2);
+            return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                          omegaOutWld, sample,
+                                          heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::BurleyDiffuseData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            auto sample = Bsdf::SampleLambertian(
-                data.color * data.weight, shadingN, wo, u1, u2);
-            return _FinalizeSubtreeSample(
-                tree, nodeId, N, wo, sample, heroWavelengthNm);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            auto sample = Bsdf::SampleLambertian(data.color * data.weight,
+                                                 normalShdLobeWldOut,
+                                                 omegaOutWld, u1, u2);
+            return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                          omegaOutWld, sample,
+                                          heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::TranslucentData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            _Frame frame = _Frame::FromNormal(-shadingN);
-            Vec3f wiLocal = _SampleCosineHemisphere(u1, u2);
-            Vec3f wi = frame.ToWorld(wiLocal);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            _Frame frame = _Frame::FromNormal(-normalShdLobeWldOut);
+            Vec3f omegaInLocal = _SampleCosineHemisphere(u1, u2);
+            Vec3f omegaInWld = frame.ToWorld(omegaInLocal);
             Bsdf::BsdfSample sample{
-                wi,
-                _EvalTranslucent(data.color, data.weight, shadingN, wi),
-                _CosineHemispherePdf(wiLocal[2]),
-                false
-            };
+                omegaInWld,
+                _EvalTranslucent(data.color, data.weight, normalShdLobeWldOut,
+                                 omegaInWld),
+                _CosineHemispherePdf(omegaInLocal[2]), false};
             sample.isDiffuseLike = true;
-            return _FinalizeSubtreeSample(
-                tree, nodeId, N, wo, sample, heroWavelengthNm);
+            return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                          omegaOutWld, sample,
+                                          heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::SubsurfaceData>) {
             Bsdf::BsdfSample sample{
                 Vec3f(0.0f),
@@ -3979,26 +3929,28 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             sample.isDiffuseLike = true;
             return sample;
         } else if constexpr (std::is_same_v<T, Bsdf::DielectricData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            const float NdotV =
-                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            const float NdotV = std::max(
+                std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
             const float effectiveIor =
                 _ResolveDielectricIor(data, heroWavelengthNm);
             const bool hasDeltaRoughness =
                 _IsEffectivelyDeltaAlpha(data.roughness);
             if (hasDeltaRoughness &&
                 data.scatterMode != Bsdf::ScatterMode::Reflection &&
-                _WouldTotalInternalReflect(effectiveIor, N, wo)) {
+                _WouldTotalInternalReflect(effectiveIor, normalShdWldOut,
+                                           omegaOutWld)) {
                 if (data.scatterMode == Bsdf::ScatterMode::Transmission) {
                     // Transmission-only lobes are paired with a separate
                     // reflection lobe; the helper splits the TIR energy with
                     // that pair instead of double-counting it.
                     return _SampleDeltaDielectricTransmission(
-                        data, effectiveIor, NdotV, N, wo,
-                        tree.luminanceCoefficients);
+                        data, effectiveIor, NdotV, normalShdWldOut,
+                        omegaOutWld, tree.luminanceCoefficients);
                 }
                 return _SampleDeltaTotalInternalReflection(
-                    data.weight, N, wo);
+                    data.weight, normalShdWldOut, omegaOutWld);
             }
             float fresnelProb = _Clamp01(_Luminance(
                 _DielectricReflectionFresnelUntinted(
@@ -4006,120 +3958,100 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             if (data.scatterMode == Bsdf::ScatterMode::Reflection) {
                 if (hasDeltaRoughness) {
                     return _SampleDeltaDielectricReflection(
-                        data, effectiveIor, shadingN, wo);
+                        data, effectiveIor, normalShdLobeWldOut, omegaOutWld);
                 }
                 if (_IsEffectivelyIsotropic(data.roughness)) {
                     auto sample = Bsdf::SampleGGXSpecular(
-                        _AverageAlphaAsRoughness(data.roughness),
-                        effectiveIor,
-                        data.tint,
-                        shadingN,
-                        wo,
-                        u1,
-                        u2);
-                    return _FinalizeSubtreeSample(
-                        tree, nodeId, N, wo, sample, heroWavelengthNm);
+                        _AverageAlphaAsRoughness(data.roughness), effectiveIor,
+                        data.tint, normalShdLobeWldOut, omegaOutWld, u1, u2);
+                    return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                                  omegaOutWld, sample,
+                                                  heroWavelengthNm);
                 }
                 auto sample = _SampleGGXSpecularAnisotropic(
-                    data.roughness,
-                    data.tangent,
-                    shadingN,
-                    wo,
-                    u1,
-                    u2);
-                return _FinalizeSubtreeSample(
-                    tree, nodeId, N, wo, sample, heroWavelengthNm);
+                    data.roughness, data.tangent, normalShdLobeWldOut,
+                    omegaOutWld, u1, u2);
+                return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                              omegaOutWld, sample,
+                                              heroWavelengthNm);
             }
             if (data.scatterMode == Bsdf::ScatterMode::Transmission) {
                 if (hasDeltaRoughness) {
                     return _SampleDeltaDielectricTransmission(
-                        data, effectiveIor, NdotV, N, wo,
-                        tree.luminanceCoefficients);
+                        data, effectiveIor, NdotV, normalShdWldOut,
+                        omegaOutWld, tree.luminanceCoefficients);
                 }
                 auto sample = Bsdf::SampleGGXTransmission(
-                    _AverageAlphaAsRoughness(data.roughness),
-                    effectiveIor,
-                    data.tint,
-                    N,
-                    wo,
-                    u1,
-                    u2);
-                if (sample.pdf <= 0.0f) {
+                    _AverageAlphaAsRoughness(data.roughness), effectiveIor,
+                    data.tint, normalShdWldOut, omegaOutWld, u1, u2);
+                if (sample.pdfSolidAngle <= 0.0f) {
                     return _SampleDeltaDielectricTransmission(
-                        data, effectiveIor, NdotV, N, wo,
-                        tree.luminanceCoefficients);
+                        data, effectiveIor, NdotV, normalShdWldOut,
+                        omegaOutWld, tree.luminanceCoefficients);
                 }
-                sample.f *= data.weight;
-                return _FinalizeSubtreeSample(
-                    tree, nodeId, N, wo, sample, heroWavelengthNm);
+                sample.bsdfValue *= data.weight;
+                return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                              omegaOutWld, sample,
+                                              heroWavelengthNm);
             }
             if (uChoice < fresnelProb) {
                 if (hasDeltaRoughness) {
                     return _ScaleDiscreteSpecularSample(
-                        _SampleDeltaDielectricReflection(
-                            data, effectiveIor, shadingN, wo),
+                        _SampleDeltaDielectricReflection(data, effectiveIor,
+                                                         normalShdLobeWldOut,
+                                                         omegaOutWld),
                         fresnelProb);
                 }
                 if (_IsEffectivelyIsotropic(data.roughness)) {
                     auto sample = Bsdf::SampleGGXSpecular(
-                        _AverageAlphaAsRoughness(data.roughness),
-                        effectiveIor,
-                        data.tint,
-                        shadingN,
-                        wo,
-                        u1,
-                        u2);
-                    return _FinalizeSubtreeSample(
-                        tree, nodeId, N, wo, sample, heroWavelengthNm);
+                        _AverageAlphaAsRoughness(data.roughness), effectiveIor,
+                        data.tint, normalShdLobeWldOut, omegaOutWld, u1, u2);
+                    return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                                  omegaOutWld, sample,
+                                                  heroWavelengthNm);
                 }
                 auto sample = _SampleGGXSpecularAnisotropic(
-                    data.roughness,
-                    data.tangent,
-                    shadingN,
-                    wo,
-                    u1,
-                    u2);
-                return _FinalizeSubtreeSample(
-                    tree, nodeId, N, wo, sample, heroWavelengthNm);
+                    data.roughness, data.tangent, normalShdLobeWldOut,
+                    omegaOutWld, u1, u2);
+                return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                              omegaOutWld, sample,
+                                              heroWavelengthNm);
             }
             {
                 if (hasDeltaRoughness) {
                     return _ScaleDiscreteSpecularSample(
                         _SampleDeltaDielectricTransmission(
-                            data, effectiveIor, NdotV, N, wo,
-                            tree.luminanceCoefficients),
+                            data, effectiveIor, NdotV, normalShdWldOut,
+                            omegaOutWld, tree.luminanceCoefficients),
                         1.0f - fresnelProb);
                 }
                 auto sample = Bsdf::SampleGGXTransmission(
-                    _AverageAlphaAsRoughness(data.roughness),
-                    effectiveIor,
-                    data.tint,
-                    N,
-                    wo,
-                    u1,
-                    u2);
-                if (sample.pdf <= 0.0f) {
+                    _AverageAlphaAsRoughness(data.roughness), effectiveIor,
+                    data.tint, normalShdWldOut, omegaOutWld, u1, u2);
+                if (sample.pdfSolidAngle <= 0.0f) {
                     return _ScaleDiscreteSpecularSample(
                         _SampleDeltaDielectricTransmission(
-                            data, effectiveIor, NdotV, N, wo,
-                            tree.luminanceCoefficients),
+                            data, effectiveIor, NdotV, normalShdWldOut,
+                            omegaOutWld, tree.luminanceCoefficients),
                         1.0f - fresnelProb);
                 }
-                sample.f *= data.weight;
-                return _FinalizeSubtreeSample(
-                    tree, nodeId, N, wo, sample, heroWavelengthNm);
+                sample.bsdfValue *= data.weight;
+                return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                              omegaOutWld, sample,
+                                              heroWavelengthNm);
             }
         } else if constexpr (
             std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            const float NdotV =
-                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            const float NdotV = std::max(
+                std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
             const float effectiveIor =
                 _ResolveDielectricIor(data, heroWavelengthNm);
             const _DielectricInterfaceSelection selection =
                 _DielectricInterfaceSelectionProbabilities(
                     data, NdotV, effectiveIor,
-                    Dot(N, wo) < 0.0f,
+                    Dot(normalShdWldOut, omegaOutWld) < 0.0f,
                     tree.luminanceCoefficients);
             if (selection.reflection + selection.transmission <= 0.0f) {
                 return Bsdf::BsdfSample{
@@ -4130,25 +4062,20 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 _IsEffectivelyDeltaAlpha(data.roughness);
             if (_UsesCoupledRoughDielectricSampling(data)) {
                 auto sample = _SampleCoupledRoughDielectric(
-                    data,
-                    effectiveIor,
-                    N,
-                    shadingN,
-                    wo,
-                    u1,
-                    u2,
-                    uChoice);
-                return _FinalizeSubtreeSample(
-                    tree, nodeId, N, wo, sample, heroWavelengthNm);
+                    data, effectiveIor, normalShdWldOut, normalShdLobeWldOut,
+                    omegaOutWld, u1, u2, uChoice);
+                return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                              omegaOutWld, sample,
+                                              heroWavelengthNm);
             }
-            if (hasDeltaRoughness &&
-                !data.thinWalled &&
-                _WouldTotalInternalReflect(effectiveIor, N, wo)) {
+            if (hasDeltaRoughness && !data.thinWalled &&
+                _WouldTotalInternalReflect(effectiveIor, normalShdWldOut,
+                                           omegaOutWld)) {
                 const float tirWeight = std::max(
                     _Clamp01(data.reflectionWeight),
                     _Clamp01(data.transmissionWeight));
                 return _SampleDeltaTotalInternalReflection(
-                    tirWeight, N, wo);
+                    tirWeight, normalShdWldOut, omegaOutWld);
             }
             if (uChoice < selection.reflection) {
                 if (selection.reflection <= 0.0f) {
@@ -4158,31 +4085,26 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 if (hasDeltaRoughness) {
                     return _ScaleDiscreteSpecularSample(
                         _SampleDeltaDielectricInterfaceReflection(
-                            data, effectiveIor, shadingN, wo,
-                            Dot(N, wo) < 0.0f),
+                            data, effectiveIor, normalShdLobeWldOut,
+                            omegaOutWld,
+                            Dot(normalShdWldOut, omegaOutWld) < 0.0f),
                         selection.reflection);
                 }
                 if (_IsEffectivelyIsotropic(data.roughness)) {
                     auto sample = Bsdf::SampleGGXSpecular(
-                        _AverageAlphaAsRoughness(data.roughness),
-                        effectiveIor,
-                        data.reflectionTint,
-                        shadingN,
-                        wo,
-                        u1,
-                        u2);
-                    return _FinalizeSubtreeSample(
-                        tree, nodeId, N, wo, sample, heroWavelengthNm);
+                        _AverageAlphaAsRoughness(data.roughness), effectiveIor,
+                        data.reflectionTint, normalShdLobeWldOut, omegaOutWld,
+                        u1, u2);
+                    return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                                  omegaOutWld, sample,
+                                                  heroWavelengthNm);
                 }
                 auto sample = _SampleGGXSpecularAnisotropic(
-                    data.roughness,
-                    data.tangent,
-                    shadingN,
-                    wo,
-                    u1,
-                    u2);
-                return _FinalizeSubtreeSample(
-                    tree, nodeId, N, wo, sample, heroWavelengthNm);
+                    data.roughness, data.tangent, normalShdLobeWldOut,
+                    omegaOutWld, u1, u2);
+                return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                              omegaOutWld, sample,
+                                              heroWavelengthNm);
             }
 
             if (selection.transmission <= 0.0f) {
@@ -4192,97 +4114,89 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             if (hasDeltaRoughness) {
                 return _ScaleDiscreteSpecularSample(
                     _SampleDeltaDielectricInterfaceTransmission(
-                        data, effectiveIor, NdotV, N, wo),
+                        data, effectiveIor, NdotV, normalShdWldOut,
+                        omegaOutWld),
                     selection.transmission);
             }
             if (data.thinWalled) {
-                const Vec3f transmissionN = -shadingN;
-                Vec3f mirroredWo = _MirrorAcrossSurface(wo, shadingN);
-                mirroredWo.normalize();
+                const Vec3f transmissionN = -normalShdLobeWldOut;
+                Vec3f omegaOutMirroredWld =
+                    _MirrorAcrossSurface(omegaOutWld, normalShdLobeWldOut);
+                omegaOutMirroredWld.normalize();
                 if (_IsEffectivelyIsotropic(data.roughness)) {
                     auto sample = Bsdf::SampleGGXSpecular(
-                        _AverageAlphaAsRoughness(data.roughness),
-                        1.0f,
-                        data.transmissionTint,
-                        transmissionN,
-                        mirroredWo,
-                        u1,
-                        u2);
-                    if (sample.pdf <= 0.0f) {
+                        _AverageAlphaAsRoughness(data.roughness), 1.0f,
+                        data.transmissionTint, transmissionN,
+                        omegaOutMirroredWld, u1, u2);
+                    if (sample.pdfSolidAngle <= 0.0f) {
                         return _ScaleDiscreteSpecularSample(
                             _SampleDeltaDielectricInterfaceTransmission(
-                                data, effectiveIor, NdotV, N, wo),
+                                data, effectiveIor, NdotV, normalShdWldOut,
+                                omegaOutWld),
                             selection.transmission);
                     }
-                    return _FinalizeSubtreeSample(
-                        tree, nodeId, N, wo, sample, heroWavelengthNm);
+                    return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                                  omegaOutWld, sample,
+                                                  heroWavelengthNm);
                 }
                 auto sample = _SampleGGXSpecularAnisotropic(
-                    data.roughness,
-                    data.tangent,
-                    transmissionN,
-                    mirroredWo,
-                    u1,
-                    u2);
-                if (sample.pdf <= 0.0f) {
+                    data.roughness, data.tangent, transmissionN,
+                    omegaOutMirroredWld, u1, u2);
+                if (sample.pdfSolidAngle <= 0.0f) {
                     return _ScaleDiscreteSpecularSample(
                         _SampleDeltaDielectricInterfaceTransmission(
-                            data, effectiveIor, NdotV, N, wo),
+                            data, effectiveIor, NdotV, normalShdWldOut,
+                            omegaOutWld),
                         selection.transmission);
                 }
-                return _FinalizeSubtreeSample(
-                    tree, nodeId, N, wo, sample, heroWavelengthNm);
+                return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                              omegaOutWld, sample,
+                                              heroWavelengthNm);
             }
             auto sample = Bsdf::SampleGGXTransmission(
-                _AverageAlphaAsRoughness(data.roughness),
-                effectiveIor,
-                data.transmissionTint,
-                N,
-                wo,
-                u1,
-                u2);
+                _AverageAlphaAsRoughness(data.roughness), effectiveIor,
+                data.transmissionTint, normalShdWldOut, omegaOutWld, u1, u2);
             // Rough samples are finalized by re-evaluating this interface,
             // which applies the same BSDL front/back transmission-energy
             // scale used by direct evaluation.
-            if (sample.pdf <= 0.0f) {
+            if (sample.pdfSolidAngle <= 0.0f) {
                 return _ScaleDiscreteSpecularSample(
                     _SampleDeltaDielectricInterfaceTransmission(
-                        data, effectiveIor, NdotV, N, wo),
+                        data, effectiveIor, NdotV, normalShdWldOut,
+                        omegaOutWld),
                     selection.transmission);
             }
-            sample.f *= _Clamp01(data.transmissionWeight);
-            return _FinalizeSubtreeSample(
-                tree, nodeId, N, wo, sample, heroWavelengthNm);
+            sample.bsdfValue *= _Clamp01(data.transmissionWeight);
+            return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                          omegaOutWld, sample,
+                                          heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
             if (_IsEffectivelyDeltaAlpha(data.roughness)) {
-                return _SampleDeltaConductorReflection(data, shadingN, wo);
+                return _SampleDeltaConductorReflection(
+                    data, normalShdLobeWldOut, omegaOutWld);
             }
             if (_IsEffectivelyIsotropic(data.roughness)) {
                 auto sample = Bsdf::SampleGGXSpecular(
-                    _AverageAlphaAsRoughness(data.roughness),
-                    1.5f,
+                    _AverageAlphaAsRoughness(data.roughness), 1.5f,
                     _ConductorF0(data.ior, data.extinction),
-                    shadingN,
-                    wo,
-                    u1,
-                    u2);
-                return _FinalizeSubtreeSample(
-                    tree, nodeId, N, wo, sample, heroWavelengthNm);
+                    normalShdLobeWldOut, omegaOutWld, u1, u2);
+                return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                              omegaOutWld, sample,
+                                              heroWavelengthNm);
             }
             auto sample = _SampleGGXSpecularAnisotropic(
-                data.roughness,
-                data.tangent,
-                shadingN,
-                wo,
-                u1,
-                u2);
-            return _FinalizeSubtreeSample(
-                tree, nodeId, N, wo, sample, heroWavelengthNm);
+                data.roughness, data.tangent, normalShdLobeWldOut, omegaOutWld,
+                u1, u2);
+            return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                          omegaOutWld, sample,
+                                          heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            const float NdotV =
-                std::max(std::abs(Dot(shadingN, wo)), _kEpsilon);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            const float NdotV = std::max(
+                std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), _kEpsilon);
             const bool hasDeltaRoughness =
                 _IsEffectivelyDeltaAlpha(data.roughness);
             float fresnelProb = _Clamp01(_Luminance(
@@ -4299,55 +4213,52 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 // reflection/transmission pair totals one.
                 const auto samplePairedTir = [&]() {
                     auto tir = _SampleDeltaTotalInternalReflection(
-                        data.weight, N, wo);
-                    tir.f = CompMul(
-                        tir.f,
+                        data.weight, normalShdWldOut, omegaOutWld);
+                    tir.bsdfValue = CompMul(
+                        tir.bsdfValue,
                         _SaturateVec(
                             Vec3f(1.0f) -
-                            _GeneralizedSchlickReflectionFresnel(
-                                data, NdotV)));
+                            _GeneralizedSchlickReflectionFresnel(data, NdotV)));
                     return tir;
                 };
                 if (hasDeltaRoughness &&
-                    _WouldTotalInternalReflect(ior, N, wo)) {
+                    _WouldTotalInternalReflect(ior, normalShdWldOut,
+                                               omegaOutWld)) {
                     return samplePairedTir();
                 }
                 if (hasDeltaRoughness) {
-                    auto deltaSample = _SampleDeltaTransmission(
-                        ior, Vec3f(1.0f), data.weight, N, wo);
-                    deltaSample.f = CompMul(
-                        deltaSample.f,
+                    auto deltaSample =
+                        _SampleDeltaTransmission(ior, Vec3f(1.0f), data.weight,
+                                                 normalShdWldOut, omegaOutWld);
+                    deltaSample.bsdfValue = CompMul(
+                        deltaSample.bsdfValue,
                         _TransmissionScale(
                             _SchlickFresnelScalar(ior, NdotV),
-                            _GeneralizedSchlickReflectionFresnel(
-                                data, NdotV)));
+                            _GeneralizedSchlickReflectionFresnel(data, NdotV)));
                     return deltaSample;
                 }
                 auto sample = Bsdf::SampleGGXTransmission(
-                    _AverageAlphaAsRoughness(data.roughness),
-                    ior,
-                    Vec3f(1.0f),
-                    N,
-                    wo,
-                    u1,
-                    u2);
-                if (sample.pdf <= 0.0f) {
-                    if (_WouldTotalInternalReflect(ior, N, wo)) {
+                    _AverageAlphaAsRoughness(data.roughness), ior, Vec3f(1.0f),
+                    normalShdWldOut, omegaOutWld, u1, u2);
+                if (sample.pdfSolidAngle <= 0.0f) {
+                    if (_WouldTotalInternalReflect(ior, normalShdWldOut,
+                                                   omegaOutWld)) {
                         return samplePairedTir();
                     }
-                    auto deltaSample = _SampleDeltaTransmission(
-                        ior, Vec3f(1.0f), data.weight, N, wo);
-                    deltaSample.f = CompMul(
-                        deltaSample.f,
+                    auto deltaSample =
+                        _SampleDeltaTransmission(ior, Vec3f(1.0f), data.weight,
+                                                 normalShdWldOut, omegaOutWld);
+                    deltaSample.bsdfValue = CompMul(
+                        deltaSample.bsdfValue,
                         _TransmissionScale(
                             _SchlickFresnelScalar(ior, NdotV),
-                            _GeneralizedSchlickReflectionFresnel(
-                                data, NdotV)));
+                            _GeneralizedSchlickReflectionFresnel(data, NdotV)));
                     return deltaSample;
                 }
-                sample.f *= data.weight;
-                return _FinalizeSubtreeSample(
-                    tree, nodeId, N, wo, sample, heroWavelengthNm);
+                sample.bsdfValue *= data.weight;
+                return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                              omegaOutWld, sample,
+                                              heroWavelengthNm);
             }
             if (data.scatterMode == Bsdf::ScatterMode::ReflectionTransmission &&
                 uChoice >= fresnelProb) {
@@ -4355,49 +4266,46 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 float sqrtF0 = std::sqrt(std::max(avgF0, 0.01f));
                 float ior = (1.0f + sqrtF0) / (1.0f - sqrtF0);
                 if (hasDeltaRoughness &&
-                    _WouldTotalInternalReflect(ior, N, wo)) {
+                    _WouldTotalInternalReflect(ior, normalShdWldOut,
+                                               omegaOutWld)) {
                     return _SampleDeltaTotalInternalReflection(
-                        data.weight, N, wo);
+                        data.weight, normalShdWldOut, omegaOutWld);
                 }
                 if (hasDeltaRoughness) {
-                    auto deltaSample = _SampleDeltaTransmission(
-                        ior, Vec3f(1.0f), data.weight, N, wo);
-                    deltaSample.f = CompMul(
-                        deltaSample.f,
+                    auto deltaSample =
+                        _SampleDeltaTransmission(ior, Vec3f(1.0f), data.weight,
+                                                 normalShdWldOut, omegaOutWld);
+                    deltaSample.bsdfValue = CompMul(
+                        deltaSample.bsdfValue,
                         _TransmissionScale(
                             _SchlickFresnelScalar(ior, NdotV),
-                            _GeneralizedSchlickReflectionFresnel(
-                                data, NdotV)));
+                            _GeneralizedSchlickReflectionFresnel(data, NdotV)));
                     return _ScaleDiscreteSpecularSample(
                         deltaSample,
                         1.0f - fresnelProb);
                 }
                 auto sample = Bsdf::SampleGGXTransmission(
-                    _AverageAlphaAsRoughness(data.roughness),
-                    ior,
-                    Vec3f(1.0f),
-                    N,
-                    wo,
-                    u1,
-                    u2);
-                if (sample.pdf <= 0.0f) {
-                    auto deltaSample = _SampleDeltaTransmission(
-                        ior, Vec3f(1.0f), data.weight, N, wo);
-                    deltaSample.f = CompMul(
-                        deltaSample.f,
+                    _AverageAlphaAsRoughness(data.roughness), ior, Vec3f(1.0f),
+                    normalShdWldOut, omegaOutWld, u1, u2);
+                if (sample.pdfSolidAngle <= 0.0f) {
+                    auto deltaSample =
+                        _SampleDeltaTransmission(ior, Vec3f(1.0f), data.weight,
+                                                 normalShdWldOut, omegaOutWld);
+                    deltaSample.bsdfValue = CompMul(
+                        deltaSample.bsdfValue,
                         _TransmissionScale(
                             _SchlickFresnelScalar(ior, NdotV),
-                            _GeneralizedSchlickReflectionFresnel(
-                                data, NdotV)));
+                            _GeneralizedSchlickReflectionFresnel(data, NdotV)));
                     return deltaSample;
                 }
-                sample.f *= data.weight;
-                return _FinalizeSubtreeSample(
-                    tree, nodeId, N, wo, sample, heroWavelengthNm);
+                sample.bsdfValue *= data.weight;
+                return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                              omegaOutWld, sample,
+                                              heroWavelengthNm);
             }
             if (hasDeltaRoughness) {
-                auto sample =
-                    _SampleDeltaGeneralizedSchlickReflection(data, shadingN, wo);
+                auto sample = _SampleDeltaGeneralizedSchlickReflection(
+                    data, normalShdLobeWldOut, omegaOutWld);
                 if (data.scatterMode ==
                     Bsdf::ScatterMode::ReflectionTransmission) {
                     return _ScaleDiscreteSpecularSample(sample, fresnelProb);
@@ -4406,33 +4314,30 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             }
             if (_IsEffectivelyIsotropic(data.roughness)) {
                 auto sample = Bsdf::SampleGGXSpecular(
-                    _AverageAlphaAsRoughness(data.roughness),
-                    1.5f,
-                    data.color0,
-                    shadingN,
-                    wo,
-                    u1,
-                    u2);
-                return _FinalizeSubtreeSample(
-                    tree, nodeId, N, wo, sample, heroWavelengthNm);
+                    _AverageAlphaAsRoughness(data.roughness), 1.5f, data.color0,
+                    normalShdLobeWldOut, omegaOutWld, u1, u2);
+                return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                              omegaOutWld, sample,
+                                              heroWavelengthNm);
             }
             auto sample = _SampleGGXSpecularAnisotropic(
-                data.roughness,
-                data.tangent,
-                shadingN,
-                wo,
-                u1,
-                u2);
-            return _FinalizeSubtreeSample(
-                tree, nodeId, N, wo, sample, heroWavelengthNm);
+                data.roughness, data.tangent, normalShdLobeWldOut, omegaOutWld,
+                u1, u2);
+            return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                          omegaOutWld, sample,
+                                          heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
-            const Vec3f shadingN = _ResolveReflectionNormal(data, N, wo);
-            auto sample = Bsdf::SampleLambertian(
-                data.color * data.weight, shadingN, wo, u1, u2);
-            return _FinalizeSubtreeSample(
-                tree, nodeId, N, wo, sample, heroWavelengthNm);
+            const Vec3f normalShdLobeWldOut =
+                _ResolveReflectionNormal(data, normalShdWldOut, omegaOutWld);
+            auto sample = Bsdf::SampleLambertian(data.color * data.weight,
+                                                 normalShdLobeWldOut,
+                                                 omegaOutWld, u1, u2);
+            return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                          omegaOutWld, sample,
+                                          heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
-            return SampleAdobeOpenPbr(data, N, wo, u1, u2, uChoice);
+            return SampleAdobeOpenPbr(data, normalShdWldOut, omegaOutWld, u1,
+                                      u2, uChoice);
         } else if constexpr (std::is_same_v<T, Bsdf::UnsupportedData>) {
             return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         } else if constexpr (std::is_same_v<T, Bsdf::MixData>) {
@@ -4443,21 +4348,24 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             float remapped = (uChoice < mix)
                 ? (mix > 0.0f ? uChoice / mix : 0.0f)
                 : ((1.0f - mix) > 0.0f ? (uChoice - mix) / (1.0f - mix) : 0.0f);
-            auto sample = _SampleNode(
-                tree, chosen, N, wo, u1, u2, remapped, heroWavelengthNm);
+            auto sample =
+                _SampleNode(tree, chosen, normalShdWldOut, omegaOutWld, u1, u2,
+                            remapped, heroWavelengthNm);
             if ((sample.isSpecular || sample.isSubsurface) &&
-                sample.pdf > 0.0f && chooseProb > 0.0f) {
-                sample.f /= chooseProb;
+                sample.pdfSolidAngle > 0.0f && chooseProb > 0.0f) {
+                sample.bsdfValue /= chooseProb;
             }
-            return _FinalizeSubtreeSample(
-                tree, nodeId, N, wo, sample, heroWavelengthNm);
+            return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                          omegaOutWld, sample,
+                                          heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::LayerData>) {
-            float topWeight = _ApproxWeight(
-                tree, data.top, N, wo, heroWavelengthNm);
-            float baseWeight = _ApproxWeight(
-                tree, data.base, N, wo, heroWavelengthNm) *
-                _Luminance(
-                    _EvalThroughput(tree, data.top, N, wo, heroWavelengthNm));
+            float topWeight = _ApproxWeight(tree, data.top, normalShdWldOut,
+                                            omegaOutWld, heroWavelengthNm);
+            float baseWeight =
+                _ApproxWeight(tree, data.base, normalShdWldOut, omegaOutWld,
+                              heroWavelengthNm) *
+                _Luminance(_EvalThroughput(tree, data.top, normalShdWldOut,
+                                           omegaOutWld, heroWavelengthNm));
             float total = topWeight + baseWeight;
             if (total <= 0.0f) {
                 return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
@@ -4469,25 +4377,29 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             float remapped = (uChoice < pTop)
                 ? (pTop > 0.0f ? uChoice / pTop : 0.0f)
                 : ((1.0f - pTop) > 0.0f ? (uChoice - pTop) / (1.0f - pTop) : 0.0f);
-            auto sample = _SampleNode(
-                tree, chosen, N, wo, u1, u2, remapped, heroWavelengthNm);
+            auto sample =
+                _SampleNode(tree, chosen, normalShdWldOut, omegaOutWld, u1, u2,
+                            remapped, heroWavelengthNm);
             if ((sample.isSpecular || sample.isSubsurface) &&
-                sample.pdf > 0.0f) {
+                sample.pdfSolidAngle > 0.0f) {
                 if (!chooseTop) {
-                    sample.f = CompMul(
-                        sample.f,
-                        _EvalLayerBaseThroughput(
-                            tree, data.top, N, wo, heroWavelengthNm));
+                    sample.bsdfValue = CompMul(
+                        sample.bsdfValue, _EvalLayerBaseThroughput(
+                                              tree, data.top, normalShdWldOut,
+                                              omegaOutWld, heroWavelengthNm));
                 }
                 if (chooseProb > 0.0f) {
-                    sample.f /= chooseProb;
+                    sample.bsdfValue /= chooseProb;
                 }
             }
-            return _FinalizeSubtreeSample(
-                tree, nodeId, N, wo, sample, heroWavelengthNm);
+            return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                          omegaOutWld, sample,
+                                          heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::AddData>) {
-            float w1 = _ApproxWeight(tree, data.in1, N, wo, heroWavelengthNm);
-            float w2 = _ApproxWeight(tree, data.in2, N, wo, heroWavelengthNm);
+            float w1 = _ApproxWeight(tree, data.in1, normalShdWldOut,
+                                     omegaOutWld, heroWavelengthNm);
+            float w2 = _ApproxWeight(tree, data.in2, normalShdWldOut,
+                                     omegaOutWld, heroWavelengthNm);
             float total = w1 + w2;
             if (total <= 0.0f) {
                 return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
@@ -4499,23 +4411,27 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             float remapped = (uChoice < p1)
                 ? (p1 > 0.0f ? uChoice / p1 : 0.0f)
                 : ((1.0f - p1) > 0.0f ? (uChoice - p1) / (1.0f - p1) : 0.0f);
-            auto sample = _SampleNode(
-                tree, chosen, N, wo, u1, u2, remapped, heroWavelengthNm);
+            auto sample =
+                _SampleNode(tree, chosen, normalShdWldOut, omegaOutWld, u1, u2,
+                            remapped, heroWavelengthNm);
             if ((sample.isSpecular || sample.isSubsurface) &&
-                sample.pdf > 0.0f && chooseProb > 0.0f) {
-                sample.f /= chooseProb;
+                sample.pdfSolidAngle > 0.0f && chooseProb > 0.0f) {
+                sample.bsdfValue /= chooseProb;
             }
-            return _FinalizeSubtreeSample(
-                tree, nodeId, N, wo, sample, heroWavelengthNm);
+            return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                          omegaOutWld, sample,
+                                          heroWavelengthNm);
         } else if constexpr (std::is_same_v<T, Bsdf::MultiplyData>) {
-            auto sample = _SampleNode(
-                tree, data.input, N, wo, u1, u2, uChoice, heroWavelengthNm);
+            auto sample =
+                _SampleNode(tree, data.input, normalShdWldOut, omegaOutWld, u1,
+                            u2, uChoice, heroWavelengthNm);
             if ((sample.isSpecular || sample.isSubsurface) &&
-                sample.pdf > 0.0f) {
-                sample.f = CompMul(data.weight, sample.f);
+                sample.pdfSolidAngle > 0.0f) {
+                sample.bsdfValue = CompMul(data.weight, sample.bsdfValue);
             }
-            return _FinalizeSubtreeSample(
-                tree, nodeId, N, wo, sample, heroWavelengthNm);
+            return _FinalizeSubtreeSample(tree, nodeId, normalShdWldOut,
+                                          omegaOutWld, sample,
+                                          heroWavelengthNm);
         } else {
             return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
@@ -4551,43 +4467,38 @@ Bsdf::GetDielectricLayerThroughputMode()
 }
 
 Vec3f
-Bsdf::EvalLambertian(
-    const Vec3f& baseColor,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo)
+Bsdf::EvalLambertian(const Vec3f& baseColor, const Vec3f& normalShdWldOut,
+                     const Vec3f& omegaInWld, const Vec3f& omegaOutWld)
 {
-    // Lambertian reflection: both wi and wo must lie on the front side of N.
-    // Previously this function ignored N/wi/wo entirely and returned
-    // baseColor/pi unconditionally, causing back-face hits (e.g. viewing an
-    // opaque ground from below, or secondary rays landing on the inside of
-    // a closed mesh) to "leak" light through the surface. The SSS exit
-    // path post-flip was especially vulnerable to this because the flipped
-    // ray routinely crosses surfaces at grazing angles.
-    if (Dot(N, wi) <= 0.0f || Dot(N, wo) <= 0.0f) {
+    // Lambertian reflection: both omegaInWld and omegaOutWld must lie on the
+    // front side of normalShdWldOut. Previously this function ignored
+    // normalShdWldOut/omegaInWld/omegaOutWld entirely and returned baseColor/pi
+    // unconditionally, causing back-face hits (e.g. viewing an opaque ground
+    // from below, or secondary rays landing on the inside of a closed mesh) to
+    // "leak" light through the surface. The SSS exit path post-flip was
+    // especially vulnerable to this because the flipped ray routinely crosses
+    // surfaces at grazing angles.
+    if (Dot(normalShdWldOut, omegaInWld) <= 0.0f ||
+        Dot(normalShdWldOut, omegaOutWld) <= 0.0f) {
         return Vec3f(0.0f);
     }
     return baseColor * kInvPi;
 }
 
 Vec3f
-Bsdf::EvalGGXSpecular(
-    float roughness,
-    float /*ior*/,
-    const Vec3f& specularColor,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo)
+Bsdf::EvalGGXSpecular(float roughness, float /*ior*/,
+                      const Vec3f& specularColor, const Vec3f& normalShdWldOut,
+                      const Vec3f& omegaInWld, const Vec3f& omegaOutWld)
 {
     float alpha = _RoughnessToAlpha(roughness);
-    float NdotL = std::max(Dot(N, wi), 0.0f);
-    float NdotV = std::max(Dot(N, wo), _kEpsilon);
+    float NdotL = std::max(Dot(normalShdWldOut, omegaInWld), 0.0f);
+    float NdotV = std::max(Dot(normalShdWldOut, omegaOutWld), _kEpsilon);
     if (NdotL <= 0.0f || NdotV <= 0.0f) {
         return Vec3f(0.0f);
     }
-    Vec3f H = (wi + wo).normalized();
-    float NdotH = std::max(Dot(N, H), 0.0f);
-    float VdotH = std::max(Dot(wo, H), 0.0f);
+    Vec3f H = (omegaInWld + omegaOutWld).normalized();
+    float NdotH = std::max(Dot(normalShdWldOut, H), 0.0f);
+    float VdotH = std::max(Dot(omegaOutWld, H), 0.0f);
     float D = _GGX_D(alpha, NdotH);
     float G = _GGX_G(alpha, NdotV, NdotL);
     Vec3f F = _SchlickFresnel(specularColor, VdotH);
@@ -4600,32 +4511,29 @@ Bsdf::EvalGGXSpecular(
 }
 
 Vec3f
-Bsdf::EvalGGXTransmission(
-    float roughness,
-    float ior,
-    const Vec3f& transmissionColor,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo)
+Bsdf::EvalGGXTransmission(float roughness, float ior,
+                          const Vec3f& transmissionColor,
+                          const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+                          const Vec3f& omegaOutWld)
 {
     float alpha = _RoughnessToAlpha(roughness);
 
-    _Frame frame = _Frame::FromNormal(N);
-    Vec3f woLocal = frame.ToLocal(wo);
-    Vec3f wiLocal = frame.ToLocal(wi);
+    _Frame frame = _Frame::FromNormal(normalShdWldOut);
+    Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
+    Vec3f omegaInLocal = frame.ToLocal(omegaInWld);
 
-    float cosThetaO = std::abs(woLocal[2]);
-    float cosThetaI = std::abs(wiLocal[2]);
+    float cosThetaO = std::abs(omegaOutLocal[2]);
+    float cosThetaI = std::abs(omegaInLocal[2]);
     if (cosThetaO < _kEpsilon || cosThetaI < _kEpsilon) {
         return Vec3f(0.0f);
     }
 
-    // etap = IOR of wi-side medium / IOR of wo-side medium
-    // (pbrt convention: eta_t / eta_i)
-    float etap = (woLocal[2] > 0.0f) ? ior : (1.0f / ior);
+    // The Walter/pbrt convention is eta_t / eta_i, the reciprocal of this
+    // renderer's eta convention.
+    float etaPbrt = (omegaOutLocal[2] > 0.0f) ? ior : (1.0f / ior);
 
     // Generalized half-vector for refraction (Walter et al. 2007)
-    Vec3f wm = (wiLocal * etap + woLocal);
+    Vec3f wm = (omegaInLocal * etaPbrt + omegaOutLocal);
     if (wm.length() < _kEpsilon) {
         return Vec3f(0.0f);
     }
@@ -4634,14 +4542,15 @@ Bsdf::EvalGGXTransmission(
         wm = -wm;
     }
 
-    // Reject if wi and wo are on the same side of the microfacet
-    if (Dot(wiLocal, wm) * Dot(woLocal, wm) > 0.0f) {
+    // Reject if omegaInWld and omegaOutWld are on the same side of the
+    // microfacet
+    if (Dot(omegaInLocal, wm) * Dot(omegaOutLocal, wm) > 0.0f) {
         return Vec3f(0.0f);
     }
 
     float NdotH = std::abs(wm[2]);
-    float VdotH = std::abs(Dot(woLocal, wm));
-    float LdotH = std::abs(Dot(wiLocal, wm));
+    float VdotH = std::abs(Dot(omegaOutLocal, wm));
+    float LdotH = std::abs(Dot(omegaInLocal, wm));
 
     float fresnel = _SchlickFresnelScalar(ior, VdotH);
     float T = 1.0f - fresnel;
@@ -4650,7 +4559,7 @@ Bsdf::EvalGGXTransmission(
     float G = _SmithG1(alpha, cosThetaO) * _SmithG1(alpha, cosThetaI);
 
     // Jacobian denominator uses signed dot products (Walter et al.)
-    float denom = Dot(wiLocal, wm) + Dot(woLocal, wm) / etap;
+    float denom = Dot(omegaInLocal, wm) + Dot(omegaOutLocal, wm) / etaPbrt;
     denom *= denom;
     if (denom < _kEpsilon) {
         return Vec3f(0.0f);
@@ -4663,48 +4572,41 @@ Bsdf::EvalGGXTransmission(
 }
 
 Vec3f
-Bsdf::EvalSheen(
-    const Vec3f& sheenColor,
-    float roughness,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo)
+Bsdf::EvalSheen(const Vec3f& sheenColor, float roughness,
+                const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+                const Vec3f& omegaOutWld)
 {
     float alpha = _ClampRoughness(roughness);
-    float NdotL = std::max(Dot(N, wi), 0.0f);
-    float NdotV = std::max(Dot(N, wo), _kEpsilon);
+    float NdotL = std::max(Dot(normalShdWldOut, omegaInWld), 0.0f);
+    float NdotV = std::max(Dot(normalShdWldOut, omegaOutWld), _kEpsilon);
     if (NdotL <= 0.0f || NdotV <= 0.0f) {
         return Vec3f(0.0f);
     }
-    Vec3f H = (wi + wo).normalized();
-    float NdotH = std::max(Dot(N, H), 0.0f);
+    Vec3f H = (omegaInWld + omegaOutWld).normalized();
+    float NdotH = std::max(Dot(normalShdWldOut, H), 0.0f);
     float D = _Charlie_D(alpha, NdotH);
     float V = _Ashikhmin_V(NdotV, NdotL);
     return _SafeVec(sheenColor * (D * V));
 }
 
 Vec3f
-Bsdf::EvalCoat(
-    float coatWeight,
-    float coatRoughness,
-    float coatIor,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo)
+Bsdf::EvalCoat(float coatWeight, float coatRoughness, float coatIor,
+               const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+               const Vec3f& omegaOutWld)
 {
     if (coatWeight <= 0.0f) {
         return Vec3f(0.0f);
     }
 
     float alpha = _RoughnessToAlpha(coatRoughness);
-    float NdotL = std::max(Dot(N, wi), 0.0f);
-    float NdotV = std::max(Dot(N, wo), _kEpsilon);
+    float NdotL = std::max(Dot(normalShdWldOut, omegaInWld), 0.0f);
+    float NdotV = std::max(Dot(normalShdWldOut, omegaOutWld), _kEpsilon);
     if (NdotL <= 0.0f || NdotV <= 0.0f) {
         return Vec3f(0.0f);
     }
-    Vec3f H = (wi + wo).normalized();
-    float NdotH = std::max(Dot(N, H), 0.0f);
-    float VdotH = std::max(Dot(wo, H), 0.0f);
+    Vec3f H = (omegaInWld + omegaOutWld).normalized();
+    float NdotH = std::max(Dot(normalShdWldOut, H), 0.0f);
+    float VdotH = std::max(Dot(omegaOutWld, H), 0.0f);
     float D = _GGX_D(alpha, NdotH);
     float G = _GGX_G(alpha, NdotV, NdotL);
     float F = _SchlickFresnelScalar(coatIor, VdotH);
@@ -4714,77 +4616,64 @@ Bsdf::EvalCoat(
 }
 
 Vec3f
-Bsdf::EvalSurface(
-    const SurfaceClosure& closure,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo,
-    float heroWavelengthNm,
-    bool frontFacing)
+Bsdf::EvalSurface(const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
+                  const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
+                  float heroWavelengthNm, bool frontFacing)
 {
-    const Vec3f interfaceN = frontFacing ? N : -N;
-    Vec3f f = closure.HasBsdfTree()
-        ? _EvalNode(
-            closure.bsdfTree,
-            closure.bsdfTree.root,
-            interfaceN,
-            wi,
-            wo,
-            heroWavelengthNm)
-        : _EvalLegacySurface(closure, interfaceN, wi, wo);
-    return _SafeVec(f * closure.presence);
+    const Vec3f interfaceN = frontFacing ? normalShdWldOut : -normalShdWldOut;
+    Vec3f bsdfValue =
+        closure.HasBsdfTree()
+            ? _EvalNode(closure.bsdfTree, closure.bsdfTree.root, interfaceN,
+                        omegaInWld, omegaOutWld, heroWavelengthNm)
+            : _EvalLegacySurface(closure, interfaceN, omegaInWld, omegaOutWld);
+    return _SafeVec(bsdfValue * closure.presence);
 }
 
 Bsdf::BsdfSample
-Bsdf::SampleLambertian(
-    const Vec3f& baseColor,
-    const Vec3f& N,
-    const Vec3f& /*wo*/,
-    float u1, float u2)
+Bsdf::SampleLambertian(const Vec3f& baseColor, const Vec3f& normalShdWldOut,
+                       const Vec3f& /*omegaOutWld*/, float u1, float u2)
 {
-    _Frame frame = _Frame::FromNormal(N);
-    Vec3f wiLocal = _SampleCosineHemisphere(u1, u2);
-    Vec3f wi = frame.ToWorld(wiLocal);
-    float pdf = _CosineHemispherePdf(wiLocal[2]);
-    BsdfSample sample{wi, baseColor * kInvPi, pdf, false};
+    _Frame frame = _Frame::FromNormal(normalShdWldOut);
+    Vec3f omegaInLocal = _SampleCosineHemisphere(u1, u2);
+    Vec3f omegaInWld = frame.ToWorld(omegaInLocal);
+    float pdfSolidAngle = _CosineHemispherePdf(omegaInLocal[2]);
+    BsdfSample sample{omegaInWld, baseColor * kInvPi, pdfSolidAngle, false};
     sample.isDiffuseLike = true;
     return sample;
 }
 
 float
-Bsdf::PdfLambertian(const Vec3f& N, const Vec3f& wi)
+Bsdf::PdfLambertian(const Vec3f& normalShdWldOut, const Vec3f& omegaInWld)
 {
-    return _CosineHemispherePdf(Dot(N, wi));
+    return _CosineHemispherePdf(Dot(normalShdWldOut, omegaInWld));
 }
 
 Bsdf::BsdfSample
-Bsdf::SampleGGXSpecular(
-    float roughness,
-    float /*ior*/,
-    const Vec3f& specularColor,
-    const Vec3f& N,
-    const Vec3f& wo,
-    float u1, float u2)
+Bsdf::SampleGGXSpecular(float roughness, float /*ior*/,
+                        const Vec3f& specularColor,
+                        const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld,
+                        float u1, float u2)
 {
     float alpha = _RoughnessToAlpha(roughness);
 
-    _Frame frame = _Frame::FromNormal(N);
-    Vec3f woLocal = frame.ToLocal(wo);
-    if (woLocal[2] <= 0.0f) {
+    _Frame frame = _Frame::FromNormal(normalShdWldOut);
+    Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
+    if (omegaOutLocal[2] <= 0.0f) {
         return BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
 
-    Vec3f wmLocal = _SampleGGX_VNDF(woLocal, alpha, u1, u2);
-    Vec3f wiLocal = 2.0f * Dot(woLocal, wmLocal) * wmLocal - woLocal;
-    if (wiLocal[2] <= 0.0f) {
+    Vec3f wmLocal = _SampleGGX_VNDF(omegaOutLocal, alpha, u1, u2);
+    Vec3f omegaInLocal =
+        2.0f * Dot(omegaOutLocal, wmLocal) * wmLocal - omegaOutLocal;
+    if (omegaInLocal[2] <= 0.0f) {
         return BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
 
-    Vec3f wi = frame.ToWorld(wiLocal);
-    float NdotL = wiLocal[2];
-    float NdotV = woLocal[2];
+    Vec3f omegaInWld = frame.ToWorld(omegaInLocal);
+    float NdotL = omegaInLocal[2];
+    float NdotV = omegaOutLocal[2];
     float NdotH = wmLocal[2];
-    float VdotH = std::max(Dot(woLocal, wmLocal), 0.0f);
+    float VdotH = std::max(Dot(omegaOutLocal, wmLocal), 0.0f);
 
     float D = _GGX_D(alpha, NdotH);
     float G = _GGX_G(alpha, NdotV, NdotL);
@@ -4792,36 +4681,33 @@ Bsdf::SampleGGXSpecular(
     Vec3f compensatedF = CompMul(
         F,
         _TurquinMicrofacetMsScale(alpha, NdotV, F));
-    Vec3f f = CompMul(
-        compensatedF,
-        Vec3f(D * G / std::max(4.0f * NdotL * NdotV, _kEpsilon)));
-    float pdf = _PdfGGX_VNDF(woLocal, wmLocal, alpha);
+    Vec3f bsdfValue = CompMul(
+        compensatedF, Vec3f(D * G / std::max(4.0f * NdotL * NdotV, _kEpsilon)));
+    float pdfSolidAngle = _PdfGGX_VNDF(omegaOutLocal, wmLocal, alpha);
 
-    return BsdfSample{wi, _SafeVec(f), std::max(pdf, 0.0f), false};
+    return BsdfSample{omegaInWld, _SafeVec(bsdfValue),
+                      std::max(pdfSolidAngle, 0.0f), false};
 }
 
 float
-Bsdf::PdfGGXSpecular(
-    float roughness,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo)
+Bsdf::PdfGGXSpecular(float roughness, const Vec3f& normalShdWldOut,
+                     const Vec3f& omegaInWld, const Vec3f& omegaOutWld)
 {
     float alpha = _RoughnessToAlpha(roughness);
-    _Frame frame = _Frame::FromNormal(N);
-    Vec3f woLocal = frame.ToLocal(wo);
-    Vec3f wiLocal = frame.ToLocal(wi);
+    _Frame frame = _Frame::FromNormal(normalShdWldOut);
+    Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
+    Vec3f omegaInLocal = frame.ToLocal(omegaInWld);
 
-    if (woLocal[2] <= 0.0f || wiLocal[2] <= 0.0f) {
+    if (omegaOutLocal[2] <= 0.0f || omegaInLocal[2] <= 0.0f) {
         return 0.0f;
     }
 
-    Vec3f wmLocal = (woLocal + wiLocal).normalized();
+    Vec3f wmLocal = (omegaOutLocal + omegaInLocal).normalized();
     if (wmLocal[2] <= 0.0f) {
         return 0.0f;
     }
 
-    return _PdfGGX_VNDF(woLocal, wmLocal, alpha);
+    return _PdfGGX_VNDF(omegaOutLocal, wmLocal, alpha);
 }
 
 float
@@ -4904,36 +4790,33 @@ Bsdf::StraightShadowDielectricTransmission(
 }
 
 Bsdf::BsdfSample
-Bsdf::SampleGGXTransmission(
-    float roughness,
-    float ior,
-    const Vec3f& transmissionColor,
-    const Vec3f& N,
-    const Vec3f& wo,
-    float u1, float u2)
+Bsdf::SampleGGXTransmission(float roughness, float ior,
+                            const Vec3f& transmissionColor,
+                            const Vec3f& normalShdWldOut,
+                            const Vec3f& omegaOutWld, float u1, float u2)
 {
     float alpha = _RoughnessToAlpha(roughness);
 
-    _Frame frame = _Frame::FromNormal(N);
-    Vec3f woLocal = frame.ToLocal(wo);
-    if (std::abs(woLocal[2]) < _kEpsilon) {
+    _Frame frame = _Frame::FromNormal(normalShdWldOut);
+    Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
+    if (std::abs(omegaOutLocal[2]) < _kEpsilon) {
         return BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
 
     // Flip to upper hemisphere for VNDF sampling
-    bool flipN = woLocal[2] < 0.0f;
-    Vec3f woFlipped = flipN ? -woLocal : woLocal;
+    bool flipN = omegaOutLocal[2] < 0.0f;
+    Vec3f omegaOutFlippedWld = flipN ? -omegaOutLocal : omegaOutLocal;
 
-    Vec3f wmLocal = _SampleGGX_VNDF(woFlipped, alpha, u1, u2);
+    Vec3f wmLocal = _SampleGGX_VNDF(omegaOutFlippedWld, alpha, u1, u2);
     if (flipN) {
         wmLocal = -wmLocal;
     }
 
     // Determine eta (incident / transmitted)
-    float eta = (woLocal[2] > 0.0f) ? (1.0f / ior) : ior;
+    float eta = (omegaOutLocal[2] > 0.0f) ? (1.0f / ior) : ior;
 
     // Refract through the microfacet
-    float cosI = Dot(woLocal, wmLocal);
+    float cosI = Dot(omegaOutLocal, wmLocal);
     float sin2T = eta * eta * (1.0f - cosI * cosI);
     if (sin2T >= 1.0f) {
         // Total internal reflection
@@ -4945,57 +4828,59 @@ Bsdf::SampleGGXTransmission(
     if (cosI > 0.0f) {
         cosT = -cosT;
     }
-    Vec3f wiLocal = -eta * woLocal + (eta * cosI + cosT) * wmLocal;
-    wiLocal.normalize();
+    Vec3f omegaInLocal = -eta * omegaOutLocal + (eta * cosI + cosT) * wmLocal;
+    omegaInLocal.normalize();
 
     // Reject if both directions are on the same side
-    if (wiLocal[2] * woLocal[2] > 0.0f) {
+    if (omegaInLocal[2] * omegaOutLocal[2] > 0.0f) {
         return BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
 
-    Vec3f wi = frame.ToWorld(wiLocal);
+    Vec3f omegaInWld = frame.ToWorld(omegaInLocal);
 
     // Evaluate BTDF and PDF
-    Vec3f f = EvalGGXTransmission(roughness, ior, transmissionColor, N, wi, wo);
-    float pdf = PdfGGXTransmission(roughness, ior, N, wi, wo);
+    Vec3f bsdfValue =
+        EvalGGXTransmission(roughness, ior, transmissionColor, normalShdWldOut,
+                            omegaInWld, omegaOutWld);
+    float pdfSolidAngle = PdfGGXTransmission(roughness, ior, normalShdWldOut,
+                                             omegaInWld, omegaOutWld);
 
-    if (pdf < _kEpsilon) {
+    if (pdfSolidAngle < _kEpsilon) {
         return BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
 
-    BsdfSample sample{wi, _SafeVec(f), pdf, false};
+    BsdfSample sample{omegaInWld, _SafeVec(bsdfValue), pdfSolidAngle, false};
     sample.eta = eta;
     return sample;
 }
 
 float
-Bsdf::PdfGGXTransmission(
-    float roughness,
-    float ior,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo)
+Bsdf::PdfGGXTransmission(float roughness, float ior,
+                         const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+                         const Vec3f& omegaOutWld)
 {
     float alpha = _RoughnessToAlpha(roughness);
 
-    _Frame frame = _Frame::FromNormal(N);
-    Vec3f woLocal = frame.ToLocal(wo);
-    Vec3f wiLocal = frame.ToLocal(wi);
+    _Frame frame = _Frame::FromNormal(normalShdWldOut);
+    Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
+    Vec3f omegaInLocal = frame.ToLocal(omegaInWld);
 
-    // Transmission requires wi and wo on opposite sides
-    if (wiLocal[2] * woLocal[2] > 0.0f) {
+    // Transmission requires omegaInWld and omegaOutWld on opposite sides
+    if (omegaInLocal[2] * omegaOutLocal[2] > 0.0f) {
         return 0.0f;
     }
 
-    float cosThetaO = std::abs(woLocal[2]);
+    float cosThetaO = std::abs(omegaOutLocal[2]);
     if (cosThetaO < _kEpsilon) {
         return 0.0f;
     }
 
-    float etap = (woLocal[2] > 0.0f) ? ior : (1.0f / ior);
+    // The Walter/pbrt convention is eta_t / eta_i, the reciprocal of this
+    // renderer's eta convention.
+    float etaPbrt = (omegaOutLocal[2] > 0.0f) ? ior : (1.0f / ior);
 
     // Generalized half-vector
-    Vec3f wm = (wiLocal * etap + woLocal);
+    Vec3f wm = (omegaInLocal * etaPbrt + omegaOutLocal);
     if (wm.length() < _kEpsilon) {
         return 0.0f;
     }
@@ -5004,68 +4889,57 @@ Bsdf::PdfGGXTransmission(
         wm = -wm;
     }
 
-    float VdotH = std::abs(Dot(woLocal, wm));
-    float LdotH = std::abs(Dot(wiLocal, wm));
+    float VdotH = std::abs(Dot(omegaOutLocal, wm));
+    float LdotH = std::abs(Dot(omegaInLocal, wm));
 
     // VNDF PDF for the half-vector
     float G1o = _SmithG1(alpha, cosThetaO);
     float NdotH = std::abs(wm[2]);
     float D = _GGX_D(alpha, NdotH);
-    float pdfWm = G1o * D * VdotH / cosThetaO;
+    float pdfMicrofacetNormalSolidAngle = G1o * D * VdotH / cosThetaO;
 
     // Jacobian for transmission half-vector change of variables
     // Uses signed dot products (Walter et al. 2007)
-    float denom = Dot(wiLocal, wm) + Dot(woLocal, wm) / etap;
+    float denom = Dot(omegaInLocal, wm) + Dot(omegaOutLocal, wm) / etaPbrt;
     denom *= denom;
     if (denom < _kEpsilon) {
         return 0.0f;
     }
     float dwm_dwi = LdotH / denom;
 
-    return std::max(pdfWm * dwm_dwi, 0.0f);
+    return std::max(pdfMicrofacetNormalSolidAngle * dwm_dwi, 0.0f);
 }
 
 Bsdf::BsdfSample
-Bsdf::SampleSurface(
-    const SurfaceClosure& closure,
-    const Vec3f& N,
-    const Vec3f& wo,
-    float u1, float u2, float uLobe,
-    float heroWavelengthNm,
-    bool frontFacing)
+Bsdf::SampleSurface(const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
+                    const Vec3f& omegaOutWld, float u1, float u2, float uLobe,
+                    float heroWavelengthNm, bool frontFacing)
 {
-    const Vec3f interfaceN = frontFacing ? N : -N;
+    const Vec3f interfaceN = frontFacing ? normalShdWldOut : -normalShdWldOut;
     if (closure.HasBsdfTree()) {
-        auto sample = _SampleNode(closure.bsdfTree, closure.bsdfTree.root,
-                                  interfaceN, wo, u1, u2, uLobe, heroWavelengthNm);
+        auto sample =
+            _SampleNode(closure.bsdfTree, closure.bsdfTree.root, interfaceN,
+                        omegaOutWld, u1, u2, uLobe, heroWavelengthNm);
         if (!sample.isSpecular) {
-            sample.f *= closure.presence;
+            sample.bsdfValue *= closure.presence;
         }
         return sample;
     }
-    return _SampleLegacySurface(closure, interfaceN, wo, u1, u2, uLobe);
+    return _SampleLegacySurface(closure, interfaceN, omegaOutWld, u1, u2,
+                                uLobe);
 }
 
 float
-Bsdf::PdfSurface(
-    const SurfaceClosure& closure,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo,
-    float heroWavelengthNm,
-    bool frontFacing)
+Bsdf::PdfSurface(const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
+                 const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
+                 float heroWavelengthNm, bool frontFacing)
 {
-    const Vec3f interfaceN = frontFacing ? N : -N;
+    const Vec3f interfaceN = frontFacing ? normalShdWldOut : -normalShdWldOut;
     if (closure.HasBsdfTree()) {
-        return _PdfNode(
-            closure.bsdfTree,
-            closure.bsdfTree.root,
-            interfaceN,
-            wi,
-            wo,
-            heroWavelengthNm);
+        return _PdfNode(closure.bsdfTree, closure.bsdfTree.root, interfaceN,
+                        omegaInWld, omegaOutWld, heroWavelengthNm);
     }
-    return _PdfLegacySurface(closure, interfaceN, wi, wo);
+    return _PdfLegacySurface(closure, interfaceN, omegaInWld, omegaOutWld);
 }
 
 SurfaceClosure
@@ -5097,18 +4971,16 @@ constexpr float _kSmoothRoughnessThreshold = 1.0e-3f;
 }
 
 bool
-Bsdf::SampleSubsurfaceEntry(
-    const SurfaceClosure& closure,
-    const Vec3f& N,
-    const Vec3f& wo,
-    float u1, float u2,
-    Vec3f& wi_into_medium)
+Bsdf::SampleSubsurfaceEntry(const SurfaceClosure& closure,
+                            const Vec3f& normalShdWldOut,
+                            const Vec3f& omegaOutWld, float u1, float u2,
+                            Vec3f& directionEntryWldOutput)
 {
     // Clamp IOR >= 1 to avoid TIR at entry (matches Cycles).
     const float ior = std::max(closure.specularIor, 1.0f);
     const float eta = 1.0f / ior;  // outside -> inside
 
-    const float cosNI = Dot(N, wo);
+    const float cosNI = Dot(normalShdWldOut, omegaOutWld);
     if (cosNI <= 0.0f) {
         return false;
     }
@@ -5118,39 +4990,41 @@ Bsdf::SampleSubsurfaceEntry(
         const float sin2T = eta * eta * (1.0f - cosNI * cosNI);
         if (sin2T >= 1.0f) {
             // Shouldn't happen with IOR >= 1 but guard anyway.
-            wi_into_medium = -wo;
+            directionEntryWldOutput = -omegaOutWld;
             return true;
         }
         const float cosT = std::sqrt(std::max(0.0f, 1.0f - sin2T));
-        wi_into_medium = -eta * wo + (eta * cosNI - cosT) * N;
+        directionEntryWldOutput =
+            -eta * omegaOutWld + (eta * cosNI - cosT) * normalShdWldOut;
         return true;
     }
 
     // Rough surface: GGX VNDF samples microfacet normal H, then Snell about H.
-    const _Frame frame = _Frame::FromNormal(N);
-    const Vec3f woLocal = frame.ToLocal(wo);
+    const _Frame frame = _Frame::FromNormal(normalShdWldOut);
+    const Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
     const float alpha = _RoughnessToAlpha(closure.roughness);
-    const Vec3f hLocal = _SampleGGX_VNDF(woLocal, alpha, u1, u2);
+    const Vec3f hLocal = _SampleGGX_VNDF(omegaOutLocal, alpha, u1, u2);
     const Vec3f H = frame.ToWorld(hLocal);
 
-    const float cosHI = Dot(H, wo);
+    const float cosHI = Dot(H, omegaOutWld);
     const float sin2T = eta * eta * (1.0f - cosHI * cosHI);
     if (sin2T >= 1.0f) {
-        wi_into_medium = -wo;
+        directionEntryWldOutput = -omegaOutWld;
         return true;
     }
     const float cosT = std::sqrt(std::max(0.0f, 1.0f - sin2T));
-    wi_into_medium = -eta * wo + (eta * cosHI - cosT) * H;
+    directionEntryWldOutput = -eta * omegaOutWld + (eta * cosHI - cosT) * H;
 
     // Fallback if the refracted direction ends up outward (numerical edge):
-    // sample a cosine-weighted hemisphere around -N so we still enter the
-    // medium.
-    if (Dot(wi_into_medium, N) >= 0.0f) {
+    // sample a cosine-weighted hemisphere around -normalShdWldOut so we still
+    // enter the medium.
+    if (Dot(directionEntryWldOutput, normalShdWldOut) >= 0.0f) {
         const Vec3f hemi = _SampleCosineHemisphere(u1, u2);
-        // hemi is expressed in a frame with +Z = up; reflect to -N by
-        // negating the Z component when transforming back through `frame`.
-        wi_into_medium = frame.ToWorld(
-            Vec3f(hemi[0], hemi[1], -hemi[2]));
+        // hemi is expressed in a frame with +Z = up; reflect to
+        // -normalShdWldOut by negating the Z component when transforming back
+        // through `frame`.
+        directionEntryWldOutput =
+            frame.ToWorld(Vec3f(hemi[0], hemi[1], -hemi[2]));
     }
     return true;
 }

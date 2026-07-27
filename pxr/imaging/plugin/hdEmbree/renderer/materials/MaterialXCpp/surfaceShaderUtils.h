@@ -126,8 +126,8 @@ EvalVolumeConstructor(const ParamMap& params)
 inline float
 MediumScatterWeight(const MediumProperties& medium)
 {
-    return std::max(0.0f,
-        medium.sigmaS[0] + medium.sigmaS[1] + medium.sigmaS[2]);
+    return std::max(0.0f, medium.scattering[0] + medium.scattering[1] +
+                              medium.scattering[2]);
 }
 
 inline MediumProperties
@@ -139,8 +139,8 @@ MixMediumProperties(
     const float bgScale = 1.0f - mix;
 
     MediumProperties result;
-    result.sigmaA = bg.sigmaA * bgScale + fg.sigmaA * mix;
-    result.sigmaS = bg.sigmaS * bgScale + fg.sigmaS * mix;
+    result.absorption = bg.absorption * bgScale + fg.absorption * mix;
+    result.scattering = bg.scattering * bgScale + fg.scattering * mix;
 
     const float bgScatterWeight = std::max(
         0.0f, MediumScatterWeight(bg) * bgScale);

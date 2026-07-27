@@ -21,13 +21,11 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 GfVec3f
-HdEmbreeRenderer::_Visibility(
-    GfVec3f const& position,
-    GfVec3f const& normal,
-    GfVec3f const& direction,
-    float dist,
-    TfToken const& shadowLink,
-    HdEmbreeMediumState const& mediumState) const
+HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
+                              GfVec3f const& directionOffsetReferenceWld,
+                              GfVec3f const& directionShadowWld,
+                              float distanceWld, TfToken const& shadowLink,
+                              HdEmbreeMediumState const& mediumState) const
 {
     constexpr int kMaxTransparentHits = 16;
     constexpr int kMaxIntersections = 256;
@@ -41,8 +39,9 @@ HdEmbreeRenderer::_Visibility(
     GfVec3f visibility(1.0f);
     HdEmbreeMediumState shadowMedium = mediumState;
     HdEmbreePrototypeContext const* straightTransparentOwner = nullptr;
-    GfVec3f rayOrigin = _OffsetRayOrigin(position, normal, direction, kRayBias);
-    float remaining = dist;
+    GfVec3f positionRayOriginWld = _OffsetRayOrigin(
+        positionWld, directionOffsetReferenceWld, directionShadowWld, kRayBias);
+    float distanceRemainingWld = distanceWld;
 
     const auto evalShadowTransmittance = [&](float distance) {
         const bool useAdobeVolumeTransport =
@@ -61,15 +60,15 @@ HdEmbreeRenderer::_Visibility(
          ++intersection) {
         RTCRayHit rayHit;
         rayHit.ray.flags = 0;
-        _PopulateRayHit(&rayHit, rayOrigin, direction, kRayBias, remaining,
+        _PopulateRayHit(&rayHit, positionRayOriginWld, directionShadowWld,
+                        kRayBias, distanceRemainingWld,
                         HdEmbree_RayMask::Camera);
         rtcIntersect1(_scene, &rayHit);
 
         if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
-            if (shadowMedium.active && remaining > 0.0f) {
+            if (shadowMedium.active && distanceRemainingWld > 0.0f) {
                 visibility = GfCompMult(
-                    visibility,
-                    evalShadowTransmittance(remaining));
+                    visibility, evalShadowTransmittance(distanceRemainingWld));
             }
             return visibility;
         }
@@ -78,11 +77,11 @@ HdEmbreeRenderer::_Visibility(
             return GfVec3f(0.0f);
         }
 
-        const float hitDist = std::min(rayHit.ray.tfar, remaining);
-        if (shadowMedium.active && hitDist > 0.0f) {
-            visibility = GfCompMult(
-                visibility,
-                evalShadowTransmittance(hitDist));
+        const float distanceHitWld =
+            std::min(rayHit.ray.tfar, distanceRemainingWld);
+        if (shadowMedium.active && distanceHitWld > 0.0f) {
+            visibility =
+                GfCompMult(visibility, evalShadowTransmittance(distanceHitWld));
         }
         if (_IsNearlyBlack(visibility, kVisThreshold)) {
             return GfVec3f(0.0f);
@@ -101,13 +100,15 @@ HdEmbreeRenderer::_Visibility(
 
         if (blockerContext &&
             !HdEmbreeMatchesLink(shadowLink, blockerContext->categories)) {
-            remaining -= hitDist;
-            if (remaining <= 0.001f) {
+            distanceRemainingWld -= distanceHitWld;
+            if (distanceRemainingWld <= 0.001f) {
                 return visibility;
             }
-            const GfVec3f hitPos = rayOrigin + direction * hitDist;
-            rayOrigin = _OffsetRayOrigin(
-                hitPos, direction, direction, kRayBias);
+            const GfVec3f positionHitWld =
+                positionRayOriginWld + directionShadowWld * distanceHitWld;
+            positionRayOriginWld =
+                _OffsetRayOrigin(positionHitWld, directionShadowWld,
+                                 directionShadowWld, kRayBias);
             continue;
         }
 
@@ -116,15 +117,19 @@ HdEmbreeRenderer::_Visibility(
         }
 
         mxcpp::SurfaceClosure closure;
-        GfVec3f hitNg = normal;
+        // Stays zero when the blocker has no usable surface frame, because
+        // _TryEvalSurfaceClosureAtHit only writes this after it builds an
+        // interaction. Every consumer that needs a real normal is guarded by
+        // hasClosure; the trailing _OffsetRayOrigin is not, and relies on its
+        // zero-length case to advance along directionShadowWld instead. Do not
+        // seed this from the caller's offset reference: that is the shading
+        // point's normal, not this blocker's, and medium callers pass a light
+        // direction.
+        GfVec3f normalGeomBlockerWldExt(0.0f);
         HdEmbreePrototypeContext const* hitMesh = nullptr;
         const bool hasClosure = _TryEvalSurfaceClosureAtHit(
-            rayHit,
-            -direction,
-            &closure,
-            nullptr,
-            &hitNg,
-            &hitMesh);
+            rayHit, -directionShadowWld, &closure, nullptr,
+            &normalGeomBlockerWldExt, &hitMesh);
 
         const bool exitsCurrentMedium =
             shadowMedium.active && hitMesh == shadowMedium.ownerGeometry;
@@ -154,7 +159,8 @@ HdEmbreeRenderer::_Visibility(
                          !exitsCurrentMedium &&
                          !exitsStraightTransparent);
                     transmissionVisibility = _TransparentShadowTransmission(
-                        closure, direction, hitNg, includeSurfaceTint);
+                        closure, directionShadowWld, normalGeomBlockerWldExt,
+                        includeSurfaceTint);
                 }
                 surfaceVisibility =
                     _CombinePresenceAndTransmissionVisibility(
@@ -175,8 +181,8 @@ HdEmbreeRenderer::_Visibility(
             return GfVec3f(0.0f);
         }
 
-        remaining -= hitDist;
-        if (remaining <= 0.001f) {
+        distanceRemainingWld -= distanceHitWld;
+        if (distanceRemainingWld <= 0.001f) {
             return visibility;
         }
 
@@ -185,14 +191,14 @@ HdEmbreeRenderer::_Visibility(
         } else if (exitsStraightTransparent) {
             straightTransparentOwner = nullptr;
         } else if (volumeOnlyBoundary && !shadowMedium.active && hitMesh &&
-                   GfDot(direction, hitNg) < 0.0f) {
+                   GfDot(directionShadowWld, normalGeomBlockerWldExt) < 0.0f) {
             shadowMedium.active = true;
             shadowMedium.medium = closure.interiorMedium;
             shadowMedium.ownerGeometry = hitMesh;
         } else if (_approxTransparentShadows && !shadowMedium.active &&
                    hasClosure && !closure.thinWalled &&
                    closure.transmission > 0.0f && hitMesh &&
-                   GfDot(direction, hitNg) < 0.0f) {
+                   GfDot(directionShadowWld, normalGeomBlockerWldExt) < 0.0f) {
             if (closure.hasInteriorMedium) {
                 shadowMedium.active = true;
                 shadowMedium.medium = closure.interiorMedium;
@@ -202,15 +208,13 @@ HdEmbreeRenderer::_Visibility(
             }
         }
 
-        GfVec3f hitPos = GfVec3f(
-            rayHit.ray.org_x + hitDist * rayHit.ray.dir_x,
-            rayHit.ray.org_y + hitDist * rayHit.ray.dir_y,
-            rayHit.ray.org_z + hitDist * rayHit.ray.dir_z);
-        rayOrigin = _OffsetRayOrigin(
-            hitPos,
-            hitNg,
-            direction,
-            kRayBias);
+        GfVec3f positionHitWld =
+            GfVec3f(rayHit.ray.org_x + distanceHitWld * rayHit.ray.dir_x,
+                    rayHit.ray.org_y + distanceHitWld * rayHit.ray.dir_y,
+                    rayHit.ray.org_z + distanceHitWld * rayHit.ray.dir_z);
+        positionRayOriginWld =
+            _OffsetRayOrigin(positionHitWld, normalGeomBlockerWldExt,
+                             directionShadowWld, kRayBias);
     }
 
     // Reaching the defensive intersection limit indicates malformed or
@@ -249,14 +253,15 @@ HdEmbreeRenderer::_FindNearestFiniteLightHit(
         const HdEmbreeLightSampler::LightSample ls =
             HdEmbreeLightSampler::EvaluateLightDirection(
                 light, position, direction, _renderColorSpace);
-        if (!ls.valid || ls.dist <= 0.0f || !std::isfinite(ls.dist)) {
+        if (!ls.valid || ls.distanceWld <= 0.0f ||
+            !std::isfinite(ls.distanceWld)) {
             continue;
         }
-        if (ls.dist >= closestDist) {
+        if (ls.distanceWld >= closestDist) {
             continue;
         }
 
-        closestDist = ls.dist;
+        closestDist = ls.distanceWld;
         closestSample = ls;
         closestLightLink = light.lightLink;
         found = true;
@@ -299,14 +304,14 @@ HdEmbreeRenderer::_EvaluateLightGeometryHit(
         HdEmbreeLightSampler::EvaluateLightDirection(
             *light, position, direction, _renderColorSpace);
     if (!sample.valid) {
-        sample.Li = GfVec3f(0.0f);
-        sample.wI = direction;
-        sample.dist = rayHit.ray.tfar;
-        sample.invPdfW = 0.0f;
+        sample.radianceIn = GfVec3f(0.0f);
+        sample.omegaInWld = direction;
+        sample.distanceWld = rayHit.ray.tfar;
+        sample.pdfSolidAngleInverse = 0.0f;
         sample.valid = true;
         sample.delta = false;
     } else {
-        sample.dist = rayHit.ray.tfar;
+        sample.distanceWld = rayHit.ray.tfar;
     }
 
     *outSample = sample;

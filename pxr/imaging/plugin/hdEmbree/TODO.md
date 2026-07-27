@@ -144,8 +144,8 @@ and excessive consecutive false intersections.
 ### Exact Fresnel and nested IORs
 
 Store absolute IOR on every logical volume; the default exterior is vacuum/air
-with IOR 1.0. At a real interface, derive `etaIncident` and `etaTransmitted`
-from the dominant entries before and after the crossing.
+with IOR 1.0. At a real interface, derive `iorIn` and `iorOut` from the
+dominant entries before and after the crossing.
 
 - Refactor dielectric BSDF evaluation and sampling to accept the IOR pair, or
   an explicitly derived relative eta, instead of assuming every boundary is

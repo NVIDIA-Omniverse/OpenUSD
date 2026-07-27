@@ -574,8 +574,8 @@ HdEmbreeEvaluateDirectionalShaping(
         return GfVec3f(0.0f);
     }
 
-    const GfVec3f wI = localDirection.GetNormalized();
-    const float cosThetaOffZ = GfClamp(wI[2], -1.0f, 1.0f);
+    const GfVec3f omegaInLocal = localDirection.GetNormalized();
+    const float cosThetaOffZ = GfClamp(omegaInLocal[2], -1.0f, 1.0f);
     GfVec3f shapingWeight(1.0f);
 
     if (shaping.focus > 0.0f) {
@@ -595,9 +595,12 @@ HdEmbreeEvaluateDirectionalShaping(
     HdEmbree_IES const& ies = shaping.ies;
     if (ies.iesFile.valid()) {
         const float norm = ies.normalize ? ies.iesFile.power() : 1.0f;
-        const float iesWeight = (norm > 0.0f)
-            ? ies.iesFile.eval(_Theta(wI), _Phi(wI), ies.angleScale) / norm
-            : 0.0f;
+        const float iesWeight =
+            (norm > 0.0f)
+                ? ies.iesFile.eval(_Theta(omegaInLocal), _Phi(omegaInLocal),
+                                   ies.angleScale) /
+                      norm
+                : 0.0f;
         shapingWeight *= iesWeight;
     }
 
@@ -691,7 +694,7 @@ HdEmbreeBuildDirectionalShapingDistribution(HdEmbree_Shaping* shaping)
 
     std::vector<float> cellWeights(
         static_cast<size_t>(numCells), 0.0f);
-    distribution.cellPdfW.assign(static_cast<size_t>(numCells), 0.0f);
+    distribution.cellPdfSolidAngle.assign(static_cast<size_t>(numCells), 0.0f);
     distribution.cdf.assign(static_cast<size_t>(numCells + 1), 0.0f);
 
     // Integrate the importance over each cell with a midpoint rule rather
@@ -775,7 +778,7 @@ HdEmbreeBuildDirectionalShapingDistribution(HdEmbree_Shaping* shaping)
             const int idx = v * numPhi + h;
             cumulative += cellWeights[static_cast<size_t>(idx)] / weightSum;
             distribution.cdf[static_cast<size_t>(idx + 1)] = cumulative;
-            distribution.cellPdfW[static_cast<size_t>(idx)] =
+            distribution.cellPdfSolidAngle[static_cast<size_t>(idx)] =
                 (cellSolidAngle > 0.0f)
                     ? cellWeights[static_cast<size_t>(idx)] /
                           (weightSum * cellSolidAngle)
@@ -856,15 +859,16 @@ HdEmbreeSampleDirectionalShaping(
         r * std::sin(phi),
         z);
     // Report the PDF through the same lookup MIS uses instead of reading
-    // cellPdfW[idx] directly: float rounding can land the sampled z exactly
-    // on a row boundary, where the lookup resolves to the neighboring row.
-    // Sharing one source of truth keeps sample and evaluation consistent
+    // cellPdfSolidAngle[idx] directly: float rounding can land the sampled z
+    // exactly on a row boundary, where the lookup resolves to the neighboring
+    // row. Sharing one source of truth keeps sample and evaluation consistent
     // (a sample that rounds into a zero-weight row is simply discarded).
-    result.pdfW =
+    result.pdfSolidAngle =
         HdEmbreeDirectionalShapingPdf(shaping, result.localDirection);
     result.importance =
         HdEmbreeDirectionalShapingImportance(shaping, result.localDirection);
-    result.valid = result.pdfW > 0.0f && std::isfinite(result.pdfW);
+    result.valid =
+        result.pdfSolidAngle > 0.0f && std::isfinite(result.pdfSolidAngle);
     return result;
 }
 
@@ -885,9 +889,9 @@ HdEmbreeDirectionalShapingPdf(
 
     constexpr int numPhi = HdEmbree_DirectionalShapingDistribution::NumPhi;
     const int numRows = distribution.NumRows();
-    const GfVec3f wI = localDirection.GetNormalized();
-    const float z = GfClamp(wI[2], -1.0f, 1.0f);
-    const float phi = _Phi(wI);
+    const GfVec3f omegaInLocal = localDirection.GetNormalized();
+    const float z = GfClamp(omegaInLocal[2], -1.0f, 1.0f);
+    const float phi = _Phi(omegaInLocal);
     // Row boundaries are descending in cos(theta); row v covers
     // (bounds[v + 1], bounds[v]].
     const auto& bounds = distribution.rowCosThetaBounds;
@@ -903,7 +907,7 @@ HdEmbreeDirectionalShapingPdf(
         0,
         numPhi - 1);
     const int idx = v * numPhi + h;
-    return distribution.cellPdfW[static_cast<size_t>(idx)];
+    return distribution.cellPdfSolidAngle[static_cast<size_t>(idx)];
 }
 
 void

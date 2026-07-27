@@ -18,16 +18,14 @@ namespace mxcpp {
 SurfaceClosure EvalAdobeOpenPbr(const ParamMap& params);
 SurfaceClosure EvalAdobeOpenPbrVisibility(const ParamMap& params);
 
-Vec3f EvalAdobeOpenPbr(
-    const Bsdf::AdobeOpenPbrData& data,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo);
+Vec3f EvalAdobeOpenPbr(const Bsdf::AdobeOpenPbrData& data,
+                       const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+                       const Vec3f& omegaOutWld);
 
 struct AdobeOpenPbrEvalPdfResult
 {
     Vec3f value = Vec3f(0.0f);
-    float pdf = 0.0f;
+    float pdfSolidAngle = 0.0f;
     bool evaluated = false;
 };
 
@@ -39,40 +37,32 @@ struct AdobeOpenPbrPreparedSurface
     bool valid = false;
 };
 
-AdobeOpenPbrPreparedSurface PrepareAdobeOpenPbrSurface(
-    const SurfaceClosure& closure,
-    const Vec3f& N,
-    const Vec3f& wo);
+AdobeOpenPbrPreparedSurface
+PrepareAdobeOpenPbrSurface(const SurfaceClosure& closure,
+                           const Vec3f& normalShdWldOut,
+                           const Vec3f& omegaOutWld);
 
-AdobeOpenPbrEvalPdfResult EvalPdfAdobeOpenPbr(
-    const Bsdf::AdobeOpenPbrData& data,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo);
+AdobeOpenPbrEvalPdfResult
+EvalPdfAdobeOpenPbr(const Bsdf::AdobeOpenPbrData& data,
+                    const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+                    const Vec3f& omegaOutWld);
 
 AdobeOpenPbrEvalPdfResult TryEvalPdfAdobeOpenPbrSurface(
-    const SurfaceClosure& closure,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo);
+    const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
+    const Vec3f& omegaInWld, const Vec3f& omegaOutWld);
 
 AdobeOpenPbrEvalPdfResult EvalPdfPreparedAdobeOpenPbrSurface(
     const AdobeOpenPbrPreparedSurface& preparedSurface,
-    const Vec3f& wi);
+    const Vec3f& omegaInWld);
 
-float PdfAdobeOpenPbr(
-    const Bsdf::AdobeOpenPbrData& data,
-    const Vec3f& N,
-    const Vec3f& wi,
-    const Vec3f& wo);
+float PdfAdobeOpenPbr(const Bsdf::AdobeOpenPbrData& data,
+                      const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+                      const Vec3f& omegaOutWld);
 
-Bsdf::BsdfSample SampleAdobeOpenPbr(
-    const Bsdf::AdobeOpenPbrData& data,
-    const Vec3f& N,
-    const Vec3f& wo,
-    float u1,
-    float u2,
-    float uLobe);
+Bsdf::BsdfSample SampleAdobeOpenPbr(const Bsdf::AdobeOpenPbrData& data,
+                                    const Vec3f& normalShdWldOut,
+                                    const Vec3f& omegaOutWld, float u1,
+                                    float u2, float uLobe);
 
 Bsdf::BsdfSample SamplePreparedAdobeOpenPbrSurface(
     const AdobeOpenPbrPreparedSurface& preparedSurface,
@@ -87,31 +77,25 @@ Vec3f AdobeOpenPbrEvalVolumeTransmittance(
     const MediumProperties& medium,
     float distance);
 
-float AdobeOpenPbrSampleVolumeEventDistance(
-    const MediumProperties& medium,
-    const Vec3f& throughput,
-    float u);
+float AdobeOpenPbrSampleVolumeEventDistance(const MediumProperties& medium,
+                                            const Vec3f& throughputRgb,
+                                            float u);
 
-Vec3f AdobeOpenPbrCalculateVolumeEventWeight(
-    const MediumProperties& medium,
-    const Vec3f& throughput,
-    float distance);
+Vec3f AdobeOpenPbrCalculateVolumeEventWeight(const MediumProperties& medium,
+                                             const Vec3f& throughputRgb,
+                                             float distance);
 
-Vec3f AdobeOpenPbrCalculateVolumeSurfaceWeight(
-    const MediumProperties& medium,
-    const Vec3f& throughput,
-    float distance);
+Vec3f AdobeOpenPbrCalculateVolumeSurfaceWeight(const MediumProperties& medium,
+                                               const Vec3f& throughputRgb,
+                                               float distance);
 
-Vec3f AdobeOpenPbrSampleVolumePhase(
-    const MediumProperties& medium,
-    const Vec3f& wo,
-    float u1,
-    float u2);
+Vec3f AdobeOpenPbrSampleVolumePhase(const MediumProperties& medium,
+                                    const Vec3f& omegaOutWld, float u1,
+                                    float u2);
 
-float AdobeOpenPbrEvalVolumePhasePdf(
-    const MediumProperties& medium,
-    const Vec3f& wi,
-    const Vec3f& wo);
+float AdobeOpenPbrEvalVolumePhasePdf(const MediumProperties& medium,
+                                     const Vec3f& omegaInWld,
+                                     const Vec3f& omegaOutWld);
 
 }  // namespace mxcpp
 

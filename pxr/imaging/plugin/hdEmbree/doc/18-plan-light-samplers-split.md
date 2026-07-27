@@ -200,19 +200,20 @@ invariants and failure modes differ per type and each must be stated:
 | Disk | radius expected positive and finite; `radius == 0` gives a zero area and an invalid sample (the degenerate `(0,0)` uv at `:1116-1117` is incidental to that, not the failure) |
 | Sphere | the solid-angle path requires a uniform-scale orthogonal transform (`_CanSampleSphereBySolidAngle` `:457`) **and** `position` strictly outside the sphere (`:497`); **otherwise it silently falls back to uniform-area sampling with a different PDF** — the single most surprising behavior in the file |
 | Cylinder | no end caps, so a ray through the open ends misses; **has no shaping-aware proposal split at all**, unlike rect and disk, so a shaped cylinder is area-sampled only; radius and length expected positive and finite |
-| Distant | `angle == 0` returns a **delta** sample (`delta = true`, `invPdfW = 1`) that MIS must not weight; `EvaluateDistantLightDirection` on a delta light returns invalid unless `dot(direction, axis) >= 1 - 1e-5` (`:707-710`) — **the tolerance is on the cosine, so the angular half-width is ~4.5 mrad, not 1e-5 rad**; a degenerate light-to-world Z axis returns invalid |
+| Distant | `angle == 0` returns a **delta** sample (`delta = true`, `pdfSolidAngleInverse = 1`) that MIS must not weight; `EvaluateDistantLightDirection` on a delta light returns invalid unless `dot(direction, axis) >= 1 - 1e-5` (`:707-710`) — **the tolerance is on the cosine, so the angular half-width is ~4.5 mrad, not 1e-5 rad**; a degenerate light-to-world Z axis returns invalid |
 | Dome | with no built distribution (`_HasDomeDistribution` `:155` false) it uniformly samples the sphere at pdf `1/4π`; in `ReflectionHemisphere` mode a zero or non-finite normal makes the fold return the zero vector and the sample **silently falls back to full-sphere evaluation** (`:1471-1481`); distance is always `float` max |
 
 **"Positive and finite" is an input invariant, not a guarded precondition.**
 Nothing validates shape dimensions. Do not write a contract that promises what
 happens when the invariant is violated, because the two non-finite cases do not
-even agree with each other: a NaN dimension yields a NaN `invPdfW`, and
-`invPdfW > 0.0f` is false for NaN, so the sample comes back invalid — but an
-*infinite* dimension yields an infinite area and an infinite `invPdfW`, and
-`inf > 0.0f` is **true**, so the sample comes back valid carrying an infinite
-PDF. State the invariant and declare behavior outside it unspecified. Adding
-real validation is a behavior change and must not be smuggled into a layout
-plan; if it is wanted, it is its own change with its own test.
+even agree with each other: a NaN dimension yields a NaN
+`pdfSolidAngleInverse`, and `pdfSolidAngleInverse > 0.0f` is false for NaN, so
+the sample comes back invalid — but an *infinite* dimension yields an infinite
+area and an infinite `pdfSolidAngleInverse`, and `inf > 0.0f` is **true**, so
+the sample comes back valid carrying an infinite PDF. State the invariant and
+declare behavior outside it unspecified. Adding real validation is a behavior
+change and must not be smuggled into a layout plan; if it is wanted, it is its
+own change with its own test.
 
 `21-plan-api-contracts.md` does not cover these 13; it keeps `LightSample` and
 the light-shape structs.
@@ -265,9 +266,9 @@ TU-local to `lightSamplerCommon.cpp`, each having exactly one caller inside it:
 `_DotZeroClip` (only `EvalAreaLight`), `_SampleRectLightTexture` (only
 `EvalAreaLight`), `_GetLuminance` / `_BlackbodyTemperatureAsRgb` and the colour
 objects (only `EvalLightBasic`), and the inner shaping-PDF chain
-`_PdfWFromInvPdfW` / `_WorldToLocalDirectionPdfScale` /
-`_DirectionalShapingPdfW` / `_ShapingAwareFinitePdfW` (only
-`ApplyShapingAwareFinitePdf`).
+`_PdfSolidAngleFromInverse` / `_WorldToLocalDirectionPdfScale` /
+`_DirectionalShapingPdfSolidAngle` / `_ShapingAwareFinitePdfSolidAngle` (only
+`_ApplyShapingAwareFinitePdf`).
 
 *Axis 2 — inline in the header or out-of-line in the `.cpp`.* This applies only
 to the exported set and is a performance decision, not an interface one.

@@ -73,10 +73,10 @@ removes stale duplicate prose rather than adding a second version.
 `LightSample` remains in scope because 18 owns the per-type functions, not
 their shared result type. Document the post-05 field names and:
 
-- incident direction orientation, world space, and normalization;
-- radiance quantity and color space;
-- finite versus infinite-light distance;
-- solid-angle PDF versus reciprocal PDF convention;
+- `omegaInWld` orientation, world space, and normalization;
+- the incident-radiance quantity and color space of `radianceIn`;
+- finite versus infinite-light meaning of `distanceWld`;
+- the reciprocal solid-angle convention of `pdfSolidAngleInverse`;
 - delta-light interpretation;
 - exact validity invariant and which fields callers may read when invalid.
 

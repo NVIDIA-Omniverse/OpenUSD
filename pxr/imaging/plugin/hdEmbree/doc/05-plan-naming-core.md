@@ -116,11 +116,12 @@ Rules:
    state and function interfaces must never rely on an implicit space.
    Transform names encode both spaces as `<from>To<to>` using the same fixed
    tokens, for example `objToWld`.
-6. **Use `In` and `Out` for transport sides.** `omegaIn` is the incident
+6. **Use `In` and `Out` for directional transport sides.** `omegaIn` is the incident
    direction toward the next vertex/light; `omegaOut` is the exitant direction
-   toward the previous vertex/camera. `iorIn` and `iorOut` are the absolute
-   medium IORs on those respective sides. Do not use `In`/`Out` to mean object
-   exterior or an outward normal.
+   toward the previous vertex/camera. Do not use `In`/`Out` to mean object
+   exterior or an outward normal. IOR names are the explicit optics exception:
+   `iorIn` is the incident medium before a crossing and `iorOut` is the
+   transmitted medium after it, independent of `omegaIn` and `omegaOut`.
 7. **Describe normal orientation explicitly.** Use `Ext` for the authored
    exterior orientation and `Out` / `In` only when a normal is faced toward
    `omegaOut` / `omegaIn`. Thus `normalGeomWldExt` and `normalGeomWldOut`
@@ -164,7 +165,7 @@ changing the semantic name.
 | `omegaInWld` | `GfVec3f` | Normalized incident direction from the interaction toward the sampled next vertex or light. Replaces `wi`, `wI`, and ambiguous `direction` when this meaning applies. |
 | `omegaOutWld` | `GfVec3f` | Normalized exitant direction from the interaction toward the previous path vertex or camera. Replaces `wo` and `wO`. |
 | `positionRayOriginWld`, `directionRayWld` | `GfVec3f` | Origin and forward travel direction of a generic ray segment. Use `directionShadowWld`, `directionEntryWld`, etc. when it is not a local scattering omega. |
-| `iorIn`, `iorOut` | `float` | Absolute IORs on the incident and exitant/transmitted sides of an interface; `1.0f` for vacuum/air and commonly about `1.5f` for glass. |
+| `iorIn`, `iorOut` | `float` | Absolute IORs in the optics convention: incident medium before a crossing and transmitted medium after it. They do not name the `omegaIn`/`omegaOut` sides. `1.0f` represents vacuum/air and glass is commonly about `1.5f`. |
 | `eta` | `float` | Explicit ratio `iorIn / iorOut`. `1.0f` means no IOR change; special sentinel behavior such as zero must be documented by the owning API. |
 | `radianceIn` | `GfVec3f` | Incident RGB radiance carried from a sampled/evaluated light. Replaces `Li`. Use `radianceInSpectral` for a hero-wavelength scalar. |
 | `radianceEmitted` | `GfVec3f` | RGB radiance emitted by a light or surface. Replaces `Le`. |
@@ -180,6 +181,7 @@ changing the semantic name.
 | `absorption` | `GfVec3f` | Per-channel absorption coefficient in inverse world units. Replaces `sigmaA`. |
 | `scattering` | `GfVec3f` | Per-channel scattering coefficient in inverse world units. Replaces `sigmaS`. |
 | `extinction` | `GfVec3f` | Per-channel extinction coefficient: `absorption + scattering`. Replaces `sigmaT`; do not call this transmission. |
+| `absorptionIndex` | `GfVec3f` | Dimensionless imaginary part of a conductor's complex IOR. Replaces the optics symbol `kappa`; it is not a medium absorption or extinction coefficient. |
 | `anisotropy` | `float` | Henyey-Greenstein anisotropy, clamped to the owning model's documented range. Replaces bare `g`. |
 | `albedo` | `GfVec3f` | Unitless per-channel scattering/reflectance ratio, normally in `[0, 1]`; qualify surface or volume variants when both coexist. |
 | `cosTheta` | `float` | Cosine of the relevant angle. Add a role suffix such as `cosThetaIn`, `cosThetaOut`, or `cosThetaLight` when multiple angles coexist. Keep bare `cosTheta` only when the role is unambiguous. |
