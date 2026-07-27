@@ -987,7 +987,9 @@ public:
 };
 
 // Capture one expected diagnostic regardless of which Embree worker reports
-// it. Counts remain valid after all synchronous scene-commit work completes.
+// it. The reporting thread must have no TfDiagnosticTrap or TfErrorMark,
+// because those intercept or defer errors before process-wide delegates.
+// Counts remain valid after all synchronous scene-commit work completes.
 class _ScopedMatchingErrorDelegate final
     : public TfDiagnosticMgr::Delegate
 {

@@ -167,10 +167,12 @@ void HdEmbree_TestGLDrawing::InitTest()
         if (_aov == "color") {
             format = HdFormatUNorm8Vec4;
             aovBinding.aovName = HdAovTokens->color;
+            // Keep background misses nonzero so the manual matrix observes
+            // exposure even though this scene has no authored lights.
             aovBinding.clearValue = VtValue(
                 _wireframeOnly
                     ? GfVec4f(1.0f)
-                    : GfVec4f(0.0f, 0.0f, 0.0f, 1.0f));
+                    : GfVec4f(0.125f, 0.25f, 0.375f, 1.0f));
         } else if (_aov == "cameraDepth" || _aov == "depth") {
             format = HdFormatFloat32;
             aovBinding.aovName = TfToken(_aov);
@@ -263,16 +265,14 @@ void HdEmbree_TestGLDrawing::InitTest()
             HdEmbreeRenderSettingsTokens->ambientOcclusionSamples, VtValue(16));
     }
 
-    // Exercise exposure only in the ordinary color writer; geometric and
-    // heatmap outputs must remain unaffected.
-    _renderDelegate->SetRenderSetting(
-        HdEmbreeRenderSettingsTokens->randomNumberSeed, VtValue(1));
-    _renderDelegate->SetRenderSetting(
-        HdEmbreeRenderSettingsTokens->enableExposureCompensation,
-        VtValue(true));
-    if (_aov == "color") {
+    // Keep explicit AOV comparisons deterministic and exercise exposure
+    // without changing this harness's legacy framebuffer path.
+    if (!_aov.empty()) {
         _renderDelegate->SetRenderSetting(
-            HdEmbreeRenderSettingsTokens->enableLighting, VtValue(false));
+            HdEmbreeRenderSettingsTokens->randomNumberSeed, VtValue(1));
+        _renderDelegate->SetRenderSetting(
+            HdEmbreeRenderSettingsTokens->enableExposureCompensation,
+            VtValue(true));
     }
     if (_aov == "adaptiveHeatmap" || _showAdaptiveHeatmap) {
         _renderDelegate->SetRenderSetting(
@@ -363,10 +363,12 @@ void HdEmbree_TestGLDrawing::InitTest()
         HdCameraTokens->focalLength,
         VtValue(50.0f));
 
-    _sceneDelegate->UpdateCamera(
-        camera,
-        HdCameraTokens->exposure,
-        VtValue(1.0f));
+    if (!_aov.empty()) {
+        _sceneDelegate->UpdateCamera(
+            camera,
+            HdCameraTokens->exposure,
+            VtValue(1.0f));
+    }
 
     _sceneDelegate->UpdateCamera(camera,
         HdCameraTokens->windowPolicy,

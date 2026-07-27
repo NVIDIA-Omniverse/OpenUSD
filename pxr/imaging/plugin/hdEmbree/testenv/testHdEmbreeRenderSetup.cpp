@@ -725,6 +725,8 @@ _TestInvalidHitContextsBecomeMisses()
 
     _CountingRenderBuffer primId(
         SdfPath("/invalidContextPrimId"), 1, 1, HdFormatInt32);
+    _CountingRenderBuffer cameraDepth(
+        SdfPath("/invalidContextCameraDepth"), 1, 1, HdFormatFloat32);
     _CountingRenderBuffer normal(
         SdfPath("/invalidContextNormal"), 1, 1, HdFormatFloat32Vec3);
     _CountingRenderBuffer primvar(
@@ -736,6 +738,7 @@ _TestInvalidHitContextsBecomeMisses()
         scene.scene,
         {
             _Binding(HdAovTokens->primId, &primId),
+            _Binding(HdAovTokens->cameraDepth, &cameraDepth),
             _Binding(HdAovTokens->normal, &normal),
             _Binding(TfToken("primvars:displayColor"), &primvar)
         },
@@ -743,9 +746,11 @@ _TestInvalidHitContextsBecomeMisses()
     renderThread.StartRender();
     renderer.Render(&renderThread);
 
-    // A top-level hit has a valid geomID but no instID[0]. It must take each
-    // AOV's normal miss path without dereferencing an instance context.
-    return TF_VERIFY(primId.intWriteCount == 1) &&
+    // Depth proves the top-level triangle was hit without needing its invalid
+    // context. Context-dependent AOVs must then take their normal miss paths.
+    return TF_VERIFY(cameraDepth.floatWriteCount == 1) &&
+           TF_VERIFY(cameraDepth.firstFloatWrite[0] > 0.0f) &&
+           TF_VERIFY(primId.intWriteCount == 1) &&
            TF_VERIFY(primId.firstIntWrite == -1) &&
            TF_VERIFY(normal.sampleWriteCount == 0) &&
            TF_VERIFY(primvar.sampleWriteCount == 0);

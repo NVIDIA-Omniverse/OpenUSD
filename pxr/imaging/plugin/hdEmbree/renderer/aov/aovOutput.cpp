@@ -433,8 +433,8 @@ HdEmbreeRenderer::_ClassifyAovOutputs()
         }
     }
 
-    // Classify supported outputs while retaining the validated buffer
-    // interfaces until the next setup.
+    // Borrow interfaces from buffers mapped earlier in _PreRenderSetup.
+    // They remain valid only until the next setup remaps the buffers.
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
         HdEmbreeRenderBufferInterface* rb =
             dynamic_cast<HdEmbreeRenderBufferInterface*>(
@@ -524,6 +524,8 @@ HdEmbreeRenderer::_WriteAov(
             break;
         }
         case _AovKind::ColorAdaptiveHeatmap: {
+            // The color replacement deliberately shows the completed count
+            // through WriteOutput; it differs from the dedicated heatmap.
             size_t const index = y * _width + x;
             float const fraction =
                 static_cast<float>(_pixelSampleCount[index]) /
@@ -577,6 +579,8 @@ HdEmbreeRenderer::_WriteAov(
             break;
         }
         case _AovKind::AdaptiveHeatmap: {
+            // The dedicated AOV deliberately accumulates count + 1 through
+            // Write; it differs from the color-replacement heatmap.
             size_t const index = y * _width + x;
             float const fraction =
                 static_cast<float>(_pixelSampleCount[index] + 1) /
@@ -715,10 +719,12 @@ HdEmbreeRenderer::_ComputePrimvar(RTCRayHit const& rayHit,
         return false;
     }
 
-    HdEmbreeInstanceContext const* instanceContext;
+    // Primvar sampling needs only the prototype, but a valid instance context
+    // remains part of the complete hit-context invariant.
+    HdEmbreeInstanceContext const* validatedInstanceContext;
     HdEmbreePrototypeContext const* prototypeContext;
     if (!_GetHitContexts(
-            _scene, rayHit, &instanceContext, &prototypeContext)) {
+            _scene, rayHit, &validatedInstanceContext, &prototypeContext)) {
         return false;
     }
 
