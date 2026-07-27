@@ -41,6 +41,23 @@ Subdivision primvars retain Hydra interpolation semantics. Vertex values use the
 
 A material may connect an `ND_displacement_float` graph to its `displacement` terminal. During Embree subdivision construction, hdEmbree evaluates that MaterialXCpp graph at each generated vertex and offsets the vertex along the normalized subdivision normal by `displacement * scale`. Object-space position and normal, interpolated `st`, constant/uniform/vertex/varying/face-varying numeric geomprops, and constant string/filename geomprops are available to the graph. Vertex, varying, and face-varying subdivision attributes are limited to float-based scalar and vector types by Embree. Displacement applies only at medium or higher complexity to meshes with a subdivision scheme such as `catmullClark`.
 
+Material terminals are validated when the material is synchronized. A
+malformed surface/displacement graph emits one warning identifying the
+material, terminal, and first failing node; unauthored optional terminals
+remain silent. Volume-only materials create a transparent participating-medium
+boundary, including where all evaluated medium coefficients are zero.
+Mixing surface-shader closures preserves that boundary identity only when
+every input with nonzero weight is itself a volume boundary.
+Displacement-only materials use display-color fallback shading on the displaced
+surface. A material with none of these usable terminals warns about its missing
+surface. A malformed displacement-only material emits its actionable
+displacement warning without also treating the intentionally absent surface as
+an error. Rejected surface graphs retain the display-color fallback, while
+rejected displacement graphs leave the surface undisplaced.
+Unexpected backend exceptions during Embree displacement commit are reported
+as runtime errors instead of being silently ignored or unwinding through
+Embree's C callback.
+
 ## Hydra wireframe display
 
 hdEmbree honors the standard mesh `wireOnSurf`, `refinedWireOnSurf`, `wire`,

@@ -11,7 +11,6 @@
 #include "materials/openPbr.h"
 #include "materials/usdPreviewSurface.h"
 
-#include <cstdio>
 #include <functional>
 #include <initializer_list>
 #include <map>
@@ -339,14 +338,19 @@ _InjectSurfaceVolumeMaterialTerminal(MaterialGraph* graph)
 
     auto surfaceIt = graph->terminals.find(_kSurface);
     auto volumeIt = graph->terminals.find(_kVolume);
-    if (surfaceIt == graph->terminals.end() ||
-        volumeIt == graph->terminals.end()) {
+    if (volumeIt == graph->terminals.end()) {
         return;
     }
 
+    // A volume terminal is a complete material even when no scattering
+    // surface is authored. The empty surface input makes the resulting
+    // closure a transparent medium boundary rather than an arbitrary
+    // substitute terminal.
     GraphNode materialNode;
     materialNode.nodeTypeId = _kSurfaceVolumeMaterial;
-    materialNode.inputConnections[_kSurface] = {surfaceIt->second};
+    if (surfaceIt != graph->terminals.end()) {
+        materialNode.inputConnections[_kSurface] = {surfaceIt->second};
+    }
     materialNode.inputConnections[_kVolume] = {volumeIt->second};
 
     const std::string path = _MakeUniqueGraphNodePath(
@@ -363,7 +367,7 @@ _InjectSurfaceVolumeMaterialTerminal(MaterialGraph* graph)
 // Compile
 // ---------------------------------------------------------------------------
 
-std::unique_ptr<EvalGraph>
+CompileResult
 EvalGraph::Compile(
     const MaterialGraph& network,
     const std::string& terminalName)
@@ -376,72 +380,96 @@ EvalGraph::Compile(
 
     NodeRegistry::RegisterBuiltinNodes();
 
+    const std::string terminal = terminalName.empty()
+        ? _kSurface : terminalName;
     MaterialGraph normalized = network;
     _InjectImplicitDefaultConnections(&normalized);
-    if (terminalName.empty()) {
+    if (terminal == _kSurface) {
         _InjectSurfaceVolumeMaterialTerminal(&normalized);
     }
 
-    auto graph = std::make_unique<EvalGraph>();
+    CompileResult result;
 
     // Locate the surface terminal.
-    std::string terminal = terminalName.empty()
-        ? _kSurface : terminalName;
     auto termIt = normalized.terminals.find(terminal);
     if (termIt == normalized.terminals.end()) {
-        if (terminalName.empty() && !normalized.terminals.empty()) {
-            termIt = normalized.terminals.begin();
-        } else {
-            if (terminalName.empty()) {
-                fprintf(stderr,
-                    "EvalGraph: no terminal found in material network\n");
-            }
-            return graph;
-        }
+        result.status = CompileStatus::AbsentTerminal;
+        return result;
     }
 
     const std::string terminalNodePath = termIt->second.upstreamNode;
     auto termNodeIt = normalized.nodes.find(terminalNodePath);
     if (termNodeIt == normalized.nodes.end()) {
-        fprintf(stderr, "EvalGraph: terminal node %s not found\n",
-                 terminalNodePath.c_str());
-        return graph;
+        result.diagnostic = "terminal \"" + terminal +
+            "\" references missing node " + terminalNodePath;
+        return result;
+    }
+    // Terminal models use dedicated dispatch rather than registry node
+    // evaluators, so validate that dispatch surface explicitly.
+    const std::string& terminalNodeType = termNodeIt->second.nodeTypeId;
+    if (terminal == "displacement" &&
+        terminalNodeType != _kDisplacementFloat) {
+        result.diagnostic = "terminal \"displacement\" has unsupported node "
+            "type " + terminalNodeType + " at " + terminalNodePath;
+        return result;
+    }
+    const bool isDisplacementModel =
+        terminalNodeType == _kDisplacementFloat;
+    const bool isSurfaceModel = _EvalMaterialModel(
+        terminalNodeType, ParamMap{}, EvalOptions{}, nullptr);
+    if ((!isDisplacementModel && !isSurfaceModel) ||
+        (terminal == _kSurface && !isSurfaceModel)) {
+        result.diagnostic = "no evaluator registered for node type " +
+            terminalNodeType + " at " + terminalNodePath;
+        return result;
     }
 
+    std::unique_ptr<EvalGraph> graph = std::make_unique<EvalGraph>();
     graph->_materialModelType = termNodeIt->second.nodeTypeId;
 
     // ---- Gather reachable nodes via DFS topological sort ----
 
     std::vector<std::string> sorted;
     std::map<std::string, _VisitState> visitStates;
-    bool hasErrors = false;
+    std::function<bool(
+        const std::string&,
+        const std::string&,
+        const std::string&)> dfs =
+        [&](const std::string& nodePath,
+            const std::string& downstreamNodePath,
+            const std::string& downstreamInputName) {
+            const auto nodeIt = normalized.nodes.find(nodePath);
+            if (nodeIt == normalized.nodes.end()) {
+                const GraphNode& downstreamNode =
+                    normalized.nodes.at(downstreamNodePath);
+                result.diagnostic = downstreamNodePath + " (" +
+                    downstreamNode.nodeTypeId + ") input " +
+                    downstreamInputName + " references missing node " +
+                    nodePath;
+                return false;
+            }
 
-    std::function<bool(const std::string&)> dfs =
-        [&](const std::string& nodePath) {
             _VisitState& state = visitStates[nodePath];
             if (state == _VisitState::Visited) {
                 return true;
             }
             if (state == _VisitState::Visiting) {
-                fprintf(stderr,
-                        "EvalGraph: cycle detected involving node %s\n",
-                        nodePath.c_str());
-                hasErrors = true;
+                result.diagnostic =
+                    "cycle detected through node " + nodePath;
                 return false;
             }
 
             state = _VisitState::Visiting;
 
-            auto nodeIt = normalized.nodes.find(nodePath);
-            if (nodeIt != normalized.nodes.end()) {
-                for (const auto& entry :
-                     nodeIt->second.inputConnections) {
-                    for (const auto& conn : entry.second) {
-                        if (conn.upstreamNode != terminalNodePath) {
-                            if (!dfs(conn.upstreamNode)) {
-                                return false;
-                            }
-                        }
+            for (const auto& entry : nodeIt->second.inputConnections) {
+                for (const auto& conn : entry.second) {
+                    if (conn.upstreamNode == terminalNodePath) {
+                        result.diagnostic =
+                            "cycle detected through node " + terminalNodePath;
+                        return false;
+                    }
+                    if (!dfs(conn.upstreamNode, nodePath, entry.first)) {
+                        return false;
                     }
                 }
             }
@@ -454,8 +482,13 @@ EvalGraph::Compile(
     // Seed from the terminal node's upstream connections.
     for (const auto& entry : termNodeIt->second.inputConnections) {
         for (const auto& conn : entry.second) {
-            if (!dfs(conn.upstreamNode)) {
-                return graph;
+            if (conn.upstreamNode == terminalNodePath) {
+                result.diagnostic =
+                    "cycle detected through node " + terminalNodePath;
+                return result;
+            }
+            if (!dfs(conn.upstreamNode, terminalNodePath, entry.first)) {
+                return result;
             }
         }
     }
@@ -477,10 +510,9 @@ EvalGraph::Compile(
 
         compiled.evalFn = registry.Find(node.nodeTypeId);
         if (!compiled.evalFn) {
-            fprintf(stderr,
-                "EvalGraph: no evaluator for node type %s\n",
-                node.nodeTypeId.c_str());
-            hasErrors = true;
+            result.diagnostic = "no evaluator registered for node type " +
+                node.nodeTypeId + " at " + path;
+            return result;
         }
 
         // Constant parameters.
@@ -563,12 +595,10 @@ EvalGraph::Compile(
         }
     }
 
-    if (hasErrors) {
-        return graph;
-    }
-
     graph->_isValid = true;
-    return graph;
+    result.status = CompileStatus::Valid;
+    result.graph = std::move(graph);
+    return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -724,8 +754,11 @@ EvalGraph::Evaluate(const ShadingContext& ctx, const EvalOptions& options) const
     auto& terminalParams = scratch.terminalParams;
     _BuildParamMap(_terminalInputs, scratch.nodeOutputs, &terminalParams);
 
-    SurfaceClosure closure =
-        _EvalMaterialModel(_materialModelType, terminalParams, options);
+    SurfaceClosure closure;
+    if (!_EvalMaterialModel(
+            _materialModelType, terminalParams, options, &closure)) {
+        return SurfaceClosure();
+    }
     closure.luminanceCoefficients = ctx.luminanceCoefficients;
     closure.bsdfTree.luminanceCoefficients = ctx.luminanceCoefficients;
     return closure;
@@ -767,96 +800,148 @@ EvalGraph::EvaluateDisplacement(
 // ---------------------------------------------------------------------------
 
 /* static */
-SurfaceClosure
+bool
 EvalGraph::_EvalMaterialModel(
     const std::string& modelType,
     const ParamMap& params,
-    const EvalOptions& options)
+    const EvalOptions& options,
+    SurfaceClosure* closure)
 {
     if (modelType == _kSurfaceVolumeMaterial) {
-        return EvalSurfaceVolumeMaterial(params);
+        if (closure) {
+            *closure = EvalSurfaceVolumeMaterial(params);
+        }
+        return true;
     }
     if (modelType == _kStandardSurface) {
-        return EvalStandardSurface(params);
+        if (closure) {
+            *closure = EvalStandardSurface(params);
+        }
+        return true;
     }
     if (modelType == _kOpenPbr) {
-        if (options.useAdobeOpenPBR) {
-            if (options.visibilityOnly) {
-                return EvalAdobeOpenPbrVisibility(params);
+        if (closure) {
+            if (options.useAdobeOpenPBR) {
+                *closure = options.visibilityOnly
+                    ? EvalAdobeOpenPbrVisibility(params)
+                    : EvalAdobeOpenPbr(params);
+            } else {
+                *closure = EvalOpenPbr(params);
             }
-            return EvalAdobeOpenPbr(params);
         }
-        return EvalOpenPbr(params);
+        return true;
     }
     if (modelType == _kDisneyPrincipled) {
-        return EvalDisneyPrincipled(params);
+        if (closure) {
+            *closure = EvalDisneyPrincipled(params);
+        }
+        return true;
     }
     if (modelType == _kGltfPbr) {
-        return EvalGltfPbr(params);
+        if (closure) {
+            *closure = EvalGltfPbr(params);
+        }
+        return true;
     }
     if (modelType == _kUsdPreviewSurface) {
-        return EvalUsdPreviewSurface(params);
+        if (closure) {
+            *closure = EvalUsdPreviewSurface(params);
+        }
+        return true;
     }
     if (modelType == _kMaterialXUsdPreviewSurface) {
-        return EvalUsdPreviewSurface(params);
+        if (closure) {
+            *closure = EvalUsdPreviewSurface(params);
+        }
+        return true;
     }
     if (modelType == _kSurfaceConstructor) {
-        return EvalSurfaceConstructor(params);
+        if (closure) {
+            *closure = EvalSurfaceConstructor(params);
+        }
+        return true;
     }
     if (modelType == _kSurfaceUnlit) {
-        return EvalSurfaceUnlit(params);
+        if (closure) {
+            *closure = EvalSurfaceUnlit(params);
+        }
+        return true;
     }
     if (modelType == _kVolumeConstructor) {
-        return EvalVolumeConstructor(params);
+        if (closure) {
+            *closure = EvalVolumeConstructor(params);
+        }
+        return true;
     }
     if (modelType == _kMixVolumeShader) {
-        return EvalMixVolumeShader(params);
+        if (closure) {
+            *closure = EvalMixVolumeShader(params);
+        }
+        return true;
     }
     if (modelType == _kMixSurfaceShader) {
-        static const SlotName bg("bg");
-        static const SlotName fg("fg");
-        static const SlotName mix("mix");
+        if (closure) {
+            static const SlotName bg("bg");
+            static const SlotName fg("fg");
+            static const SlotName mix("mix");
 
-        const SurfaceClosure empty = MakeEmptySurfaceClosure();
-        return MixSurfaceClosures(
-            Get<SurfaceClosure>(params, bg, empty),
-            Get<SurfaceClosure>(params, fg, empty),
-            Get<float>(params, mix, 0.0f));
+            const SurfaceClosure empty = MakeEmptySurfaceClosure();
+            *closure = MixSurfaceClosures(
+                Get<SurfaceClosure>(params, bg, empty),
+                Get<SurfaceClosure>(params, fg, empty),
+                Get<float>(params, mix, 0.0f));
+        }
+        return true;
     }
     if (modelType == _kConvertFloatSurfaceShader) {
-        const float v = Get<float>(params, _kIn, 0.0f);
-        return MakeUnlitSurfaceClosure(Vec3f(v));
+        if (closure) {
+            const float v = Get<float>(params, _kIn, 0.0f);
+            *closure = MakeUnlitSurfaceClosure(Vec3f(v));
+        }
+        return true;
     }
     if (modelType == _kConvertIntegerSurfaceShader) {
-        const float v = static_cast<float>(Get<int>(params, _kIn, 0));
-        return MakeUnlitSurfaceClosure(Vec3f(v));
+        if (closure) {
+            const float v = static_cast<float>(Get<int>(params, _kIn, 0));
+            *closure = MakeUnlitSurfaceClosure(Vec3f(v));
+        }
+        return true;
     }
     if (modelType == _kConvertBooleanSurfaceShader) {
-        const float v = Get<bool>(params, _kIn, false) ? 1.0f : 0.0f;
-        return MakeUnlitSurfaceClosure(Vec3f(v));
+        if (closure) {
+            const float v = Get<bool>(params, _kIn, false) ? 1.0f : 0.0f;
+            *closure = MakeUnlitSurfaceClosure(Vec3f(v));
+        }
+        return true;
     }
     if (modelType == _kConvertColor3SurfaceShader ||
         modelType == _kConvertVector3SurfaceShader) {
-        return MakeUnlitSurfaceClosure(
-            Get<Vec3f>(params, _kIn, Vec3f(0.0f)));
+        if (closure) {
+            *closure = MakeUnlitSurfaceClosure(
+                Get<Vec3f>(params, _kIn, Vec3f(0.0f)));
+        }
+        return true;
     }
     if (modelType == _kConvertColor4SurfaceShader ||
         modelType == _kConvertVector4SurfaceShader) {
-        const Vec4f v = Get<Vec4f>(
-            params, _kIn, Vec4f(0.0f, 0.0f, 0.0f, 1.0f));
-        return MakeUnlitSurfaceClosure(Vec3f(v[0], v[1], v[2]), v[3]);
+        if (closure) {
+            const Vec4f v = Get<Vec4f>(
+                params, _kIn, Vec4f(0.0f, 0.0f, 0.0f, 1.0f));
+            *closure =
+                MakeUnlitSurfaceClosure(Vec3f(v[0], v[1], v[2]), v[3]);
+        }
+        return true;
     }
     if (modelType == _kConvertVector2SurfaceShader) {
-        const Vec2f v = Get<Vec2f>(params, _kIn, Vec2f(0.0f));
-        return MakeUnlitSurfaceClosure(Vec3f(v[0], v[1], 0.0f));
+        if (closure) {
+            const Vec2f v = Get<Vec2f>(params, _kIn, Vec2f(0.0f));
+            *closure =
+                MakeUnlitSurfaceClosure(Vec3f(v[0], v[1], 0.0f));
+        }
+        return true;
     }
 
-    // Unknown model: construct a basic closure from common parameter names.
-    static const SlotName baseColor("base_color");
-    SurfaceClosure closure;
-    closure.baseColor = Get<Vec3f>(
-        params, baseColor, Vec3f(0.8f));
-    return closure;
+    return false;
 }
 
 }  // namespace mxcpp

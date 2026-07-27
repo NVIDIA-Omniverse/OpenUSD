@@ -113,14 +113,28 @@ set must remain a subset of the delegate descriptors.
 - `materials/materialEvalContext.h`: stable renderer-owned texture, frame, and
   time services borrowed by geometry-build and hit-time material evaluation.
 - `materials/MaterialXCpp/`: CPU material graph compiler/evaluator, nodes,
-  terminal models, closures, spectral support, and focused tests.
+  terminal models, closures, spectral support, and focused tests. Compilation
+  returns explicit valid, invalid-with-diagnostic, or absent-terminal results;
+  only valid results own an evaluation graph. A volume terminal without a
+  surface is explicitly wrapped in the internal transparent surface-volume
+  model; this is not arbitrary terminal substitution. Volume-only closures
+  retain explicit boundary identity even when their evaluated coefficients are
+  vacuum, while `hasInteriorMedium` remains reserved for active medium state.
+  Surface-shader mixes retain that identity only when every contributing input
+  is a volume boundary. Zero-weight endpoint branches contribute neither their
+  BSDF tree nor their medium state. Terminal support validation uses the same
+  dispatch function as evaluation so the accepted model set cannot drift
+  separately.
 - `materials/BSDL/`: BSDF support library and generated lookup tables.
 - `geometry/context.h`: Embree prototype and instance hit data: identities,
   properties, primvars, materials, derivatives, transforms, and categories.
 - `geometry/displacementEvaluation.h/.cpp`: shared build-time and hit-time
   displacement evaluation, transform-correct object-space offsets, final
   displaced-position probes, smooth displaced subdivision-frame
-  reconstruction, and lazy displaced-normal curvature evaluation.
+  reconstruction, and lazy displaced-normal curvature evaluation. Recoverable
+  authored failures return false; unexpected exceptions at Embree's C callback
+  boundary leave the affected lane undisplaced, emit one runtime error per
+  prototype commit, and do not unwind through Embree.
 - `geometry/primvarSampler.h/.cpp`: generic Hydra buffer and primvar sampling.
 - `geometry/meshSamplers.h/.cpp`: constant, uniform, triangle,
   face-varying, and subdivision interpolation.
@@ -403,10 +417,17 @@ For each segment, `_IntegratePath()` performs these stages in order:
    display color, the reconstructed displaced tangent frame when available,
    geomprop lookup, uniform primvars, and surface/ray derivatives.
 9. **Evaluate the material.** The bound `mxcpp::EvalGraph` produces a
-   `SurfaceClosure`. A missing or failed material evaluation leaves a synthetic
-   diffuse fallback available for direct lighting. A synthetic SSS exit replaces
-   the material with a unit Lambertian closure so subsurface albedo is not
-   counted twice. Material normal inputs are resolved before BSDF work. Coupled
+   `SurfaceClosure`. Malformed graphs are rejected during compilation, so
+   hit-time evaluation does not use exceptions for authored-value, missing
+   input, or type-mismatch failures. Missing or rejected surface graphs leave a
+   synthetic diffuse fallback available for direct lighting; displacement-only
+   materials intentionally use that fallback, while volume-only materials use
+   a synthesized transparent medium boundary. Exceptions from OIIO handle
+   resolution, sampling, and color conversion are caught around those backend
+   calls, reported once with the filename, and return the authored texture
+   default. A synthetic SSS exit replaces the material with a
+   unit Lambertian closure so subsurface albedo is not counted twice. Material
+   normal inputs are resolved before BSDF work. Coupled
    dielectric closures carry an explicit combined reflection/refraction
    compensation policy enabled by OpenPBR and metalness-workflow
    UsdPreviewSurface. Missing energy is restored with an additive cosine

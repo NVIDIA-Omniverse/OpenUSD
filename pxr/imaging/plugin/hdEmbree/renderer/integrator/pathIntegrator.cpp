@@ -272,20 +272,18 @@ HdEmbreeRenderer::_IntegratePath(
         // Evaluate the graph into one closure. Failure falls through to the
         // display-color fallback used by direct lighting.
         // -----------------------------------------------------------------
-        mxcpp::EvalGraph *evalGraph = prototypeContext->material ? prototypeContext->material->evalGraph : nullptr;
+        mxcpp::EvalGraph* surfaceGraph = prototypeContext->material
+            ? prototypeContext->material->surfaceGraph
+            : nullptr;
 
         mxcpp::SurfaceClosure closure;
         bool hasClosure = false;
 
-        if (evalGraph && !path.useSyntheticLambertian) {
-            try {
-                mxcpp::EvalOptions evalOptions;
-                evalOptions.useAdobeOpenPBR = _useAdobeOpenPBR;
-                closure = evalGraph->Evaluate(ctx, evalOptions);
-                hasClosure = true;
-            } catch (...) {
-                hasClosure = false;
-            }
+        if (surfaceGraph && !path.useSyntheticLambertian) {
+            mxcpp::EvalOptions evalOptions;
+            evalOptions.useAdobeOpenPBR = _useAdobeOpenPBR;
+            closure = surfaceGraph->Evaluate(ctx, evalOptions);
+            hasClosure = true;
         }
 
         // SSS exit synthesis: at the exit-side surface hit immediately

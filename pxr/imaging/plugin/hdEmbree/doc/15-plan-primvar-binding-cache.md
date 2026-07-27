@@ -90,9 +90,9 @@ millions of times per frame.
 A material compiles **two independent `EvalGraph`s** — `material.cpp:94`
 compiles the surface terminal and `material.cpp:98` compiles `"displacement"`,
 each producing its own `std::unique_ptr<EvalGraph>` (`material.h:48-49`). They
-are reached through separate members, `HdEmbreeMaterialData::evalGraph` and
+are reached through separate members, `HdEmbreeMaterialData::surfaceGraph` and
 `::displacementGraph` (`materials/material.h:18-19`), and they have separate
-consumers: the integrators evaluate `evalGraph`
+consumers: the integrators evaluate `surfaceGraph`
 (`surfaceShading.cpp:648`, `pathIntegrator.cpp:268`, `unlitIntegrator.cpp:85`)
 while displacement evaluates `displacementGraph`
 (`displacementEvaluation.cpp:277, 364`, `mesh.cpp:466, 687`).
@@ -152,7 +152,7 @@ established, and now visibly so.
 ```
 struct HdEmbreeMaterialData
 {
-    ::mxcpp::EvalGraph* evalGraph = nullptr;
+    ::mxcpp::EvalGraph* surfaceGraph = nullptr;
     ::mxcpp::EvalGraph* displacementGraph = nullptr;
     /// Handle space shared by both graphs above. Prototypes size and index
     /// their resolved sampler vectors against this.

@@ -49,9 +49,9 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
 
     SdfPath const& id = GetId();
 
-    _evalGraph.reset();
+    _surfaceGraph.reset();
     _displacementGraph.reset();
-    _renderMaterial.evalGraph = nullptr;
+    _renderMaterial.surfaceGraph = nullptr;
     _renderMaterial.displacementGraph = nullptr;
 
     VtValue networkMapValue;
@@ -87,44 +87,55 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
     }
 
     if (haveNetwork) {
-        try {
-            HdEmbreeRenderColorSpace renderColorSpace =
-                HdEmbreeRenderColorSpace::LinearRec709;
-            if (renderParam) {
-                HdEmbreeMaterialEvalServices const* const services =
-                    static_cast<HdEmbreeRenderParam*>(renderParam)
-                        ->GetMaterialEvalServices();
-                if (services) {
-                    renderColorSpace = services->renderColorSpace;
-                }
+        HdEmbreeRenderColorSpace renderColorSpace =
+            HdEmbreeRenderColorSpace::LinearRec709;
+        if (renderParam) {
+            HdEmbreeMaterialEvalServices const* const services =
+                static_cast<HdEmbreeRenderParam*>(renderParam)
+                    ->GetMaterialEvalServices();
+            if (services) {
+                renderColorSpace = services->renderColorSpace;
             }
+        }
 
-            // Surface shading runs at ray hits, but Embree requests
-            // displacement while committing subdivision geometry. Compile the
-            // terminals independently so either consumer can run without
-            // evaluating the other (and either terminal may be absent).
-            auto mxcppGraph =
-                ConvertHdNetworkToMxcppGraph(network, renderColorSpace);
-            _evalGraph = mxcpp::EvalGraph::Compile(mxcppGraph);
-            if (_evalGraph && !_evalGraph->IsValid()) {
-                _evalGraph.reset();
-            }
-            _displacementGraph =
-                mxcpp::EvalGraph::Compile(mxcppGraph, "displacement");
-            if (_displacementGraph && !_displacementGraph->IsValid()) {
-                _displacementGraph.reset();
-            }
-        } catch (...) {
-            TF_WARN("HdEmbreeMaterial: exception compiling graph for %s",
-                    id.GetText());
-            _evalGraph.reset();
-            _displacementGraph.reset();
+        // Surface shading runs at ray hits, but Embree requests displacement
+        // while committing subdivision geometry. Compile the terminals
+        // independently so either consumer can run without evaluating the
+        // other.
+        const mxcpp::MaterialGraph mxcppGraph =
+            ConvertHdNetworkToMxcppGraph(network, renderColorSpace);
+        mxcpp::CompileResult surfaceResult =
+            mxcpp::EvalGraph::Compile(mxcppGraph);
+        mxcpp::CompileResult displacementResult =
+            mxcpp::EvalGraph::Compile(mxcppGraph, "displacement");
+        if (surfaceResult.status == mxcpp::CompileStatus::Valid) {
+            _surfaceGraph = std::move(surfaceResult.graph);
+        } else if (surfaceResult.status == mxcpp::CompileStatus::Invalid) {
+            TF_WARN(
+                "HdEmbreeMaterial %s: invalid surface terminal: %s",
+                id.GetText(), surfaceResult.diagnostic.c_str());
+        } else if (
+            displacementResult.status ==
+            mxcpp::CompileStatus::AbsentTerminal) {
+            TF_WARN(
+                "HdEmbreeMaterial %s: invalid surface terminal: terminal is "
+                "absent",
+                id.GetText());
+        }
+
+        if (displacementResult.status == mxcpp::CompileStatus::Valid) {
+            _displacementGraph = std::move(displacementResult.graph);
+        } else if (
+            displacementResult.status == mxcpp::CompileStatus::Invalid) {
+            TF_WARN(
+                "HdEmbreeMaterial %s: invalid displacement terminal: %s",
+                id.GetText(), displacementResult.diagnostic.c_str());
         }
     }
 
     // Mesh prototype contexts retain this material handle, so keep the
     // handle stable and replace only the graphs it points at.
-    _renderMaterial.evalGraph = _evalGraph.get();
+    _renderMaterial.surfaceGraph = _surfaceGraph.get();
     _renderMaterial.displacementGraph = _displacementGraph.get();
     *dirtyBits = HdMaterial::Clean;
 }

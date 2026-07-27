@@ -649,68 +649,64 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
         *outNg = interaction.Ng;
     }
 
-    mxcpp::EvalGraph* evalGraph = prototypeContext->material
-        ? prototypeContext->material->evalGraph
+    mxcpp::EvalGraph* surfaceGraph = prototypeContext->material
+        ? prototypeContext->material->surfaceGraph
         : nullptr;
-    if (!evalGraph || !outClosure) {
+    if (!surfaceGraph || !outClosure) {
         return false;
     }
 
     const GfVec3f baseNormalIncident =
         interaction.GetIncidentBaseNormal();
     GfVec3f shadingNormal = baseNormalIncident;
-    try {
-        HdEmbreeRayDifferential defaultRayDiff;
-        const _ShadingContextOptions options(false);
-        mxcpp::ShadingContext ctx = _BuildShadingContext(
-            rayHit,
-            defaultRayDiff,
-            instanceContext,
-            prototypeContext,
-            interaction,
-            nullptr,
-            nullptr,
-            options);
-        HdEmbreePrimvarLookup cbData{
-            &prototypeContext->primvarMapByString,
-            rayHit.hit.primID,
-            rayHit.hit.u,
-            rayHit.hit.v};
-        ctx.geomPropLookup = &HdEmbreeSamplePrimvar;
-        ctx.geomPropUserData = &cbData;
-        ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
-        mxcpp::EvalOptions evalOptions;
-        evalOptions.useAdobeOpenPBR = _useAdobeOpenPBR;
-        evalOptions.visibilityOnly = true;
-        *outClosure = evalGraph->Evaluate(ctx, evalOptions);
+    HdEmbreeRayDifferential defaultRayDiff;
+    const _ShadingContextOptions options(false);
+    mxcpp::ShadingContext ctx = _BuildShadingContext(
+        rayHit,
+        defaultRayDiff,
+        instanceContext,
+        prototypeContext,
+        interaction,
+        nullptr,
+        nullptr,
+        options);
+    HdEmbreePrimvarLookup cbData{
+        &prototypeContext->primvarMapByString,
+        rayHit.hit.primID,
+        rayHit.hit.u,
+        rayHit.hit.v};
+    ctx.geomPropLookup = &HdEmbreeSamplePrimvar;
+    ctx.geomPropUserData = &cbData;
+    ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
+    mxcpp::EvalOptions evalOptions;
+    evalOptions.useAdobeOpenPBR = _useAdobeOpenPBR;
+    evalOptions.visibilityOnly = true;
+    *outClosure = surfaceGraph->Evaluate(ctx, evalOptions);
 
-        mxcpp::Vec3f resolvedNormal;
-        if (outClosure->ResolveNormal(
-                ctx.tangent,
-                ctx.bitangent,
-                ctx.normal,
-                &resolvedNormal)) {
-            const GfVec3f candidate = _ToGf(resolvedNormal);
-            GfVec3f normalizedCandidate;
-            const bool valid =
-                _TryNormalizeDirection(candidate, &normalizedCandidate) &&
-                GfDot(
-                    normalizedCandidate,
-                    interaction.GetIncidentGeometricNormal()) > 0.0f &&
-                GfDot(normalizedCandidate, wo) > 0.0f;
-            if (valid) {
-                shadingNormal = normalizedCandidate;
-            } else {
-                ++_invalidMaterialNormalCount;
-            }
+    mxcpp::Vec3f resolvedNormal;
+    if (outClosure->ResolveNormal(
+            ctx.tangent,
+            ctx.bitangent,
+            ctx.normal,
+            &resolvedNormal)) {
+        const GfVec3f candidate = _ToGf(resolvedNormal);
+        GfVec3f normalizedCandidate;
+        const bool valid =
+            _TryNormalizeDirection(candidate, &normalizedCandidate) &&
+            GfDot(
+                normalizedCandidate,
+                interaction.GetIncidentGeometricNormal()) > 0.0f &&
+            GfDot(normalizedCandidate, wo) > 0.0f;
+        if (valid) {
+            shadingNormal = normalizedCandidate;
+        } else {
+            ++_invalidMaterialNormalCount;
         }
-        if (outShadingNormal) {
-            *outShadingNormal = shadingNormal;
-        }
-        return true;
-    } catch (...) {
-        return false;
     }
+    if (outShadingNormal) {
+        *outShadingNormal = shadingNormal;
+    }
+    return true;
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

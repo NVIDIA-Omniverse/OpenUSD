@@ -28,6 +28,7 @@
 #include "pxr/imaging/hd/repr.h"
 #include "pxr/imaging/hd/unitTestDelegate.h"
 #include "pxr/imaging/pxOsd/tokens.h"
+#include "pxr/base/tf/diagnosticTrap.h"
 #include "pxr/usd/sdf/layer.h"
 #include "pxr/usd/usd/stage.h"
 #include "pxr/usdImaging/usdImaging/delegate.h"
@@ -39,6 +40,7 @@
 #include <cstdio>
 #include <limits>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -772,7 +774,7 @@ _CompileConstantDisplacement(float value)
     const std::string path = "/Material/Displacement";
     network.nodes[path] = terminal;
     network.terminals["displacement"] = GraphConnection{path, "out"};
-    return EvalGraph::Compile(network, "displacement");
+    return EvalGraph::Compile(network, "displacement").graph;
 }
 
 std::unique_ptr<EvalGraph>
@@ -793,7 +795,7 @@ _CompileGeomPropDisplacement(std::string const& name)
     network.nodes["/Material/Displacement"] = terminal;
     network.terminals["displacement"] =
         {"/Material/Displacement", "out"};
-    return EvalGraph::Compile(network, "displacement");
+    return EvalGraph::Compile(network, "displacement").graph;
 }
 
 std::unique_ptr<EvalGraph>
@@ -818,7 +820,7 @@ _CompileTexcoordDisplacement()
     network.nodes["/Material/Displacement"] = terminal;
     network.terminals["displacement"] =
         {"/Material/Displacement", "out"};
-    return EvalGraph::Compile(network, "displacement");
+    return EvalGraph::Compile(network, "displacement").graph;
 }
 
 std::unique_ptr<EvalGraph>
@@ -866,7 +868,7 @@ _CompileTextureFrameTimeDisplacement()
     network.nodes["/Material/Displacement"] = terminal;
     network.terminals["displacement"] =
         {"/Material/Displacement", "out"};
-    return EvalGraph::Compile(network, "displacement");
+    return EvalGraph::Compile(network, "displacement").graph;
 }
 
 std::unique_ptr<EvalGraph>
@@ -918,7 +920,7 @@ _CompileQuadraticTextureDisplacement()
     network.nodes["/Material/Displacement"] = terminal;
     network.terminals["displacement"] =
         {"/Material/Displacement", "out"};
-    return EvalGraph::Compile(network, "displacement");
+    return EvalGraph::Compile(network, "displacement").graph;
 }
 
 class _ThreadSafeTexcoordTextureSystem final : public TextureSystem
@@ -969,6 +971,16 @@ private:
     mutable std::atomic<float> _lastFrame{0.0f};
     mutable std::atomic<int> _callCount{0};
     mutable std::atomic<bool> _allFramesMatched{true};
+};
+
+class _ThrowingTextureSystem final : public TextureSystem
+{
+public:
+    Texture2DResult Sample2D(
+        Texture2DRequest const&) const override
+    {
+        throw std::runtime_error("test backend failure");
+    }
 };
 
 float
@@ -1130,6 +1142,7 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     }
 
     const auto rebuild = [&]() {
+        context.displacementExceptionReported.store(false);
         rtcUpdateGeometryBuffer(geometry, RTC_BUFFER_TYPE_LEVEL, 0);
         rtcCommitGeometry(geometry);
         rtcCommitScene(scene);
@@ -1159,6 +1172,24 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     HdEmbreeMaterialEvalServices services;
     services.textureSystem = &textureSystem;
     context.materialEvalServices = &services;
+
+    // A renderer callback violating its non-throwing contract must still not
+    // unwind through Embree's C callback.
+    _ThrowingTextureSystem throwingTextureSystem;
+    services.textureSystem = &throwingTextureSystem;
+    material.displacementGraph = textureFrameTime.get();
+    TfDiagnosticTrap displacementCallbackTrap;
+    rebuild();
+    const float throwingBackendHit = _TraceCenter(scene);
+    const std::vector<TfError>& displacementCallbackErrors =
+        displacementCallbackTrap.GetErrors();
+    const bool throwingBackendReported =
+        displacementCallbackErrors.size() == 1 &&
+        displacementCallbackErrors[0].GetCommentary().find(
+            "HdEmbreeDisplacementFunction: exception at Embree callback "
+            "boundary: test backend failure") != std::string::npos;
+    displacementCallbackTrap.Clear();
+    services.textureSystem = &textureSystem;
 
     material.displacementGraph = quadraticTexture.get();
     textureSystem.Reset(0.0f);
@@ -1327,6 +1358,8 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
         secondTextureCalls > 0 && secondFramesMatched &&
         _Close(secondServiceHit, secondExpectedHit, 0.02f) &&
         firstServiceHit > secondServiceHit + 0.3f &&
+        throwingBackendReported &&
+        _Close(throwingBackendHit, 2.0f, 0.02f) &&
         _Close(undisplacedHit, 2.0f, 0.02f) &&
         _Close(negativeHit, 2.25f, 0.02f) &&
         smallFrameEvaluated &&
@@ -1360,6 +1393,10 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
             boundaryFrameComputed, boundaryDerivativeCalls, boundaryFrame.du,
             boundaryDndu[0], boundaryDndu[1], boundaryDndu[2],
             invalidDerivativesComputed, invalidDerivativeCalls);
+        std::printf(
+            "    callback failure=(reported=%d errors=%zu hit=%g)\n",
+            throwingBackendReported, displacementCallbackErrors.size(),
+            throwingBackendHit);
     }
     return valid;
 }
@@ -1384,6 +1421,22 @@ _MakeHydraMaterialNetwork(bool withDisplacement, float displacement = 0.0f)
         network.terminals[TfToken("displacement")] =
             HdMaterialConnection2{displacementPath, TfToken("out")};
     }
+    return network;
+}
+
+HdMaterialNetwork2
+_MakeMalformedDisplacementMaterialNetwork()
+{
+    HdMaterialNetwork2 network = _MakeHydraMaterialNetwork(false);
+    const SdfPath displacementPath("/Material/BrokenDisplacement");
+    HdMaterialNode2 displacement;
+    displacement.nodeTypeId = TfToken("ND_displacement_float");
+    displacement.inputConnections[TfToken("displacement")] = {
+        HdMaterialConnection2{
+            SdfPath("/Material/Missing"), TfToken("out")}};
+    network.nodes[displacementPath] = displacement;
+    network.terminals[TfToken("displacement")] =
+        HdMaterialConnection2{displacementPath, TfToken("out")};
     return network;
 }
 
@@ -1429,13 +1482,13 @@ TestMaterialSyncKeepsStableHandleAndReplacesDisplacementGraph()
         HdDirtyBits bits = material.GetInitialDirtyBitsMask();
         material.Sync(&delegate, &renderParam, &bits);
         HdEmbreeMaterialData const* handle = material.GetRenderMaterial();
-        bool firstValid = handle->evalGraph && handle->displacementGraph;
+        bool firstValid = handle->surfaceGraph && handle->displacementGraph;
 
         delegate.resource = VtValue(_MakeHydraMaterialNetwork(false));
         bits = HdMaterial::AllDirty;
         material.Sync(&delegate, &renderParam, &bits);
         bool removed = material.GetRenderMaterial() == handle &&
-            handle->evalGraph && !handle->displacementGraph;
+            handle->surfaceGraph && !handle->displacementGraph;
 
         delegate.resource = VtValue(_MakeHydraMaterialNetwork(true, -0.75f));
         bits = HdMaterial::AllDirty;
@@ -1453,6 +1506,103 @@ TestMaterialSyncKeepsStableHandleAndReplacesDisplacementGraph()
     rtcReleaseScene(notificationScene);
     rtcReleaseDevice(notificationDevice);
     return valid;
+}
+
+bool
+TestMaterialSyncReportsTerminalFailuresAndSkipsAbsentDisplacement()
+{
+    _EmbreeTestContext context;
+    HdRenderIndex* const renderIndex = context.renderIndex.get();
+    if (!renderIndex) {
+        return false;
+    }
+
+    _MaterialDelegate delegate(renderIndex);
+    HdEmbreeMaterial material(SdfPath("/BrokenMaterial"));
+
+    TfDiagnosticTrap trap;
+    delegate.resource =
+        VtValue(_MakeMalformedDisplacementMaterialNetwork());
+    HdDirtyBits bits = material.GetInitialDirtyBitsMask();
+    material.Sync(&delegate, nullptr, &bits);
+
+    const std::vector<TfWarning>& warnings = trap.GetWarnings();
+    HdEmbreeMaterialData const* const malformedHandle =
+        material.GetRenderMaterial();
+    const bool oneActionableWarning =
+        warnings.size() == 1 &&
+        malformedHandle->surfaceGraph &&
+        !malformedHandle->displacementGraph &&
+        warnings[0].GetCommentary().find("/BrokenMaterial") !=
+            std::string::npos &&
+        warnings[0].GetCommentary().find("displacement terminal") !=
+            std::string::npos &&
+        warnings[0].GetCommentary().find(
+            "/Material/BrokenDisplacement (ND_displacement_float) input "
+            "displacement references missing node /Material/Missing") !=
+            std::string::npos;
+    trap.ClearWarnings();
+
+    delegate.resource = VtValue(_MakeHydraMaterialNetwork(false));
+    bits = HdMaterial::AllDirty;
+    material.Sync(&delegate, nullptr, &bits);
+    const bool absentDisplacementStayedQuiet = !trap.HasWarnings();
+    trap.ClearWarnings();
+
+    HdMaterialNetwork2 displacementOnly;
+    const SdfPath displacementPath("/Material/Displacement");
+    HdMaterialNode2 displacement;
+    displacement.nodeTypeId = TfToken("ND_displacement_float");
+    displacementOnly.nodes[displacementPath] = displacement;
+    displacementOnly.terminals[TfToken("displacement")] =
+        HdMaterialConnection2{displacementPath, TfToken("out")};
+    delegate.resource = VtValue(displacementOnly);
+    bits = HdMaterial::AllDirty;
+    material.Sync(&delegate, nullptr, &bits);
+    const HdEmbreeMaterialData* const displacementOnlyHandle =
+        material.GetRenderMaterial();
+    const bool displacementOnlyStayedQuiet =
+        !trap.HasWarnings() &&
+        !displacementOnlyHandle->surfaceGraph &&
+        displacementOnlyHandle->displacementGraph;
+    trap.ClearWarnings();
+
+    HdMaterialNetwork2 malformedDisplacementOnly =
+        _MakeMalformedDisplacementMaterialNetwork();
+    malformedDisplacementOnly.terminals.erase(TfToken("surface"));
+    malformedDisplacementOnly.nodes.erase(SdfPath("/Material/Surface"));
+    delegate.resource = VtValue(malformedDisplacementOnly);
+    bits = HdMaterial::AllDirty;
+    material.Sync(&delegate, nullptr, &bits);
+    const std::vector<TfWarning>& malformedDisplacementOnlyWarnings =
+        trap.GetWarnings();
+    const HdEmbreeMaterialData* const malformedDisplacementOnlyHandle =
+        material.GetRenderMaterial();
+    const bool malformedDisplacementOnlyWarnedOnce =
+        malformedDisplacementOnlyWarnings.size() == 1 &&
+        !malformedDisplacementOnlyHandle->surfaceGraph &&
+        !malformedDisplacementOnlyHandle->displacementGraph &&
+        malformedDisplacementOnlyWarnings[0].GetCommentary().find(
+            "invalid displacement terminal") != std::string::npos;
+    trap.ClearWarnings();
+
+    delegate.resource = VtValue(HdMaterialNetwork2{});
+    bits = HdMaterial::AllDirty;
+    material.Sync(&delegate, nullptr, &bits);
+    const std::vector<TfWarning>& emptyMaterialWarnings =
+        trap.GetWarnings();
+    const bool emptyMaterialWarned =
+        emptyMaterialWarnings.size() == 1 &&
+        emptyMaterialWarnings[0].GetCommentary().find(
+            "/BrokenMaterial") != std::string::npos &&
+        emptyMaterialWarnings[0].GetCommentary().find(
+            "surface terminal: terminal is absent") != std::string::npos;
+    trap.Clear();
+    return oneActionableWarning &&
+        absentDisplacementStayedQuiet &&
+        displacementOnlyStayedQuiet &&
+        malformedDisplacementOnlyWarnedOnce &&
+        emptyMaterialWarned;
 }
 
 
@@ -2967,6 +3117,8 @@ main()
          &TestRealCallbackAddsRemovesAndReplacesDisplacement},
         {"Subdivision.TestMaterialSyncKeepsStableHandleAndReplacesDisplacementGraph",
          &TestMaterialSyncKeepsStableHandleAndReplacesDisplacementGraph},
+        {"Subdivision.TestMaterialSyncReportsTerminalFailuresAndSkipsAbsentDisplacement",
+         &TestMaterialSyncReportsTerminalFailuresAndSkipsAbsentDisplacement},
         {"Subdivision.TestMaterialChangeForcesProductionDisplacementRecommit",
          &TestMaterialChangeForcesProductionDisplacementRecommit},
         {"Subdivision.TestMaterialTerminalTransitionsCommitWithInstanceOnlyDirtyBits",

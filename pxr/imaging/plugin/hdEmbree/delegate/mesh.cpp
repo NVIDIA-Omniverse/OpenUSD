@@ -22,6 +22,7 @@
 #include "pxr/imaging/pxOsd/tokens.h"
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/matrix4d.h"
+#include "pxr/base/tf/diagnostic.h"
 #include "pxr/base/vt/typeHeaders.h"
 #include "pxr/base/vt/visitValue.h"
 #include "pxr/usd/sdf/assetPath.h"
@@ -30,6 +31,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <limits>
 #include <mutex>
 #include <numeric>       // std::iota
@@ -468,79 +470,101 @@ HdEmbreeDisplacementFunction(
     }
 
     for (unsigned int i = 0; i < args->N; ++i) {
-        // Embree supplies position and a normalized base normal but not the
-        // tangent frame needed by geometric MaterialX nodes. Interpolate the
-        // undisplaced limit-surface derivatives at the same patch location.
-        alignas(16) float sampledDu[4] = {};
-        alignas(16) float sampledDv[4] = {};
-        rtcInterpolate1(
-            args->geometry,
-            args->primID,
-            args->u[i],
-            args->v[i],
-            RTC_BUFFER_TYPE_VERTEX,
-            0,
-            nullptr,
-            sampledDu,
-            sampledDv,
-            3);
-
-        const GfVec3f position(
-            args->P_x[i], args->P_y[i], args->P_z[i]);
-        const GfVec3f normal = prototypeContext->orientationSign * GfVec3f(
-            args->Ng_x[i], args->Ng_y[i], args->Ng_z[i]);
-        const GfVec3f dPdu(
-            sampledDu[0], sampledDu[1], sampledDu[2]);
-        const GfVec3f dPdv(
-            sampledDv[0], sampledDv[1], sampledDv[2]);
-
-        float displacement = 0.0f;
-        // The shared evaluator supplies texture/frame/time, transforms, st,
-        // and geomprops and catches every graph exception before it can cross
-        // Embree's C callback boundary.
-        if (!HdEmbreeEvaluateDisplacement(
-                prototypeContext,
+        // Embree's C callback boundary must not receive an exception from an
+        // allocation failure or a renderer callback that violates its
+        // non-throwing contract. A failed lane retains its input position
+        // without preventing independent lanes from being evaluated.
+        try {
+            // Embree supplies position and a normalized base normal but not
+            // the tangent frame needed by geometric MaterialX nodes.
+            // Interpolate the undisplaced limit-surface derivatives at the
+            // same patch location.
+            alignas(16) float sampledDu[4] = {};
+            alignas(16) float sampledDv[4] = {};
+            rtcInterpolate1(
+                args->geometry,
                 args->primID,
                 args->u[i],
                 args->v[i],
-                position,
-                normal,
-                dPdu,
-                dPdv,
-                &displacement)) {
-            continue;
-        }
+                RTC_BUFFER_TYPE_VERTEX,
+                0,
+                nullptr,
+                sampledDu,
+                sampledDv,
+                3);
 
-        // The terminal value is a world-space distance along the semantic
-        // world normal. Convert that vector back to the prototype's object
-        // space before modifying Embree's positions. This preserves both
-        // direction and magnitude under non-uniform transforms.
-        GfVec3f objectOffset;
-        if (!HdEmbreeComputeObjectSpaceDisplacementOffset(
-                prototypeContext, normal, displacement, &objectOffset)) {
-            continue;
-        }
+            const GfVec3f position(
+                args->P_x[i], args->P_y[i], args->P_z[i]);
+            const GfVec3f normal =
+                prototypeContext->orientationSign *
+                GfVec3f(args->Ng_x[i], args->Ng_y[i], args->Ng_z[i]);
+            const GfVec3f dPdu(
+                sampledDu[0], sampledDu[1], sampledDu[2]);
+            const GfVec3f dPdv(
+                sampledDv[0], sampledDv[1], sampledDv[2]);
 
-        const double displacedPosition[3] = {
-            static_cast<double>(args->P_x[i]) + objectOffset[0],
-            static_cast<double>(args->P_y[i]) + objectOffset[1],
-            static_cast<double>(args->P_z[i]) + objectOffset[2]};
-        constexpr double maxFloat =
-            static_cast<double>(std::numeric_limits<float>::max());
-        if (!std::isfinite(displacedPosition[0]) ||
-            !std::isfinite(displacedPosition[1]) ||
-            !std::isfinite(displacedPosition[2]) ||
-            std::abs(displacedPosition[0]) > maxFloat ||
-            std::abs(displacedPosition[1]) > maxFloat ||
-            std::abs(displacedPosition[2]) > maxFloat) {
-            continue;
+            float displacement = 0.0f;
+            // The shared evaluator supplies texture/frame/time, transforms,
+            // st, and geomprops. Authored failures return false; exceptional
+            // backend failures are contained by this C boundary.
+            if (!HdEmbreeEvaluateDisplacement(
+                    prototypeContext,
+                    args->primID,
+                    args->u[i],
+                    args->v[i],
+                    position,
+                    normal,
+                    dPdu,
+                    dPdv,
+                    &displacement)) {
+                continue;
+            }
+
+            // The terminal value is a world-space distance along the semantic
+            // world normal. Convert that vector back to the prototype's object
+            // space before modifying Embree's positions. This preserves both
+            // direction and magnitude under non-uniform transforms.
+            GfVec3f objectOffset;
+            if (!HdEmbreeComputeObjectSpaceDisplacementOffset(
+                    prototypeContext, normal, displacement, &objectOffset)) {
+                continue;
+            }
+
+            const double displacedPosition[3] = {
+                static_cast<double>(args->P_x[i]) + objectOffset[0],
+                static_cast<double>(args->P_y[i]) + objectOffset[1],
+                static_cast<double>(args->P_z[i]) + objectOffset[2]};
+            constexpr double maxFloat =
+                static_cast<double>(std::numeric_limits<float>::max());
+            if (!std::isfinite(displacedPosition[0]) ||
+                !std::isfinite(displacedPosition[1]) ||
+                !std::isfinite(displacedPosition[2]) ||
+                std::abs(displacedPosition[0]) > maxFloat ||
+                std::abs(displacedPosition[1]) > maxFloat ||
+                std::abs(displacedPosition[2]) > maxFloat) {
+                continue;
+            }
+            args->P_x[i] = static_cast<float>(displacedPosition[0]);
+            args->P_y[i] = static_cast<float>(displacedPosition[1]);
+            args->P_z[i] = static_cast<float>(displacedPosition[2]);
+        } catch (const std::exception& error) {
+            if (!prototypeContext->displacementExceptionReported.exchange(
+                    true)) {
+                TF_RUNTIME_ERROR(
+                    "HdEmbreeDisplacementFunction: exception at Embree "
+                    "callback boundary: %s",
+                    error.what());
+            }
+        } catch (...) {
+            if (!prototypeContext->displacementExceptionReported.exchange(
+                    true)) {
+                TF_RUNTIME_ERROR(
+                    "HdEmbreeDisplacementFunction: unknown exception at "
+                    "Embree callback boundary");
+            }
         }
-        args->P_x[i] = static_cast<float>(displacedPosition[0]);
-        args->P_y[i] = static_cast<float>(displacedPosition[1]);
-        args->P_z[i] = static_cast<float>(displacedPosition[2]);
     }
 }
-
 
 HdEmbreeMesh::HdEmbreeMesh(SdfPath const& id)
     : HdMesh(id)
@@ -657,6 +681,7 @@ HdEmbreeMesh::UpdateSubdivisionLevels(
         std::copy(newLevels.begin(), newLevels.end(),
                   _subdivisionLevels.begin());
     }
+    prototypeContext->displacementExceptionReported.store(false);
     rtcUpdateGeometryBuffer(_geometry, RTC_BUFFER_TYPE_LEVEL, 0);
     rtcCommitGeometry(_geometry);
     rtcCommitScene(_rtcMeshScene);
@@ -2132,6 +2157,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
     if (prototypeDirty) {
         // Primvar samplers and subdivision topology/rule changes also mutate
         // the geometry. Commit once after all buffers are current.
+        prototypeContext->displacementExceptionReported.store(false);
         rtcCommitGeometry(_geometry);
         rtcCommitScene(_rtcMeshScene);
     }

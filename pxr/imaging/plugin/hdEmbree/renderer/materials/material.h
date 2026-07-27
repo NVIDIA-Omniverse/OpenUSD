@@ -15,7 +15,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 struct HdEmbreeMaterialData
 {
-    ::mxcpp::EvalGraph* evalGraph = nullptr;
+    ::mxcpp::EvalGraph* surfaceGraph = nullptr;
     ::mxcpp::EvalGraph* displacementGraph = nullptr;
 };
 

@@ -457,6 +457,32 @@ scene delegate. It accepts modern `HdMaterialNetwork2` and legacy material
 network maps, converts them in `renderer/materials/mxcppAdapter.*`, and compiles an
 `mxcpp::EvalGraph`. Surface and optional `displacement` terminals are compiled separately into the stable material handle. `HdEmbreeMesh` registers an Embree subdivision displacement callback; scene commit evaluates `ND_displacement_float` at generated vertices and offsets positions by `displacement * scale` along `Ng`. Bind material state before committing the prototype scene, and force a recommit after displacement material changes. The callback currently supplies object-space position/normal, `st`, and constant string/filename geomprops. Triangle geometry, including meshes with `subdivisionScheme = "none"`, is not displaced.
 
+`EvalGraph::Compile()` returns an explicit valid, invalid, or absent-terminal
+result. Valid results alone own a graph; invalid results carry one actionable
+diagnostic; absent optional terminals carry neither. The material delegate
+warns for invalid surfaces, warns for an absent surface only when neither a
+volume nor displacement terminal is authored, warns for malformed
+displacement, and keeps absent displacement silent. A malformed
+displacement-only material emits the actionable displacement warning without a
+redundant missing-surface warning. Volume-only
+materials synthesize a transparent medium boundary; displacement-only
+materials retain the renderer's default display-color surface. Authored graph
+failures must not escape compilation or hit-time/displacement evaluation as
+exceptions. Renderer callbacks must translate recoverable backend failures
+into their documented fallback values; texture failures are caught and
+reported at the OIIO boundary where the filename is available. Unexpected
+exceptions reaching Embree's displacement C callback boundary emit a
+`TF_RUNTIME_ERROR` once per prototype commit rather than escaping through
+Embree or failing silently; the affected callback lane remains undisplaced.
+
+`SurfaceClosure::isVolumeBoundary` identifies volume-only boundaries
+independently of `hasInteriorMedium`. Preserve it for vacuum or locally
+zero-density volume closures so they remain transparent transport boundaries;
+`hasInteriorMedium` continues to mean that there is actual medium state to
+enter. `MixSurfaceClosures` preserves the flag only when every input with
+nonzero weight is a volume boundary; endpoint mixes preserve the selected
+input and must not retain the zero-weight branch's BSDF tree or medium state.
+
 MaterialXCpp supports EDF-only materials authored as `ND_uniform_edf`
 connected to the `edf` input of `ND_surface`. The uniform EDF is carried
 through graph evaluation as a typed `mxcpp::UniformEdf` closure; `ND_surface`

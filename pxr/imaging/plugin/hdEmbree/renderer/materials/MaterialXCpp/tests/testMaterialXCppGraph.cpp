@@ -6,6 +6,7 @@
 //
 #include "../graph.h"
 #include "../nodeRegistry.h"
+#include "../surfaceShaderUtils.h"
 
 #include <cstdio>
 #include <functional>
@@ -46,10 +47,9 @@ static bool
 TestCompileEmptyNetwork()
 {
     MaterialGraph network;
-    auto graph = EvalGraph::Compile(network);
-    // Empty network should produce an invalid graph.
-    if (!graph) return false;
-    return !graph->IsValid();
+    CompileResult compileResult = EvalGraph::Compile(network);
+    return compileResult.status == CompileStatus::AbsentTerminal &&
+           !compileResult.graph && compileResult.diagnostic.empty();
 }
 
 static bool
@@ -70,7 +70,9 @@ TestCompileSingleTerminal()
     termConn.upstreamOutputName = "out";
     network.terminals["surface"] = termConn;
 
-    auto graph = EvalGraph::Compile(network);
+    CompileResult compileResult = EvalGraph::Compile(network);
+
+    std::unique_ptr<EvalGraph>& graph = compileResult.graph;
     if (!graph || !graph->IsValid()) {
         printf("    Graph compilation failed\n");
         return false;
@@ -106,7 +108,9 @@ TestCompileMaterialXUsdPreviewSurfaceTerminal()
     termConn.upstreamOutputName = "out";
     network.terminals["surface"] = termConn;
 
-    auto graph = EvalGraph::Compile(network);
+    CompileResult compileResult = EvalGraph::Compile(network);
+
+    std::unique_ptr<EvalGraph>& graph = compileResult.graph;
     if (!graph || !graph->IsValid()) {
         printf("    MaterialX UsdPreviewSurface compilation failed\n");
         return false;
@@ -138,7 +142,9 @@ TestCompileDisneyPrincipledTerminal()
     termConn.upstreamOutputName = "out";
     network.terminals["surface"] = termConn;
 
-    auto graph = EvalGraph::Compile(network);
+    CompileResult compileResult = EvalGraph::Compile(network);
+
+    std::unique_ptr<EvalGraph>& graph = compileResult.graph;
     if (!graph || !graph->IsValid()) {
         return false;
     }
@@ -167,7 +173,9 @@ TestCompileGltfPbrTerminal()
     termConn.upstreamOutputName = "out";
     network.terminals["surface"] = termConn;
 
-    auto graph = EvalGraph::Compile(network);
+    CompileResult compileResult = EvalGraph::Compile(network);
+
+    std::unique_ptr<EvalGraph>& graph = compileResult.graph;
     if (!graph || !graph->IsValid()) {
         return false;
     }
@@ -194,7 +202,9 @@ TestOpenPbrEvalOptionsSelectAdobeBackend()
     termConn.upstreamOutputName = "out";
     network.terminals["surface"] = termConn;
 
-    auto graph = EvalGraph::Compile(network);
+    CompileResult compileResult = EvalGraph::Compile(network);
+
+    std::unique_ptr<EvalGraph>& graph = compileResult.graph;
     if (!graph || !graph->IsValid()) {
         return false;
     }
@@ -267,7 +277,9 @@ TestCompileLinearChain()
     termConn.upstreamOutputName = "out";
     network.terminals["surface"] = termConn;
 
-    auto graph = EvalGraph::Compile(network);
+    CompileResult compileResult = EvalGraph::Compile(network);
+
+    std::unique_ptr<EvalGraph>& graph = compileResult.graph;
     if (!graph || !graph->IsValid()) return false;
 
     ShadingContext ctx;
@@ -328,7 +340,9 @@ TestCompileDiamondDAG()
     termConn.upstreamOutputName = "out";
     network.terminals["surface"] = termConn;
 
-    auto graph = EvalGraph::Compile(network);
+    CompileResult compileResult = EvalGraph::Compile(network);
+
+    std::unique_ptr<EvalGraph>& graph = compileResult.graph;
     if (!graph || !graph->IsValid()) return false;
 
     ShadingContext ctx;
@@ -361,7 +375,9 @@ TestEvalWithConstantInputs()
     termConn.upstreamOutputName = "out";
     network.terminals["surface"] = termConn;
 
-    auto graph = EvalGraph::Compile(network);
+    CompileResult compileResult = EvalGraph::Compile(network);
+
+    std::unique_ptr<EvalGraph>& graph = compileResult.graph;
     if (!graph || !graph->IsValid()) return false;
 
     ShadingContext ctx;
@@ -415,7 +431,9 @@ TestEvalMultiplyChain()
     termConn.upstreamOutputName = "out";
     network.terminals["surface"] = termConn;
 
-    auto graph = EvalGraph::Compile(network);
+    CompileResult compileResult = EvalGraph::Compile(network);
+
+    std::unique_ptr<EvalGraph>& graph = compileResult.graph;
     if (!graph || !graph->IsValid()) return false;
 
     ShadingContext ctx;
@@ -456,7 +474,9 @@ TestEvalGeometricInput()
     termConn.upstreamOutputName = "out";
     network.terminals["surface"] = termConn;
 
-    auto graph = EvalGraph::Compile(network);
+    CompileResult compileResult = EvalGraph::Compile(network);
+
+    std::unique_ptr<EvalGraph>& graph = compileResult.graph;
     if (!graph || !graph->IsValid()) return false;
 
     ShadingContext ctx;
@@ -498,9 +518,24 @@ TestCompileUnknownNodeTypeFails()
     termConn.upstreamOutputName = "out";
     network.terminals["surface"] = termConn;
 
-    auto graph = EvalGraph::Compile(network);
-    if (!graph) return false;
-    return !graph->IsValid();
+    CompileResult compileResult = EvalGraph::Compile(network);
+
+    std::unique_ptr<EvalGraph>& graph = compileResult.graph;
+    if (compileResult.status != CompileStatus::Invalid ||
+        graph ||
+        compileResult.diagnostic !=
+            "no evaluator registered for node type "
+            "ND_totally_unknown_float at /Material/Unknown") {
+        return false;
+    }
+
+    network.terminals["surface"] = unknownConn;
+    CompileResult terminalResult = EvalGraph::Compile(network);
+    return terminalResult.status == CompileStatus::Invalid &&
+           !terminalResult.graph &&
+           terminalResult.diagnostic ==
+               "no evaluator registered for node type "
+               "ND_totally_unknown_float at /Material/Unknown";
 }
 
 static bool
@@ -542,9 +577,92 @@ TestCompileRejectsCycle()
     termConn.upstreamOutputName = "out";
     network.terminals["surface"] = termConn;
 
-    auto graph = EvalGraph::Compile(network);
-    if (!graph) return false;
-    return !graph->IsValid();
+    CompileResult compileResult = EvalGraph::Compile(network);
+
+    std::unique_ptr<EvalGraph>& graph = compileResult.graph;
+    return compileResult.status == CompileStatus::Invalid &&
+           !graph &&
+           compileResult.diagnostic ==
+               "cycle detected through node /Material/A";
+}
+
+static bool
+TestCompileRejectsMissingUpstreamNode()
+{
+    MaterialGraph network;
+
+    GraphNode add;
+    add.nodeTypeId = "ND_add_float";
+    add.parameters["in2"] = Value(1.0f);
+    add.inputConnections["in1"] =
+        {{"/Material/Missing", "out"}};
+    network.nodes["/Material/Add"] = add;
+
+    GraphNode surface;
+    surface.nodeTypeId = "UsdPreviewSurface";
+    surface.inputConnections["roughness"] =
+        {{"/Material/Add", "out"}};
+    network.nodes["/Material/Surface"] = surface;
+    network.terminals["surface"] = {"/Material/Surface", "out"};
+
+    CompileResult result = EvalGraph::Compile(network);
+    return result.status == CompileStatus::Invalid &&
+           !result.graph &&
+           result.diagnostic ==
+               "/Material/Add (ND_add_float) input in1 references missing "
+               "node /Material/Missing";
+}
+
+static bool
+TestCompileRejectsTerminalCycles()
+{
+    MaterialGraph network;
+
+    GraphNode upstream;
+    upstream.nodeTypeId = "ND_add_float";
+    upstream.parameters["in2"] = Value(1.0f);
+    upstream.inputConnections["in1"] =
+        {{"/Material/Surface", "out"}};
+    network.nodes["/Material/Upstream"] = upstream;
+
+    GraphNode surface;
+    surface.nodeTypeId = "UsdPreviewSurface";
+    surface.inputConnections["roughness"] =
+        {{"/Material/Upstream", "out"}};
+    network.nodes["/Material/Surface"] = surface;
+    network.terminals["surface"] = {"/Material/Surface", "out"};
+
+    CompileResult upstreamCycle = EvalGraph::Compile(network);
+    if (upstreamCycle.status != CompileStatus::Invalid ||
+        upstreamCycle.graph ||
+        upstreamCycle.diagnostic !=
+            "cycle detected through node /Material/Surface") {
+        return false;
+    }
+
+    network.nodes["/Material/Surface"].inputConnections["roughness"] =
+        {{"/Material/Surface", "out"}};
+    CompileResult selfCycle = EvalGraph::Compile(network);
+    return selfCycle.status == CompileStatus::Invalid &&
+           !selfCycle.graph &&
+           selfCycle.diagnostic ==
+               "cycle detected through node /Material/Surface";
+}
+
+static bool
+TestCompileRejectsMissingTerminalNode()
+{
+    MaterialGraph network;
+    network.terminals["displacement"] =
+        {"/Material/Disp", "out"};
+
+    CompileResult result =
+        EvalGraph::Compile(network, "displacement");
+    return result.status == CompileStatus::Invalid &&
+           !result.graph &&
+           result.diagnostic ==
+               "terminal \"displacement\" references missing node "
+               "/Material/Disp";
 }
 
 static bool
@@ -556,8 +674,190 @@ TestCompileMissingDisplacementTerminal()
     network.nodes["/Material/Surface"] = surface;
     network.terminals["surface"] = {"/Material/Surface", "out"};
 
-    auto graph = EvalGraph::Compile(network, "displacement");
-    return graph && !graph->IsValid();
+    CompileResult compileResult = EvalGraph::Compile(network, "displacement");
+
+    return compileResult.status == CompileStatus::AbsentTerminal &&
+           !compileResult.graph && compileResult.diagnostic.empty();
+}
+
+static bool
+TestCompileVolumeOnlyMaterial()
+{
+    MaterialGraph network;
+
+    GraphNode vdf;
+    vdf.nodeTypeId = "ND_anisotropic_vdf";
+    vdf.parameters["absorption"] = Value(Vec3f(0.1f, 0.2f, 0.3f));
+    vdf.parameters["scattering"] = Value(Vec3f(0.4f, 0.5f, 0.6f));
+    vdf.parameters["anisotropy"] = Value(0.25f);
+    network.nodes["/Material/Vdf"] = vdf;
+
+    GraphNode volume;
+    volume.nodeTypeId = "ND_volume";
+    volume.inputConnections["vdf"] = {{"/Material/Vdf", "out"}};
+    network.nodes["/Material/Volume"] = volume;
+    network.terminals["volume"] = {"/Material/Volume", "out"};
+
+    CompileResult result = EvalGraph::Compile(network);
+    if (result.status != CompileStatus::Valid ||
+        !result.graph ||
+        !result.diagnostic.empty()) {
+        return false;
+    }
+
+    const SurfaceClosure closure =
+        result.graph->Evaluate(ShadingContext{});
+    CompileResult explicitResult =
+        EvalGraph::Compile(network, "surface");
+    if (explicitResult.status != CompileStatus::Valid ||
+        !explicitResult.graph ||
+        !explicitResult.diagnostic.empty()) {
+        return false;
+    }
+    const SurfaceClosure explicitClosure =
+        explicitResult.graph->Evaluate(ShadingContext{});
+
+    GraphNode vacuumVolume;
+    vacuumVolume.nodeTypeId = "ND_volume";
+    network.nodes.clear();
+    network.nodes["/Material/Volume"] = vacuumVolume;
+    network.terminals["volume"] = {"/Material/Volume", "out"};
+    CompileResult vacuumResult = EvalGraph::Compile(network);
+    if (vacuumResult.status != CompileStatus::Valid ||
+        !vacuumResult.graph) {
+        return false;
+    }
+    const SurfaceClosure vacuumClosure =
+        vacuumResult.graph->Evaluate(ShadingContext{});
+
+    return closure.opacity == 0.0f &&
+        closure.isVolumeBoundary &&
+        closure.hasInteriorMedium &&
+        Test_IsClose(
+            closure.interiorMedium.sigmaA,
+            Vec3f(0.1f, 0.2f, 0.3f)) &&
+        Test_IsClose(
+            closure.interiorMedium.sigmaS,
+            Vec3f(0.4f, 0.5f, 0.6f)) &&
+        Test_IsClose(closure.interiorMedium.anisotropy, 0.25f) &&
+        explicitClosure.opacity == closure.opacity &&
+        explicitClosure.isVolumeBoundary &&
+        explicitClosure.hasInteriorMedium ==
+            closure.hasInteriorMedium &&
+        Test_IsClose(
+            explicitClosure.interiorMedium.sigmaA,
+            closure.interiorMedium.sigmaA) &&
+        Test_IsClose(
+            explicitClosure.interiorMedium.sigmaS,
+            closure.interiorMedium.sigmaS) &&
+        Test_IsClose(
+            explicitClosure.interiorMedium.anisotropy,
+            closure.interiorMedium.anisotropy) &&
+        vacuumClosure.opacity == 0.0f &&
+        vacuumClosure.isVolumeBoundary &&
+        !vacuumClosure.hasInteriorMedium;
+}
+
+static bool
+TestMixSurfaceClosuresPreservesVolumeBoundaryIdentity()
+{
+    MaterialGraph network;
+    GraphNode bgVolume;
+    bgVolume.nodeTypeId = "ND_volume";
+    network.nodes["/Material/BgVolume"] = bgVolume;
+    GraphNode fgVolume;
+    fgVolume.nodeTypeId = "ND_volume";
+    network.nodes["/Material/FgVolume"] = fgVolume;
+    GraphNode mixNode;
+    mixNode.nodeTypeId = "ND_mix_surfaceshader";
+    mixNode.parameters["mix"] = Value(0.5f);
+    mixNode.inputConnections["bg"] = {
+        {"/Material/BgVolume", "out"}};
+    mixNode.inputConnections["fg"] = {
+        {"/Material/FgVolume", "out"}};
+    network.nodes["/Material/Mix"] = mixNode;
+    network.terminals["surface"] = {"/Material/Mix", "out"};
+
+    CompileResult compileResult = EvalGraph::Compile(network);
+    if (compileResult.status != CompileStatus::Valid ||
+        !compileResult.graph) {
+        return false;
+    }
+    const SurfaceClosure graphVolumeMix =
+        compileResult.graph->Evaluate(ShadingContext{});
+
+    GraphNode dielectric;
+    dielectric.nodeTypeId = "ND_dielectric_bsdf";
+    network.nodes["/Material/Dielectric"] = dielectric;
+    GraphNode surface;
+    surface.nodeTypeId = "ND_surface";
+    surface.inputConnections["bsdf"] = {
+        {"/Material/Dielectric", "out"}};
+    network.nodes["/Material/Surface"] = surface;
+
+    network.nodes["/Material/Mix"].parameters["mix"] = Value(0.0f);
+    network.nodes["/Material/Mix"].inputConnections["fg"] = {
+        {"/Material/Surface", "out"}};
+    CompileResult bgEndpointResult = EvalGraph::Compile(network);
+    if (bgEndpointResult.status != CompileStatus::Valid ||
+        !bgEndpointResult.graph) {
+        return false;
+    }
+    const SurfaceClosure graphBgEndpoint =
+        bgEndpointResult.graph->Evaluate(ShadingContext{});
+
+    GraphNode vdf;
+    vdf.nodeTypeId = "ND_anisotropic_vdf";
+    vdf.parameters["absorption"] = Value(Vec3f(0.25f));
+    network.nodes["/Material/Vdf"] = vdf;
+    GraphNode mediumVolume;
+    mediumVolume.nodeTypeId = "ND_volume";
+    mediumVolume.inputConnections["vdf"] = {
+        {"/Material/Vdf", "out"}};
+    network.nodes["/Material/MediumVolume"] = mediumVolume;
+    network.nodes["/Material/Mix"].parameters["mix"] = Value(1.0f);
+    network.nodes["/Material/Mix"].inputConnections["bg"] = {
+        {"/Material/Surface", "out"}};
+    network.nodes["/Material/Mix"].inputConnections["fg"] = {
+        {"/Material/MediumVolume", "out"}};
+    CompileResult fgEndpointResult = EvalGraph::Compile(network);
+    if (fgEndpointResult.status != CompileStatus::Valid ||
+        !fgEndpointResult.graph) {
+        return false;
+    }
+    const SurfaceClosure graphFgEndpoint =
+        fgEndpointResult.graph->Evaluate(ShadingContext{});
+
+    const SurfaceClosure volume =
+        MakeVolumeSurfaceClosure(VdfClosure{});
+    const SurfaceClosure opaque =
+        MakeUnlitSurfaceClosure(Vec3f(1.0f));
+
+    const SurfaceClosure volumeMix =
+        MixSurfaceClosures(volume, volume, 0.5f);
+    const SurfaceClosure bgEndpoint =
+        MixSurfaceClosures(volume, opaque, 0.0f);
+    const SurfaceClosure fgEndpoint =
+        MixSurfaceClosures(opaque, volume, 1.0f);
+    const SurfaceClosure surfaceMix =
+        MixSurfaceClosures(volume, opaque, 0.5f);
+
+    return graphVolumeMix.isVolumeBoundary &&
+        graphBgEndpoint.isVolumeBoundary &&
+        !graphBgEndpoint.HasBsdfTree() &&
+        graphBgEndpoint.opacity == 0.0f &&
+        !graphBgEndpoint.hasInteriorMedium &&
+        graphFgEndpoint.isVolumeBoundary &&
+        !graphFgEndpoint.HasBsdfTree() &&
+        graphFgEndpoint.opacity == 0.0f &&
+        graphFgEndpoint.hasInteriorMedium &&
+        Test_IsClose(
+            graphFgEndpoint.interiorMedium.sigmaA,
+            Vec3f(0.25f)) &&
+        volumeMix.isVolumeBoundary &&
+        bgEndpoint.isVolumeBoundary &&
+        fgEndpoint.isVolumeBoundary &&
+        !surfaceMix.isVolumeBoundary;
 }
 
 static bool
@@ -572,7 +872,9 @@ TestEvaluateConstantDisplacement()
     network.terminals["displacement"] =
         {"/Material/Displacement", "out"};
 
-    auto graph = EvalGraph::Compile(network, "displacement");
+    CompileResult compileResult = EvalGraph::Compile(network, "displacement");
+
+    std::unique_ptr<EvalGraph>& graph = compileResult.graph;
     float displacement = 0.0f;
     return graph && graph->IsValid() &&
            graph->EvaluateDisplacement(ShadingContext{}, &displacement) &&
@@ -617,26 +919,15 @@ TestEvaluatePositionSineDisplacement()
     network.terminals["displacement"] =
         {"/Material/Displacement", "out"};
 
-    auto graph = EvalGraph::Compile(network, "displacement");
+    CompileResult compileResult = EvalGraph::Compile(network, "displacement");
+
+    std::unique_ptr<EvalGraph>& graph = compileResult.graph;
     ShadingContext context;
     context.position = Vec3f(0.78539816339f, 0.0f, 0.0f);
     float displacement = 0.0f;
     return graph && graph->IsValid() &&
            graph->EvaluateDisplacement(context, &displacement) &&
            Test_IsClose(displacement, 0.25f, 1.0e-4f);
-}
-
-static bool
-TestInvalidGraphEvaluate()
-{
-    MaterialGraph network;
-    auto graph = EvalGraph::Compile(network);
-    if (!graph) return false;
-
-    ShadingContext ctx;
-    SurfaceClosure closure = graph->Evaluate(ctx);
-    // Should return a default closure without crashing.
-    return Test_IsClose(closure.baseColor, Vec3f(0.8f), 1e-4f);
 }
 
 static bool
@@ -686,7 +977,9 @@ TestInputReevaluationUsesModifiedContext()
     termConn.upstreamOutputName = "out";
     network.terminals["surface"] = termConn;
 
-    auto graph = EvalGraph::Compile(network);
+    CompileResult compileResult = EvalGraph::Compile(network);
+
+    std::unique_ptr<EvalGraph>& graph = compileResult.graph;
     if (!graph || !graph->IsValid()) {
         printf("    Graph compilation failed\n");
         return false;
@@ -720,10 +1013,14 @@ Test_RegisterGraphTests()
     _REG(TestEvalGeometricInput);
     _REG(TestCompileUnknownNodeTypeFails);
     _REG(TestCompileRejectsCycle);
+    _REG(TestCompileRejectsMissingUpstreamNode);
+    _REG(TestCompileRejectsTerminalCycles);
+    _REG(TestCompileRejectsMissingTerminalNode);
     _REG(TestCompileMissingDisplacementTerminal);
+    _REG(TestCompileVolumeOnlyMaterial);
+    _REG(TestMixSurfaceClosuresPreservesVolumeBoundaryIdentity);
     _REG(TestEvaluateConstantDisplacement);
     _REG(TestEvaluatePositionSineDisplacement);
-    _REG(TestInvalidGraphEvaluate);
     _REG(TestInputReevaluationUsesModifiedContext);
 }
 

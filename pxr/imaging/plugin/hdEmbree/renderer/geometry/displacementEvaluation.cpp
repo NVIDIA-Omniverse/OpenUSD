@@ -817,13 +817,9 @@ HdEmbreeEvaluateDisplacement(
     GfVec3f const& dPdv,
     float* displacement)
 {
-    try {
-        return _EvaluateDisplacementImpl(
-            context, primID, u, v,
-            position, normal, dPdu, dPdv, displacement);
-    } catch (...) {
-        return false;
-    }
+    return _EvaluateDisplacementImpl(
+        context, primID, u, v,
+        position, normal, dPdu, dPdv, displacement);
 }
 
 bool
@@ -833,12 +829,8 @@ HdEmbreeComputeObjectSpaceDisplacementOffset(
     float displacement,
     GfVec3f* objectOffset)
 {
-    try {
-        return _ComputeObjectSpaceDisplacementOffsetImpl(
-            context, objectNormal, displacement, objectOffset);
-    } catch (...) {
-        return false;
-    }
+    return _ComputeObjectSpaceDisplacementOffsetImpl(
+        context, objectNormal, displacement, objectOffset);
 }
 
 bool
@@ -850,12 +842,8 @@ HdEmbreeComputeDisplacedSubdivPosition(
     float v,
     GfVec3f* outPosition)
 {
-    try {
-        return _ComputeDisplacedSubdivPositionImpl(
-            geometry, context, primID, u, v, outPosition);
-    } catch (...) {
-        return false;
-    }
+    return _ComputeDisplacedSubdivPositionImpl(
+        geometry, context, primID, u, v, outPosition);
 }
 
 bool
@@ -867,12 +855,8 @@ HdEmbreeComputeDisplacedSubdivFrame(
     float v,
     HdEmbreeDisplacedSubdivFrame* outFrame)
 {
-    try {
-        return _ComputeDisplacedSubdivFrameImpl(
-            geometry, context, primID, u, v, outFrame);
-    } catch (...) {
-        return false;
-    }
+    return _ComputeDisplacedSubdivFrameImpl(
+        geometry, context, primID, u, v, outFrame);
 }
 
 bool
@@ -909,12 +893,8 @@ HdEmbreeComputeDisplacedSubdivNormalDerivatives(
     GfVec3f* outDndu,
     GfVec3f* outDndv)
 {
-    try {
-        return _ComputeDisplacedSubdivNormalDerivativesImpl(
-            geometry, context, frame, outDndu, outDndv);
-    } catch (...) {
-        return false;
-    }
+    return _ComputeDisplacedSubdivNormalDerivativesImpl(
+        geometry, context, frame, outDndu, outDndv);
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

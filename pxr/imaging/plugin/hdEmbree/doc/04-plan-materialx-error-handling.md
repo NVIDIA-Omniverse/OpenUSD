@@ -73,8 +73,14 @@ Define these explicitly and implement the delegate accordingly:
   warning. The delegate simply skips that terminal.
 - **Present but malformed terminal** (unsupported node, missing upstream node,
   cycle, missing evaluator): invalid. Emit one warning.
-- **Missing surface**: treated as invalid for the surface terminal — a material
-  with no usable surface falls back to display-color shading and warns once.
+- **Missing surface with no volume or displacement terminal**: invalid — the
+  material falls back to display-color shading and warns once.
+- **Volume-only material**: valid. Compilation synthesizes the internal
+  transparent surface-volume terminal so the renderer can cross the medium
+  boundary.
+- **Displacement-only material**: valid. The displacement graph is compiled,
+  the absent surface remains the renderer's display-color fallback, and no
+  missing-surface warning is emitted.
 - The current "use first available terminal when the requested surface terminal
   is absent" behavior at `graph.cpp:391-393` is intentionally **removed**: an
   absent surface terminal now reports `Absent` rather than silently substituting

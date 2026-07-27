@@ -10,9 +10,18 @@
 #include "graphTypes.h"
 
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace mxcpp {
+
+enum class CompileStatus {
+    Valid,
+    Invalid,
+    AbsentTerminal
+};
+
+struct CompileResult;
 
 struct EvalOptions
 {
@@ -27,19 +36,31 @@ struct EvalOptions
 class EvalGraph
 {
 public:
-    /// Compile a MaterialGraph into an evaluation graph.
-    /// \p terminalName selects which terminal (e.g. "surface") to compile.
-    static std::unique_ptr<EvalGraph> Compile(
+    /// Compile one terminal of a MaterialGraph without using authored graph
+    /// errors as exceptions.
+    ///
+    /// \p terminalName selects the terminal. An empty name selects "surface".
+    /// A valid result owns the only non-null graph. Invalid results carry one
+    /// actionable diagnostic. An absent requested terminal carries neither.
+    static CompileResult Compile(
         const MaterialGraph& network,
         const std::string& terminalName = std::string());
 
-    /// Evaluate the compiled graph for a single shading point.
+    /// Evaluate this valid graph for one shading point.
+    ///
+    /// Malformed authored values, missing inputs, and type mismatches produce
+    /// node or material fallbacks rather than exceptions. Renderer callbacks
+    /// in ShadingContext must likewise translate recoverable backend failures
+    /// into their documented fallback results.
     SurfaceClosure Evaluate(
         const ShadingContext& ctx,
         const EvalOptions& options = EvalOptions()) const;
 
-    /// Evaluate an ND_displacement_float terminal. Returns false when this
-    /// graph is not a valid displacement graph.
+    /// Evaluate an ND_displacement_float terminal without throwing for
+    /// malformed authored values, missing inputs, or type mismatches.
+    ///
+    /// Returns false when this is not a displacement graph, \p displacement
+    /// is null, or evaluation cannot produce a float.
     bool EvaluateDisplacement(
         const ShadingContext& ctx,
         float* displacement) const;
@@ -71,10 +92,15 @@ private:
     std::string _materialModelType;
     bool _isValid = false;
 
-    static SurfaceClosure _EvalMaterialModel(
+    /// Evaluate one supported terminal model into \p closure. A null closure
+    /// performs the same dispatch lookup without evaluating the model.
+    ///
+    /// Returns false when \p modelType has no terminal-model evaluator.
+    static bool _EvalMaterialModel(
         const std::string& modelType,
         const ParamMap& params,
-        const EvalOptions& options);
+        const EvalOptions& options,
+        SurfaceClosure* closure);
 
     void _BuildParamMap(
         const std::vector<InputBinding>& bindings,
@@ -98,6 +124,17 @@ private:
         SlotId sourceOutputSlot,
         const ShadingContext& ctx,
         Value* out);
+};
+
+/// The explicit outcome of compiling one requested material terminal.
+///
+/// Valid owns a usable graph and no diagnostic. Invalid owns no graph and
+/// carries one diagnostic. AbsentTerminal owns no graph and no diagnostic.
+struct CompileResult
+{
+    CompileStatus status = CompileStatus::Invalid;
+    std::unique_ptr<EvalGraph> graph;
+    std::string diagnostic;
 };
 
 }  // namespace mxcpp

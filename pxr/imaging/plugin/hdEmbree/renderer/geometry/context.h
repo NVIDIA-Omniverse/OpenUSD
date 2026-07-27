@@ -18,6 +18,7 @@
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/vt/array.h"
 
+#include <atomic>
 #include <unordered_map>
 #include <string>
 #include <vector>
@@ -65,6 +66,9 @@ struct HdEmbreePrototypeContext
     /// Whether the active repr and display style permit custom displacement.
     bool displacementEnabled = true;
     bool displaced = false;
+    /// Deduplicates callback-boundary diagnostics across Embree worker
+    /// invocations during one prototype commit.
+    std::atomic<bool> displacementExceptionReported{false};
     /// Converts Embree's subdivision winding to the authored USD orientation.
     /// Coarse triangles are already reordered by HdMeshUtil and stay +1.
     float orientationSign = 1.0f;

@@ -62,6 +62,9 @@ struct SurfaceClosure
     Vec3f normal = Vec3f(0.0f, 0.0f, 1.0f);
     SurfaceNormalSpace normalSpace = SurfaceNormalSpace::None;
     bool thinWalled = false;
+    // Identifies a material authored only as a volume boundary independently
+    // of whether its evaluated medium coefficients are locally nonzero.
+    bool isVolumeBoundary = false;
     bool hasInteriorMedium = false;
     MediumProperties interiorMedium;
     bool hasPrecomputedSubsurfaceMedium = false;

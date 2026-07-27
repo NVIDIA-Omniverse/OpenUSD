@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <exception>
 #include <mutex>
 #include <string>
 #include <unordered_set>
@@ -376,6 +377,10 @@ HdEmbreeOiioTextureSystem::Sample2D(
         request.defaultValue[3],
     };
 
+    // OIIO handle resolution, sampling, and color management can report
+    // recoverable failures as exceptions. Keep the exception region around
+    // those backend calls only, where the filename is still available.
+    try {
     OIIO::TextureSystem::Perthread* const threadInfo =
         textureSystem->get_perthread_info();
     const _Impl::_CachedHandle& cached =
@@ -444,6 +449,22 @@ HdEmbreeOiioTextureSystem::Sample2D(
     result.value = mxcpp::Vec4f(sampled[0], sampled[1], sampled[2], sampled[3]);
     result.status = mxcpp::TextureSampleStatus::Ok;
     return result;
+    } catch (const std::exception& error) {
+        if (_ShouldWarnOnce(_impl.get(), request.filePath)) {
+            TF_WARN(
+                "Exception sampling texture '%s': %s. Returning the authored "
+                "default value.",
+                request.filePath.c_str(), error.what());
+        }
+    } catch (...) {
+        if (_ShouldWarnOnce(_impl.get(), request.filePath)) {
+            TF_WARN(
+                "Unknown exception sampling texture '%s'. Returning the "
+                "authored default value.",
+                request.filePath.c_str());
+        }
+    }
+    return _MakeDefaultResult(request, mxcpp::TextureSampleStatus::Error);
 #endif
 }
 

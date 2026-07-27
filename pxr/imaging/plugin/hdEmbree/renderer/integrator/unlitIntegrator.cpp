@@ -82,20 +82,18 @@ HdEmbreeRenderer::_IntegrateUnlit(
     GfVec3f bitangent = _ToGf(ctx.bitangent);
 
     // Try to evaluate MaterialXCpp material if one is bound.
-    mxcpp::EvalGraph *evalGraph = prototypeContext->material ? prototypeContext->material->evalGraph : nullptr;
+    mxcpp::EvalGraph* surfaceGraph = prototypeContext->material
+        ? prototypeContext->material->surfaceGraph
+        : nullptr;
 
     mxcpp::SurfaceClosure closure;
     bool hasMaterialClosure = false;
 
-    if (evalGraph) {
-        try {
-            mxcpp::EvalOptions evalOptions;
-            evalOptions.useAdobeOpenPBR = _useAdobeOpenPBR;
-            closure = evalGraph->Evaluate(ctx, evalOptions);
-            hasMaterialClosure = true;
-        } catch (...) {
-            hasMaterialClosure = false;
-        }
+    if (surfaceGraph) {
+        mxcpp::EvalOptions evalOptions;
+        evalOptions.useAdobeOpenPBR = _useAdobeOpenPBR;
+        closure = surfaceGraph->Evaluate(ctx, evalOptions);
+        hasMaterialClosure = true;
     }
 
     if (hasMaterialClosure) {

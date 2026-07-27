@@ -108,6 +108,7 @@ MakeVolumeSurfaceClosure(const VdfClosure& vdfClosure)
     // but the renderer still needs a closure at the boundary so it can enter
     // and exit the medium.
     closure.opacity = 0.0f;
+    closure.isVolumeBoundary = true;
     closure.hasInteriorMedium = !vdfClosure.medium.IsVacuum();
     closure.interiorMedium = vdfClosure.medium;
     return closure;
@@ -168,6 +169,7 @@ MixVolumeSurfaceClosures(
 {
     SurfaceClosure result = MakeEmptySurfaceClosure();
     result.opacity = 0.0f;
+    result.isVolumeBoundary = true;
     result.interiorMedium = MixMediumProperties(
         bg.hasInteriorMedium ? bg.interiorMedium : MediumProperties{},
         fg.hasInteriorMedium ? fg.interiorMedium : MediumProperties{},
@@ -208,8 +210,12 @@ EvalSurfaceVolumeMaterial(const ParamMap& params)
     static const SlotName surface("surface");
     static const SlotName volume("volume");
 
+    // A missing surface is an intentional transparent boundary for a
+    // volume-only material. A connected surface still replaces this default.
+    const SurfaceClosure volumeOnlyBoundary =
+        MakeVolumeSurfaceClosure(VdfClosure{});
     return ApplyVolumeToSurfaceClosure(
-        Get<SurfaceClosure>(params, surface, MakeEmptySurfaceClosure()),
+        Get<SurfaceClosure>(params, surface, volumeOnlyBoundary),
         Get<SurfaceClosure>(params, volume, MakeEmptySurfaceClosure()));
 }
 
@@ -389,6 +395,14 @@ MixSurfaceClosures(
     result.normalSpace =
         mix >= 0.5f ? fg.normalSpace : bg.normalSpace;
     result.thinWalled = mix >= 0.5f ? fg.thinWalled : bg.thinWalled;
+    // A mixed closure is a pure medium boundary only when every input with a
+    // nonzero contribution is itself a medium boundary. Endpoint mixes retain
+    // the selected input's identity.
+    const bool usesBg = mix < 1.0f;
+    const bool usesFg = mix > 0.0f;
+    result.isVolumeBoundary =
+        (!usesBg || bg.isVolumeBoundary) &&
+        (!usesFg || fg.isVolumeBoundary);
 
     result.subsurfaceWeight =
         MixFloat(bg.subsurfaceWeight, fg.subsurfaceWeight, mix);
@@ -402,29 +416,52 @@ MixSurfaceClosures(
         MixFloat(bg.subsurfaceAnisotropy, fg.subsurfaceAnisotropy, mix);
 
     const bool chooseFg = mix >= 0.5f;
-    if (fg.hasInteriorMedium && (!bg.hasInteriorMedium || chooseFg)) {
+    if (!usesFg && bg.hasInteriorMedium) {
+        result.hasInteriorMedium = true;
+        result.interiorMedium = bg.interiorMedium;
+    } else if (!usesBg && fg.hasInteriorMedium) {
         result.hasInteriorMedium = true;
         result.interiorMedium = fg.interiorMedium;
-    } else if (bg.hasInteriorMedium) {
+    } else if (usesBg && usesFg &&
+               fg.hasInteriorMedium &&
+               (!bg.hasInteriorMedium || chooseFg)) {
+        result.hasInteriorMedium = true;
+        result.interiorMedium = fg.interiorMedium;
+    } else if (usesBg && usesFg && bg.hasInteriorMedium) {
         result.hasInteriorMedium = true;
         result.interiorMedium = bg.interiorMedium;
     }
 
-    if (fg.hasPrecomputedSubsurfaceMedium &&
-        (!bg.hasPrecomputedSubsurfaceMedium || chooseFg)) {
+    if (!usesFg && bg.hasPrecomputedSubsurfaceMedium) {
+        result.hasPrecomputedSubsurfaceMedium = true;
+        result.precomputedSubsurfaceMedium =
+            bg.precomputedSubsurfaceMedium;
+    } else if (!usesBg && fg.hasPrecomputedSubsurfaceMedium) {
         result.hasPrecomputedSubsurfaceMedium = true;
         result.precomputedSubsurfaceMedium =
             fg.precomputedSubsurfaceMedium;
-    } else if (bg.hasPrecomputedSubsurfaceMedium) {
+    } else if (usesBg && usesFg &&
+               fg.hasPrecomputedSubsurfaceMedium &&
+               (!bg.hasPrecomputedSubsurfaceMedium || chooseFg)) {
+        result.hasPrecomputedSubsurfaceMedium = true;
+        result.precomputedSubsurfaceMedium =
+            fg.precomputedSubsurfaceMedium;
+    } else if (usesBg && usesFg &&
+               bg.hasPrecomputedSubsurfaceMedium) {
         result.hasPrecomputedSubsurfaceMedium = true;
         result.precomputedSubsurfaceMedium =
             bg.precomputedSubsurfaceMedium;
     }
 
-    const Bsdf::NodeId bgRoot =
-        AppendClosureTree(&result.bsdfTree, bg.bsdfTree);
-    const Bsdf::NodeId fgRoot =
-        AppendClosureTree(&result.bsdfTree, fg.bsdfTree);
+    // A zero-weight branch must not leave a closure tree behind: renderer
+    // transport classification uses tree presence to distinguish pure medium
+    // boundaries from scattering surfaces.
+    const Bsdf::NodeId bgRoot = usesBg
+        ? AppendClosureTree(&result.bsdfTree, bg.bsdfTree)
+        : Bsdf::InvalidNodeId;
+    const Bsdf::NodeId fgRoot = usesFg
+        ? AppendClosureTree(&result.bsdfTree, fg.bsdfTree)
+        : Bsdf::InvalidNodeId;
 
     if (result.bsdfTree.IsValid(bgRoot) && result.bsdfTree.IsValid(fgRoot)) {
         Bsdf::MixData mixData;

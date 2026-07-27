@@ -325,8 +325,11 @@ TestConvertAndCompileSurfaceAndDisplacementTerminals()
         return false;
     }
 
-    auto surface = EvalGraph::Compile(graph, "surface");
-    auto displacement = EvalGraph::Compile(graph, "displacement");
+    CompileResult surfaceResult = EvalGraph::Compile(graph, "surface");
+
+    std::unique_ptr<EvalGraph>& surface = surfaceResult.graph;
+    CompileResult displacementResult = EvalGraph::Compile(graph, "displacement");
+    std::unique_ptr<EvalGraph>& displacement = displacementResult.graph;
     float value = 0.0f;
     ShadingContext context;
     return surface && surface->IsValid() &&

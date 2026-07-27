@@ -576,7 +576,7 @@ _IsReflectionOnlyClosure(mxcpp::SurfaceClosure const& closure)
 inline bool
 _IsVolumeOnlyBoundary(mxcpp::SurfaceClosure const& closure)
 {
-    return closure.hasInteriorMedium &&
+    return closure.isVolumeBoundary &&
            !closure.HasBsdfTree() &&
            _IsEffectivelyZero(closure.opacity);
 }

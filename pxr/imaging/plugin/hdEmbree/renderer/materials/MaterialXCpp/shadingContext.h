@@ -76,7 +76,8 @@ struct ShadingContext
     // Named-space transform support for geometric and transform* nodes.
     // The callback can handle arbitrary renderer-defined spaces; when it is
     // absent or declines a transform, mxcpp falls back to built-in object/world
-    // transforms using the matrices below.
+    // transforms using the matrices below. It must report recoverable failures
+    // by returning false rather than throwing.
     TransformSpaceFn transformSpace = nullptr;
     const void* transformUserData = nullptr;
     std::string workingSpace = "world";
@@ -87,7 +88,8 @@ struct ShadingContext
 
     // Per-sample varying property lookup (geompropvalue).
     // Returns the named geometric property at the current shading point.
-    // Returns std::monostate (empty Value) on failure.
+    // Returns std::monostate (empty Value) on failure and must not throw for
+    // recoverable lookup failures.
     using GeomPropFn = Value(*)(const void* userData, const std::string& name);
     GeomPropFn geomPropLookup = nullptr;
     const void* geomPropUserData = nullptr;
@@ -98,7 +100,8 @@ struct ShadingContext
 
     // Optional color transform callback for MaterialX colortransform nodes.
     // The callback receives canonical lower-case color-space names and RGB
-    // triplets only. color4 alpha passthrough is handled in mxcpp.
+    // triplets only. color4 alpha passthrough is handled in mxcpp. Recoverable
+    // transform failures must return false rather than throw.
     using ColorTransformFn = bool(*)(
         const void* userData,
         const std::string& sourceColorSpace,

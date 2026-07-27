@@ -76,6 +76,9 @@ class TextureSystem
 public:
     virtual ~TextureSystem() = default;
 
+    /// Sample one texture lookup. Implementations must translate recoverable
+    /// backend failures into Missing or Error results and must not let those
+    /// failures escape graph evaluation as exceptions.
     virtual Texture2DResult Sample2D(
         const Texture2DRequest& request) const = 0;
 };
