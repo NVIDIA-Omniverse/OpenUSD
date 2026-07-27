@@ -361,6 +361,7 @@ pxr_build_test(testMaterialXCpp
         renderer/materials/MaterialXCpp/tests/testMaterialXCppGraph.cpp
         renderer/materials/MaterialXCpp/tests/testMaterialXCppAdapter.cpp
         renderer/colorManagement.cpp
+        renderer/materials/MaterialXCpp/tests/testClosureClassification.cpp
         renderer/integrator/medium.cpp
         renderer/materials/mxcppAdapter.cpp
         renderer/integrator/sss.cpp
@@ -390,6 +391,11 @@ pxr_build_test(testMaterialXCpp
         renderer/materials/MaterialXCpp/nodes/procedural3dNodes.cpp
         renderer/materials/MaterialXCpp/nodes/pbrNodes.cpp
         renderer/materials/MaterialXCpp/nodes/colorTransformNodes.cpp
+)
+
+pxr_register_test(testMaterialXCpp
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testMaterialXCpp"
+    EXPECTED_RETURN_CODE 0
 )
 
 if (TARGET testHdEmbreeSampling)

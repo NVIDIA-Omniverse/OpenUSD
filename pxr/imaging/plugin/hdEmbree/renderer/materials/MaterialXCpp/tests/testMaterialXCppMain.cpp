@@ -57,6 +57,7 @@ void Test_RegisterNodeTests();
 void Test_RegisterMaterialTests();
 void Test_RegisterGraphTests();
 void Test_RegisterAdapterTests();
+void Test_RegisterClosureClassificationTests();
 
 int
 main(int argc, char** argv)
@@ -66,6 +67,7 @@ main(int argc, char** argv)
     Test_RegisterMaterialTests();
     Test_RegisterGraphTests();
     Test_RegisterAdapterTests();
+    Test_RegisterClosureClassificationTests();
 
     const char* filter = (argc > 1) ? argv[1] : nullptr;
 
