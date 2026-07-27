@@ -12,11 +12,36 @@ hdEmbree is one plugin target with three source submodules:
 
 The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer code depends only on renderer-owned runtime records and interfaces; delegate adapters populate or implement those contracts.
 
+hdEmbree exposes no supported hand-written C++ API and installs no
+hand-written headers. Hydra loads the plugin through `plugInfo.json`; the
+supported external contract is:
+
+| Contract | Source of truth |
+| --- | --- |
+| Renderer identity `Embree` (`usdview`/`usdrender -r`, `loadWithRenderer`) | `plugInfo.json` |
+| `HdEmbreeRendererPlugin` type name, `HdRendererPlugin` base, priority | `plugInfo.json`, `delegate/rendererPlugin.cpp` |
+| `HdEmbree_ImplicitSurfaceSceneIndexPlugin` type name, base, `loadWithRenderer` | `plugInfo.json`, `delegate/implicitSurfaceSceneIndexPlugin.cpp` |
+| `TyphoonRenderSettingsAPI` schema identity, auto-apply to `RenderSettings` | `plugInfo.json`, `schema/generatedSchema.usda` |
+| The 27 `ty:` attribute names, types, defaults, and allowed tokens | `schema/schema.usda`, `HdEmbreeRenderDelegate::_Initialize()` |
+| Generic unnamespaced settings (`domeLightCameraVisibility`) and the namespace list | `HdEmbreeRenderDelegate::GetRenderSettingsNamespaces()` |
+| Material render-context tokens | `HdEmbreeRenderDelegate::GetMaterialRenderContexts()` |
+| Supported AOV names | `renderer/aov/aovOutput.cpp` |
+| The renderer identifiers RenderLab matches on (`"HdEmbreeRendererPlugin"`, `"Embree"`) | `extras/usd/examples/usdviewPlugins/renderLab/renderSettingsMetadata.py` |
+| RenderLab setting keys, a subset of the delegate descriptors | `extras/usd/examples/usdviewPlugins/renderLab/renderSettingsMetadata.py` |
+
+The USD `TyphoonRenderSettingsAPI` schema is hdEmbree's supported external
+settings interface. Hydra's direct delegate-settings path is an internal
+application-control path, required by usdview and RenderLab, and is not a
+consumer-facing C++ API. RenderLab uses `StageView.SetRendererSetting()` rather
+than authoring USD. Its explicit metadata covers 25 of the 27 `ty:` attributes;
+`ty:disableShadows` and `ty:textureCacheSize` use the default category. Its key
+set must remain a subset of the delegate descriptors.
+
 ## Repository map
 
 ### Plugin root
 
-- `CMakeLists.txt`: plugin sources, dependencies, installed headers/resources, compile definitions, and C++ tests.
+- `CMakeLists.txt`: plugin sources, dependencies, installed resources, compile definitions, and C++ tests.
 - `plugInfo.json`: Hydra renderer, scene-index plugin, and Typhoon schema registration.
 - `pch.h`: precompiled system/standard headers. It remains at root because the OpenUSD build macros discover it there.
 - `README.md`: user-facing capabilities and render settings.
@@ -44,11 +69,10 @@ The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer c
 
 ### `renderer/`: path tracing
 
-- `renderer.h/.cpp`: `HdEmbreeRenderer` public façade, persistent frame state,
+- `renderer.h/.cpp`: `HdEmbreeRenderer` central façade, persistent frame state,
   settings, and the progressive preview/full-resolution render loop.
 - `rendererImpl.h`: private inline math, ray, closure, spectral, and shading
-  helpers shared by focused renderer translation units. It is not an extension
-  point or installed API.
+  helpers shared by focused renderer translation units.
 - `camera/camera.cpp`: camera and lens sampling, primary-ray construction,
   and ray differentials. Tile/pixel traversal remains in `renderer.cpp`.
 - `aov/aovOutput.cpp`: AOV binding validation, clear/reset behavior, adaptive
@@ -499,7 +523,7 @@ Read `renderer.h` for persistent state and function contracts,
 `lights/lightSamplers.*` for light PDFs, and
 `materials/MaterialXCpp/materials/bsdf.*` for closure evaluation and sampling.
 
-## Extension points
+## Changing the plugin
 
 ### Materials and MaterialX nodes
 

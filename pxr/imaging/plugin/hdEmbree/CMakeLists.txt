@@ -81,7 +81,7 @@ pxr_plugin(hdEmbree
         renderer/integrator/visibility.cpp
         renderer/integrator/volumeTransport.cpp
 
-    PUBLIC_CLASSES
+    PRIVATE_CLASSES
         renderer/config
         delegate/adaptiveSubdivision
         delegate/instancer
@@ -128,7 +128,12 @@ pxr_plugin(hdEmbree
         renderer/materials/MaterialXCpp/nodes/pbrNodes
         renderer/materials/MaterialXCpp/nodes/colorTransformNodes
 
-    PUBLIC_HEADERS
+        renderer/debugCodes
+        delegate/implicitSurfaceSceneIndexPlugin
+        renderer/materials/oiioTextureSystem
+        renderer/integrator/sss
+
+    PRIVATE_HEADERS
         renderer/colorManagement.h
         renderer/geometry/context.h
         renderer/geometry/displacementEvaluation.h
@@ -155,12 +160,6 @@ pxr_plugin(hdEmbree
         renderer/materials/MaterialXCpp/nodes/helpers/valueHelper.h
         renderer/materials/MaterialXCpp/graphTypes.h
         renderer/materials/MaterialXCpp/slots.h
-
-    PRIVATE_CLASSES
-        renderer/debugCodes
-        delegate/implicitSurfaceSceneIndexPlugin
-        renderer/materials/oiioTextureSystem
-        renderer/integrator/sss
 
     RESOURCE_FILES
         plugInfo.json

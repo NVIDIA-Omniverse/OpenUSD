@@ -9,22 +9,12 @@
 
 \anchor hdEmbree_mainpage
 
-## Classes
-
-- HdEmbreeConfig
-- HdEmbreeInstancer
-- HdEmbreeMesh
-- HdEmbreeRendererPlugin
-- HdEmbreeRenderDelegate
-- HdEmbreeRenderParam
-- HdEmbreeRenderPass
-- HdEmbreeRenderer
-
 ## Overview
 
 HdEmbree implements a Hydra renderer plugin based on Intel's Embree raytracing
-kernels. HdEmbree is provided as a minimal example of how to write a renderer
-plugin for hydra; it aims to be living documentation of that API.
+kernels. Hydra discovers and loads it through plugin metadata. HdEmbree installs
+no hand-written C++ headers; its supported interface is its plugin identity,
+render-settings schema, delegate settings, material render contexts, and AOVs.
 
 The embree API is prefixed by "rtc", for raytracing core, and documentation is
 available [here](https://embree.github.io/api.html).
@@ -98,8 +88,9 @@ creation; the renderpass, in turn, gets a handle to the renderer on creation.
 
 ## Configuration
 
-Embree exports some configuration parameters, controllable by environment
-variable, through the HdEmbreeConfig class.
+The TyphoonRenderSettingsAPI schema is the supported external settings
+interface. Hydra applications can also control the delegate through renderer
+settings. Environment variables provide startup defaults.
 
 ## Unit Test
 

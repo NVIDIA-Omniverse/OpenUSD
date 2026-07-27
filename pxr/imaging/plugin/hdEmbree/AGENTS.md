@@ -210,6 +210,7 @@ plugin in the active Pixi environment.
 - `renderer/` contains the path tracer and its rendering, sampling, shading, texture, and third-party support components.
 - Dependencies should flow from `delegate/` to `renderer/`; new renderer code should not depend on Hydra-facing delegate implementation details.
 - `schema/` contains the authored and generated `TyphoonRenderSettingsAPI` schema files. Runtime plugin metadata remains in root `plugInfo.json`.
+- No hand-written hdEmbree header is installed or supported as a C++ API or extension point.
 
 ## Directory Map
 
@@ -236,8 +237,7 @@ plugin in the active Pixi environment.
 - `renderer/integrator/surfaceShading.cpp`, `lighting.cpp`, `sss.cpp`, and
   `visibility.cpp`: shared shading contexts and ray differentials, direct and
   environment lighting, subsurface transport, and linked/transparent traversal.
-- `renderer/rendererImpl.h`: private shared implementation helpers; do not treat it
-  as an installed API or extension point.
+- `renderer/rendererImpl.h`: private shared implementation helpers.
 - `delegate/mesh.*`: `HdEmbreeMesh`; translates Hydra mesh data into Embree prototype
   geometry and top-level instances.
 - `delegate/instancer.*`: Hydra instancer support for per-instance transforms and
