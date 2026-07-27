@@ -315,7 +315,8 @@ authored-IOR Fresnel.
    buffer exactly once and reports convergence. AOV validation is deliberately
    uncached because buffer properties can change without rebinding.
 8. When an offline client sets `enableInteractive = false`, the active stage
-   has `RenderSettings`/`RenderProduct` output, and the renderer converges,
+   has `RenderSettings`/`RenderProduct` output, and the renderer both passes
+   setup and converges,
    `HdEmbreeRenderPass::_WriteActiveRenderProducts()` reads Hydra
    `HdRenderSettingsSchema`/`HdRenderProductSchema` data from the terminal
    scene index and writes color/raw raster products through Hio. Unset or true
@@ -687,8 +688,9 @@ resources, prefer CTest through Pixi over running the binary directly.
   agree.
 - Active RenderSettings bridging must not overwrite direct UI edits or explicit
   delegate settings. Preserve the bridge-owned tracking behavior.
-- Product output is convergence-driven. If an image never reaches convergence,
-  `_WriteActiveRenderProducts()` will not run.
+- Product output requires both valid renderer setup and convergence. If setup
+  fails or an image never reaches convergence, `_WriteActiveRenderProducts()`
+  will not run.
 - Embree geometry user data must outlive geometry that can be hit by in-flight
   rays. Release contexts and geometry in `Finalize()` paths.
 - Generated schema files are part of the plugin contract. Keep `schema.usda`,

@@ -335,6 +335,7 @@ bool
 _RunRenderProductOutputCase(const char *filename,
                             bool setInteractive,
                             bool interactive,
+                            bool invalidateSetup,
                             bool expectOutput)
 {
     if (!_RemoveIfExists(filename)) {
@@ -399,6 +400,14 @@ _RunRenderProductOutputCase(const char *filename,
         std::printf("failed to allocate render-product test buffer\n");
         return false;
     }
+    HdEmbreeRenderBuffer invalidBuffer(SdfPath("/InvalidBuffer"));
+    if (invalidateSetup &&
+        !invalidBuffer.Allocate(
+            GfVec3i(1, 1, 1), HdFormatFloat32,
+            /*multiSampled=*/false)) {
+        std::printf("failed to allocate invalid render-product test buffer\n");
+        return false;
+    }
 
     HdRenderPassSharedPtr renderPass = delegate.CreateRenderPass(
         renderIndex.get(), HdRprimCollection());
@@ -410,7 +419,17 @@ _RunRenderProductOutputCase(const char *filename,
     colorAov.aovName = HdAovTokens->color;
     colorAov.renderBuffer = &colorBuffer;
     colorAov.clearValue = VtValue(GfVec4f(0.0f));
-    renderPassState->SetAovBindings({colorAov});
+    HdRenderPassAovBindingVector aovBindings{colorAov};
+    if (invalidateSetup) {
+        // Keep color writable so the old product gate would emit a bogus
+        // image, while an invalid primId format forces renderer setup failure.
+        HdRenderPassAovBinding invalidAov;
+        invalidAov.aovName = HdAovTokens->primId;
+        invalidAov.renderBuffer = &invalidBuffer;
+        invalidAov.clearValue = VtValue(0);
+        aovBindings.push_back(invalidAov);
+    }
+    renderPassState->SetAovBindings(aovBindings);
 
     renderPass->Execute(renderPassState, TfTokenVector());
 
@@ -448,16 +467,26 @@ _TestRenderProductOutputPolicy()
         "testHdEmbreeInteractiveRenderProduct", ".png");
     const std::string offlineFilename = ArchMakeTmpFileName(
         "testHdEmbreeOfflineRenderProduct", ".png");
+    const std::string failedFilename = ArchMakeTmpFileName(
+        "testHdEmbreeFailedRenderProduct", ".png");
     return _RunRenderProductOutputCase(
                interactiveFilename.c_str(),
                /*setInteractive=*/false,
                /*interactive=*/true,
+               /*invalidateSetup=*/false,
                /*expectOutput=*/false) &&
            _RunRenderProductOutputCase(
                offlineFilename.c_str(),
                /*setInteractive=*/true,
                /*interactive=*/false,
-               /*expectOutput=*/true);
+               /*invalidateSetup=*/false,
+               /*expectOutput=*/true) &&
+           _RunRenderProductOutputCase(
+               failedFilename.c_str(),
+               /*setInteractive=*/true,
+               /*interactive=*/false,
+               /*invalidateSetup=*/true,
+               /*expectOutput=*/false);
 }
 
 bool

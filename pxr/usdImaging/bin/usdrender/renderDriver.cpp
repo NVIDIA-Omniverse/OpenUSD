@@ -6,13 +6,7 @@
 #include "pxr/imaging/glf/simpleLight.h"
 #include "pxr/imaging/glf/simpleMaterial.h"
 #include "pxr/imaging/hd/aov.h"
-#include "pxr/imaging/hd/renderBuffer.h"
 #include "pxr/imaging/hd/renderSettings.h"
-#include "pxr/imaging/hdSt/hioConversions.h"
-#include "pxr/imaging/hdSt/textureUtils.h"
-#include "pxr/imaging/hdx/tokens.h"
-#include "pxr/imaging/hdx/types.h"
-#include "pxr/imaging/hio/image.h"
 #include "pxr/usd/usd/editContext.h"
 #include "pxr/usd/usdGeom/camera.h"
 #include "pxr/usd/usdGeom/tokens.h"
@@ -27,12 +21,6 @@
 PXR_NAMESPACE_USING_DIRECTIVE
 static std::vector<std::string>_Split(std::string s){std::replace(s.begin(),s.end(),',',' ');std::istringstream i(s);std::vector<std::string>r;for(std::string x;i>>x;)r.push_back(x);return r;}
 static bool _Exists(const std::string&p){FILE*f=ArchOpenFile(p.c_str(),"rb");if(!f)return false;fclose(f);return true;}
-class _Writer{UsdImagingGLEngine&_e;public:explicit _Writer(UsdImagingGLEngine&e):_e(e){}bool Write(const std::string&name){
- HioImage::StorageSpec s;HdRenderBuffer*b=nullptr;HgiTextureHandle t;HdStTextureUtils::AlignedBuffer<uint8_t>d;void*data=nullptr;
- if(_e.GetGPUEnabled()){t=_e.GetAovTexture(HdAovTokens->color);if(!t)return false;const auto&x=t->GetDescriptor();s.width=x.dimensions[0];s.height=x.dimensions[1];s.format=HdxGetHioFormat(x.format);size_t z=0;d=HdStTextureUtils::HgiTextureReadback(_e.GetHgi(),t,&z);data=d.get();}
- else{b=_e.GetAovRenderBuffer(HdAovTokens->color);if(!b)return false;b->Resolve();s.width=b->GetWidth();s.height=b->GetHeight();s.format=HdStHioConversions::GetHioFormat(b->GetFormat());data=b->Map();}
- s.data=data;s.flipped=true;const HioImageSharedPtr image=HioImage::OpenForWriting(name);const bool ok=image&&image->Write(s);if(b)b->Unmap();return ok;
-}};
 bool RenderAll(const Options&o,const StageData&d,const RenderRequest&r){
  OffscreenContext context(o.gpu);if(!context.IsValid()){std::cerr<<context.GetError()<<"\n";return false;}
  UsdImagingGLEngine::Parameters p;p.rendererPluginId=r.renderer;p.gpuEnabled=o.gpu;p.enableUsdDrawModes=o.drawMode;UsdImagingGLEngine engine(p);
@@ -51,7 +39,6 @@ bool RenderAll(const Options&o,const StageData&d,const RenderRequest&r){
   UsdImagingGLRenderParams rp;rp.frame=time;rp.complexity=o.complexity;rp.colorCorrectionMode=TfToken(o.colorCorrection);rp.clearColor=GfVec4f(0);rp.enableSceneMaterials=o.sceneMaterials;
   rp.showProxy=std::find(purposes.begin(),purposes.end(),"proxy")!=purposes.end();rp.showRender=std::find(purposes.begin(),purposes.end(),"render")!=purposes.end();rp.showGuides=std::find(purposes.begin(),purposes.end(),"guide")!=purposes.end();
   std::cout<<"Recording time code: "<<(time.IsDefault()?0:time.GetValue())<<"\n";unsigned delay=10;do{engine.Render(d.stage->GetPseudoRoot(),rp);if(!engine.IsConverged()){std::this_thread::sleep_for(std::chrono::milliseconds(delay));delay=std::min(100u,delay+5);}}while(!engine.IsConverged());
-  _Writer writer(engine);for(const std::string&path:expected)if(!_Exists(path)&&!writer.Write(path)){std::cerr<<"Failed to write missing RenderProduct '"<<path<<"' from color AOV\n";return false;}
   for(const std::string&path:expected)if(!_Exists(path)){std::cerr<<"Missing expected RenderProduct '"<<path<<"'\n";return false;}
  }return true;
 }

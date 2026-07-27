@@ -492,6 +492,10 @@ participating-medium transport, or Russian roulette.
 `_PreRenderSetup()` rebuilds AOV validation and dispatch state every render;
 it does not cache validation because a bound buffer can change format or
 dimensions without changing its pointer.
+The renderer publishes synchronized `Pending`, `Valid`, or `Failed` frame
+status across the render and client threads. Offline RenderProducts are written
+only after the current frame is both valid and converged; setup failure still
+marks usable AOVs converged to park the render thread without writing output.
 
 After the selected integrator returns, `_EvaluatePixelSample()` applies any
 active mesh wireframe repr to the retained camera hit, then updates the

@@ -4,10 +4,14 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
+#include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
+#include "pxr/imaging/plugin/hdEmbree/delegate/renderPass.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
 
 #include "pxr/imaging/hd/renderBuffer.h"
+#include "pxr/imaging/hd/renderIndex.h"
+#include "pxr/imaging/hd/renderPassState.h"
 #include "pxr/imaging/hd/renderThread.h"
 #include "pxr/imaging/hd/tokens.h"
 
@@ -16,8 +20,12 @@
 
 #include <embree4/rtcore.h>
 
+#include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <thread>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -197,6 +205,7 @@ _FailedWithoutWork(
            buffer.resolveCount == 0 &&
            buffer.sampleWriteCount == 0 &&
            buffer.converged &&
+           !renderer->DidLastFrameProduceValidPixels() &&
            renderer->GetCompletedSamples() == 0;
 }
 
@@ -423,7 +432,116 @@ _TestSuccessfulMapBalance()
            primId.resolveCount == 1 &&
            primId.sampleWriteCount == 1 &&
            primId.converged &&
+           renderer.DidLastFrameProduceValidPixels() &&
            renderer.GetCompletedSamples() == 1;
+}
+
+bool
+_TestFrameStatusTransitions()
+{
+    _Scene scene;
+    _CountingRenderBuffer buffer(
+        SdfPath("/frameStatus"), 1, 1, HdFormatFloat32Vec4);
+    HdEmbreeRenderer renderer;
+    HdRenderThread renderThread;
+    _Configure(
+        &renderer,
+        scene.scene,
+        {_Binding(HdAovTokens->color, &buffer)},
+        GfRect2i(GfVec2i(0), 1, 1));
+
+    // A new renderer and a restarted valid frame must not expose validity
+    // until the new Render invocation passes setup.
+    if (renderer.DidLastFrameProduceValidPixels()) {
+        return false;
+    }
+    renderer.Render(&renderThread);
+    if (!renderer.DidLastFrameProduceValidPixels()) {
+        return false;
+    }
+    renderer.MarkFramePending();
+    if (renderer.DidLastFrameProduceValidPixels()) {
+        return false;
+    }
+
+    // A terminal setup failure must replace Pending with Failed.
+    buffer.Allocate(GfVec3i(1, 1, 1), HdFormatInt32, true);
+    buffer.converged = false;
+    renderer.Render(&renderThread);
+    return !renderer.DidLastFrameProduceValidPixels() &&
+           buffer.converged;
+}
+
+bool
+_TestRenderPassMarksRestartPending()
+{
+    _Scene scene;
+    _CountingRenderBuffer buffer(
+        SdfPath("/pendingRestart"), 1, 1, HdFormatFloat32Vec4);
+    HdEmbreeRenderer renderer;
+    HdRenderThread statusThread;
+    _Configure(
+        &renderer,
+        scene.scene,
+        {_Binding(HdAovTokens->color, &buffer)},
+        GfRect2i(GfVec2i(0), 1, 1));
+
+    // Establish a valid previous frame before the render pass restarts it.
+    statusThread.StartRender();
+    renderer.Render(&statusThread);
+    statusThread.StopRender();
+    if (!renderer.DidLastFrameProduceValidPixels()) {
+        return false;
+    }
+
+    HdEmbreeRenderDelegate delegate;
+    std::unique_ptr<HdRenderIndex> renderIndex(
+        HdRenderIndex::New(&delegate, HdDriverVector()));
+    if (!renderIndex) {
+        return false;
+    }
+
+    std::atomic<int> sceneVersion{1};
+    std::atomic<int> displacementVersion{0};
+    std::atomic<bool> callbackEntered{false};
+    std::atomic<bool> releaseCallback{false};
+    HdRenderThread renderThread;
+    renderThread.SetRenderCallback([&]() {
+        callbackEntered.store(true, std::memory_order_release);
+        while (!releaseCallback.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+    });
+    renderThread.StartThread();
+
+    HdEmbreeRenderPass renderPass(
+        renderIndex.get(),
+        HdRprimCollection(),
+        &renderThread,
+        &renderer,
+        &sceneVersion,
+        &displacementVersion);
+    HdRenderPassStateSharedPtr renderPassState =
+        delegate.CreateRenderPassState();
+    renderPassState->SetViewport(GfVec4d(0.0, 0.0, 1.0, 1.0));
+    renderPassState->SetAovBindings(
+        {_Binding(HdAovTokens->color, &buffer)});
+    renderPass.Execute(renderPassState, TfTokenVector());
+
+    for (int i = 0;
+         i != 500 &&
+             !callbackEntered.load(std::memory_order_acquire);
+         ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    const bool entered =
+        callbackEntered.load(std::memory_order_acquire);
+    const bool pending =
+        !renderer.DidLastFrameProduceValidPixels();
+
+    releaseCallback.store(true, std::memory_order_release);
+    renderThread.StopThread();
+    return entered && pending;
 }
 
 } // anonymous namespace
@@ -442,5 +560,7 @@ main()
     TF_AXIOM(_TestEmptyDataWindow());
     TF_AXIOM(_TestNullScene());
     TF_AXIOM(_TestSuccessfulMapBalance());
+    TF_AXIOM(_TestFrameStatusTransitions());
+    TF_AXIOM(_TestRenderPassMarksRestartPending());
     return 0;
 }

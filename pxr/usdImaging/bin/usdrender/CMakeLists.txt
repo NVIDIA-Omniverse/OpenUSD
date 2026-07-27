@@ -6,7 +6,7 @@ if (NOT ${PXR_BUILD_GPU_SUPPORT})
 endif()
 pxr_cpp_bin(usdrender
     LIBRARIES
-        arch ar cameraUtil garch gf glf hd hdSt hdx hio sdf tf trace usd usdGeom
+        arch ar cameraUtil garch gf glf hd sdf tf trace usd usdGeom
         usdHydra usdImagingGL usdRender usdUtils vt
 )
 if (UNIX AND NOT APPLE)
@@ -32,5 +32,11 @@ if (PXR_BUILD_EMBREE_PLUGIN AND BUILD_SHARED_LIBS)
         WARN_PERCENT 0.001
         EXPECTED_RETURN_CODE 0
         TESTENV testenv/CpuFrames
+    )
+
+    pxr_register_test(testUsdRenderInvalidProduct
+        COMMAND "${CMAKE_INSTALL_PREFIX}/bin/usdrender test.usda --disableGpu --renderer Embree --outputRoot ."
+        EXPECTED_RETURN_CODE 1
+        TESTENV testenv/InvalidProduct
     )
 endif()

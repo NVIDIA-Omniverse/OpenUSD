@@ -430,7 +430,7 @@ bool
 HdEmbreeRenderPass::IsConverged() const
 {
     const bool converged = _HasConverged();
-    if (converged) {
+    if (converged && _renderer->DidLastFrameProduceValidPixels()) {
         HdEmbreeRenderPass *self = const_cast<HdEmbreeRenderPass *>(this);
         if (!self->_renderProductsWritten) {
             self->_WriteActiveRenderProducts();
@@ -1147,6 +1147,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         _converged = false;
         _renderProductsWritten = false;
         _renderer->MarkAovBuffersUnconverged();
+        _renderer->MarkFramePending();
         _renderThread->StartRender();
     }
 }

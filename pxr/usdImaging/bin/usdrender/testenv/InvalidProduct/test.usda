@@ -1,0 +1,25 @@
+#usda 1.0
+(
+    renderSettingsPrimPath = "/Render/Settings"
+)
+
+def Camera "Camera"
+{
+}
+
+def Scope "Render"
+{
+    def RenderSettings "Settings"
+    {
+        rel camera = </Camera>
+        rel products = [</Render/Product>]
+    }
+
+    def RenderProduct "Product"
+    {
+        token productType = "raster"
+        token productName = "invalid-product.png"
+        int2 resolution = (1, 1)
+        float4 dataWindowNDC = (2, 2, 3, 3)
+    }
+}

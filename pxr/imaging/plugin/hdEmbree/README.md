@@ -18,7 +18,9 @@ hdEmbree writes active stage-authored `RenderProduct` files only for offline
 clients that set Hydra's `enableInteractive` render setting to `false`. An
 unset value is treated as interactive, so viewers such as usdview render the
 products into their viewport without writing their `productName` paths.
-`usdrender` explicitly selects offline mode and continues to write products.
+`usdrender` explicitly selects offline mode. hdEmbree writes products only
+after the frame both passes renderer setup and converges; a failed setup leaves
+the expected product absent so `usdrender` reports an error.
 
 ## Subdivision complexity and MaterialX displacement
 

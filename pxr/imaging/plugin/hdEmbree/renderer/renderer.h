@@ -394,6 +394,18 @@ public:
     /// the call; used for pause/stop checks and framebuffer locking.
     void Render(HdRenderThread* renderThread);
 
+    /// \brief Mark the next frame as pending before starting its render thread.
+    ///
+    /// The render pass must call this immediately before every StartRender()
+    /// so convergence checks cannot reuse the previous frame's validity.
+    void MarkFramePending();
+
+    /// \brief Report whether setup succeeded for the current or last frame.
+    ///
+    /// Safe to call from a client thread while Render runs on HdRenderThread.
+    /// \return True only after the current Render invocation completed setup.
+    bool DidLastFrameProduceValidPixels() const;
+
     /// \brief Clear authored AOV values and adaptive accumulation.
     ///
     /// Validates bindings, clears buffers that have non-empty clear values,
@@ -444,6 +456,13 @@ public:
     uint64_t GetSssIntersectionCount() const;
 
 private:
+    /// Setup state shared by the render thread and convergence client.
+    enum class _FrameStatus {
+        Pending,
+        Valid,
+        Failed
+    };
+
     /// Result produced by exactly one selected camera-ray integrator.
     struct _PixelSampleResult {
         /// First Embree intersection, retained unchanged for geometric AOVs.
@@ -1312,6 +1331,9 @@ private:
 
     // How many samples have been completed.
     std::atomic<int> _completedSamples;
+
+    // Whether the current frame passed setup and may write RenderProducts.
+    std::atomic<_FrameStatus> _frameStatus{_FrameStatus::Pending};
 
     // SSS random-walk statistics accumulated over the current render.
     mutable std::atomic<uint64_t> _sssCallCount;

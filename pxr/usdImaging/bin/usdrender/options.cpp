@@ -7,7 +7,7 @@
 PXR_NAMESPACE_USING_DIRECTIVE
 using namespace pxr_CLI;
 bool ParseOptions(int argc,char**argv,Options*o){
- CLI::App app("Generates images from a USD file");
+ CLI::App app("Renders authored RenderProducts from a USD file; the selected renderer must write every product");
  bool disableGpu=false,disableDrawMode=false,disableSceneMaterials=false;
  app.add_option("usdFilePath",o->usdFile,"USD file to render")->required();
  app.add_option("--mask",o->mask); app.add_option("--purposes",o->purposes);

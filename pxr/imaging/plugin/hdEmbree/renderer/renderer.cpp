@@ -364,6 +364,18 @@ HdEmbreeRenderer::GetCompletedSamples() const
     return _completedSamples.load();
 }
 
+void
+HdEmbreeRenderer::MarkFramePending()
+{
+    _frameStatus.store(_FrameStatus::Pending, std::memory_order_release);
+}
+
+bool
+HdEmbreeRenderer::DidLastFrameProduceValidPixels() const
+{
+    return _frameStatus.load(std::memory_order_acquire) == _FrameStatus::Valid;
+}
+
 float
 HdEmbreeRenderer::GetRenderElapsedSeconds() const
 {
@@ -480,8 +492,10 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
 
     _renderStartTime = std::chrono::steady_clock::now();
     if (!_PreRenderSetup()) {
+        _frameStatus.store(_FrameStatus::Failed, std::memory_order_release);
         return;
     }
+    _frameStatus.store(_FrameStatus::Valid, std::memory_order_release);
 
     // Compute the OpenQMC frame seed once per Render() call. An explicit
     // render setting or environment seed overrides the scene frame.
