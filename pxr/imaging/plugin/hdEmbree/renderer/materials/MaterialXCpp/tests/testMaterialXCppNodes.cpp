@@ -2758,6 +2758,7 @@ static bool TestLuminance() {
     }
     ParamMap in;
     in["in"] = Value(Vec3f(1.0f, 1.0f, 1.0f));
+    in["lumacoeffs"] = Value(Vec3f(0.2126f, 0.7152f, 0.0722f));
     NodeOutputMap out;
     ShadingContext ctx;
     fn(in, ctx, &out);
