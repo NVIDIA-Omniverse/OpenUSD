@@ -418,7 +418,7 @@ HdEmbreeRenderer::_PreRenderSetup()
     _height = 0;
     _needColor = false;
     _colorClearValue = GfVec4f(0.0f);
-    _aovWriters.clear();
+    _aovOutputs.clear();
     _pixelMean.clear();
     _pixelM2.clear();
     _pixelSampleCount.clear();
@@ -468,7 +468,7 @@ HdEmbreeRenderer::_PreRenderSetup()
         _pixelConverged.resize(numPixels, false);
     }
 
-    _BuildAovDispatchTable();
+    _ClassifyAovOutputs();
 
     // A validated interface Map is non-failing aside from allocation failure,
     // which is outside this non-exception setup contract.
@@ -784,13 +784,12 @@ HdEmbreeRenderer::_EvaluatePixelSample(
     if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
         const GfVec3f rgb(
             result.color[0], result.color[1], result.color[2]);
-        _UpdateVariance(this, x, y, rgb);
+        _UpdateVariance(x, y, rgb);
     }
 
-    for (const auto& writer : _aovWriters) {
-        if (!writer.buffer->IsConverged()) {
-            writer.writeFn(
-                this, writer, result.primaryHit, result.color, x, y);
+    for (_AovOutput const& aov : _aovOutputs) {
+        if (!aov.buffer->IsConverged()) {
+            _WriteAov(aov, result.primaryHit, result.color, x, y);
         }
     }
 }

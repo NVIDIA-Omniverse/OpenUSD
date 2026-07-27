@@ -43,6 +43,7 @@ public:
         , _wireframeOnSurface(false)
         , _wireframeOnly(false)
         , _ao(false)
+        , _showAdaptiveHeatmap(false)
         , _outputName("color1.png")
     {
         SetCameraRotate(0,0);
@@ -111,6 +112,7 @@ private:
     bool _wireframeOnSurface;
     bool _wireframeOnly;
     bool  _ao;
+    bool _showAdaptiveHeatmap;
 
     // For offscreen tests, which AOV should we output?
     // (empty string means we should read color from the framebuffer).
@@ -169,14 +171,28 @@ void HdEmbree_TestGLDrawing::InitTest()
                 _wireframeOnly
                     ? GfVec4f(1.0f)
                     : GfVec4f(0.0f, 0.0f, 0.0f, 1.0f));
-        } else if (_aov == "cameraDepth") {
+        } else if (_aov == "cameraDepth" || _aov == "depth") {
             format = HdFormatFloat32;
-            aovBinding.aovName = HdAovTokens->cameraDepth;
+            aovBinding.aovName = TfToken(_aov);
             aovBinding.clearValue = VtValue(0.0f);
-        } else if (_aov == "primId") {
+        } else if (_aov == "primId" ||
+                   _aov == "elementId" ||
+                   _aov == "instanceId") {
             format = HdFormatInt32;
-            aovBinding.aovName = HdAovTokens->primId;
+            aovBinding.aovName = TfToken(_aov);
             aovBinding.clearValue = VtValue(-1);
+        } else if (_aov == "normal" || _aov == "Neye") {
+            format = HdFormatFloat32Vec3;
+            aovBinding.aovName = TfToken(_aov);
+            aovBinding.clearValue = VtValue(GfVec3f(0.0f));
+        } else if (_aov == "primvars:displayColor") {
+            format = HdFormatFloat32Vec3;
+            aovBinding.aovName = TfToken(_aov);
+            aovBinding.clearValue = VtValue(GfVec3f(0.0f));
+        } else if (_aov == "adaptiveHeatmap") {
+            format = HdFormatFloat32Vec4;
+            aovBinding.aovName = HdEmbreeAovTokens->adaptiveHeatmap;
+            aovBinding.clearValue = VtValue(GfVec4f(0.0f));
         }
         aovBinding.renderBufferId = renderBuffer;
         _sceneDelegate->AddRenderBuffer(renderBuffer,
@@ -245,6 +261,28 @@ void HdEmbree_TestGLDrawing::InitTest()
             HdEmbreeRenderSettingsTokens->enableAmbientOcclusion, VtValue(true));
         _renderDelegate->SetRenderSetting(
             HdEmbreeRenderSettingsTokens->ambientOcclusionSamples, VtValue(16));
+    }
+
+    // Exercise exposure only in the ordinary color writer; geometric and
+    // heatmap outputs must remain unaffected.
+    _renderDelegate->SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->randomNumberSeed, VtValue(1));
+    _renderDelegate->SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->enableExposureCompensation,
+        VtValue(true));
+    if (_aov == "color") {
+        _renderDelegate->SetRenderSetting(
+            HdEmbreeRenderSettingsTokens->enableLighting, VtValue(false));
+    }
+    if (_aov == "adaptiveHeatmap" || _showAdaptiveHeatmap) {
+        _renderDelegate->SetRenderSetting(
+            HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
+            VtValue(true));
+    }
+    if (_showAdaptiveHeatmap) {
+        _renderDelegate->SetRenderSetting(
+            HdEmbreeRenderSettingsTokens->showAdaptiveHeatmap,
+            VtValue(true));
     }
 
     if (_instance) {
@@ -324,6 +362,11 @@ void HdEmbree_TestGLDrawing::InitTest()
         camera,
         HdCameraTokens->focalLength,
         VtValue(50.0f));
+
+    _sceneDelegate->UpdateCamera(
+        camera,
+        HdCameraTokens->exposure,
+        VtValue(1.0f));
 
     _sceneDelegate->UpdateCamera(camera,
         HdCameraTokens->windowPolicy,
@@ -423,10 +466,12 @@ void HdEmbree_TestGLDrawing::OffscreenTest()
         // writing it to a file.  Additionally, we write prim ID as RGBA u8,
         // instead of single-channel int32, since the former has better file
         // support.
-        if (_aov == "cameraDepth") {
+        if (_aov == "cameraDepth" || _aov == "depth") {
             _RescaleDepth(reinterpret_cast<float*>(storage.data),
                 storage.width*storage.height);
-        } else if (_aov == "primId") {
+        } else if (_aov == "primId" ||
+                   _aov == "elementId" ||
+                   _aov == "instanceId") {
             storage.format =  HioFormatUNorm8Vec4;
             _ColorizeId(reinterpret_cast<int32_t*>(storage.data),
                 storage.width*storage.height);
@@ -435,8 +480,17 @@ void HdEmbree_TestGLDrawing::OffscreenTest()
         VtDictionary metadata;
 
         HioImageSharedPtr image = HioImage::OpenForWriting(_outputName);
-        if (image) {
-            image->Write(storage, metadata);
+        if (!TF_VERIFY(
+                image != nullptr,
+                "Could not open '%s' for writing", _outputName.c_str())) {
+            rb->Unmap();
+            return;
+        }
+        if (!TF_VERIFY(
+                image->Write(storage, metadata),
+                "Could not write '%s'", _outputName.c_str())) {
+            rb->Unmap();
+            return;
         }
 
         rb->Unmap();
@@ -485,13 +539,29 @@ void HdEmbree_TestGLDrawing::ParseArgs(int argc, char *argv[])
             ++i;
         } else if (std::string(argv[i]) == "--ao") {
             _ao = true;
+        } else if (std::string(argv[i]) == "--show-adaptive-heatmap") {
+            _showAdaptiveHeatmap = true;
         }
     }
 
-    // AOV only supports "color", "cameraDepth", and "primId" currently.
+    // Keep each invocation single-binding so every classified output path is
+    // exercised independently.
     if (_aov.size() > 0 &&
-        _aov != "color" && _aov != "cameraDepth" && _aov != "primId") {
+        _aov != "color" &&
+        _aov != "cameraDepth" &&
+        _aov != "depth" &&
+        _aov != "primId" &&
+        _aov != "elementId" &&
+        _aov != "instanceId" &&
+        _aov != "normal" &&
+        _aov != "Neye" &&
+        _aov != "primvars:displayColor" &&
+        _aov != "adaptiveHeatmap") {
         TF_WARN("Unrecognized AOV token '%s'", _aov.c_str());
+        exit(EXIT_FAILURE);
+    }
+    if (_showAdaptiveHeatmap && _aov != "color") {
+        TF_WARN("--show-adaptive-heatmap requires --aov color");
         exit(EXIT_FAILURE);
     }
 }

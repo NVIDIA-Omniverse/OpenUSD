@@ -370,9 +370,9 @@ HdEmbreeRenderer::MarkAovBuffersUnconverged()
 }
 
 void
-HdEmbreeRenderer::_BuildAovDispatchTable()
+HdEmbreeRenderer::_ClassifyAovOutputs()
 {
-    _aovWriters.clear();
+    _aovOutputs.clear();
     _needColor = _enableAdaptiveSampling;
     _colorClearValue = GfVec4f(0.0f);
 
@@ -385,42 +385,53 @@ HdEmbreeRenderer::_BuildAovDispatchTable()
         }
     }
 
-    // Build writer table.
+    // Classify supported outputs while retaining the validated buffer
+    // interfaces until the next setup.
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
-        HdEmbreeRenderBufferInterface *rb = dynamic_cast<HdEmbreeRenderBufferInterface*>(
-            _aovBindings[i].renderBuffer);
-        const auto& aovName = _aovNames[i];
+        HdEmbreeRenderBufferInterface* rb =
+            dynamic_cast<HdEmbreeRenderBufferInterface*>(
+                _aovBindings[i].renderBuffer);
+        HdParsedAovToken const& aovName = _aovNames[i];
 
         if (aovName.name == HdAovTokens->color) {
-            _AovWriteFn fn = (_showAdaptiveHeatmap
-                && _enableAdaptiveSampling
-                && !_pixelSampleCount.empty())
-                ? &_WriteColorHeatmap : &_WriteColor;
-            _aovWriters.push_back(_AovWriter{rb, fn, {}});
+            _AovKind const kind =
+                (_showAdaptiveHeatmap &&
+                 _enableAdaptiveSampling &&
+                 !_pixelSampleCount.empty())
+                ? _AovKind::ColorAdaptiveHeatmap
+                : _AovKind::Color;
+            _aovOutputs.push_back(_AovOutput{rb, kind, TfToken()});
         } else if (aovName.name == HdAovTokens->cameraDepth &&
                    rb->GetFormat() == HdFormatFloat32) {
-            _aovWriters.push_back(_AovWriter{rb, &_WriteDepth, {}});
+            _aovOutputs.push_back(
+                _AovOutput{rb, _AovKind::CameraDepth, TfToken()});
         } else if (aovName.name == HdAovTokens->depth &&
                    rb->GetFormat() == HdFormatFloat32) {
-            _aovWriters.push_back(_AovWriter{rb, &_WriteClipDepth, {}});
+            _aovOutputs.push_back(
+                _AovOutput{rb, _AovKind::Depth, TfToken()});
         } else if ((aovName.name == HdAovTokens->primId ||
                     aovName.name == HdAovTokens->elementId ||
                     aovName.name == HdAovTokens->instanceId) &&
                    rb->GetFormat() == HdFormatInt32) {
-            _aovWriters.push_back(_AovWriter{rb, &_WriteId, aovName.name});
+            _aovOutputs.push_back(
+                _AovOutput{rb, _AovKind::Id, aovName.name});
         } else if (aovName.name == HdAovTokens->normal &&
                    rb->GetFormat() == HdFormatFloat32Vec3) {
-            _aovWriters.push_back(_AovWriter{rb, &_WriteNormal, {}});
+            _aovOutputs.push_back(
+                _AovOutput{rb, _AovKind::Normal, TfToken()});
         } else if (aovName.name == HdAovTokens->Neye &&
                    rb->GetFormat() == HdFormatFloat32Vec3) {
-            _aovWriters.push_back(_AovWriter{rb, &_WriteNormalEye, {}});
+            _aovOutputs.push_back(
+                _AovOutput{rb, _AovKind::EyeNormal, TfToken()});
         } else if (aovName.isPrimvar &&
                    rb->GetFormat() == HdFormatFloat32Vec3) {
-            _aovWriters.push_back(_AovWriter{rb, &_WritePrimvar, aovName.name});
+            _aovOutputs.push_back(
+                _AovOutput{rb, _AovKind::Primvar, aovName.name});
         } else if (aovName.name == HdEmbreeAovTokens->adaptiveHeatmap) {
             if (_enableAdaptiveSampling && !_pixelSampleCount.empty()) {
-                _aovWriters.push_back(
-                    _AovWriter{rb, &_WriteAdaptiveHeatmap, {}});
+                _aovOutputs.push_back(
+                    _AovOutput{
+                        rb, _AovKind::AdaptiveHeatmap, TfToken()});
             }
         }
     }
@@ -448,137 +459,106 @@ HdEmbreeRenderer::_HeatmapColor(float t)
 }
 
 void
-HdEmbreeRenderer::_WriteColor(
-    HdEmbreeRenderer* self, _AovWriter const& w,
-    RTCRayHit const&, GfVec4f const& color,
+HdEmbreeRenderer::_WriteAov(
+    _AovOutput const& aov,
+    RTCRayHit const& rayHit,
+    GfVec4f const& color,
     unsigned int x, unsigned int y)
 {
-    GfVec4f exposedColor = color;
-    exposedColor[0] *= self->_cameraExposureScale;
-    exposedColor[1] *= self->_cameraExposureScale;
-    exposedColor[2] *= self->_cameraExposureScale;
-    w.buffer->Write(GfVec3i(x, y, 1), 4, exposedColor.data());
-}
-
-void
-HdEmbreeRenderer::_WriteColorHeatmap(
-    HdEmbreeRenderer* self, _AovWriter const& w,
-    RTCRayHit const&, GfVec4f const&,
-    unsigned int x, unsigned int y)
-{
-    const size_t idx = y * self->_width + x;
-    float t = static_cast<float>(self->_pixelSampleCount[idx])
-            / static_cast<float>(std::max(1, self->_samplesToConvergence));
-    GfVec4f heatColor = _HeatmapColor(t);
-    w.buffer->WriteOutput(GfVec3i(x, y, 1), 4, heatColor.data());
-}
-
-void
-HdEmbreeRenderer::_WriteDepth(
-    HdEmbreeRenderer* self, _AovWriter const& w,
-    RTCRayHit const& rayHit, GfVec4f const&,
-    unsigned int x, unsigned int y)
-{
-    float depth;
-    if (self->_ComputeDepth(rayHit, &depth, false)) {
-        w.buffer->Write(GfVec3i(x, y, 1), 1, &depth);
+    GfVec3i const pixel(x, y, 1);
+    switch (aov.kind) {
+        case _AovKind::Color: {
+            GfVec4f exposedColor = color;
+            exposedColor[0] *= _cameraExposureScale;
+            exposedColor[1] *= _cameraExposureScale;
+            exposedColor[2] *= _cameraExposureScale;
+            aov.buffer->Write(pixel, 4, exposedColor.data());
+            break;
+        }
+        case _AovKind::ColorAdaptiveHeatmap: {
+            size_t const index = y * _width + x;
+            float const fraction =
+                static_cast<float>(_pixelSampleCount[index]) /
+                static_cast<float>(std::max(1, _samplesToConvergence));
+            GfVec4f const heatmapColor = _HeatmapColor(fraction);
+            aov.buffer->WriteOutput(
+                pixel, 4, heatmapColor.data());
+            break;
+        }
+        case _AovKind::CameraDepth: {
+            float depth;
+            if (_ComputeDepth(rayHit, &depth, false)) {
+                aov.buffer->Write(pixel, 1, &depth);
+            }
+            break;
+        }
+        case _AovKind::Depth: {
+            float depth;
+            if (_ComputeDepth(rayHit, &depth, true)) {
+                aov.buffer->Write(pixel, 1, &depth);
+            }
+            break;
+        }
+        case _AovKind::Id: {
+            int32_t id;
+            if (!_ComputeId(rayHit, aov.token, &id)) {
+                id = -1;
+            }
+            aov.buffer->Write(pixel, 1, &id);
+            break;
+        }
+        case _AovKind::Normal: {
+            GfVec3f normal;
+            if (_ComputeNormal(rayHit, &normal, false)) {
+                aov.buffer->Write(pixel, 3, normal.data());
+            }
+            break;
+        }
+        case _AovKind::EyeNormal: {
+            GfVec3f normal;
+            if (_ComputeNormal(rayHit, &normal, true)) {
+                aov.buffer->Write(pixel, 3, normal.data());
+            }
+            break;
+        }
+        case _AovKind::Primvar: {
+            GfVec3f value;
+            if (_ComputePrimvar(rayHit, aov.token, &value)) {
+                aov.buffer->Write(pixel, 3, value.data());
+            }
+            break;
+        }
+        case _AovKind::AdaptiveHeatmap: {
+            size_t const index = y * _width + x;
+            float const fraction =
+                static_cast<float>(_pixelSampleCount[index] + 1) /
+                static_cast<float>(std::max(1, _samplesToConvergence));
+            GfVec4f const heatmapColor = _HeatmapColor(fraction);
+            aov.buffer->Write(pixel, 4, heatmapColor.data());
+            break;
+        }
     }
-}
-
-void
-HdEmbreeRenderer::_WriteClipDepth(
-    HdEmbreeRenderer* self, _AovWriter const& w,
-    RTCRayHit const& rayHit, GfVec4f const&,
-    unsigned int x, unsigned int y)
-{
-    float depth;
-    if (self->_ComputeDepth(rayHit, &depth, true)) {
-        w.buffer->Write(GfVec3i(x, y, 1), 1, &depth);
-    }
-}
-
-void
-HdEmbreeRenderer::_WriteId(
-    HdEmbreeRenderer* self, _AovWriter const& w,
-    RTCRayHit const& rayHit, GfVec4f const&,
-    unsigned int x, unsigned int y)
-{
-    int32_t id;
-    if (!self->_ComputeId(rayHit, w.token, &id)) {
-        id = -1;
-    }
-    w.buffer->Write(GfVec3i(x, y, 1), 1, &id);
-}
-
-void
-HdEmbreeRenderer::_WriteNormal(
-    HdEmbreeRenderer* self, _AovWriter const& w,
-    RTCRayHit const& rayHit, GfVec4f const&,
-    unsigned int x, unsigned int y)
-{
-    GfVec3f normal;
-    if (self->_ComputeNormal(rayHit, &normal, false)) {
-        w.buffer->Write(GfVec3i(x, y, 1), 3, normal.data());
-    }
-}
-
-void
-HdEmbreeRenderer::_WriteNormalEye(
-    HdEmbreeRenderer* self, _AovWriter const& w,
-    RTCRayHit const& rayHit, GfVec4f const&,
-    unsigned int x, unsigned int y)
-{
-    GfVec3f normal;
-    if (self->_ComputeNormal(rayHit, &normal, true)) {
-        w.buffer->Write(GfVec3i(x, y, 1), 3, normal.data());
-    }
-}
-
-void
-HdEmbreeRenderer::_WritePrimvar(
-    HdEmbreeRenderer* self, _AovWriter const& w,
-    RTCRayHit const& rayHit, GfVec4f const&,
-    unsigned int x, unsigned int y)
-{
-    GfVec3f value;
-    if (self->_ComputePrimvar(rayHit, w.token, &value)) {
-        w.buffer->Write(GfVec3i(x, y, 1), 3, value.data());
-    }
-}
-
-void
-HdEmbreeRenderer::_WriteAdaptiveHeatmap(
-    HdEmbreeRenderer* self, _AovWriter const& w,
-    RTCRayHit const&, GfVec4f const&,
-    unsigned int x, unsigned int y)
-{
-    const size_t idx = y * self->_width + x;
-    float t = static_cast<float>(self->_pixelSampleCount[idx] + 1)
-            / static_cast<float>(std::max(1, self->_samplesToConvergence));
-    GfVec4f heatColor = _HeatmapColor(t);
-    w.buffer->Write(GfVec3i(x, y, 1), 4, heatColor.data());
 }
 
 void
 HdEmbreeRenderer::_UpdateVariance(
-    HdEmbreeRenderer* self,
     unsigned int x, unsigned int y,
     GfVec3f const& rgb)
 {
-    const size_t idx = y * self->_width + x;
-    uint32_t count = ++self->_pixelSampleCount[idx];
-    GfVec3f delta = rgb - self->_pixelMean[idx];
-    self->_pixelMean[idx] += delta / static_cast<float>(count);
-    GfVec3f delta2 = rgb - self->_pixelMean[idx];
-    self->_pixelM2[idx] += GfCompMult(delta, delta2);
+    const size_t idx = y * _width + x;
+    uint32_t count = ++_pixelSampleCount[idx];
+    GfVec3f delta = rgb - _pixelMean[idx];
+    _pixelMean[idx] += delta / static_cast<float>(count);
+    GfVec3f delta2 = rgb - _pixelMean[idx];
+    _pixelM2[idx] += GfCompMult(delta, delta2);
 
-    if (count >= static_cast<uint32_t>(self->_minSamplesBeforeAdaptive)) {
+    if (count >= static_cast<uint32_t>(_minSamplesBeforeAdaptive)) {
         float fCount = static_cast<float>(count);
-        GfVec3f varOfMean = self->_pixelM2[idx] / (fCount * fCount);
-        const GfVec3f &mean = self->_pixelMean[idx];
+        GfVec3f varOfMean = _pixelM2[idx] / (fCount * fCount);
+        const GfVec3f &mean = _pixelMean[idx];
         if (_IsPerChannelVarianceConverged(
-                varOfMean, mean, self->_adaptiveThreshold)) {
-            self->_pixelConverged[idx] = true;
+                varOfMean, mean, _adaptiveThreshold)) {
+            _pixelConverged[idx] = true;
         }
     }
 }

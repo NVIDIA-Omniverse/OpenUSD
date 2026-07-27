@@ -1050,163 +1050,45 @@ private:
         GfVec3f* normalGeomWldExtOutput = nullptr,
         HdEmbreePrototypeContext const** outGeometry = nullptr) const;
 
-    // ---- AOV dispatch table (built once per frame in _PreRenderSetup) ----
+    // ---- AOV output classification (built once in _PreRenderSetup) ----
 
-    struct _AovWriter;
+    enum class _AovKind {
+        Color,
+        ColorAdaptiveHeatmap,
+        CameraDepth,
+        Depth,
+        Id,
+        Normal,
+        EyeNormal,
+        Primvar,
+        AdaptiveHeatmap
+    };
 
-    /// Callback contract used by the precomputed AOV dispatch table. All
-    /// pointers and references are borrowed for the duration of one call.
-    using _AovWriteFn = void (*)(HdEmbreeRenderer* self,
-                                 _AovWriter const& writer,
-                                 RTCRayHit const& rayHit,
-                                 GfVec4f const& color,
-                                 unsigned int x,
-                                 unsigned int y);
-    struct _AovWriter {
-        HdEmbreeRenderBufferInterface* buffer = nullptr;
-        _AovWriteFn writeFn = nullptr;
+    struct _AovOutput {
+        HdEmbreeRenderBufferInterface* buffer;
+        _AovKind kind;
         TfToken token;
     };
 
-    /// \brief Build specialized writers for the current validated AOVs.
+    /// \brief Classify the current validated AOVs for direct output.
     ///
-    /// Borrows mapped buffer interfaces and stores them until the next setup.
-    void _BuildAovDispatchTable();
+    /// Borrows buffer interfaces and stores them until the next setup.
+    void _ClassifyAovOutputs();
 
-    /// \brief Accumulate a linear color sample into a color AOV.
+    /// \brief Write one sample to a classified AOV.
     ///
-    /// \param self Non-null renderer owning the current dispatch table.
-    /// \param writer Writer whose non-null buffer receives the sample.
-    /// \param rayHit Current hit; unused for color output.
-    /// \param color Linear RGBA sample to write.
-    /// \param x In-bounds render-buffer x coordinate.
-    /// \param y In-bounds render-buffer y coordinate.
-    static void _WriteColor(HdEmbreeRenderer* self,
-                            _AovWriter const& writer,
-                            RTCRayHit const& rayHit,
-                            GfVec4f const& color,
-                            unsigned int x,
-                            unsigned int y);
-
-    /// \brief Write adaptive sample-count color instead of scene color.
-    ///
-    /// \param self Non-null renderer with allocated adaptive arrays.
-    /// \param writer Writer whose non-null buffer receives the sample.
-    /// \param rayHit Current hit; unused by this writer.
-    /// \param color Scene color; unused by this writer.
-    /// \param x In-bounds render-buffer x coordinate.
-    /// \param y In-bounds render-buffer y coordinate.
-    static void _WriteColorHeatmap(HdEmbreeRenderer* self,
-                                   _AovWriter const& writer,
-                                   RTCRayHit const& rayHit,
-                                   GfVec4f const& color,
-                                   unsigned int x,
-                                   unsigned int y);
-
-    /// \brief Write camera-space ray distance to a depth AOV.
-    ///
-    /// \param self Non-null renderer used to evaluate the hit.
-    /// \param writer Writer whose non-null buffer receives successful output.
+    /// The output buffer must be valid and unconverged. Hit-dependent AOVs
+    /// retain their cleared value on misses except ID AOVs, which write -1.
+    /// \param aov Classified output borrowing a non-null buffer.
     /// \param rayHit Current initialized intersection result.
-    /// \param color Current color sample; unused by this writer.
+    /// \param color Linear scene RGBA sample.
     /// \param x In-bounds render-buffer x coordinate.
     /// \param y In-bounds render-buffer y coordinate.
-    static void _WriteDepth(HdEmbreeRenderer* self,
-                            _AovWriter const& writer,
-                            RTCRayHit const& rayHit,
-                            GfVec4f const& color,
-                            unsigned int x,
-                            unsigned int y);
-
-    /// \brief Write normalized projected depth to a depth AOV.
-    ///
-    /// \param self Non-null renderer used to evaluate the hit.
-    /// \param writer Writer whose non-null buffer receives successful output.
-    /// \param rayHit Current initialized intersection result.
-    /// \param color Current color sample; unused by this writer.
-    /// \param x In-bounds render-buffer x coordinate.
-    /// \param y In-bounds render-buffer y coordinate.
-    static void _WriteClipDepth(HdEmbreeRenderer* self,
-                                _AovWriter const& writer,
-                                RTCRayHit const& rayHit,
-                                GfVec4f const& color,
-                                unsigned int x,
-                                unsigned int y);
-
-    /// \brief Write the ID selected by the writer token.
-    ///
-    /// \param self Non-null renderer used to resolve the hit ID.
-    /// \param writer Writer with a non-null buffer and Hydra ID token.
-    /// \param rayHit Current initialized intersection result.
-    /// \param color Current color sample; unused by this writer.
-    /// \param x In-bounds render-buffer x coordinate.
-    /// \param y In-bounds render-buffer y coordinate.
-    static void _WriteId(HdEmbreeRenderer* self,
-                         _AovWriter const& writer,
-                         RTCRayHit const& rayHit,
-                         GfVec4f const& color,
-                         unsigned int x,
-                         unsigned int y);
-
-    /// \brief Write a normalized world-space hit normal.
-    ///
-    /// \param self Non-null renderer used to resolve the normal.
-    /// \param writer Writer whose non-null buffer receives successful output.
-    /// \param rayHit Current initialized intersection result.
-    /// \param color Current color sample; unused by this writer.
-    /// \param x In-bounds render-buffer x coordinate.
-    /// \param y In-bounds render-buffer y coordinate.
-    static void _WriteNormal(HdEmbreeRenderer* self,
-                             _AovWriter const& writer,
-                             RTCRayHit const& rayHit,
-                             GfVec4f const& color,
-                             unsigned int x,
-                             unsigned int y);
-
-    /// \brief Write a normalized camera-space hit normal.
-    ///
-    /// \param self Non-null renderer used to resolve the normal.
-    /// \param writer Writer whose non-null buffer receives successful output.
-    /// \param rayHit Current initialized intersection result.
-    /// \param color Current color sample; unused by this writer.
-    /// \param x In-bounds render-buffer x coordinate.
-    /// \param y In-bounds render-buffer y coordinate.
-    static void _WriteNormalEye(HdEmbreeRenderer* self,
-                                _AovWriter const& writer,
-                                RTCRayHit const& rayHit,
-                                GfVec4f const& color,
-                                unsigned int x,
-                                unsigned int y);
-
-    /// \brief Write the primvar selected by the writer token.
-    ///
-    /// \param self Non-null renderer used to sample the primvar.
-    /// \param writer Writer with a non-null buffer and primvar name token.
-    /// \param rayHit Current initialized intersection result.
-    /// \param color Current color sample; unused by this writer.
-    /// \param x In-bounds render-buffer x coordinate.
-    /// \param y In-bounds render-buffer y coordinate.
-    static void _WritePrimvar(HdEmbreeRenderer* self,
-                              _AovWriter const& writer,
-                              RTCRayHit const& rayHit,
-                              GfVec4f const& color,
-                              unsigned int x,
-                              unsigned int y);
-
-    /// \brief Write adaptive sample-count color to its dedicated AOV.
-    ///
-    /// \param self Non-null renderer with allocated adaptive arrays.
-    /// \param writer Writer whose non-null buffer receives the heatmap color.
-    /// \param rayHit Current hit; unused by this writer.
-    /// \param color Current color sample; unused by this writer.
-    /// \param x In-bounds render-buffer x coordinate.
-    /// \param y In-bounds render-buffer y coordinate.
-    static void _WriteAdaptiveHeatmap(HdEmbreeRenderer* self,
-                                      _AovWriter const& writer,
-                                      RTCRayHit const& rayHit,
-                                      GfVec4f const& color,
-                                      unsigned int x,
-                                      unsigned int y);
+    void _WriteAov(_AovOutput const& aov,
+                   RTCRayHit const& rayHit,
+                   GfVec4f const& color,
+                   unsigned int x,
+                   unsigned int y);
 
     /// \brief Map a normalized sample-count fraction to heatmap RGBA.
     ///
@@ -1217,14 +1099,12 @@ private:
     /// \brief Add one color sample to a pixel's adaptive statistics.
     ///
     /// Updates Welford mean/variance and may mark the pixel converged.
-    /// \param self Non-null renderer with arrays sized to width times height.
     /// \param x In-bounds render-buffer x coordinate.
     /// \param y In-bounds render-buffer y coordinate.
     /// \param rgb Finite linear RGB sample.
-    static void _UpdateVariance(HdEmbreeRenderer* self,
-                                unsigned int x,
-                                unsigned int y,
-                                GfVec3f const& rgb);
+    void _UpdateVariance(unsigned int x,
+                         unsigned int y,
+                         GfVec3f const& rgb);
 
     // The bound aovs for this renderer.
     HdRenderPassAovBindingVector _aovBindings;
@@ -1354,7 +1234,7 @@ private:
     // Pre-resolved per-frame state (built in _PreRenderSetup).
     bool _needColor = false;
     GfVec4f _colorClearValue;
-    std::vector<_AovWriter> _aovWriters;
+    std::vector<_AovOutput> _aovOutputs;
 };
 
 PXR_NAMESPACE_CLOSE_SCOPE

@@ -231,10 +231,10 @@ plugin in the active Pixi environment.
   `RenderProduct` writing.
 - `renderer/renderer.*`: `HdEmbreeRenderer` façade, persistent frame/settings
   state, progressive preview/full-resolution orchestration, and per-pixel
-  integrator selection/AOV dispatch.
+  integrator selection/AOV output classification.
 - `renderer/camera/camera.cpp`: camera/lens sampling, primary-ray construction, and ray differentials; tile traversal stays in `renderer/renderer.cpp`.
 - `renderer/aov/aovOutput.cpp`: AOV validation, accumulation, adaptive convergence,
-  hit outputs, and writer dispatch.
+  hit outputs, and direct buffer writes.
 - `renderer/integrator/pathIntegrator.cpp`: lit multi-bounce control loop and
   shared path state; owns its primary hit and surface-event ordering.
 - `renderer/integrator/volumeTransport.cpp`: participating-medium segment

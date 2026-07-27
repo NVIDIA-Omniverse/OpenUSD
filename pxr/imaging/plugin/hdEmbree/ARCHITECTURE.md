@@ -150,7 +150,7 @@ corresponding type without changing the semantic name.
 - `camera/camera.cpp`: camera and lens sampling, primary-ray construction,
   and ray differentials. Tile/pixel traversal remains in `renderer.cpp`.
 - `aov/aovOutput.cpp`: AOV binding validation, clear/reset behavior, adaptive
-  variance tracking, hit AOV evaluation, and format-specific writers.
+  variance tracking, hit AOV evaluation, and format-specific buffer writes.
 - `integrator/pathIntegrator.cpp`: the lit multi-bounce control loop. It owns
   the primary hit, surface-event ordering, path state, throughput, BSDF
   continuation, bounce limits, and Russian roulette.
@@ -588,7 +588,7 @@ participating-medium transport, or Russian roulette.
 
 ### Accumulation and AOV output
 
-`_PreRenderSetup()` rebuilds AOV validation and dispatch state every render;
+`_PreRenderSetup()` rebuilds AOV validation and output classification every render;
 it does not cache validation because a bound buffer can change format or
 dimensions without changing its pointer.
 The renderer publishes synchronized `Pending`, `Valid`, or `Failed` frame
@@ -598,13 +598,13 @@ marks usable AOVs converged to park the render thread without writing output.
 
 After the selected integrator returns, `_EvaluatePixelSample()` applies any
 active mesh wireframe repr to the retained camera hit, then updates the
-per-pixel mean and variance used by adaptive convergence. It then dispatches the
-prebuilt AOV writers:
+per-pixel mean and variance used by adaptive convergence. It then passes each
+classified AOV through `_WriteAov()`'s direct switch:
 
-- color writers consume the returned radiance and apply camera exposure only at
+- color output consumes the returned radiance and applies camera exposure only at
   output;
-- depth, normal, ID, and primvar writers interpret the retained `primaryHit`;
-- heatmap writers consume adaptive sample counts rather than scene radiance.
+- depth, normal, ID, and primvar output interprets the retained `primaryHit`;
+- heatmap output consumes adaptive sample counts rather than scene radiance.
 
 The render buffer accumulates samples until resolve/convergence. Thus transport
 is owned by one selected integrator, while accumulation, format conversion, and
@@ -623,7 +623,7 @@ than reading one monolithic translation unit:
    `_SampleCameraRay()` in `camera/camera.cpp` for camera/lens sampling, primary
    rays, and ray differentials.
 3. `_EvaluatePixelSample()` in `renderer.cpp`: selects exactly one radiance
-   integrator, then updates adaptive variance and dispatches AOV writers using
+   integrator, then updates adaptive variance and writes classified AOVs using
    the selected integrator's retained primary hit. Geometric-AOV-only samples
    take a primary-intersection fast path.
 4. `_IntegratePath()` in `integrator/pathIntegrator.cpp`: lit integration. Its
@@ -634,8 +634,8 @@ than reading one monolithic translation unit:
    single-hit integration for material base color, camera light, and AO.
 6. `integrator/surfaceShading.cpp`, `lighting.cpp`, `visibility.cpp`, and
    `sss.cpp`: shared shading and transport branches used by the integrators.
-7. `_WriteColor()` and the other writers in `aov/aovOutput.cpp`: conversion of
-   the returned color and retained primary hit into Hydra AOV storage.
+7. `_WriteAov()` in `aov/aovOutput.cpp`: direct conversion of the returned
+   color and retained primary hit into Hydra AOV storage.
 
 Read `renderer.h` for persistent state and function contracts,
 `geometry/context.h` for hit data, `sampling/sampling.h` for random domains,
