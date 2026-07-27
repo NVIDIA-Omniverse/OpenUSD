@@ -20,6 +20,7 @@
 
 #include <embree4/rtcore.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -80,20 +81,11 @@ public:
     void ClearSamples() override {}
     void BlockFill(unsigned int) override {}
 
-    void Write(GfVec3i const&, size_t, float const*) override
-    {
-        ++sampleWriteCount;
-    }
+    void Write(GfVec3i const&, size_t, float const*) override;
 
-    void Write(GfVec3i const&, size_t, int const*) override
-    {
-        ++sampleWriteCount;
-    }
+    void Write(GfVec3i const&, size_t, int const*) override;
 
-    void WriteOutput(GfVec3i const&, size_t, float const*) override
-    {
-        ++sampleWriteCount;
-    }
+    void WriteOutput(GfVec3i const&, size_t, float const*) override;
 
     void Clear(size_t, float const*) override {}
     void Clear(size_t, int const*) override {}
@@ -102,6 +94,12 @@ public:
     unsigned int unmapCount = 0;
     unsigned int resolveCount = 0;
     unsigned int sampleWriteCount = 0;
+    unsigned int floatWriteCount = 0;
+    unsigned int intWriteCount = 0;
+    unsigned int floatOutputWriteCount = 0;
+    GfVec4f firstFloatWrite = GfVec4f(0.0f);
+    GfVec4f firstFloatOutputWrite = GfVec4f(0.0f);
+    int firstIntWrite = 0;
     bool converged = false;
 
 protected:
@@ -113,6 +111,43 @@ private:
     HdFormat _format;
     uint8_t _storage = 0;
 };
+
+void
+_CountingRenderBuffer::Write(
+    GfVec3i const&, size_t components, float const* value)
+{
+    ++sampleWriteCount;
+    ++floatWriteCount;
+    if (floatWriteCount == 1) {
+        for (size_t i = 0; i < std::min(components, size_t(4)); ++i) {
+            firstFloatWrite[i] = value[i];
+        }
+    }
+}
+
+void
+_CountingRenderBuffer::Write(
+    GfVec3i const&, size_t, int const* value)
+{
+    ++sampleWriteCount;
+    ++intWriteCount;
+    if (intWriteCount == 1) {
+        firstIntWrite = value[0];
+    }
+}
+
+void
+_CountingRenderBuffer::WriteOutput(
+    GfVec3i const&, size_t components, float const* value)
+{
+    ++sampleWriteCount;
+    ++floatOutputWriteCount;
+    if (floatOutputWriteCount == 1) {
+        for (size_t i = 0; i < std::min(components, size_t(4)); ++i) {
+            firstFloatOutputWrite[i] = value[i];
+        }
+    }
+}
 
 // Model a valid Hydra buffer owned by another delegate implementation.
 class _WrongRenderBuffer final : public HdRenderBuffer
@@ -164,6 +199,56 @@ public:
         if (device != nullptr) {
             rtcReleaseDevice(device);
         }
+    }
+
+    // Add renderer-invalid top-level geometry with no instance context.
+    // Returns false if Embree cannot allocate the test geometry or buffers.
+    bool AddUninstancedTriangle()
+    {
+        RTCGeometry geometry =
+            rtcNewGeometry(device, RTC_GEOMETRY_TYPE_TRIANGLE);
+        if (geometry == nullptr) {
+            return false;
+        }
+
+        float* const vertices = static_cast<float*>(
+            rtcSetNewGeometryBuffer(
+                geometry,
+                RTC_BUFFER_TYPE_VERTEX,
+                0,
+                RTC_FORMAT_FLOAT3,
+                3 * sizeof(float),
+                3));
+        unsigned int* const indices = static_cast<unsigned int*>(
+            rtcSetNewGeometryBuffer(
+                geometry,
+                RTC_BUFFER_TYPE_INDEX,
+                0,
+                RTC_FORMAT_UINT3,
+                3 * sizeof(unsigned int),
+                1));
+        if (vertices == nullptr || indices == nullptr) {
+            rtcReleaseGeometry(geometry);
+            return false;
+        }
+
+        vertices[0] = -10.0f;
+        vertices[1] = -10.0f;
+        vertices[2] = -2.0f;
+        vertices[3] = 10.0f;
+        vertices[4] = -10.0f;
+        vertices[5] = -2.0f;
+        vertices[6] = 0.0f;
+        vertices[7] = 10.0f;
+        vertices[8] = -2.0f;
+        indices[0] = 0;
+        indices[1] = 1;
+        indices[2] = 2;
+
+        rtcCommitGeometry(geometry);
+        unsigned int const geometryId = rtcAttachGeometry(scene, geometry);
+        rtcReleaseGeometry(geometry);
+        return geometryId != RTC_INVALID_GEOMETRY_ID;
     }
 
     RTCDevice device;
@@ -437,6 +522,236 @@ _TestSuccessfulMapBalance()
 }
 
 bool
+_TestAovOutputDispatch()
+{
+    _Scene scene;
+    GfRect2i const dataWindow(GfVec2i(0), 1, 1);
+
+    // Ordinary color uses multisampled accumulation and applies exposure to
+    // RGB without changing alpha.
+    {
+        _CountingRenderBuffer color(
+            SdfPath("/dispatchColor"), 1, 1, HdFormatFloat32Vec4);
+        HdRenderPassAovBinding binding =
+            _Binding(HdAovTokens->color, &color);
+        binding.clearValue = VtValue(GfVec4f(0.25f, 0.5f, 0.75f, 0.8f));
+        HdEmbreeRenderer renderer;
+        HdRenderThread renderThread;
+        _Configure(&renderer, scene.scene, {binding}, dataWindow);
+        renderer.SetCameraExposureScale(2.0f);
+        if (!TF_VERIFY(!color.converged)) {
+            return false;
+        }
+        renderThread.StartRender();
+        renderer.Render(&renderThread);
+        if (!TF_VERIFY(
+                renderer.GetCompletedSamples() == 1,
+                "completedSamples=%d", renderer.GetCompletedSamples()) ||
+            !TF_VERIFY(color.mapCount == 1, "mapCount=%u", color.mapCount) ||
+            !TF_VERIFY(
+                color.floatWriteCount == 1,
+                "floatWriteCount=%u", color.floatWriteCount) ||
+            !TF_VERIFY(
+                color.floatOutputWriteCount == 0,
+                "floatOutputWriteCount=%u", color.floatOutputWriteCount) ||
+            !TF_VERIFY(
+                color.firstFloatWrite ==
+                GfVec4f(0.5f, 1.0f, 1.5f, 1.0f),
+                "firstFloatWrite=(%g, %g, %g, %g)",
+                color.firstFloatWrite[0],
+                color.firstFloatWrite[1],
+                color.firstFloatWrite[2],
+                color.firstFloatWrite[3])) {
+            return false;
+        }
+    }
+
+    // ID misses write -1, while other geometric misses retain their cleared
+    // output by issuing no sample write.
+    {
+        _CountingRenderBuffer primId(
+            SdfPath("/dispatchPrimId"), 1, 1, HdFormatInt32);
+        _CountingRenderBuffer elementId(
+            SdfPath("/dispatchElementId"), 1, 1, HdFormatInt32);
+        _CountingRenderBuffer instanceId(
+            SdfPath("/dispatchInstanceId"), 1, 1, HdFormatInt32);
+        _CountingRenderBuffer cameraDepth(
+            SdfPath("/dispatchCameraDepth"), 1, 1, HdFormatFloat32);
+        _CountingRenderBuffer depth(
+            SdfPath("/dispatchDepth"), 1, 1, HdFormatFloat32);
+        _CountingRenderBuffer normal(
+            SdfPath("/dispatchNormal"), 1, 1, HdFormatFloat32Vec3);
+        _CountingRenderBuffer eyeNormal(
+            SdfPath("/dispatchEyeNormal"), 1, 1, HdFormatFloat32Vec3);
+        _CountingRenderBuffer primvar(
+            SdfPath("/dispatchPrimvar"), 1, 1, HdFormatFloat32Vec3);
+        HdEmbreeRenderer renderer;
+        HdRenderThread renderThread;
+        _Configure(
+            &renderer,
+            scene.scene,
+            {
+                _Binding(HdAovTokens->primId, &primId),
+                _Binding(HdAovTokens->elementId, &elementId),
+                _Binding(HdAovTokens->instanceId, &instanceId),
+                _Binding(HdAovTokens->cameraDepth, &cameraDepth),
+                _Binding(HdAovTokens->depth, &depth),
+                _Binding(HdAovTokens->normal, &normal),
+                _Binding(HdAovTokens->Neye, &eyeNormal),
+                _Binding(TfToken("primvars:displayColor"), &primvar)
+            },
+            dataWindow);
+        renderThread.StartRender();
+        renderer.Render(&renderThread);
+        if (!TF_VERIFY(primId.intWriteCount == 1) ||
+            !TF_VERIFY(primId.firstIntWrite == -1) ||
+            !TF_VERIFY(elementId.intWriteCount == 1) ||
+            !TF_VERIFY(elementId.firstIntWrite == -1) ||
+            !TF_VERIFY(instanceId.intWriteCount == 1) ||
+            !TF_VERIFY(instanceId.firstIntWrite == -1) ||
+            !TF_VERIFY(cameraDepth.sampleWriteCount == 0) ||
+            !TF_VERIFY(depth.sampleWriteCount == 0) ||
+            !TF_VERIFY(normal.sampleWriteCount == 0) ||
+            !TF_VERIFY(eyeNormal.sampleWriteCount == 0) ||
+            !TF_VERIFY(primvar.sampleWriteCount == 0)) {
+            return false;
+        }
+    }
+
+    // The color-replacement heatmap bypasses accumulation and uses the
+    // current sample count.
+    {
+        _CountingRenderBuffer color(
+            SdfPath("/dispatchColorHeatmap"), 1, 1, HdFormatFloat32Vec4);
+        HdEmbreeRenderer renderer;
+        HdRenderThread renderThread;
+        _Configure(
+            &renderer,
+            scene.scene,
+            {_Binding(HdAovTokens->color, &color)},
+            dataWindow);
+        renderer.SetSamplesToConvergence(4);
+        renderer.SetEnableAdaptiveSampling(true);
+        renderer.SetMinSamplesBeforeAdaptive(5);
+        renderer.SetShowAdaptiveHeatmap(true);
+        renderThread.StartRender();
+        renderer.Render(&renderThread);
+        if (!TF_VERIFY(
+                color.floatWriteCount == 0,
+                "floatWriteCount=%u", color.floatWriteCount) ||
+            !TF_VERIFY(
+                color.floatOutputWriteCount == 4,
+                "floatOutputWriteCount=%u", color.floatOutputWriteCount) ||
+            !TF_VERIFY(
+                color.firstFloatOutputWrite ==
+                GfVec4f(0.0f, 1.0f, 1.0f, 1.0f))) {
+            return false;
+        }
+    }
+
+    // Adaptive-only output is omitted while disabled, and requesting the
+    // color heatmap still falls back to ordinary color.
+    {
+        _CountingRenderBuffer heatmap(
+            SdfPath("/dispatchDisabledAdaptiveHeatmap"),
+            1, 1, HdFormatFloat32Vec4);
+        _CountingRenderBuffer color(
+            SdfPath("/dispatchDisabledColorHeatmap"),
+            1, 1, HdFormatFloat32Vec4);
+        HdRenderPassAovBinding colorBinding =
+            _Binding(HdAovTokens->color, &color);
+        colorBinding.clearValue = VtValue(GfVec4f(0.25f));
+        HdEmbreeRenderer renderer;
+        HdRenderThread renderThread;
+        _Configure(
+            &renderer,
+            scene.scene,
+            {
+                _Binding(
+                    HdEmbreeAovTokens->adaptiveHeatmap, &heatmap),
+                colorBinding
+            },
+            dataWindow);
+        renderer.SetShowAdaptiveHeatmap(true);
+        renderThread.StartRender();
+        renderer.Render(&renderThread);
+        if (!TF_VERIFY(heatmap.sampleWriteCount == 0) ||
+            !TF_VERIFY(color.floatWriteCount == 1) ||
+            !TF_VERIFY(color.floatOutputWriteCount == 0)) {
+            return false;
+        }
+    }
+
+    // The dedicated heatmap accumulates samples and visualizes count + 1.
+    {
+        _CountingRenderBuffer heatmap(
+            SdfPath("/dispatchAdaptiveHeatmap"),
+            1, 1, HdFormatFloat32Vec4);
+        HdEmbreeRenderer renderer;
+        HdRenderThread renderThread;
+        _Configure(
+            &renderer,
+            scene.scene,
+            {_Binding(HdEmbreeAovTokens->adaptiveHeatmap, &heatmap)},
+            dataWindow);
+        renderer.SetSamplesToConvergence(4);
+        renderer.SetEnableAdaptiveSampling(true);
+        renderer.SetMinSamplesBeforeAdaptive(5);
+        renderThread.StartRender();
+        renderer.Render(&renderThread);
+        if (!TF_VERIFY(
+                heatmap.floatWriteCount == 4,
+                "floatWriteCount=%u", heatmap.floatWriteCount) ||
+            !TF_VERIFY(
+                heatmap.floatOutputWriteCount == 0,
+                "floatOutputWriteCount=%u", heatmap.floatOutputWriteCount) ||
+            !TF_VERIFY(
+                heatmap.firstFloatWrite ==
+                GfVec4f(0.0f, 1.0f, 0.0f, 1.0f))) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool
+_TestInvalidHitContextsBecomeMisses()
+{
+    _Scene scene;
+    if (!TF_VERIFY(scene.AddUninstancedTriangle())) {
+        return false;
+    }
+
+    _CountingRenderBuffer primId(
+        SdfPath("/invalidContextPrimId"), 1, 1, HdFormatInt32);
+    _CountingRenderBuffer normal(
+        SdfPath("/invalidContextNormal"), 1, 1, HdFormatFloat32Vec3);
+    _CountingRenderBuffer primvar(
+        SdfPath("/invalidContextPrimvar"), 1, 1, HdFormatFloat32Vec3);
+    HdEmbreeRenderer renderer;
+    HdRenderThread renderThread;
+    _Configure(
+        &renderer,
+        scene.scene,
+        {
+            _Binding(HdAovTokens->primId, &primId),
+            _Binding(HdAovTokens->normal, &normal),
+            _Binding(TfToken("primvars:displayColor"), &primvar)
+        },
+        GfRect2i(GfVec2i(0), 1, 1));
+    renderThread.StartRender();
+    renderer.Render(&renderThread);
+
+    // A top-level hit has a valid geomID but no instID[0]. It must take each
+    // AOV's normal miss path without dereferencing an instance context.
+    return TF_VERIFY(primId.intWriteCount == 1) &&
+           TF_VERIFY(primId.firstIntWrite == -1) &&
+           TF_VERIFY(normal.sampleWriteCount == 0) &&
+           TF_VERIFY(primvar.sampleWriteCount == 0);
+}
+
+bool
 _TestFrameStatusTransitions()
 {
     _Scene scene;
@@ -560,6 +875,8 @@ main()
     TF_AXIOM(_TestEmptyDataWindow());
     TF_AXIOM(_TestNullScene());
     TF_AXIOM(_TestSuccessfulMapBalance());
+    TF_AXIOM(_TestAovOutputDispatch());
+    TF_AXIOM(_TestInvalidHitContextsBecomeMisses());
     TF_AXIOM(_TestFrameStatusTransitions());
     TF_AXIOM(_TestRenderPassMarksRestartPending());
     return 0;

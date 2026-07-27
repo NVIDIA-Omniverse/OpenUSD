@@ -47,6 +47,54 @@ _IsPerChannelVarianceConverged(
     return true;
 }
 
+// Returns false if the hit has no valid instance/prototype context.
+// Outputs are written only on success.
+bool
+_GetHitContexts(
+    RTCScene scene,
+    RTCRayHit const& rayHit,
+    HdEmbreeInstanceContext const** instanceContextOutput,
+    HdEmbreePrototypeContext const** prototypeContextOutput)
+{
+    if (instanceContextOutput == nullptr ||
+        prototypeContextOutput == nullptr ||
+        scene == nullptr ||
+        rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID ||
+        rayHit.hit.instID[0] == RTC_INVALID_GEOMETRY_ID) {
+        return false;
+    }
+
+    // hdEmbree flattens Hydra instances, so only the first Embree instance
+    // level owns the prototype scene containing the hit geometry.
+    RTCGeometry instanceGeometry =
+        rtcGetGeometry(scene, rayHit.hit.instID[0]);
+    if (instanceGeometry == nullptr) {
+        return false;
+    }
+    HdEmbreeInstanceContext const* instanceContext =
+        static_cast<HdEmbreeInstanceContext const*>(
+            rtcGetGeometryUserData(instanceGeometry));
+    if (instanceContext == nullptr || instanceContext->rootScene == nullptr) {
+        return false;
+    }
+
+    RTCGeometry prototypeGeometry =
+        rtcGetGeometry(instanceContext->rootScene, rayHit.hit.geomID);
+    if (prototypeGeometry == nullptr) {
+        return false;
+    }
+    HdEmbreePrototypeContext const* prototypeContext =
+        static_cast<HdEmbreePrototypeContext const*>(
+            rtcGetGeometryUserData(prototypeGeometry));
+    if (prototypeContext == nullptr) {
+        return false;
+    }
+
+    *instanceContextOutput = instanceContext;
+    *prototypeContextOutput = prototypeContext;
+    return true;
+}
+
 } // anonymous namespace
 
 void
@@ -574,18 +622,12 @@ HdEmbreeRenderer::_ComputeId(RTCRayHit const& rayHit, TfToken const& idType,
         return false;
     }
 
-    // Get the instance and prototype context structures for the hit prim.
-    // We don't use embree's multi-level instancing; we
-    // flatten everything in hydra. So instID[0] should always be correct.
-    const HdEmbreeInstanceContext *instanceContext =
-        static_cast<HdEmbreeInstanceContext*>(
-            rtcGetGeometryUserData(rtcGetGeometry(_scene,
-                                                  rayHit.hit.instID[0])));
-
-    const HdEmbreePrototypeContext *prototypeContext =
-        static_cast<HdEmbreePrototypeContext*>(
-            rtcGetGeometryUserData(rtcGetGeometry(instanceContext->rootScene,
-                                                  rayHit.hit.geomID)));
+    HdEmbreeInstanceContext const* instanceContext;
+    HdEmbreePrototypeContext const* prototypeContext;
+    if (!_GetHitContexts(
+            _scene, rayHit, &instanceContext, &prototypeContext)) {
+        return false;
+    }
 
     if (idType == HdAovTokens->primId) {
         *id = prototypeContext->primId;
@@ -640,18 +682,12 @@ HdEmbreeRenderer::_ComputeNormal(RTCRayHit const& rayHit,
         return false;
     }
 
-    // We don't use embree's multi-level instancing; we
-    // flatten everything in hydra. So instID[0] should always be correct.
-    const HdEmbreeInstanceContext *instanceContext =
-        static_cast<HdEmbreeInstanceContext*>(
-                rtcGetGeometryUserData(rtcGetGeometry(_scene,
-                                                      rayHit.hit.instID[0])));
-
-    const HdEmbreePrototypeContext *prototypeContext =
-        static_cast<HdEmbreePrototypeContext*>(
-                rtcGetGeometryUserData(
-                    rtcGetGeometry(instanceContext->rootScene,
-                                   rayHit.hit.geomID)));
+    HdEmbreeInstanceContext const* instanceContext;
+    HdEmbreePrototypeContext const* prototypeContext;
+    if (!_GetHitContexts(
+            _scene, rayHit, &instanceContext, &prototypeContext)) {
+        return false;
+    }
 
     GfVec3f n = _ResolveObjectSpaceNormal(
         prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
@@ -679,18 +715,12 @@ HdEmbreeRenderer::_ComputePrimvar(RTCRayHit const& rayHit,
         return false;
     }
 
-    // We don't use embree's multi-level instancing; we
-    // flatten everything in hydra. So instID[0] should always be correct.
-    const HdEmbreeInstanceContext *instanceContext =
-        static_cast<HdEmbreeInstanceContext*>(
-                rtcGetGeometryUserData(rtcGetGeometry(_scene,
-                                                      rayHit.hit.instID[0])));
-
-    const HdEmbreePrototypeContext *prototypeContext =
-        static_cast<HdEmbreePrototypeContext*>(
-                rtcGetGeometryUserData(
-                    rtcGetGeometry(instanceContext->rootScene,
-                                   rayHit.hit.geomID)));
+    HdEmbreeInstanceContext const* instanceContext;
+    HdEmbreePrototypeContext const* prototypeContext;
+    if (!_GetHitContexts(
+            _scene, rayHit, &instanceContext, &prototypeContext)) {
+        return false;
+    }
 
     // XXX: This is a little clunky, although sample will early out if the
     // types don't match.
