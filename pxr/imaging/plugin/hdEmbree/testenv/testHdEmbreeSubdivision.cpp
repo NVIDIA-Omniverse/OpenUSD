@@ -28,6 +28,7 @@
 #include "pxr/imaging/hd/repr.h"
 #include "pxr/imaging/hd/unitTestDelegate.h"
 #include "pxr/imaging/pxOsd/tokens.h"
+#include "pxr/base/tf/diagnosticMgr.h"
 #include "pxr/base/tf/diagnosticTrap.h"
 #include "pxr/usd/sdf/layer.h"
 #include "pxr/usd/usd/stage.h"
@@ -41,6 +42,8 @@
 #include <limits>
 #include <memory>
 #include <stdexcept>
+#include <string>
+#include <utility>
 #include <vector>
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -983,6 +986,83 @@ public:
     }
 };
 
+// Capture one expected diagnostic regardless of which Embree worker reports
+// it. Counts remain valid after all synchronous scene-commit work completes.
+class _ScopedMatchingErrorDelegate final
+    : public TfDiagnosticMgr::Delegate
+{
+public:
+    explicit _ScopedMatchingErrorDelegate(std::string expectedCommentary)
+        : _expectedCommentary(std::move(expectedCommentary))
+    {
+        TfDiagnosticMgr::GetInstance().AddDelegate(this);
+    }
+
+    ~_ScopedMatchingErrorDelegate() override
+    {
+        Remove();
+    }
+
+    // Stop capture and wait for any in-flight delegate callback to finish.
+    // Safe to call more than once from the registering thread.
+    void Remove()
+    {
+        if (_registered) {
+            TfDiagnosticMgr::GetInstance().RemoveDelegate(this);
+            _registered = false;
+        }
+    }
+
+    void IssueError(TfError const& error) override
+    {
+        _errorCount.fetch_add(1, std::memory_order_relaxed);
+        if (error.GetDiagnosticCode() ==
+                TF_DIAGNOSTIC_RUNTIME_ERROR_TYPE &&
+            error.GetCommentary().find(_expectedCommentary) !=
+                std::string::npos) {
+            _matchingErrorCount.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+
+    void IssueFatalError(
+        TfCallContext const&, std::string const&) override
+    {
+        _otherDiagnosticCount.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void IssueStatus(TfStatus const&) override
+    {
+        _otherDiagnosticCount.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void IssueWarning(TfWarning const&) override
+    {
+        _otherDiagnosticCount.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    unsigned int GetErrorCount() const
+    {
+        return _errorCount.load(std::memory_order_relaxed);
+    }
+
+    unsigned int GetMatchingErrorCount() const
+    {
+        return _matchingErrorCount.load(std::memory_order_relaxed);
+    }
+
+    unsigned int GetOtherDiagnosticCount() const
+    {
+        return _otherDiagnosticCount.load(std::memory_order_relaxed);
+    }
+
+private:
+    std::string const _expectedCommentary;
+    bool _registered = true;
+    std::atomic<unsigned int> _errorCount{0};
+    std::atomic<unsigned int> _matchingErrorCount{0};
+    std::atomic<unsigned int> _otherDiagnosticCount{0};
+};
+
 float
 _TraceCenter(RTCScene scene)
 {
@@ -1178,17 +1258,29 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     _ThrowingTextureSystem throwingTextureSystem;
     services.textureSystem = &throwingTextureSystem;
     material.displacementGraph = textureFrameTime.get();
-    TfDiagnosticTrap displacementCallbackTrap;
-    rebuild();
-    const float throwingBackendHit = _TraceCenter(scene);
-    const std::vector<TfError>& displacementCallbackErrors =
-        displacementCallbackTrap.GetErrors();
-    const bool throwingBackendReported =
-        displacementCallbackErrors.size() == 1 &&
-        displacementCallbackErrors[0].GetCommentary().find(
+    float throwingBackendHit;
+    unsigned int displacementCallbackErrorCount;
+    unsigned int displacementCallbackMatchingErrorCount;
+    unsigned int displacementCallbackOtherDiagnosticCount;
+    bool throwingBackendReported;
+    {
+        _ScopedMatchingErrorDelegate displacementCallbackDelegate(
             "HdEmbreeDisplacementFunction: exception at Embree callback "
-            "boundary: test backend failure") != std::string::npos;
-    displacementCallbackTrap.Clear();
+            "boundary: test backend failure");
+        rebuild();
+        displacementCallbackDelegate.Remove();
+        displacementCallbackErrorCount =
+            displacementCallbackDelegate.GetErrorCount();
+        displacementCallbackMatchingErrorCount =
+            displacementCallbackDelegate.GetMatchingErrorCount();
+        displacementCallbackOtherDiagnosticCount =
+            displacementCallbackDelegate.GetOtherDiagnosticCount();
+        throwingBackendReported =
+            displacementCallbackErrorCount == 1 &&
+            displacementCallbackMatchingErrorCount == 1 &&
+            displacementCallbackOtherDiagnosticCount == 0;
+    }
+    throwingBackendHit = _TraceCenter(scene);
     services.textureSystem = &textureSystem;
 
     material.displacementGraph = quadraticTexture.get();
@@ -1394,9 +1486,11 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
             boundaryDndu[0], boundaryDndu[1], boundaryDndu[2],
             invalidDerivativesComputed, invalidDerivativeCalls);
         std::printf(
-            "    callback failure=(reported=%d errors=%zu hit=%g)\n",
-            throwingBackendReported, displacementCallbackErrors.size(),
-            throwingBackendHit);
+            "    callback failure=(reported=%d errors=%u matching=%u "
+            "other=%u hit=%g)\n",
+            throwingBackendReported, displacementCallbackErrorCount,
+            displacementCallbackMatchingErrorCount,
+            displacementCallbackOtherDiagnosticCount, throwingBackendHit);
     }
     return valid;
 }
