@@ -338,7 +338,7 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
                                        HdRenderThread *renderThread,
                                        HdEmbreeRenderer *renderer,
                                        std::atomic<int> *sceneVersion,
-                                       std::atomic<int> *displacementVersion)
+                                       std::atomic<int> *materialVersion)
     : HdRenderPass(index, collection)
     , _lastCollectionReprSelector(collection.GetReprSelector())
     , _lastCollectionForcedRepr(collection.IsForcedRepr())
@@ -346,8 +346,8 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _renderer(renderer)
     , _sceneVersion(sceneVersion)
     , _lastSceneVersion(0)
-    , _displacementVersion(displacementVersion)
-    , _lastDisplacementVersion(0)
+    , _materialVersion(materialVersion)
+    , _lastMaterialVersion(0)
     , _lastSettingsVersion(0)
     , _hasAppliedRendererSettings(false)
     , _lastRenderSettingsPrimPath()
@@ -753,11 +753,11 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         needStartRender = true;
         _lastSceneVersion = currentSceneVersion;
     }
-    int currentDisplacementVersion = _displacementVersion->load();
-    bool displacementChanged =
-        _lastDisplacementVersion != currentDisplacementVersion;
-    if (displacementChanged) {
-        _lastDisplacementVersion = currentDisplacementVersion;
+    int currentMaterialVersion = _materialVersion->load();
+    bool materialChanged =
+        _lastMaterialVersion != currentMaterialVersion;
+    if (materialChanged) {
+        _lastMaterialVersion = currentMaterialVersion;
     }
 
     bool frameTimeChanged = false;
@@ -995,10 +995,10 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                 sceneChanged = true;
                 _lastSceneVersion = currentSceneVersion;
             }
-            currentDisplacementVersion = _displacementVersion->load();
-            if (_lastDisplacementVersion != currentDisplacementVersion) {
-                displacementChanged = true;
-                _lastDisplacementVersion = currentDisplacementVersion;
+            currentMaterialVersion = _materialVersion->load();
+            if (_lastMaterialVersion != currentMaterialVersion) {
+                materialChanged = true;
+                _lastMaterialVersion = currentMaterialVersion;
             }
         }
 
@@ -1091,15 +1091,25 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         _subdivisionDataWindow = _dataWindow;
     }
 
+    // A material recompile replaces graphs and their shared handle table
+    // without necessarily dirtying bound meshes. Refresh all prototypes
+    // before subdivision commits can evaluate displacement.
+    if (materialChanged) {
+        _renderThread->StopRender();
+        static_cast<HdEmbreeRenderDelegate*>(renderDelegate)
+            ->RefreshMaterialBindings();
+        needStartRender = true;
+    }
+
     // Scene changes can add subdivision meshes. Displacement materials and
     // animated graph inputs can also change geometry without changing edge
     // levels. Hold that work until a camera is attached, then recommit it
     // against the frozen subdivision camera unless dynamic updates are
     // enabled.
     _subdivisionSceneUpdatePending |=
-        sceneChanged || displacementChanged || frameTimeChanged;
+        sceneChanged || materialChanged || frameTimeChanged;
     _subdivisionDisplacementUpdatePending |=
-        displacementChanged || frameTimeChanged;
+        materialChanged || frameTimeChanged;
     if (hasAttachedCamera && _hasSubdivisionCamera &&
         (_subdivisionSceneUpdatePending || updateSubdivisionCamera)) {
         _renderThread->StopRender();

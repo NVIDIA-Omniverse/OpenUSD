@@ -276,11 +276,11 @@ HdEmbreeRenderer::_IntegratePath(
             interaction, &surfaceDifferentials.dndu,
             &surfaceDifferentials.dndv);
         HdEmbreePrimvarLookup cbData{
-            &prototypeContext->primvarMapByString,
+            &prototypeContext->geomPropSamplers,
             rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
         ctx.geomPropLookup = &HdEmbreeSamplePrimvar;
         ctx.geomPropUserData = &cbData;
-        ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
+        ctx.uniformProps = &prototypeContext->geomPropUniformValues;
 
         // Preserve differential geometry beyond the temporary context so a
         // specular continuation can propagate the ray footprint.

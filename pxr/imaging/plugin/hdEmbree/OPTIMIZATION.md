@@ -336,6 +336,40 @@ Repro recipe: bind a material with `UsdPreviewSurface` + several
 `Input reevals` showed the multiplier directly while it existed; re-add
 counters around `EvalGraph::_EvaluateNodeOutput` to measure this again.
 
+## Compile-Time Geomprop Binding Handles (2026-07-28)
+
+MaterialX geomprop nodes now compile names to material-owned integer handles.
+Each mesh prototype resolves those handles to sampler and uniform-value vectors
+when its material binding changes. Hit-time evaluation therefore does no string
+hashing, string copying, or `TfToken` construction. This supersedes the
+`primvarMapByString` mitigation above and removes that mirror map.
+
+Five fixed-seed repetitions used the profile build, `perf stat -r 5 -d`, the
+stage-authored resolution and sample settings, `--complexity high`, and
+`ty:randomNumberSeed = 1`. The measured workloads were the material-fidelity
+`geompropvalue_color3`, `standard_surface/textured`, and
+`standard_surface/glass` stages:
+
+| Workload | Wall before | Wall after | Renderer before | Renderer after | Samples/s before | Samples/s after |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| geomprop | 0.2646 s | 0.2727 s | 0.1068 s | 0.1046 s | 2.468 M | 2.512 M |
+| textured | 1.9531 s | 1.9814 s | 1.6290 s | 1.6476 s | 2.576 M | 2.550 M |
+| glass | 3.3913 s | 3.4678 s | 3.0580 s | 3.1508 s | 1.372 M | 1.332 M |
+
+These small fixtures do not demonstrate an end-to-end speedup: wall time moved
+by +1.4% to +3.1%, while renderer time and throughput moved in both directions.
+Their startup and fixed render work dominate, and none reproduces the original
+64-thread, seven-texture geomprop re-evaluation contention. The durable result
+is removal of the known hot-path operation; a production-scale repeat of the
+garden-hose workload is still required before claiming a performance gain.
+
+The older external material-fidelity harness could not run because its provider
+command still passes the removed `usdrender --disableCameraLight` option. The
+current Typhoon golden-image suite passed all 436 cases in 244.04 seconds,
+including geomprop, textured, glass, displacement, and uniform geomprop cases.
+Focused renderer and MaterialX C++ regressions additionally cover binding-table
+refresh, defaults, and bounds checks.
+
 ## Duplicate Camera-Hit Material Evaluation (2026-07-08)
 
 The shading-cost diagnostics showed `Color mat evals` tracking `Path mat

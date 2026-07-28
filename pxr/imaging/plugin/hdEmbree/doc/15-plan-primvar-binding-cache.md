@@ -1,10 +1,17 @@
 # Plan: Resolve geomprop primvar bindings once per prototype instead of per hit
 
-Status: performance and simplification. Behavior-preserving **except** for the
-connected-`geomprop` case (see **Risks**), which must be audited before the
-claim is made unconditional. Executes after plans 04, 13, and 14: plan 14
-first relocates the `rendererImpl.h` primvar consumers into their final
-modules, then this plan rewrites them.
+Status: implemented 2026-07-28. Performance and simplification. Executes after
+plans 04, 13, and 14: plan 14 first relocates the `rendererImpl.h` primvar
+consumers into their final modules, then this plan rewrites them.
+
+Implementation audit (2026-07-28): supported MaterialX and native USD primvar
+reader paths author `varname` as a uniform constant and the adapter renames it
+to the constant `geomprop` parameter. The generic Hydra network representation
+can nevertheless carry a connected `varname`/`geomprop` in malformed authored
+data. The implementation compiles connected, absent, or non-string geomprop
+inputs to invalid handle -1, reports one recoverable material diagnostic, and
+evaluates the node's authored default. It does not retain a hit-time
+name-lookup fallback.
 
 ## Issue
 
@@ -405,7 +412,9 @@ Four commits, each independently buildable and testable.
    `_displacementVersion` → `_materialVersion` rename can be a separate trivial
    commit either side of this one.
 4. **Sampler ownership.** Convert `primvarMap` to
-   `TfHashMap<TfToken, std::unique_ptr<HdEmbreePrimvarSampler>, ...>` and delete
+   `std::unordered_map<TfToken, std::unique_ptr<HdEmbreePrimvarSampler>, ...>`
+   because this OpenUSD configuration aliases `TfHashMap` to the legacy
+   `__gnu_cxx::hash_map`, which cannot store move-only values, and delete
    `_ReleasePrimvarSamplers()` (introduced by plan 13). Update both the ~15
    `it->second` read sites **and the construction sites** — note
    `testHdEmbreeSubdivision.cpp:1107-1108` currently assigns the address of a

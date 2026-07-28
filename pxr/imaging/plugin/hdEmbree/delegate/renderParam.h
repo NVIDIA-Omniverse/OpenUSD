@@ -33,12 +33,12 @@ public:
                         HdEmbreeRenderer *renderer,
                         HdEmbreeMaterialEvalServices const* materialEvalServices,
                         std::atomic<int> *sceneVersion,
-                        std::atomic<int> *displacementVersion)
+                        std::atomic<int> *materialVersion)
         : _scene(scene), _device(device)
         , _renderThread(renderThread), _renderer(renderer)
         , _materialEvalServices(materialEvalServices)
         , _sceneVersion(sceneVersion)
-        , _displacementVersion(displacementVersion)
+        , _materialVersion(materialVersion)
     {}
 
     /// Accessor for the top-level embree scene.
@@ -51,11 +51,11 @@ public:
         _renderThread->StopRender();
         (*_sceneVersion)++;
     }
-    /// Notify both ordinary scene consumers and displacement tessellation.
-    void NotifyDisplacementChange() {
+    /// Notify ordinary scene consumers and material-binding dependants.
+    void NotifyMaterialChange() {
         _renderThread->StopRender();
         (*_sceneVersion)++;
-        (*_displacementVersion)++;
+        (*_materialVersion)++;
     }
     /// Accessor for the top-level embree device (library handle).
     RTCDevice GetEmbreeDevice() { return _device; }
@@ -79,8 +79,8 @@ private:
     HdEmbreeMaterialEvalServices const* _materialEvalServices;
     /// A version counter for edits to _scene.
     std::atomic<int> *_sceneVersion;
-    /// A narrower version for edits that can change displaced geometry.
-    std::atomic<int> *_displacementVersion;
+    /// A narrower version for compiled material edits.
+    std::atomic<int> *_materialVersion;
 };
 
 PXR_NAMESPACE_CLOSE_SCOPE

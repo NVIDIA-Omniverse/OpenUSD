@@ -75,6 +75,13 @@ Subdivision primvars retain Hydra interpolation semantics. Vertex values use the
 
 A material may connect an `ND_displacement_float` graph to its `displacement` terminal. During Embree subdivision construction, hdEmbree evaluates that MaterialXCpp graph at each generated vertex and offsets the vertex along the normalized subdivision normal by `displacement * scale`. Object-space position and normal, interpolated `st`, constant/uniform/vertex/varying/face-varying numeric geomprops, and constant string/filename geomprops are available to the graph. Vertex, varying, and face-varying subdivision attributes are limited to float-based scalar and vector types by Embree. Displacement applies only at medium or higher complexity to meshes with a subdivision scheme such as `catmullClark`.
 
+MaterialX `geompropvalue` names must be constant strings, as required by the
+MaterialX uniform input declaration. Material compilation assigns names shared
+integer handles across surface and displacement terminals; meshes resolve those
+handles when primvars or materials change. Connected, absent, or non-string
+`geomprop` inputs produce one recoverable material diagnostic and make only
+that node evaluate its authored default.
+
 Material terminals are validated when the material is synchronized. A
 malformed surface/displacement graph emits one warning identifying the
 material, terminal, and first failing node; unauthored optional terminals

@@ -187,6 +187,12 @@ public:
         GfRect2i const& dataWindow,
         bool forceDisplacementRebuild);
 
+    /// Refresh material geomprop bindings on all live mesh prototypes.
+    ///
+    /// Rendering must be stopped. The walk is unconditional so triangle
+    /// meshes and temporarily undisplaced subdivision meshes are included.
+    void RefreshMaterialBindings();
+
     /// Create a hydra Sprim, representing scene or viewport state like cameras
     /// or lights.
     ///   \param typeId The sprim type to create. This must be one of the types
@@ -287,9 +293,8 @@ private:
     // A version counter for edits to _scene.
     std::atomic<int> _sceneVersion;
 
-    // A narrower version for material edits that require displacement
-    // callbacks to be reevaluated.
-    std::atomic<int> _displacementVersion;
+    // A narrower version for compiled material edits.
+    std::atomic<int> _materialVersion;
 
     // A shared HdEmbreeRenderParam object that stores top-level embree state;
     // passed to prims during Sync().

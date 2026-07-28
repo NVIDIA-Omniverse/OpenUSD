@@ -11,8 +11,10 @@
 #include "materials/openPbr.h"
 #include "materials/usdPreviewSurface.h"
 
+#include <algorithm>
 #include <functional>
 #include <initializer_list>
+#include <iterator>
 #include <map>
 #include <string>
 #include <utility>
@@ -367,10 +369,53 @@ _InjectSurfaceVolumeMaterialTerminal(MaterialGraph* graph)
 // Compile
 // ---------------------------------------------------------------------------
 
+static bool
+_IsGeomPropNode(const std::string& nodeTypeId)
+{
+    return _StartsWith(nodeTypeId, "ND_geompropvalue");
+}
+
+std::vector<std::string>
+CollectGeomPropNames(const MaterialGraph& network)
+{
+    // Graph normalization does not synthesize geomprop nodes or rewrite their
+    // geomprop parameters. If it starts doing either, collect from the same
+    // normalized graph that Compile consumes so handle spaces cannot diverge.
+    std::vector<std::string> names;
+    for (const auto& [path, node] : network.nodes) {
+        (void)path;
+        if (!_IsGeomPropNode(node.nodeTypeId)) {
+            continue;
+        }
+        const auto geomPropIt = node.parameters.find("geomprop");
+        if (geomPropIt == node.parameters.end() ||
+            !ValueHolds<std::string>(geomPropIt->second)) {
+            continue;
+        }
+        const std::string& name =
+            ValueGet<std::string>(geomPropIt->second);
+        if (std::find(names.begin(), names.end(), name) == names.end()) {
+            names.push_back(name);
+        }
+    }
+    return names;
+}
+
 CompileResult
 EvalGraph::Compile(
     const MaterialGraph& network,
     const std::string& terminalName)
+{
+    const std::vector<std::string> geomPropNames =
+        CollectGeomPropNames(network);
+    return Compile(network, terminalName, geomPropNames);
+}
+
+CompileResult
+EvalGraph::Compile(
+    const MaterialGraph& network,
+    const std::string& terminalName,
+    const std::vector<std::string>& geomPropNames)
 {
     enum class _VisitState {
         Unvisited,
@@ -462,6 +507,13 @@ EvalGraph::Compile(
             state = _VisitState::Visiting;
 
             for (const auto& entry : nodeIt->second.inputConnections) {
+                // A dynamic geomprop name is malformed uniform authoring.
+                // Ignore its upstream graph so this node can retain its
+                // authored default even when that irrelevant graph is broken.
+                if (_IsGeomPropNode(nodeIt->second.nodeTypeId) &&
+                    entry.first == "geomprop") {
+                    continue;
+                }
                 for (const auto& conn : entry.second) {
                     if (conn.upstreamNode == terminalNodePath) {
                         result.diagnostic =
@@ -508,6 +560,43 @@ EvalGraph::Compile(
         const auto& node = normalized.nodes.at(path);
         auto& compiled = graph->_nodes[i];
 
+        int geomPropHandle = -1;
+        if (_IsGeomPropNode(node.nodeTypeId)) {
+            const auto connectionIt =
+                node.inputConnections.find("geomprop");
+            const auto parameterIt = node.parameters.find("geomprop");
+            const bool hasConnectedName =
+                connectionIt != node.inputConnections.end() &&
+                !connectionIt->second.empty();
+            const bool hasConstantStringName =
+                parameterIt != node.parameters.end() &&
+                ValueHolds<std::string>(parameterIt->second);
+            if (hasConnectedName || !hasConstantStringName) {
+                // Keep one actionable warning while compiling a usable node.
+                // Handle -1 makes the evaluator return its authored default.
+                if (result.diagnostic.empty()) {
+                    result.diagnostic = path + " (" + node.nodeTypeId +
+                        ") input geomprop must be a constant string";
+                }
+            } else {
+                const std::string& name =
+                    ValueGet<std::string>(parameterIt->second);
+                const auto nameIt = std::find(
+                    geomPropNames.begin(), geomPropNames.end(), name);
+                // CollectGeomPropNames and this rewrite operate on the same
+                // authored geomprop parameters. Normalization must not create
+                // a name that is absent from the material handle space.
+                if (nameIt == geomPropNames.end()) {
+                    result.diagnostic = path + " (" + node.nodeTypeId +
+                        ") geomprop name is absent from the material handle "
+                        "space";
+                    return result;
+                }
+                geomPropHandle = static_cast<int>(
+                    std::distance(geomPropNames.begin(), nameIt));
+            }
+        }
+
         compiled.evalFn = registry.Find(node.nodeTypeId);
         if (!compiled.evalFn) {
             result.diagnostic = "no evaluator registered for node type " +
@@ -519,13 +608,29 @@ EvalGraph::Compile(
         for (const auto& param : node.parameters) {
             InputBinding binding;
             binding.inputSlot = InternSlot(param.first);
-            binding.defaultValue = param.second;
+            if (_IsGeomPropNode(node.nodeTypeId) &&
+                param.first == "geomprop") {
+                binding.defaultValue = Value(geomPropHandle);
+            } else {
+                binding.defaultValue = param.second;
+            }
+            compiled.inputs.push_back(std::move(binding));
+        }
+        if (_IsGeomPropNode(node.nodeTypeId) &&
+            node.parameters.find("geomprop") == node.parameters.end()) {
+            InputBinding binding;
+            binding.inputSlot = InternSlot("geomprop");
+            binding.defaultValue = Value(geomPropHandle);
             compiled.inputs.push_back(std::move(binding));
         }
 
         // Connections (may override a same-named constant).
         for (const auto& connEntry : node.inputConnections) {
             if (connEntry.second.empty()) continue;
+            if (_IsGeomPropNode(node.nodeTypeId) &&
+                connEntry.first == "geomprop") {
+                continue;
+            }
             const auto& conn = connEntry.second.front();
 
             auto idxIt = nodeIndex.find(conn.upstreamNode);

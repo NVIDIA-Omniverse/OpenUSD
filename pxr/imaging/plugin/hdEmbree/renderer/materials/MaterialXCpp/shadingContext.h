@@ -9,7 +9,7 @@
 #include "value.h"
 
 #include <string>
-#include <unordered_map>
+#include <vector>
 
 namespace mxcpp {
 
@@ -86,17 +86,17 @@ struct ShadingContext
     bool hasObjectToWorldTransform = false;
     bool hasWorldToObjectTransform = false;
 
-    // Per-sample varying property lookup (geompropvalue).
-    // Returns the named geometric property at the current shading point.
+    // Per-sample varying property lookup (geompropvalue). Handles are indexed
+    // against the material name table used to compile the active graph.
     // Returns std::monostate (empty Value) on failure and must not throw for
     // recoverable lookup failures.
-    using GeomPropFn = Value(*)(const void* userData, const std::string& name);
+    using GeomPropFn = Value(*)(const void* userData, int geomPropHandle);
     GeomPropFn geomPropLookup = nullptr;
     const void* geomPropUserData = nullptr;
 
-    // Per-mesh uniform property map (geompropvalueuniform).
-    // Points to a pre-built map; lifetime managed by the caller.
-    const std::unordered_map<std::string, Value>* uniformProps = nullptr;
+    // Per-mesh uniform properties indexed against the material name table
+    // used to compile the active graph. Lifetime is managed by the caller.
+    const std::vector<Value>* uniformProps = nullptr;
 
     // Optional color transform callback for MaterialX colortransform nodes.
     // The callback receives canonical lower-case color-space names and RGB

@@ -44,7 +44,7 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
         // The render thread reads the compiled graph during shading, so stop
         // the current render and bump the scene version before replacing it.
         static_cast<HdEmbreeRenderParam*>(renderParam)
-            ->NotifyDisplacementChange();
+            ->NotifyMaterialChange();
     }
 
     SdfPath const& id = GetId();
@@ -53,6 +53,8 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
     _displacementGraph.reset();
     _renderMaterial.surfaceGraph = nullptr;
     _renderMaterial.displacementGraph = nullptr;
+    _renderMaterial.geomPropNames.clear();
+    _renderMaterial.geomPropTokens.clear();
 
     VtValue networkMapValue;
     try {
@@ -104,12 +106,27 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
         // other.
         const mxcpp::MaterialGraph mxcppGraph =
             ConvertHdNetworkToMxcppGraph(network, renderColorSpace);
+        _renderMaterial.geomPropNames =
+            mxcpp::CollectGeomPropNames(mxcppGraph);
+        _renderMaterial.geomPropTokens.reserve(
+            _renderMaterial.geomPropNames.size());
+        for (const std::string& name : _renderMaterial.geomPropNames) {
+            _renderMaterial.geomPropTokens.emplace_back(name);
+        }
         mxcpp::CompileResult surfaceResult =
-            mxcpp::EvalGraph::Compile(mxcppGraph);
+            mxcpp::EvalGraph::Compile(
+                mxcppGraph, std::string(), _renderMaterial.geomPropNames);
         mxcpp::CompileResult displacementResult =
-            mxcpp::EvalGraph::Compile(mxcppGraph, "displacement");
+            mxcpp::EvalGraph::Compile(
+                mxcppGraph, "displacement",
+                _renderMaterial.geomPropNames);
         if (surfaceResult.status == mxcpp::CompileStatus::Valid) {
             _surfaceGraph = std::move(surfaceResult.graph);
+            if (!surfaceResult.diagnostic.empty()) {
+                TF_WARN(
+                    "HdEmbreeMaterial %s: recoverable surface authoring: %s",
+                    id.GetText(), surfaceResult.diagnostic.c_str());
+            }
         } else if (surfaceResult.status == mxcpp::CompileStatus::Invalid) {
             TF_WARN(
                 "HdEmbreeMaterial %s: invalid surface terminal: %s",
@@ -125,6 +142,13 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
 
         if (displacementResult.status == mxcpp::CompileStatus::Valid) {
             _displacementGraph = std::move(displacementResult.graph);
+            if (!displacementResult.diagnostic.empty() &&
+                displacementResult.diagnostic != surfaceResult.diagnostic) {
+                TF_WARN(
+                    "HdEmbreeMaterial %s: recoverable displacement "
+                    "authoring: %s",
+                    id.GetText(), displacementResult.diagnostic.c_str());
+            }
         } else if (
             displacementResult.status == mxcpp::CompileStatus::Invalid) {
             TF_WARN(
@@ -150,7 +174,7 @@ HdEmbreeMaterial::Finalize(HdRenderParam *renderParam)
     // after the affected rprims have re-synced their material bindings.
     if (renderParam) {
         static_cast<HdEmbreeRenderParam*>(renderParam)
-            ->NotifyDisplacementChange();
+            ->NotifyMaterialChange();
     }
 }
 

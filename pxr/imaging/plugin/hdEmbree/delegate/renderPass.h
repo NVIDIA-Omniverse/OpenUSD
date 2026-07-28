@@ -48,7 +48,7 @@ public:
                        HdRenderThread *renderThread,
                        HdEmbreeRenderer *renderer,
                        std::atomic<int> *sceneVersion,
-                       std::atomic<int> *displacementVersion);
+                       std::atomic<int> *materialVersion);
 
     /// Renderpass destructor.
     ~HdEmbreeRenderPass() override;
@@ -96,9 +96,9 @@ private:
     // The last scene version we rendered with.
     int _lastSceneVersion;
 
-    // A reference to and the last observed displacement-material version.
-    std::atomic<int> *_displacementVersion;
-    int _lastDisplacementVersion;
+    // A reference to and the last observed compiled-material version.
+    std::atomic<int> *_materialVersion;
+    int _lastMaterialVersion;
 
     // The last settings version we rendered with.
     int _lastSettingsVersion;

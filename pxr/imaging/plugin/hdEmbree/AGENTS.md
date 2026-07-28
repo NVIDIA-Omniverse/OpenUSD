@@ -447,6 +447,16 @@ Primvars are pulled into `_primvarSourceMap` by `_UpdatePrimvarSources()` and
 `_UpdateComputedPrimvarSources()`, then converted into `HdEmbreePrimvarSampler`
 objects in `renderer/geometry/meshSamplers.*`. The sampler map is stored in
 `HdEmbreePrototypeContext` so the renderer can evaluate primvars at ray hits.
+The context owns samplers in `primvarMap`. Material compilation assigns each
+constant `geomprop` name one integer handle shared by the surface and
+displacement graphs; each mesh resolves that handle table to observing sampler
+and uniform-value vectors after sampler/material Sync. Material recompiles
+increment the material version even on failure, and the render pass refreshes
+all mesh bindings before subdivision recommits or rendering. Never add a
+hit-time string or `TfToken` lookup fallback. Connected, absent, or non-string
+`geomprop` inputs violate MaterialX's uniform contract; compile them to invalid
+handle -1, emit one recoverable diagnostic, and evaluate the node's authored
+default without invalidating the terminal.
 
 For refined primvars, preserve indexed face-varying data rather than flattening it: each face-varying primvar needs an independent Embree attribute topology because different primvars can have different seams. Topology 1 is reserved for linear `varying` data; face-varying topologies start at 2. Embree maps `none` to `SMOOTH_BOUNDARY`, the three OpenSubdiv corner variants to `PIN_CORNERS`, `boundaries` to `PIN_BOUNDARY`, and `all` to `PIN_ALL`. Embree interpolation buffers and outputs must remain 16-byte padded. Low-complexity triangle samplers still need indexed values flattened before triangulation.
 
@@ -493,8 +503,9 @@ network maps, converts them in `renderer/materials/mxcppAdapter.*`, and compiles
 `mxcpp::EvalGraph`. Surface and optional `displacement` terminals are compiled separately into the stable material handle. `HdEmbreeMesh` registers an Embree subdivision displacement callback; scene commit evaluates `ND_displacement_float` at generated vertices and offsets positions by `displacement * scale` along the normalized object-space geometric normal. Bind material state before committing the prototype scene, and force a recommit after displacement material changes. The callback currently supplies object-space position/normal, `st`, and constant string/filename geomprops. Triangle geometry, including meshes with `subdivisionScheme = "none"`, is not displaced.
 
 `EvalGraph::Compile()` returns an explicit valid, invalid, or absent-terminal
-result. Valid results alone own a graph; invalid results carry one actionable
-diagnostic; absent optional terminals carry neither. The material delegate
+result. Valid results alone own a graph and may carry one recoverable authoring
+diagnostic; invalid results carry one fatal diagnostic; absent optional
+terminals carry neither. The material delegate
 warns for invalid surfaces, warns for an absent surface only when neither a
 volume nor displacement terminal is authored, warns for malformed
 displacement, and keeps absent displacement silent. A malformed
@@ -554,10 +565,10 @@ geometry primvars.
 
 MaterialX `ND_geompropvalueuniform_string` and
 `ND_geompropvalueuniform_filename` read `HdInterpolationConstant` primvars
-from the per-mesh `uniformPrimvarMap`. String-like values are accepted from
-string, token, asset path, and their array forms; asset paths should resolve to
-the resolved path when available and otherwise fall back to the authored asset
-path.
+from the prototype's material-handle-indexed uniform-value vector. String-like
+values are accepted from string, token, asset path, and their array forms;
+asset paths should resolve to the resolved path when available and otherwise
+fall back to the authored asset path.
 
 MaterialXCpp implements `ND_tiledcircles_color3`,
 `ND_tiledcloverleafs_color3`, and `ND_tiledhexagons_color3` directly from the
@@ -717,6 +728,8 @@ two renderer regression suites:
   runs 67 renderer-focused material,
   transport, primvar, geometry, and texture fixtures imported from the AOUSD
   materials suite.
+- `powerprofilesctl launch --profile performance -- pixi run pytest test-suite`
+  runs 41 broader renderer integration fixtures.
 - `powerprofilesctl launch --profile performance -- pixi run pytest usdlux`
   runs 328 active direct-lighting frames across the USD Lux light types,
   shaping/IES controls, and visible light geometry.
@@ -731,6 +744,7 @@ powerprofilesctl launch --profile performance -- \
 Its expected laptop baseline is approximately 235 seconds. If any test fails
 or runtime is 250 seconds or above, stop and check with Anders before
 continuing or landing the change.
+The complete suite currently contains 436 cases.
 
 Initialize its shaderball assets with
 `git submodule update --init --depth 1`. Use the material subtree for transport

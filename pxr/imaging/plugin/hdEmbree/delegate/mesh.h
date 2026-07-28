@@ -131,6 +131,12 @@ public:
         GfRect2i const& dataWindow,
         bool forceDisplacementRebuild = false);
 
+    /// Re-resolve material geomprop handles against this prototype.
+    ///
+    /// Rendering must be stopped. Missing materials and primvars produce
+    /// empty binding vectors and fallback node values.
+    void RefreshMaterialBindings();
+
     /// Access cached vertex positions for surface derivative computation.
     VtVec3fArray const& GetPoints() const { return _points; }
 
@@ -184,15 +190,14 @@ private:
     // scene. Recommit every instance after changing that prototype scene.
     void _CommitPrototypeInstances();
 
-    // Release and clear all raw-owned samplers immediately before destroying
-    // the prototype context. No renderer may be using them. Safe to call more
-    // than once.
-    void _ReleasePrimvarSamplers();
-
     // Synchronize the cached effective displacement state and Embree callback
     // pointer. Requires a live prototype geometry and context. Returns true
     // when a geometry recommit is required.
     bool _RefreshDisplacementState();
+
+    // Resolve the bound material's shared handle space against this
+    // prototype's varying samplers and constant string primvar sources.
+    void _ResolveGeomPropBindings();
 
     void _WarnIfInstancedDisplacementIsLimited(
         HdEmbreePrototypeContext const* prototypeContext);

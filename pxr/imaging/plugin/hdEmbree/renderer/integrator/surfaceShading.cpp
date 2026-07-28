@@ -539,7 +539,8 @@ HdEmbreeRenderer::_BuildShadingContext(
         auto it = prototypeContext->primvarMap.find(_tokensSt);
         if (it != prototypeContext->primvarMap.end()) {
             HdEmbreeSampleTexcoord(
-                it->second, rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
+                it->second.get(), rayHit.hit.primID,
+                rayHit.hit.u, rayHit.hit.v,
                 &texcoordVal);
         }
     }
@@ -778,13 +779,13 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
         nullptr,
         options);
     HdEmbreePrimvarLookup cbData{
-        &prototypeContext->primvarMapByString,
+        &prototypeContext->geomPropSamplers,
         rayHit.hit.primID,
         rayHit.hit.u,
         rayHit.hit.v};
     ctx.geomPropLookup = &HdEmbreeSamplePrimvar;
     ctx.geomPropUserData = &cbData;
-    ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
+    ctx.uniformProps = &prototypeContext->geomPropUniformValues;
     mxcpp::EvalOptions evalOptions;
     evalOptions.useAdobeOpenPBR = _settings.useAdobeOpenPBR;
     evalOptions.visibilityOnly = true;

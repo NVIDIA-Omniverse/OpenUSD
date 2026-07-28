@@ -203,7 +203,8 @@ ty::ComputeTriangleSurfaceDerivatives(
         auto it = prototypeContext->primvarMap.find(_tokensSt);
         if (it != prototypeContext->primvarMap.end()) {
             auto* vtxSampler =
-                dynamic_cast<HdEmbreeTriangleVertexSampler*>(it->second);
+                dynamic_cast<HdEmbreeTriangleVertexSampler*>(
+                    it->second.get());
             if (vtxSampler) {
                 haveSt = vtxSampler->SampleVertices(
                     primID, &st[0], &st[1], &st[2]);
@@ -211,7 +212,7 @@ ty::ComputeTriangleSurfaceDerivatives(
             if (!haveSt) {
                 auto* fvSampler =
                     dynamic_cast<HdEmbreeTriangleFaceVaryingSampler*>(
-                        it->second);
+                        it->second.get());
                 if (fvSampler) {
                     haveSt = fvSampler->SampleVertices(
                         primID, &st[0], &st[1], &st[2]);
@@ -228,7 +229,8 @@ ty::ComputeTriangleSurfaceDerivatives(
         auto it = prototypeContext->primvarMap.find(HdTokens->normals);
         if (it != prototypeContext->primvarMap.end()) {
             auto* vtxSampler =
-                dynamic_cast<HdEmbreeTriangleVertexSampler*>(it->second);
+                dynamic_cast<HdEmbreeTriangleVertexSampler*>(
+                    it->second.get());
             if (vtxSampler) {
                 haveNormals = vtxSampler->SampleVertices(
                     primID, &N[0], &N[1], &N[2]);
@@ -236,7 +238,7 @@ ty::ComputeTriangleSurfaceDerivatives(
             if (!haveNormals) {
                 auto* fvSampler =
                     dynamic_cast<HdEmbreeTriangleFaceVaryingSampler*>(
-                        it->second);
+                        it->second.get());
                 if (fvSampler) {
                     haveNormals = fvSampler->SampleVertices(
                         primID, &N[0], &N[1], &N[2]);
@@ -354,7 +356,7 @@ ty::ComputeSubdivSurfaceDerivatives(
     auto const stIt = prototypeContext->primvarMap.find(_tokensSt);
     if (stIt != prototypeContext->primvarMap.end()) {
         stJacobian = HdEmbreeComputeSubdivTexcoordJacobian(
-            stIt->second, primID, u, v);
+            stIt->second.get(), primID, u, v);
     }
     if (stJacobian.valid) {
         const GfVec3f dPduParam = *outDPdu;
@@ -392,11 +394,14 @@ ty::ComputeSubdivSurfaceDerivatives(
             GfVec3f sampledNormal(0.0f);
             bool haveNormalDerivatives = false;
             auto* vertexSampler =
-                dynamic_cast<HdEmbreeSubdivVertexSampler*>(it->second);
+                dynamic_cast<HdEmbreeSubdivVertexSampler*>(
+                    it->second.get());
             auto* varyingSampler =
-                dynamic_cast<HdEmbreeSubdivVaryingSampler*>(it->second);
+                dynamic_cast<HdEmbreeSubdivVaryingSampler*>(
+                    it->second.get());
             auto* fvarSampler =
-                dynamic_cast<HdEmbreeSubdivFaceVaryingSampler*>(it->second);
+                dynamic_cast<HdEmbreeSubdivFaceVaryingSampler*>(
+                    it->second.get());
             if (vertexSampler) {
                 haveNormalDerivatives =
                     vertexSampler->SampleWithDerivatives(
@@ -489,7 +494,7 @@ ty::TryComputeDisplacedSubdivNormalDerivativesToWorld(
     if (stIt != prototypeContext->primvarMap.end()) {
         const HdEmbreeSubdivTexcoordJacobian stJacobian =
             HdEmbreeComputeSubdivTexcoordJacobian(
-                stIt->second, frame.primID, frame.u, frame.v);
+                stIt->second.get(), frame.primID, frame.u, frame.v);
         if (stJacobian.valid) {
             const GfVec3f dNduParam = objectDndu;
             const GfVec3f dNdvParam = objectDndv;

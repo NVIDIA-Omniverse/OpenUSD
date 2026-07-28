@@ -25,6 +25,28 @@ bool Test_IsClose(const Vec3f& a, const Vec3f& b, float eps = 1e-5f);
 static const SlotName _kIn("in");
 static const SlotName _kOut("out");
 
+struct _GeomPropLookupData
+{
+    std::vector<Value> values;
+    mutable std::vector<int> requestedHandles;
+};
+
+static Value
+_LookupGeomPropHandle(const void* userData, int geomPropHandle)
+{
+    const _GeomPropLookupData* const data =
+        static_cast<const _GeomPropLookupData*>(userData);
+    if (!data) {
+        return Value();
+    }
+    data->requestedHandles.push_back(geomPropHandle);
+    if (geomPropHandle < 0 ||
+        static_cast<size_t>(geomPropHandle) >= data->values.size()) {
+        return Value();
+    }
+    return data->values[geomPropHandle];
+}
+
 static void
 _EvalOffsetReevaluate(const ParamMap& inputs,
                       const ShadingContext& ctx,
@@ -982,6 +1004,139 @@ TestInputReevaluationUsesModifiedContext()
     return true;
 }
 
+static bool
+TestGeomPropHandleSpaceIsSharedAcrossTerminals()
+{
+    MaterialGraph network;
+
+    GraphNode surfaceGeomProp;
+    surfaceGeomProp.nodeTypeId = "ND_geompropvalue_color3";
+    surfaceGeomProp.parameters["geomprop"] =
+        Value(std::string("displayColor"));
+    surfaceGeomProp.parameters["default"] = Value(Vec3f(0.0f));
+    network.nodes["/Material/A_SurfaceGeomProp"] = surfaceGeomProp;
+
+    GraphNode duplicateGeomProp = surfaceGeomProp;
+    network.nodes["/Material/B_DuplicateGeomProp"] = duplicateGeomProp;
+
+    GraphNode displacementGeomProp;
+    displacementGeomProp.nodeTypeId = "ND_geompropvalue_float";
+    displacementGeomProp.parameters["geomprop"] =
+        Value(std::string("height"));
+    displacementGeomProp.parameters["default"] = Value(0.0f);
+    network.nodes["/Material/C_DisplacementGeomProp"] =
+        displacementGeomProp;
+
+    GraphNode surface;
+    surface.nodeTypeId = "UsdPreviewSurface";
+    surface.inputConnections["diffuseColor"] = {
+        {"/Material/A_SurfaceGeomProp", "out"}};
+    surface.inputConnections["emissiveColor"] = {
+        {"/Material/B_DuplicateGeomProp", "out"}};
+    network.nodes["/Material/Surface"] = surface;
+    network.terminals["surface"] = {"/Material/Surface", "out"};
+
+    GraphNode displacement;
+    displacement.nodeTypeId = "ND_displacement_float";
+    displacement.inputConnections["displacement"] = {
+        {"/Material/C_DisplacementGeomProp", "out"}};
+    network.nodes["/Material/Displacement"] = displacement;
+    network.terminals["displacement"] =
+        {"/Material/Displacement", "out"};
+
+    const std::vector<std::string> names = CollectGeomPropNames(network);
+    if (names !=
+        std::vector<std::string>{"displayColor", "height"}) {
+        return false;
+    }
+
+    CompileResult surfaceResult =
+        EvalGraph::Compile(network, "surface", names);
+    CompileResult displacementResult =
+        EvalGraph::Compile(network, "displacement", names);
+    if (!surfaceResult.graph || !displacementResult.graph) {
+        return false;
+    }
+
+    _GeomPropLookupData lookupData;
+    lookupData.values = {
+        Value(Vec3f(0.25f, 0.5f, 0.75f)), Value(0.125f)};
+    ShadingContext context;
+    context.geomPropLookup = &_LookupGeomPropHandle;
+    context.geomPropUserData = &lookupData;
+    const SurfaceClosure closure = surfaceResult.graph->Evaluate(context);
+    float displacementValue = 0.0f;
+    const bool evaluated = Test_IsClose(
+               closure.baseColor, Vec3f(0.25f, 0.5f, 0.75f)) &&
+        displacementResult.graph->EvaluateDisplacement(
+            context, &displacementValue) &&
+        Test_IsClose(displacementValue, 0.125f);
+    return evaluated &&
+        lookupData.requestedHandles ==
+            std::vector<int>{0, 0, 1};
+}
+
+static bool
+_MalformedGeomPropUsesDefault(const MaterialGraph& network)
+{
+    CompileResult result = EvalGraph::Compile(network);
+    if (result.status != CompileStatus::Valid || !result.graph ||
+        result.diagnostic.find(
+            "input geomprop must be a constant string") ==
+            std::string::npos) {
+        return false;
+    }
+    _GeomPropLookupData lookupData;
+    lookupData.values = {Value(0.9f)};
+    ShadingContext context;
+    context.geomPropLookup = &_LookupGeomPropHandle;
+    context.geomPropUserData = &lookupData;
+    const SurfaceClosure closure =
+        result.graph->Evaluate(context);
+    return Test_IsClose(closure.roughness, 0.25f) &&
+        lookupData.requestedHandles.empty();
+}
+
+static bool
+TestCompileMalformedGeomPropNameUsesDefault()
+{
+    MaterialGraph network;
+
+    GraphNode geomProp;
+    geomProp.nodeTypeId = "ND_geompropvalue_float";
+    geomProp.parameters["geomprop"] =
+        Value(std::string("authoredName"));
+    geomProp.parameters["default"] = Value(0.25f);
+    geomProp.inputConnections["geomprop"] = {
+        {"/Material/Missing", "out"}};
+    network.nodes["/Material/GeomProp"] = geomProp;
+
+    GraphNode surface;
+    surface.nodeTypeId = "UsdPreviewSurface";
+    surface.inputConnections["roughness"] = {
+        {"/Material/GeomProp", "out"}};
+    network.nodes["/Material/Surface"] = surface;
+    network.terminals["surface"] = {"/Material/Surface", "out"};
+
+    const bool connectedUsesDefault =
+        _MalformedGeomPropUsesDefault(network);
+
+    network.nodes["/Material/GeomProp"]
+        .inputConnections.clear();
+    network.nodes["/Material/GeomProp"]
+        .parameters.erase("geomprop");
+    const bool absentUsesDefault =
+        _MalformedGeomPropUsesDefault(network);
+
+    network.nodes["/Material/GeomProp"]
+        .parameters["geomprop"] = Value(2.0f);
+    const bool wrongTypeUsesDefault =
+        _MalformedGeomPropUsesDefault(network);
+
+    return connectedUsesDefault && absentUsesDefault &&
+        wrongTypeUsesDefault;
+}
+
 // ---------------------------------------------------------------------------
 
 void
@@ -1009,6 +1164,8 @@ Test_RegisterGraphTests()
     _REG(TestEvaluateConstantDisplacement);
     _REG(TestEvaluatePositionSineDisplacement);
     _REG(TestInputReevaluationUsesModifiedContext);
+    _REG(TestGeomPropHandleSpaceIsSharedAcrossTerminals);
+    _REG(TestCompileMalformedGeomPropNameUsesDefault);
 }
 
 #undef _REG

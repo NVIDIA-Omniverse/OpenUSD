@@ -19,8 +19,9 @@
 #include "pxr/base/vt/array.h"
 
 #include <atomic>
-#include <unordered_map>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/value.h"
 
@@ -84,24 +85,20 @@ struct HdEmbreePrototypeContext
     GfMatrix4f displacementWorldToObjectMatrix = GfMatrix4f(1.0f);
     VtVec3fArray const* triangleDPdu = nullptr;
     VtVec3fArray const* triangleDPdv = nullptr;
-    /// A name-indexed map of primvar samplers.
-    TfHashMap<TfToken, HdEmbreePrimvarSampler*, TfToken::HashFunctor>
-        primvarMap;
-    /// String-keyed mirror of primvarMap for the material geomprop-lookup
-    /// callback, which receives plain string names from the pxr-independent
-    /// shading core.  Looking up here avoids constructing a TfToken — a
-    /// locked global-table operation — on every material input evaluation,
-    /// which is far too hot for the shading inner loop.  The samplers are
-    /// owned by primvarMap; this map only references them.
-    std::unordered_map<std::string, HdEmbreePrimvarSampler*>
-        primvarMapByString;
+    /// Name-indexed owning storage for primvar samplers.
+    std::unordered_map<
+        TfToken,
+        std::unique_ptr<HdEmbreePrimvarSampler>,
+        TfToken::HashFunctor> primvarMap;
     /// A copy of the primitive params for this rprim.
     VtIntArray primitiveParams;
     /// The bound material, or nullptr if none.
     HdEmbreeMaterialData const* material = nullptr;
-    /// Per-mesh uniform primvar values for geompropvalueuniform nodes.
-    /// Built once during Sync from HdInterpolationConstant primvars.
-    std::unordered_map<std::string, mxcpp::Value> uniformPrimvarMap;
+    /// Handle-indexed against material->geomPropNames. Both vectors are
+    /// rebuilt after every material-table or primvarMap mutation; sampler
+    /// pointers observe the unique_ptr-owned entries in primvarMap.
+    std::vector<HdEmbreePrimvarSampler*> geomPropSamplers;
+    std::vector<mxcpp::Value> geomPropUniformValues;
 };
 
 ///

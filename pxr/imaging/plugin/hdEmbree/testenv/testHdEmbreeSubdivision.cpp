@@ -1181,25 +1181,28 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
         indices.cdata(), 0, sizeof(int), indices.size());
 
     HdEmbreeRTCBufferAllocator allocator;
-    HdEmbreeSubdivVaryingSampler heightSampler(
-        TfToken("height"),
-        VtValue(VtFloatArray{0.0f, 1.0f, 1.0f, 0.0f}),
-        geometry, &allocator);
-    HdEmbreeSubdivFaceVaryingSampler stSampler(
-        TfToken("st"),
-        VtValue(VtVec3fArray{
-            GfVec3f(0.0f, 0.0f, 9.0f),
-            GfVec3f(1.0f, 0.0f, 9.0f),
-            GfVec3f(1.0f, 1.0f, 9.0f),
-            GfVec3f(0.0f, 1.0f, 9.0f)}),
-        geometry, 2, &allocator);
-
     HdEmbreePrototypeContext context;
     HdEmbreeMaterialData material;
+    material.geomPropNames.push_back("height");
+    material.geomPropTokens.emplace_back("height");
     context.material = &material;
     context.displaced = true;
-    context.primvarMap[TfToken("st")] = &stSampler;
-    context.primvarMapByString["height"] = &heightSampler;
+    context.primvarMap[TfToken("height")] =
+        std::make_unique<HdEmbreeSubdivVaryingSampler>(
+            TfToken("height"),
+            VtValue(VtFloatArray{0.0f, 1.0f, 1.0f, 0.0f}),
+            geometry, &allocator);
+    context.primvarMap[TfToken("st")] =
+        std::make_unique<HdEmbreeSubdivFaceVaryingSampler>(
+            TfToken("st"),
+            VtValue(VtVec3fArray{
+                GfVec3f(0.0f, 0.0f, 9.0f),
+                GfVec3f(1.0f, 0.0f, 9.0f),
+                GfVec3f(1.0f, 1.0f, 9.0f),
+                GfVec3f(0.0f, 1.0f, 9.0f)}),
+            geometry, 2, &allocator);
+    context.geomPropSamplers.push_back(
+        context.primvarMap[TfToken("height")].get());
     rtcSetGeometryUserData(geometry, &context);
     rtcSetGeometryDisplacementFunction(
         geometry, HdEmbreeDisplacementFunction);
@@ -1392,7 +1395,8 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     rtcReleaseScene(scene);
     float detachedHeight = -1.0f;
     const bool detachedSampled =
-        heightSampler.Sample(0, 0.5f, 0.5f, &detachedHeight);
+        context.geomPropSamplers[0]->Sample(
+            0, 0.5f, 0.5f, &detachedHeight);
 
     rtcReleaseGeometry(geometry);
     rtcReleaseDevice(device);
@@ -1497,6 +1501,17 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     return valid;
 }
 
+bool
+TestGeomPropLookupRejectsInvalidHandles()
+{
+    std::vector<HdEmbreePrimvarSampler*> samplers(1, nullptr);
+    const HdEmbreePrimvarLookup lookup{
+        &samplers, 0, 0.25f, 0.25f};
+    return ValueIsEmpty(HdEmbreeSamplePrimvar(&lookup, -1)) &&
+        ValueIsEmpty(HdEmbreeSamplePrimvar(&lookup, 1)) &&
+        ValueIsEmpty(HdEmbreeSamplePrimvar(&lookup, 0));
+}
+
 HdMaterialNetwork2
 _MakeHydraMaterialNetwork(bool withDisplacement, float displacement = 0.0f)
 {
@@ -1536,6 +1551,97 @@ _MakeMalformedDisplacementMaterialNetwork()
     return network;
 }
 
+HdMaterialNetwork2
+_MakeGeomPropMaterialNetwork(
+    bool includeSecond,
+    bool includeUniform = false)
+{
+    HdMaterialNetwork2 network;
+
+    const SdfPath firstPath("/Material/First");
+    HdMaterialNode2 first;
+    first.nodeTypeId = TfToken("ND_geompropvalue_float");
+    first.parameters[TfToken("geomprop")] = VtValue(std::string("first"));
+    first.parameters[TfToken("default")] = VtValue(0.5f);
+    network.nodes[firstPath] = first;
+
+    const SdfPath surfacePath("/Material/Surface");
+    HdMaterialNode2 surface;
+    surface.nodeTypeId = TfToken("UsdPreviewSurface");
+    surface.inputConnections[TfToken("roughness")] = {
+        HdMaterialConnection2{firstPath, TfToken("out")}};
+
+    if (includeSecond) {
+        const SdfPath secondPath("/Material/Second");
+        HdMaterialNode2 second;
+        second.nodeTypeId = TfToken("ND_geompropvalue_color3");
+        second.parameters[TfToken("geomprop")] =
+            VtValue(std::string("second"));
+        second.parameters[TfToken("default")] =
+            VtValue(GfVec3f(0.5f));
+        network.nodes[secondPath] = second;
+        surface.inputConnections[TfToken("diffuseColor")] = {
+            HdMaterialConnection2{secondPath, TfToken("out")}};
+    }
+    if (includeUniform) {
+        const SdfPath uniformPath("/Material/UniformLabel");
+        HdMaterialNode2 uniform;
+        uniform.nodeTypeId =
+            TfToken("ND_geompropvalueuniform_string");
+        uniform.parameters[TfToken("geomprop")] =
+            VtValue(std::string("label"));
+        uniform.parameters[TfToken("default")] =
+            VtValue(std::string("fallback"));
+        network.nodes[uniformPath] = uniform;
+    }
+
+    network.nodes[surfacePath] = surface;
+    network.terminals[TfToken("surface")] =
+        HdMaterialConnection2{surfacePath, TfToken("out")};
+    return network;
+}
+
+HdMaterialNetwork2
+_MakeSurfaceDisplacementGeomPropNetwork()
+{
+    HdMaterialNetwork2 network;
+
+    const SdfPath colorPath("/Material/A_SurfaceColor");
+    HdMaterialNode2 color;
+    color.nodeTypeId = TfToken("ND_geompropvalue_color3");
+    color.parameters[TfToken("geomprop")] =
+        VtValue(std::string("surfaceColor"));
+    color.parameters[TfToken("default")] = VtValue(GfVec3f(0.0f));
+    network.nodes[colorPath] = color;
+
+    const SdfPath heightPath("/Material/B_Height");
+    HdMaterialNode2 height;
+    height.nodeTypeId = TfToken("ND_geompropvalue_float");
+    height.parameters[TfToken("geomprop")] =
+        VtValue(std::string("height"));
+    height.parameters[TfToken("default")] = VtValue(0.0f);
+    network.nodes[heightPath] = height;
+
+    const SdfPath surfacePath("/Material/Surface");
+    HdMaterialNode2 surface;
+    surface.nodeTypeId = TfToken("UsdPreviewSurface");
+    surface.inputConnections[TfToken("diffuseColor")] = {
+        HdMaterialConnection2{colorPath, TfToken("out")}};
+    network.nodes[surfacePath] = surface;
+    network.terminals[TfToken("surface")] =
+        HdMaterialConnection2{surfacePath, TfToken("out")};
+
+    const SdfPath displacementPath("/Material/Displacement");
+    HdMaterialNode2 displacement;
+    displacement.nodeTypeId = TfToken("ND_displacement_float");
+    displacement.inputConnections[TfToken("displacement")] = {
+        HdMaterialConnection2{heightPath, TfToken("out")}};
+    network.nodes[displacementPath] = displacement;
+    network.terminals[TfToken("displacement")] =
+        HdMaterialConnection2{displacementPath, TfToken("out")};
+    return network;
+}
+
 class _MaterialDelegate final : public HdUnitTestDelegate
 {
 public:
@@ -1565,10 +1671,10 @@ TestMaterialSyncKeepsStableHandleAndReplacesDisplacementGraph()
     RTCScene notificationScene = rtcNewScene(notificationDevice);
     HdRenderThread renderThread;
     std::atomic<int> sceneVersion{0};
-    std::atomic<int> displacementVersion{0};
+    std::atomic<int> materialVersion{0};
     HdEmbreeRenderParam renderParam(
         notificationDevice, notificationScene, &renderThread, nullptr,
-        nullptr, &sceneVersion, &displacementVersion);
+        nullptr, &sceneVersion, &materialVersion);
 
     bool valid = false;
     {
@@ -1596,12 +1702,285 @@ TestMaterialSyncKeepsStableHandleAndReplacesDisplacementGraph()
             handle->displacementGraph->EvaluateDisplacement(context, &value) &&
             _Close(value, -0.75f);
         valid = firstValid && removed && replaced &&
-            sceneVersion.load() == 3 && displacementVersion.load() == 3;
+            sceneVersion.load() == 3 && materialVersion.load() == 3;
     }
 
     rtcReleaseScene(notificationScene);
     rtcReleaseDevice(notificationDevice);
     return valid;
+}
+
+bool
+TestGeomPropBindingsRefreshForMeshAndMaterialChanges()
+{
+    _EmbreeTestContext context;
+    HdRenderDelegate* const renderDelegate = context.renderDelegate;
+    HdEmbreeRenderDelegate* const embreeDelegate =
+        dynamic_cast<HdEmbreeRenderDelegate*>(renderDelegate);
+    HdRenderIndex* const renderIndex = context.renderIndex.get();
+    if (!embreeDelegate || !renderIndex) {
+        return false;
+    }
+
+    HdUnitTestDelegate delegate(
+        renderIndex, SdfPath::AbsoluteRootPath());
+    const SdfPath materialId("/geomPropMaterial");
+    const SdfPath meshId("/triangleQuad");
+    delegate.AddMaterialResource(
+        materialId, VtValue(_MakeGeomPropMaterialNetwork(false)));
+    delegate.AddMesh(
+        meshId, GfMatrix4f(1.0f),
+        VtVec3fArray{
+            GfVec3f(0.0f, 0.0f, 0.0f),
+            GfVec3f(1.0f, 0.0f, 0.0f),
+            GfVec3f(1.0f, 1.0f, 0.0f),
+            GfVec3f(0.0f, 1.0f, 0.0f)},
+        VtIntArray{4}, VtIntArray{0, 1, 2, 3});
+    delegate.SetRefineLevel(meshId, 0);
+    delegate.AddPrimvar(
+        meshId, TfToken("first"),
+        VtValue(VtFloatArray{0.1f, 0.1f, 0.1f, 0.1f}),
+        HdInterpolationVertex, TfToken());
+    delegate.AddPrimvar(
+        meshId, TfToken("second"),
+        VtValue(VtVec3fArray(4, GfVec3f(0.2f, 0.3f, 0.4f))),
+        HdInterpolationVertex, TfToken());
+    delegate.AddPrimvar(
+        meshId, TfToken("label"), VtValue(std::string("mesh-label")),
+        HdInterpolationConstant, TfToken());
+    delegate.BindMaterial(meshId, materialId);
+
+    HdSprim* const material = renderIndex->GetSprim(
+        HdPrimTypeTokens->material, materialId);
+    HdDirtyBits materialBits = material->GetInitialDirtyBitsMask();
+    material->Sync(
+        &delegate, renderDelegate->GetRenderParam(), &materialBits);
+
+    HdRprim* const mesh =
+        const_cast<HdRprim*>(renderIndex->GetRprim(meshId));
+    HdDirtyBits meshBits = mesh->GetInitialDirtyBitsMask();
+    mesh->InitRepr(&delegate, HdReprTokens->refined, &meshBits);
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+
+    RTCScene root = static_cast<HdEmbreeRenderParam*>(
+        renderDelegate->GetRenderParam())->AcquireSceneForEdit();
+    rtcCommitScene(root);
+    RTCGeometry instance = rtcGetGeometry(root, 0);
+    HdEmbreeInstanceContext* const instanceContext = instance
+        ? static_cast<HdEmbreeInstanceContext*>(
+            rtcGetGeometryUserData(instance))
+        : nullptr;
+    RTCGeometry prototype = instanceContext
+        ? rtcGetGeometry(instanceContext->rootScene, 0)
+        : nullptr;
+    HdEmbreePrototypeContext* const prototypeContext = prototype
+        ? static_cast<HdEmbreePrototypeContext*>(
+            rtcGetGeometryUserData(prototype))
+        : nullptr;
+    if (!prototypeContext ||
+        prototypeContext->geomPropSamplers.size() != 1 ||
+        !prototypeContext->geomPropSamplers[0]) {
+        return false;
+    }
+    HdRenderPassSharedPtr renderPass = renderDelegate->CreateRenderPass(
+        renderIndex, HdRprimCollection());
+    HdRenderPassStateSharedPtr renderPassState =
+        renderDelegate->CreateRenderPassState();
+    renderPassState->SetViewport(GfVec4d(0.0, 0.0, 64.0, 64.0));
+    renderPass->Execute(renderPassState, TfTokenVector());
+
+    delegate.UpdatePrimvarValue(
+        meshId, TfToken("first"),
+        VtValue(VtFloatArray{0.75f, 0.75f, 0.75f, 0.75f}));
+    meshBits = HdChangeTracker::DirtyPrimvar;
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+    float updatedValue = 0.0f;
+    const bool meshRefreshWorked =
+        prototypeContext->geomPropSamplers.size() == 1 &&
+        prototypeContext->geomPropSamplers[0] &&
+        prototypeContext->geomPropSamplers[0]->Sample(
+            0, 0.25f, 0.25f, &updatedValue) &&
+        _Close(updatedValue, 0.75f);
+
+    delegate.UpdateMaterialResource(
+        materialId, VtValue(_MakeGeomPropMaterialNetwork(true, true)));
+    materialBits = HdMaterial::DirtyResource;
+    material->Sync(
+        &delegate, renderDelegate->GetRenderParam(), &materialBits);
+    // Remove the owning sampler while retaining the mesh's private source
+    // cache. Material-only refresh must still resolve the uniform value from
+    // _primvarSourceMap rather than depending on primvarMap.
+    const size_t erasedUniformSampler =
+        prototypeContext->primvarMap.erase(TfToken("label"));
+    // No camera is attached and the triangle mesh is not re-synced. Execute
+    // must still observe the material version and refresh the longer table.
+    renderPass->Execute(renderPassState, TfTokenVector());
+    const auto firstSamplerIt =
+        prototypeContext->primvarMap.find(TfToken("first"));
+    const auto secondSamplerIt =
+        prototypeContext->primvarMap.find(TfToken("second"));
+    const HdEmbreePrimvarLookup lookup{
+        &prototypeContext->geomPropSamplers, 0, 0.25f, 0.25f};
+    ShadingContext shadingContext;
+    shadingContext.geomPropLookup = &HdEmbreeSamplePrimvar;
+    shadingContext.geomPropUserData = &lookup;
+    shadingContext.uniformProps =
+        &prototypeContext->geomPropUniformValues;
+    const SurfaceClosure closure =
+        prototypeContext->material->surfaceGraph->Evaluate(shadingContext);
+    const bool longerMaterialRefreshWorked =
+        prototypeContext->material->geomPropNames ==
+            std::vector<std::string>{"first", "second", "label"} &&
+        prototypeContext->material->geomPropTokens ==
+            std::vector<TfToken>{
+                TfToken("first"), TfToken("second"), TfToken("label")} &&
+        prototypeContext->geomPropSamplers.size() == 3 &&
+        prototypeContext->geomPropUniformValues.size() == 3 &&
+        firstSamplerIt != prototypeContext->primvarMap.end() &&
+        secondSamplerIt != prototypeContext->primvarMap.end() &&
+        prototypeContext->geomPropSamplers[0] ==
+            firstSamplerIt->second.get() &&
+        prototypeContext->geomPropSamplers[1] ==
+            secondSamplerIt->second.get() &&
+        erasedUniformSampler == 1 &&
+        prototypeContext->geomPropSamplers[2] == nullptr &&
+        ValueHolds<std::string>(
+            prototypeContext->geomPropUniformValues[2]) &&
+        ValueGet<std::string>(
+            prototypeContext->geomPropUniformValues[2]) == "mesh-label" &&
+        _Close(closure.roughness, 0.75f) &&
+        _Close(closure.baseColor[0], 0.2f) &&
+        _Close(closure.baseColor[1], 0.3f) &&
+        _Close(closure.baseColor[2], 0.4f);
+
+    delegate.UpdatePrimvarValue(
+        meshId, TfToken("label"),
+        VtValue(std::string("updated-label")));
+    meshBits = HdChangeTracker::DirtyPrimvar;
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+    const bool uniformMeshRefreshWorked =
+        prototypeContext->geomPropUniformValues.size() == 3 &&
+        ValueHolds<std::string>(
+            prototypeContext->geomPropUniformValues[2]) &&
+        ValueGet<std::string>(
+            prototypeContext->geomPropUniformValues[2]) ==
+            "updated-label";
+
+    delegate.UpdateMaterialResource(materialId, VtValue());
+    materialBits = HdMaterial::DirtyResource;
+    material->Sync(
+        &delegate, renderDelegate->GetRenderParam(), &materialBits);
+    renderPass->Execute(renderPassState, TfTokenVector());
+    const bool failedMaterialRefreshWorked =
+        prototypeContext->material->geomPropNames.empty() &&
+        prototypeContext->material->geomPropTokens.empty() &&
+        prototypeContext->geomPropSamplers.empty() &&
+        prototypeContext->geomPropUniformValues.empty();
+
+    return meshRefreshWorked && longerMaterialRefreshWorked &&
+        uniformMeshRefreshWorked && failedMaterialRefreshWorked;
+}
+
+bool
+TestSurfaceAndDisplacementSharePrototypeGeomPropBindings()
+{
+    _EmbreeTestContext context;
+    HdRenderDelegate* const renderDelegate = context.renderDelegate;
+    HdEmbreeRenderDelegate* const embreeDelegate =
+        dynamic_cast<HdEmbreeRenderDelegate*>(renderDelegate);
+    HdRenderIndex* const renderIndex = context.renderIndex.get();
+    if (!embreeDelegate || !renderIndex) {
+        return false;
+    }
+
+    HdUnitTestDelegate delegate(
+        renderIndex, SdfPath::AbsoluteRootPath());
+    const SdfPath materialId("/surfaceDisplacementMaterial");
+    const SdfPath meshId("/surfaceDisplacementQuad");
+    delegate.AddMaterialResource(
+        materialId,
+        VtValue(_MakeSurfaceDisplacementGeomPropNetwork()));
+    delegate.AddMesh(
+        meshId, GfMatrix4f(1.0f),
+        VtVec3fArray{
+            GfVec3f(0.0f, 0.0f, 0.0f),
+            GfVec3f(1.0f, 0.0f, 0.0f),
+            GfVec3f(1.0f, 1.0f, 0.0f),
+            GfVec3f(0.0f, 1.0f, 0.0f)},
+        VtIntArray{4}, VtIntArray{0, 1, 2, 3});
+    delegate.SetRefineLevel(meshId, 2);
+    delegate.AddPrimvar(
+        meshId, TfToken("surfaceColor"),
+        VtValue(VtVec3fArray(
+            4, GfVec3f(0.15f, 0.35f, 0.55f))),
+        HdInterpolationVertex, TfToken());
+    delegate.AddPrimvar(
+        meshId, TfToken("height"),
+        VtValue(VtFloatArray{0.4f, 0.4f, 0.4f, 0.4f}),
+        HdInterpolationVertex, TfToken());
+    delegate.BindMaterial(meshId, materialId);
+
+    HdSprim* const material = renderIndex->GetSprim(
+        HdPrimTypeTokens->material, materialId);
+    HdDirtyBits materialBits = material->GetInitialDirtyBitsMask();
+    material->Sync(
+        &delegate, renderDelegate->GetRenderParam(), &materialBits);
+
+    HdRprim* const mesh =
+        const_cast<HdRprim*>(renderIndex->GetRprim(meshId));
+    HdDirtyBits meshBits = mesh->GetInitialDirtyBitsMask();
+    mesh->InitRepr(&delegate, HdReprTokens->refined, &meshBits);
+    mesh->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &meshBits, HdReprTokens->refined);
+
+    RTCScene root = static_cast<HdEmbreeRenderParam*>(
+        renderDelegate->GetRenderParam())->AcquireSceneForEdit();
+    rtcCommitScene(root);
+    embreeDelegate->UpdateAdaptiveSubdivision(
+        GfMatrix4d(1.0), GfMatrix4d(1.0),
+        GfRect2i(GfVec2i(0), 100, 100), true);
+    rtcCommitScene(root);
+
+    RTCGeometry instance = rtcGetGeometry(root, 0);
+    HdEmbreeInstanceContext* const instanceContext = instance
+        ? static_cast<HdEmbreeInstanceContext*>(
+            rtcGetGeometryUserData(instance))
+        : nullptr;
+    RTCGeometry prototype = instanceContext
+        ? rtcGetGeometry(instanceContext->rootScene, 0)
+        : nullptr;
+    HdEmbreePrototypeContext* const prototypeContext = prototype
+        ? static_cast<HdEmbreePrototypeContext*>(
+            rtcGetGeometryUserData(prototype))
+        : nullptr;
+    if (!prototypeContext ||
+        prototypeContext->material->geomPropNames !=
+            std::vector<std::string>{"surfaceColor", "height"} ||
+        prototypeContext->geomPropSamplers.size() != 2) {
+        return false;
+    }
+
+    const HdEmbreePrimvarLookup lookup{
+        &prototypeContext->geomPropSamplers, 0, 0.5f, 0.5f};
+    ShadingContext shadingContext;
+    shadingContext.geomPropLookup = &HdEmbreeSamplePrimvar;
+    shadingContext.geomPropUserData = &lookup;
+    shadingContext.uniformProps =
+        &prototypeContext->geomPropUniformValues;
+    const SurfaceClosure closure =
+        prototypeContext->material->surfaceGraph->Evaluate(shadingContext);
+
+    return _Close(closure.baseColor[0], 0.15f) &&
+        _Close(closure.baseColor[1], 0.35f) &&
+        _Close(closure.baseColor[2], 0.55f) &&
+        _Close(_TraceCenter(root), 1.6f, 0.02f);
 }
 
 bool
@@ -1682,6 +2061,33 @@ TestMaterialSyncReportsTerminalFailuresAndSkipsAbsentDisplacement()
             "invalid displacement terminal") != std::string::npos;
     trap.ClearWarnings();
 
+    HdMaterialNetwork2 recoverableGeomProp =
+        _MakeGeomPropMaterialNetwork(false);
+    recoverableGeomProp.nodes[SdfPath("/Material/First")]
+        .parameters.erase(TfToken("geomprop"));
+    delegate.resource = VtValue(recoverableGeomProp);
+    bits = HdMaterial::AllDirty;
+    material.Sync(&delegate, nullptr, &bits);
+    const std::vector<TfWarning>& recoverableGeomPropWarnings =
+        trap.GetWarnings();
+    const HdEmbreeMaterialData* const recoverableGeomPropHandle =
+        material.GetRenderMaterial();
+    const SurfaceClosure recoverableClosure =
+        recoverableGeomPropHandle->surfaceGraph
+        ? recoverableGeomPropHandle->surfaceGraph->Evaluate(
+            ShadingContext())
+        : SurfaceClosure();
+    const bool recoverableGeomPropWarnedOnce =
+        recoverableGeomPropWarnings.size() == 1 &&
+        recoverableGeomPropHandle->surfaceGraph &&
+        recoverableGeomPropWarnings[0].GetCommentary().find(
+            "recoverable surface authoring") != std::string::npos &&
+        recoverableGeomPropWarnings[0].GetCommentary().find(
+            "input geomprop must be a constant string") !=
+            std::string::npos &&
+        _Close(recoverableClosure.roughness, 0.5f);
+    trap.ClearWarnings();
+
     delegate.resource = VtValue(HdMaterialNetwork2{});
     bits = HdMaterial::AllDirty;
     material.Sync(&delegate, nullptr, &bits);
@@ -1698,6 +2104,7 @@ TestMaterialSyncReportsTerminalFailuresAndSkipsAbsentDisplacement()
         absentDisplacementStayedQuiet &&
         displacementOnlyStayedQuiet &&
         malformedDisplacementOnlyWarnedOnce &&
+        recoverableGeomPropWarnedOnce &&
         emptyMaterialWarned;
 }
 
@@ -2692,9 +3099,15 @@ TestSubdivisionPrimvarsUseHydraInterpolationModes()
 
         const auto sample = [&](char const* name, unsigned int face,
                                 float u, float v) {
+            const auto samplerIt =
+                prototypeContext->primvarMap.find(TfToken(name));
+            std::vector<HdEmbreePrimvarSampler*> samplers{
+                samplerIt == prototypeContext->primvarMap.end()
+                    ? nullptr
+                    : samplerIt->second.get()};
             HdEmbreePrimvarLookup lookup{
-                &prototypeContext->primvarMapByString, face, u, v};
-            const Value value = HdEmbreeSamplePrimvar(&lookup, name);
+                &samplers, face, u, v};
+            const Value value = HdEmbreeSamplePrimvar(&lookup, 0);
             return ValueHolds<float>(value)
                 ? ValueGet<float>(value)
                 : std::numeric_limits<float>::quiet_NaN();
@@ -2717,7 +3130,8 @@ TestSubdivisionPrimvarsUseHydraInterpolationModes()
         auto vectorIt = prototypeContext->primvarMap.find(
             TfToken("vector3Value"));
         auto* vectorSampler = vectorIt != prototypeContext->primvarMap.end()
-            ? dynamic_cast<HdEmbreeSubdivVertexSampler*>(vectorIt->second)
+            ? dynamic_cast<HdEmbreeSubdivVertexSampler*>(
+                vectorIt->second.get())
             : nullptr;
         const bool vectorSampled = vectorSampler &&
             vectorSampler->SampleWithDerivatives(
@@ -3211,8 +3625,14 @@ main()
          &TestAdaptiveSubdivisionDoesNotGuardDepthPlanes},
         {"Subdivision.TestRealCallbackAddsRemovesAndReplacesDisplacement",
          &TestRealCallbackAddsRemovesAndReplacesDisplacement},
+        {"Subdivision.TestGeomPropLookupRejectsInvalidHandles",
+         &TestGeomPropLookupRejectsInvalidHandles},
         {"Subdivision.TestMaterialSyncKeepsStableHandleAndReplacesDisplacementGraph",
          &TestMaterialSyncKeepsStableHandleAndReplacesDisplacementGraph},
+        {"Subdivision.TestGeomPropBindingsRefreshForMeshAndMaterialChanges",
+         &TestGeomPropBindingsRefreshForMeshAndMaterialChanges},
+        {"Subdivision.TestSurfaceAndDisplacementSharePrototypeGeomPropBindings",
+         &TestSurfaceAndDisplacementSharePrototypeGeomPropBindings},
         {"Subdivision.TestMaterialSyncReportsTerminalFailuresAndSkipsAbsentDisplacement",
          &TestMaterialSyncReportsTerminalFailuresAndSkipsAbsentDisplacement},
         {"Subdivision.TestMaterialChangeForcesProductionDisplacementRecommit",

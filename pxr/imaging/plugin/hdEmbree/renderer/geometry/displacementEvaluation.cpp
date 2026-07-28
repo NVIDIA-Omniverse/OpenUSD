@@ -434,7 +434,7 @@ HdEmbreeEvaluateDisplacement(
     if (stIt != context->primvarMap.end()) {
         const HdEmbreeSubdivTexcoordJacobian stJacobian =
             HdEmbreeComputeSubdivTexcoordJacobian(
-                stIt->second, primID, u, v);
+                stIt->second.get(), primID, u, v);
         if (stJacobian.valid) {
             objectDPdu =
                 stJacobian.duDs * dPdu + stJacobian.dvDs * dPdv;
@@ -481,14 +481,14 @@ HdEmbreeEvaluateDisplacement(
     // image filtering identical.
     if (stIt != context->primvarMap.end()) {
         HdEmbreeSampleTexcoord(
-            stIt->second, primID, u, v, &shadingContext.texcoord);
+            stIt->second.get(), primID, u, v, &shadingContext.texcoord);
     }
 
     HdEmbreePrimvarLookup primvarLookup{
-        &context->primvarMapByString, primID, u, v};
+        &context->geomPropSamplers, primID, u, v};
     shadingContext.geomPropLookup = &HdEmbreeSamplePrimvar;
     shadingContext.geomPropUserData = &primvarLookup;
-    shadingContext.uniformProps = &context->uniformPrimvarMap;
+    shadingContext.uniformProps = &context->geomPropUniformValues;
 
     if (context->materialEvalServices) {
         shadingContext.textureSystem =

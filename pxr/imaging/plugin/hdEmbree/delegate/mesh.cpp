@@ -700,18 +700,6 @@ HdEmbreeMesh::_CommitPrototypeInstances()
     }
 }
 
-void
-HdEmbreeMesh::_ReleasePrimvarSamplers()
-{
-    if (!_prototypeContext) {
-        return;
-    }
-    TF_FOR_ALL(it, _prototypeContext->primvarMap) {
-        delete it->second;
-    }
-    _prototypeContext->primvarMap.clear();
-}
-
 bool
 HdEmbreeMesh::_RefreshDisplacementState()
 {
@@ -739,6 +727,52 @@ HdEmbreeMesh::_RefreshDisplacementState()
     }
     _WarnIfInstancedDisplacementIsLimited(prototypeContext);
     return true;
+}
+
+void
+HdEmbreeMesh::_ResolveGeomPropBindings()
+{
+    HdEmbreePrototypeContext* const context = _prototypeContext.get();
+    if (!context || !context->material) {
+        if (context) {
+            context->geomPropSamplers.clear();
+            context->geomPropUniformValues.clear();
+        }
+        return;
+    }
+
+    const std::vector<TfToken>& tokens =
+        context->material->geomPropTokens;
+    context->geomPropSamplers.assign(tokens.size(), nullptr);
+    context->geomPropUniformValues.assign(tokens.size(), mxcpp::Value());
+
+    for (size_t handle = 0; handle < tokens.size(); ++handle) {
+        const TfToken& name = tokens[handle];
+        const auto samplerIt = context->primvarMap.find(name);
+        if (samplerIt != context->primvarMap.end()) {
+            context->geomPropSamplers[handle] = samplerIt->second.get();
+        }
+
+        const auto sourceIt = _primvarSourceMap.find(name);
+        if (sourceIt == _primvarSourceMap.end() ||
+            sourceIt->second.interpolation != HdInterpolationConstant) {
+            continue;
+        }
+        std::string value;
+        if (_GetUniformStringPrimvarValue(sourceIt->second.data, &value)) {
+            context->geomPropUniformValues[handle] =
+                mxcpp::Value(std::move(value));
+        }
+    }
+}
+
+void
+HdEmbreeMesh::RefreshMaterialBindings()
+{
+    // geomPropSamplers observes primvarMap storage. Every sampler mutation in
+    // _PopulateRtMesh must precede this rebuild so no observer survives an
+    // erased or replaced owning entry.
+    _ResolveGeomPropBindings();
 }
 
 void
@@ -786,7 +820,6 @@ HdEmbreeMesh::Finalize(HdRenderParam *renderParam)
             rtcReleaseGeometry(_geometry);
             _geometry = nullptr;
             _rtcMeshId = RTC_INVALID_GEOMETRY_ID;
-            _ReleasePrimvarSamplers();
             _prototypeContext.reset();
         }
         rtcReleaseScene(_rtcMeshScene);
@@ -1401,7 +1434,7 @@ HdEmbreeMesh::_UpdateSurfaceDerivativeCache()
     if (HdEmbreePrototypeContext* ctx = _prototypeContext.get()) {
         auto it = ctx->primvarMap.find(_tokensSt);
         if (it != ctx->primvarMap.end()) {
-            stSampler = it->second;
+            stSampler = it->second.get();
         }
     }
 
@@ -1478,7 +1511,7 @@ HdEmbreeMesh::_UpdateTangentFrameCache()
     HdEmbreePrimvarSampler const* normalSampler = nullptr;
     auto normalIt = ctx->primvarMap.find(HdTokens->normals);
     if (normalIt != ctx->primvarMap.end()) {
-        normalSampler = normalIt->second;
+        normalSampler = normalIt->second.get();
     }
 
     struct Accumulator
@@ -1631,13 +1664,9 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
                                     bool refined,
                                     unsigned int topologyId)
 {
-    // Delete the old sampler, if it exists.
+    // Replace the old sampler, if it exists.
     HdEmbreePrototypeContext *ctx = _prototypeContext.get();
-    if (ctx->primvarMap.count(name) > 0) {
-        delete ctx->primvarMap[name];
-    }
     ctx->primvarMap.erase(name);
-    ctx->primvarMapByString.erase(name.GetString());
 
     HdVtBufferSource buffer(name, data);
     const HdTupleType tupleType = buffer.GetTupleType();
@@ -1650,46 +1679,47 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
 
     // Construct the correct type of sampler from the interpolation mode and
     // geometry mode.
-    HdEmbreePrimvarSampler *sampler = nullptr;
+    std::unique_ptr<HdEmbreePrimvarSampler> sampler;
     switch(interpolation) {
         case HdInterpolationConstant:
-            sampler = new HdEmbreeConstantSampler(name, data);
+            sampler = std::make_unique<HdEmbreeConstantSampler>(name, data);
             break;
         case HdInterpolationUniform:
             if (refined) {
-                sampler = new HdEmbreeUniformSampler(name, data);
+                sampler = std::make_unique<HdEmbreeUniformSampler>(name, data);
             } else {
-                sampler = new HdEmbreeUniformSampler(name, data,
-                    _trianglePrimitiveParams);
+                sampler = std::make_unique<HdEmbreeUniformSampler>(
+                    name, data, _trianglePrimitiveParams);
             }
             break;
         case HdInterpolationVertex:
             if (refined) {
-                sampler = new HdEmbreeSubdivVertexSampler(
+                sampler = std::make_unique<HdEmbreeSubdivVertexSampler>(
                     name, data, _geometry, &_embreeBufferAllocator);
             } else {
-                sampler = new HdEmbreeTriangleVertexSampler(name, data,
-                    _triangulatedIndices);
+                sampler = std::make_unique<HdEmbreeTriangleVertexSampler>(
+                    name, data, _triangulatedIndices);
             }
             break;
         case HdInterpolationVarying:
             if (refined) {
-                sampler = new HdEmbreeSubdivVaryingSampler(
+                sampler = std::make_unique<HdEmbreeSubdivVaryingSampler>(
                     name, data, _geometry, &_embreeBufferAllocator);
             } else {
-                sampler = new HdEmbreeTriangleVertexSampler(name, data,
-                    _triangulatedIndices);
+                sampler = std::make_unique<HdEmbreeTriangleVertexSampler>(
+                    name, data, _triangulatedIndices);
             }
             break;
         case HdInterpolationFaceVarying:
             if (refined) {
-                sampler = new HdEmbreeSubdivFaceVaryingSampler(
+                sampler = std::make_unique<HdEmbreeSubdivFaceVaryingSampler>(
                     name, data, _geometry, topologyId,
                     &_embreeBufferAllocator);
             } else {
                 HdMeshUtil meshUtil(&_topology, GetId());
-                sampler = new HdEmbreeTriangleFaceVaryingSampler(name, data,
-                    meshUtil);
+                sampler =
+                    std::make_unique<HdEmbreeTriangleFaceVaryingSampler>(
+                        name, data, meshUtil);
             }
             break;
         default:
@@ -1698,9 +1728,8 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
     }
 
     // Put the new sampler back in the primvar map.
-    if (sampler != nullptr) {
-        ctx->primvarMap[name] = sampler;
-        ctx->primvarMapByString[name.GetString()] = sampler;
+    if (sampler) {
+        ctx->primvarMap[name] = std::move(sampler);
     }
 }
 
@@ -1848,7 +1877,6 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
             rtcReleaseGeometry(_geometry);
             _geometry = nullptr;
             _rtcMeshId = RTC_INVALID_GEOMETRY_ID;
-            _ReleasePrimvarSamplers();
             _prototypeContext.reset();
         }
         // Create the prototype mesh scene, if it doesn't exist yet.
@@ -2016,11 +2044,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
     // behavior.
     if (!_smoothNormals && !authoredNormals) {
         HdEmbreePrototypeContext *ctx = _prototypeContext.get();
-        if (ctx->primvarMap.count(HdTokens->normals) > 0) {
-            delete ctx->primvarMap[HdTokens->normals];
-        }
         ctx->primvarMap.erase(HdTokens->normals);
-        ctx->primvarMapByString.erase(HdTokens->normals.GetString());
 
         // Force the smooth normals code to rebuild the "normals" primvar the
         // next time smooth normals is enabled.
@@ -2044,10 +2068,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
                     _prototypeContext.get();
                 auto samplerIt = context->primvarMap.find(it->first);
                 if (samplerIt != context->primvarMap.end()) {
-                    delete samplerIt->second;
                     context->primvarMap.erase(samplerIt);
-                    context->primvarMapByString.erase(
-                        it->first.GetString());
                 }
                 continue;
             }
@@ -2088,29 +2109,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
                      {_tokensComputedTangent, _tokensComputedBitangent}) {
                 auto it = ctx->primvarMap.find(name);
                 if (it != ctx->primvarMap.end()) {
-                    delete it->second;
                     ctx->primvarMap.erase(it);
-                    ctx->primvarMapByString.erase(name.GetString());
-                }
-            }
-        }
-    }
-
-    // Build uniform primvar map for geompropvalueuniform nodes.
-    // Extract HdInterpolationConstant string primvars from source data.
-    {
-        HdEmbreePrototypeContext* const protoCtx =
-            _prototypeContext.get();
-        if (protoCtx) {
-            protoCtx->uniformPrimvarMap.clear();
-            TF_FOR_ALL(it, _primvarSourceMap) {
-                if (it->second.interpolation == HdInterpolationConstant) {
-                    std::string value;
-                    if (_GetUniformStringPrimvarValue(it->second.data, &value)) {
-                        const std::string name = it->first.GetString();
-                        protoCtx->uniformPrimvarMap[name] =
-                            mxcpp::Value(std::move(value));
-                    }
                 }
             }
         }
@@ -2134,6 +2133,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
                 mat ? mat->GetRenderMaterial() : nullptr;
         }
     }
+    _ResolveGeomPropBindings();
     HdEmbreePrototypeContext* const prototypeContext =
         _prototypeContext.get();
     const bool displacementStateChanged = _RefreshDisplacementState();
@@ -2171,7 +2171,6 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
             rtcReleaseGeometry(_geometry);
             _geometry = nullptr;
             _rtcMeshId = RTC_INVALID_GEOMETRY_ID;
-            _ReleasePrimvarSamplers();
             _prototypeContext.reset();
             _refined = false;
             rtcCommitScene(_rtcMeshScene);

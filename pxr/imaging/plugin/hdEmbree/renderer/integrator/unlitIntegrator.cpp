@@ -90,11 +90,11 @@ HdEmbreeRenderer::_IntegrateUnlit(
     mxcpp::ShadingContext ctx = _BuildShadingContext(
         rayHit, rayDiff, instanceContext, prototypeContext, interaction);
     HdEmbreePrimvarLookup cbData{
-        &prototypeContext->primvarMapByString,
+        &prototypeContext->geomPropSamplers,
         rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
     ctx.geomPropLookup = &HdEmbreeSamplePrimvar;
     ctx.geomPropUserData = &cbData;
-    ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
+    ctx.uniformProps = &prototypeContext->geomPropUniformValues;
 
     // Recover the tangent frame used to apply a material normal map.
     GfVec3f tangent = ty::ToGf(ctx.tangent);

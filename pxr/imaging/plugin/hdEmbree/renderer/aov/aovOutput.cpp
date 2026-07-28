@@ -740,7 +740,7 @@ HdEmbreeRenderer::_ComputePrimvar(RTCRayHit const& rayHit,
     // types don't match.
     auto it = prototypeContext->primvarMap.find(primvar);
     if (it != prototypeContext->primvarMap.end()) {
-        const HdEmbreePrimvarSampler *sampler = it->second;
+        const HdEmbreePrimvarSampler *sampler = it->second.get();
         if (sampler->Sample(rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
                             value)) {
             return true;

@@ -324,15 +324,10 @@ static void
 _EvalGeomPropValue(const ParamMap& inputs, const ShadingContext& ctx,
                    NodeOutputMap* outputs)
 {
-    // Read the primvar name by reference: this node runs for every material
-    // input re-evaluation, so a per-call std::string copy is measurable.
-    const Value* nameValue = inputs.Find(_kGeomprop);
-    const std::string* name =
-        (nameValue && ValueHolds<std::string>(*nameValue))
-            ? &ValueGet<std::string>(*nameValue)
-            : nullptr;
-    if (name && !name->empty() && ctx.geomPropLookup) {
-        Value v = ctx.geomPropLookup(ctx.geomPropUserData, *name);
+    const int geomPropHandle = Get<int>(inputs, _kGeomprop, -1);
+    if (geomPropHandle >= 0 && ctx.geomPropLookup) {
+        Value v = ctx.geomPropLookup(
+            ctx.geomPropUserData, geomPropHandle);
         if (ValueHolds<T>(v)) {
             (*outputs)[_kOut] = v;
             return;
@@ -346,13 +341,14 @@ _EvalGeomPropValueUniformString(const ParamMap& inputs,
                                 const ShadingContext& ctx,
                                 NodeOutputMap* outputs)
 {
-    std::string name = Get<std::string>(inputs, _kGeomprop, std::string());
-    std::string defaultVal = Get<std::string>(inputs, _kDefault, std::string());
-    if (!name.empty() && ctx.uniformProps) {
-        auto it = ctx.uniformProps->find(name);
-        if (it != ctx.uniformProps->end() &&
-            ValueHolds<std::string>(it->second)) {
-            (*outputs)[_kOut] = it->second;
+    const int geomPropHandle = Get<int>(inputs, _kGeomprop, -1);
+    const std::string defaultVal =
+        Get<std::string>(inputs, _kDefault, std::string());
+    if (geomPropHandle >= 0 && ctx.uniformProps &&
+        static_cast<size_t>(geomPropHandle) < ctx.uniformProps->size()) {
+        const Value& value = (*ctx.uniformProps)[geomPropHandle];
+        if (ValueHolds<std::string>(value)) {
+            (*outputs)[_kOut] = value;
             return;
         }
     }

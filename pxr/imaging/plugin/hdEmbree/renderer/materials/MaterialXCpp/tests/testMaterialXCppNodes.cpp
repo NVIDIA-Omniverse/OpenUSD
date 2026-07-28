@@ -1397,16 +1397,18 @@ static bool TestProceduralFlake3dCoverageZero() {
 // ---------------------------------------------------------------------------
 
 struct _TestGeomPropData {
-    std::unordered_map<std::string, Value> props;
+    std::vector<Value> props;
 };
 
 static Value
-_TestGeomPropLookup(const void* userData, const std::string& name)
+_TestGeomPropLookup(const void* userData, int geomPropHandle)
 {
     auto* data = static_cast<const _TestGeomPropData*>(userData);
-    auto it = data->props.find(name);
-    if (it != data->props.end()) return it->second;
-    return Value();
+    if (!data || geomPropHandle < 0 ||
+        static_cast<size_t>(geomPropHandle) >= data->props.size()) {
+        return Value();
+    }
+    return data->props[geomPropHandle];
 }
 
 // ---------------------------------------------------------------------------
@@ -1415,14 +1417,14 @@ _TestGeomPropLookup(const void* userData, const std::string& name)
 
 static bool TestGeomPropValueFloat() {
     _TestGeomPropData gpData;
-    gpData.props["myFloat"] = Value(3.14f);
+    gpData.props.push_back(Value(3.14f));
 
     ShadingContext ctx;
     ctx.geomPropLookup = &_TestGeomPropLookup;
     ctx.geomPropUserData = &gpData;
 
     ParamMap in;
-    in["geomprop"] = Value(std::string("myFloat"));
+    in["geomprop"] = Value(0);
     in["default"] = Value(0.0f);
 
     NodeRegistry::RegisterBuiltinNodes();
@@ -1437,14 +1439,14 @@ static bool TestGeomPropValueFloat() {
 
 static bool TestGeomPropValueColor3() {
     _TestGeomPropData gpData;
-    gpData.props["Cd"] = Value(Vec3f(1.0f, 0.0f, 0.5f));
+    gpData.props.push_back(Value(Vec3f(1.0f, 0.0f, 0.5f)));
 
     ShadingContext ctx;
     ctx.geomPropLookup = &_TestGeomPropLookup;
     ctx.geomPropUserData = &gpData;
 
     ParamMap in;
-    in["geomprop"] = Value(std::string("Cd"));
+    in["geomprop"] = Value(0);
     in["default"] = Value(Vec3f(0.0f));
 
     NodeRegistry::RegisterBuiltinNodes();
@@ -1462,7 +1464,7 @@ static bool TestGeomPropValueDefault() {
     ShadingContext ctx;
 
     ParamMap in;
-    in["geomprop"] = Value(std::string("missing"));
+    in["geomprop"] = Value(0);
     in["default"] = Value(42.0f);
 
     NodeRegistry::RegisterBuiltinNodes();
@@ -1478,14 +1480,14 @@ static bool TestGeomPropValueDefault() {
 static bool TestGeomPropValueTypeMismatch() {
     // Callback returns float but node expects Vec3f — should return default.
     _TestGeomPropData gpData;
-    gpData.props["wrongType"] = Value(1.0f);
+    gpData.props.push_back(Value(1.0f));
 
     ShadingContext ctx;
     ctx.geomPropLookup = &_TestGeomPropLookup;
     ctx.geomPropUserData = &gpData;
 
     ParamMap in;
-    in["geomprop"] = Value(std::string("wrongType"));
+    in["geomprop"] = Value(0);
     in["default"] = Value(Vec3f(0.5f));
 
     NodeRegistry::RegisterBuiltinNodes();
@@ -1501,14 +1503,14 @@ static bool TestGeomPropValueTypeMismatch() {
 static bool TestGeomPropValueEmptyName() {
     // Empty property name should return default.
     _TestGeomPropData gpData;
-    gpData.props["something"] = Value(99.0f);
+    gpData.props.push_back(Value(99.0f));
 
     ShadingContext ctx;
     ctx.geomPropLookup = &_TestGeomPropLookup;
     ctx.geomPropUserData = &gpData;
 
     ParamMap in;
-    in["geomprop"] = Value(std::string(""));
+    in["geomprop"] = Value(-1);
     in["default"] = Value(7.0f);
 
     NodeRegistry::RegisterBuiltinNodes();
@@ -1524,14 +1526,14 @@ static bool TestGeomPropValueEmptyName() {
 static bool TestGeomPropValueNotFound() {
     // Callback set but property name not in data — should return default.
     _TestGeomPropData gpData;
-    gpData.props["exists"] = Value(1.0f);
+    gpData.props.push_back(Value(1.0f));
 
     ShadingContext ctx;
     ctx.geomPropLookup = &_TestGeomPropLookup;
     ctx.geomPropUserData = &gpData;
 
     ParamMap in;
-    in["geomprop"] = Value(std::string("doesNotExist"));
+    in["geomprop"] = Value(1);
     in["default"] = Value(99.0f);
 
     NodeRegistry::RegisterBuiltinNodes();
@@ -1545,14 +1547,14 @@ static bool TestGeomPropValueNotFound() {
 }
 
 static bool TestGeomPropValueUniformString() {
-    std::unordered_map<std::string, Value> uniformMap;
-    uniformMap["textureset"] = Value(std::string("/path/to/texture.png"));
+    std::vector<Value> uniformValues{
+        Value(std::string("/path/to/texture.png"))};
 
     ShadingContext ctx;
-    ctx.uniformProps = &uniformMap;
+    ctx.uniformProps = &uniformValues;
 
     ParamMap in;
-    in["geomprop"] = Value(std::string("textureset"));
+    in["geomprop"] = Value(0);
     in["default"] = Value(std::string(""));
 
     NodeRegistry::RegisterBuiltinNodes();
@@ -1572,7 +1574,7 @@ static bool TestGeomPropValueUniformDefault() {
     ShadingContext ctx;
 
     ParamMap in;
-    in["geomprop"] = Value(std::string("missing"));
+    in["geomprop"] = Value(0);
     in["default"] = Value(std::string("fallback.png"));
 
     NodeRegistry::RegisterBuiltinNodes();
@@ -1585,6 +1587,32 @@ static bool TestGeomPropValueUniformDefault() {
     const Value* val = out.Find("out");
     if (!val || !ValueHolds<std::string>(*val)) return false;
     return ValueGet<std::string>(*val) == "fallback.png";
+}
+
+static bool TestGeomPropValueUniformInvalidHandles() {
+    const std::vector<Value> uniformValues{
+        Value(std::string("authored.png"))};
+    ShadingContext ctx;
+    ctx.uniformProps = &uniformValues;
+
+    NodeRegistry::RegisterBuiltinNodes();
+    NodeEvalFn fn = NodeRegistry::GetInstance().Find(
+        std::string("ND_geompropvalueuniform_filename"));
+    if (!fn) return false;
+
+    for (int geomPropHandle : {-1, 1}) {
+        ParamMap in;
+        in["geomprop"] = Value(geomPropHandle);
+        in["default"] = Value(std::string("fallback.png"));
+        NodeOutputMap out;
+        fn(in, ctx, &out);
+        const Value* const value = out.Find("out");
+        if (!value || !ValueHolds<std::string>(*value) ||
+            ValueGet<std::string>(*value) != "fallback.png") {
+            return false;
+        }
+    }
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -3131,6 +3159,7 @@ Test_RegisterNodeTests()
     _REG(TestGeomPropValueNotFound);
     _REG(TestGeomPropValueUniformString);
     _REG(TestGeomPropValueUniformDefault);
+    _REG(TestGeomPropValueUniformInvalidHandles);
 }
 
 #undef _REG

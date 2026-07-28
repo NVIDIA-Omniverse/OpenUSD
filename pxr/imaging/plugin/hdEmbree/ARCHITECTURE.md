@@ -194,7 +194,8 @@ corresponding type without changing the semantic name.
 - `lights/lightLinking.h`: category sets and light/shadow-link matching.
 - `lights/pxrIES/`: IES parser and photometric-profile wrapper.
 - `materials/material.h`: stable renderer material handle referencing the
-  currently compiled graph.
+  current surface/displacement graphs and their one shared geomprop-name
+  handle table plus its cached `TfToken` form for prototype refreshes.
 - `materials/mxcppAdapter.h/.cpp`: converts Hydra/MaterialX networks into
   canonical MaterialXCpp graphs.
 - `materials/oiioTextureSystem.h/.cpp`: OpenImageIO texture implementation for
@@ -203,10 +204,16 @@ corresponding type without changing the semantic name.
   time services borrowed by geometry-build and hit-time material evaluation.
 - `materials/MaterialXCpp/`: CPU material graph compiler/evaluator, nodes,
   terminal models, closures, spectral support, and focused tests. Compilation
-  returns explicit valid, invalid-with-diagnostic, or absent-terminal results;
-  only valid results own an evaluation graph. A volume terminal without a
-  surface is explicitly wrapped in the internal transparent surface-volume
-  model; this is not arbitrary terminal substitution. Volume-only closures
+  returns explicit valid, invalid, or absent-terminal results; only valid
+  results own an evaluation graph, and may carry one recoverable authoring
+  diagnostic. `CollectGeomPropNames()` walks
+  the whole material network once; both terminal graphs compile constant
+  geomprop names to integer handles in that material-owned table. Connected,
+  absent, or non-string geomprop inputs compile to invalid handle -1, emit one
+  recoverable diagnostic, and evaluate the node's authored default without
+  invalidating the terminal. A volume terminal without a surface is explicitly
+  wrapped in the internal transparent surface-volume model; this is not
+  arbitrary terminal substitution. Volume-only closures
   retain explicit boundary identity even when their evaluated coefficients are
   vacuum, while `hasInteriorMedium` remains reserved for active medium state.
   Surface-shader mixes retain that identity only when every contributing input
@@ -216,7 +223,9 @@ corresponding type without changing the semantic name.
   separately.
 - `materials/BSDL/`: BSDF support library and generated lookup tables.
 - `geometry/context.h`: Embree prototype and instance hit data: identities,
-  properties, primvars, materials, derivatives, transforms, and categories.
+  properties, `std::unordered_map`-owned primvar samplers,
+  material-handle-indexed observing sampler and uniform-value bindings,
+  derivatives, transforms, and categories.
 - `geometry/displacementEvaluation.h/.cpp`: shared build-time and hit-time
   displacement evaluation, transform-correct object-space offsets, final
   displaced-position probes, smooth displaced subdivision-frame
@@ -250,7 +259,7 @@ corresponding type without changing the semantic name.
 1. Hydra creates `HdEmbreeRenderDelegate` through `HdEmbreeRendererPlugin`.
 2. `CreateRprim/CreateSprim/CreateBprim` create mesh, material, light, and render-buffer adapters.
 3. During `HdRenderIndex::SyncAll()`, Hydra calls each adapter's `Sync()`: meshes pull geometry/primvars/bindings/instances; materials compile networks; lights pull Lux/texture/IES/linking data; instancers update transforms and contexts.
-4. Mutating adapters use `HdEmbreeRenderParam::AcquireSceneForEdit()` or `NotifySceneChange()`. This stops background rendering before shared state changes and increments the scene version.
+4. Mutating adapters use `HdEmbreeRenderParam::AcquireSceneForEdit()` or `NotifySceneChange()`. This stops background rendering before shared state changes and increments the scene version. Material Sync additionally increments the material version, including failed/empty recompiles. After `SyncAll()`, the render pass observes that version and refreshes every mesh's handle-indexed geomprop bindings before any camera-gated subdivision recommit or render.
 5. Mesh prototypes/instances are attached to the top-level `RTCScene`.
    `HdEmbreePrototypeContext` and `HdEmbreeInstanceContext` make synchronized
    renderer data available at hits without retaining Hydra adapter objects.

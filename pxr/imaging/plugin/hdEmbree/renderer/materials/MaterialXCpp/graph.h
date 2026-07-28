@@ -29,6 +29,14 @@ struct EvalOptions
     bool visibilityOnly = false;
 };
 
+/// Collect the ordered, de-duplicated geomprop handle space for a material.
+///
+/// Only constant string geomprop parameters receive handles. Graph
+/// normalization must not synthesize geomprop nodes or parameters after this
+/// table is collected.
+std::vector<std::string> CollectGeomPropNames(
+    const MaterialGraph& network);
+
 /// \class EvalGraph
 ///
 /// A compiled, topologically-sorted shader graph ready for per-pixel
@@ -45,6 +53,15 @@ public:
     static CompileResult Compile(
         const MaterialGraph& network,
         const std::string& terminalName = std::string());
+
+    /// Compile against the material-owned geomprop handle space.
+    ///
+    /// The resulting graph is valid only while evaluated against resolved
+    /// bindings indexed by \p geomPropNames.
+    static CompileResult Compile(
+        const MaterialGraph& network,
+        const std::string& terminalName,
+        const std::vector<std::string>& geomPropNames);
 
     /// Evaluate this valid graph for one shading point.
     ///
@@ -128,8 +145,9 @@ private:
 
 /// The explicit outcome of compiling one requested material terminal.
 ///
-/// Valid owns a usable graph and no diagnostic. Invalid owns no graph and
-/// carries one diagnostic. AbsentTerminal owns no graph and no diagnostic.
+/// Valid owns a usable graph and may carry one recoverable authoring
+/// diagnostic. Invalid owns no graph and carries one fatal diagnostic.
+/// AbsentTerminal owns no graph and no diagnostic.
 struct CompileResult
 {
     CompileStatus status = CompileStatus::Invalid;

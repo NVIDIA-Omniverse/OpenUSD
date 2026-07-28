@@ -20,8 +20,7 @@
 #include "pxr/base/gf/vec4f.h"
 
 #include <cmath>
-#include <string>
-#include <unordered_map>
+#include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -30,7 +29,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 // consumers use the interpolation mode chosen by the mesh primvar sampler.
 struct HdEmbreePrimvarLookup
 {
-    std::unordered_map<std::string, HdEmbreePrimvarSampler*> const* primvars;
+    std::vector<HdEmbreePrimvarSampler*> const* primvars;
     unsigned int primId;
     float u;
     float v;
@@ -166,21 +165,22 @@ HdEmbreeSampleTexcoord(
 }
 
 inline mxcpp::Value
-HdEmbreeSamplePrimvar(void const* userData, std::string const& name)
+HdEmbreeSamplePrimvar(void const* userData, int geomPropHandle)
 {
     auto const* lookup = static_cast<HdEmbreePrimvarLookup const*>(userData);
-    if (!lookup || !lookup->primvars) {
+    if (!lookup || !lookup->primvars || geomPropHandle < 0 ||
+        static_cast<size_t>(geomPropHandle) >= lookup->primvars->size()) {
         return mxcpp::Value();
     }
-    auto const it = lookup->primvars->find(name);
-    if (it == lookup->primvars->end()) {
+    HdEmbreePrimvarSampler* const sampler =
+        (*lookup->primvars)[geomPropHandle];
+    if (!sampler) {
         return mxcpp::Value();
     }
 
     // Sample requires an exact tuple type. Trying supported MaterialX types in
     // likely-use order is therefore deterministic and avoids storing another
     // type tag in the graph-facing lookup table.
-    HdEmbreePrimvarSampler* sampler = it->second;
     GfVec2f vec2;
     if (sampler->Sample(lookup->primId, lookup->u, lookup->v, &vec2)) {
         return mxcpp::Value(mxcpp::Vec2f(vec2[0], vec2[1]));

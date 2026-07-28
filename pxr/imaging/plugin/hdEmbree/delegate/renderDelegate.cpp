@@ -265,14 +265,14 @@ HdEmbreeRenderDelegate::_Initialize()
 
     // std::atomic does not default-initialize; do so here.
     _sceneVersion.store(0);
-    _displacementVersion.store(0);
+    _materialVersion.store(0);
 
     // Store top-level embree objects inside a render param that can be
     // passed to prims during Sync(). Also pass a handle to the render thread.
     _renderParam = std::make_shared<HdEmbreeRenderParam>(
         _rtcDevice, _rtcScene, &_renderThread, &_renderer,
         _renderer.GetMaterialEvalServices(), &_sceneVersion,
-        &_displacementVersion);
+        &_materialVersion);
 
     // Pass the scene handle to the renderer.
     _renderer.SetScene(_rtcScene);
@@ -464,7 +464,7 @@ HdEmbreeRenderDelegate::CreateRenderPass(HdRenderIndex *index,
 {
     return HdRenderPassSharedPtr(new HdEmbreeRenderPass(
         index, collection, &_renderThread, &_renderer, &_sceneVersion,
-        &_displacementVersion));
+        &_materialVersion));
 }
 
 HdInstancer *
@@ -526,6 +526,15 @@ HdEmbreeRenderDelegate::UpdateAdaptiveSubdivision(
             forceDisplacementRebuild);
     }
     return changed;
+}
+
+void
+HdEmbreeRenderDelegate::RefreshMaterialBindings()
+{
+    std::lock_guard<std::mutex> lock(_meshRegistryMutex);
+    for (HdEmbreeMesh* mesh : _meshes) {
+        mesh->RefreshMaterialBindings();
+    }
 }
 
 HdSprim *

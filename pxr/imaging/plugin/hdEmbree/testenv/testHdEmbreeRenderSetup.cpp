@@ -896,7 +896,7 @@ _TestRenderPassMarksRestartPending()
     }
 
     std::atomic<int> sceneVersion{1};
-    std::atomic<int> displacementVersion{0};
+    std::atomic<int> materialVersion{0};
     std::atomic<bool> callbackEntered{false};
     std::atomic<bool> releaseCallback{false};
     HdRenderThread renderThread;
@@ -914,7 +914,7 @@ _TestRenderPassMarksRestartPending()
         &renderThread,
         &renderer,
         &sceneVersion,
-        &displacementVersion);
+        &materialVersion);
     HdRenderPassStateSharedPtr renderPassState =
         delegate.CreateRenderPassState();
     renderPassState->SetViewport(GfVec4d(0.0, 0.0, 1.0, 1.0));
@@ -1105,7 +1105,7 @@ _TestRenderPassSettingsApplication()
 
     HdEmbreeRenderer renderer;
     std::atomic<int> sceneVersion{0};
-    std::atomic<int> displacementVersion{0};
+    std::atomic<int> materialVersion{0};
     HdRenderThread renderThread;
     renderThread.SetRenderCallback([]() {});
     renderThread.StartThread();
@@ -1120,7 +1120,7 @@ _TestRenderPassSettingsApplication()
         &renderThread,
         &renderer,
         &sceneVersion,
-        &displacementVersion);
+        &materialVersion);
     HdRenderPassStateSharedPtr renderPassState =
         delegate.CreateRenderPassState();
     renderPassState->SetViewport(GfVec4d(0.0, 0.0, 1.0, 1.0));
