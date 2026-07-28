@@ -223,8 +223,23 @@ Validation:
      re-render identically to `after.exr`.
   3. `oiiotool --diff before.exr after.exr` must report zero differing pixels.
 
-  Fill in the exact `usdrender` invocation and output paths on first run and
-  record them here, so the comparison is reproducible.
+  The first comparison used the following commands from
+  `/home/anders/code/openusd-omniverse`; `--disableGpu` keeps the headless
+  render independent of an X display:
+
+  ```sh
+  HDEMBREE_RANDOM_NUMBER_SEED=1 pixi run usdrender \
+      /home/anders/code/aousd-materials-test-suite/test-suite/surfaces/open_pbr_surface/displacement.usda \
+      --disableGpu --outputRoot /tmp/hdembree-plan10-before
+
+  HDEMBREE_RANDOM_NUMBER_SEED=1 pixi run usdrender \
+      /home/anders/code/aousd-materials-test-suite/test-suite/surfaces/open_pbr_surface/displacement.usda \
+      --disableGpu --outputRoot /tmp/hdembree-plan10-after
+
+  pixi run oiiotool --diff \
+      /tmp/hdembree-plan10-before/surfaces/open_pbr_surface/displacement.exr \
+      /tmp/hdembree-plan10-after/surfaces/open_pbr_surface/displacement.exr
+  ```
 
 There is no checked-in delta reflection/refraction displacement fixture, so the
 hit-time normal-derivative path (`renderer/rendererImpl.h:1061`) is covered by

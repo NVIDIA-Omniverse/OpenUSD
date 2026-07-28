@@ -71,10 +71,29 @@ _IsFinite(GfVec3d const& value)
 }
 
 bool
-_TryNormalize(
-    GfVec3d const& value,
-    GfVec3d* result,
-    double* length = nullptr)
+_TryConvertToVec3f(GfVec3d const& value, GfVec3f* result)
+{
+    // Double-precision transforms, sums, and finite differences can exceed
+    // float range even when every input is finite. Reject those results before
+    // narrowing so displacement never introduces infinities.
+    constexpr double maxFloat =
+        static_cast<double>(std::numeric_limits<float>::max());
+    if (!result || !_IsFinite(value) ||
+        std::abs(value[0]) > maxFloat ||
+        std::abs(value[1]) > maxFloat ||
+        std::abs(value[2]) > maxFloat) {
+        return false;
+    }
+
+    *result = GfVec3f(
+        static_cast<float>(value[0]),
+        static_cast<float>(value[1]),
+        static_cast<float>(value[2]));
+    return _IsFinite(*result);
+}
+
+bool
+_TryNormalize(GfVec3d const& value, GfVec3d* result)
 {
     if (!result || !_IsFinite(value)) {
         return false;
@@ -93,9 +112,6 @@ _TryNormalize(
     }
 
     *result = scaled / scaledLength;
-    if (length) {
-        *length = maximumComponent * scaledLength;
-    }
     return _IsFinite(*result);
 }
 
@@ -111,11 +127,7 @@ _TryNormalize(GfVec3f const& value, GfVec3f* result)
             GfVec3d(value[0], value[1], value[2]), &normalized)) {
         return false;
     }
-    *result = GfVec3f(
-        static_cast<float>(normalized[0]),
-        static_cast<float>(normalized[1]),
-        static_cast<float>(normalized[2]));
-    return _IsFinite(*result);
+    return _TryConvertToVec3f(normalized, result);
 }
 
 bool
@@ -151,11 +163,7 @@ _TryBuildNormalFromTangents(
     if (!_TryNormalize(cross, &normalized)) {
         return false;
     }
-    *normal = GfVec3f(
-        static_cast<float>(normalized[0]),
-        static_cast<float>(normalized[1]),
-        static_cast<float>(normalized[2]));
-    return _IsFinite(*normal);
+    return _TryConvertToVec3f(normalized, normal);
 }
 
 bool
@@ -262,7 +270,145 @@ _InterpolateBaseFrame(
 }
 
 bool
-_EvaluateDisplacementImpl(
+_TryAddOffset(
+    GfVec3f const& position,
+    GfVec3f const& offset,
+    GfVec3f* displacedPosition)
+{
+    if (!displacedPosition || !_IsFinite(position) || !_IsFinite(offset)) {
+        return false;
+    }
+    const GfVec3d sum(
+        static_cast<double>(position[0]) + offset[0],
+        static_cast<double>(position[1]) + offset[1],
+        static_cast<double>(position[2]) + offset[2]);
+    return _TryConvertToVec3f(sum, displacedPosition);
+}
+
+bool
+_TryFiniteDifference(
+    GfVec3f const& probe,
+    GfVec3f const& center,
+    float parameterOffset,
+    GfVec3f* derivative)
+{
+    if (!derivative || !_IsFinite(probe) || !_IsFinite(center) ||
+        !std::isfinite(parameterOffset) || parameterOffset == 0.0f) {
+        return false;
+    }
+    const double inverseOffset =
+        1.0 / static_cast<double>(parameterOffset);
+    const GfVec3d result(
+        (static_cast<double>(probe[0]) - center[0]) * inverseOffset,
+        (static_cast<double>(probe[1]) - center[1]) * inverseOffset,
+        (static_cast<double>(probe[2]) - center[2]) * inverseOffset);
+    return _TryConvertToVec3f(result, derivative);
+}
+
+bool
+_EvaluateDisplacedSubdivProbe(
+    RTCGeometry geometry,
+    HdEmbreePrototypeContext const* context,
+    unsigned int primID,
+    float u,
+    float v,
+    float orientationSign,
+    GfVec3f* outObjectOffset,
+    GfVec3f* outBaseDPdu,
+    GfVec3f* outBaseDPdv)
+{
+    if (!geometry || !context || !outObjectOffset ||
+        !std::isfinite(u) || !std::isfinite(v)) {
+        return false;
+    }
+
+    GfVec3f position;
+    GfVec3f normal;
+    GfVec3f dPdu;
+    GfVec3f dPdv;
+    if (!_InterpolateBaseFrame(
+            geometry, primID, u, v, orientationSign,
+            &position, &normal, &dPdu, &dPdv)) {
+        return false;
+    }
+
+    float displacement = 0.0f;
+    if (!HdEmbreeEvaluateDisplacement(
+            context, primID, u, v,
+            position, normal, dPdu, dPdv, &displacement)) {
+        return false;
+    }
+    if (!HdEmbreeComputeObjectSpaceDisplacementOffset(
+            context, normal, displacement, outObjectOffset)) {
+        return false;
+    }
+
+    if (outBaseDPdu) {
+        *outBaseDPdu = dPdu;
+    }
+    if (outBaseDPdv) {
+        *outBaseDPdv = dPdv;
+    }
+    return true;
+}
+
+bool
+_TryBuildDisplacedNormal(
+    GfVec3f const& baseDPdu,
+    GfVec3f const& baseDPdv,
+    GfVec3f const& centerObjectOffset,
+    GfVec3f const& uObjectOffset,
+    GfVec3f const& vObjectOffset,
+    float du,
+    float dv,
+    float orientationSign,
+    GfVec3f* outNormal,
+    GfVec3f* outDPdu,
+    GfVec3f* outDPdv)
+{
+    // Every caller needs the normal; callers that need only curvature may
+    // omit either displaced-tangent output.
+    if (!outNormal) {
+        return false;
+    }
+
+    GfVec3f objectOffsetDu;
+    GfVec3f objectOffsetDv;
+    GfVec3f displacedDPdu;
+    GfVec3f displacedDPdv;
+    if (!_TryFiniteDifference(
+            uObjectOffset, centerObjectOffset, du, &objectOffsetDu) ||
+        !_TryFiniteDifference(
+            vObjectOffset, centerObjectOffset, dv, &objectOffsetDv) ||
+        !_TryAddOffset(baseDPdu, objectOffsetDu, &displacedDPdu) ||
+        !_TryAddOffset(baseDPdv, objectOffsetDv, &displacedDPdv)) {
+        return false;
+    }
+
+    GfVec3f displacedNormal;
+    if (!_TryBuildNormalFromTangents(
+            displacedDPdu, displacedDPdv, &displacedNormal)) {
+        return false;
+    }
+    displacedNormal *= orientationSign;
+    if (!_IsFinite(displacedNormal)) {
+        return false;
+    }
+
+    *outNormal = displacedNormal;
+    if (outDPdu) {
+        *outDPdu = displacedDPdu;
+    }
+    if (outDPdv) {
+        *outDPdv = displacedDPdv;
+    }
+    return true;
+}
+
+} // namespace
+
+bool
+HdEmbreeEvaluateDisplacement(
     HdEmbreePrototypeContext const* context,
     unsigned int primID,
     float u,
@@ -371,7 +517,7 @@ _EvaluateDisplacementImpl(
 }
 
 bool
-_ComputeObjectSpaceDisplacementOffsetImpl(
+HdEmbreeComputeObjectSpaceDisplacementOffset(
     HdEmbreePrototypeContext const* context,
     GfVec3f const& objectNormal,
     float displacement,
@@ -396,99 +542,24 @@ _ComputeObjectSpaceDisplacementOffsetImpl(
     const GfVec3d offset =
         GfMatrix4d(context->displacementWorldToObjectMatrix)
             .TransformDir(worldOffset);
-    constexpr double maxFloat =
-        static_cast<double>(std::numeric_limits<float>::max());
-    if (!_IsFinite(offset) ||
-        std::abs(offset[0]) > maxFloat ||
-        std::abs(offset[1]) > maxFloat ||
-        std::abs(offset[2]) > maxFloat) {
-        return false;
-    }
-
-    *objectOffset = GfVec3f(
-        static_cast<float>(offset[0]),
-        static_cast<float>(offset[1]),
-        static_cast<float>(offset[2]));
-    return _IsFinite(*objectOffset);
+    return _TryConvertToVec3f(offset, objectOffset);
 }
 
 bool
-_TryAddOffset(
-    GfVec3f const& position,
-    GfVec3f const& offset,
-    GfVec3f* displacedPosition)
-{
-    if (!displacedPosition || !_IsFinite(position) || !_IsFinite(offset)) {
-        return false;
-    }
-    const GfVec3d sum(
-        static_cast<double>(position[0]) + offset[0],
-        static_cast<double>(position[1]) + offset[1],
-        static_cast<double>(position[2]) + offset[2]);
-    constexpr double maxFloat =
-        static_cast<double>(std::numeric_limits<float>::max());
-    if (!_IsFinite(sum) ||
-        std::abs(sum[0]) > maxFloat ||
-        std::abs(sum[1]) > maxFloat ||
-        std::abs(sum[2]) > maxFloat) {
-        return false;
-    }
-    *displacedPosition = GfVec3f(
-        static_cast<float>(sum[0]),
-        static_cast<float>(sum[1]),
-        static_cast<float>(sum[2]));
-    return true;
-}
-
-bool
-_TryFiniteDifference(
-    GfVec3f const& probe,
-    GfVec3f const& center,
-    float parameterOffset,
-    GfVec3f* derivative)
-{
-    if (!derivative || !_IsFinite(probe) || !_IsFinite(center) ||
-        !std::isfinite(parameterOffset) || parameterOffset == 0.0f) {
-        return false;
-    }
-    const double inverseOffset =
-        1.0 / static_cast<double>(parameterOffset);
-    const GfVec3d result(
-        (static_cast<double>(probe[0]) - center[0]) * inverseOffset,
-        (static_cast<double>(probe[1]) - center[1]) * inverseOffset,
-        (static_cast<double>(probe[2]) - center[2]) * inverseOffset);
-    constexpr double maxFloat =
-        static_cast<double>(std::numeric_limits<float>::max());
-    if (!_IsFinite(result) ||
-        std::abs(result[0]) > maxFloat ||
-        std::abs(result[1]) > maxFloat ||
-        std::abs(result[2]) > maxFloat) {
-        return false;
-    }
-    *derivative = GfVec3f(
-        static_cast<float>(result[0]),
-        static_cast<float>(result[1]),
-        static_cast<float>(result[2]));
-    return true;
-}
-
-bool
-_EvaluateDisplacedSubdivProbe(
+HdEmbreeComputeDisplacedSubdivPosition(
     RTCGeometry geometry,
     HdEmbreePrototypeContext const* context,
     unsigned int primID,
     float u,
     float v,
-    float orientationSign,
-    GfVec3f* outObjectOffset,
-    GfVec3f* outBaseDPdu,
-    GfVec3f* outBaseDPdv)
+    GfVec3f* outPosition)
 {
-    if (!geometry || !context || !outObjectOffset ||
+    if (!geometry || !context || !outPosition ||
         !std::isfinite(u) || !std::isfinite(v)) {
         return false;
     }
 
+    const float orientationSign = context->orientationSign;
     GfVec3f position;
     GfVec3f normal;
     GfVec3f dPdu;
@@ -500,92 +571,26 @@ _EvaluateDisplacedSubdivProbe(
     }
 
     float displacement = 0.0f;
-    if (!_EvaluateDisplacementImpl(
+    if (!HdEmbreeEvaluateDisplacement(
             context, primID, u, v,
             position, normal, dPdu, dPdv, &displacement)) {
         return false;
     }
-    if (!_ComputeObjectSpaceDisplacementOffsetImpl(
-            context, normal, displacement, outObjectOffset)) {
+
+    GfVec3f objectOffset;
+    GfVec3f displacedPosition;
+    if (!HdEmbreeComputeObjectSpaceDisplacementOffset(
+            context, normal, displacement, &objectOffset) ||
+        !_TryAddOffset(position, objectOffset, &displacedPosition)) {
         return false;
     }
 
-    if (outBaseDPdu) {
-        *outBaseDPdu = dPdu;
-    }
-    if (outBaseDPdv) {
-        *outBaseDPdv = dPdv;
-    }
+    *outPosition = displacedPosition;
     return true;
 }
 
 bool
-_TryBuildDisplacedNormal(
-    GfVec3f const& baseDPdu,
-    GfVec3f const& baseDPdv,
-    GfVec3f const& centerObjectOffset,
-    GfVec3f const& uObjectOffset,
-    GfVec3f const& vObjectOffset,
-    float du,
-    float dv,
-    float orientationSign,
-    GfVec3f* outNormal,
-    GfVec3f* outDPdu,
-    GfVec3f* outDPdv)
-{
-    if (!outNormal || !outDPdu || !outDPdv) {
-        return false;
-    }
-
-    GfVec3f objectOffsetDu;
-    GfVec3f objectOffsetDv;
-    GfVec3f displacedDPdu;
-    GfVec3f displacedDPdv;
-    if (!_TryFiniteDifference(
-            uObjectOffset, centerObjectOffset, du, &objectOffsetDu) ||
-        !_TryFiniteDifference(
-            vObjectOffset, centerObjectOffset, dv, &objectOffsetDv) ||
-        !_TryAddOffset(baseDPdu, objectOffsetDu, &displacedDPdu) ||
-        !_TryAddOffset(baseDPdv, objectOffsetDv, &displacedDPdv)) {
-        return false;
-    }
-
-    GfVec3f displacedNormal;
-    if (!_TryBuildNormalFromTangents(
-            displacedDPdu, displacedDPdv, &displacedNormal)) {
-        return false;
-    }
-    displacedNormal *= orientationSign;
-    if (!_IsFinite(displacedNormal)) {
-        return false;
-    }
-
-    *outNormal = displacedNormal;
-    *outDPdu = displacedDPdu;
-    *outDPdv = displacedDPdv;
-    return true;
-}
-
-bool
-_TryProjectNormalDerivative(
-    GfVec3f const& normal,
-    GfVec3f const& derivative,
-    GfVec3f* outDerivative)
-{
-    if (!outDerivative || !_IsFinite(normal) || !_IsFinite(derivative)) {
-        return false;
-    }
-    const GfVec3f projected =
-        derivative - normal * GfDot(normal, derivative);
-    if (!_IsFinite(projected)) {
-        return false;
-    }
-    *outDerivative = projected;
-    return true;
-}
-
-bool
-_ComputeDisplacedSubdivFrameImpl(
+HdEmbreeComputeDisplacedSubdivFrame(
     RTCGeometry geometry,
     HdEmbreePrototypeContext const* context,
     unsigned int primID,
@@ -598,9 +603,7 @@ _ComputeDisplacedSubdivFrameImpl(
         return false;
     }
 
-    const float orientationSign = context->orientationSign < 0.0f
-        ? -1.0f
-        : 1.0f;
+    const float orientationSign = context->orientationSign;
 
     GfVec3f centerObjectOffset;
     GfVec3f centerBaseDPdu;
@@ -670,196 +673,6 @@ _ComputeDisplacedSubdivFrameImpl(
 }
 
 bool
-_ComputeDisplacedSubdivNormalDerivativesImpl(
-    RTCGeometry geometry,
-    HdEmbreePrototypeContext const* context,
-    HdEmbreeDisplacedSubdivFrame const& frame,
-    GfVec3f* outDndu,
-    GfVec3f* outDndv)
-{
-    if (!geometry || !context || !frame.valid || !outDndu || !outDndv ||
-        !std::isfinite(frame.u) || !std::isfinite(frame.v) ||
-        !std::isfinite(frame.du) || !std::isfinite(frame.dv) ||
-        frame.du == 0.0f || frame.dv == 0.0f ||
-        !_IsFinite(frame.normal) ||
-        !_IsFinite(frame.uObjectOffset) ||
-        !_IsFinite(frame.vObjectOffset) ||
-        !_IsFinite(frame.uBaseDPdu) || !_IsFinite(frame.uBaseDPdv) ||
-        !_IsFinite(frame.vBaseDPdu) || !_IsFinite(frame.vBaseDPdv)) {
-        return false;
-    }
-
-    const float orientationSign = context->orientationSign < 0.0f
-        ? -1.0f
-        : 1.0f;
-    GfVec3f uuObjectOffset;
-    if (!_EvaluateDisplacedSubdivProbe(
-            geometry, context, frame.primID,
-            frame.u + 2.0f * frame.du, frame.v, orientationSign,
-            &uuObjectOffset, nullptr, nullptr)) {
-        return false;
-    }
-
-    GfVec3f uvObjectOffset;
-    if (!_EvaluateDisplacedSubdivProbe(
-            geometry, context, frame.primID,
-            frame.u + frame.du, frame.v + frame.dv, orientationSign,
-            &uvObjectOffset, nullptr, nullptr)) {
-        return false;
-    }
-
-    GfVec3f vvObjectOffset;
-    if (!_EvaluateDisplacedSubdivProbe(
-            geometry, context, frame.primID,
-            frame.u, frame.v + 2.0f * frame.dv, orientationSign,
-            &vvObjectOffset, nullptr, nullptr)) {
-        return false;
-    }
-
-    GfVec3f normalU;
-    GfVec3f unusedDPdu;
-    GfVec3f unusedDPdv;
-    if (!_TryBuildDisplacedNormal(
-            frame.uBaseDPdu, frame.uBaseDPdv,
-            frame.uObjectOffset, uuObjectOffset, uvObjectOffset,
-            frame.du, frame.dv, orientationSign,
-            &normalU, &unusedDPdu, &unusedDPdv)) {
-        return false;
-    }
-
-    GfVec3f normalV;
-    if (!_TryBuildDisplacedNormal(
-            frame.vBaseDPdu, frame.vBaseDPdv,
-            frame.vObjectOffset, uvObjectOffset, vvObjectOffset,
-            frame.du, frame.dv, orientationSign,
-            &normalV, &unusedDPdu, &unusedDPdv)) {
-        return false;
-    }
-
-    if (GfDot(normalU, frame.normal) < 0.0f) {
-        normalU = -normalU;
-    }
-    if (GfDot(normalV, frame.normal) < 0.0f) {
-        normalV = -normalV;
-    }
-
-    GfVec3f dNdu;
-    GfVec3f dNdv;
-    if (!_TryFiniteDifference(normalU, frame.normal, frame.du, &dNdu) ||
-        !_TryFiniteDifference(normalV, frame.normal, frame.dv, &dNdv) ||
-        !_TryProjectNormalDerivative(frame.normal, dNdu, &dNdu) ||
-        !_TryProjectNormalDerivative(frame.normal, dNdv, &dNdv)) {
-        return false;
-    }
-
-    *outDndu = dNdu;
-    *outDndv = dNdv;
-    return true;
-}
-
-bool
-_ComputeDisplacedSubdivPositionImpl(
-    RTCGeometry geometry,
-    HdEmbreePrototypeContext const* context,
-    unsigned int primID,
-    float u,
-    float v,
-    GfVec3f* outPosition)
-{
-    if (!geometry || !context || !outPosition ||
-        !std::isfinite(u) || !std::isfinite(v)) {
-        return false;
-    }
-
-    const float orientationSign = context->orientationSign < 0.0f
-        ? -1.0f
-        : 1.0f;
-    GfVec3f position;
-    GfVec3f normal;
-    GfVec3f dPdu;
-    GfVec3f dPdv;
-    if (!_InterpolateBaseFrame(
-            geometry, primID, u, v, orientationSign,
-            &position, &normal, &dPdu, &dPdv)) {
-        return false;
-    }
-
-    float displacement = 0.0f;
-    if (!_EvaluateDisplacementImpl(
-            context, primID, u, v,
-            position, normal, dPdu, dPdv, &displacement)) {
-        return false;
-    }
-
-    GfVec3f objectOffset;
-    GfVec3f displacedPosition;
-    if (!_ComputeObjectSpaceDisplacementOffsetImpl(
-            context, normal, displacement, &objectOffset) ||
-        !_TryAddOffset(position, objectOffset, &displacedPosition)) {
-        return false;
-    }
-
-    *outPosition = displacedPosition;
-    return true;
-}
-
-} // namespace
-
-bool
-HdEmbreeEvaluateDisplacement(
-    HdEmbreePrototypeContext const* context,
-    unsigned int primID,
-    float u,
-    float v,
-    GfVec3f const& position,
-    GfVec3f const& normal,
-    GfVec3f const& dPdu,
-    GfVec3f const& dPdv,
-    float* displacement)
-{
-    return _EvaluateDisplacementImpl(
-        context, primID, u, v,
-        position, normal, dPdu, dPdv, displacement);
-}
-
-bool
-HdEmbreeComputeObjectSpaceDisplacementOffset(
-    HdEmbreePrototypeContext const* context,
-    GfVec3f const& objectNormal,
-    float displacement,
-    GfVec3f* objectOffset)
-{
-    return _ComputeObjectSpaceDisplacementOffsetImpl(
-        context, objectNormal, displacement, objectOffset);
-}
-
-bool
-HdEmbreeComputeDisplacedSubdivPosition(
-    RTCGeometry geometry,
-    HdEmbreePrototypeContext const* context,
-    unsigned int primID,
-    float u,
-    float v,
-    GfVec3f* outPosition)
-{
-    return _ComputeDisplacedSubdivPositionImpl(
-        geometry, context, primID, u, v, outPosition);
-}
-
-bool
-HdEmbreeComputeDisplacedSubdivFrame(
-    RTCGeometry geometry,
-    HdEmbreePrototypeContext const* context,
-    unsigned int primID,
-    float u,
-    float v,
-    HdEmbreeDisplacedSubdivFrame* outFrame)
-{
-    return _ComputeDisplacedSubdivFrameImpl(
-        geometry, context, primID, u, v, outFrame);
-}
-
-bool
 HdEmbreeComputeDisplacedSubdivFrame(
     RTCGeometry geometry,
     HdEmbreePrototypeContext const* context,
@@ -893,8 +706,83 @@ HdEmbreeComputeDisplacedSubdivNormalDerivatives(
     GfVec3f* outDndu,
     GfVec3f* outDndv)
 {
-    return _ComputeDisplacedSubdivNormalDerivativesImpl(
-        geometry, context, frame, outDndu, outDndv);
+    if (!geometry || !context || !frame.valid || !outDndu || !outDndv ||
+        !std::isfinite(frame.u) || !std::isfinite(frame.v) ||
+        !std::isfinite(frame.du) || !std::isfinite(frame.dv) ||
+        frame.du == 0.0f || frame.dv == 0.0f ||
+        !_IsFinite(frame.normal) ||
+        !_IsFinite(frame.uObjectOffset) ||
+        !_IsFinite(frame.vObjectOffset) ||
+        !_IsFinite(frame.uBaseDPdu) || !_IsFinite(frame.uBaseDPdv) ||
+        !_IsFinite(frame.vBaseDPdu) || !_IsFinite(frame.vBaseDPdv)) {
+        return false;
+    }
+
+    const float orientationSign = context->orientationSign;
+    GfVec3f uuObjectOffset;
+    if (!_EvaluateDisplacedSubdivProbe(
+            geometry, context, frame.primID,
+            frame.u + 2.0f * frame.du, frame.v, orientationSign,
+            &uuObjectOffset, nullptr, nullptr)) {
+        return false;
+    }
+
+    GfVec3f uvObjectOffset;
+    if (!_EvaluateDisplacedSubdivProbe(
+            geometry, context, frame.primID,
+            frame.u + frame.du, frame.v + frame.dv, orientationSign,
+            &uvObjectOffset, nullptr, nullptr)) {
+        return false;
+    }
+
+    GfVec3f vvObjectOffset;
+    if (!_EvaluateDisplacedSubdivProbe(
+            geometry, context, frame.primID,
+            frame.u, frame.v + 2.0f * frame.dv, orientationSign,
+            &vvObjectOffset, nullptr, nullptr)) {
+        return false;
+    }
+
+    GfVec3f normalU;
+    if (!_TryBuildDisplacedNormal(
+            frame.uBaseDPdu, frame.uBaseDPdv,
+            frame.uObjectOffset, uuObjectOffset, uvObjectOffset,
+            frame.du, frame.dv, orientationSign,
+            &normalU, nullptr, nullptr)) {
+        return false;
+    }
+
+    GfVec3f normalV;
+    if (!_TryBuildDisplacedNormal(
+            frame.vBaseDPdu, frame.vBaseDPdv,
+            frame.vObjectOffset, uvObjectOffset, vvObjectOffset,
+            frame.du, frame.dv, orientationSign,
+            &normalV, nullptr, nullptr)) {
+        return false;
+    }
+
+    if (GfDot(normalU, frame.normal) < 0.0f) {
+        normalU = -normalU;
+    }
+    if (GfDot(normalV, frame.normal) < 0.0f) {
+        normalV = -normalV;
+    }
+
+    GfVec3f dNdu;
+    GfVec3f dNdv;
+    if (!_TryFiniteDifference(normalU, frame.normal, frame.du, &dNdu) ||
+        !_TryFiniteDifference(normalV, frame.normal, frame.dv, &dNdv)) {
+        return false;
+    }
+    dNdu -= frame.normal * GfDot(frame.normal, dNdu);
+    dNdv -= frame.normal * GfDot(frame.normal, dNdv);
+    if (!_IsFinite(dNdu) || !_IsFinite(dNdv)) {
+        return false;
+    }
+
+    *outDndu = dNdu;
+    *outDndv = dNdv;
+    return true;
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

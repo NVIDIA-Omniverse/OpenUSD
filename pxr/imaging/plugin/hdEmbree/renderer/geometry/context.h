@@ -70,7 +70,8 @@ struct HdEmbreePrototypeContext
     /// invocations during one prototype commit.
     std::atomic<bool> displacementExceptionReported{false};
     /// Converts Embree's subdivision winding to the authored USD orientation.
-    /// Coarse triangles are already reordered by HdMeshUtil and stay +1.
+    /// Always exactly -1 or +1. Coarse triangles are already reordered by
+    /// HdMeshUtil and stay +1.
     float orientationSign = 1.0f;
     /// Renderer-owned material evaluation services. Geometry callbacks borrow
     /// this state; it is updated only while rendering is stopped and remains
