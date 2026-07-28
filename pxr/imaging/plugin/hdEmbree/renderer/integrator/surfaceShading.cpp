@@ -7,11 +7,18 @@
 // Hit interpretation and shading-context construction.
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "../rendererImpl.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/normalTransforms.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampling.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/surfaceDerivatives.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/geometry/wireframe.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graph.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/shadingContext.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/rayUtil.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
 
 #include "pxr/imaging/hd/perfLog.h"
+#include "pxr/imaging/hd/tokens.h"
 #include "pxr/base/work/loops.h"
 #include "pxr/base/work/threadLimits.h"
 
@@ -22,6 +29,111 @@
 #include <thread>
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+static const TfToken _tokensTangent("tangent");
+static const TfToken _tokensBitangent("bitangent");
+static const TfToken _tokensComputedTangent("hdEmbreeComputedTangent");
+static const TfToken _tokensComputedBitangent("hdEmbreeComputedBitangent");
+static const TfToken _tokensSt("st");
+
+static void
+_ComputeScreenSpaceDerivatives(HdEmbreeRayDifferential const& rayDifferential,
+                               GfVec3f const& positionHitWld,
+                               GfVec3f const& normalTangentPlaneWld,
+                               GfVec3f const& dPdu, GfVec3f const& dPdv,
+                               GfMatrix4d const& viewMatrix,
+                               GfMatrix4d const& inverseProjMatrix,
+                               float imageWidth, float imageHeight,
+                               int samplesPerPixel, mxcpp::ShadingContext& ctx)
+{
+    GfVec3f dPdx(0.0f);
+    GfVec3f dPdy(0.0f);
+
+    if (rayDifferential.hasDifferentials) {
+        // Intersect differential rays with the tangent plane at positionHitWld.
+        float planeOffset = -GfDot(normalTangentPlaneWld, positionHitWld);
+        float rxDotN =
+            GfDot(normalTangentPlaneWld, rayDifferential.rxDirection);
+        if (std::abs(rxDotN) > 1e-10f) {
+            float tx =
+                -(GfDot(normalTangentPlaneWld, rayDifferential.rxOrigin) +
+                  planeOffset) /
+                rxDotN;
+            GfVec3f px =
+                rayDifferential.rxOrigin + tx * rayDifferential.rxDirection;
+            dPdx = px - positionHitWld;
+        }
+        float ryDotN =
+            GfDot(normalTangentPlaneWld, rayDifferential.ryDirection);
+        if (std::abs(ryDotN) > 1e-10f) {
+            float ty =
+                -(GfDot(normalTangentPlaneWld, rayDifferential.ryOrigin) +
+                  planeOffset) /
+                ryDotN;
+            GfVec3f py =
+                rayDifferential.ryOrigin + ty * rayDifferential.ryDirection;
+            dPdy = py - positionHitWld;
+        }
+    } else {
+        // Fallback: approximate dPdx/dPdy from camera projection.
+        GfVec3f hitCamera = GfVec3f(viewMatrix.Transform(positionHitWld));
+        float distanceCameraWld = hitCamera.GetLength();
+        if (distanceCameraWld > 1e-6f) {
+            GfVec3f ndcCenter(0.0f, 0.0f, -1.0f);
+            GfVec3f ndcDx(2.0f / imageWidth, 0.0f, -1.0f);
+            GfVec3f ndcDy(0.0f, 2.0f / imageHeight, -1.0f);
+            GfVec3f camCenter = GfVec3f(inverseProjMatrix.Transform(ndcCenter));
+            GfVec3f camDx = GfVec3f(inverseProjMatrix.Transform(ndcDx));
+            GfVec3f camDy = GfVec3f(inverseProjMatrix.Transform(ndcDy));
+            float pixelScaleX =
+                (camDx - camCenter).GetLength() * distanceCameraWld;
+            float pixelScaleY =
+                (camDy - camCenter).GetLength() * distanceCameraWld;
+
+            float sppScale = (samplesPerPixel > 1)
+                ? 1.0f / std::sqrt(static_cast<float>(samplesPerPixel))
+                : 1.0f;
+            pixelScaleX *= sppScale;
+            pixelScaleY *= sppScale;
+
+            GfVec3f tangentWld, bitangentWld;
+            GfBuildOrthonormalFrame(normalTangentPlaneWld, &tangentWld,
+                                    &bitangentWld);
+            dPdx = tangentWld * pixelScaleX;
+            dPdy = bitangentWld * pixelScaleY;
+        }
+    }
+
+    ctx.dPdx = ty::ToMx(dPdx);
+    ctx.dPdy = ty::ToMx(dPdy);
+
+    // Solve for UV derivatives: A^T A x = A^T b (least squares)
+    float ata00 = GfDot(dPdu, dPdu);
+    float ata01 = GfDot(dPdu, dPdv);
+    float ata11 = GfDot(dPdv, dPdv);
+    float detATA = ty::DifferenceOfProducts(ata00, ata11, ata01, ata01);
+
+    if (std::abs(detATA) > 1e-18f) {
+        float invDet = 1.0f / detATA;
+        float atb0x = GfDot(dPdu, dPdx);
+        float atb1x = GfDot(dPdv, dPdx);
+        float atb0y = GfDot(dPdu, dPdy);
+        float atb1y = GfDot(dPdv, dPdy);
+
+        ctx.dudx = std::clamp(
+            ty::DifferenceOfProducts(ata11, atb0x, ata01, atb1x) * invDet,
+            -1e8f, 1e8f);
+        ctx.dvdx = std::clamp(
+            ty::DifferenceOfProducts(ata00, atb1x, ata01, atb0x) * invDet,
+            -1e8f, 1e8f);
+        ctx.dudy = std::clamp(
+            ty::DifferenceOfProducts(ata11, atb0y, ata01, atb1y) * invDet,
+            -1e8f, 1e8f);
+        ctx.dvdy = std::clamp(
+            ty::DifferenceOfProducts(ata00, atb1y, ata01, atb0y) * invDet,
+            -1e8f, 1e8f);
+    }
+}
 
 namespace {
 
@@ -75,7 +187,7 @@ _GetWireframeParametricFrame(
         instanceContext->objectToWorldMatrix.TransformDir(objectDPdu);
     const GfVec3f worldDPdv =
         instanceContext->objectToWorldMatrix.TransformDir(objectDPdv);
-    if (!_IsFinite(worldDPdu) || !_IsFinite(worldDPdv) ||
+    if (!ty::IsFinite(worldDPdu) || !ty::IsFinite(worldDPdv) ||
         GfCross(worldDPdu, worldDPdv).GetLengthSq() <= 1.0e-18f) {
         return std::nullopt;
     }
@@ -151,12 +263,13 @@ HdEmbreeRenderer::_ApplyWireframe(
         return;
     }
 
-    const GfVec3f positionHitWld = _CalculateHitPosition(primaryHit);
+    const GfVec3f positionHitWld = ty::CalculateHitPosition(primaryHit);
     HdEmbreeDisplacedSubdivFrame displacedFrame;
-    GfVec3f normalSrfWldExt = _ResolveObjectSpaceNormal(
+    GfVec3f normalSrfWldExt = ty::ResolveObjectSpaceNormal(
         prototypeContext, instanceContext->rootScene, primaryHit.hit.geomID,
         primaryHit, &displacedFrame);
-    normalSrfWldExt = _TransformNormalToWorld(instanceContext, normalSrfWldExt);
+    normalSrfWldExt =
+        ty::TransformNormalToWorld(instanceContext, normalSrfWldExt);
 
     const std::optional<_WireframeParametricFrame> parametricFrame =
         _GetWireframeParametricFrame(
@@ -360,18 +473,23 @@ HdEmbreeRenderer::_TryBuildSurfaceInteraction(
         prototypeContext->orientationSign *
         GfVec3f(rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
     normalGeomWldExt =
-        _TransformNormalToWorld(instanceContext, normalGeomWldExt);
-    if (!_TryNormalizeDirection(normalGeomWldExt, &normalGeomWldExt)) {
+        ty::TransformNormalToWorld(instanceContext, normalGeomWldExt);
+    if (!ty::TryNormalizeDirection(normalGeomWldExt, &normalGeomWldExt)) {
         return false;
     }
 
     // The shared resolver remains the only smooth/displaced normal source.
     HdEmbreeDisplacedSubdivFrame displacedFrame;
     GfVec3f normalSrfWldExt =
-        _ResolveObjectSpaceNormal(prototypeContext, instanceContext->rootScene,
-                                  rayHit.hit.geomID, rayHit, &displacedFrame);
-    normalSrfWldExt = _TransformNormalToWorld(instanceContext, normalSrfWldExt);
-    if (!_TryNormalizeDirection(normalSrfWldExt, &normalSrfWldExt)) {
+        ty::ResolveObjectSpaceNormal(
+            prototypeContext,
+            instanceContext->rootScene,
+            rayHit.hit.geomID,
+            rayHit,
+            &displacedFrame);
+    normalSrfWldExt =
+        ty::TransformNormalToWorld(instanceContext, normalSrfWldExt);
+    if (!ty::TryNormalizeDirection(normalSrfWldExt, &normalSrfWldExt)) {
         return false;
     }
     if (GfDot(normalSrfWldExt, normalGeomWldExt) < 0.0f) {
@@ -379,7 +497,7 @@ HdEmbreeRenderer::_TryBuildSurfaceInteraction(
     }
 
     _SurfaceInteraction interaction;
-    interaction.positionHitWld = _CalculateHitPosition(rayHit);
+    interaction.positionHitWld = ty::CalculateHitPosition(rayHit);
     interaction.normalGeomWldExt = normalGeomWldExt;
     interaction.normalSrfWldExt = normalSrfWldExt;
     interaction.displacedFrame = displacedFrame;
@@ -411,7 +529,9 @@ HdEmbreeRenderer::_BuildShadingContext(
     const GfVec3f normalSrfWldOut = interaction.GetNormalSrfWldOut();
     const GfVec3f normalSrfWldExt = interaction.normalSrfWldExt;
     HdEmbreeDisplacedSubdivFrame const* displacedFrame =
-        interaction.displacedFrame.valid ? &interaction.displacedFrame : nullptr;
+        interaction.displacedFrame.valid
+            ? &interaction.displacedFrame
+            : nullptr;
     const float sideSign = interaction.frontFacing ? 1.0f : -1.0f;
 
     mxcpp::Vec2f texcoordVal(0.0f);
@@ -451,16 +571,16 @@ HdEmbreeRenderer::_BuildShadingContext(
     // start in object space and are transformed to world space below.
     GfVec3f dPdu, dPdv, dndu, dndv;
     const GfVec3f objectNormal =
-        _TransformNormalToObject(instanceContext, normalSrfWldExt);
-    if (_IsSubdivMesh(prototypeContext)) {
-        _ComputeSubdivSurfaceDerivatives(
+        ty::TransformNormalToObject(instanceContext, normalSrfWldExt);
+    if (prototypeContext->refined) {
+        ty::ComputeSubdivSurfaceDerivatives(
             prototypeContext,
             instanceContext->rootScene, rayHit.hit.geomID,
             rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
             objectNormal, &dPdu, &dPdv, &dndu, &dndv,
             displacedFrame);
     } else {
-        _ComputeTriangleSurfaceDerivatives(
+        ty::ComputeTriangleSurfaceDerivatives(
             prototypeContext,
             rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v, objectNormal,
             &dPdu, &dPdv, &dndu, &dndv);
@@ -474,9 +594,9 @@ HdEmbreeRenderer::_BuildShadingContext(
     // Object space -> world space
     dPdu = instanceContext->objectToWorldMatrix.TransformDir(dPdu);
     dPdv = instanceContext->objectToWorldMatrix.TransformDir(dPdv);
-    dndu = _TransformNormalDerivativeToWorld(
+    dndu = ty::TransformNormalDerivativeToWorld(
         instanceContext, objectNormal, dndu);
-    dndv = _TransformNormalDerivativeToWorld(
+    dndv = ty::TransformNormalDerivativeToWorld(
         instanceContext, objectNormal, dndv);
     dndu *= sideSign;
     dndv *= sideSign;
@@ -491,7 +611,8 @@ HdEmbreeRenderer::_BuildShadingContext(
         const auto sampleFrame = [&](TfToken const& tangentToken,
                                      TfToken const& bitangentToken) {
             auto tangentIt = prototypeContext->primvarMap.find(tangentToken);
-            auto bitangentIt = prototypeContext->primvarMap.find(bitangentToken);
+            auto bitangentIt =
+                prototypeContext->primvarMap.find(bitangentToken);
             if (tangentIt == prototypeContext->primvarMap.end() ||
                 bitangentIt == prototypeContext->primvarMap.end()) {
                 return false;
@@ -503,7 +624,8 @@ HdEmbreeRenderer::_BuildShadingContext(
                     &bitangent)) {
                 return false;
             }
-            tangent = instanceContext->objectToWorldMatrix.TransformDir(tangent);
+            tangent =
+                instanceContext->objectToWorldMatrix.TransformDir(tangent);
             bitangent =
                 instanceContext->objectToWorldMatrix.TransformDir(bitangent);
             return true;
@@ -523,8 +645,8 @@ HdEmbreeRenderer::_BuildShadingContext(
         GfVec3f bitangentOut =
             bitangent - normalSrfWldExt * GfDot(normalSrfWldExt, bitangent);
         haveTangentFrame =
-            _TryNormalizeDirection(tangentOut, &tangentOut) &&
-            _TryNormalizeDirection(bitangentOut, &bitangentOut);
+            ty::TryNormalizeDirection(tangentOut, &tangentOut) &&
+            ty::TryNormalizeDirection(bitangentOut, &bitangentOut);
         if (haveTangentFrame) {
             handedness =
                 GfDot(GfCross(tangentOut, bitangentOut), normalSrfWldExt) < 0.0f
@@ -539,8 +661,8 @@ HdEmbreeRenderer::_BuildShadingContext(
         GfVec3f parameterBitangent =
             dPdv - normalSrfWldExt * GfDot(normalSrfWldExt, dPdv);
         haveTangentFrame =
-            _TryNormalizeDirection(tangent, &tangent) &&
-            _TryNormalizeDirection(parameterBitangent, &parameterBitangent);
+            ty::TryNormalizeDirection(tangent, &tangent) &&
+            ty::TryNormalizeDirection(parameterBitangent, &parameterBitangent);
         if (haveTangentFrame) {
             handedness = GfDot(GfCross(tangent, parameterBitangent),
                                normalSrfWldExt) < 0.0f
@@ -550,27 +672,28 @@ HdEmbreeRenderer::_BuildShadingContext(
     }
 
     tangent -= normalSrfWldOut * GfDot(normalSrfWldOut, tangent);
-    if (!_TryNormalizeDirection(tangent, &tangent)) {
+    if (!ty::TryNormalizeDirection(tangent, &tangent)) {
         GfBuildOrthonormalFrame(normalSrfWldOut, &tangent, &bitangent);
     } else {
         bitangent = handedness * GfCross(normalSrfWldOut, tangent);
-        if (!_TryNormalizeDirection(bitangent, &bitangent)) {
+        if (!ty::TryNormalizeDirection(bitangent, &bitangent)) {
             GfBuildOrthonormalFrame(normalSrfWldOut, &tangent, &bitangent);
         }
     }
 
     mxcpp::ShadingContext ctx;
-    ctx.position = _ToMx(objectHitPos);
-    ctx.normal = _ToMx(normalSrfWldOut);
-    ctx.tangent = _ToMx(tangent);
-    ctx.bitangent = _ToMx(bitangent);
-    ctx.viewPosition = _ToMx(GfVec3f(_inverseViewMatrix.Transform(GfVec3f(0.0f))));
+    ctx.position = ty::ToMx(objectHitPos);
+    ctx.normal = ty::ToMx(normalSrfWldOut);
+    ctx.tangent = ty::ToMx(tangent);
+    ctx.bitangent = ty::ToMx(bitangent);
+    ctx.viewPosition =
+        ty::ToMx(GfVec3f(_inverseViewMatrix.Transform(GfVec3f(0.0f))));
     // Graph-facing texture coordinates preserve authored USD st values, which
     // match MaterialX's lower-left UV convention.  Texture backends convert
     // from that convention to their native image-space convention at lookup
     // time.
     ctx.texcoord = texcoordVal;
-    ctx.displayColor = _ToMx(displayColor);
+    ctx.displayColor = ty::ToMx(displayColor);
     ctx.displayOpacity = displayOpacity;
     HdEmbreeMaterialEvalServices const* materialEvalServices =
         prototypeContext->materialEvalServices
@@ -582,16 +705,16 @@ HdEmbreeRenderer::_BuildShadingContext(
     ctx.bypassColorTransforms = HdEmbreeBypassesColorTransforms(
         materialEvalServices->renderColorSpace);
     ctx.luminanceCoefficients =
-        _ToMx(materialEvalServices->luminanceCoefficients);
+        ty::ToMx(materialEvalServices->luminanceCoefficients);
     ctx.faceId = rayHit.hit.primID;
     ctx.baryU = rayHit.hit.u;
     ctx.baryV = rayHit.hit.v;
-    ctx.dPdu = _ToMx(dPdu);
-    ctx.dPdv = _ToMx(dPdv);
-    ctx.dPositiondu = _ToMx(objectDPdu);
-    ctx.dPositiondv = _ToMx(objectDPdv);
-    ctx.objectToWorldMatrix = _ToMx(instanceContext->objectToWorldMatrix);
-    ctx.worldToObjectMatrix = _ToMx(instanceContext->worldToObjectMatrix);
+    ctx.dPdu = ty::ToMx(dPdu);
+    ctx.dPdv = ty::ToMx(dPdv);
+    ctx.dPositiondu = ty::ToMx(objectDPdu);
+    ctx.dPositiondv = ty::ToMx(objectDPdv);
+    ctx.objectToWorldMatrix = ty::ToMx(instanceContext->objectToWorldMatrix);
+    ctx.worldToObjectMatrix = ty::ToMx(instanceContext->worldToObjectMatrix);
     ctx.hasObjectToWorldTransform = true;
     ctx.hasWorldToObjectTransform = true;
 
@@ -604,10 +727,10 @@ HdEmbreeRenderer::_BuildShadingContext(
             ctx);
     }
 
-    ctx.dPositiondx = _ToMx(
-        instanceContext->worldToObjectMatrix.TransformDir(_ToGf(ctx.dPdx)));
-    ctx.dPositiondy = _ToMx(
-        instanceContext->worldToObjectMatrix.TransformDir(_ToGf(ctx.dPdy)));
+    ctx.dPositiondx = ty::ToMx(
+        instanceContext->worldToObjectMatrix.TransformDir(ty::ToGf(ctx.dPdx)));
+    ctx.dPositiondy = ty::ToMx(
+        instanceContext->worldToObjectMatrix.TransformDir(ty::ToGf(ctx.dPdy)));
 
     return ctx;
 }
@@ -673,10 +796,10 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
             ctx.bitangent,
             ctx.normal,
             &resolvedNormal)) {
-        const GfVec3f candidate = _ToGf(resolvedNormal);
+        const GfVec3f candidate = ty::ToGf(resolvedNormal);
         GfVec3f normalizedCandidate;
         const bool valid =
-            _TryNormalizeDirection(candidate, &normalizedCandidate) &&
+            ty::TryNormalizeDirection(candidate, &normalizedCandidate) &&
             GfDot(normalizedCandidate, interaction.GetNormalGeomWldOut()) >
                 0.0f &&
             GfDot(normalizedCandidate, omegaOutWld) > 0.0f;

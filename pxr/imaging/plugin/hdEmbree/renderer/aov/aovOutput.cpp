@@ -7,11 +7,15 @@
 // AOV validation, accumulation, dispatch, and hit outputs.
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "../rendererImpl.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/normalTransforms.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/surfaceDerivatives.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/rayUtil.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
 
 #include "pxr/imaging/hd/perfLog.h"
 #include "pxr/imaging/hd/renderBuffer.h"
+#include "pxr/imaging/hd/meshUtil.h"
+#include "pxr/imaging/hd/tokens.h"
 #include "pxr/base/work/loops.h"
 #include "pxr/base/work/threadLimits.h"
 
@@ -665,7 +669,7 @@ HdEmbreeRenderer::_ComputeDepth(RTCRayHit const& rayHit,
     }
 
     if (clip) {
-        GfVec3f hitPos = _CalculateHitPosition(rayHit);
+        GfVec3f hitPos = ty::CalculateHitPosition(rayHit);
 
         hitPos = GfVec3f(_viewMatrix.Transform(hitPos));
         hitPos = GfVec3f(_projMatrix.Transform(hitPos));
@@ -697,11 +701,11 @@ HdEmbreeRenderer::_ComputeNormal(RTCRayHit const& rayHit,
         return false;
     }
 
-    GfVec3f n = _ResolveObjectSpaceNormal(
+    GfVec3f n = ty::ResolveObjectSpaceNormal(
         prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
         rayHit);
 
-    n = _TransformNormalToWorld(instanceContext, n);
+    n = ty::TransformNormalToWorld(instanceContext, n);
     if (eye) {
         n = GfVec3f(_viewMatrix.TransformDir(n));
     }

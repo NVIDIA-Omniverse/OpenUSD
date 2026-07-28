@@ -7,9 +7,32 @@
 // Single-hit unlit, camera-light, and ambient-occlusion integration.
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "../rendererImpl.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampling.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graph.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/shadingContext.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/rayUtil.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+/// Generate a random cosine-weighted direction ray (in the hemisphere
+/// around <0,0,1>).  The input is a pair of uniformly distributed random
+/// numbers in the range [0,1].
+///
+/// The algorithm here is to generate a random point on the disk, and project
+/// that point to the unit hemisphere.
+static GfVec3f
+_CosineWeightedDirection(GfVec2f const& uniformSamples)
+{
+    GfVec3f directionLocal;
+    float angleAzimuth = 2.0f * ty::Pi<float> * uniformSamples[0];
+    float u2 = uniformSamples[1];
+    float radiusDisk = sqrtf(u2);
+    directionLocal[0] = cosf(angleAzimuth) * radiusDisk;
+    directionLocal[1] = sinf(angleAzimuth) * radiusDisk;
+    directionLocal[2] = sqrtf(1.0f - u2);
+    return directionLocal;
+}
 
 HdEmbreeRenderer::_PixelSampleResult
 HdEmbreeRenderer::_IntegrateUnlit(
@@ -21,7 +44,7 @@ HdEmbreeRenderer::_IntegrateUnlit(
     _PixelSampleResult result;
     RTCRayHit& rayHit = result.primaryHit;
     rayHit.ray.flags = 0;
-    _PopulateRayHit(
+    ty::PopulateRayHit(
         &rayHit, origin, dir, 0.0f,
         std::numeric_limits<float>::max(),
         HdEmbree_RayMask::Camera);
@@ -74,8 +97,8 @@ HdEmbreeRenderer::_IntegrateUnlit(
     ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
 
     // Recover the tangent frame used to apply a material normal map.
-    GfVec3f tangent = _ToGf(ctx.tangent);
-    GfVec3f bitangent = _ToGf(ctx.bitangent);
+    GfVec3f tangent = ty::ToGf(ctx.tangent);
+    GfVec3f bitangent = ty::ToGf(ctx.bitangent);
 
     // Try to evaluate MaterialXCpp material if one is bound.
     mxcpp::EvalGraph* surfaceGraph = prototypeContext->material
@@ -94,11 +117,12 @@ HdEmbreeRenderer::_IntegrateUnlit(
 
     if (hasMaterialClosure) {
         mxcpp::Vec3f resolvedNormal;
-        if (closure.ResolveNormal(_ToMx(tangent), _ToMx(bitangent),
-                                  _ToMx(normalShdWldOut), &resolvedNormal)) {
+        if (closure.ResolveNormal(ty::ToMx(tangent), ty::ToMx(bitangent),
+                                  ty::ToMx(normalShdWldOut), &resolvedNormal)) {
             GfVec3f candidate;
             const bool valid =
-                _TryNormalizeDirection(_ToGf(resolvedNormal), &candidate) &&
+                ty::TryNormalizeDirection(
+                    ty::ToGf(resolvedNormal), &candidate) &&
                 GfDot(candidate, interaction.GetNormalGeomWldOut()) > 0.0f &&
                 GfDot(candidate, omegaOutWld) > 0.0f;
             if (valid) {
@@ -111,10 +135,10 @@ HdEmbreeRenderer::_IntegrateUnlit(
 
     GfVec3f materialColor;
     if (hasMaterialClosure) {
-        materialColor = _ToGf(closure.baseColor);
+        materialColor = ty::ToGf(closure.baseColor);
     } else {
         materialColor = _settings.enableSceneColors
-            ? _ToGf(ctx.displayColor) : GfVec3f(0.5f);
+            ? ty::ToGf(ctx.displayColor) : GfVec3f(0.5f);
     }
 
     // The unlit integrator uses a camera-facing headlight, optionally
@@ -128,7 +152,8 @@ HdEmbreeRenderer::_IntegrateUnlit(
         positionHitWld, normalShdWldOut, interaction.normalGeomWldExt,
         domain.Fork(HdEmbreeSampleDomainKey::AmbientOcclusion));
 
-    const GfVec3f lightingColor = materialColor * diffuseLight * aoLightIntensity;
+    const GfVec3f lightingColor =
+        materialColor * diffuseLight * aoLightIntensity;
 
     GfVec4f output;
     output[0] = std::max(0.0f, lightingColor[0]);
@@ -206,8 +231,8 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
 
     // Ambient visibility is the fraction of the hemisphere that is unoccluded
     // when rays are traced to infinity.
-    const GfVec3f rayOrigin =
-        _OffsetRayOrigin(positionWld, normalGeomWldExt, normalShdWldOut, 1e-4f);
+    const GfVec3f rayOrigin = ty::OffsetRayOrigin(
+        positionWld, normalGeomWldExt, normalShdWldOut, 1e-4f);
     for (int i = 0; i < _settings.ambientOcclusionSamples; i++)
     {
         // Sample in the hemisphere centered on normalShdWldOut. Use
@@ -218,7 +243,7 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
         // we only care about intersection status, not intersection id.
         RTCRay shadow;
         shadow.flags = 0;
-        _PopulateRay(&shadow, rayOrigin, shadowDir, 1e-4f);
+        ty::PopulateRay(&shadow, rayOrigin, shadowDir, 1e-4f);
         {
           rtcOccluded1(_scene, &shadow);
         }

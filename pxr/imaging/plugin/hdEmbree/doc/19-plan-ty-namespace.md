@@ -3,6 +3,13 @@
 Status: required. Repository-wide rename over `renderer/`, no behavior change.
 Completes the namespace ownership invariant that `14` begins.
 
+Amendment after implementing `14`: all anonymous-namespace removal,
+TU-contained type relocation, related uniqueness checks, and MaterialXCpp
+linkage changes described below are withdrawn. Preserve existing anonymous
+namespaces and MaterialXCpp linkage. Plan 19 now owns only shared renderer
+declarations and type renames into `ty`; TU-contained implementation stays
+outside `ty` with its existing linkage.
+
 Sequencing: depends on `14` (introduces `namespace ty` and the membership rule
 for the code it extracts), `17` and `18` (their file splits must settle first,
 or every moved symbol is renamed twice). Must precede the cross-struct naming

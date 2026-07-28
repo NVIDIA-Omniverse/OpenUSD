@@ -614,12 +614,14 @@ private:
     ///
     /// \param weight Finite, non-negative RGB transport multiplier.
     /// \param state Non-null path state updated in RGB or hero-wavelength mode.
+    /// The inline definition lives in `heroWavelength.h`.
     void _ApplyPathWeight(GfVec3f const& weight, _PathState* state) const;
 
     /// \brief Convert current path throughput to display RGB.
     ///
     /// \param state Path state with a valid hero PDF when spectral mode is active.
     /// \return RGB representation of the current transport throughput.
+    /// The inline definition lives in `heroWavelength.h`.
     GfVec3f _GetPathThroughputRgb(_PathState const& state) const;
 
     /// \brief Weight RGB radiance by current path throughput.

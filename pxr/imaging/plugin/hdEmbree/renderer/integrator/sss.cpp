@@ -3,9 +3,13 @@
 //
 #include "pxr/imaging/plugin/hdEmbree/renderer/integrator/sss.h"
 
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/normalTransforms.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/heroWavelength.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/integrator/medium.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/transportPolicy.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/bsdf.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "../rendererImpl.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/sampling/sampling.h"
 
 #include "pxr/base/gf/math.h"
@@ -327,8 +331,8 @@ _TraceSssBoundary(_SssWalkState const& state, HdEmbreeSssInput const& input,
     result.normalGeomObjExt = embreeObjectHitNormal;
     GfVec3f normalGeomWldExt = orientationSign * embreeObjectHitNormal;
     if (useOwnerScene) {
-        normalGeomWldExt = _TransformNormalToWorld(input.worldToObjectMatrix,
-                                                   normalGeomWldExt);
+        normalGeomWldExt = ty::TransformNormalToWorld(
+            input.worldToObjectMatrix, normalGeomWldExt);
     }
     if (normalGeomWldExt.GetLengthSq() > 1.0e-20f) {
         normalGeomWldExt.Normalize();
@@ -842,7 +846,7 @@ HdEmbreeRandomWalkSSS(HdEmbreeSssInput const& input,
                 normalGeomWldExt.Normalize();
             } else {
                 normalGeomWldExt = -state.directionRayWld; // fallback
-                normalGeomObjExt = _TransformNormalToObject(
+                normalGeomObjExt = ty::TransformNormalToObject(
                     input.objectToWorldMatrix, normalGeomWldExt);
             }
             // Orient outward: the exit normal should align with the ray
@@ -896,12 +900,12 @@ HdEmbreeRenderer::_TraceSubsurface(
             domain.Fork(HdEmbreeSampleDomainKey::SssEntryDirection).Draw2D();
         mxcpp::Vec3f sampledDirection;
         if (!mxcpp::Bsdf::SampleSubsurfaceEntry(
-                *input.closure, _ToMx(input.normalShdWldOut),
-                _ToMx(input.omegaOutWld), sample[0], sample[1],
+                *input.closure, ty::ToMx(input.normalShdWldOut),
+                ty::ToMx(input.omegaOutWld), sample[0], sample[1],
                 sampledDirection)) {
             return _SubsurfaceResult::Terminate;
         }
-        entryDirection = _ToGf(sampledDirection);
+        entryDirection = ty::ToGf(sampledDirection);
     }
 
     // A direction that is inward in the shading frame can still point out of
@@ -918,8 +922,8 @@ HdEmbreeRenderer::_TraceSubsurface(
         }
     }
     _ApplyPathWeight(entryWeight, state);
-    if (_IsNearlyBlack(
-            _GetPathThroughputRgb(*state), _minLuminanceCutoff)) {
+    if (ty::IsNearlyBlack(
+            _GetPathThroughputRgb(*state), ty::MinLuminanceCutoff)) {
         return _SubsurfaceResult::Terminate;
     }
 
@@ -927,19 +931,19 @@ HdEmbreeRenderer::_TraceSubsurface(
     walkInput.positionEntryWld = input.positionHitWld;
     walkInput.normalShdEntryGuideWldOut = input.normalShdWldOut;
     walkInput.directionEntryWld = entryDirection;
-    walkInput.albedo = _ToGf(input.closure->subsurfaceColor);
+    walkInput.albedo = ty::ToGf(input.closure->subsurfaceColor);
     walkInput.radius = GfCompMult(
-        _ToGf(input.closure->subsurfaceRadius),
-        _ToGf(input.closure->subsurfaceRadiusScale));
+        ty::ToGf(input.closure->subsurfaceRadius),
+        ty::ToGf(input.closure->subsurfaceRadiusScale));
     walkInput.anisotropy =
         std::clamp(input.closure->subsurfaceAnisotropy, -0.99f, 0.99f);
     if (input.closure->hasPrecomputedSubsurfaceMedium &&
         !input.closure->precomputedSubsurfaceMedium.IsVacuum()) {
         walkInput.usePrecomputedCoefficients = true;
         walkInput.precomputedAbsorption =
-            _ToGf(input.closure->precomputedSubsurfaceMedium.absorption);
+            ty::ToGf(input.closure->precomputedSubsurfaceMedium.absorption);
         walkInput.precomputedScattering =
-            _ToGf(input.closure->precomputedSubsurfaceMedium.scattering);
+            ty::ToGf(input.closure->precomputedSubsurfaceMedium.scattering);
         walkInput.anisotropy = std::clamp(
             input.closure->precomputedSubsurfaceMedium.anisotropy,
             -0.99f,
@@ -976,8 +980,8 @@ HdEmbreeRenderer::_TraceSubsurface(
         }
     }
     _ApplyPathWeight(walkWeight, state);
-    if (_IsNearlyBlack(
-            _GetPathThroughputRgb(*state), _minLuminanceCutoff)) {
+    if (ty::IsNearlyBlack(
+            _GetPathThroughputRgb(*state), ty::MinLuminanceCutoff)) {
         return _SubsurfaceResult::Terminate;
     }
 

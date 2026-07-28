@@ -7,7 +7,9 @@
 // Frame orchestration and renderer configuration.
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "rendererImpl.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/bsdf.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/oiioTextureSystem.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/rayUtil.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
 
 #include "pxr/imaging/hd/perfLog.h"
@@ -607,7 +609,7 @@ HdEmbreeRenderer::_EvaluatePixelSample(
     } else {
         // Geometric AOV-only renders need the primary hit but no radiance.
         result.primaryHit.ray.flags = 0;
-        _PopulateRayHit(
+        ty::PopulateRayHit(
             &result.primaryHit, origin, dir, 0.0f,
             std::numeric_limits<float>::max(),
             HdEmbree_RayMask::Camera);

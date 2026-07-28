@@ -7,8 +7,18 @@
 // Main multi-bounce path integration loop.
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "../rendererImpl.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampling.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/surfaceDerivatives.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/heroWavelength.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/closureClassification.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/transportPolicy.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graph.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/bsdf.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/shadingContext.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/rayUtil.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
 
 #include "pxr/imaging/hd/perfLog.h"
 #include "pxr/base/work/loops.h"
@@ -20,6 +30,37 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
+static bool
+_PopulateSssExitRayHit(
+    RTCRayHit* rayHit,
+    HdEmbreeSssOutput const& sssOut)
+{
+    if (sssOut.exitInstanceId == RTC_INVALID_GEOMETRY_ID ||
+        sssOut.exitGeomId == RTC_INVALID_GEOMETRY_ID ||
+        sssOut.exitPrimId == RTC_INVALID_GEOMETRY_ID) {
+        return false;
+    }
+
+    GfVec3f rayDir = -sssOut.directionExitWld;
+    if (rayDir.GetLengthSq() <= 1.0e-20f) {
+        return false;
+    }
+    rayDir.Normalize();
+
+    ty::PopulateRayHit(rayHit, sssOut.positionExitWld, rayDir, 0.0f, 0.0f,
+                       HdEmbree_RayMask::Camera);
+
+    rayHit->hit.primID = sssOut.exitPrimId;
+    rayHit->hit.geomID = sssOut.exitGeomId;
+    rayHit->hit.instID[0] = sssOut.exitInstanceId;
+    rayHit->hit.u = sssOut.coordinateParametricExitU;
+    rayHit->hit.v = sssOut.coordinateParametricExitV;
+    rayHit->hit.Ng_x = sssOut.normalGeomExitObjExt[0];
+    rayHit->hit.Ng_y = sssOut.normalGeomExitObjExt[1];
+    rayHit->hit.Ng_z = sssOut.normalGeomExitObjExt[2];
+    return true;
+}
+
 GfVec3f
 HdEmbreeRenderer::_WeightPathRadiance(GfVec3f const& radiance,
                                       _PathState const& state) const
@@ -29,9 +70,9 @@ HdEmbreeRenderer::_WeightPathRadiance(GfVec3f const& radiance,
     }
     const _HeroWavelengthState hero{
         true, state.hero.wavelengthNm, state.hero.pdf};
-    return _SpectralValueToRgb(
+    return ty::SpectralValueToRgb(
         state.throughputSpectral *
-            _RgbToSpectralValue(radiance, hero, _renderColorSpace),
+            ty::RgbToSpectralValue(radiance, hero, _renderColorSpace),
         hero, _renderColorSpace);
 }
 
@@ -43,12 +84,12 @@ HdEmbreeRenderer::_AddPathRadiance(GfVec3f radianceContribution,
         return;
     }
     if (state->currentPathIsCaustic) {
-        radianceContribution = _ClampFireflyContribution(
+        radianceContribution = ty::ClampFireflyContribution(
             radianceContribution, _settings.causticsClampThreshold,
             _materialEvalServices.luminanceCoefficients);
     }
     state->radianceAccumulated +=
-        _ClampFireflyContribution(
+        ty::ClampFireflyContribution(
             radianceContribution, _settings.fireflyClampThreshold,
             _materialEvalServices.luminanceCoefficients);
 }
@@ -90,16 +131,19 @@ HdEmbreeRenderer::_IntegratePath(
         rayHit.ray.flags = 0;
         const bool syntheticLambertianHit = path.useSyntheticLambertian;
         if (syntheticLambertianHit) {
-            if (!_PopulateSssExitRayHit(&rayHit, path.syntheticLambertianExit)) {
+            if (!_PopulateSssExitRayHit(
+                    &rayHit, path.syntheticLambertianExit)) {
                 break;
             }
         } else {
-            _PopulateRayHit(&rayHit, path.positionRayOriginWld,
-                            path.directionRayWld,
-                            path.isFirstBounce ? 0.0f : 1e-4f,
-                            std::numeric_limits<float>::max(),
-                            emitterOnlyBounce ? HdEmbree_RayMask::Light
-                                              : HdEmbree_RayMask::Camera);
+            ty::PopulateRayHit(
+                &rayHit,
+                path.positionRayOriginWld,
+                path.directionRayWld,
+                path.isFirstBounce ? 0.0f : 1e-4f,
+                std::numeric_limits<float>::max(),
+                emitterOnlyBounce ? HdEmbree_RayMask::Light
+                                  : HdEmbree_RayMask::Camera);
             rtcIntersect1(_scene, &rayHit);
         }
 
@@ -176,7 +220,7 @@ HdEmbreeRenderer::_IntegratePath(
                 finiteLightHit.pdfSolidAngleInverse > 0.0f) {
                 const float lightPdf =
                     1.0f / finiteLightHit.pdfSolidAngleInverse;
-                const float effectiveLightPdf = _GetMultiSampleMisLightPdf(
+                const float effectiveLightPdf = ty::GetMultiSampleMisLightPdf(
                     lightPdf,
                     _settings.lightSamplesPerHit);
                 if (effectiveLightPdf > 0.0f) {
@@ -240,8 +284,8 @@ HdEmbreeRenderer::_IntegratePath(
 
         // Preserve differential geometry beyond the temporary context so a
         // specular continuation can propagate the ray footprint.
-        surfaceDifferentials.dpdx = _ToGf(ctx.dPdx);
-        surfaceDifferentials.dpdy = _ToGf(ctx.dPdy);
+        surfaceDifferentials.dpdx = ty::ToGf(ctx.dPdx);
+        surfaceDifferentials.dpdy = ty::ToGf(ctx.dPdy);
         surfaceDifferentials.dudx = ctx.dudx;
         surfaceDifferentials.dvdx = ctx.dvdx;
         surfaceDifferentials.dudy = ctx.dudy;
@@ -254,8 +298,8 @@ HdEmbreeRenderer::_IntegratePath(
                 ? _ResolvedNormalDerivativeProvenance::None
                 : _ResolvedNormalDerivativeProvenance::BaseApproximation;
 
-        GfVec3f tangent = _ToGf(ctx.tangent);
-        GfVec3f bitangent = _ToGf(ctx.bitangent);
+        GfVec3f tangent = ty::ToGf(ctx.tangent);
+        GfVec3f bitangent = ty::ToGf(ctx.bitangent);
 
         // -----------------------------------------------------------------
         // Evaluate the graph into one closure. Failure falls through to the
@@ -309,11 +353,12 @@ HdEmbreeRenderer::_IntegratePath(
         bool resolvedNormalUsesBase = true;
         mxcpp::Vec3f resolvedNormal;
         if (hasClosure &&
-            closure.ResolveNormal(_ToMx(tangent), _ToMx(bitangent),
-                                  _ToMx(normalShdWldOut), &resolvedNormal)) {
+            closure.ResolveNormal(ty::ToMx(tangent), ty::ToMx(bitangent),
+                                  ty::ToMx(normalShdWldOut), &resolvedNormal)) {
             GfVec3f candidate;
             const bool valid =
-                _TryNormalizeDirection(_ToGf(resolvedNormal), &candidate) &&
+                ty::TryNormalizeDirection(
+                    ty::ToGf(resolvedNormal), &candidate) &&
                 GfDot(candidate, normalGeomWldOut) > 0.0f &&
                 GfDot(candidate, omegaOutWld) > 0.0f;
             if (valid) {
@@ -346,7 +391,7 @@ HdEmbreeRenderer::_IntegratePath(
                 // MIS / first-bounce state from the previous real interaction.
             };
 
-            const float presence = _Clamp01(closure.presence);
+            const float presence = ty::Clamp01(closure.presence);
             if (presence <= 0.0f) {
                 advancePastHit();
                 continue;
@@ -369,7 +414,7 @@ HdEmbreeRenderer::_IntegratePath(
         // disabled caustics prune disallowed lobes before sampling.
         mxcpp::SurfaceClosure causticPrunedClosure;
         const bool volumeOnlyBoundary =
-            hasClosure && _IsVolumeOnlyBoundary(closure);
+            hasClosure && ty::IsVolumeOnlyBoundary(closure);
         const mxcpp::SurfaceClosure* bsdfClosure =
             hasClosure ? &closure : nullptr;
         bool hasBsdfClosure = hasClosure && !volumeOnlyBoundary;
@@ -402,7 +447,7 @@ HdEmbreeRenderer::_IntegratePath(
                         .Draw1D());
             path.hero.pdf = mxcpp::Spectral::HeroWavelengthPdf();
             path.throughputSpectral =
-                _RgbToSpectralValue(
+                ty::RgbToSpectralValue(
                     path.throughputRgb, path.hero, _renderColorSpace);
         }
 
@@ -412,9 +457,9 @@ HdEmbreeRenderer::_IntegratePath(
         if (hasBsdfClosure) {
             adobeOpenPbrSurface = mxcpp::PrepareAdobeOpenPbrSurface(
                 *bsdfClosure,
-                _ToMx(interaction.frontFacing ? normalShdWldOut
-                                              : -normalShdWldOut),
-                _ToMx(omegaOutWld));
+                ty::ToMx(interaction.frontFacing ? normalShdWldOut
+                                                  : -normalShdWldOut),
+                ty::ToMx(omegaOutWld));
         }
 
         // Sample once for possible continuation, independently of direct
@@ -434,9 +479,14 @@ HdEmbreeRenderer::_IntegratePath(
                     bsdfSample[2]);
             } else {
                 bs = mxcpp::Bsdf::SampleSurface(
-                    *bsdfClosure, _ToMx(normalShdWldOut), _ToMx(omegaOutWld),
-                    bsdfSample[0], bsdfSample[1], bsdfSample[2],
-                    path.hero.wavelengthNm, interaction.frontFacing);
+                    *bsdfClosure,
+                    ty::ToMx(normalShdWldOut),
+                    ty::ToMx(omegaOutWld),
+                    bsdfSample[0],
+                    bsdfSample[1],
+                    bsdfSample[2],
+                    path.hero.wavelengthNm,
+                    interaction.frontFacing);
             }
             hasBsdfSample = bs.isSubsurface || bs.pdfSolidAngle > 0.0f;
         }
@@ -456,8 +506,8 @@ HdEmbreeRenderer::_IntegratePath(
             subsurfaceInput.normalShdWldOut = normalShdWldOut;
             subsurfaceInput.normalGeomWldOut = normalGeomWldOut;
             subsurfaceInput.omegaOutWld = omegaOutWld;
-            subsurfaceInput.directionEntryWld = _ToGf(bs.omegaInWld);
-            subsurfaceInput.entryWeight = _ToGf(bs.bsdfValue);
+            subsurfaceInput.directionEntryWld = ty::ToGf(bs.omegaInWld);
+            subsurfaceInput.entryWeight = ty::ToGf(bs.bsdfValue);
             subsurfaceInput.hasSampledEntryDirection =
                 bs.hasSubsurfaceEntryDirection;
 
@@ -476,7 +526,7 @@ HdEmbreeRenderer::_IntegratePath(
         // whether the closure can continue the path.
         if (hasClosure) {
             _AddPathRadiance(
-                _WeightPathRadiance(_ToGf(closure.emissiveColor), path),
+                _WeightPathRadiance(ty::ToGf(closure.emissiveColor), path),
                 &path);
         }
 
@@ -495,9 +545,9 @@ HdEmbreeRenderer::_IntegratePath(
             // Missing/failed materials use diffuse display color so
             // unmaterialized geometry remains visible.
             GfVec3f matColor = _settings.enableSceneColors
-                ? _ToGf(ctx.displayColor) : GfVec3f(0.5f);
+                ? ty::ToGf(ctx.displayColor) : GfVec3f(0.5f);
             mxcpp::SurfaceClosure fallback;
-            fallback.baseColor = _ToMx(matColor);
+            fallback.baseColor = ty::ToMx(matColor);
             fallback.roughness = 1.0f;
             fallback.metallic = 0.0f;
             fallback.specular = 0.0f;
@@ -554,7 +604,7 @@ HdEmbreeRenderer::_IntegratePath(
         // scheduled its own exit above.
         if (!hasBsdfClosure || !hasBsdfSample || bs.isSubsurface) break;
 
-        const GfVec3f omegaInWld = _ToGf(bs.omegaInWld);
+        const GfVec3f omegaInWld = ty::ToGf(bs.omegaInWld);
         const float omegaOutDotNormalGeom =
             GfDot(omegaOutWld, normalGeomWldExt);
         const float omegaInDotNormalGeom = GfDot(omegaInWld, normalGeomWldExt);
@@ -610,7 +660,7 @@ HdEmbreeRenderer::_IntegratePath(
                         : mxcpp::Spectral::RgbColorSpace::LinearRec709);
             } else {
                 const float cosTheta =
-                    std::abs(GfDot(normalShdWldOut, _ToGf(bs.omegaInWld)));
+                    std::abs(GfDot(normalShdWldOut, ty::ToGf(bs.omegaInWld)));
                 bsdfContrib = mxcpp::Spectral::RgbToSpectralValue(
                     bs.bsdfValue,
                     path.hero.wavelengthNm,
@@ -631,11 +681,12 @@ HdEmbreeRenderer::_IntegratePath(
                 // Delta distribution (e.g. thin-surface transmission):
                 // The sampled BSDF value already contains the throughput
                 // coefficient; no cosine or PDF division is needed.
-                bsdfContrib = _ToGf(bs.bsdfValue);
+                bsdfContrib = ty::ToGf(bs.bsdfValue);
             } else {
                 float cosTheta =
-                    std::abs(GfDot(normalShdWldOut, _ToGf(bs.omegaInWld)));
-                bsdfContrib = _ToGf(bs.bsdfValue) * cosTheta / bs.pdfSolidAngle;
+                    std::abs(GfDot(normalShdWldOut, ty::ToGf(bs.omegaInWld)));
+                bsdfContrib =
+                    ty::ToGf(bs.bsdfValue) * cosTheta / bs.pdfSolidAngle;
             }
 
             for (int i = 0; i < 3; ++i) {
@@ -652,7 +703,7 @@ HdEmbreeRenderer::_IntegratePath(
         path.lastScatterWasMedium = false;
         path.lastScatterCategories = &instanceContext->categories;
         path.lastLightSamplingMode =
-            (!bs.isSpecular && _IsReflectionOnlyClosure(closure))
+            (!bs.isSpecular && ty::IsReflectionOnlyClosure(closure))
                 ? HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere
                 : HdEmbreeLightSampler::SamplingMode::FullSphere;
         path.lastLightSamplingNormal = normalShdWldOut;
@@ -675,15 +726,15 @@ HdEmbreeRenderer::_IntegratePath(
             float q =
                 path.hero.active
                     ? std::max({
-                        _SpectralScalarToRgb(
+                        ty::SpectralScalarToRgb(
                             path.throughputSpectral,
                             path.hero,
                             _renderColorSpace)[0],
-                        _SpectralScalarToRgb(
+                        ty::SpectralScalarToRgb(
                             path.throughputSpectral,
                             path.hero,
                             _renderColorSpace)[1],
-                        _SpectralScalarToRgb(
+                        ty::SpectralScalarToRgb(
                             path.throughputSpectral,
                             path.hero,
                             _renderColorSpace)[2]})
@@ -712,7 +763,7 @@ HdEmbreeRenderer::_IntegratePath(
             !traceEmitterOnlySample) {
             GfVec3f displacedDndu;
             GfVec3f displacedDndv;
-            if (_TryComputeDisplacedSubdivNormalDerivativesToWorld(
+            if (ty::TryComputeDisplacedSubdivNormalDerivativesToWorld(
                     prototypeContext, instanceContext,
                     instanceContext->rootScene, rayHit.hit.geomID,
                     displacedFrame, normalSrfWldOut, &displacedDndu,

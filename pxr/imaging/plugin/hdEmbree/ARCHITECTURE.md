@@ -153,8 +153,15 @@ corresponding type without changing the semantic name.
 
 - `renderer.h/.cpp`: `HdEmbreeRenderer` central façade, persistent frame state,
   settings, and the progressive preview/full-resolution render loop.
-- `rendererImpl.h`: private inline math, ray, closure, spectral, and shading
-  helpers shared by focused renderer translation units.
+- `rendererMath.h`, `rayUtil.h`, `heroWavelength.h`, and
+  `geometry/normalTransforms.h`: focused inline numeric, ray, spectral, and
+  normal-transform helpers shared by renderer translation units.
+- `geometry/surfaceDerivatives.h/.cpp`: triangle/subdivision shading frames,
+  authored/displaced normals, and surface derivatives.
+- `integrator/closureClassification.h/.cpp`: transport classification of
+  compiled material closures.
+- `integrator/transportPolicy.h`: contribution cutoff, firefly-clamping, and
+  multi-sample MIS policy.
 - `camera/camera.cpp`: camera and lens sampling, primary-ray construction,
   and ray differentials. Tile/pixel traversal remains in `renderer.cpp`.
 - `aov/aovOutput.cpp`: AOV binding validation, clear/reset behavior, adaptive

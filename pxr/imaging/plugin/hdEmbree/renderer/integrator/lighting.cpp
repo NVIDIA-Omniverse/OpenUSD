@@ -7,8 +7,13 @@
 // Surface and participating-medium direct lighting.
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "../rendererImpl.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/heroWavelength.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/closureClassification.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/transportPolicy.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/bsdf.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
 
 #include "pxr/imaging/hd/perfLog.h"
 #include "pxr/base/work/loops.h"
@@ -73,8 +78,9 @@ HdEmbreeRenderer::_AccumulateEnvironment(_PathState* state) const
         if (state->lastBsdfPdf > 0.0f && sample.pdfSolidAngleInverse > 0.0f) {
             radianceEnvironment *= mxcpp::Bsdf::PowerHeuristic(
                 state->lastBsdfPdf,
-                _GetMultiSampleMisLightPdf(1.0f / sample.pdfSolidAngleInverse,
-                                           _settings.lightSamplesPerHit));
+                ty::GetMultiSampleMisLightPdf(
+                    1.0f / sample.pdfSolidAngleInverse,
+                    _settings.lightSamplesPerHit));
         }
         _AddPathRadiance(_WeightPathRadiance(radianceEnvironment, *state),
                          state);
@@ -105,7 +111,7 @@ HdEmbreeRenderer::_AccumulateEnvironment(_PathState* state) const
 
         GfVec3f radianceEnvironment = sample.radianceIn;
         if (state->lastBsdfPdf > 0.0f) {
-            const float pdfDomeSolidAngle = _GetMultiSampleMisLightPdf(
+            const float pdfDomeSolidAngle = ty::GetMultiSampleMisLightPdf(
                 sample.pdfSolidAngleInverse > 0.0f
                     ? 1.0f / sample.pdfSolidAngleInverse
                     : 0.0f,
@@ -136,7 +142,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
     const float lightSampleCountInverse =
         1.0f / static_cast<float>(lightSampleCount);
     const HdEmbreeLightSampler::SamplingMode lightSamplingMode =
-        (closure && _IsReflectionOnlyClosure(*closure))
+        (closure && ty::IsReflectionOnlyClosure(*closure))
             ? HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere
             : HdEmbreeLightSampler::SamplingMode::FullSphere;
 
@@ -196,7 +202,10 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                                                      normalShdWldOut, u1, u2,
                                                      lightSamplingMode,
                                                      _renderColorSpace);
-            if (GfIsClose(ls.radianceIn, GfVec3f(0.0f), _minLuminanceCutoff)) {
+            if (GfIsClose(
+                    ls.radianceIn,
+                    GfVec3f(0.0f),
+                    ty::MinLuminanceCutoff)) {
                 continue;
             }
 
@@ -223,17 +232,17 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
             GfVec3f visibility = _Visibility(
                 positionWld, normalGeomWldExt, ls.omegaInWld,
                 ls.distanceWld * 0.99f, light.shadowLink, mediumState);
-            if (_IsNearlyBlack(visibility)) {
+            if (ty::IsNearlyBlack(visibility)) {
                 continue;
             }
 
             GfVec3f radianceSample(0.0f);
             if (closure) {
-                const mxcpp::Vec3f normalMx = _ToMx(normalShdWldOut);
+                const mxcpp::Vec3f normalMx = ty::ToMx(normalShdWldOut);
                 const mxcpp::Vec3f interfaceNormalMx =
                     frontFacing ? normalMx : -normalMx;
-                const mxcpp::Vec3f omegaInWldMx = _ToMx(ls.omegaInWld);
-                const mxcpp::Vec3f omegaOutWldMx = _ToMx(omegaOutWld);
+                const mxcpp::Vec3f omegaInWldMx = ty::ToMx(ls.omegaInWld);
+                const mxcpp::Vec3f omegaOutWldMx = ty::ToMx(omegaOutWld);
                 const mxcpp::AdobeOpenPbrEvalPdfResult adobeEvalPdf =
                     (adobeOpenPbrSurface && adobeOpenPbrSurface->valid)
                         ? mxcpp::EvalPdfPreparedAdobeOpenPbrSurface(
@@ -245,10 +254,10 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 GfVec3f bsdfValue(0.0f);
                 float pdfBsdfSolidAngle = 0.0f;
                 if (adobeEvalPdf.evaluated) {
-                    bsdfValue = _ToGf(adobeEvalPdf.value);
+                    bsdfValue = ty::ToGf(adobeEvalPdf.value);
                     pdfBsdfSolidAngle = adobeEvalPdf.pdfSolidAngle;
                 } else {
-                    bsdfValue = _ToGf(mxcpp::Bsdf::EvalSurface(
+                    bsdfValue = ty::ToGf(mxcpp::Bsdf::EvalSurface(
                         *closure, normalMx, omegaInWldMx, omegaOutWldMx,
                         heroWavelengthNm, frontFacing));
                     pdfBsdfSolidAngle = mxcpp::Bsdf::PdfSurface(
@@ -271,23 +280,23 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                             ? 1.0f / ls.pdfSolidAngleInverse
                             : 0.0f;
                     const float pdfLightSolidAngleEffective =
-                        _GetMultiSampleMisLightPdf(pdfLightSolidAngle,
-                                                   lightSampleCount);
+                        ty::GetMultiSampleMisLightPdf(
+                            pdfLightSolidAngle, lightSampleCount);
                     weightMis = mxcpp::Bsdf::PowerHeuristic(
                         pdfLightSolidAngleEffective, pdfBsdfSolidAngle);
                 }
 
                 if (hero.active) {
                     const float radianceInSpectral =
-                        _RgbToSpectralValue(
+                        ty::RgbToSpectralValue(
                             ls.radianceIn, hero, _renderColorSpace);
                     const float spectralVis =
-                        _RgbToSpectralValue(
+                        ty::RgbToSpectralValue(
                             visibility, hero, _renderColorSpace);
                     const float spectralBsdf =
-                        _RgbToSpectralValue(
+                        ty::RgbToSpectralValue(
                             bsdfValue, hero, _renderColorSpace);
-                    radianceSample = _SpectralValueToRgb(
+                    radianceSample = ty::SpectralValueToRgb(
                         radianceInSpectral * spectralBsdf *
                             cosThetaLightAbsolute * spectralVis *
                             ls.pdfSolidAngleInverse * weightMis,
@@ -300,15 +309,15 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                         weightMis;
                 }
             } else {
-                float brdf = 1.0f / _pi<float>;
+                float brdf = 1.0f / ty::Pi<float>;
                 if (hero.active) {
                     const float radianceInSpectral =
-                        _RgbToSpectralValue(
+                        ty::RgbToSpectralValue(
                             ls.radianceIn, hero, _renderColorSpace);
                     const float spectralVis =
-                        _RgbToSpectralValue(
+                        ty::RgbToSpectralValue(
                             visibility, hero, _renderColorSpace);
-                    radianceSample = _SpectralValueToRgb(
+                    radianceSample = ty::SpectralValueToRgb(
                         radianceInSpectral * cosThetaLightAbsolute * brdf *
                             spectralVis * ls.pdfSolidAngleInverse,
                         hero, _renderColorSpace);
@@ -319,7 +328,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 }
             }
 
-            radianceSample = _ClampFireflyContribution(
+            radianceSample = ty::ClampFireflyContribution(
                 radianceSample,
                 _settings.fireflyClampThreshold,
                 _materialEvalServices.luminanceCoefficients);
@@ -414,7 +423,10 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
                                                          SamplingMode::
                                                              FullSphere,
                                                      _renderColorSpace);
-            if (GfIsClose(ls.radianceIn, GfVec3f(0.0f), _minLuminanceCutoff)) {
+            if (GfIsClose(
+                    ls.radianceIn,
+                    GfVec3f(0.0f),
+                    ty::MinLuminanceCutoff)) {
                 continue;
             }
 
@@ -423,17 +435,17 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
             const GfVec3f visibility = _Visibility(
                 positionWld, ls.omegaInWld, ls.omegaInWld,
                 ls.distanceWld * 0.99f, light.shadowLink, mediumState);
-            if (_IsNearlyBlack(visibility)) {
+            if (ty::IsNearlyBlack(visibility)) {
                 continue;
             }
 
             const float pdfPhaseSolidAngle =
                 useAdobeVolumeTransport
                     ? mxcpp::AdobeOpenPbrEvalVolumePhasePdf(
-                          mediumState.medium, _ToMx(ls.omegaInWld),
-                          _ToMx(omegaOutWld))
-                    : mxcpp::PdfHenyeyGreenstein(_ToMx(ls.omegaInWld),
-                                                 _ToMx(omegaOutWld),
+                          mediumState.medium, ty::ToMx(ls.omegaInWld),
+                          ty::ToMx(omegaOutWld))
+                    : mxcpp::PdfHenyeyGreenstein(ty::ToMx(ls.omegaInWld),
+                                                 ty::ToMx(omegaOutWld),
                                                  mediumState.medium.anisotropy);
             if (pdfPhaseSolidAngle <= 0.0f) {
                 continue;
@@ -444,8 +456,8 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
                 ls.pdfSolidAngleInverse > 0.0f) {
                 const float pdfLightSolidAngle = 1.0f / ls.pdfSolidAngleInverse;
                 const float pdfLightSolidAngleEffective =
-                    _GetMultiSampleMisLightPdf(pdfLightSolidAngle,
-                                               lightSampleCount);
+                    ty::GetMultiSampleMisLightPdf(
+                        pdfLightSolidAngle, lightSampleCount);
                 if (pdfLightSolidAngleEffective > 0.0f) {
                     weightMis = mxcpp::Bsdf::PowerHeuristic(
                         pdfLightSolidAngleEffective, pdfPhaseSolidAngle);
@@ -455,12 +467,12 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
             GfVec3f radianceSample(0.0f);
             if (hero.active) {
                 const float radianceInSpectral =
-                    _RgbToSpectralValue(
+                    ty::RgbToSpectralValue(
                         ls.radianceIn, hero, _renderColorSpace);
                 const float spectralVis =
-                    _RgbToSpectralValue(
+                    ty::RgbToSpectralValue(
                         visibility, hero, _renderColorSpace);
-                radianceSample = _SpectralValueToRgb(
+                radianceSample = ty::SpectralValueToRgb(
                     radianceInSpectral * spectralVis * pdfPhaseSolidAngle *
                         ls.pdfSolidAngleInverse * weightMis,
                     hero, _renderColorSpace);
@@ -470,7 +482,7 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
                                  weightMis;
             }
 
-            radianceSample = _ClampFireflyContribution(
+            radianceSample = ty::ClampFireflyContribution(
                 radianceSample,
                 _settings.fireflyClampThreshold,
                 _materialEvalServices.luminanceCoefficients);

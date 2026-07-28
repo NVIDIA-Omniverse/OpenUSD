@@ -7,8 +7,13 @@
 // Shadow visibility and finite-light intersection handling.
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "../rendererImpl.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/closureClassification.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/transportPolicy.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/bsdf.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/rayUtil.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
 
 #include "pxr/imaging/hd/perfLog.h"
 #include "pxr/base/work/loops.h"
@@ -19,6 +24,43 @@
 #include <thread>
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+static GfVec3f
+_TransparentShadowTransmission(mxcpp::SurfaceClosure const& closure,
+                               GfVec3f const& directionShadowWld,
+                               GfVec3f const& normalGeomWldExt,
+                               bool includeSurfaceTint)
+{
+    const float transmission = ty::Clamp01(closure.transmission);
+    if (transmission <= 0.0f) {
+        return GfVec3f(0.0f);
+    }
+
+    const float interfaceTransmission =
+        mxcpp::Bsdf::StraightShadowDielectricTransmission(
+            closure, GfDot(directionShadowWld, normalGeomWldExt));
+    GfVec3f attenuation(transmission * interfaceTransmission);
+    if (includeSurfaceTint) {
+        attenuation = GfCompMult(
+            attenuation,
+            ty::Clamp01(ty::ToGf(closure.transmissionColor)));
+    }
+    return ty::Clamp01(attenuation);
+}
+
+static GfVec3f
+_CombinePresenceAndTransmissionVisibility(
+    mxcpp::SurfaceClosure const& closure,
+    GfVec3f const& transmissionVisibility)
+{
+    // `presence` is geometric coverage. `opacity` can be an alpha/transmission
+    // control (e.g. UsdPreviewSurface transparent mode), so using it here would
+    // bypass the transmissive shadow response for fully transparent glass.
+    const float presence = ty::Clamp01(closure.presence);
+    const GfVec3f passthroughVisibility(1.0f - presence);
+    return ty::Clamp01(
+        passthroughVisibility + transmissionVisibility * presence);
+}
 
 GfVec3f
 HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
@@ -39,7 +81,7 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
     GfVec3f visibility(1.0f);
     HdEmbreeMediumState shadowMedium = mediumState;
     HdEmbreePrototypeContext const* straightTransparentOwner = nullptr;
-    GfVec3f positionRayOriginWld = _OffsetRayOrigin(
+    GfVec3f positionRayOriginWld = ty::OffsetRayOrigin(
         positionWld, directionOffsetReferenceWld, directionShadowWld, kRayBias);
     float distanceRemainingWld = distanceWld;
 
@@ -48,7 +90,7 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
             _settings.useAdobeOpenPBR &&
             shadowMedium.medium.transportModel ==
                 mxcpp::MediumTransportModel::AdobeOpenPBR;
-        return _ToGf(useAdobeVolumeTransport
+        return ty::ToGf(useAdobeVolumeTransport
             ? mxcpp::AdobeOpenPbrEvalVolumeTransmittance(
                   shadowMedium.medium, distance)
             : mxcpp::EvalBeerTransmittance(shadowMedium.medium, distance));
@@ -60,9 +102,13 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
          ++intersection) {
         RTCRayHit rayHit;
         rayHit.ray.flags = 0;
-        _PopulateRayHit(&rayHit, positionRayOriginWld, directionShadowWld,
-                        kRayBias, distanceRemainingWld,
-                        HdEmbree_RayMask::Camera);
+        ty::PopulateRayHit(
+            &rayHit,
+            positionRayOriginWld,
+            directionShadowWld,
+            kRayBias,
+            distanceRemainingWld,
+            HdEmbree_RayMask::Camera);
         rtcIntersect1(_scene, &rayHit);
 
         if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
@@ -83,7 +129,7 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
             visibility =
                 GfCompMult(visibility, evalShadowTransmittance(distanceHitWld));
         }
-        if (_IsNearlyBlack(visibility, kVisThreshold)) {
+        if (ty::IsNearlyBlack(visibility, kVisThreshold)) {
             return GfVec3f(0.0f);
         }
 
@@ -107,8 +153,8 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
             const GfVec3f positionHitWld =
                 positionRayOriginWld + directionShadowWld * distanceHitWld;
             positionRayOriginWld =
-                _OffsetRayOrigin(positionHitWld, directionShadowWld,
-                                 directionShadowWld, kRayBias);
+                ty::OffsetRayOrigin(positionHitWld, directionShadowWld,
+                                    directionShadowWld, kRayBias);
             continue;
         }
 
@@ -120,11 +166,11 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
         // Stays zero when the blocker has no usable surface frame, because
         // _TryEvalSurfaceClosureAtHit only writes this after it builds an
         // interaction. Every consumer that needs a real normal is guarded by
-        // hasClosure; the trailing _OffsetRayOrigin is not, and relies on its
-        // zero-length case to advance along directionShadowWld instead. Do not
-        // seed this from the caller's offset reference: that is the shading
-        // point's normal, not this blocker's, and medium callers pass a light
-        // direction.
+        // hasClosure; the trailing ty::OffsetRayOrigin is not, and relies on
+        // its zero-length case to advance along directionShadowWld instead.
+        // Do not seed this from the caller's offset reference: that is the
+        // shading point's normal, not this blocker's, and medium callers pass
+        // a light direction.
         GfVec3f normalGeomBlockerWldExt(0.0f);
         HdEmbreePrototypeContext const* hitMesh = nullptr;
         const bool hasClosure = _TryEvalSurfaceClosureAtHit(
@@ -136,7 +182,7 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
         const bool exitsStraightTransparent =
             straightTransparentOwner && hitMesh == straightTransparentOwner;
         const bool volumeOnlyBoundary =
-            hasClosure && _IsVolumeOnlyBoundary(closure);
+            hasClosure && ty::IsVolumeOnlyBoundary(closure);
         GfVec3f surfaceVisibility(0.0f);
         if (volumeOnlyBoundary) {
             surfaceVisibility = GfVec3f(1.0f);
@@ -166,18 +212,18 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
                     _CombinePresenceAndTransmissionVisibility(
                         closure, transmissionVisibility);
             } else {
-                float scalarVisibility = 1.0f - _Clamp01(closure.opacity);
+                float scalarVisibility = 1.0f - ty::Clamp01(closure.opacity);
                 if (exitsCurrentMedium) {
                     scalarVisibility = std::max(
                         scalarVisibility,
-                        _Clamp01(closure.transmission));
+                        ty::Clamp01(closure.transmission));
                 }
-                surfaceVisibility = GfVec3f(_Clamp01(scalarVisibility));
+                surfaceVisibility = GfVec3f(ty::Clamp01(scalarVisibility));
             }
         }
         visibility = GfCompMult(visibility, surfaceVisibility);
 
-        if (_IsNearlyBlack(visibility, kVisThreshold)) {
+        if (ty::IsNearlyBlack(visibility, kVisThreshold)) {
             return GfVec3f(0.0f);
         }
 
@@ -213,7 +259,7 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
                     rayHit.ray.org_y + distanceHitWld * rayHit.ray.dir_y,
                     rayHit.ray.org_z + distanceHitWld * rayHit.ray.dir_z);
         positionRayOriginWld =
-            _OffsetRayOrigin(positionHitWld, normalGeomBlockerWldExt,
+            ty::OffsetRayOrigin(positionHitWld, normalGeomBlockerWldExt,
                              directionShadowWld, kRayBias);
     }
 

@@ -7,9 +7,86 @@
 // Camera and lens sampling, primary-ray construction, and ray differentials.
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "../rendererImpl.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+static bool
+_IsCameraDepthOfFieldEnabled(HdEmbreeCameraDepthOfField const& dof,
+                             bool isOrthographic)
+{
+    return !isOrthographic &&
+           std::isfinite(dof.fStop) &&
+           std::isfinite(dof.focusDistance) &&
+           std::isfinite(dof.focalLength) &&
+           dof.fStop > 0.0f &&
+           dof.focusDistance > 0.0f &&
+           dof.focalLength > 0.0f;
+}
+
+static float
+_GetLensRadius(HdEmbreeCameraDepthOfField const& dof)
+{
+    return dof.focalLength / (2.0f * dof.fStop);
+}
+
+static GfVec2f
+_SampleUniformDiskConcentric(GfVec2f const& sample)
+{
+    const float x = 2.0f * sample[0] - 1.0f;
+    const float y = 2.0f * sample[1] - 1.0f;
+
+    if (x == 0.0f && y == 0.0f) {
+        return GfVec2f(0.0f);
+    }
+
+    float r;
+    float angleAzimuth;
+    if (std::abs(x) > std::abs(y)) {
+        r = x;
+        angleAzimuth = (ty::Pi<float> / 4.0f) * (y / x);
+    } else {
+        r = y;
+        angleAzimuth =
+            (ty::Pi<float> / 2.0f) - (ty::Pi<float> / 4.0f) * (x / y);
+    }
+
+    return GfVec2f(r * std::cos(angleAzimuth), r * std::sin(angleAzimuth));
+}
+
+static bool
+_ApplyCameraDepthOfField(HdEmbreeCameraDepthOfField const& dof,
+                         GfVec2f const& lensPoint, GfVec3f* origin,
+                         GfVec3f* directionLocal)
+{
+    constexpr float eps = 1.0e-7f;
+
+    if (!origin || !directionLocal || !ty::IsFinite(*origin) ||
+        !ty::IsFinite(*directionLocal)) {
+        return false;
+    }
+
+    const float dz = (*directionLocal)[2];
+    if (!std::isfinite(dz) || std::abs(dz) < eps) {
+        return false;
+    }
+
+    const float focusT = -dof.focusDistance / dz;
+    if (!std::isfinite(focusT) || focusT <= 0.0f) {
+        return false;
+    }
+
+    const GfVec3f focusPoint = *origin + (*directionLocal) * focusT;
+    const GfVec3f lensOrigin(lensPoint[0], lensPoint[1], 0.0f);
+    const GfVec3f dofDir = focusPoint - lensOrigin;
+    if (!ty::IsFinite(dofDir) || dofDir.GetLengthSq() <= eps * eps) {
+        return false;
+    }
+
+    *origin = lensOrigin;
+    *directionLocal = dofDir;
+    return true;
+}
 
 void
 HdEmbreeRenderer::_SampleCameraRay(

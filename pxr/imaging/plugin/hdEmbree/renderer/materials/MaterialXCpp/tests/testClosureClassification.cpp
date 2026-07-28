@@ -4,7 +4,9 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "../../../rendererImpl.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/closureClassification.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/bsdf.h"
 
 #include <cstdio>
 #include <functional>
@@ -21,6 +23,8 @@ void Test_Register(const char* name, std::function<bool()> fn);
 #define _REG(name) Test_Register("ClosureClassification." #name, &name)
 
 namespace {
+
+static constexpr float _reflectionOnlyEps = 1.0e-6f;
 
 struct _LeafCase
 {
@@ -43,7 +47,17 @@ _ClassifyLeaf(const Bsdf::NodeData& data)
 {
     Bsdf::ClosureTree tree;
     tree.root = tree.Add(data);
-    return _IsReflectionOnlyNode(tree, tree.root);
+    SurfaceClosure closure;
+    closure.bsdfTree = std::move(tree);
+    return PXR_INTERNAL_NS::ty::IsReflectionOnlyClosure(closure);
+}
+
+static bool
+_ClassifyTree(Bsdf::ClosureTree const& tree)
+{
+    SurfaceClosure closure;
+    closure.bsdfTree = tree;
+    return PXR_INTERNAL_NS::ty::IsReflectionOnlyClosure(closure);
 }
 
 static Bsdf::NodeId
@@ -179,7 +193,7 @@ MixEndpointsAndInterior()
                     ? foregroundReflectionOnly
                     : foregroundReflectionOnly && backgroundReflectionOnly;
                 passed &= _Check(
-                    _IsReflectionOnlyNode(tree, tree.root) == expected,
+                    _ClassifyTree(tree) == expected,
                     "mix endpoint/interior child selection");
             }
         }
@@ -214,7 +228,7 @@ MixEndpointsAndInterior()
         data.mix = testCase.mix;
         tree.root = tree.Add(data);
         passed &= _Check(
-            _IsReflectionOnlyNode(tree, tree.root) == testCase.expected,
+            _ClassifyTree(tree) == testCase.expected,
             "mix epsilon endpoint selection");
     }
     return passed;
@@ -237,7 +251,7 @@ CompositeKinds()
                 : _AddTransmissive(&layerTree);
             layerTree.root = layerTree.Add(layer);
             passed &= _Check(
-                _IsReflectionOnlyNode(layerTree, layerTree.root) ==
+                _ClassifyTree(layerTree) ==
                     (firstReflectionOnly && secondReflectionOnly),
                 "layer requires both children to be reflection-only");
 
@@ -251,7 +265,7 @@ CompositeKinds()
                 : _AddTransmissive(&addTree);
             addTree.root = addTree.Add(add);
             passed &= _Check(
-                _IsReflectionOnlyNode(addTree, addTree.root) ==
+                _ClassifyTree(addTree) ==
                     (firstReflectionOnly && secondReflectionOnly),
                 "add requires both children to be reflection-only");
         }
@@ -265,7 +279,7 @@ CompositeKinds()
             : _AddTransmissive(&tree);
         tree.root = tree.Add(multiply);
         passed &= _Check(
-            _IsReflectionOnlyNode(tree, tree.root) == inputReflectionOnly,
+            _ClassifyTree(tree) == inputReflectionOnly,
             "multiply preserves its input classification");
     }
 
@@ -294,10 +308,10 @@ NestedComposite()
     tree.root = tree.Add(mix);
 
     const bool selectedReflection =
-        _IsReflectionOnlyNode(tree, tree.root);
+        _ClassifyTree(tree);
     std::get<Bsdf::MixData>(tree.nodes[tree.root].data).mix = 0.5f;
     const bool combinedTransmission =
-        _IsReflectionOnlyNode(tree, tree.root);
+        _ClassifyTree(tree);
 
     return _Check(
                selectedReflection,
@@ -308,17 +322,82 @@ NestedComposite()
 }
 
 static bool
-InvalidNodes()
+ClosurePolicy()
 {
-    Bsdf::ClosureTree emptyTree;
+    SurfaceClosure closure;
     bool passed = _Check(
-        !_IsReflectionOnlyNode(emptyTree, Bsdf::InvalidNodeId),
-        "empty tree invalid root");
+        PXR_INTERNAL_NS::ty::IsReflectionOnlyClosure(closure),
+        "default legacy closure is reflection-only");
 
-    emptyTree.nodes.push_back(Bsdf::Node{Bsdf::OrenNayarDiffuseData{}});
+    closure.presence = 0.5f;
     passed &= _Check(
-        !_IsReflectionOnlyNode(emptyTree, 42),
-        "out-of-range node id");
+        !PXR_INTERNAL_NS::ty::IsReflectionOnlyClosure(closure),
+        "partial presence is not reflection-only");
+
+    closure = SurfaceClosure{};
+    closure.opacity = 0.5f;
+    passed &= _Check(
+        !PXR_INTERNAL_NS::ty::IsReflectionOnlyClosure(closure),
+        "partial opacity is not reflection-only");
+
+    closure = SurfaceClosure{};
+    closure.subsurfaceWeight = 0.5f;
+    closure.bsdfTree.root =
+        closure.bsdfTree.Add(Bsdf::OrenNayarDiffuseData{});
+    passed &= _Check(
+        !PXR_INTERNAL_NS::ty::IsReflectionOnlyClosure(closure),
+        "subsurface guard overrides a reflection-only BSDF tree");
+
+    closure = SurfaceClosure{};
+    closure.subsurfaceWeight = 0.5f;
+    closure.subsurfaceRadius = Vec3f(0.0f);
+    passed &= _Check(
+        !PXR_INTERNAL_NS::ty::IsReflectionOnlyClosure(closure),
+        "legacy subsurface weight is not reflection-only with zero radius");
+
+    closure = SurfaceClosure{};
+    closure.transmission = 0.5f;
+    passed &= _Check(
+        !PXR_INTERNAL_NS::ty::IsReflectionOnlyClosure(closure),
+        "legacy transmissive closure is not reflection-only");
+
+    closure = SurfaceClosure{};
+    Bsdf::MultiplyData multiply;
+    multiply.input = 42;
+    closure.bsdfTree.root = closure.bsdfTree.Add(multiply);
+    passed &= _Check(
+        !PXR_INTERNAL_NS::ty::IsReflectionOnlyClosure(closure),
+        "out-of-range BSDF child is not reflection-only");
+    return passed;
+}
+
+static bool
+VolumeBoundaryPolicy()
+{
+    SurfaceClosure closure;
+    closure.isVolumeBoundary = true;
+    closure.opacity = 0.0f;
+    bool passed = _Check(
+        PXR_INTERNAL_NS::ty::IsVolumeOnlyBoundary(closure),
+        "transparent volume-only closure is a boundary");
+
+    closure.isVolumeBoundary = false;
+    passed &= _Check(
+        !PXR_INTERNAL_NS::ty::IsVolumeOnlyBoundary(closure),
+        "surface closure is not a volume-only boundary");
+
+    closure.isVolumeBoundary = true;
+    closure.opacity = 2.0e-6f;
+    passed &= _Check(
+        !PXR_INTERNAL_NS::ty::IsVolumeOnlyBoundary(closure),
+        "nonzero opacity is not a volume-only boundary");
+
+    closure.opacity = 0.0f;
+    closure.bsdfTree.root =
+        closure.bsdfTree.Add(Bsdf::OrenNayarDiffuseData{});
+    passed &= _Check(
+        !PXR_INTERNAL_NS::ty::IsVolumeOnlyBoundary(closure),
+        "scattering closure is not a volume-only boundary");
     return passed;
 }
 
@@ -331,5 +410,6 @@ Test_RegisterClosureClassificationTests()
     _REG(MixEndpointsAndInterior);
     _REG(CompositeKinds);
     _REG(NestedComposite);
-    _REG(InvalidNodes);
+    _REG(ClosurePolicy);
+    _REG(VolumeBoundaryPolicy);
 }

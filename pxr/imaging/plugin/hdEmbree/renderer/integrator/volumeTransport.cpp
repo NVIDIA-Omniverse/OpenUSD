@@ -7,9 +7,16 @@
 // Path-segment transport through participating media.
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "../rendererImpl.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/heroWavelength.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/transportPolicy.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/bsdf.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/rayUtil.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+static constexpr float _volumePdfEps = 1.0e-20f;
 
 void
 HdEmbreeRenderer::_UpdatePathMedium(
@@ -53,8 +60,8 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
         state->hero.pdf};
 
     const auto throughputIsBlack = [&]() {
-        return _IsNearlyBlack(
-            _GetPathThroughputRgb(*state), _minLuminanceCutoff);
+        return ty::IsNearlyBlack(
+            _GetPathThroughputRgb(*state), ty::MinLuminanceCutoff);
     };
 
     const auto addFiniteLightHit = [&]() {
@@ -69,7 +76,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
             input.finiteLightHit.pdfSolidAngleInverse > 0.0f) {
             const float lightPdf =
                 1.0f / input.finiteLightHit.pdfSolidAngleInverse;
-            const float effectiveLightPdf = _GetMultiSampleMisLightPdf(
+            const float effectiveLightPdf = ty::GetMultiSampleMisLightPdf(
                 lightPdf,
                 _settings.lightSamplesPerHit);
             if (effectiveLightPdf > 0.0f) {
@@ -95,8 +102,8 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
         int channel = 0;
 
         if (!useAdobeVolumeTransport) {
-            extinction = _ToGf(medium.Extinction());
-            scattering = _ToGf(medium.scattering);
+            extinction = ty::ToGf(medium.Extinction());
+            scattering = ty::ToGf(medium.scattering);
             GfVec3f albedo(0.0f);
             for (int i = 0; i < 3; ++i) {
                 if (extinction[i] > 1.0e-6f) {
@@ -107,8 +114,8 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
 
             mxcpp::Vec3f channelPdfMx;
             channel = mxcpp::ChannelMIS(
-                _ToMx(_GetPathThroughputRgb(*state)),
-                _ToMx(albedo),
+                ty::ToMx(_GetPathThroughputRgb(*state)),
+                ty::ToMx(albedo),
                 domain.Fork(HdEmbreeSampleDomainKey::MediumChannel).Draw1D(),
                 &channelPdfMx);
             channelPdf =
@@ -118,7 +125,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
         // Chiang channel MIS: sample a single RGB tracking channel, but
         // evaluate all RGB channels against the mixture pdf.
         const auto evalTransmittance = [&](float distance) {
-            return _ToGf(useAdobeVolumeTransport
+            return ty::ToGf(useAdobeVolumeTransport
                 ? mxcpp::AdobeOpenPbrEvalVolumeTransmittance(
                       medium, distance)
                 : mxcpp::EvalBeerTransmittance(medium, distance));
@@ -126,10 +133,10 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
 
         const auto evalScatterWeight = [&](float distance) {
             if (useAdobeVolumeTransport) {
-                return _ToGf(
+                return ty::ToGf(
                     mxcpp::AdobeOpenPbrCalculateVolumeEventWeight(
                         medium,
-                        _ToMx(_GetPathThroughputRgb(*state)),
+                        ty::ToMx(_GetPathThroughputRgb(*state)),
                         distance));
             }
             const GfVec3f transmittance = evalTransmittance(distance);
@@ -144,10 +151,10 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
 
         const auto evalTransmittanceWeight = [&](float distance) {
             if (useAdobeVolumeTransport) {
-                return _ToGf(
+                return ty::ToGf(
                     mxcpp::AdobeOpenPbrCalculateVolumeSurfaceWeight(
                         medium,
-                        _ToMx(_GetPathThroughputRgb(*state)),
+                        ty::ToMx(_GetPathThroughputRgb(*state)),
                         distance));
             }
             const GfVec3f transmittance = evalTransmittance(distance);
@@ -161,7 +168,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
         const float scatterDist = useAdobeVolumeTransport
             ? mxcpp::AdobeOpenPbrSampleVolumeEventDistance(
                   medium,
-                  _ToMx(_GetPathThroughputRgb(*state)),
+                  ty::ToMx(_GetPathThroughputRgb(*state)),
                   domain
                       .Fork(HdEmbreeSampleDomainKey::MediumFreeFlight)
                       .Draw1D())
@@ -204,15 +211,15 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
                 float q =
                     hero.active
                         ? std::max({
-                            _SpectralScalarToRgb(
+                            ty::SpectralScalarToRgb(
                                 state->throughputSpectral,
                                 hero,
                                 _renderColorSpace)[0],
-                            _SpectralScalarToRgb(
+                            ty::SpectralScalarToRgb(
                                 state->throughputSpectral,
                                 hero,
                                 _renderColorSpace)[1],
-                            _SpectralScalarToRgb(
+                            ty::SpectralScalarToRgb(
                                 state->throughputSpectral,
                                 hero,
                                 _renderColorSpace)[2]})
@@ -236,26 +243,26 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
             const GfVec2f phaseSample =
                 domain.Fork(HdEmbreeSampleDomainKey::MediumPhase).Draw2D();
             const GfVec3f omegaInWld =
-                _ToGf(useAdobeVolumeTransport
+                ty::ToGf(useAdobeVolumeTransport
                           ? mxcpp::AdobeOpenPbrSampleVolumePhase(
-                                medium, _ToMx(omegaOutWld), phaseSample[0],
+                                medium, ty::ToMx(omegaOutWld), phaseSample[0],
                                 phaseSample[1])
                           : mxcpp::SampleHenyeyGreenstein(
-                                _ToMx(omegaOutWld), medium.anisotropy,
+                                ty::ToMx(omegaOutWld), medium.anisotropy,
                                 phaseSample[0], phaseSample[1]));
             const float phasePdf =
                 useAdobeVolumeTransport
                     ? mxcpp::AdobeOpenPbrEvalVolumePhasePdf(
-                          medium, _ToMx(omegaInWld), _ToMx(omegaOutWld))
-                    : mxcpp::PdfHenyeyGreenstein(_ToMx(omegaInWld),
-                                                 _ToMx(omegaOutWld),
+                          medium, ty::ToMx(omegaInWld), ty::ToMx(omegaOutWld))
+                    : mxcpp::PdfHenyeyGreenstein(ty::ToMx(omegaInWld),
+                                                 ty::ToMx(omegaOutWld),
                                                  medium.anisotropy);
             if (phasePdf <= 0.0f || !std::isfinite(phasePdf)) {
                 return _VolumeTransmissionResult::Terminate;
             }
 
             state->positionRayOriginWld =
-                _OffsetRayOrigin(scatterPos, omegaInWld, omegaInWld, 1e-4f);
+                ty::OffsetRayOrigin(scatterPos, omegaInWld, omegaInWld, 1e-4f);
             state->directionRayWld = omegaInWld;
             state->rayDifferential.hasDifferentials = false;
             state->lastBsdfPdf = phasePdf;
@@ -288,7 +295,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
     } else if (input.hasFiniteLightHit &&
                input.finiteLightDist < input.surfaceDist &&
                input.finiteLightDist > 0.0f) {
-        const GfVec3f transmittance = _ToGf(useAdobeVolumeTransport
+        const GfVec3f transmittance = ty::ToGf(useAdobeVolumeTransport
             ? mxcpp::AdobeOpenPbrEvalVolumeTransmittance(
                   medium, input.finiteLightDist)
             : mxcpp::EvalBeerTransmittance(
@@ -301,7 +308,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
 
         return addFiniteLightHit();
     } else if (std::isfinite(input.surfaceDist) && input.surfaceDist > 0.0f) {
-        const GfVec3f transmittance = _ToGf(useAdobeVolumeTransport
+        const GfVec3f transmittance = ty::ToGf(useAdobeVolumeTransport
             ? mxcpp::AdobeOpenPbrEvalVolumeTransmittance(
                   medium, input.surfaceDist)
             : mxcpp::EvalBeerTransmittance(

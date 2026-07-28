@@ -217,8 +217,25 @@ plugin in the active Pixi environment.
 - `delegate/` contains the Hydra-facing plugin, render delegate/pass, scene primitives, and AOV bridge.
 - `renderer/` contains the path tracer and its rendering, sampling, shading, texture, and third-party support components.
 - Dependencies should flow from `delegate/` to `renderer/`; new renderer code should not depend on Hydra-facing delegate implementation details.
+- Include first-party hdEmbree headers by their absolute project path, starting
+  with `pxr/imaging/plugin/hdEmbree/`; do not use same-directory or `../`
+  relative paths.
 - `schema/` contains the authored and generated `TyphoonRenderSettingsAPI` schema files. Runtime plugin metadata remains in root `plugInfo.json`.
 - No hand-written hdEmbree header is installed or supported as a C++ API or extension point.
+
+## Renderer Namespace And Linkage
+
+- Shared renderer helpers declared in headers live in
+  `PXR_NAMESPACE::ty` and have no leading underscore.
+- Translation-unit-contained renderer functions and constants must not live in
+  `ty`: use `static _Foo` directly at `PXR_NAMESPACE` scope, or preserve an
+  existing anonymous namespace when it groups file-local implementation.
+  Do not churn between those two internal-linkage forms for style alone.
+- `renderer/materials/MaterialXCpp/` keeps its existing `mxcpp` and anonymous
+  namespace conventions. Do not introduce `mxcpp::ty`.
+- Renderer types remain at `PXR_NAMESPACE` scope with their existing
+  `HdEmbree` or leading-underscore names as an interim state. Plan 19 moves
+  renderer types into `ty` and completes the namespace pass.
 
 ## Directory Map
 
@@ -245,7 +262,15 @@ plugin in the active Pixi environment.
 - `renderer/integrator/surfaceShading.cpp`, `lighting.cpp`, `sss.cpp`, and
   `visibility.cpp`: shared shading contexts and ray differentials, direct and
   environment lighting, subsurface transport, and linked/transparent traversal.
-- `renderer/rendererImpl.h`: private shared implementation helpers.
+- `renderer/rendererMath.h`, `rayUtil.h`, `heroWavelength.h`, and
+  `geometry/normalTransforms.h`: focused inline numeric, ray, spectral, and
+  normal-transform helpers shared by renderer translation units.
+- `renderer/geometry/surfaceDerivatives.*`: triangle/subdivision shading
+  frames, authored/displaced normals, and surface derivatives.
+- `renderer/integrator/closureClassification.*`: renderer transport
+  classification of compiled material closures.
+- `renderer/integrator/transportPolicy.h`: shared contribution cutoff,
+  firefly-clamping, and multi-sample MIS policy.
 - `delegate/mesh.*`: `HdEmbreeMesh`; translates Hydra mesh data into Embree prototype
   geometry and top-level instances.
 - `delegate/instancer.*`: Hydra instancer support for per-instance transforms and

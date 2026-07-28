@@ -59,8 +59,8 @@ Three consequences beyond size:
 - Stop shipping the 28 headers / 4,940 lines that `rendererImpl.h` adds on top of
   `renderer.h` to TUs that use none of them. Dependencies `renderer.h` already
   supplies are out of scope.
-- Replace the header's anonymous namespaces with the `ty` namespace so shared
-  helpers are one entity rather than ten.
+- Put shared helpers in the `ty` namespace so they are one entity rather than
+  ten, and put TU-contained helpers directly at `PXR_NAMESPACE` scope.
 - Make `_Foo` mean "contained to this file" again, and make `static` say so at
   the declaration.
 
@@ -74,7 +74,8 @@ Three consequences beyond size:
 
 ## The `ty` namespace
 
-Extracted code moves into `namespace ty`, nested inside `PXR_NAMESPACE`:
+Shared extracted code moves into `namespace ty`, nested inside
+`PXR_NAMESPACE`:
 
 ```cpp
 PXR_NAMESPACE_OPEN_SCOPE
@@ -94,55 +95,40 @@ a header, which leaks into every includer.
 Membership rule, to be recorded in `AGENTS.md`:
 
 - `ty::Foo` — declared in a header, used by more than one translation unit.
-- `static _Foo` at `ty` scope in a `.cpp` — contained to one translation unit.
-- **No anonymous namespaces.**
+- `static _Foo` directly at `PXR_NAMESPACE` scope in a `.cpp` — contained to
+  one translation unit.
+- Existing `.cpp` anonymous namespaces remain valid and are out of scope for
+  this extraction. Do not move their contents merely to normalize style.
 
 ```cpp
 PXR_NAMESPACE_OPEN_SCOPE
-namespace ty {
 
 static float _DotZeroClip(float x) { ... }   // TU-contained
 static constexpr float _kVolumePdfEps = 1e-7f;
 
-}
 PXR_NAMESPACE_CLOSE_SCOPE
 ```
 
-`static` marks TU-containment **at the declaration**, which an anonymous
-namespace cannot: `lightSamplers.cpp`'s anonymous namespace is 1,465 lines
-long, so a reader at `:900` has no way to see that the function in front of
-them is file-local. That is the same complaint this plan makes about
-`rendererImpl.h`, and it is why the `_` prefix currently has to carry meaning
-the language should carry.
-
-Write `static` explicitly even on `const`/`constexpr` objects, where namespace
-scope already implies internal linkage. Uniformity is the point — one marker,
-present on every TU-contained definition, so its absence means "shared".
-
-**Types are the one gap:** `static` cannot be applied to a `struct`, `class`, or
-`enum`. TU-contained types are declared `_Foo` at `ty` scope with no `static`
-and therefore have external linkage, so their names must be unique across the
-plugin. There are six in the whole renderer today, all already distinct;
-`19-plan-ty-namespace.md` carries the list and the grep that keeps them unique.
+The `static` form is used for helpers extracted by this plan because they are
+individual definitions placed beside their only consumer. It is not a
+repository-wide preference over anonymous namespaces.
 
 This plan applies the rule to the functions and constants it extracts. Types
-keep their `HdEmbree` prefix at `PXR_NAMESPACE` scope **temporarily**;
+also stay at `PXR_NAMESPACE` scope and keep their `HdEmbree` prefix
+**temporarily**;
 `19-plan-ty-namespace.md` is required and completes the pass. State that in
 `AGENTS.md` as a known interim state, not as the endpoint — the mixed
 `ty::TryComputeDisplacedSubdivNormalDerivativesToWorld(HdEmbreePrototypeContext
 const&)` form this plan produces is a waypoint.
 
-The third clause is this plan's own defect generalized: `rendererImpl.h`'s
-anonymous namespaces are in a *header*, which is why its seven
+`rendererImpl.h`'s anonymous namespaces are in a *header*, which is why its seven
 `static const TfToken`s are constructed ten times at static-init. In a `.cpp`
-an anonymous namespace is merely a less visible `static`; in a header it is a
-bug. Banning both leaves one rule instead of two.
+an anonymous namespace is a valid internal-linkage mechanism; in this header it
+is the defect because it creates one copy per includer.
 
-Under `renderer/materials/MaterialXCpp/`, **`mxcpp` already serves the role
-`ty` serves here** — it is that component's own namespace and exists for the
-same reason. The rule there is `mxcpp::Foo` vs `static _Foo` at `mxcpp` scope;
-there is no nested `mxcpp::ty`. Record both halves in `AGENTS.md` together, so
-the rule reads as one convention with two homes rather than two conventions.
+`renderer/materials/MaterialXCpp/` is not part of this linkage cleanup. It keeps
+its existing `mxcpp` and anonymous namespace conventions; there is no nested
+`mxcpp::ty`.
 
 A reader seeing `_ComputeThing(...)` then knows it is defined in the file they
 are already reading, and `ty::ComputeThing(...)` means the definition is
@@ -150,8 +136,9 @@ elsewhere. Today `_Foo` means both. Extracted names drop the `_` prefix; call
 sites become explicitly qualified (`ty::ResolveObjectSpaceNormal(...)`) rather
 than relying on a using-directive.
 
-This plan puts functions and constants in `ty`. Types are untouched here — they
-keep their current names, prefixes, and files until the required
+This plan puts shared functions and constants in `ty`, and TU-contained ones
+directly at `PXR_NAMESPACE` scope. Types are untouched here — they keep their
+current names, prefixes, and files until the required
 `19-plan-ty-namespace.md` renames them. `_HeroWavelengthState` stays at
 `renderer.h:107-112`; `19` makes it `ty::HeroWavelengthState`.
 
@@ -194,7 +181,7 @@ it — define a file-local `_tokensSt` in each of the two `.cpp` files. That
 matches existing practice: `delegate/mesh.cpp` and
 `geometry/displacementEvaluation.cpp` already carry their own private copies.
 
-These keep `_` prefixes and become `static` at `ty` scope in their owning
+These keep `_` prefixes and become `static` directly at `PXR_NAMESPACE` scope in their owning
 `.cpp` files. `_ComputeScreenSpaceDerivatives`
 has exactly two call sites, `surfaceShading.cpp:172` and `:602`, and none in
 `camera.cpp` — the "camera-projection fallback" in its comment describes its
@@ -212,7 +199,8 @@ functions): `ty::ResolveObjectSpaceNormal`, `ty::ComputeTriangleSurfaceDerivativ
 `ty::ComputeSubdivSurfaceDerivatives`,
 `ty::TryComputeDisplacedSubdivNormalDerivativesToWorld`.
 
-**Static at `ty` scope in `surfaceDerivatives.cpp`**, keeping their `_` prefixes
+**Static directly at `PXR_NAMESPACE` scope in `surfaceDerivatives.cpp`**,
+keeping their `_` prefixes
 because they have no consumer outside it: `_InterpolateSubdivPosition`,
 `_TryComputeSubdivLimitNormal`, `_TryBuildSurfaceNormal` (moved from `:110-128`).
 
@@ -255,7 +243,8 @@ Lines 425-438 and 491-582, ~110 lines.
 **Declared in `closureClassification.h`** (two functions):
 `ty::IsReflectionOnlyClosure`, `ty::IsVolumeOnlyBoundary`.
 
-**Static at `ty` scope in `closureClassification.cpp`**:
+**Static directly at `PXR_NAMESPACE` scope in
+`closureClassification.cpp`**:
 `_reflectionOnlyEps`, `_IsEffectivelyZero`, `_IsEffectivelyOpaque`,
 `_IsReflectionOnlyNode`. The recursive node walker is an implementation detail
 of the two exported predicates; the transparent-shadow helpers moving to
@@ -278,11 +267,11 @@ all reachable through a single-node closure tree.
 
 | file | source lines | contents | consumer TUs |
 | --- | --- | --- | --- |
-| `renderer/rendererMath.h` | 49-50, 65-108, 353-390, 439-453, 583-594 | `_pi`, `_IsFinite`, `_TryNormalizeDirection`, `_DifferenceOfProducts`, `_Clamp01` (2), `_ToGf`, `_ToMx` (4) | the seven `integrator/*.cpp`, plus `camera.cpp` **after** step 2 — the moved DOF block calls `_pi<float>` (`:163`) and `_IsFinite` (`:181`). Not `renderer.cpp` or `aovOutput.cpp` |
-| `renderer/integrator/transportPolicy.h` | 53, 392-424 | `_minLuminanceCutoff`, `_IsNearlyBlack`, `_ClampFireflyContribution`, `_GetMultiSampleMisLightPdf` | lighting, sss, visibility, pathIntegrator, volumeTransport |
-| `renderer/rayUtil.h` | 211-224, 1212-1276 | `_CalculateHitPosition`, `_PopulateRay`, `_OffsetRayOrigin`, `_PopulateRayHit` | renderer, aovOutput, surfaceShading, unlitIntegrator, visibility, volumeTransport, pathIntegrator |
-| `renderer/heroWavelength.h` | 595-617, 1334-1361 | `_RgbToSpectralValue`, `_SpectralValueToRgb`, `_SpectralScalarToRgb`, and the two inline `HdEmbreeRenderer` members | lighting, pathIntegrator, volumeTransport, sss |
-| `renderer/geometry/normalTransforms.h` | 225-339 | `_TransformNormalToWorld` (2), `_TransformNormalToObject` (2), `_TransformNormalDerivativeToWorld` | aovOutput, sss, surfaceShading |
+| `renderer/rendererMath.h` | 49-50, 65-108, 353-390, 439-453, 583-594 | `Pi`, `IsFinite`, `TryNormalizeDirection`, `DifferenceOfProducts`, `Clamp01` (2), `ToGf`, `ToMx` (4) | the seven `integrator/*.cpp`, plus `camera.cpp` **after** step 2 — the moved DOF block calls `Pi<float>` and `IsFinite`. Not `renderer.cpp` or `aovOutput.cpp` |
+| `renderer/integrator/transportPolicy.h` | 53, 392-424 | `MinLuminanceCutoff`, `IsNearlyBlack`, `ClampFireflyContribution`, `GetMultiSampleMisLightPdf` | lighting, sss, visibility, pathIntegrator, volumeTransport |
+| `renderer/rayUtil.h` | 211-224, 1212-1276 | `CalculateHitPosition`, `PopulateRay`, `OffsetRayOrigin`, `PopulateRayHit` | renderer, aovOutput, surfaceShading, unlitIntegrator, visibility, volumeTransport, pathIntegrator |
+| `renderer/heroWavelength.h` | 595-617, 1334-1361 | `RgbToSpectralValue`, `SpectralValueToRgb`, `SpectralScalarToRgb`, and the two inline `HdEmbreeRenderer` members | lighting, pathIntegrator, volumeTransport, sss |
+| `renderer/geometry/normalTransforms.h` | 225-339 | `TransformNormalToWorld` (2), `TransformNormalToObject` (2), `TransformNormalDerivativeToWorld` | aovOutput, sss, surfaceShading |
 
 Notes on placement:
 
@@ -292,7 +281,7 @@ Notes on placement:
 - **Constants moving into a shared header become `inline constexpr`.** At
   namespace scope a plain `constexpr` implies internal linkage, so each includer
   would still get its own copy and the "one entity, not ten" goal would not hold.
-  This applies to `_pi` and `_minLuminanceCutoff`; `_reflectionOnlyEps` becomes
+  This applies to `Pi` and `MinLuminanceCutoff`; `_reflectionOnlyEps` becomes
   `.cpp`-local and needs no change. The project builds at C++17, so
   `inline constexpr` is available. This is the **only** declaration-spelling
   change permitted while moving bodies — everything else is a verbatim move.
@@ -361,16 +350,17 @@ One commit per group, each independently buildable.
 
 1. Reproduce the call-site table above and delete the two dead symbols.
 2. Move single-consumer code into its owning `.cpp` (one commit per destination
-   file). No `ty`, no new files, no body changes.
+   file), directly at `PXR_NAMESPACE` scope with `static`. No new files, no body
+   changes.
 3. Add `rendererMath.h`, then `transportPolicy.h`, `rayUtil.h`, in `namespace ty`.
 4. Add `heroWavelength.h` (including `renderer.h`), and move the two inline
    `HdEmbreeRenderer` members into it. `renderer.h` is not edited.
 5. Add `normalTransforms.h`.
 6. Add `surfaceDerivatives.{h,cpp}`, then `closureClassification.{h,cpp}`.
 7. Delete `rendererImpl.h`; drop includes and tokens each TU no longer needs.
-8. Record the `ty` membership rule in `AGENTS.md`; update the `Directory Map`
-   entry describing `renderer/rendererImpl.h`, and the matching
-   `ARCHITECTURE.md` text.
+8. Record the `ty` membership and absolute first-party include rules in
+   `AGENTS.md`; update the `Directory Map` entry describing
+   `renderer/rendererImpl.h`, and the matching `ARCHITECTURE.md` text.
 9. Record before/after header line count, definition count, and per-TU include
    counts.
 
@@ -380,8 +370,9 @@ One commit per group, each independently buildable.
 **not** put them in `CPPFILES` + `PUBLIC_HEADERS`. After
 `01-plan-build-surface.md` there is no `PUBLIC_HEADERS` list to put them in;
 before it, doing so would install internal headers as public API.
-Header-only modules need no CMake entry at all — `rendererImpl.h` appears
-nowhere in `CMakeLists.txt` today.
+Register the five header-only modules in `PRIVATE_HEADERS`. `rendererImpl.h`
+was an anomaly, not precedent for leaving internal headers out of the target's
+source inventory.
 
 ## Dependencies
 
@@ -401,10 +392,10 @@ Runs alongside or after:
 
 - `06` — owns the triplicated hit-context lookup extraction. Rebase on it; do
   not re-extract.
-- `23` — the `auto` and `_pi` sweep runs after this, over wherever the code
-  landed.
-- `19` — required; completes the pass over `renderer/`, renames the types, and
-  converts the remaining anonymous namespaces to `static`.
+- `23` — the remaining `auto` sweep runs after this, over wherever the code
+  landed. The shared constant is already named `Pi`.
+- `19` — required; completes the renderer type rename. Anonymous-namespace
+  removal was pulled forward into this implementation.
 
 ## Validation
 
@@ -481,10 +472,13 @@ Runs alongside or after:
 - The two new modules are in `PRIVATE_CLASSES`; nothing was added to
   `PUBLIC_HEADERS`.
 - `_` prefixes on **functions and constants** appear only on genuinely
-  TU-contained ones, and every such definition is `static` at `ty` scope. Types
+  TU-contained ones. Definitions extracted by this plan are `static` directly
+  at `PXR_NAMESPACE` scope; pre-existing anonymous namespaces are unchanged.
+  Types
   are out of scope, so `_HeroWavelengthState` and the `HdEmbree`-prefixed structs
   are untouched here.
-- This plan introduces no new anonymous namespace, in a header or a `.cpp`.
+- This plan removes the header anonymous namespaces with `rendererImpl.h` but
+  preserves pre-existing `.cpp` anonymous namespaces.
 - `AGENTS.md` records the membership rule and marks the type situation as an
   interim state that `19` completes.
 
@@ -501,3 +495,61 @@ powerprofilesctl launch --profile performance -- pixi run pytest --renderer typh
 All tests must pass. The expected baseline is approximately 235 seconds. If any
 test fails or runtime is 250 seconds or above, stop: do not continue or land
 the plan. Check with Anders before proceeding.
+
+## Implementation measurements
+
+Measured after implementation with the configured compiler's dependency output.
+Paths were normalized before comparison and counts include hdEmbree-local
+transitive headers only. Removed implementation headers and added replacement
+interfaces are reported separately:
+
+| translation unit | before | after | removed headers / lines | added headers / lines | net |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `renderer.cpp` | 43 | 36 | 10 / 1,432 | 3 / 340 | -7 |
+| `camera.cpp` | 42 | 23 | 21 / 4,212 | 2 / 243 | -19 |
+| `aovOutput.cpp` | 43 | 26 | 21 / 4,212 | 4 / 480 | -17 |
+| `lighting.cpp` | 43 | 40 | 7 / 874 | 4 / 328 | -3 |
+| `pathIntegrator.cpp` | 43 | 48 | 1 / 42 | 6 / 522 | +5 |
+| `sss.cpp` | 42 | 34 | 12 / 1,562 | 4 / 441 | -8 |
+| `surfaceShading.cpp` | 44 | 37 | 11 / 2,794 | 4 / 480 | -7 |
+| `unlitIntegrator.cpp` | 42 | 33 | 11 / 2,794 | 2 / 243 | -9 |
+| `visibility.cpp` | 43 | 32 | 15 / 3,315 | 4 / 334 | -11 |
+| `volumeTransport.cpp` | 42 | 39 | 7 / 874 | 4 / 398 | -3 |
+
+The table is a conservative snapshot taken before removing one final unused
+`heroWavelength.h` include from `renderer.cpp`; that cleanup can only reduce
+its after count further.
+
+`pathIntegrator.cpp` consumes all six replacement interfaces, so its raw local
+header count rises by five even though `rendererImpl.h` and its unrelated OIIO
+dependency are gone. This contradicts the original "net count falls for all ten
+TUs" target, but not the compile-boundary goal: its added headers are exactly
+the modules it calls. The other nine TUs have lower raw counts.
+
+`rendererImpl.h` fell from 1,418 lines to zero. Its nine replacement module
+files total 1,351 lines: 542 lines in the five shared inline headers, 124 lines
+in the two declaration-only interfaces, and 685 lines in the two owning
+translation units.
+
+## Implementation validation
+
+Validated on 2026-07-28:
+
+- Built and installed `hdEmbree`, `testMaterialXCpp`,
+  `testHdEmbreeSubdivision`, `testHdEmbreeWireframe`, and
+  `testHdEmbreeRenderSettings`.
+- The four focused CTest targets passed in 3.12 seconds.
+  `testMaterialXCpp` passed all 332 registered cases.
+- An adversarial test review found that an invalid tree root does not enter
+  recursive classification because `ClosureTree::Empty()` rejects the root.
+  The retained defensive-lookup test instead uses a valid multiply root with
+  an out-of-range child, which reaches the null-node guard through
+  `ty::IsReflectionOnlyClosure`.
+- The complete Typhoon suite passed 436/436 cases in 246.72 seconds, below the
+  250-second stop threshold.
+
+The retrospective exact-image and before/after `perf stat -r 5` comparisons
+remain outstanding. No pre-change render or performance artifact was captured,
+so those comparisons require rebuilding the pre-change source state; do not
+claim those two gates as completed or add results to `OPTIMIZATION.md` until
+that baseline exists.

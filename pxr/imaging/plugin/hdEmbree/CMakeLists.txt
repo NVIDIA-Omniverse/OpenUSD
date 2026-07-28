@@ -131,14 +131,21 @@ pxr_plugin(hdEmbree
         delegate/implicitSurfaceSceneIndexPlugin
         renderer/materials/oiioTextureSystem
         renderer/integrator/sss
+        renderer/geometry/surfaceDerivatives
+        renderer/integrator/closureClassification
 
     PRIVATE_HEADERS
         renderer/colorManagement.h
+        renderer/heroWavelength.h
+        renderer/rayUtil.h
         renderer/renderSettings.h
+        renderer/rendererMath.h
         renderer/geometry/context.h
         renderer/geometry/displacementEvaluation.h
+        renderer/geometry/normalTransforms.h
         renderer/geometry/primvarSampling.h
         renderer/geometry/wireframe.h
+        renderer/integrator/transportPolicy.h
         delegate/displacement.h
         renderer/lights/light.h
         renderer/lights/lightLinking.h
@@ -361,6 +368,7 @@ pxr_build_test(testMaterialXCpp
         renderer/materials/MaterialXCpp/tests/testMaterialXCppAdapter.cpp
         renderer/colorManagement.cpp
         renderer/materials/MaterialXCpp/tests/testClosureClassification.cpp
+        renderer/integrator/closureClassification.cpp
         renderer/integrator/medium.cpp
         renderer/materials/mxcppAdapter.cpp
         renderer/integrator/sss.cpp
