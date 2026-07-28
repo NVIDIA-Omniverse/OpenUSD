@@ -398,15 +398,16 @@ _IsNearlyBlack(const GfVec3f& value, float threshold = 1.0e-4f)
 }
 
 inline GfVec3f
-_ClampFireflyContribution(GfVec3f contribution, float threshold)
+_ClampFireflyContribution(
+    GfVec3f contribution,
+    float threshold,
+    GfVec3f const& luminanceCoefficients)
 {
     if (threshold <= 0.0f) {
         return contribution;
     }
 
-    const float luminance = 0.2126f * contribution[0]
-                          + 0.7152f * contribution[1]
-                          + 0.0722f * contribution[2];
+    const float luminance = GfDot(contribution, luminanceCoefficients);
     if (luminance > threshold) {
         contribution *= threshold / luminance;
     }
@@ -593,24 +594,44 @@ _ToMx(const GfMatrix4d& m)
 }
 
 inline float
-_RgbToSpectralValue(const GfVec3f& rgb, const _HeroWavelengthState& hero)
+_RgbToSpectralValue(
+    const GfVec3f& rgb,
+    const _HeroWavelengthState& hero,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
-    return mxcpp::Spectral::RgbToSpectralValue(_ToMx(rgb), hero.wavelengthNm);
+    const mxcpp::Spectral::RgbColorSpace spectralColorSpace =
+        renderColorSpace == HdEmbreeRenderColorSpace::LinearAP1
+            ? mxcpp::Spectral::RgbColorSpace::LinearAP1
+            : mxcpp::Spectral::RgbColorSpace::LinearRec709;
+    return mxcpp::Spectral::RgbToSpectralValue(
+        _ToMx(rgb), hero.wavelengthNm, spectralColorSpace);
 }
 
 inline GfVec3f
-_SpectralValueToRgb(float value, const _HeroWavelengthState& hero)
+_SpectralValueToRgb(
+    float value,
+    const _HeroWavelengthState& hero,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
+    const mxcpp::Spectral::RgbColorSpace spectralColorSpace =
+        renderColorSpace == HdEmbreeRenderColorSpace::LinearAP1
+            ? mxcpp::Spectral::RgbColorSpace::LinearAP1
+            : mxcpp::Spectral::RgbColorSpace::LinearRec709;
     return _ToGf(mxcpp::Spectral::SpectralValueToRgb(
         value,
         hero.wavelengthNm,
-        hero.pdf));
+        hero.pdf,
+        spectralColorSpace));
 }
 
 inline GfVec3f
-_SpectralScalarToRgb(float value, const _HeroWavelengthState& hero)
+_SpectralScalarToRgb(
+    float value,
+    const _HeroWavelengthState& hero,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
-    return hero.active ? _SpectralValueToRgb(value, hero)
+    return hero.active
+        ? _SpectralValueToRgb(value, hero, renderColorSpace)
                        : GfVec3f(value);
 }
 
@@ -1341,7 +1362,8 @@ HdEmbreeRenderer::_ApplyPathWeight(
     if (state->hero.active) {
         const _HeroWavelengthState hero{
             true, state->hero.wavelengthNm, state->hero.pdf};
-        state->spectralThroughput *= _RgbToSpectralValue(weight, hero);
+        state->spectralThroughput *=
+            _RgbToSpectralValue(weight, hero, _renderColorSpace);
     } else {
         state->throughput = GfCompMult(state->throughput, weight);
     }
@@ -1355,7 +1377,8 @@ HdEmbreeRenderer::_GetPathThroughputRgb(_PathState const& state) const
         state.hero.wavelengthNm,
         state.hero.pdf};
     return state.hero.active
-        ? _SpectralScalarToRgb(state.spectralThroughput, hero)
+        ? _SpectralScalarToRgb(
+            state.spectralThroughput, hero, _renderColorSpace)
         : state.throughput;
 }
 

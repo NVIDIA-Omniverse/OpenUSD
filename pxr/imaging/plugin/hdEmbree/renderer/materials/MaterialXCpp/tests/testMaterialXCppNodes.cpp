@@ -2906,6 +2906,25 @@ static bool TestColorTransformCallbackReceivesClampedInput() {
            Test_IsClose(_GetVec3(out), Vec3f(0.0f));
 }
 
+static bool TestColorTransformRawBypassesCallbackAndFallback() {
+    ParamMap in;
+    const Vec3f authoredValue(-0.25f, 0.5f, 1.5f);
+    in["in"] = Value(authoredValue);
+
+    _TestColorTransformState state;
+    state.outputValue = Vec3f(9.0f);
+
+    ShadingContext ctx;
+    ctx.colorTransform = &_TestColorTransformCallback;
+    ctx.colorTransformUserData = &state;
+    ctx.bypassColorTransforms = true;
+
+    const NodeOutputMap out =
+        _EvalWithCtx("ND_g22_ap1_to_lin_rec709_color3", in, ctx);
+    return state.callCount == 0 &&
+           Test_IsClose(_GetVec3(out), authoredValue);
+}
+
 // ---------------------------------------------------------------------------
 // Param map tests
 // ---------------------------------------------------------------------------
@@ -3091,6 +3110,7 @@ Test_RegisterNodeTests()
     _REG(TestColorTransformCallbackOverridesFallback);
     _REG(TestColorTransformCallbackFallbackWhenUnhandled);
     _REG(TestColorTransformCallbackReceivesClampedInput);
+    _REG(TestColorTransformRawBypassesCallbackAndFallback);
     _REG(TestParamMapCopyOnWriteForBorrowedValue);
     _REG(TestNodeRegistryLookup);
     _REG(TestNodeRegistryMissing);

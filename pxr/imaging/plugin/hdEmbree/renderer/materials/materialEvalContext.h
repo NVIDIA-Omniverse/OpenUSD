@@ -8,6 +8,9 @@
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_MATERIAL_EVAL_CONTEXT_H
 
 #include "pxr/pxr.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/colorManagement.h"
+
+#include "pxr/base/gf/vec3f.h"
 
 namespace mxcpp {
 class TextureSystem;
@@ -23,6 +26,11 @@ struct HdEmbreeMaterialEvalServices
     mxcpp::TextureSystem const* textureSystem = nullptr;
     float frame = 0.0f;
     float time = 0.0f;
+    HdEmbreeRenderColorSpace renderColorSpace =
+        HdEmbreeRenderColorSpace::LinearRec709;
+    GfVec3f luminanceCoefficients =
+        HdEmbreeGetLuminanceCoefficients(
+            HdEmbreeRenderColorSpace::LinearRec709);
 };
 
 PXR_NAMESPACE_CLOSE_SCOPE

@@ -16,6 +16,7 @@
 #include "pxr/imaging/hd/resourceRegistry.h"
 #include "pxr/imaging/hd/tokens.h"
 
+#include "pxr/base/gf/colorSpace.h"
 #include "pxr/base/tf/diagnostic.h"
 
 #include "pxr/imaging/plugin/hdEmbree/delegate/mesh.h"
@@ -134,6 +135,9 @@ HdEmbreeRenderDelegate::_Initialize()
     // Initialize the settings and settings descriptors.
     const HdEmbreeConfig &config = HdEmbreeConfig::GetInstance();
     _settingDescriptors = {
+        { "Rendering Color Space",
+            HdRenderSettingsPrimTokens->renderingColorSpace,
+            VtValue(GfColorSpaceNames->LinearRec709) },
         { "Enable Scene Colors",
             HdEmbreeRenderSettingsTokens->enableSceneColors,
             VtValue(config.enableSceneColors) },

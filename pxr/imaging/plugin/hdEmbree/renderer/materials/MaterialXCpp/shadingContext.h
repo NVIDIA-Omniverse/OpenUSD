@@ -107,6 +107,14 @@ struct ShadingContext
         Vec3f* out);
     ColorTransformFn colorTransform = nullptr;
     const void* colorTransformUserData = nullptr;
+    // Global renderer raw mode overrides authored color-transform nodes.
+    bool bypassColorTransforms = false;
+
+    // CIE Y coefficients for renderer-dependent lobe weighting and clamping.
+    Vec3f luminanceCoefficients =
+        Vec3f(0.212639005871510f,
+              0.715168678767756f,
+              0.072192315360734f);
 
     // Texture lookup backend owned by the embedding renderer. The pointer is
     // non-owning and may be null, in which case texture nodes fall back to

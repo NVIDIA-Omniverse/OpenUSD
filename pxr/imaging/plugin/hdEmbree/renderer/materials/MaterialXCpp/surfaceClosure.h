@@ -71,6 +71,10 @@ struct SurfaceClosure
     Vec3f subsurfaceRadius = Vec3f(1.0f);
     Vec3f subsurfaceRadiusScale = Vec3f(1.0f);
     float subsurfaceAnisotropy = 0.0f;
+    Vec3f luminanceCoefficients =
+        Vec3f(0.212639005871510f,
+              0.715168678767756f,
+              0.072192315360734f);
     Bsdf::ClosureTree bsdfTree;
 
     /// Returns whether subsurface scattering should be performed for this closure.

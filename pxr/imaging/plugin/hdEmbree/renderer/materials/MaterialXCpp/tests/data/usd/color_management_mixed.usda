@@ -1,0 +1,237 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Y"
+    renderSettingsPrimPath = "/RenderSettings"
+    doc = """Mixed-input counterpart to color_management_lin_rec709.usda.
+
+The intended tristimulus colors are identical to the baseline, but authored
+values mix linear AP1, sRGB Rec.709, raw, and linear Rec.709.  Texture color
+spaces are attached to the image file inputs, matching hdEmbree's supported
+MaterialX file-color-space path.  The render color space remains linear
+Rec.709, so a correct result matches the baseline scene.  Materials use
+emission so the comparison is independent of lighting and path-sampling noise."""
+)
+
+def RenderSettings "RenderSettings"
+{
+    rel camera = </World/Camera>
+    int2 resolution = (960, 540)
+    uniform token renderingColorSpace = "lin_rec709_scene"
+}
+
+def Xform "World"
+{
+    def Camera "Camera"
+    {
+        float focalLength = 45
+        float horizontalAperture = 36
+        float verticalAperture = 20.25
+        float2 clippingRange = (0.1, 1000)
+        double3 xformOp:translate = (0, 0.15, 13)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "WarmSphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.9
+        double3 xformOp:translate = (-3, -1.45, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Looks/WarmSolid>
+    }
+
+    def Cube "CoolCube" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double size = 1.65
+        float3 xformOp:rotateXYZ = (18, 28, 0)
+        double3 xformOp:translate = (0, -1.45, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        rel material:binding = </World/Looks/CoolSolid>
+    }
+
+    def Cylinder "GreenCylinder" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double height = 1.9
+        double radius = 0.72
+        float3 xformOp:rotateXYZ = (65, 0, 24)
+        double3 xformOp:translate = (3, -1.45, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        rel material:binding = </World/Looks/GreenSolid>
+    }
+
+    def Mesh "TextureCardA" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(-1.35, -0.95, 0), (1.35, -0.95, 0), (1.35, 0.95, 0), (-1.35, 0.95, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        double3 xformOp:translate = (-1.65, 1.55, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Looks/TextureA>
+    }
+
+    def Mesh "TextureCardB" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        point3f[] points = [(-1.35, -0.95, 0), (1.35, -0.95, 0), (1.35, 0.95, 0), (-1.35, 0.95, 0)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        bool doubleSided = true
+        uniform token subdivisionScheme = "none"
+        double3 xformOp:translate = (1.65, 1.55, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </World/Looks/TextureB>
+    }
+
+    def Scope "Looks"
+    {
+        def Material "WarmSolid" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Looks/WarmSolid/Surface.outputs:out>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0
+                float inputs:emission = 1
+                color3f inputs:emission_color = (0.505387187, 0.216290325, 0.086754665) (
+                    colorSpace = "lin_ap1_scene"
+                )
+                token outputs:out
+            }
+        }
+
+        def Material "CoolSolid" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Looks/CoolSolid/Surface.outputs:out>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0
+                float inputs:emission = 1
+                color3f inputs:emission_color = (0.313304096, 0.601243377, 0.896243751) (
+                    colorSpace = "srgb_rec709_scene"
+                )
+                token outputs:out
+            }
+        }
+
+        def Material "GreenSolid" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Looks/GreenSolid/Surface.outputs:out>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0
+                float inputs:emission = 1
+                color3f inputs:emission_color = (0.12, 0.62, 0.24) (
+                    colorSpace = "raw"
+                )
+                token outputs:out
+            }
+        }
+
+        def Material "TextureA" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Looks/TextureA/Surface.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Image"
+            {
+                uniform token info:id = "ND_image_color3"
+                asset inputs:file = @../images/color_management_pattern_lin_ap1.ppm@ (
+                    colorSpace = "lin_ap1_scene"
+                )
+                string inputs:filtertype = "closest"
+                float2 inputs:texcoord.connect = </World/Looks/TextureA/TexCoord.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0
+                float inputs:emission = 1
+                color3f inputs:emission_color.connect = </World/Looks/TextureA/Image.outputs:out>
+                token outputs:out
+            }
+        }
+
+        def Material "TextureB" (
+            prepend apiSchemas = ["MaterialXConfigAPI"]
+        )
+        {
+            string config:mtlx:version = "1.38"
+            token outputs:mtlx:surface.connect = </World/Looks/TextureB/Surface.outputs:out>
+
+            def Shader "TexCoord"
+            {
+                uniform token info:id = "ND_texcoord_vector2"
+                float2 outputs:out
+            }
+
+            def Shader "Image"
+            {
+                uniform token info:id = "ND_image_color3"
+                asset inputs:file = @../images/color_management_pattern_srgb_rec709.ppm@ (
+                    colorSpace = "srgb_rec709_scene"
+                )
+                string inputs:filtertype = "closest"
+                float2 inputs:texcoord.connect = </World/Looks/TextureB/TexCoord.outputs:out>
+                color3f outputs:out
+            }
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0
+                float inputs:emission = 1
+                color3f inputs:emission_color.connect = </World/Looks/TextureB/Image.outputs:out>
+                token outputs:out
+            }
+        }
+    }
+
+}

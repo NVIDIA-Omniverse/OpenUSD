@@ -17,9 +17,11 @@
 #include "pxr/imaging/hd/utils.h"
 #include "pxr/imaging/hio/image.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/config.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/colorManagement.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/material.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderPass.h"
+#include "pxr/base/gf/colorSpace.h"
 #include "pxr/base/gf/half.h"
 #include "pxr/base/tf/diagnostic.h"
 #include "pxr/base/tf/enum.h"
@@ -122,6 +124,13 @@ _GetNamespacedRenderSettings(HdRenderSettingsSchema const &rsSchema)
         namespacedSettings,
         HdRenderSettingsTokens->domeLightCameraVisibility,
         &renderSettings);
+    if (auto colorSpace = rsSchema.GetRenderingColorSpace()) {
+        const TfToken value = colorSpace->GetTypedValue(0);
+        if (!value.IsEmpty()) {
+            renderSettings[HdRenderSettingsPrimTokens->renderingColorSpace] =
+                VtValue(value);
+        }
+    }
     return renderSettings;
 }
 
@@ -522,7 +531,7 @@ _GetSceneFrameAndTime(const HdSceneIndexBaseRefPtr &si,
 }
 
 static void
-_ResyncMaterialNetworksForRenderContextChange(HdRenderIndex *index)
+_ResyncMaterialNetworksForRenderSettingsChange(HdRenderIndex *index)
 {
     if (!index || !index->IsSprimTypeSupported(HdPrimTypeTokens->material)) {
         return;
@@ -536,7 +545,7 @@ _ResyncMaterialNetworksForRenderContextChange(HdRenderIndex *index)
         HdEmbreeMaterial *material = dynamic_cast<HdEmbreeMaterial *>(
             index->GetSprim(HdPrimTypeTokens->material, path));
         if (material) {
-            material->ResyncForRenderContextChange(renderParam);
+            material->ResyncForRenderSettingsChange(renderParam);
         }
     }
 }
@@ -801,6 +810,29 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
         const HdEmbreeConfig &config = HdEmbreeConfig::GetInstance();
 
+        const TfToken renderColorSpaceToken = _GetTokenRenderSetting(
+            renderDelegate,
+            HdRenderSettingsPrimTokens->renderingColorSpace,
+            GfColorSpaceNames->LinearRec709);
+        HdEmbreeRenderColorSpace renderColorSpace =
+            HdEmbreeRenderColorSpace::LinearRec709;
+        if (!HdEmbreeParseRenderColorSpace(
+                renderColorSpaceToken, &renderColorSpace)) {
+            TF_WARN(
+                "hdEmbree rendering color space '%s' is unsupported; "
+                "falling back to '%s'. Supported values are '%s', '%s', "
+                "and '%s'.",
+                renderColorSpaceToken.GetText(),
+                GfColorSpaceNames->LinearRec709.GetText(),
+                GfColorSpaceNames->LinearRec709.GetText(),
+                GfColorSpaceNames->LinearAP1.GetText(),
+                GfColorSpaceNames->Raw.GetText());
+        }
+        const bool materialColorSpaceChanged =
+            _renderer->GetMaterialEvalServices()->renderColorSpace !=
+                renderColorSpace;
+        _renderer->SetRenderColorSpace(renderColorSpace);
+
         _renderer->SetSamplesToConvergence(
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
@@ -942,8 +974,8 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                 HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
                 config.useAdobeOpenPBR));
 
-        if (materialRenderContextsChanged) {
-            _ResyncMaterialNetworksForRenderContextChange(GetRenderIndex());
+        if (materialRenderContextsChanged || materialColorSpaceChanged) {
+            _ResyncMaterialNetworksForRenderSettingsChange(GetRenderIndex());
 
             // The resync can publish a new displacement graph. Observe its
             // versions in this Execute so we never render one pass with new

@@ -8,6 +8,7 @@
 #include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightSamplers.h"
 
 #include "pxr/base/gf/colorSpace.h"
+#include "pxr/base/gf/color.h"
 #include "pxr/base/gf/matrix3f.h"
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/vec2f.h"
@@ -111,6 +112,39 @@ _MakeRectLight(const GfVec3f& center, float width, float height)
     light.color = GfVec3f(1.0f);
     light.lightVariant = HdEmbree_Rect{width, height};
     return light;
+}
+
+bool
+TestDomeTextureConvertsToRenderColorSpace()
+{
+    const GfVec3f source(0.25f, 0.5f, 0.75f);
+    const HdEmbree_LightData light =
+        _MakeDomeLight({source}, 1, 1);
+    const GfVec3f direction(0.0f, 0.0f, 1.0f);
+
+    const auto raw =
+        HdEmbreeLightSampler::EvaluateDomeLightDirection(
+            light,
+            direction,
+            HdEmbreeRenderColorSpace::Raw);
+    if (!raw.valid || !_IsClose(raw.Li, source)) {
+        std::printf("    raw dome texture values were transformed\n");
+        return false;
+    }
+
+    const auto ap1 =
+        HdEmbreeLightSampler::EvaluateDomeLightDirection(
+            light,
+            direction,
+            HdEmbreeRenderColorSpace::LinearAP1);
+    const GfVec3f expected = GfColorSpace(
+        GfColorSpaceNames->LinearAP1).Convert(
+            GfColorSpace(GfColorSpaceNames->LinearRec709), source).GetRGB();
+    if (!ap1.valid || !_IsClose(ap1.Li, expected, 1.0e-5f)) {
+        std::printf("    dome texture was not converted to Linear AP1\n");
+        return false;
+    }
+    return true;
 }
 
 HdEmbree_LightData
@@ -1169,6 +1203,8 @@ int
 main(int /*argc*/, char** /*argv*/)
 {
     _Register("DomeDistributionBuildsCdfs", &TestDomeDistributionBuildsCdfs);
+    _Register("DomeTextureConvertsToRenderColorSpace",
+              &TestDomeTextureConvertsToRenderColorSpace);
     _Register("DomeDistributionRespectsTextureColorSpace",
               &TestDomeDistributionRespectsTextureColorSpace);
     _Register("DomeDirectionalPdfPrefersBrightTexel",

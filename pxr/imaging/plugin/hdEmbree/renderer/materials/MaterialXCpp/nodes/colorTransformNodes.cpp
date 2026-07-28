@@ -224,7 +224,8 @@ _EvalColorTransformColor3(const ParamMap& inputs, const ShadingContext& ctx,
                           NodeOutputMap* outputs)
 {
     const Vec3f in = Get<Vec3f>(inputs, _kIn, Vec3f(0.0f));
-    (*outputs)[_kOut] = Value(Transform(ctx, in));
+    (*outputs)[_kOut] =
+        Value(ctx.bypassColorTransforms ? in : Transform(ctx, in));
 }
 
 template<Vec3f (*Transform)(const ShadingContext&, const Vec3f&)>
@@ -233,7 +234,9 @@ _EvalColorTransformColor4(const ParamMap& inputs, const ShadingContext& ctx,
                           NodeOutputMap* outputs)
 {
     const Vec4f in = Get<Vec4f>(inputs, _kIn, Vec4f(0.0f));
-    const Vec3f transformed = Transform(ctx, Vec3f(in[0], in[1], in[2]));
+    const Vec3f rgb(in[0], in[1], in[2]);
+    const Vec3f transformed =
+        ctx.bypassColorTransforms ? rgb : Transform(ctx, rgb);
     (*outputs)[_kOut] = Value(
         Vec4f(transformed[0], transformed[1], transformed[2], in[3]));
 }

@@ -1001,9 +1001,20 @@ _PdfGGX_VNDF_Anisotropic(const Vec3f& woLocal,
 }
 
 inline float
-_Luminance(const Vec3f& c)
+_Luminance(const Vec3f& c, const Vec3f& coefficients)
 {
-    return kRec709LumaR * c[0] + kRec709LumaG * c[1] + kRec709LumaB * c[2];
+    return coefficients[0] * c[0] +
+           coefficients[1] * c[1] +
+           coefficients[2] * c[2];
+}
+
+inline Vec3f
+_DefaultLuminanceCoefficients()
+{
+    return Vec3f(
+        0.212639005871510f,
+        0.715168678767756f,
+        0.072192315360734f);
 }
 
 inline Vec3f
@@ -1749,15 +1760,19 @@ _DielectricInterfaceSelectionProbabilities(
     const Bsdf::DielectricInterfaceData& data,
     float cosTheta,
     float effectiveIor,
-    bool backside)
+    bool backside,
+    const Vec3f& luminanceCoefficients =
+        _DefaultLuminanceCoefficients())
 {
     const float reflectionWeight = std::max(
         _Luminance(_DielectricInterfaceReflectionCoefficient(
-            data, cosTheta, effectiveIor, backside)),
+            data, cosTheta, effectiveIor, backside),
+            luminanceCoefficients),
         0.0f);
     const float transmissionWeight = std::max(
         _Luminance(_DielectricInterfaceTransmissionCoefficient(
-            data, cosTheta, effectiveIor, backside)),
+            data, cosTheta, effectiveIor, backside),
+            luminanceCoefficients),
         0.0f);
     const float total = reflectionWeight + transmissionWeight;
     if (total <= 0.0f) {
@@ -2472,7 +2487,9 @@ _SampleDeltaDielectricTransmission(
     float effectiveIor,
     float fresnelCos,
     const Vec3f& N,
-    const Vec3f& wo)
+    const Vec3f& wo,
+    const Vec3f& luminanceCoefficients =
+        _DefaultLuminanceCoefficients())
 {
     if (_WouldTotalInternalReflect(effectiveIor, N, wo)) {
         // A transmission-only lobe is paired with a separate reflection lobe
@@ -2482,7 +2499,8 @@ _SampleDeltaDielectricTransmission(
         // the remainder so the reflection/transmission pair totals one.
         const float pairedReflectance = _Clamp01(_Luminance(
             _DielectricReflectionFresnelUntinted(
-                data, fresnelCos, effectiveIor)));
+                data, fresnelCos, effectiveIor),
+            luminanceCoefficients));
         return _SampleDeltaTotalInternalReflection(
             data.weight * (1.0f - pairedReflectance), N, wo);
     }
@@ -2595,6 +2613,9 @@ _EvalLegacySurface(
     const Vec3f& wi,
     const Vec3f& wo)
 {
+    const auto _Luminance = [&](const Vec3f& value) {
+        return mxcpp::_Luminance(value, c.luminanceCoefficients);
+    };
     const Vec3f shadingN = _FaceForwardNormal(N, wo);
     float NdotL = Dot(shadingN, wi);
 
@@ -2662,6 +2683,9 @@ _PdfLegacySurface(
     const Vec3f& wi,
     const Vec3f& wo)
 {
+    const auto _Luminance = [&](const Vec3f& value) {
+        return mxcpp::_Luminance(value, c.luminanceCoefficients);
+    };
     const Vec3f shadingN = _FaceForwardNormal(N, wo);
     Vec3f F0 = _ComputeLegacyF0(
         c.baseColor, c.metallic, c.specular, c.specularIor);
@@ -2702,6 +2726,9 @@ _SampleLegacySurface(
     float u2,
     float uLobe)
 {
+    const auto _Luminance = [&](const Vec3f& value) {
+        return mxcpp::_Luminance(value, c.luminanceCoefficients);
+    };
     const Vec3f shadingN = _FaceForwardNormal(N, wo);
     Vec3f F0 = _ComputeLegacyF0(
         c.baseColor, c.metallic, c.specular, c.specularIor);
@@ -2826,6 +2853,7 @@ public:
     explicit _CausticClassPruner(const Bsdf::ClosureTree& source)
         : _source(source)
     {
+        _result.luminanceCoefficients = source.luminanceCoefficients;
     }
 
     Bsdf::ClosureTree Run()
@@ -2840,6 +2868,10 @@ public:
 private:
     Bsdf::NodeId _PruneNode(Bsdf::NodeId nodeId)
     {
+        const auto _Luminance = [&](const Vec3f& value) {
+            return mxcpp::_Luminance(
+                value, _source.luminanceCoefficients);
+        };
         const Bsdf::Node* node = _source.Get(nodeId);
         if (!node) {
             return Bsdf::InvalidNodeId;
@@ -2995,6 +3027,9 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
           const Vec3f& N, const Vec3f& wi, const Vec3f& wo,
           float heroWavelengthNm)
 {
+    const auto _Luminance = [&](const Vec3f& value) {
+        return mxcpp::_Luminance(value, tree.luminanceCoefficients);
+    };
     const Bsdf::Node* node = tree.Get(nodeId);
     if (!node) {
         return Vec3f(0.0f);
@@ -3502,6 +3537,9 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
               const Vec3f& N, const Vec3f& wo,
               float heroWavelengthNm)
 {
+    const auto _Luminance = [&](const Vec3f& value) {
+        return mxcpp::_Luminance(value, tree.luminanceCoefficients);
+    };
     const Bsdf::Node* node = tree.Get(nodeId);
     if (!node) {
         return 0.0f;
@@ -3637,6 +3675,9 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
          const Vec3f& N, const Vec3f& wi, const Vec3f& wo,
          float heroWavelengthNm)
 {
+    const auto _Luminance = [&](const Vec3f& value) {
+        return mxcpp::_Luminance(value, tree.luminanceCoefficients);
+    };
     const Bsdf::Node* node = tree.Get(nodeId);
     if (!node) {
         return 0.0f;
@@ -3707,7 +3748,8 @@ _PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             const _DielectricInterfaceSelection selection =
                 _DielectricInterfaceSelectionProbabilities(
                     data, NdotV, effectiveIor,
-                    Dot(N, wo) < 0.0f);
+                    Dot(N, wo) < 0.0f,
+                    tree.luminanceCoefficients);
             if (sameSide && data.reflectionWeight > 0.0f) {
                 const float branchPdf =
                     _IsEffectivelyIsotropic(data.roughness)
@@ -3890,6 +3932,9 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             float u1, float u2, float uChoice,
             float heroWavelengthNm)
 {
+    const auto _Luminance = [&](const Vec3f& value) {
+        return mxcpp::_Luminance(value, tree.luminanceCoefficients);
+    };
     const Bsdf::Node* node = tree.Get(nodeId);
     if (!node) {
         return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
@@ -3949,7 +3994,8 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     // reflection lobe; the helper splits the TIR energy with
                     // that pair instead of double-counting it.
                     return _SampleDeltaDielectricTransmission(
-                        data, effectiveIor, NdotV, N, wo);
+                        data, effectiveIor, NdotV, N, wo,
+                        tree.luminanceCoefficients);
                 }
                 return _SampleDeltaTotalInternalReflection(
                     data.weight, N, wo);
@@ -3987,7 +4033,8 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             if (data.scatterMode == Bsdf::ScatterMode::Transmission) {
                 if (hasDeltaRoughness) {
                     return _SampleDeltaDielectricTransmission(
-                        data, effectiveIor, NdotV, N, wo);
+                        data, effectiveIor, NdotV, N, wo,
+                        tree.luminanceCoefficients);
                 }
                 auto sample = Bsdf::SampleGGXTransmission(
                     _AverageAlphaAsRoughness(data.roughness),
@@ -3999,7 +4046,8 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                     u2);
                 if (sample.pdf <= 0.0f) {
                     return _SampleDeltaDielectricTransmission(
-                        data, effectiveIor, NdotV, N, wo);
+                        data, effectiveIor, NdotV, N, wo,
+                        tree.luminanceCoefficients);
                 }
                 sample.f *= data.weight;
                 return _FinalizeSubtreeSample(
@@ -4038,7 +4086,8 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 if (hasDeltaRoughness) {
                     return _ScaleDiscreteSpecularSample(
                         _SampleDeltaDielectricTransmission(
-                            data, effectiveIor, NdotV, N, wo),
+                            data, effectiveIor, NdotV, N, wo,
+                            tree.luminanceCoefficients),
                         1.0f - fresnelProb);
                 }
                 auto sample = Bsdf::SampleGGXTransmission(
@@ -4052,7 +4101,8 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 if (sample.pdf <= 0.0f) {
                     return _ScaleDiscreteSpecularSample(
                         _SampleDeltaDielectricTransmission(
-                            data, effectiveIor, NdotV, N, wo),
+                            data, effectiveIor, NdotV, N, wo,
+                            tree.luminanceCoefficients),
                         1.0f - fresnelProb);
                 }
                 sample.f *= data.weight;
@@ -4069,7 +4119,8 @@ _SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             const _DielectricInterfaceSelection selection =
                 _DielectricInterfaceSelectionProbabilities(
                     data, NdotV, effectiveIor,
-                    Dot(N, wo) < 0.0f);
+                    Dot(N, wo) < 0.0f,
+                    tree.luminanceCoefficients);
             if (selection.reflection + selection.transmission <= 0.0f) {
                 return Bsdf::BsdfSample{
                     Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};

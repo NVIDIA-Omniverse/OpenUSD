@@ -9,6 +9,7 @@
 
 #include "pxr/pxr.h"
 
+#include "pxr/imaging/plugin/hdEmbree/renderer/colorManagement.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/geometry/context.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/geometry/displacementEvaluation.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/lights/light.h"
@@ -171,6 +172,13 @@ public:
     /// \param frame Finite application frame value.
     /// \param time Finite application time value.
     void SetSceneFrameAndTime(float frame, float time);
+
+    /// \brief Select the renderer's working color space.
+    ///
+    /// Supported values are Linear Rec.709, Linear AP1, and Raw. Raw bypasses
+    /// all renderer-managed color transforms while retaining Rec.709 as the
+    /// fallback basis for numerical algorithms that require RGB primaries.
+    void SetRenderColorSpace(HdEmbreeRenderColorSpace colorSpace);
 
     /// \brief Return renderer-owned services used for material evaluation.
     ///
@@ -1283,6 +1291,9 @@ private:
 
     // Shared MaterialX texture backend for the whole renderer.
     std::unique_ptr<mxcpp::TextureSystem> _textureSystem;
+
+    // Working color space selected by UsdRenderSettings.
+    HdEmbreeRenderColorSpace _renderColorSpace;
 
     // Stable-address services shared by geometry-build and hit-time material
     // evaluation. _textureSystem is declared first so it is initialized before

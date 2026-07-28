@@ -13,6 +13,7 @@
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/gf/vec3d.h"
 #include "pxr/base/gf/vec4f.h"
+#include "pxr/base/tf/diagnostic.h"
 #include "pxr/usd/sdf/assetPath.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -239,10 +240,87 @@ _ConvertValue(const VtValue& v)
     return mxcpp::Value();
 }
 
+bool
+_HasConnectedInput(
+    const mxcpp::GraphNode& node,
+    const std::string& inputName)
+{
+    const auto it = node.inputConnections.find(inputName);
+    return it != node.inputConnections.end() && !it->second.empty();
+}
+
+void
+_ConvertAuthoredColorParameters(
+    mxcpp::GraphNode* node,
+    const std::string& nodePath,
+    HdEmbreeRenderColorSpace renderColorSpace)
+{
+    if (!node) {
+        return;
+    }
+
+    static const std::string colorSpacePrefix = "colorSpace:";
+
+    for (auto& [inputName, value] : node->parameters) {
+        if (inputName.compare(
+                0, colorSpacePrefix.size(), colorSpacePrefix) == 0 ||
+            _HasConnectedInput(*node, inputName)) {
+            continue;
+        }
+
+        const auto colorSpaceIt =
+            node->parameters.find(colorSpacePrefix + inputName);
+        if (colorSpaceIt == node->parameters.end() ||
+            !mxcpp::ValueHolds<std::string>(colorSpaceIt->second)) {
+            continue;
+        }
+
+        const std::string& sourceColorSpace =
+            mxcpp::ValueGet<std::string>(colorSpaceIt->second);
+        GfVec3f rgb(0.0f);
+        float alpha = 1.0f;
+        const bool isColor3 = mxcpp::ValueHolds<mxcpp::Vec3f>(value);
+        const bool isColor4 = mxcpp::ValueHolds<mxcpp::Vec4f>(value);
+        if (isColor3) {
+            const mxcpp::Vec3f& source =
+                mxcpp::ValueGet<mxcpp::Vec3f>(value);
+            rgb = GfVec3f(source[0], source[1], source[2]);
+        } else if (isColor4) {
+            const mxcpp::Vec4f& source =
+                mxcpp::ValueGet<mxcpp::Vec4f>(value);
+            rgb = GfVec3f(source[0], source[1], source[2]);
+            alpha = source[3];
+        } else {
+            continue;
+        }
+
+        if (!HdEmbreeConvertToRenderColorSpace(
+                sourceColorSpace, renderColorSpace, &rgb)) {
+            TF_WARN(
+                "Unsupported color space '%s' for material input '%s' on "
+                "'%s'. Leaving the authored value unchanged.",
+                sourceColorSpace.c_str(),
+                inputName.c_str(),
+                nodePath.c_str());
+            continue;
+        }
+
+        if (isColor3) {
+            value = mxcpp::Value(
+                mxcpp::Vec3f(rgb[0], rgb[1], rgb[2]));
+        } else {
+            value = mxcpp::Value(
+                mxcpp::Vec4f(rgb[0], rgb[1], rgb[2], alpha));
+        }
+    }
+}
+
 } // anonymous namespace
 
 mxcpp::MaterialGraph
-ConvertHdNetworkToMxcppGraph(const HdMaterialNetwork2& network)
+ConvertHdNetworkToMxcppGraph(
+    const HdMaterialNetwork2& network,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
     mxcpp::MaterialGraph graph;
 
@@ -284,6 +362,8 @@ ConvertHdNetworkToMxcppGraph(const HdMaterialNetwork2& network)
             }
         }
 
+        _ConvertAuthoredColorParameters(
+            &node, path.GetString(), renderColorSpace);
         graph.nodes[path.GetString()] = std::move(node);
     }
 

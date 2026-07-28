@@ -40,7 +40,7 @@ HdEmbreeRenderer::_AccumulateEnvironment(_PathState* state) const
             if (dome->visible) {
                 state->radiance +=
                     HdEmbreeLightSampler::EvaluateDomeLightDirection(
-                        *dome, state->rayDir).Li;
+                        *dome, state->rayDir, _renderColorSpace).Li;
             }
         }
         return;
@@ -63,7 +63,7 @@ HdEmbreeRenderer::_AccumulateEnvironment(_PathState* state) const
 
         const HdEmbreeLightSampler::LightSample sample =
             HdEmbreeLightSampler::EvaluateLightDirection(
-                light, state->rayOrigin, state->rayDir);
+                light, state->rayOrigin, state->rayDir, _renderColorSpace);
         if (!sample.valid) {
             continue;
         }
@@ -99,9 +99,10 @@ HdEmbreeRenderer::_AccumulateEnvironment(_PathState* state) const
                       *dome,
                       state->rayDir,
                       state->lastLightSamplingNormal,
-                      samplingMode)
+                      samplingMode,
+                      _renderColorSpace)
                 : HdEmbreeLightSampler::EvaluateDomeLightDirection(
-                      *dome, state->rayDir);
+                      *dome, state->rayDir, _renderColorSpace);
 
         GfVec3f contribution = sample.Li;
         if (state->lastBsdfPdf > 0.0f) {
@@ -191,7 +192,8 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
 
             HdEmbreeLightSampler::LightSample ls =
                 HdEmbreeLightSampler::GetLightSample(
-                    light, position, normal, u1, u2, lightSamplingMode);
+                    light, position, normal, u1, u2, lightSamplingMode,
+                    _renderColorSpace);
             if (GfIsClose(ls.Li, GfVec3f(0.0f), _minLuminanceCutoff)) {
                 continue;
             }
@@ -280,14 +282,18 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 }
 
                 if (hero.active) {
-                    const float spectralLi = _RgbToSpectralValue(ls.Li, hero);
-                    const float spectralVis = _RgbToSpectralValue(vis, hero);
+                    const float spectralLi = _RgbToSpectralValue(
+                        ls.Li, hero, _renderColorSpace);
+                    const float spectralVis = _RgbToSpectralValue(
+                        vis, hero, _renderColorSpace);
                     const float spectralBsdf =
-                        _RgbToSpectralValue(bsdfValue, hero);
+                        _RgbToSpectralValue(
+                            bsdfValue, hero, _renderColorSpace);
                     sampleContrib = _SpectralValueToRgb(
                         spectralLi * spectralBsdf *
                             absDotNL * spectralVis * ls.invPdfW * misW,
-                        hero);
+                        hero,
+                        _renderColorSpace);
                 } else {
                     sampleContrib = GfCompMult(
                         GfCompMult(ls.Li, bsdfValue),
@@ -296,11 +302,14 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
             } else {
                 float brdf = 1.0f / _pi<float>;
                 if (hero.active) {
-                    const float spectralLi = _RgbToSpectralValue(ls.Li, hero);
-                    const float spectralVis = _RgbToSpectralValue(vis, hero);
+                    const float spectralLi = _RgbToSpectralValue(
+                        ls.Li, hero, _renderColorSpace);
+                    const float spectralVis = _RgbToSpectralValue(
+                        vis, hero, _renderColorSpace);
                     sampleContrib = _SpectralValueToRgb(
                         spectralLi * absDotNL * brdf * spectralVis * ls.invPdfW,
-                        hero);
+                        hero,
+                        _renderColorSpace);
                 } else {
                     sampleContrib = GfCompMult(ls.Li, vis)
                         * absDotNL * brdf * ls.invPdfW;
@@ -308,7 +317,9 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
             }
 
             sampleContrib = _ClampFireflyContribution(
-                sampleContrib, _fireflyClampThreshold);
+                sampleContrib,
+                _fireflyClampThreshold,
+                _materialEvalServices.luminanceCoefficients);
 
             lightContrib += sampleContrib;
         }
@@ -400,7 +411,9 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
                     position,
                     GfVec3f(0.0f),
                     u1,
-                    u2);
+                    u2,
+                    HdEmbreeLightSampler::SamplingMode::FullSphere,
+                    _renderColorSpace);
             if (GfIsClose(ls.Li, GfVec3f(0.0f), _minLuminanceCutoff)) {
                 continue;
             }
@@ -440,18 +453,23 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
 
             GfVec3f sampleContrib(0.0f);
             if (hero.active) {
-                const float spectralLi = _RgbToSpectralValue(ls.Li, hero);
-                const float spectralVis = _RgbToSpectralValue(vis, hero);
+                const float spectralLi = _RgbToSpectralValue(
+                    ls.Li, hero, _renderColorSpace);
+                const float spectralVis = _RgbToSpectralValue(
+                    vis, hero, _renderColorSpace);
                 sampleContrib = _SpectralValueToRgb(
                     spectralLi * spectralVis * phasePdf * ls.invPdfW * misW,
-                    hero);
+                    hero,
+                    _renderColorSpace);
             } else {
                 sampleContrib =
                     GfCompMult(ls.Li, vis) * phasePdf * ls.invPdfW * misW;
             }
 
             sampleContrib = _ClampFireflyContribution(
-                sampleContrib, _fireflyClampThreshold);
+                sampleContrib,
+                _fireflyClampThreshold,
+                _materialEvalServices.luminanceCoefficients);
 
             lightContrib += sampleContrib;
         }

@@ -5,6 +5,7 @@
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_OIIO_TEXTURE_SYSTEM_H
 
 #include "pxr/pxr.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/colorManagement.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/textureSystem.h"
 
 #include <memory>
@@ -27,8 +28,13 @@ public:
     /// hdEmbree is built without the OIIO plugin.
     void SetCacheSizeMB(int sizeMB);
 
+    /// Select the destination working space for color-role texture samples.
+    void SetRenderColorSpace(HdEmbreeRenderColorSpace colorSpace);
+
 private:
     std::unique_ptr<_Impl> _impl;
+    HdEmbreeRenderColorSpace _renderColorSpace =
+        HdEmbreeRenderColorSpace::LinearRec709;
 };
 
 PXR_NAMESPACE_CLOSE_SCOPE

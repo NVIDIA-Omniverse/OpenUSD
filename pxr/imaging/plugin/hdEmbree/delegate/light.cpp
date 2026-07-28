@@ -42,12 +42,6 @@ const TfToken _visibleInPrimaryRayToken(
     "visibleInPrimaryRay", TfToken::Immortal);
 
 float
-_LinearRec709Luminance(GfVec3f const& color)
-{
-    return color[0] * 0.2126f + color[1] * 0.7152f + color[2] * 0.0722f;
-}
-
-float
 _Smoothstep(float t, float edge0, float edge1)
 {
     const float length = edge1 - edge0;
@@ -617,7 +611,13 @@ HdEmbreeDirectionalShapingImportance(
 {
     const GfVec3f shapingWeight =
         HdEmbreeEvaluateDirectionalShaping(shaping, localDirection);
-    return std::max(0.0f, _LinearRec709Luminance(shapingWeight));
+    // This is a proposal weight only.  Max-component importance avoids
+    // embedding working-space-specific luminance coefficients in light sync.
+    return std::max(
+        0.0f,
+        std::max(
+            shapingWeight[0],
+            std::max(shapingWeight[1], shapingWeight[2])));
 }
 
 void

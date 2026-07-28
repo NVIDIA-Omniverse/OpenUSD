@@ -9,6 +9,7 @@
 #include "pxr/pxr.h"
 #include "pxr/base/gf/vec3f.h"
 
+#include "pxr/imaging/plugin/hdEmbree/renderer/colorManagement.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/lights/light.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -38,13 +39,17 @@ public:
             GfVec3f const& normal,
             float u1,
             float u2,
-            SamplingMode samplingMode = SamplingMode::FullSphere);
+            SamplingMode samplingMode = SamplingMode::FullSphere,
+            HdEmbreeRenderColorSpace renderColorSpace =
+                HdEmbreeRenderColorSpace::LinearRec709);
 
     /// Evaluates a dome light along a fixed direction and returns the
     /// corresponding radiance and directional PDF.
     static LightSample EvaluateDomeLightDirection(
             HdEmbree_LightData const& lightData,
-            GfVec3f const& direction);
+            GfVec3f const& direction,
+            HdEmbreeRenderColorSpace renderColorSpace =
+                HdEmbreeRenderColorSpace::LinearRec709);
 
     /// Evaluates a dome light along a fixed direction with the PDF used by
     /// the selected dome-light sampling mode.
@@ -52,7 +57,9 @@ public:
             HdEmbree_LightData const& lightData,
             GfVec3f const& direction,
             GfVec3f const& normal,
-            SamplingMode samplingMode);
+            SamplingMode samplingMode,
+            HdEmbreeRenderColorSpace renderColorSpace =
+                HdEmbreeRenderColorSpace::LinearRec709);
 
     /// Evaluates a light along a fixed direction from a point and returns the
     /// corresponding radiance, distance, and directional PDF when the ray
@@ -60,7 +67,9 @@ public:
     static LightSample EvaluateLightDirection(
             HdEmbree_LightData const& lightData,
             GfVec3f const& hitPosition,
-            GfVec3f const& direction);
+            GfVec3f const& direction,
+            HdEmbreeRenderColorSpace renderColorSpace =
+                HdEmbreeRenderColorSpace::LinearRec709);
 
     // callables to be used with std::visit
     LightSample operator()(HdEmbree_UnknownLight const& rect);
@@ -77,13 +86,15 @@ private:
                          GfVec3f const& normal,
                          float u1,
                          float u2,
-                         SamplingMode samplingMode) :
+                         SamplingMode samplingMode,
+                         HdEmbreeRenderColorSpace renderColorSpace) :
         _lightData(lightData),
         _hitPosition(hitPosition),
         _normal(normal),
         _u1(u1),
         _u2(u2),
-        _samplingMode(samplingMode)
+        _samplingMode(samplingMode),
+        _renderColorSpace(renderColorSpace)
     {}
 
     HdEmbree_LightData const& _lightData;
@@ -92,6 +103,7 @@ private:
     float _u1;
     float _u2;
     SamplingMode _samplingMode;
+    HdEmbreeRenderColorSpace _renderColorSpace;
 };
 
 PXR_NAMESPACE_CLOSE_SCOPE

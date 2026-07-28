@@ -209,11 +209,17 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
                 float q = hero.active
                     ? std::max({
                         _SpectralScalarToRgb(
-                            state->spectralThroughput, hero)[0],
+                            state->spectralThroughput,
+                            hero,
+                            _renderColorSpace)[0],
                         _SpectralScalarToRgb(
-                            state->spectralThroughput, hero)[1],
+                            state->spectralThroughput,
+                            hero,
+                            _renderColorSpace)[1],
                         _SpectralScalarToRgb(
-                            state->spectralThroughput, hero)[2]})
+                            state->spectralThroughput,
+                            hero,
+                            _renderColorSpace)[2]})
                     : std::max({
                         state->throughput[0],
                         state->throughput[1],

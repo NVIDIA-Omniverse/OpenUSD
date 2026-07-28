@@ -35,8 +35,8 @@ public:
 
     HdDirtyBits GetInitialDirtyBitsMask() const override;
 
-    /// Recompile the material after the render context priority changed.
-    void ResyncForRenderContextChange(HdRenderParam *renderParam);
+    /// Recompile the material after graph-affecting render settings changed.
+    void ResyncForRenderSettingsChange(HdRenderParam *renderParam);
 
     /// Return the compiled evaluation graph, or nullptr if unavailable.
     HdEmbreeMaterialData const* GetRenderMaterial() const { return &_renderMaterial; }

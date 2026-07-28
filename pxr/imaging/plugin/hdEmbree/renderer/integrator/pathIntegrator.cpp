@@ -30,7 +30,10 @@ HdEmbreeRenderer::_WeightPathRadiance(
     const _HeroWavelengthState hero{
         true, state.hero.wavelengthNm, state.hero.pdf};
     return _SpectralValueToRgb(
-        state.spectralThroughput * _RgbToSpectralValue(value, hero), hero);
+        state.spectralThroughput *
+            _RgbToSpectralValue(value, hero, _renderColorSpace),
+        hero,
+        _renderColorSpace);
 }
 
 void
@@ -42,10 +45,14 @@ HdEmbreeRenderer::_AddPathRadiance(
     }
     if (state->currentPathIsCaustic) {
         contribution = _ClampFireflyContribution(
-            contribution, _causticsClampThreshold);
+            contribution,
+            _causticsClampThreshold,
+            _materialEvalServices.luminanceCoefficients);
     }
     state->radiance += _ClampFireflyContribution(
-        contribution, _fireflyClampThreshold);
+        contribution,
+        _fireflyClampThreshold,
+        _materialEvalServices.luminanceCoefficients);
 }
 
 HdEmbreeRenderer::_PixelSampleResult
@@ -401,7 +408,8 @@ HdEmbreeRenderer::_IntegratePath(
                         .Fork(HdEmbreeSampleDomainKey::Wavelength)
                         .Draw1D());
             path.hero.pdf = mxcpp::Spectral::HeroWavelengthPdf();
-            path.spectralThroughput = _RgbToSpectralValue(path.throughput, path.hero);
+            path.spectralThroughput = _RgbToSpectralValue(
+                path.throughput, path.hero, _renderColorSpace);
         }
 
         // Every lobe consumes the same incident-facing shading normal.
@@ -618,12 +626,23 @@ HdEmbreeRenderer::_IntegratePath(
             float bsdfContrib = 0.0f;
             if (bs.isSpecular) {
                 bsdfContrib = mxcpp::Spectral::RgbToSpectralValue(
-                    bs.f, path.hero.wavelengthNm);
+                    bs.f,
+                    path.hero.wavelengthNm,
+                    _renderColorSpace ==
+                            HdEmbreeRenderColorSpace::LinearAP1
+                        ? mxcpp::Spectral::RgbColorSpace::LinearAP1
+                        : mxcpp::Spectral::RgbColorSpace::LinearRec709);
             } else {
                 const float cosTheta =
                     std::abs(GfDot(bsdfNormal, _ToGf(bs.wi)));
                 bsdfContrib = mxcpp::Spectral::RgbToSpectralValue(
-                    bs.f, path.hero.wavelengthNm) * cosTheta / bs.pdf;
+                    bs.f,
+                    path.hero.wavelengthNm,
+                    _renderColorSpace ==
+                            HdEmbreeRenderColorSpace::LinearAP1
+                        ? mxcpp::Spectral::RgbColorSpace::LinearAP1
+                        : mxcpp::Spectral::RgbColorSpace::LinearRec709) *
+                    cosTheta / bs.pdf;
             }
 
             if (!std::isfinite(bsdfContrib) || bsdfContrib < 0.0f) {
@@ -681,9 +700,18 @@ HdEmbreeRenderer::_IntegratePath(
         if (!traceEmitterOnlySample && bounce >= _minBouncesBeforeRR) {
             float q = path.hero.active
                 ? std::max({
-                    _SpectralScalarToRgb(path.spectralThroughput, path.hero)[0],
-                    _SpectralScalarToRgb(path.spectralThroughput, path.hero)[1],
-                    _SpectralScalarToRgb(path.spectralThroughput, path.hero)[2]})
+                    _SpectralScalarToRgb(
+                        path.spectralThroughput,
+                        path.hero,
+                        _renderColorSpace)[0],
+                    _SpectralScalarToRgb(
+                        path.spectralThroughput,
+                        path.hero,
+                        _renderColorSpace)[1],
+                    _SpectralScalarToRgb(
+                        path.spectralThroughput,
+                        path.hero,
+                        _renderColorSpace)[2]})
                 : std::max({path.throughput[0], path.throughput[1], path.throughput[2]});
             q = std::min(q, 0.95f);
             if (q <= 0.0f ||

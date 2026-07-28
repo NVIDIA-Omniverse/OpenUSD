@@ -265,6 +265,10 @@ struct ClosureTree
 {
     std::vector<Node> nodes;
     NodeId root = InvalidNodeId;
+    Vec3f luminanceCoefficients =
+        Vec3f(0.212639005871510f,
+              0.715168678767756f,
+              0.072192315360734f);
 
     void Clear()
     {

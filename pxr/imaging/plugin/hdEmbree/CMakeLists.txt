@@ -15,6 +15,7 @@ add_subdirectory(renderer/materials/BSDL)
 
 set(_hdEmbree_libraries
     BSDL::BSDL
+    BSDL_spectral_luts
     tf
     vt
     gf
@@ -68,6 +69,7 @@ pxr_plugin(hdEmbree
         ${_hdEmbree_include_dirs}
 
     CPPFILES
+        renderer/colorManagement.cpp
         renderer/aov/aovOutput.cpp
         renderer/camera/camera.cpp
         renderer/geometry/displacementEvaluation.cpp
@@ -127,6 +129,7 @@ pxr_plugin(hdEmbree
         renderer/materials/MaterialXCpp/nodes/colorTransformNodes
 
     PUBLIC_HEADERS
+        renderer/colorManagement.h
         renderer/geometry/context.h
         renderer/geometry/displacementEvaluation.h
         renderer/geometry/primvarSampling.h
@@ -308,6 +311,7 @@ endif()
 
 set(__MXCPP_TEST_LIBS
     BSDL::BSDL
+    BSDL_spectral_luts
     ${__MXCPP_TEST_IMATH_LIBS}
     ${EMBREE_LIBRARY}
 )
@@ -333,6 +337,7 @@ pxr_build_test(testMaterialXCpp
         renderer/materials/MaterialXCpp/tests/testMaterialXCppMaterials.cpp
         renderer/materials/MaterialXCpp/tests/testMaterialXCppGraph.cpp
         renderer/materials/MaterialXCpp/tests/testMaterialXCppAdapter.cpp
+        renderer/colorManagement.cpp
         renderer/integrator/medium.cpp
         renderer/materials/mxcppAdapter.cpp
         renderer/integrator/sss.cpp

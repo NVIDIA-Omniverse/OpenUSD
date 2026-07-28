@@ -88,11 +88,23 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
 
     if (haveNetwork) {
         try {
+            HdEmbreeRenderColorSpace renderColorSpace =
+                HdEmbreeRenderColorSpace::LinearRec709;
+            if (renderParam) {
+                HdEmbreeMaterialEvalServices const* const services =
+                    static_cast<HdEmbreeRenderParam*>(renderParam)
+                        ->GetMaterialEvalServices();
+                if (services) {
+                    renderColorSpace = services->renderColorSpace;
+                }
+            }
+
             // Surface shading runs at ray hits, but Embree requests
             // displacement while committing subdivision geometry. Compile the
             // terminals independently so either consumer can run without
             // evaluating the other (and either terminal may be absent).
-            auto mxcppGraph = ConvertHdNetworkToMxcppGraph(network);
+            auto mxcppGraph =
+                ConvertHdNetworkToMxcppGraph(network, renderColorSpace);
             _evalGraph = mxcpp::EvalGraph::Compile(mxcppGraph);
             if (_evalGraph && !_evalGraph->IsValid()) {
                 _evalGraph.reset();
@@ -132,7 +144,7 @@ HdEmbreeMaterial::Finalize(HdRenderParam *renderParam)
 }
 
 void
-HdEmbreeMaterial::ResyncForRenderContextChange(HdRenderParam *renderParam)
+HdEmbreeMaterial::ResyncForRenderSettingsChange(HdRenderParam *renderParam)
 {
     if (!_sceneDelegate) {
         return;

@@ -935,7 +935,10 @@ TestDispersionDisabledIgnoresHeroWavelength()
 }
 
 static Vec3f
-_AverageHeroRoundTrip(const Vec3f& rgb)
+_AverageHeroRoundTrip(
+    const Vec3f& rgb,
+    Spectral::RgbColorSpace colorSpace =
+        Spectral::RgbColorSpace::LinearRec709)
 {
     Vec3f average(0.0f);
     const float pdf = Spectral::HeroWavelengthPdf();
@@ -944,12 +947,14 @@ _AverageHeroRoundTrip(const Vec3f& rgb)
         const float wavelengthNm =
             Spectral::kLambdaMinNm + static_cast<float>(i) * Spectral::kLambdaStepNm;
         const float spectralValue =
-            Spectral::RgbToSpectralValue(rgb, wavelengthNm);
+            Spectral::RgbToSpectralValue(
+                rgb, wavelengthNm, colorSpace);
         const Vec3f reconstructed =
             Spectral::SpectralValueToRgb(
                 spectralValue,
                 wavelengthNm,
-                pdf);
+                pdf,
+                colorSpace);
         const float weight = (i == 0 || i + 1 == static_cast<int>(Spectral::kLambdaResolution))
             ? 0.5f * Spectral::kLambdaStepNm
             : Spectral::kLambdaStepNm;
@@ -979,6 +984,22 @@ TestSpectralNeutralRoundTripGray()
     if (!Test_IsClose(reconstructed, target, 1.0e-3f)) {
         printf("    Expected gray round-trip to remain neutral, got (%f,%f,%f)\n",
                reconstructed[0], reconstructed[1], reconstructed[2]);
+        return false;
+    }
+    return true;
+}
+
+static bool
+TestSpectralAp1NeutralRoundTrip()
+{
+    const Vec3f target(0.18f);
+    const Vec3f reconstructed = _AverageHeroRoundTrip(
+        target, Spectral::RgbColorSpace::LinearAP1);
+    if (!Test_IsClose(reconstructed, target, 1.0e-3f)) {
+        printf(
+            "    Expected AP1 gray round-trip to remain neutral, got "
+            "(%f,%f,%f)\n",
+            reconstructed[0], reconstructed[1], reconstructed[2]);
         return false;
     }
     return true;
@@ -4433,6 +4454,7 @@ Test_RegisterBsdfTests()
     _REG(TestDispersionDisabledIgnoresHeroWavelength);
     _REG(TestSpectralNeutralRoundTripWhite);
     _REG(TestSpectralNeutralRoundTripGray);
+    _REG(TestSpectralAp1NeutralRoundTrip);
     _REG(TestCoatZeroWeight);
     _REG(TestEvalSurfaceEmissiveOnly);
     _REG(TestSheenGrazingAngle);

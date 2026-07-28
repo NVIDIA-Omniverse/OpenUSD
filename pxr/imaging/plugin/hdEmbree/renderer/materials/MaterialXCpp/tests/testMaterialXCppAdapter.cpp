@@ -4,8 +4,11 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
+#include "pxr/base/gf/color.h"
+#include "pxr/base/gf/colorSpace.h"
 #include "pxr/base/gf/vec2f.h"
 #include "pxr/base/gf/vec3f.h"
+#include "pxr/base/gf/vec4f.h"
 #include "../graph.h"
 #include "pxr/base/vt/value.h"
 
@@ -22,6 +25,14 @@ using namespace mxcpp;
 void Test_Register(const char* name, std::function<bool()> fn);
 
 #define _REG(name) Test_Register("Adapter." #name, &name)
+
+static bool
+_IsClose(const Vec3f& a, const GfVec3f& b, float tolerance = 1.0e-6f)
+{
+    return std::abs(a[0] - b[0]) <= tolerance &&
+           std::abs(a[1] - b[1]) <= tolerance &&
+           std::abs(a[2] - b[2]) <= tolerance;
+}
 
 static bool
 TestConvertNativeUsdNodesToCanonicalMxcppNodes()
@@ -117,6 +128,133 @@ TestConvertNativeUsdNodesToCanonicalMxcppNodes()
 }
 
 static bool
+TestConvertAuthoredSolidColorsToRenderSpace()
+{
+    HdMaterialNetwork2 network;
+
+    const GfVec3f authoredAp1(
+        0.505387187f, 0.216290325f, 0.086754665f);
+    const GfVec4f authoredSrgb(
+        0.313304096f, 0.601243377f, 0.896243751f, 0.37f);
+
+    const SdfPath surfacePath("/Material/Surface");
+    HdMaterialNode2 surfaceNode;
+    surfaceNode.nodeTypeId = TfToken("UsdPreviewSurface");
+    surfaceNode.parameters[TfToken("diffuseColor")] =
+        VtValue(authoredAp1);
+    surfaceNode.parameters[TfToken("colorSpace:diffuseColor")] =
+        VtValue(GfColorSpaceNames->LinearAP1);
+    surfaceNode.parameters[TfToken("testColor4")] =
+        VtValue(authoredSrgb);
+    surfaceNode.parameters[TfToken("colorSpace:testColor4")] =
+        VtValue(GfColorSpaceNames->SRGBRec709);
+    network.nodes[surfacePath] = surfaceNode;
+
+    const MaterialGraph graph = ConvertHdNetworkToMxcppGraph(
+        network, HdEmbreeRenderColorSpace::LinearRec709);
+    const auto nodeIt = graph.nodes.find(surfacePath.GetString());
+    if (nodeIt == graph.nodes.end()) {
+        std::printf("    Missing converted solid-color node\n");
+        return false;
+    }
+
+    const auto diffuseIt = nodeIt->second.parameters.find("diffuseColor");
+    const auto color4It = nodeIt->second.parameters.find("testColor4");
+    const auto diffuseSpaceIt =
+        nodeIt->second.parameters.find("colorSpace:diffuseColor");
+    if (diffuseIt == nodeIt->second.parameters.end() ||
+        color4It == nodeIt->second.parameters.end() ||
+        diffuseSpaceIt == nodeIt->second.parameters.end() ||
+        !ValueHolds<Vec3f>(diffuseIt->second) ||
+        !ValueHolds<Vec4f>(color4It->second) ||
+        !ValueHolds<std::string>(diffuseSpaceIt->second)) {
+        std::printf("    Converted solid-color parameters are malformed\n");
+        return false;
+    }
+
+    const GfVec3f expectedAp1ToRec709 =
+        GfColorSpace(GfColorSpaceNames->LinearRec709)
+            .Convert(
+                GfColorSpace(GfColorSpaceNames->LinearAP1),
+                authoredAp1)
+            .GetRGB();
+    const GfVec3f expectedSrgbToRec709 =
+        GfColorSpace(GfColorSpaceNames->LinearRec709)
+            .Convert(
+                GfColorSpace(GfColorSpaceNames->SRGBRec709),
+                GfVec3f(
+                    authoredSrgb[0],
+                    authoredSrgb[1],
+                    authoredSrgb[2]))
+            .GetRGB();
+
+    const Vec3f& convertedColor3 = ValueGet<Vec3f>(diffuseIt->second);
+    const Vec4f& convertedColor4 = ValueGet<Vec4f>(color4It->second);
+    if (!_IsClose(convertedColor3, expectedAp1ToRec709) ||
+        !_IsClose(
+            Vec3f(
+                convertedColor4[0],
+                convertedColor4[1],
+                convertedColor4[2]),
+            expectedSrgbToRec709) ||
+        std::abs(convertedColor4[3] - authoredSrgb[3]) > 1.0e-6f) {
+        std::printf("    Authored solid colors were not converted correctly\n");
+        return false;
+    }
+
+    if (ValueGet<std::string>(diffuseSpaceIt->second) !=
+        GfColorSpaceNames->LinearAP1.GetString()) {
+        std::printf("    Solid input color-space metadata was not preserved\n");
+        return false;
+    }
+
+    const MaterialGraph rawGraph = ConvertHdNetworkToMxcppGraph(
+        network, HdEmbreeRenderColorSpace::Raw);
+    const auto rawNodeIt = rawGraph.nodes.find(surfacePath.GetString());
+    if (rawNodeIt == rawGraph.nodes.end()) {
+        return false;
+    }
+    const Value& rawValue =
+        rawNodeIt->second.parameters.at("diffuseColor");
+    return ValueHolds<Vec3f>(rawValue) &&
+           _IsClose(ValueGet<Vec3f>(rawValue), authoredAp1);
+}
+
+static bool
+TestConnectedColorInputSkipsConstantColorTransform()
+{
+    HdMaterialNetwork2 network;
+
+    const SdfPath upstreamPath("/Material/Upstream");
+    HdMaterialNode2 upstreamNode;
+    upstreamNode.nodeTypeId = TfToken("ND_constant_color3");
+    upstreamNode.parameters[TfToken("value")] =
+        VtValue(GfVec3f(0.1f, 0.2f, 0.3f));
+    network.nodes[upstreamPath] = upstreamNode;
+
+    const GfVec3f authoredAp1(
+        0.505387187f, 0.216290325f, 0.086754665f);
+    const SdfPath surfacePath("/Material/Surface");
+    HdMaterialNode2 surfaceNode;
+    surfaceNode.nodeTypeId = TfToken("UsdPreviewSurface");
+    surfaceNode.parameters[TfToken("diffuseColor")] =
+        VtValue(authoredAp1);
+    surfaceNode.parameters[TfToken("colorSpace:diffuseColor")] =
+        VtValue(GfColorSpaceNames->LinearAP1);
+    surfaceNode.inputConnections[TfToken("diffuseColor")].push_back(
+        HdMaterialConnection2{upstreamPath, TfToken("out")});
+    network.nodes[surfacePath] = surfaceNode;
+
+    const MaterialGraph graph = ConvertHdNetworkToMxcppGraph(
+        network, HdEmbreeRenderColorSpace::LinearRec709);
+    const Value& fallback =
+        graph.nodes.at(surfacePath.GetString())
+            .parameters.at("diffuseColor");
+    return ValueHolds<Vec3f>(fallback) &&
+           _IsClose(ValueGet<Vec3f>(fallback), authoredAp1);
+}
+
+static bool
 TestConvertMaterialXUsdPrimvarReaderStringToCanonicalNode()
 {
     HdMaterialNetwork2 network;
@@ -201,6 +339,8 @@ void
 Test_RegisterAdapterTests()
 {
     _REG(TestConvertNativeUsdNodesToCanonicalMxcppNodes);
+    _REG(TestConvertAuthoredSolidColorsToRenderSpace);
+    _REG(TestConnectedColorInputSkipsConstantColorTransform);
     _REG(TestConvertMaterialXUsdPrimvarReaderStringToCanonicalNode);
     _REG(TestConvertAndCompileSurfaceAndDisplacementTerminals);
 }

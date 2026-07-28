@@ -724,7 +724,11 @@ EvalGraph::Evaluate(const ShadingContext& ctx, const EvalOptions& options) const
     auto& terminalParams = scratch.terminalParams;
     _BuildParamMap(_terminalInputs, scratch.nodeOutputs, &terminalParams);
 
-    return _EvalMaterialModel(_materialModelType, terminalParams, options);
+    SurfaceClosure closure =
+        _EvalMaterialModel(_materialModelType, terminalParams, options);
+    closure.luminanceCoefficients = ctx.luminanceCoefficients;
+    closure.bsdfTree.luminanceCoefficients = ctx.luminanceCoefficients;
+    return closure;
 }
 
 bool

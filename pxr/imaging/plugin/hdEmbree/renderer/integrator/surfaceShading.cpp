@@ -586,6 +586,10 @@ HdEmbreeRenderer::_BuildShadingContext(
     ctx.textureSystem = materialEvalServices->textureSystem;
     ctx.frame = materialEvalServices->frame;
     ctx.time = materialEvalServices->time;
+    ctx.bypassColorTransforms = HdEmbreeBypassesColorTransforms(
+        materialEvalServices->renderColorSpace);
+    ctx.luminanceCoefficients =
+        _ToMx(materialEvalServices->luminanceCoefficients);
     ctx.faceId = rayHit.hit.primID;
     ctx.baryU = rayHit.hit.u;
     ctx.baryV = rayHit.hit.v;

@@ -86,24 +86,6 @@ _AreaCylinder(GfMatrix4f const& xf, float radius, float length)
 // Color utilities
 // -------------------------------------------------------------------------
 
-const GfColorSpace _linRec709(GfColorSpaceNames->LinearRec709);
-const GfColorSpace _xyzColorSpace(GfColorSpaceNames->CIEXYZ);
-
-// Ideally, we could could move this to GfColor::GetLuminance()
-inline float
-_GetLuminance(GfColor const& color)
-{
-    GfColor xyzColor(color, _xyzColorSpace);
-    // The "Y" component in XYZ space is luminance
-    return xyzColor.GetRGB()[1];
-}
-
-const GfVec3f _rec709LuminanceComponents(
-    _GetLuminance(GfColor(GfVec3f::XAxis(), _linRec709)),
-    _GetLuminance(GfColor(GfVec3f::YAxis(), _linRec709)),
-    _GetLuminance(GfColor(GfVec3f::ZAxis(), _linRec709)));
-
-
 // Recreates UsdLuxBlackbodyTemperatureAsRgb in "pxr/usd/usdLux/blackbody.h"...
 /// But uses new GfColor functionality, since we shouldn't import usd into
 // imaging
@@ -112,15 +94,20 @@ const GfVec3f _rec709LuminanceComponents(
 // a new utility function somewhere, for use by other HdRenderDelegates?
 // (Maybe in gf/color.h?)
 inline GfVec3f
-_BlackbodyTemperatureAsRgb(float kelvinColorTemp)
+_BlackbodyTemperatureAsRgb(
+    float kelvinColorTemp,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
-    auto tempColor = GfColor(_linRec709);
-    // Get color in Rec709 with luminance 1.0
+    const GfColorSpace workingColorSpace(
+        HdEmbreeGetWorkingColorSpaceToken(renderColorSpace));
+    auto tempColor = GfColor(workingColorSpace);
+    // Get color in the numerical working space with luminance 1.0.
     tempColor.SetFromPlanckianLocus(kelvinColorTemp, 1.0f);
-    // We normalize to the luminance of (1,1,1) in Rec709
     GfVec3f tempColorRGB = tempColor.GetRGB();
-    float rec709Luminance = GfDot(tempColorRGB, _rec709LuminanceComponents);
-    return tempColorRGB / rec709Luminance;
+    const float luminance = GfDot(
+        tempColorRGB,
+        HdEmbreeGetLuminanceCoefficients(renderColorSpace));
+    return luminance > 0.0f ? tempColorRGB / luminance : GfVec3f(1.0f);
 }
 
 // -------------------------------------------------------------------------
@@ -360,7 +347,11 @@ _FoldDirectionToReflectionHemisphere(
 }
 
 GfVec3f
-_SampleLightTexture(HdEmbree_LightTexture const& texture, float s, float t)
+_SampleLightTexture(
+    HdEmbree_LightTexture const& texture,
+    float s,
+    float t,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
     if (texture.pixels.empty()) {
         return GfVec3f(0.0f);
@@ -375,12 +366,16 @@ _SampleLightTexture(HdEmbree_LightTexture const& texture, float s, float t)
         0,
         texture.height - 1);
 
-    return texture.pixels.at(y * texture.width + x);
+    GfVec3f result = texture.pixels.at(y * texture.width + x);
+    HdEmbreeConvertToRenderColorSpace(
+        texture.colorSpaceName.GetString(), renderColorSpace, &result);
+    return result;
 }
 
 GfVec3f
 _SampleRectLightTexture(HdEmbree_LightTexture const& texture,
-                        GfVec2f const& uv)
+                        GfVec2f const& uv,
+                        HdEmbreeRenderColorSpace renderColorSpace)
 {
     if (texture.pixels.empty() || texture.width <= 0 || texture.height <= 0) {
         return GfVec3f(0.0f);
@@ -397,7 +392,10 @@ _SampleRectLightTexture(HdEmbree_LightTexture const& texture,
         0,
         texture.height - 1);
 
-    return texture.pixels.at(y * texture.width + x);
+    GfVec3f result = texture.pixels.at(y * texture.width + x);
+    HdEmbreeConvertToRenderColorSpace(
+        texture.colorSpaceName.GetString(), renderColorSpace, &result);
+    return result;
 }
 
 _ShapeSample
@@ -514,7 +512,8 @@ _EvalSphereLightSolidAngle(
     HdEmbree_Sphere const& sphere,
     GfVec3f const& position,
     float u1,
-    float u2);
+    float u2,
+    HdEmbreeRenderColorSpace renderColorSpace);
 
 GfVec3f
 _SampleDiskPolar(float u1, float u2)
@@ -607,7 +606,9 @@ _InvalidLightSample()
 }
 
 GfVec3f
-_EvalLightBasic(HdEmbree_LightData const& light);
+_EvalLightBasic(
+    HdEmbree_LightData const& light,
+    HdEmbreeRenderColorSpace renderColorSpace);
 
 bool
 _GetDistantLightDirection(
@@ -670,9 +671,10 @@ _DistantNormalizeSizeFactor(float thetaMax)
 GfVec3f
 _EvalDistantLightRadiance(
     HdEmbree_LightData const& light,
-    HdEmbree_Distant const& distant)
+    HdEmbree_Distant const& distant,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
-    GfVec3f Li = _EvalLightBasic(light);
+    GfVec3f Li = _EvalLightBasic(light, renderColorSpace);
     if (light.normalize) {
         const float sizeFactor =
             _DistantNormalizeSizeFactor(_DistantHalfAngleRadians(distant));
@@ -687,7 +689,8 @@ HdEmbreeLightSampler::LightSample
 _EvaluateDistantLightDirection(
     HdEmbree_LightData const& light,
     HdEmbree_Distant const& distant,
-    GfVec3f const& direction)
+    GfVec3f const& direction,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
     if (!_IsFinite(direction) || direction.GetLengthSq() <= 0.0f) {
         return _InvalidLightSample();
@@ -701,7 +704,8 @@ _EvaluateDistantLightDirection(
     const float thetaMax = _DistantHalfAngleRadians(distant);
     const GfVec3f wi = direction.GetNormalized();
     const float cosTheta = GfDot(wi, axis);
-    const GfVec3f Li = _EvalDistantLightRadiance(light, distant);
+    const GfVec3f Li =
+        _EvalDistantLightRadiance(light, distant, renderColorSpace);
 
     if (thetaMax <= 0.0f) {
         constexpr float directionEps = 1.0e-5f;
@@ -740,7 +744,8 @@ _EvalDistantLight(
     HdEmbree_LightData const& light,
     HdEmbree_Distant const& distant,
     float u1,
-    float u2)
+    float u2,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
     GfVec3f axis;
     if (!_GetDistantLightDirection(light, &axis)) {
@@ -749,7 +754,8 @@ _EvalDistantLight(
 
     const float thetaMax = _DistantHalfAngleRadians(distant);
     if (thetaMax <= 0.0f) {
-        return _EvaluateDistantLightDirection(light, distant, axis);
+        return _EvaluateDistantLightDirection(
+            light, distant, axis, renderColorSpace);
     }
 
     const float solidAngle = _DistantConeSolidAngle(thetaMax);
@@ -773,7 +779,7 @@ _EvalDistantLight(
          axis * cosTheta).GetNormalized();
 
     return HdEmbreeLightSampler::LightSample {
-        _EvalDistantLightRadiance(light, distant),
+        _EvalDistantLightRadiance(light, distant, renderColorSpace),
         wi,
         std::numeric_limits<float>::max(),
         solidAngle,
@@ -785,14 +791,16 @@ _EvalDistantLight(
 HdEmbreeLightSampler::LightSample
 _EvaluateDomeLightDirection(
     HdEmbree_LightData const& light,
-    GfVec3f const& direction);
+    GfVec3f const& direction,
+    HdEmbreeRenderColorSpace renderColorSpace);
 
 HdEmbreeLightSampler::LightSample
 _EvaluateDomeLightDirection(
     HdEmbree_LightData const& light,
     GfVec3f const& direction,
     GfVec3f const& normal,
-    HdEmbreeLightSampler::SamplingMode samplingMode);
+    HdEmbreeLightSampler::SamplingMode samplingMode,
+    HdEmbreeRenderColorSpace renderColorSpace);
 
 bool
 _IntersectSphereLight(
@@ -803,7 +811,9 @@ _IntersectSphereLight(
     _ShapeSample* outSample);
 
 GfVec3f
-_EvalLightBasic(HdEmbree_LightData const& light)
+_EvalLightBasic(
+    HdEmbree_LightData const& light,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
     // Our current material model is always 100% diffuse, so diffuse parameter
     // is a straight multiplier
@@ -811,7 +821,8 @@ _EvalLightBasic(HdEmbree_LightData const& light)
         * powf(2.0f, light.exposure);
     if (light.enableColorTemperature) {
         Le = GfCompMult(Le,
-            _BlackbodyTemperatureAsRgb(light.colorTemperature));
+            _BlackbodyTemperatureAsRgb(
+                light.colorTemperature, renderColorSpace));
     }
     return Le;
 }
@@ -940,7 +951,8 @@ _ApplyShapingAwareFinitePdf(
 
 HdEmbreeLightSampler::LightSample
 _EvalAreaLight(HdEmbree_LightData const& light, _ShapeSample const& ss,
-               GfVec3f const& position)
+               GfVec3f const& position,
+               HdEmbreeRenderColorSpace renderColorSpace)
 {
     // Transform PDF from area measure to solid angle measure. We use the
     // inverse PDF here to avoid division by zero when the surface point is
@@ -956,16 +968,18 @@ _EvalAreaLight(HdEmbree_LightData const& light, _ShapeSample const& ss,
     // Combine the brightness parameters to get initial emission luminance
     // (nits)
     GfVec3f Le = cosThetaOffNormal > 0.0f ?
-        _EvalLightBasic(light)
+        _EvalLightBasic(light, renderColorSpace)
         : GfVec3f(0.0f);
 
     // Multiply by the texture, if there is one
     if (!light.texture.pixels.empty()) {
         const GfVec3f textureColor =
             std::holds_alternative<HdEmbree_Rect>(light.lightVariant)
-                ? _SampleRectLightTexture(light.texture, ss.uv)
+                ? _SampleRectLightTexture(
+                    light.texture, ss.uv, renderColorSpace)
                 : _SampleLightTexture(light.texture, ss.uv[0],
-                                      1.0f - ss.uv[1]);
+                                      1.0f - ss.uv[1],
+                                      renderColorSpace);
         Le = GfCompMult(Le, textureColor);
     }
 
@@ -996,7 +1010,8 @@ _EvalSphereLightSolidAngle(
     HdEmbree_Sphere const& sphere,
     GfVec3f const& position,
     float u1,
-    float u2)
+    float u2,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
     const float solidAngle = _SphereSolidAngle(light, sphere, position);
     if (solidAngle <= 0.0f) {
@@ -1030,7 +1045,7 @@ _EvalSphereLightSolidAngle(
     }
 
     HdEmbreeLightSampler::LightSample sample =
-        _EvalAreaLight(light, shapeSample, position);
+        _EvalAreaLight(light, shapeSample, position, renderColorSpace);
     sample.invPdfW = solidAngle;
     sample.valid = sample.valid && sample.invPdfW > 0.0f;
     return sample;
@@ -1252,7 +1267,8 @@ HdEmbreeLightSampler::LightSample
 _EvaluateLightDirection(
     HdEmbree_LightData const& light,
     GfVec3f const& position,
-    GfVec3f const& direction)
+    GfVec3f const& direction,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
     const GfVec3f normalizedDirection = direction.GetNormalized();
     _ShapeSample shapeSample;
@@ -1270,7 +1286,8 @@ _EvaluateLightDirection(
             light, *sphere, position, normalizedDirection, &shapeSample);
         if (hit) {
             HdEmbreeLightSampler::LightSample sample =
-                _EvalAreaLight(light, shapeSample, position);
+                _EvalAreaLight(
+                    light, shapeSample, position, renderColorSpace);
             const float solidAngle =
                 _SphereSolidAngle(light, *sphere, position);
             if (solidAngle > 0.0f) {
@@ -1291,9 +1308,10 @@ _EvaluateLightDirection(
     } else if (auto const* distant =
                    std::get_if<HdEmbree_Distant>(&light.lightVariant)) {
         return _EvaluateDistantLightDirection(
-            light, *distant, normalizedDirection);
+            light, *distant, normalizedDirection, renderColorSpace);
     } else if (std::holds_alternative<HdEmbree_Dome>(light.lightVariant)) {
-        return _EvaluateDomeLightDirection(light, normalizedDirection);
+        return _EvaluateDomeLightDirection(
+            light, normalizedDirection, renderColorSpace);
     }
 
     if (!hit) {
@@ -1301,7 +1319,7 @@ _EvaluateLightDirection(
     }
 
     HdEmbreeLightSampler::LightSample sample =
-        _EvalAreaLight(light, shapeSample, position);
+        _EvalAreaLight(light, shapeSample, position, renderColorSpace);
     if (useShapingAwareFinitePdf) {
         _ApplyShapingAwareFinitePdf(light, &sample, true);
     }
@@ -1314,7 +1332,8 @@ _SampleRectDirectionalShaping(
     HdEmbree_Rect const& rect,
     GfVec3f const& position,
     float u1,
-    float u2)
+    float u2,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
     const HdEmbree_DirectionalShapingSample directionalSample =
         HdEmbreeSampleDirectionalShaping(light.shaping, u1, u2);
@@ -1336,7 +1355,7 @@ _SampleRectDirectionalShaping(
     }
 
     HdEmbreeLightSampler::LightSample sample =
-        _EvalAreaLight(light, shapeSample, position);
+        _EvalAreaLight(light, shapeSample, position, renderColorSpace);
     _ApplyShapingAwareFinitePdf(light, &sample, true);
     return sample;
 }
@@ -1347,7 +1366,8 @@ _SampleDiskDirectionalShaping(
     HdEmbree_Disk const& disk,
     GfVec3f const& position,
     float u1,
-    float u2)
+    float u2,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
     const HdEmbree_DirectionalShapingSample directionalSample =
         HdEmbreeSampleDirectionalShaping(light.shaping, u1, u2);
@@ -1369,7 +1389,7 @@ _SampleDiskDirectionalShaping(
     }
 
     HdEmbreeLightSampler::LightSample sample =
-        _EvalAreaLight(light, shapeSample, position);
+        _EvalAreaLight(light, shapeSample, position, renderColorSpace);
     _ApplyShapingAwareFinitePdf(light, &sample, true);
     return sample;
 }
@@ -1377,7 +1397,8 @@ _SampleDiskDirectionalShaping(
 HdEmbreeLightSampler::LightSample
 _EvaluateDomeLightDirection(
     HdEmbree_LightData const& light,
-    GfVec3f const& direction)
+    GfVec3f const& direction,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
     if (!_IsFinite(direction) || direction.GetLengthSq() <= 0.0f) {
         return _InvalidLightSample();
@@ -1390,11 +1411,12 @@ _EvaluateDomeLightDirection(
 
     GfVec3f Li = light.texture.pixels.empty() ?
         GfVec3f(1.0f)
-        : _SampleLightTexture(light.texture, uv[0], uv[1]);
+        : _SampleLightTexture(
+            light.texture, uv[0], uv[1], renderColorSpace);
 
     // Apply LightAPI radiometric parameters (intensity, exposure, color,
     // color temperature) consistently with area lights.
-    Li = GfCompMult(Li, _EvalLightBasic(light));
+    Li = GfCompMult(Li, _EvalLightBasic(light, renderColorSpace));
 
     const float pdfW = _DomeDirectionalPdf(light, uv);
 
@@ -1412,11 +1434,13 @@ _EvaluateDomeLightDirection(
     HdEmbree_LightData const& light,
     GfVec3f const& direction,
     GfVec3f const& normal,
-    HdEmbreeLightSampler::SamplingMode samplingMode)
+    HdEmbreeLightSampler::SamplingMode samplingMode,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
     if (samplingMode !=
         HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere) {
-        return _EvaluateDomeLightDirection(light, direction);
+        return _EvaluateDomeLightDirection(
+            light, direction, renderColorSpace);
     }
 
     if (!_IsFinite(direction) || direction.GetLengthSq() <= 0.0f) {
@@ -1430,8 +1454,9 @@ _EvaluateDomeLightDirection(
 
     GfVec3f Li = light.texture.pixels.empty() ?
         GfVec3f(1.0f)
-        : _SampleLightTexture(light.texture, uv[0], uv[1]);
-    Li = GfCompMult(Li, _EvalLightBasic(light));
+        : _SampleLightTexture(
+            light.texture, uv[0], uv[1], renderColorSpace);
+    Li = GfCompMult(Li, _EvalLightBasic(light, renderColorSpace));
 
     const float pdfW =
         _ReflectionHemispherePdf(light, normal, normalizedDirection);
@@ -1448,7 +1473,8 @@ _EvaluateDomeLightDirection(
 HdEmbreeLightSampler::LightSample
 _EvalDomeLight(HdEmbree_LightData const& light, GfVec3f const& normal,
                float u1, float u2,
-               HdEmbreeLightSampler::SamplingMode samplingMode)
+               HdEmbreeLightSampler::SamplingMode samplingMode,
+               HdEmbreeRenderColorSpace renderColorSpace)
 {
     GfVec3f worldDirection;
     if (!_HasDomeDistribution(light.texture)) {
@@ -1474,11 +1500,13 @@ _EvalDomeLight(HdEmbree_LightData const& light, GfVec3f const& normal,
             _FoldDirectionToReflectionHemisphere(worldDirection, normal);
         if (hemisphereDirection.GetLengthSq() > 0.0f) {
             return _EvaluateDomeLightDirection(
-                light, hemisphereDirection, normal, samplingMode);
+                light, hemisphereDirection, normal, samplingMode,
+                renderColorSpace);
         }
     }
 
-    return _EvaluateDomeLightDirection(light, worldDirection);
+    return _EvaluateDomeLightDirection(
+        light, worldDirection, renderColorSpace);
 }
 
 } // namespace ""
@@ -1491,19 +1519,23 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::GetLightSample(
         GfVec3f const& normal,
         float u1,
         float u2,
-        SamplingMode samplingMode)
+        SamplingMode samplingMode,
+        HdEmbreeRenderColorSpace renderColorSpace)
 {
     HdEmbreeLightSampler lightSampler(
-        lightData, hitPosition, normal, u1, u2, samplingMode);
+        lightData, hitPosition, normal, u1, u2, samplingMode,
+        renderColorSpace);
     return std::visit(lightSampler, lightData.lightVariant);
 }
 
 HdEmbreeLightSampler::LightSample
 HdEmbreeLightSampler::EvaluateDomeLightDirection(
     HdEmbree_LightData const& lightData,
-    GfVec3f const& direction)
+    GfVec3f const& direction,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
-    return _EvaluateDomeLightDirection(lightData, direction);
+    return _EvaluateDomeLightDirection(
+        lightData, direction, renderColorSpace);
 }
 
 HdEmbreeLightSampler::LightSample
@@ -1511,19 +1543,22 @@ HdEmbreeLightSampler::EvaluateDomeLightDirection(
     HdEmbree_LightData const& lightData,
     GfVec3f const& direction,
     GfVec3f const& normal,
-    SamplingMode samplingMode)
+    SamplingMode samplingMode,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
     return _EvaluateDomeLightDirection(
-        lightData, direction, normal, samplingMode);
+        lightData, direction, normal, samplingMode, renderColorSpace);
 }
 
 HdEmbreeLightSampler::LightSample
 HdEmbreeLightSampler::EvaluateLightDirection(
     HdEmbree_LightData const& lightData,
     GfVec3f const& hitPosition,
-    GfVec3f const& direction)
+    GfVec3f const& direction,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
-    return _EvaluateLightDirection(lightData, hitPosition, direction);
+    return _EvaluateLightDirection(
+        lightData, hitPosition, direction, renderColorSpace);
 }
 
 HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
@@ -1552,7 +1587,8 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
             _hitPosition,
             (_u1 - _ShapingAwareFiniteAreaProposalWeight) /
                 _ShapingAwareFiniteDirectionalProposalWeight,
-            _u2);
+            _u2,
+            _renderColorSpace);
     }
 
     _ShapeSample shapeSample = _SampleRect(
@@ -1565,7 +1601,8 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
                 : _u1,
             _u2);
     HdEmbreeLightSampler::LightSample sample =
-        _EvalAreaLight(_lightData, shapeSample, _hitPosition);
+        _EvalAreaLight(
+            _lightData, shapeSample, _hitPosition, _renderColorSpace);
     if (useShapingAwareSampling) {
         _ApplyShapingAwareFinitePdf(_lightData, &sample, true);
     }
@@ -1576,7 +1613,8 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
         HdEmbree_Sphere const& sphere) {
     const HdEmbreeLightSampler::LightSample solidAngleSample =
         _EvalSphereLightSolidAngle(
-            _lightData, sphere, _hitPosition, _u1, _u2);
+            _lightData, sphere, _hitPosition, _u1, _u2,
+            _renderColorSpace);
     if (solidAngleSample.valid) {
         return solidAngleSample;
     }
@@ -1587,7 +1625,8 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
             sphere.radius,
             _u1,
             _u2);
-    return _EvalAreaLight(_lightData, shapeSample, _hitPosition);
+    return _EvalAreaLight(
+        _lightData, shapeSample, _hitPosition, _renderColorSpace);
 }
 
 HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
@@ -1602,7 +1641,8 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
             _hitPosition,
             (_u1 - _ShapingAwareFiniteAreaProposalWeight) /
                 _ShapingAwareFiniteDirectionalProposalWeight,
-            _u2);
+            _u2,
+            _renderColorSpace);
     }
 
     _ShapeSample shapeSample = _SampleDisk(
@@ -1614,7 +1654,8 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
                 : _u1,
             _u2);
     HdEmbreeLightSampler::LightSample sample =
-        _EvalAreaLight(_lightData, shapeSample, _hitPosition);
+        _EvalAreaLight(
+            _lightData, shapeSample, _hitPosition, _renderColorSpace);
     if (useShapingAwareSampling) {
         _ApplyShapingAwareFinitePdf(_lightData, &sample, true);
     }
@@ -1623,7 +1664,8 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
 
 HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
         HdEmbree_Distant const& distant) {
-    return _EvalDistantLight(_lightData, distant, _u1, _u2);
+    return _EvalDistantLight(
+        _lightData, distant, _u1, _u2, _renderColorSpace);
 }
 
 HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
@@ -1635,12 +1677,15 @@ HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
             cylinder.length,
             _u1,
             _u2);
-    return _EvalAreaLight(_lightData, shapeSample, _hitPosition);
+    return _EvalAreaLight(
+        _lightData, shapeSample, _hitPosition, _renderColorSpace);
 }
 
 HdEmbreeLightSampler::LightSample HdEmbreeLightSampler::operator()(
         HdEmbree_Dome const& dome) {
-    return _EvalDomeLight(_lightData, _normal, _u1, _u2, _samplingMode);
+    return _EvalDomeLight(
+        _lightData, _normal, _u1, _u2, _samplingMode,
+        _renderColorSpace);
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

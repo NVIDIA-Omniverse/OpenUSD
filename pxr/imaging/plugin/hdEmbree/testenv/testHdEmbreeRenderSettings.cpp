@@ -6,7 +6,11 @@
 //
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderBuffer.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/colorManagement.h"
 
+#include "pxr/base/gf/colorSpace.h"
+#include "pxr/base/gf/color.h"
+#include "pxr/base/gf/math.h"
 #include "pxr/base/gf/vec2i.h"
 #include "pxr/imaging/hd/renderIndex.h"
 #include "pxr/imaging/hd/renderPass.h"
@@ -104,6 +108,7 @@ _TestRenderDelegateSettings()
     const HdRenderSettingDescriptorList descriptors =
         delegate.GetRenderSettingDescriptors();
     const TfTokenVector expectedKeys = {
+        HdRenderSettingsPrimTokens->renderingColorSpace,
         HdEmbreeRenderSettingsTokens->enableSceneColors,
         HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
         HdEmbreeRenderSettingsTokens->enableLighting,
@@ -162,6 +167,15 @@ _TestRenderDelegateSettings()
         return false;
     }
 
+    const VtValue renderingColorSpaceDefault = delegate.GetRenderSetting(
+        HdRenderSettingsPrimTokens->renderingColorSpace);
+    if (!renderingColorSpaceDefault.IsHolding<TfToken>() ||
+        renderingColorSpaceDefault.UncheckedGet<TfToken>() !=
+            GfColorSpaceNames->LinearRec709) {
+        std::printf("renderingColorSpace default is not lin_rec709_scene\n");
+        return false;
+    }
+
     for (HdRenderSettingDescriptor const& descriptor : descriptors) {
         const std::string key = descriptor.key.GetString();
         if (delegate.GetRenderSetting(descriptor.key) !=
@@ -171,7 +185,10 @@ _TestRenderDelegateSettings()
             return false;
         }
 
-        if (descriptor.key == HdRenderSettingsTokens->domeLightCameraVisibility) {
+        if (descriptor.key ==
+                HdRenderSettingsTokens->domeLightCameraVisibility ||
+            descriptor.key ==
+                HdRenderSettingsPrimTokens->renderingColorSpace) {
             continue;
         }
 
@@ -204,6 +221,65 @@ _TestRenderDelegateSettings()
                         oldHdEmbreeNamespaceKey.GetText());
             return false;
         }
+    }
+
+    return true;
+}
+
+bool
+_TestColorManagementUtilities()
+{
+    HdEmbreeRenderColorSpace parsed =
+        HdEmbreeRenderColorSpace::LinearRec709;
+    if (!HdEmbreeParseRenderColorSpace(
+            GfColorSpaceNames->LinearAP1, &parsed) ||
+        parsed != HdEmbreeRenderColorSpace::LinearAP1 ||
+        !HdEmbreeParseRenderColorSpace(
+            GfColorSpaceNames->Raw, &parsed) ||
+        parsed != HdEmbreeRenderColorSpace::Raw ||
+        HdEmbreeParseRenderColorSpace(TfToken("acescg"), &parsed)) {
+        std::printf("rendering color-space token parsing failed\n");
+        return false;
+    }
+
+    const GfVec3f authored(0.25f, 0.5f, 0.75f);
+    GfVec3f raw = authored;
+    if (!HdEmbreeConvertToRenderColorSpace(
+            GfColorSpaceNames->SRGBRec709.GetString(),
+            HdEmbreeRenderColorSpace::Raw,
+            &raw) ||
+        !GfIsClose(raw, authored, 1.0e-6f)) {
+        std::printf("raw did not bypass a texture color transform\n");
+        return false;
+    }
+
+    GfVec3f converted = authored;
+    if (!HdEmbreeConvertToRenderColorSpace(
+            GfColorSpaceNames->LinearRec709.GetString(),
+            HdEmbreeRenderColorSpace::LinearAP1,
+            &converted)) {
+        std::printf("Linear Rec.709 to AP1 conversion failed\n");
+        return false;
+    }
+    const GfVec3f expected = GfColorSpace(
+        GfColorSpaceNames->LinearAP1).Convert(
+            GfColorSpace(GfColorSpaceNames->LinearRec709), authored).GetRGB();
+    if (!GfIsClose(converted, expected, 1.0e-6f)) {
+        std::printf("Linear Rec.709 to AP1 conversion was incorrect\n");
+        return false;
+    }
+
+    const GfVec3f ap1Luminance = HdEmbreeGetLuminanceCoefficients(
+        HdEmbreeRenderColorSpace::LinearAP1);
+    // Gf's lin_ap1_scene primaries are Bradford-preadapted to D65.
+    if (!GfIsClose(
+            ap1Luminance,
+            GfVec3f(0.26767218f, 0.67433995f, 0.05798787f),
+            1.0e-5f)) {
+        std::printf(
+            "unexpected AP1 luminance coefficients: (%f, %f, %f)\n",
+            ap1Luminance[0], ap1Luminance[1], ap1Luminance[2]);
+        return false;
     }
 
     return true;
@@ -503,6 +579,9 @@ _TestActiveRenderSettingsPrimBridge()
     const bool authoredDisableShadows = !defaultDisableShadows;
 
     HdRenderSettingsSchema::Builder renderSettingsBuilder;
+    renderSettingsBuilder.SetRenderingColorSpace(
+        HdRetainedTypedSampledDataSource<TfToken>::New(
+            GfColorSpaceNames->LinearAP1));
     renderSettingsBuilder.SetNamespacedSettings(
         HdRetainedContainerDataSource::New(
             HdEmbreeRenderSettingsTokens->maxBounces,
@@ -566,6 +645,14 @@ _TestActiveRenderSettingsPrimBridge()
     if (maxBounces != 3) {
         std::printf("active RenderSettings ty:maxBounces was not bridged: %d\n",
                     maxBounces);
+        return false;
+    }
+
+    const TfToken renderingColorSpace = delegate.GetRenderSetting<TfToken>(
+        HdRenderSettingsPrimTokens->renderingColorSpace, TfToken());
+    if (renderingColorSpace != GfColorSpaceNames->LinearAP1) {
+        std::printf(
+            "active RenderSettings renderingColorSpace was not bridged\n");
         return false;
     }
 
@@ -751,6 +838,9 @@ _TestTyphoonRenderSettingsAPI()
 int
 main()
 {
+    if (!_TestColorManagementUtilities()) {
+        return 1;
+    }
     if (!_TestRenderDelegateSettings()) {
         return 1;
     }

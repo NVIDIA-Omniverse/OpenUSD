@@ -248,7 +248,7 @@ HdEmbreeRenderer::_FindNearestFiniteLightHit(
 
         const HdEmbreeLightSampler::LightSample ls =
             HdEmbreeLightSampler::EvaluateLightDirection(
-                light, position, direction);
+                light, position, direction, _renderColorSpace);
         if (!ls.valid || ls.dist <= 0.0f || !std::isfinite(ls.dist)) {
             continue;
         }
@@ -297,7 +297,7 @@ HdEmbreeRenderer::_EvaluateLightGeometryHit(
 
     HdEmbreeLightSampler::LightSample sample =
         HdEmbreeLightSampler::EvaluateLightDirection(
-            *light, position, direction);
+            *light, position, direction, _renderColorSpace);
     if (!sample.valid) {
         sample.Li = GfVec3f(0.0f);
         sample.wI = direction;

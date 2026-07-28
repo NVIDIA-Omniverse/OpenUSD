@@ -4,12 +4,9 @@
 #include "pxr/imaging/plugin/hdEmbree/renderer/materials/oiioTextureSystem.h"
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/config.h"
-#include "pxr/base/gf/colorSpace.h"
 #include "pxr/base/tf/diagnostic.h"
-#include "pxr/base/tf/token.h"
 
 #include <algorithm>
-#include <array>
 #include <cctype>
 #include <cmath>
 #include <mutex>
@@ -101,16 +98,6 @@ _ShouldWarnOnce(HdEmbreeOiioTextureSystem::_Impl* const impl,
     return impl->warnedFiles.insert(key).second;
 }
 
-std::string
-_NormalizeColorSpaceName(const std::string& name)
-{
-    std::string normalized = name;
-    std::transform(
-        normalized.begin(), normalized.end(), normalized.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return normalized;
-}
-
 bool
 _ShouldApplyColorTransform(const mxcpp::Texture2DRequest& request)
 {
@@ -119,98 +106,20 @@ _ShouldApplyColorTransform(const mxcpp::Texture2DRequest& request)
            !request.sourceColorSpace.empty();
 }
 
-enum class _ColorSpaceResolution {
-    NoTransform,
-    Transform,
-    Unsupported
-};
-
-_ColorSpaceResolution
-_ResolveColorSpace(
-    const std::string& sourceColorSpace,
-    TfToken* outColorSpaceName)
-{
-    if (!outColorSpaceName) {
-        return _ColorSpaceResolution::Unsupported;
-    }
-
-    const std::string normalized = _NormalizeColorSpaceName(sourceColorSpace);
-    if (normalized.empty() ||
-        normalized == "none" ||
-        normalized == "raw" ||
-        normalized == "data" ||
-        normalized == "auto" ||
-        normalized == "identity") {
-        return _ColorSpaceResolution::NoTransform;
-    }
-
-    if (normalized == "srgb_texture" || normalized == "srgb") {
-        *outColorSpaceName = GfColorSpaceNames->SRGBRec709;
-        return _ColorSpaceResolution::Transform;
-    }
-    if (normalized == "lin_rec709" || normalized == "lin_srgb") {
-        *outColorSpaceName = GfColorSpaceNames->LinearRec709;
-        return _ColorSpaceResolution::Transform;
-    }
-    if (normalized == "g22_rec709") {
-        *outColorSpaceName = GfColorSpaceNames->G22Rec709;
-        return _ColorSpaceResolution::Transform;
-    }
-    if (normalized == "g18_rec709") {
-        *outColorSpaceName = GfColorSpaceNames->G18Rec709;
-        return _ColorSpaceResolution::Transform;
-    }
-    if (normalized == "acescg" || normalized == "lin_ap1") {
-        *outColorSpaceName = GfColorSpaceNames->LinearAP1;
-        return _ColorSpaceResolution::Transform;
-    }
-    if (normalized == "g22_ap1") {
-        *outColorSpaceName = GfColorSpaceNames->G22AP1;
-        return _ColorSpaceResolution::Transform;
-    }
-    if (normalized == "adobergb") {
-        *outColorSpaceName = GfColorSpaceNames->G22AdobeRGB;
-        return _ColorSpaceResolution::Transform;
-    }
-    if (normalized == "lin_adobergb") {
-        *outColorSpaceName = GfColorSpaceNames->LinearAdobeRGB;
-        return _ColorSpaceResolution::Transform;
-    }
-    if (normalized == "srgb_displayp3") {
-        *outColorSpaceName = GfColorSpaceNames->SRGBP3D65;
-        return _ColorSpaceResolution::Transform;
-    }
-    if (normalized == "lin_displayp3") {
-        *outColorSpaceName = GfColorSpaceNames->LinearP3D65;
-        return _ColorSpaceResolution::Transform;
-    }
-
-    const TfToken directToken(normalized);
-    if (GfColorSpace::IsValid(directToken)) {
-        *outColorSpaceName = directToken;
-        return _ColorSpaceResolution::Transform;
-    }
-
-    return _ColorSpaceResolution::Unsupported;
-}
-
 void
 _ApplyColorTransform(
     const mxcpp::Texture2DRequest& request,
     float* sampled,
-    HdEmbreeOiioTextureSystem::_Impl* impl)
+    HdEmbreeOiioTextureSystem::_Impl* impl,
+    HdEmbreeRenderColorSpace renderColorSpace)
 {
     if (!_ShouldApplyColorTransform(request) || !sampled) {
         return;
     }
 
-    TfToken sourceColorSpaceName;
-    const _ColorSpaceResolution resolution =
-        _ResolveColorSpace(request.sourceColorSpace, &sourceColorSpaceName);
-    if (resolution == _ColorSpaceResolution::NoTransform) {
-        return;
-    }
-    if (resolution == _ColorSpaceResolution::Unsupported) {
+    GfVec3f rgb(sampled[0], sampled[1], sampled[2]);
+    if (!HdEmbreeConvertToRenderColorSpace(
+            request.sourceColorSpace, renderColorSpace, &rgb)) {
         const std::string warningKey =
             request.filePath + "|" + request.sourceColorSpace;
         if (_ShouldWarnOnce(impl, warningKey)) {
@@ -223,15 +132,6 @@ _ApplyColorTransform(
         return;
     }
 
-    if (sourceColorSpaceName == GfColorSpaceNames->LinearRec709) {
-        return;
-    }
-
-    std::array<float, 3> rgb = {sampled[0], sampled[1], sampled[2]};
-    const GfColorSpace srcColorSpace(sourceColorSpaceName);
-    const GfColorSpace dstColorSpace(GfColorSpaceNames->LinearRec709);
-    srcColorSpace.ConvertRGBSpan(
-        dstColorSpace, TfSpan<float>(rgb.data(), rgb.size()));
     sampled[0] = rgb[0];
     sampled[1] = rgb[1];
     sampled[2] = rgb[2];
@@ -396,6 +296,13 @@ HdEmbreeOiioTextureSystem::SetCacheSizeMB(int sizeMB)
 #endif
 }
 
+void
+HdEmbreeOiioTextureSystem::SetRenderColorSpace(
+    HdEmbreeRenderColorSpace colorSpace)
+{
+    _renderColorSpace = colorSpace;
+}
+
 HdEmbreeOiioTextureSystem::~HdEmbreeOiioTextureSystem()
 {
 #if defined(PXR_OIIO_PLUGIN_ENABLED)
@@ -530,7 +437,8 @@ HdEmbreeOiioTextureSystem::Sample2D(
         return _MakeDefaultResult(request, mxcpp::TextureSampleStatus::Error);
     }
 
-    _ApplyColorTransform(request, sampled, _impl.get());
+    _ApplyColorTransform(
+        request, sampled, _impl.get(), _renderColorSpace);
 
     mxcpp::Texture2DResult result;
     result.value = mxcpp::Vec4f(sampled[0], sampled[1], sampled[2], sampled[3]);

@@ -123,7 +123,13 @@ HdEmbreeRenderer::HdEmbreeRenderer()
         TfToken(HdEmbreeConfig::GetInstance().dielectricLayerThroughputMode))
     , _useAdobeOpenPBR(HdEmbreeConfig::GetInstance().useAdobeOpenPBR)
     , _textureSystem(std::make_unique<HdEmbreeOiioTextureSystem>())
-    , _materialEvalServices{_textureSystem.get(), 0.0f, 0.0f}
+    , _renderColorSpace(HdEmbreeRenderColorSpace::LinearRec709)
+    , _materialEvalServices{
+        _textureSystem.get(),
+        0.0f,
+        0.0f,
+        _renderColorSpace,
+        HdEmbreeGetLuminanceCoefficients(_renderColorSpace)}
     , _completedSamples(0)
     , _sssCallCount(0)
     , _sssSuccessCount(0)
@@ -355,6 +361,19 @@ HdEmbreeRenderer::SetSceneFrameAndTime(float frame, float time)
 {
     _materialEvalServices.frame = frame;
     _materialEvalServices.time = time;
+}
+
+void
+HdEmbreeRenderer::SetRenderColorSpace(HdEmbreeRenderColorSpace colorSpace)
+{
+    _renderColorSpace = colorSpace;
+    _materialEvalServices.renderColorSpace = colorSpace;
+    _materialEvalServices.luminanceCoefficients =
+        HdEmbreeGetLuminanceCoefficients(colorSpace);
+    if (auto* oiio =
+            dynamic_cast<HdEmbreeOiioTextureSystem*>(_textureSystem.get())) {
+        oiio->SetRenderColorSpace(colorSpace);
+    }
 }
 
 int

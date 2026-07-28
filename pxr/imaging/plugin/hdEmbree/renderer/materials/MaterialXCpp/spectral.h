@@ -7,6 +7,19 @@
 
 #include "mathTypes.h"
 
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
+#endif
+
+#include <BSDL/jakobhanika_impl.h>
+#include <BSDL/spectrum_decl.h>
+#include <BSDL/spectrum_luts.h>
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -14,6 +27,12 @@
 
 namespace mxcpp {
 namespace Spectral {
+
+enum class RgbColorSpace
+{
+    LinearRec709,
+    LinearAP1
+};
 
 constexpr float kLambdaMinNm = 380.0f;
 constexpr float kLambdaMaxNm = 780.0f;
@@ -288,8 +307,37 @@ _IntegrateD65Y()
 }
 
 inline float
-RgbToSpectralValue(const Vec3f& rgb, float wavelengthNm)
+RgbToSpectralValue(
+    const Vec3f& rgb,
+    float wavelengthNm,
+    RgbColorSpace colorSpace = RgbColorSpace::LinearRec709)
 {
+    if (colorSpace == RgbColorSpace::LinearAP1) {
+        const Vec3f nonNegative(
+            std::max(rgb[0], 0.0f),
+            std::max(rgb[1], 0.0f),
+            std::max(rgb[2], 0.0f));
+        const float maximum =
+            std::max(nonNegative[0], std::max(nonNegative[1], nonNegative[2]));
+        const float minimum =
+            std::min(nonNegative[0], std::min(nonNegative[1], nonNegative[2]));
+        if (maximum <= 0.0f) {
+            return 0.0f;
+        }
+        if (maximum - minimum < bsdl::EPSILON) {
+            return maximum;
+        }
+
+        constexpr float safeMaximum = 0.7f;
+        const float scale = std::max(maximum, safeMaximum);
+        const Vec3f scaled = nonNegative * (safeMaximum / scale);
+        const auto curve = bsdl::JakobHanikaUpsampler(
+            BSDL_CONFIG::get_jakobhanika_lut(
+                BSDL_CONFIG::ColorSpaceTag::ACEScg))
+            .lookup(scaled[0], scaled[1], scaled[2]);
+        return curve(wavelengthNm) * scale / safeMaximum;
+    }
+
     const Vec3f basis = _GetSrgbBasis()[_LookupIndex(wavelengthNm)];
     return std::max(
         basis[0] * rgb[0] + basis[1] * rgb[1] + basis[2] * rgb[2],
@@ -300,67 +348,117 @@ inline Vec3f
 _SpectralValueToRgbUnbalanced(
     float spectralValue,
     float wavelengthNm,
-    float wavelengthPdf)
+    float wavelengthPdf,
+    RgbColorSpace colorSpace)
 {
     if (spectralValue <= 0.0f || wavelengthPdf <= 0.0f) {
         return Vec3f(0.0f);
     }
 
     const int index = _LookupIndex(wavelengthNm);
-    const float invNorm = 1.0f / std::max(_IntegrateD65Y(), 1.0e-8f);
+    const auto& bsdlData = bsdl::Spectrum::get_luts();
+    const bool useAp1 = colorSpace == RgbColorSpace::LinearAP1;
+    const float illuminant = useAp1
+        ? bsdlData.D60_illuminant[index]
+        : _GetD65Illuminant()[index];
+    const float illuminantY = useAp1
+        ? bsdl::Spectrum::integrate_illuminant(
+            bsdlData.D60_illuminant, bsdlData.xyz_response)
+        : _IntegrateD65Y();
+    const float invNorm = 1.0f / std::max(illuminantY, 1.0e-8f);
     const Vec3f xyz = _GetXyzResponse()[index] *
-        (_GetD65Illuminant()[index] * spectralValue * invNorm / wavelengthPdf);
+        (illuminant * spectralValue * invNorm / wavelengthPdf);
 
-    const float r = std::max(
-        3.2405f * xyz[0] - 1.5371f * xyz[1] - 0.4985f * xyz[2],
-        0.0f);
-    const float g = std::max(
-        -0.9693f * xyz[0] + 1.8760f * xyz[1] + 0.0416f * xyz[2],
-        0.0f);
-    const float b = std::max(
-        0.0556f * xyz[0] - 0.2040f * xyz[1] + 1.0572f * xyz[2],
-        0.0f);
+    const float r = useAp1
+        ? std::max(
+            1.641023f * xyz[0] -
+            0.324803f * xyz[1] -
+            0.236425f * xyz[2],
+            0.0f)
+        : std::max(
+            3.2405f * xyz[0] -
+            1.5371f * xyz[1] -
+            0.4985f * xyz[2],
+            0.0f);
+    const float g = useAp1
+        ? std::max(
+            -0.663663f * xyz[0] +
+            1.615332f * xyz[1] +
+            0.016756f * xyz[2],
+            0.0f)
+        : std::max(
+            -0.9693f * xyz[0] +
+            1.8760f * xyz[1] +
+            0.0416f * xyz[2],
+            0.0f);
+    const float b = useAp1
+        ? std::max(
+            0.011722f * xyz[0] -
+            0.008284f * xyz[1] +
+            0.988395f * xyz[2],
+            0.0f)
+        : std::max(
+            0.0556f * xyz[0] -
+            0.2040f * xyz[1] +
+            1.0572f * xyz[2],
+            0.0f);
     return Vec3f(r, g, b);
 }
 
 inline Vec3f
-_GetNeutralRoundTripScale()
+_ComputeNeutralRoundTripScale(RgbColorSpace colorSpace)
 {
-    static const Vec3f scale = []() {
-        const float pdf = HeroWavelengthPdf();
-        Vec3f whiteResponse(0.0f);
+    const float pdf = HeroWavelengthPdf();
+    Vec3f whiteResponse(0.0f);
 
-        for (std::size_t i = 0; i < kLambdaResolution; ++i) {
-            const float wavelengthNm =
-                kLambdaMinNm + static_cast<float>(i) * kLambdaStepNm;
-            const float spectralWhite =
-                RgbToSpectralValue(Vec3f(1.0f), wavelengthNm);
-            const Vec3f reconstructed =
-                _SpectralValueToRgbUnbalanced(
-                    spectralWhite,
-                    wavelengthNm,
-                    pdf);
-            const float probability = _LookupBinWidthNm(i) / kLambdaRangeNm;
-            whiteResponse += reconstructed * probability;
-        }
+    for (std::size_t i = 0; i < kLambdaResolution; ++i) {
+        const float wavelengthNm =
+            kLambdaMinNm + static_cast<float>(i) * kLambdaStepNm;
+        const float spectralWhite =
+            RgbToSpectralValue(
+                Vec3f(1.0f), wavelengthNm, colorSpace);
+        const Vec3f reconstructed =
+            _SpectralValueToRgbUnbalanced(
+                spectralWhite,
+                wavelengthNm,
+                pdf,
+                colorSpace);
+        const float probability = _LookupBinWidthNm(i) / kLambdaRangeNm;
+        whiteResponse += reconstructed * probability;
+    }
 
-        return Vec3f(
-            1.0f / std::max(whiteResponse[0], 1.0e-8f),
-            1.0f / std::max(whiteResponse[1], 1.0e-8f),
-            1.0f / std::max(whiteResponse[2], 1.0e-8f));
-    }();
-    return scale;
+    return Vec3f(
+        1.0f / std::max(whiteResponse[0], 1.0e-8f),
+        1.0f / std::max(whiteResponse[1], 1.0e-8f),
+        1.0f / std::max(whiteResponse[2], 1.0e-8f));
 }
 
 inline Vec3f
-SpectralValueToRgb(float spectralValue, float wavelengthNm, float wavelengthPdf)
+_GetNeutralRoundTripScale(RgbColorSpace colorSpace)
+{
+    static const Vec3f rec709Scale =
+        _ComputeNeutralRoundTripScale(RgbColorSpace::LinearRec709);
+    static const Vec3f ap1Scale =
+        _ComputeNeutralRoundTripScale(RgbColorSpace::LinearAP1);
+    return colorSpace == RgbColorSpace::LinearAP1
+        ? ap1Scale
+        : rec709Scale;
+}
+
+inline Vec3f
+SpectralValueToRgb(
+    float spectralValue,
+    float wavelengthNm,
+    float wavelengthPdf,
+    RgbColorSpace colorSpace = RgbColorSpace::LinearRec709)
 {
     const Vec3f rgb =
         _SpectralValueToRgbUnbalanced(
             spectralValue,
             wavelengthNm,
-            wavelengthPdf);
-    return CompMul(rgb, _GetNeutralRoundTripScale());
+            wavelengthPdf,
+            colorSpace);
+    return CompMul(rgb, _GetNeutralRoundTripScale(colorSpace));
 }
 
 }  // namespace Spectral

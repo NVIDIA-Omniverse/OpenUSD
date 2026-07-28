@@ -18,9 +18,13 @@ find_package(Threads REQUIRED)
 
 include(bsdl.cmake)
 
-# BSDL has small tables for spectral rendering in sRGB. For other color
-# spaces, pass SPECTRAL_COLOR_SPACES to add_bsdl_library().
-add_bsdl_library(BSDL)
+# BSDL has small tables for spectral rendering in sRGB. Generate the ACEScg
+# Jakob-Hanika table used by hdEmbree's lin_ap1_scene spectral path.
+add_bsdl_library(BSDL SPECTRAL_COLOR_SPACES ACEScg)
+add_library(BSDL_spectral_luts STATIC ${BSDL_LUTS_CPP})
+target_link_libraries(BSDL_spectral_luts PUBLIC BSDL)
+set_target_properties(BSDL_spectral_luts PROPERTIES
+    POSITION_INDEPENDENT_CODE ON)
 add_library(BSDL::BSDL ALIAS BSDL)
 file(MAKE_DIRECTORY "${BSDL_GENERATED_INCLUDE_DIR}/BSDL")
 
