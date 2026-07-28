@@ -5,18 +5,25 @@
 // https://openusd.org/license.
 //
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
+#include "pxr/imaging/plugin/hdEmbree/delegate/renderBuffer.h"
+#include "pxr/imaging/plugin/hdEmbree/delegate/renderParam.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderPass.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
+#include "../renderer/materials/MaterialXCpp/materials/bsdf.h"
 
 #include "pxr/imaging/hd/renderBuffer.h"
 #include "pxr/imaging/hd/renderIndex.h"
 #include "pxr/imaging/hd/renderPassState.h"
 #include "pxr/imaging/hd/renderThread.h"
+#include "pxr/imaging/hd/rprim.h"
 #include "pxr/imaging/hd/tokens.h"
+#include "pxr/imaging/hd/unitTestDelegate.h"
 
+#include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/vec2i.h"
 #include "pxr/base/tf/diagnostic.h"
+#include "pxr/base/tf/diagnosticMgr.h"
 
 #include <embree4/rtcore.h>
 
@@ -26,7 +33,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <thread>
+#include <vector>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -148,6 +157,58 @@ _CountingRenderBuffer::WriteOutput(
         }
     }
 }
+
+// Capture the warnings that define fallback behavior for authored tokens.
+// Unexpected diagnostics are counted so none can be hidden by the delegate.
+class _ScopedTokenWarningDelegate final
+    : public TfDiagnosticMgr::Delegate
+{
+public:
+    _ScopedTokenWarningDelegate()
+    {
+        TfDiagnosticMgr::GetInstance().AddDelegate(this);
+    }
+
+    ~_ScopedTokenWarningDelegate() override
+    {
+        TfDiagnosticMgr::GetInstance().RemoveDelegate(this);
+    }
+
+    void IssueError(TfError const&) override
+    {
+        ++unexpectedDiagnostics;
+    }
+    void IssueFatalError(
+        TfCallContext const&, std::string const&) override
+    {
+        ++unexpectedDiagnostics;
+    }
+    void IssueStatus(TfStatus const&) override
+    {
+        ++unexpectedDiagnostics;
+    }
+
+    void IssueWarning(TfWarning const& warning) override
+    {
+        const std::string& commentary = warning.GetCommentary();
+        if (commentary.find("sampler sequence") != std::string::npos) {
+            ++samplerWarnings;
+        }
+        if (commentary.find("dielectric layer throughput mode") !=
+            std::string::npos) {
+            ++dielectricWarnings;
+        }
+        if (commentary.find("sampler sequence") == std::string::npos &&
+            commentary.find("dielectric layer throughput mode") ==
+                std::string::npos) {
+            ++unexpectedDiagnostics;
+        }
+    }
+
+    unsigned int samplerWarnings = 0;
+    unsigned int dielectricWarnings = 0;
+    unsigned int unexpectedDiagnostics = 0;
+};
 
 // Model a valid Hydra buffer owned by another delegate implementation.
 class _WrongRenderBuffer final : public HdRenderBuffer
@@ -274,8 +335,13 @@ _Configure(
     renderer->SetScene(scene);
     renderer->SetAovBindings(bindings);
     renderer->SetDataWindow(dataWindow);
-    renderer->SetSamplesToConvergence(1);
-    renderer->SetEnableAdaptiveSampling(false);
+    HdEmbreeRenderSettings settings;
+    settings.samplesToConvergence = 1;
+    settings.enableAdaptiveSampling = false;
+    // Every render-setup case exercises the newly exposed zero tile-size
+    // input; SetRenderSettings must normalize it before tile partitioning.
+    settings.tileSize = 0;
+    renderer->SetRenderSettings(settings);
 }
 
 bool
@@ -630,10 +696,12 @@ _TestAovOutputDispatch()
             scene.scene,
             {_Binding(HdAovTokens->color, &color)},
             dataWindow);
-        renderer.SetSamplesToConvergence(4);
-        renderer.SetEnableAdaptiveSampling(true);
-        renderer.SetMinSamplesBeforeAdaptive(5);
-        renderer.SetShowAdaptiveHeatmap(true);
+        HdEmbreeRenderSettings settings;
+        settings.samplesToConvergence = 4;
+        settings.enableAdaptiveSampling = true;
+        settings.minSamplesBeforeAdaptive = 5;
+        settings.showAdaptiveHeatmap = true;
+        renderer.SetRenderSettings(settings);
         renderThread.StartRender();
         renderer.Render(&renderThread);
         if (!TF_VERIFY(
@@ -672,7 +740,11 @@ _TestAovOutputDispatch()
                 colorBinding
             },
             dataWindow);
-        renderer.SetShowAdaptiveHeatmap(true);
+        HdEmbreeRenderSettings settings;
+        settings.samplesToConvergence = 1;
+        settings.enableAdaptiveSampling = false;
+        settings.showAdaptiveHeatmap = true;
+        renderer.SetRenderSettings(settings);
         renderThread.StartRender();
         renderer.Render(&renderThread);
         if (!TF_VERIFY(heatmap.sampleWriteCount == 0) ||
@@ -694,9 +766,11 @@ _TestAovOutputDispatch()
             scene.scene,
             {_Binding(HdEmbreeAovTokens->adaptiveHeatmap, &heatmap)},
             dataWindow);
-        renderer.SetSamplesToConvergence(4);
-        renderer.SetEnableAdaptiveSampling(true);
-        renderer.SetMinSamplesBeforeAdaptive(5);
+        HdEmbreeRenderSettings settings;
+        settings.samplesToConvergence = 4;
+        settings.enableAdaptiveSampling = true;
+        settings.minSamplesBeforeAdaptive = 5;
+        renderer.SetRenderSettings(settings);
         renderThread.StartRender();
         renderer.Render(&renderThread);
         if (!TF_VERIFY(
@@ -864,6 +938,284 @@ _TestRenderPassMarksRestartPending()
     return entered && pending;
 }
 
+bool
+_TestProcessGlobalSettingsAreReapplied()
+{
+    HdEmbreeRenderer renderer;
+    HdEmbreeRenderSettings settings;
+    settings.enableGgxMicrofacetMultipleScattering = false;
+    settings.dielectricLayerThroughputMode =
+        HdEmbreeDielectricLayerThroughputMode::MaterialXGlsl;
+    renderer.SetRenderSettings(settings);
+
+    mxcpp::Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
+    mxcpp::Bsdf::SetDielectricLayerThroughputMode(
+        mxcpp::Bsdf::DielectricLayerThroughputMode::Bsdl);
+    renderer.SetRenderSettings(settings);
+
+    const bool reapplied =
+        !mxcpp::Bsdf::IsGgxMicrofacetMultipleScatteringEnabled() &&
+        mxcpp::Bsdf::GetDielectricLayerThroughputMode() ==
+            mxcpp::Bsdf::DielectricLayerThroughputMode::MaterialXGlsl;
+    renderer.SetRenderSettings(HdEmbreeRenderSettings{});
+    return reapplied;
+}
+
+bool
+_TestTileSizeAndCameraJitterImages()
+{
+    constexpr unsigned int width = 40;
+    constexpr unsigned int height = 8;
+
+    HdEmbreeRenderDelegate delegate;
+    std::unique_ptr<HdRenderIndex> renderIndex(
+        HdRenderIndex::New(&delegate, HdDriverVector()));
+    if (!renderIndex) {
+        return false;
+    }
+
+    HdUnitTestDelegate sceneDelegate(
+        renderIndex.get(), SdfPath::AbsoluteRootPath());
+    const SdfPath meshId("/leftHalf");
+    // The right edge crosses pixel 20 halfway through its interior in NDC.
+    // Non-jittered rays stay left of it while jittered samples straddle it.
+    sceneDelegate.AddMesh(
+        meshId,
+        GfMatrix4f(1.0f),
+        VtVec3fArray{
+            GfVec3f(-2.0f, -2.0f, -2.0f),
+            GfVec3f(0.025f, -2.0f, -2.0f),
+            GfVec3f(0.025f, 2.0f, -2.0f),
+            GfVec3f(-2.0f, 2.0f, -2.0f)},
+        VtIntArray{4},
+        VtIntArray{0, 1, 2, 3},
+        false,
+        SdfPath(),
+        PxOsdOpenSubdivTokens->none,
+        HdTokens->rightHanded,
+        true);
+
+    HdRprim* const mesh =
+        const_cast<HdRprim*>(renderIndex->GetRprim(meshId));
+    if (!mesh) {
+        return false;
+    }
+    HdDirtyBits meshBits = mesh->GetInitialDirtyBitsMask();
+    mesh->InitRepr(
+        &sceneDelegate, HdReprTokens->smoothHull, &meshBits);
+    mesh->Sync(
+        &sceneDelegate,
+        delegate.GetRenderParam(),
+        &meshBits,
+        HdReprTokens->smoothHull);
+
+    HdEmbreeRenderParam* const renderParam =
+        static_cast<HdEmbreeRenderParam*>(delegate.GetRenderParam());
+    HdEmbreeRenderer* const renderer = renderParam->GetRenderer();
+    renderer->SetCamera(GfMatrix4d(1.0), GfMatrix4d(1.0));
+    renderer->SetDataWindow(
+        GfRect2i(GfVec2i(0), width, height));
+
+    const auto renderImage =
+        [&](int tileSize,
+            bool jitterCamera,
+            std::vector<uint8_t>* colorBytes,
+            std::vector<uint8_t>* primIdBytes) {
+            HdEmbreeRenderBuffer color(SdfPath("/imageColor"));
+            HdEmbreeRenderBuffer primId(SdfPath("/imagePrimId"));
+            if (!color.Allocate(
+                    GfVec3i(width, height, 1),
+                    HdFormatFloat32Vec4,
+                    true) ||
+                !primId.Allocate(
+                    GfVec3i(width, height, 1),
+                    HdFormatInt32,
+                    true)) {
+                return false;
+            }
+            renderer->SetAovBindings({
+                _Binding(HdAovTokens->color, &color),
+                _Binding(HdAovTokens->primId, &primId)});
+
+            HdEmbreeRenderSettings settings;
+            settings.samplesToConvergence = 16;
+            settings.randomNumberSeed = 1;
+            settings.tileSize = tileSize;
+            settings.jitterCamera = jitterCamera;
+            settings.enableAdaptiveSampling = false;
+            settings.enableLighting = false;
+            settings.ambientOcclusionSamples = 0;
+            renderer->SetRenderSettings(settings);
+
+            HdRenderThread renderThread;
+            renderThread.StartRender();
+            renderer->Render(&renderThread);
+            renderThread.StopRender();
+
+            const size_t colorByteCount =
+                width * height * HdDataSizeOfFormat(color.GetFormat());
+            const uint8_t* const colorData =
+                static_cast<uint8_t const*>(color.Map());
+            colorBytes->assign(
+                colorData, colorData + colorByteCount);
+            color.Unmap();
+
+            const size_t primIdByteCount =
+                width * height * HdDataSizeOfFormat(primId.GetFormat());
+            const uint8_t* const primIdData =
+                static_cast<uint8_t const*>(primId.Map());
+            primIdBytes->assign(
+                primIdData, primIdData + primIdByteCount);
+            primId.Unmap();
+            return renderer->DidLastFrameProduceValidPixels() &&
+                renderer->GetCompletedSamples() == 16;
+        };
+
+    std::vector<uint8_t> tile8Color;
+    std::vector<uint8_t> tile32Color;
+    std::vector<uint8_t> noJitterColor;
+    std::vector<uint8_t> tile8PrimId;
+    std::vector<uint8_t> tile32PrimId;
+    std::vector<uint8_t> noJitterPrimId;
+    const bool rendered =
+        renderImage(
+            8, true, &tile8Color, &tile8PrimId) &&
+        renderImage(
+            32, true, &tile32Color, &tile32PrimId) &&
+        renderImage(
+            8, false, &noJitterColor, &noJitterPrimId);
+
+    renderer->SetRenderSettings(HdEmbreeRenderSettings{});
+    return rendered &&
+        tile8Color == tile32Color &&
+        tile8PrimId == tile32PrimId &&
+        (noJitterColor != tile8Color ||
+         noJitterPrimId != tile8PrimId);
+}
+
+bool
+_TestRenderPassSettingsApplication()
+{
+    HdEmbreeRenderDelegate delegate;
+    std::unique_ptr<HdRenderIndex> renderIndex(
+        HdRenderIndex::New(&delegate, HdDriverVector()));
+    if (!renderIndex) {
+        return false;
+    }
+
+    HdEmbreeRenderer renderer;
+    std::atomic<int> sceneVersion{0};
+    std::atomic<int> displacementVersion{0};
+    HdRenderThread renderThread;
+    renderThread.SetRenderCallback([]() {});
+    renderThread.StartThread();
+    const auto finish = [&]() {
+        renderThread.StopThread();
+        renderer.SetRenderSettings(HdEmbreeRenderSettings{});
+    };
+
+    HdEmbreeRenderPass renderPass(
+        renderIndex.get(),
+        HdRprimCollection(),
+        &renderThread,
+        &renderer,
+        &sceneVersion,
+        &displacementVersion);
+    HdRenderPassStateSharedPtr renderPassState =
+        delegate.CreateRenderPassState();
+    renderPassState->SetViewport(GfVec4d(0.0, 0.0, 1.0, 1.0));
+
+    // The first Execute must restore defaults even when the settings version
+    // has not changed and process-wide state was changed externally.
+    mxcpp::Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(false);
+    mxcpp::Bsdf::SetDielectricLayerThroughputMode(
+        mxcpp::Bsdf::DielectricLayerThroughputMode::MaterialXGlsl);
+    renderPass.Execute(renderPassState, TfTokenVector());
+    const HdEmbreeRenderSettings first = renderer.GetRenderSettings();
+    if (!mxcpp::Bsdf::IsGgxMicrofacetMultipleScatteringEnabled() ||
+        mxcpp::Bsdf::GetDielectricLayerThroughputMode() !=
+            mxcpp::Bsdf::DielectricLayerThroughputMode::Bsdl ||
+        !first.jitterCamera) {
+        finish();
+        return false;
+    }
+
+    // A direct delegate update must propagate on the next Execute, normalize
+    // renderer invariants, and canonicalize unknown token values.
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->tileSize, VtValue(0));
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->maxBounces, VtValue(-2));
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->lightSamplesPerHit, VtValue(0));
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->jitterCamera, VtValue(false));
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->samplerSequence,
+        VtValue(std::string("invalid")));
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
+        VtValue(std::string("invalid")));
+    unsigned int samplerWarnings = 0;
+    unsigned int dielectricWarnings = 0;
+    unsigned int unexpectedDiagnostics = 0;
+    {
+        _ScopedTokenWarningDelegate warnings;
+        renderPass.Execute(renderPassState, TfTokenVector());
+        samplerWarnings = warnings.samplerWarnings;
+        dielectricWarnings = warnings.dielectricWarnings;
+        unexpectedDiagnostics = warnings.unexpectedDiagnostics;
+    }
+    const HdEmbreeRenderSettings normalized = renderer.GetRenderSettings();
+    if (normalized.tileSize != 1 ||
+        normalized.maxBounces != 0 ||
+        normalized.lightSamplesPerHit != 1 ||
+        normalized.jitterCamera ||
+        normalized.samplerSequence !=
+            HdEmbreeSamplerSequence::OpenQMCSobolBN ||
+        normalized.dielectricLayerThroughputMode !=
+            HdEmbreeDielectricLayerThroughputMode::Bsdl ||
+        samplerWarnings != 1 ||
+        dielectricWarnings != 1 ||
+        unexpectedDiagnostics != 0) {
+        finish();
+        return false;
+    }
+
+    // Lighting suppresses AO; otherwise the enable flag selects the authored
+    // AO sample count.
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->samplerSequence,
+        VtValue(std::string("openqmc_sobolbn")));
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
+        VtValue(std::string("bsdl")));
+    for (bool enableLighting : {false, true}) {
+        for (bool enableAmbientOcclusion : {false, true}) {
+            delegate.SetRenderSetting(
+                HdEmbreeRenderSettingsTokens->enableLighting,
+                VtValue(enableLighting));
+            delegate.SetRenderSetting(
+                HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
+                VtValue(enableAmbientOcclusion));
+            delegate.SetRenderSetting(
+                HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
+                VtValue(7));
+            renderPass.Execute(renderPassState, TfTokenVector());
+            const int expectedSamples =
+                !enableLighting && enableAmbientOcclusion ? 7 : 0;
+            if (renderer.GetRenderSettings().ambientOcclusionSamples !=
+                expectedSamples) {
+                finish();
+                return false;
+            }
+        }
+    }
+
+    finish();
+    return true;
+}
+
 } // anonymous namespace
 
 int
@@ -884,5 +1236,8 @@ main()
     TF_AXIOM(_TestInvalidHitContextsBecomeMisses());
     TF_AXIOM(_TestFrameStatusTransitions());
     TF_AXIOM(_TestRenderPassMarksRestartPending());
+    TF_AXIOM(_TestProcessGlobalSettingsAreReapplied());
+    TF_AXIOM(_TestTileSizeAndCameraJitterImages());
+    TF_AXIOM(_TestRenderPassSettingsApplication());
     return 0;
 }

@@ -87,7 +87,7 @@ HdEmbreeRenderer::_IntegrateUnlit(
 
     if (surfaceGraph) {
         mxcpp::EvalOptions evalOptions;
-        evalOptions.useAdobeOpenPBR = _useAdobeOpenPBR;
+        evalOptions.useAdobeOpenPBR = _settings.useAdobeOpenPBR;
         closure = surfaceGraph->Evaluate(ctx, evalOptions);
         hasMaterialClosure = true;
     }
@@ -113,7 +113,7 @@ HdEmbreeRenderer::_IntegrateUnlit(
     if (hasMaterialClosure) {
         materialColor = _ToGf(closure.baseColor);
     } else {
-        materialColor = _enableSceneColors
+        materialColor = _settings.enableSceneColors
             ? _ToGf(ctx.displayColor) : GfVec3f(0.5f);
     }
 
@@ -122,7 +122,7 @@ HdEmbreeRenderer::_IntegrateUnlit(
     const GfVec3f rawDir(
         rayHit.ray.dir_x, rayHit.ray.dir_y, rayHit.ray.dir_z);
     float diffuseLight = fabs(GfDot(-rawDir, normalShdWldOut)) *
-                         HdEmbreeConfig::GetInstance().cameraLightIntensity;
+                         HdEmbreeCameraLightIntensity;
 
     float aoLightIntensity = _ComputeAmbientOcclusion(
         positionHitWld, normalShdWldOut, interaction.normalGeomWldExt,
@@ -146,7 +146,7 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
                                            HdEmbreeSampleDomain const& domain)
 {
     // 0 ambient occlusion samples means disable the ambient occlusion term.
-    if (_ambientOcclusionSamples < 1) {
+    if (_settings.ambientOcclusionSamples < 1) {
         return 1.0f;
     }
 
@@ -173,23 +173,24 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
     // bunched in the far corner of the hemisphere, but instead have some
     // equal spacing guarantees.
     std::vector<GfVec2f> samples;
-    samples.resize(_ambientOcclusionSamples);
+    samples.resize(_settings.ambientOcclusionSamples);
     std::vector<float> yJitter;
-    yJitter.resize(_ambientOcclusionSamples);
-    for (int i = 0; i < _ambientOcclusionSamples; ++i) {
+    yJitter.resize(_settings.ambientOcclusionSamples);
+    for (int i = 0; i < _settings.ambientOcclusionSamples; ++i) {
         const GfVec2f sample =
             domain
                 .Split(
                     HdEmbreeSampleDomainKey::AmbientOcclusionSample,
-                    _ambientOcclusionSamples,
+                    _settings.ambientOcclusionSamples,
                     i)
                 .Draw2D();
         samples[i][0] =
-            (static_cast<float>(i) + sample[0]) / _ambientOcclusionSamples;
+            (static_cast<float>(i) + sample[0]) /
+            _settings.ambientOcclusionSamples;
         yJitter[i] = sample[1];
     }
     // Fisher-Yates shuffle using a separate sampler domain.
-    for (int i = _ambientOcclusionSamples - 1; i > 0; --i) {
+    for (int i = _settings.ambientOcclusionSamples - 1; i > 0; --i) {
         int j = static_cast<int>(
             domain
                 .Chain(HdEmbreeSampleDomainKey::AmbientOcclusionShuffle, i)
@@ -197,16 +198,17 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
         j = std::min(j, i);
         std::swap(samples[i], samples[j]);
     }
-    for (int i = 0; i < _ambientOcclusionSamples; ++i) {
+    for (int i = 0; i < _settings.ambientOcclusionSamples; ++i) {
         samples[i][1] =
-            (static_cast<float>(i) + yJitter[i]) / _ambientOcclusionSamples;
+            (static_cast<float>(i) + yJitter[i]) /
+            _settings.ambientOcclusionSamples;
     }
 
     // Ambient visibility is the fraction of the hemisphere that is unoccluded
     // when rays are traced to infinity.
     const GfVec3f rayOrigin =
         _OffsetRayOrigin(positionWld, normalGeomWldExt, normalShdWldOut, 1e-4f);
-    for (int i = 0; i < _ambientOcclusionSamples; i++)
+    for (int i = 0; i < _settings.ambientOcclusionSamples; i++)
     {
         // Sample in the hemisphere centered on normalShdWldOut. Use
         // cosine-weighting to favor directions with more influence on AO.
@@ -232,7 +234,7 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
             visibility += 1.0f;
     }
     // Average the ambient-visibility samples.
-    visibility /= _ambientOcclusionSamples;
+    visibility /= _settings.ambientOcclusionSamples;
 
     return visibility;
 }

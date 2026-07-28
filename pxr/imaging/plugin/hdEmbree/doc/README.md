@@ -134,8 +134,8 @@ attribute overrides for any prim into the session layer. Each value is parsed by
 the real usda parser in an isolated scratch layer and copied across as a
 `VtValue`, so every value type works and no value can author a prim; types come
 from the composed stage; every typo is a hard error before anything is authored.
-Replaces the per-invocation override capability that 12 deletes with the
-`HDEMBREE_*` environment variables.
+Provides the per-invocation override capability used after plan 12 deletes
+render-setting environment variables.
 _No code dependency. **Must be completed before 12**, or there is an interval
 with no way to override a render setting without editing the stage. Sole editor
 of `pxr/usdImaging/bin/usdrender/`; overlaps 12 only on `AGENTS.md`, `README.md`,

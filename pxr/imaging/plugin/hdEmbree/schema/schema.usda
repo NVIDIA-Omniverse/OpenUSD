@@ -49,6 +49,14 @@ class "TyphoonRenderSettingsAPI" (
         doc = """OpenQMC frame seed. A value of -1 uses the current scene frame."""
     )
 
+    uniform int ty:tileSize = 8 (
+        doc = """Pixel width and height of each parallel rendering work item."""
+    )
+
+    uniform bool ty:jitterCamera = true (
+        doc = """Jitter camera rays within pixels for antialiasing."""
+    )
+
     uniform token ty:samplerSequence = "openqmc_sobolbn" (
         allowedTokens = [
             "openqmc_sobol",

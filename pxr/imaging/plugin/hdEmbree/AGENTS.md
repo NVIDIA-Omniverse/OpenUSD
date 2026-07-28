@@ -149,8 +149,8 @@ Profile the printed `usdrender` command directly instead of profiling pytest,
 FLIP comparison, and report generation. Set `ty:randomNumberSeed` to a fixed
 value with `--set`. Keep resolution, sample count, bounce count, adaptive
 sampling, and other scene-authored render settings unchanged between
-measurements. Scene-authored `ty:` settings take precedence over
-environment-backed defaults; `--set` takes precedence over both.
+measurements. Scene-authored `ty:` settings take precedence over hard-coded
+defaults; `--set` takes precedence over both.
 Run the profiling commands below from `/home/anders/code/openusd-omniverse` so
 the `$PWD/.pixi` path identifies the provider environment.
 
@@ -273,7 +273,8 @@ plugin in the active Pixi environment.
 - `renderer/geometry/meshSamplers.*`, `renderer/geometry/primvarSampler.*`, `renderer/sampling/sampling.h`: primvar sampling and OpenQMC
   sample-domain logic.
 - `delegate/renderBuffer.*`: CPU-backed Hydra render buffer implementation for AOVs.
-- `renderer/config.*`: startup defaults from `HDEMBREE_*` environment variables.
+- `renderer/renderSettings.h`: renderer-consumed settings, hard-coded defaults,
+  token conversions, and pass-owned setting defaults.
 - `schema/schema.usda`, `schema/generatedSchema.usda`, `plugInfo.json`: the
   `TyphoonRenderSettingsAPI` applied USD API schema and schema registration.
 - `testenv/`: focused C++ tests for render settings, sampling, light sampling,
@@ -357,8 +358,8 @@ hdEmbree supports two related settings paths:
 
 The canonical hdEmbree-specific USD attributes are in the `ty:` namespace.
 Tokens are defined in `HDEMBREE_RENDER_SETTINGS_TOKENS` in `delegate/renderDelegate.h`.
-Defaults and UI labels are set in `HdEmbreeRenderDelegate::_Initialize()` in
-`delegate/renderDelegate.cpp`, mostly from `HdEmbreeConfig`.
+Defaults live in `renderer/renderSettings.h`; UI labels and descriptors are set
+in `HdEmbreeRenderDelegate::_Initialize()` in `delegate/renderDelegate.cpp`.
 
 `HdEmbreeRenderDelegate::GetRenderSettingsNamespaces()` currently returns
 `ty` and the empty namespace. `ty` asks UsdImaging/Hydra for hdEmbree-specific
@@ -378,17 +379,18 @@ delegate values it set, resets bridge-owned settings back to defaults when USD
 authored settings disappear, and avoids clobbering direct UI or explicit
 delegate-setting overrides.
 
-`_Execute()` then reads final values back from `HdRenderDelegate` and pushes
-them into `HdEmbreeRenderer` through setters such as
-`SetSamplesToConvergence()`, `SetEnableLighting()`,
-`SetDomeLightCameraVisibility()`, `SetSamplerSequence()`,
-`SetMaxBounces()`, `SetDisableShadows()`, and material-context handling.
+`_Execute()` then reads final values back from `HdRenderDelegate`, resolves
+cross-setting policy and token values, and pushes one
+`HdEmbreeRenderSettings` value through
+`HdEmbreeRenderer::SetRenderSettings()`. Material-context handling remains
+pass-owned.
 
 When adding or changing a render setting, update all relevant surfaces:
 
 - `delegate/renderDelegate.h`: token definition.
-- `delegate/renderDelegate.cpp`: descriptor label, default, and default population.
-- `renderer/config.h/.cpp`: environment variable-backed default if appropriate.
+- `delegate/renderDelegate.cpp`: descriptor label and default population.
+- `renderer/renderSettings.h`: hard-coded default and renderer field, or a
+  named pass-owned default.
 - `delegate/renderPass.cpp`: bridge and `_Execute()` push into `HdEmbreeRenderer`.
 - `renderer/renderer.h/.cpp`: setting storage and frame orchestration; runtime behavior lives in the owning `renderer/aov/`, `renderer/camera/`, or `renderer/integrator/` implementation.
 - `schema/schema.usda` and `schema/generatedSchema.usda`: `TyphoonRenderSettingsAPI`.

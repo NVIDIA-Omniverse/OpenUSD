@@ -226,7 +226,8 @@ corresponding type without changing the semantic name.
 - `sampling/sampling.h`: OpenQMC sequence selection, stable sample-domain keys,
   and `Fork`, `Split`, `Distrib`, and `Chain` operations.
 - `renderBuffer.h`: narrow AOV output interface implemented by the delegate.
-- `config.h/.cpp`: startup defaults from `HDEMBREE_*` environment variables.
+- `renderSettings.h`: the renderer-consumed settings value, hard-coded
+  defaults, token conversions, and pass-owned setting defaults.
 - `debugCodes.h/.cpp`: hdEmbree `TF_DEBUG` symbols.
 
 ### `schema/`: render settings
@@ -358,7 +359,10 @@ traversal to reduce ray leaks at dense displaced patch boundaries.
 
 1. Hydra calls `HdEmbreeRenderPass::_Execute()`.
 2. The pass compares scene/settings versions, frame/time, camera/framing, data window, and AOV bindings with the previous execution.
-3. Changes are pushed through `HdEmbreeRenderer::Set*`. Values originate in delegate descriptors, scene-index `HdRenderSettingsSchema`, and `HdEmbreeConfig`.
+3. The pass resolves delegate and scene-index `HdRenderSettingsSchema` values,
+   then applies renderer-consumed settings through one
+   `HdEmbreeRenderer::SetRenderSettings()` call. Camera, framing, AOV, scene,
+   and wireframe state retain their dedicated setters.
 4. If accumulation-relevant state changed, the pass stops the thread, resets as needed, and starts `HdEmbreeRenderer::Render()` on `HdRenderThread`.
 5. Before scene commit or buffer mapping, the renderer validates that the
    scene exists, every AOV is an hdEmbree buffer with a supported format and
@@ -699,13 +703,29 @@ Anders.
 
 ### Render settings
 
+hdEmbree's supported external render-settings interface is the USD
+`TyphoonRenderSettingsAPI` schema. Direct Hydra delegate settings remain an
+internal application-control path used by clients such as usdview's renderLab.
+`HdEmbreeRenderer` and `HdEmbreeRenderSettings` are implementation details, not
+a supported C++ API.
+
+The MaterialXCpp GGX multiple-scattering and dielectric-layer throughput
+policies remain process-wide globals. OIIO's primary texture system and its
+cache-size attribute are also process-wide because it is created in shared
+mode. `SetRenderSettings()` therefore reapplies all three values
+unconditionally; applying them for one stopped renderer can affect another
+renderer that is shading concurrently. Per-evaluation ownership is separate
+work.
+
 Update all relevant surfaces:
 
-- token, descriptor, label, and default in `delegate/renderDelegate.*`;
-- environment default in `renderer/config.*`, if appropriate;
+- default and typed runtime field in `renderer/renderSettings.h`, where
+  renderer-consumed;
+- token, descriptor, and label in `delegate/renderDelegate.*`;
 - authored and generated files under `schema/`;
 - bridge logic in `delegate/renderPass.cpp`;
-- renderer setter/state in `renderer/renderer.*` and behavior in the owning `aov/`, `camera/`, or `integrator/` file;
+- unified renderer application/state in `renderer/renderer.*` and behavior in
+  the owning `aov/`, `camera/`, or `integrator/` file;
 - user documentation in `README.md`;
 - coverage in `testenv/testHdEmbreeRenderSettings.cpp`.
 

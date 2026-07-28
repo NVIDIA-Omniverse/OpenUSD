@@ -40,14 +40,14 @@ class "TyphoonRenderSettingsAPI" (
             string userDocBrief = "Rough dielectric top-layer throughput estimate mode."
         }
     )
-    uniform bool ty:dynamicSubdvTesselation = 0 (
-        customData = {
-            string userDocBrief = "Recompute screen-space subdivision tessellation after camera or viewport changes."
-        }
-    )
     uniform bool ty:disableShadows = 0 (
         customData = {
             string userDocBrief = "Disable shadow visibility rays."
+        }
+    )
+    uniform bool ty:dynamicSubdvTesselation = 0 (
+        customData = {
+            string userDocBrief = "Recompute screen-space subdivision tessellation after camera or viewport changes."
         }
     )
     uniform bool ty:enableAdaptiveSampling = 1 (
@@ -90,6 +90,11 @@ class "TyphoonRenderSettingsAPI" (
             string userDocBrief = "Clamp threshold for bright non-caustic path contributions."
         }
     )
+    uniform bool ty:jitterCamera = 1 (
+        customData = {
+            string userDocBrief = "Jitter camera rays within pixels for antialiasing."
+        }
+    )
     uniform int ty:lightSamplesPerHit = 1 (
         customData = {
             string userDocBrief = "Number of light samples per hit point per light."
@@ -118,7 +123,7 @@ class "TyphoonRenderSettingsAPI" (
     )
     uniform int ty:randomNumberSeed = -1 (
         customData = {
-            string userDocBrief = "OpenQMC frame seed. A value of -1 uses the current scene frame."
+            string userDocBrief = "OpenQMC frame seed."
         }
     )
     uniform token ty:samplerSequence = "openqmc_sobolbn" (
@@ -140,6 +145,11 @@ class "TyphoonRenderSettingsAPI" (
     uniform int ty:textureCacheSize = 16384 (
         customData = {
             string userDocBrief = "Size (in MB) of the OpenImageIO texture/tile cache."
+        }
+    )
+    uniform int ty:tileSize = 8 (
+        customData = {
+            string userDocBrief = "Pixel width and height of each parallel rendering work item."
         }
     )
     uniform bool ty:useAdobeOpenPBR = 0 (

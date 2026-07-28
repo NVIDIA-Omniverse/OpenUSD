@@ -7,6 +7,7 @@
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderBuffer.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/colorManagement.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/renderSettings.h"
 
 #include "pxr/base/gf/colorSpace.h"
 #include "pxr/base/gf/color.h"
@@ -26,6 +27,7 @@
 #include "pxr/base/plug/registry.h"
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/usd/sdf/types.h"
+#include "pxr/usd/sdf/schema.h"
 #include "pxr/usd/usd/attribute.h"
 #include "pxr/usd/usd/primDefinition.h"
 #include "pxr/usd/usd/schemaRegistry.h"
@@ -40,6 +42,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -115,6 +118,8 @@ _TestRenderDelegateSettings()
         HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
         HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
         HdEmbreeRenderSettingsTokens->randomNumberSeed,
+        HdEmbreeRenderSettingsTokens->tileSize,
+        HdEmbreeRenderSettingsTokens->jitterCamera,
         HdEmbreeRenderSettingsTokens->samplerSequence,
         HdRenderSettingsTokens->domeLightCameraVisibility,
         HdEmbreeRenderSettingsTokens->enableExposureCompensation,
@@ -768,6 +773,8 @@ _TestTyphoonRenderSettingsAPI()
         TfToken("ty:ambientOcclusionSamples"),
         TfToken("ty:convergedSamplesPerPixel"),
         TfToken("ty:randomNumberSeed"),
+        TfToken("ty:tileSize"),
+        TfToken("ty:jitterCamera"),
         TfToken("ty:samplerSequence"),
         TfToken("ty:enableExposureCompensation"),
         TfToken("ty:enableAdaptiveSampling"),
@@ -885,6 +892,176 @@ _TestTyphoonRenderSettingsAPI()
     return true;
 }
 
+TfToken
+_GetTokenValue(VtValue const& value)
+{
+    if (value.IsHolding<TfToken>()) {
+        return value.UncheckedGet<TfToken>();
+    }
+    if (value.IsHolding<std::string>()) {
+        return TfToken(value.UncheckedGet<std::string>());
+    }
+    return TfToken();
+}
+
+bool
+_TestRenderSettingDefaultParity()
+{
+    const UsdPrimDefinition* apiDef =
+        UsdSchemaRegistry::GetInstance().FindAppliedAPIPrimDefinition(
+            TfToken("TyphoonRenderSettingsAPI"));
+    if (!apiDef) {
+        std::printf("missing schema for render-setting parity test\n");
+        return false;
+    }
+
+    const HdEmbreeRenderSettings defaults;
+    const std::vector<std::pair<TfToken, VtValue>> expected = {
+        {HdEmbreeRenderSettingsTokens->enableSceneColors,
+         VtValue(defaults.enableSceneColors)},
+        {HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
+         VtValue(HdEmbreeDefaultEnableAmbientOcclusion)},
+        {HdEmbreeRenderSettingsTokens->enableLighting,
+         VtValue(defaults.enableLighting)},
+        {HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
+         VtValue(defaults.ambientOcclusionSamples)},
+        {HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
+         VtValue(defaults.samplesToConvergence)},
+        {HdEmbreeRenderSettingsTokens->randomNumberSeed,
+         VtValue(defaults.randomNumberSeed)},
+        {HdEmbreeRenderSettingsTokens->tileSize,
+         VtValue(defaults.tileSize)},
+        {HdEmbreeRenderSettingsTokens->jitterCamera,
+         VtValue(defaults.jitterCamera)},
+        {HdEmbreeRenderSettingsTokens->samplerSequence,
+         VtValue(HdEmbreeGetSamplerSequenceToken(defaults.samplerSequence))},
+        {HdEmbreeRenderSettingsTokens->enableExposureCompensation,
+         VtValue(HdEmbreeDefaultEnableExposureCompensation)},
+        {HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
+         VtValue(HdEmbreeDefaultDynamicSubdvTesselation)},
+        {HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
+         VtValue(defaults.enableAdaptiveSampling)},
+        {HdEmbreeRenderSettingsTokens->adaptiveThreshold,
+         VtValue(defaults.adaptiveThreshold)},
+        {HdEmbreeRenderSettingsTokens->minSamplesBeforeAdaptive,
+         VtValue(defaults.minSamplesBeforeAdaptive)},
+        {HdEmbreeRenderSettingsTokens->maxBounces,
+         VtValue(defaults.maxBounces)},
+        {HdEmbreeRenderSettingsTokens->minBouncesBeforeRR,
+         VtValue(defaults.minBouncesBeforeRR)},
+        {HdEmbreeRenderSettingsTokens->lightSamplesPerHit,
+         VtValue(defaults.lightSamplesPerHit)},
+        {HdEmbreeRenderSettingsTokens->stratifyLightSamples,
+         VtValue(defaults.stratifyLightSamples)},
+        {HdEmbreeRenderSettingsTokens->showAdaptiveHeatmap,
+         VtValue(defaults.showAdaptiveHeatmap)},
+        {HdEmbreeRenderSettingsTokens->fireflyClampThreshold,
+         VtValue(defaults.fireflyClampThreshold)},
+        {HdEmbreeRenderSettingsTokens->enableCaustics,
+         VtValue(defaults.enableCaustics)},
+        {HdEmbreeRenderSettingsTokens->causticsClampThreshold,
+         VtValue(defaults.causticsClampThreshold)},
+        {HdEmbreeRenderSettingsTokens->approxTransparentShadows,
+         VtValue(defaults.approxTransparentShadows)},
+        {HdEmbreeRenderSettingsTokens->disableShadows,
+         VtValue(defaults.disableShadows)},
+        {HdEmbreeRenderSettingsTokens->enableGgxMicrofacetMultipleScattering,
+         VtValue(defaults.enableGgxMicrofacetMultipleScattering)},
+        {HdEmbreeRenderSettingsTokens->materialRenderContext,
+         VtValue(TfToken(HdEmbreeDefaultMaterialRenderContext))},
+        {HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
+         VtValue(defaults.useAdobeOpenPBR)},
+        {HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
+         VtValue(HdEmbreeGetDielectricLayerThroughputModeToken(
+             defaults.dielectricLayerThroughputMode))},
+        {HdEmbreeRenderSettingsTokens->textureCacheSize,
+         VtValue(defaults.textureCacheSizeMB)}
+    };
+
+    const TfTokenVector schemaProperties = apiDef->GetPropertyNames();
+    if (schemaProperties.size() != expected.size()) {
+        std::printf("schema/default count mismatch: %zu vs %zu\n",
+                    schemaProperties.size(), expected.size());
+        return false;
+    }
+
+    for (std::pair<TfToken, VtValue> const& entry : expected) {
+        VtValue fallback;
+        if (!apiDef->GetAttributeFallbackValue(entry.first, &fallback) ||
+            fallback != entry.second) {
+            std::printf("schema/default mismatch: %s\n",
+                        entry.first.GetText());
+            return false;
+        }
+    }
+
+    const HdEmbreeRenderDelegate delegate;
+    const HdRenderSettingDescriptorList descriptors =
+        delegate.GetRenderSettingDescriptors();
+    for (HdRenderSettingDescriptor const& descriptor : descriptors) {
+        if (descriptor.key ==
+            HdRenderSettingsPrimTokens->renderingColorSpace) {
+            continue;
+        }
+        if (descriptor.key ==
+            HdRenderSettingsTokens->domeLightCameraVisibility) {
+            if (descriptor.defaultValue !=
+                VtValue(defaults.domeLightCameraVisibility)) {
+                std::printf("dome descriptor/default mismatch\n");
+                return false;
+            }
+            continue;
+        }
+        const auto it = std::find_if(
+            expected.begin(), expected.end(),
+            [&descriptor](std::pair<TfToken, VtValue> const& entry) {
+                return entry.first == descriptor.key;
+            });
+        if (it == expected.end()) {
+            std::printf("descriptor has no schema default: %s\n",
+                        descriptor.key.GetText());
+            return false;
+        }
+        if (it->second.IsHolding<TfToken>()) {
+            if (_GetTokenValue(descriptor.defaultValue) !=
+                it->second.UncheckedGet<TfToken>()) {
+                std::printf("token descriptor/default mismatch: %s\n",
+                            descriptor.key.GetText());
+                return false;
+            }
+        } else if (descriptor.defaultValue != it->second) {
+            std::printf("descriptor/default mismatch: %s\n",
+                        descriptor.key.GetText());
+            return false;
+        }
+    }
+
+    const TfToken tokenSettings[] = {
+        HdEmbreeRenderSettingsTokens->samplerSequence,
+        HdEmbreeRenderSettingsTokens->materialRenderContext,
+        HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode
+    };
+    for (TfToken const& tokenSetting : tokenSettings) {
+        VtTokenArray allowedTokens;
+        const UsdPrimDefinition::Attribute attribute =
+            apiDef->GetAttributeDefinition(tokenSetting);
+        VtValue fallback;
+        if (!attribute ||
+            !attribute.GetMetadata(SdfFieldKeys->AllowedTokens,
+                                   &allowedTokens) ||
+            !apiDef->GetAttributeFallbackValue(tokenSetting, &fallback) ||
+            std::find(
+                allowedTokens.begin(), allowedTokens.end(),
+                _GetTokenValue(fallback)) == allowedTokens.end()) {
+            std::printf("invalid token default or allowedTokens: %s\n",
+                        tokenSetting.GetText());
+            return false;
+        }
+    }
+
+    return true;
+}
+
 }
 
 int
@@ -900,6 +1077,9 @@ main()
         return 1;
     }
     if (!_TestTyphoonRenderSettingsAPI()) {
+        return 1;
+    }
+    if (!_TestRenderSettingDefaultParity()) {
         return 1;
     }
     if (!_TestActiveRenderSettingsPrimBridge()) {

@@ -32,7 +32,7 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
     constexpr float kVisThreshold = 1e-4f;
     constexpr float kRayBias = 1e-4f;
 
-    if (_disableShadows) {
+    if (_settings.disableShadows) {
         return GfVec3f(1.0f);
     }
 
@@ -45,7 +45,7 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
 
     const auto evalShadowTransmittance = [&](float distance) {
         const bool useAdobeVolumeTransport =
-            _useAdobeOpenPBR &&
+            _settings.useAdobeOpenPBR &&
             shadowMedium.medium.transportModel ==
                 mxcpp::MediumTransportModel::AdobeOpenPBR;
         return _ToGf(useAdobeVolumeTransport
@@ -142,11 +142,11 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
             surfaceVisibility = GfVec3f(1.0f);
         } else if (hasClosure) {
             const bool useStraightTransmission =
-                closure.thinWalled || _approxTransparentShadows;
+                closure.thinWalled || _settings.approxTransparentShadows;
             if (useStraightTransmission) {
                 GfVec3f transmissionVisibility(0.0f);
                 if (closure.thinWalled ||
-                    (_approxTransparentShadows &&
+                    (_settings.approxTransparentShadows &&
                      (exitsCurrentMedium ||
                       exitsStraightTransparent ||
                       closure.transmission > 0.0f))) {
@@ -195,7 +195,7 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
             shadowMedium.active = true;
             shadowMedium.medium = closure.interiorMedium;
             shadowMedium.ownerGeometry = hitMesh;
-        } else if (_approxTransparentShadows && !shadowMedium.active &&
+        } else if (_settings.approxTransparentShadows && !shadowMedium.active &&
                    hasClosure && !closure.thinWalled &&
                    closure.transmission > 0.0f && hitMesh &&
                    GfDot(directionShadowWld, normalGeomBlockerWldExt) < 0.0f) {

@@ -39,6 +39,10 @@ Three consequences beyond size:
   | `MaterialXCpp/spectral.h` | 1 | 369 | `heroWavelength` |
   | `config.h`, `materials/oiioTextureSystem.h`, `tf/singleton.h`, `tf/envSetting.h`, `tf/instantiateSingleton.h` | 5 | 815 | audit — may be unused |
 
+  These measurements predate plan `12`. That plan deletes `config.h` and its
+  Tf environment/singleton dependency chain, so reproduce the closure and
+  totals before implementing this plan.
+
   The consumers do not include any of this themselves — `surfaceShading.cpp:9-12`,
   `aovOutput.cpp:9-11`, and `pathIntegrator.cpp:9-11` each include only
   `renderer.h`, `rendererImpl.h`, and one or two more — so the dependency is

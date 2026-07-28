@@ -44,12 +44,12 @@ HdEmbreeRenderer::_AddPathRadiance(GfVec3f radianceContribution,
     }
     if (state->currentPathIsCaustic) {
         radianceContribution = _ClampFireflyContribution(
-            radianceContribution, _causticsClampThreshold,
+            radianceContribution, _settings.causticsClampThreshold,
             _materialEvalServices.luminanceCoefficients);
     }
     state->radianceAccumulated +=
         _ClampFireflyContribution(
-            radianceContribution, _fireflyClampThreshold,
+            radianceContribution, _settings.fireflyClampThreshold,
             _materialEvalServices.luminanceCoefficients);
 }
 
@@ -72,7 +72,7 @@ HdEmbreeRenderer::_IntegratePath(
     // continuations use them to propagate the camera-ray footprint.
     _SurfaceDifferentials surfaceDifferentials;
 
-    const int maxBounces = std::max(0, _maxBounces);
+    const int maxBounces = std::max(0, _settings.maxBounces);
 
     // bounce counts real scatters; pathEvent advances every iteration so
     // pass-through events still get distinct deterministic sample domains.
@@ -178,7 +178,7 @@ HdEmbreeRenderer::_IntegratePath(
                     1.0f / finiteLightHit.pdfSolidAngleInverse;
                 const float effectiveLightPdf = _GetMultiSampleMisLightPdf(
                     lightPdf,
-                    _lightSamplesPerHit);
+                    _settings.lightSamplesPerHit);
                 if (effectiveLightPdf > 0.0f) {
                     radianceLight *= mxcpp::Bsdf::PowerHeuristic(
                         path.lastBsdfPdf, effectiveLightPdf);
@@ -270,7 +270,7 @@ HdEmbreeRenderer::_IntegratePath(
 
         if (surfaceGraph && !path.useSyntheticLambertian) {
             mxcpp::EvalOptions evalOptions;
-            evalOptions.useAdobeOpenPBR = _useAdobeOpenPBR;
+            evalOptions.useAdobeOpenPBR = _settings.useAdobeOpenPBR;
             closure = surfaceGraph->Evaluate(ctx, evalOptions);
             hasClosure = true;
         }
@@ -373,7 +373,9 @@ HdEmbreeRenderer::_IntegratePath(
         const mxcpp::SurfaceClosure* bsdfClosure =
             hasClosure ? &closure : nullptr;
         bool hasBsdfClosure = hasClosure && !volumeOnlyBoundary;
-        if (hasClosure && path.hasDiffuseLikeAncestor && !_enableCaustics) {
+        if (hasClosure &&
+            path.hasDiffuseLikeAncestor &&
+            !_settings.enableCaustics) {
             causticPrunedClosure =
                 mxcpp::Bsdf::PruneCausticClassLobes(closure);
             // A tree-based material can prune down to no remaining BSDF
@@ -389,7 +391,9 @@ HdEmbreeRenderer::_IntegratePath(
 
         // Enter hero-wavelength mode at the first dispersive closure and
         // retain that wavelength/PDF for every later segment.
-        if (hasBsdfClosure && bsdfClosure->HasDispersion() && !path.hero.active) {
+        if (hasBsdfClosure &&
+            bsdfClosure->HasDispersion() &&
+            !path.hero.active) {
             path.hero.active = true;
             path.hero.wavelengthNm =
                 mxcpp::Spectral::SampleHeroWavelength(
@@ -490,7 +494,7 @@ HdEmbreeRenderer::_IntegratePath(
         } else if (!hasClosure) {
             // Missing/failed materials use diffuse display color so
             // unmaterialized geometry remains visible.
-            GfVec3f matColor = _enableSceneColors
+            GfVec3f matColor = _settings.enableSceneColors
                 ? _ToGf(ctx.displayColor) : GfVec3f(0.5f);
             mxcpp::SurfaceClosure fallback;
             fallback.baseColor = _ToMx(matColor);
@@ -586,7 +590,7 @@ HdEmbreeRenderer::_IntegratePath(
         // distribution when caustics are disabled. Keep this guard for cases
         // that are only visible after sampling, such as normal-map boundary
         // changes, backend-specific lobe labels, or future medium variants.
-        if (sampledCausticEvent && !_enableCaustics) {
+        if (sampledCausticEvent && !_settings.enableCaustics) {
             break;
         }
         path.currentPathIsCaustic =
@@ -667,7 +671,7 @@ HdEmbreeRenderer::_IntegratePath(
 
         // Russian roulette ends low-throughput paths without bias; survivors
         // divide by their probability. Terminal emitter rays skip it.
-        if (!traceEmitterOnlySample && bounce >= _minBouncesBeforeRR) {
+        if (!traceEmitterOnlySample && bounce >= _settings.minBouncesBeforeRR) {
             float q =
                 path.hero.active
                     ? std::max({

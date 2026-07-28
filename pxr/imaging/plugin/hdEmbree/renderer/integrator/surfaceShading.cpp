@@ -173,9 +173,10 @@ HdEmbreeRenderer::_ApplyWireframe(
                                    _viewMatrix, _inverseProjMatrix,
                                    static_cast<float>(_dataWindow.GetWidth()),
                                    static_cast<float>(_dataWindow.GetHeight()),
-                                   _samplesToConvergence, wireframeContext);
+                                   _settings.samplesToConvergence,
+                                   wireframeContext);
     const float derivativeScale =
-        HdEmbreeComputeWireframeDerivativeScale(_samplesToConvergence);
+        HdEmbreeComputeWireframeDerivativeScale(_settings.samplesToConvergence);
     const HdEmbreeWireframeSample sample{
         primaryHit.hit.u,
         primaryHit.hit.v,
@@ -425,7 +426,7 @@ HdEmbreeRenderer::_BuildShadingContext(
 
     // Display color — always sample the authored primvar so that material
     // evaluation (including opacity) sees the correct value regardless of
-    // the _enableSceneColors display-only flag.
+    // the _settings.enableSceneColors display-only flag.
     GfVec3f displayColor(0.8f);
     {
         auto it = prototypeContext->primvarMap.find(HdTokens->displayColor);
@@ -598,7 +599,8 @@ HdEmbreeRenderer::_BuildShadingContext(
         _ComputeScreenSpaceDerivatives(
             rayDiff, positionHitWld, normalSrfWldOut, dPdu, dPdv, _viewMatrix,
             _inverseProjMatrix, static_cast<float>(_dataWindow.GetWidth()),
-            static_cast<float>(_dataWindow.GetHeight()), _samplesToConvergence,
+            static_cast<float>(_dataWindow.GetHeight()),
+            _settings.samplesToConvergence,
             ctx);
     }
 
@@ -661,7 +663,7 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
     ctx.geomPropUserData = &cbData;
     ctx.uniformProps = &prototypeContext->uniformPrimvarMap;
     mxcpp::EvalOptions evalOptions;
-    evalOptions.useAdobeOpenPBR = _useAdobeOpenPBR;
+    evalOptions.useAdobeOpenPBR = _settings.useAdobeOpenPBR;
     evalOptions.visibilityOnly = true;
     *outClosure = surfaceGraph->Evaluate(ctx, evalOptions);
 

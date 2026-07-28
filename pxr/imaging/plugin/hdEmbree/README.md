@@ -9,12 +9,12 @@ frame and pixel-sample orchestration remains in `renderer.cpp`, while camera
 sampling, lit and unlit integrators, AOVs, lights, materials, geometry, and
 sampling live in dedicated subdirectories. See `ARCHITECTURE.md` for the file map and render-flow guide.
 
-The following settings can be configured via `renderSettings` (Hydra render
-delegate settings API) and/or environment variables. USD `RenderSettings` prim
-attributes use the `ty:` namespace. For `usdrender`, precedence is:
-built-in default < environment variable < USD `RenderSettings` prim <
-command-line `--set`. Interactive applications can place direct Hydra renderer
-settings, including UI changes, above authored USD values.
+The following settings can be configured through the Hydra render-delegate
+settings API. USD `RenderSettings` prim attributes use the `ty:` namespace,
+except the generic `domeLightCameraVisibility` setting. For `usdrender`,
+precedence is built-in default < USD `RenderSettings` prim < command-line
+`--set`. Interactive applications can place direct Hydra renderer settings,
+including UI changes, above authored USD values.
 
 ## Render-product output
 
@@ -135,35 +135,38 @@ nearest surface's interiors and draw the retained front-surface edges as
 unlit, opaque black. They do not trace rear-facing edges through that surface;
 use wire-on-surface for deterministic final-render diagnostics.
 
-| UI Name | Token | Type | Default | Environment Variable |
-|---------|-------|------|---------|---------------------|
-| Enable Scene Colors | `ty:enableSceneColors` | `bool` | `true` | `HDEMBREE_ENABLE_SCENE_COLORS` |
-| Enable Scene Lighting | `ty:enableLighting` | `bool` | `true` | `HDEMBREE_ENABLE_LIGHTING` |
-| Enable Ambient Occlusion | `ty:enableAmbientOcclusion` | `bool` | `false` | `HDEMBREE_ENABLE_AMBIENT_OCCLUSION` |
-| Ambient Occlusion Samples | `ty:ambientOcclusionSamples` | `int` | `0` | `HDEMBREE_AMBIENT_OCCLUSION_SAMPLES` |
-| Samples To Convergence | `ty:convergedSamplesPerPixel` | `int` | `256` | `HDEMBREE_SAMPLES_TO_CONVERGENCE` |
-| Random Number Seed | `ty:randomNumberSeed` | `int` | `-1` | `HDEMBREE_RANDOM_NUMBER_SEED` |
-| Sampler Sequence | `ty:samplerSequence` | `token` | `openqmc_sobolbn` | `HDEMBREE_SAMPLER_SEQUENCE` |
-| Dome Light Camera Visibility | `ty:domeLightCameraVisibility` | `bool` | `true` | `HDEMBREE_DOME_LIGHT_CAMERA_VISIBILITY` |
-| Enable Exposure Compensation | `ty:enableExposureCompensation` | `bool` | `true` | - |
-| Dynamic Subdivision Tessellation | `ty:dynamicSubdvTesselation` | `bool` | `false` | - |
-| Enable Adaptive Sampling | `ty:enableAdaptiveSampling` | `bool` | `true` | `HDEMBREE_ENABLE_ADAPTIVE_SAMPLING` |
-| Adaptive Threshold | `ty:adaptiveThreshold` | `float` | `0.01` | `HDEMBREE_ADAPTIVE_THRESHOLD` |
-| Min Samples Before Adaptive | `ty:minSamplesBeforeAdaptive` | `int` | `64` | `HDEMBREE_MIN_SAMPLES_BEFORE_ADAPTIVE` |
-| Max Bounces | `ty:maxBounces` | `int` | `16` | `HDEMBREE_MAX_BOUNCES` |
-| Min Bounces Before Russian Roulette | `ty:minBouncesBeforeRR` | `int` | `2` | `HDEMBREE_MIN_BOUNCES_BEFORE_RR` |
-| Light Samples Per Hit | `ty:lightSamplesPerHit` | `int` | `1` | `HDEMBREE_LIGHT_SAMPLES_PER_HIT` |
-| Stratify Light Samples | `ty:stratifyLightSamples` | `bool` | `true` | `HDEMBREE_STRATIFY_LIGHT_SAMPLES` |
-| Show Adaptive Heatmap | `ty:showAdaptiveHeatmap` | `bool` | `false` | `HDEMBREE_SHOW_ADAPTIVE_HEATMAP` |
-| Firefly Clamp Threshold | `ty:fireflyClampThreshold` | `float` | `20.0` | `HDEMBREE_FIREFLY_CLAMP_THRESHOLD` |
-| Enable Caustics | `ty:enableCaustics` | `bool` | `false` | `HDEMBREE_ENABLE_CAUSTICS` |
-| Caustics Clamp Threshold | `ty:causticsClampThreshold` | `float` | `5.0` | `HDEMBREE_CAUSTICS_CLAMP_THRESHOLD` |
-| Approximate Transparent Shadows | `ty:approxTransparentShadows` | `bool` | `true` | `HDEMBREE_APPROX_TRANSPARENT_SHADOWS` |
-| Disable Shadows | `ty:disableShadows` | `bool` | `false` | `HDEMBREE_DISABLE_SHADOWS` |
-| Enable GGX Microfacet Multiple Scattering | `ty:enableGgxMicrofacetMultipleScattering` | `bool` | `true` | `HDEMBREE_ENABLE_GGX_MICROFACET_MULTIPLE_SCATTERING` |
-| Material Render Context | `ty:materialRenderContext` | `token` | `mtlx` | `HDEMBREE_MATERIAL_RENDER_CONTEXT` |
-| Use Adobe OpenPBR | `ty:useAdobeOpenPBR` | `bool` | `false` | `HDEMBREE_USE_ADOBE_OPENPBR` |
-| Dielectric Layer Throughput Mode | `ty:dielectricLayerThroughputMode` | `token` | `bsdl` | `HDEMBREE_DIELECTRIC_LAYER_THROUGHPUT_MODE` |
+| UI Name | Token | Type | Default |
+|---------|-------|------|---------|
+| Enable Scene Colors | `ty:enableSceneColors` | `bool` | `true` |
+| Enable Scene Lighting | `ty:enableLighting` | `bool` | `true` |
+| Enable Ambient Occlusion | `ty:enableAmbientOcclusion` | `bool` | `false` |
+| Ambient Occlusion Samples | `ty:ambientOcclusionSamples` | `int` | `0` |
+| Samples To Convergence | `ty:convergedSamplesPerPixel` | `int` | `256` |
+| Random Number Seed | `ty:randomNumberSeed` | `int` | `-1` |
+| Tile Size | `ty:tileSize` | `int` | `8` |
+| Jitter Camera Rays | `ty:jitterCamera` | `bool` | `true` |
+| Sampler Sequence | `ty:samplerSequence` | `token` | `openqmc_sobolbn` |
+| Dome Light Camera Visibility | `domeLightCameraVisibility` | `bool` | `true` |
+| Enable Exposure Compensation | `ty:enableExposureCompensation` | `bool` | `true` |
+| Dynamic Subdivision Tessellation | `ty:dynamicSubdvTesselation` | `bool` | `false` |
+| Enable Adaptive Sampling | `ty:enableAdaptiveSampling` | `bool` | `true` |
+| Adaptive Threshold | `ty:adaptiveThreshold` | `float` | `0.01` |
+| Min Samples Before Adaptive | `ty:minSamplesBeforeAdaptive` | `int` | `64` |
+| Max Bounces | `ty:maxBounces` | `int` | `16` |
+| Min Bounces Before Russian Roulette | `ty:minBouncesBeforeRR` | `int` | `2` |
+| Light Samples Per Hit | `ty:lightSamplesPerHit` | `int` | `1` |
+| Stratify Light Samples | `ty:stratifyLightSamples` | `bool` | `true` |
+| Show Adaptive Heatmap | `ty:showAdaptiveHeatmap` | `bool` | `false` |
+| Firefly Clamp Threshold | `ty:fireflyClampThreshold` | `float` | `20.0` |
+| Enable Caustics | `ty:enableCaustics` | `bool` | `false` |
+| Caustics Clamp Threshold | `ty:causticsClampThreshold` | `float` | `5.0` |
+| Approximate Transparent Shadows | `ty:approxTransparentShadows` | `bool` | `true` |
+| Disable Shadows | `ty:disableShadows` | `bool` | `false` |
+| Enable GGX Microfacet Multiple Scattering | `ty:enableGgxMicrofacetMultipleScattering` | `bool` | `true` |
+| Material Render Context | `ty:materialRenderContext` | `token` | `mtlx` |
+| Use Adobe OpenPBR | `ty:useAdobeOpenPBR` | `bool` | `false` |
+| Dielectric Layer Throughput Mode | `ty:dielectricLayerThroughputMode` | `token` | `bsdl` |
+| Texture Cache Size (MB) | `ty:textureCacheSize` | `int` | `16384` |
 
 ## Setting Descriptions
 
@@ -171,7 +174,10 @@ use wire-on-surface for deterministic final-render diagnostics.
 When enabled, the renderer evaluates direct lighting from scene lights (UsdLux-compliant area lights) using MIS-based path tracing. When disabled, falls back to ambient occlusion if that is enabled.
 
 ### Enable Ambient Occlusion (`ty:enableAmbientOcclusion` / `ty:ambientOcclusionSamples`)
-When scene lighting is disabled, ambient occlusion can be used instead. The number of AO rays per camera ray is controlled by `ty:ambientOcclusionSamples`. For compatibility with existing launches, `HDEMBREE_AMBIENT_OCCLUSION_SAMPLES` greater than `0` also enables ambient occlusion at startup. Set both `ty:enableAmbientOcclusion` to `false` and `ty:ambientOcclusionSamples` to `0` to disable.
+When scene lighting is disabled, ambient occlusion can be used instead. The
+number of AO rays per camera ray is controlled by
+`ty:ambientOcclusionSamples`. Set `ty:enableAmbientOcclusion` to `false` to
+disable AO.
 
 ### Sampler Sequence (`ty:samplerSequence`)
 Selects the per-pixel sampler implementation. Supported values are:
@@ -183,9 +189,9 @@ Selects the per-pixel sampler implementation. Supported values are:
 - `openqmc_lattice`
 - `openqmc_latticebn`
 
-If `ty:samplerSequence` is not authored and `HDEMBREE_SAMPLER_SEQUENCE` is empty,
-hdEmbree chooses `openqmc_sobolbn`. Unknown sampler tokens fall back to that
-default and emit a warning.
+If `ty:samplerSequence` is not authored, hdEmbree chooses
+`openqmc_sobolbn`. Unknown sampler tokens fall back to that default and emit a
+warning.
 
 Internally, sampling is domain-aware rather than a single mutable 1D stream.
 Each sampling decision, such as camera jitter, BSDF sampling, direct-light

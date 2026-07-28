@@ -73,44 +73,9 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _cameraExposureScale(1.0f)
     , _cameraDepthOfField()
     , _scene(nullptr)
-    , _samplesToConvergence(
-        HdEmbreeConfig::GetInstance().samplesToConvergence)
-    , _ambientOcclusionSamples(
-        HdEmbreeConfig::GetInstance().enableAmbientOcclusion
-            ? HdEmbreeConfig::GetInstance().ambientOcclusionSamples
-            : 0)
-    , _enableSceneColors(HdEmbreeConfig::GetInstance().enableSceneColors)
+    , _settings()
     , _wireframeColor(0.0f)
     , _wireframeLineWidth(1.0f)
-    , _domeLightCameraVisibility(
-        HdEmbreeConfig::GetInstance().domeLightCameraVisibility)
-    , _enableLighting(HdEmbreeConfig::GetInstance().enableLighting)
-    , _maxBounces(HdEmbreeConfig::GetInstance().maxBounces)
-    , _minBouncesBeforeRR(HdEmbreeConfig::GetInstance().minBouncesBeforeRR)
-    , _samplerSequence(HdEmbreeGetSamplerSequenceFromToken(
-        TfToken(HdEmbreeConfig::GetInstance().samplerSequence)))
-    , _enableAdaptiveSampling(
-        HdEmbreeConfig::GetInstance().enableAdaptiveSampling)
-    , _adaptiveThreshold(HdEmbreeConfig::GetInstance().adaptiveThreshold)
-    , _minSamplesBeforeAdaptive(
-        HdEmbreeConfig::GetInstance().minSamplesBeforeAdaptive)
-    , _lightSamplesPerHit(HdEmbreeConfig::GetInstance().lightSamplesPerHit)
-    , _stratifyLightSamples(
-        HdEmbreeConfig::GetInstance().stratifyLightSamples)
-    , _showAdaptiveHeatmap(HdEmbreeConfig::GetInstance().showAdaptiveHeatmap)
-    , _fireflyClampThreshold(
-        HdEmbreeConfig::GetInstance().fireflyClampThreshold)
-    , _enableCaustics(HdEmbreeConfig::GetInstance().enableCaustics)
-    , _causticsClampThreshold(
-        HdEmbreeConfig::GetInstance().causticsClampThreshold)
-    , _approxTransparentShadows(
-        HdEmbreeConfig::GetInstance().approxTransparentShadows)
-    , _disableShadows(HdEmbreeConfig::GetInstance().disableShadows)
-    , _enableGgxMicrofacetMultipleScattering(
-        HdEmbreeConfig::GetInstance().enableGgxMicrofacetMultipleScattering)
-    , _dielectricLayerThroughputMode(
-        TfToken(HdEmbreeConfig::GetInstance().dielectricLayerThroughputMode))
-    , _useAdobeOpenPBR(HdEmbreeConfig::GetInstance().useAdobeOpenPBR)
     , _textureSystem(std::make_unique<HdEmbreeOiioTextureSystem>())
     , _renderColorSpace(HdEmbreeRenderColorSpace::LinearRec709)
     , _materialEvalServices{
@@ -136,21 +101,32 @@ HdEmbreeRenderer::SetScene(RTCScene scene)
 }
 
 void
-HdEmbreeRenderer::SetSamplesToConvergence(int samplesToConvergence)
+HdEmbreeRenderer::SetRenderSettings(
+    HdEmbreeRenderSettings const& settings)
 {
-    _samplesToConvergence = samplesToConvergence;
-}
+    // Normalize values required by renderer loops and work partitioning.
+    HdEmbreeRenderSettings normalized = settings;
+    normalized.maxBounces = std::max(0, normalized.maxBounces);
+    normalized.lightSamplesPerHit =
+        std::max(1, normalized.lightSamplesPerHit);
+    normalized.tileSize = std::max(1, normalized.tileSize);
 
-void
-HdEmbreeRenderer::SetAmbientOcclusionSamples(int ambientOcclusionSamples)
-{
-    _ambientOcclusionSamples = ambientOcclusionSamples;
-}
+    // MaterialXCpp policy and OIIO's shared texture cache are process-wide.
+    // Reapply them because another renderer or caller may have changed them.
+    mxcpp::Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(
+        normalized.enableGgxMicrofacetMultipleScattering);
+    mxcpp::Bsdf::SetDielectricLayerThroughputMode(
+        normalized.dielectricLayerThroughputMode ==
+                HdEmbreeDielectricLayerThroughputMode::MaterialXGlsl
+            ? mxcpp::Bsdf::DielectricLayerThroughputMode::MaterialXGlsl
+            : mxcpp::Bsdf::DielectricLayerThroughputMode::Bsdl);
+    if (HdEmbreeOiioTextureSystem* oiio =
+            dynamic_cast<HdEmbreeOiioTextureSystem*>(
+                _textureSystem.get())) {
+        oiio->SetCacheSizeMB(normalized.textureCacheSizeMB);
+    }
 
-void
-HdEmbreeRenderer::SetEnableSceneColors(bool enableSceneColors)
-{
-    _enableSceneColors = enableSceneColors;
+    _settings = normalized;
 }
 
 void
@@ -160,153 +136,6 @@ HdEmbreeRenderer::SetWireframeStyle(
 {
     _wireframeColor = color;
     _wireframeLineWidth = std::max(1.0f, lineWidth);
-}
-
-void
-HdEmbreeRenderer::SetDomeLightCameraVisibility(bool domeLightCameraVisibility)
-{
-    _domeLightCameraVisibility = domeLightCameraVisibility;
-}
-
-void
-HdEmbreeRenderer::SetEnableLighting(bool enableLighting)
-{
-    _enableLighting = enableLighting;
-}
-
-void
-HdEmbreeRenderer::SetMaxBounces(int maxBounces)
-{
-    _maxBounces = std::max(0, maxBounces);
-}
-
-void
-HdEmbreeRenderer::SetMinBouncesBeforeRR(int minBounces)
-{
-    _minBouncesBeforeRR = minBounces;
-}
-
-void
-HdEmbreeRenderer::SetSamplerSequence(HdEmbreeSamplerSequence sequence)
-{
-    _samplerSequence = sequence;
-}
-
-void
-HdEmbreeRenderer::SetEnableAdaptiveSampling(bool enable)
-{
-    _enableAdaptiveSampling = enable;
-}
-
-void
-HdEmbreeRenderer::SetAdaptiveThreshold(float threshold)
-{
-    _adaptiveThreshold = threshold;
-}
-
-void
-HdEmbreeRenderer::SetMinSamplesBeforeAdaptive(int minSamples)
-{
-    _minSamplesBeforeAdaptive = minSamples;
-}
-
-void
-HdEmbreeRenderer::SetLightSamplesPerHit(int samples)
-{
-    _lightSamplesPerHit = std::max(1, samples);
-}
-
-void
-HdEmbreeRenderer::SetStratifyLightSamples(bool stratify)
-{
-    _stratifyLightSamples = stratify;
-}
-
-void
-HdEmbreeRenderer::SetShowAdaptiveHeatmap(bool show)
-{
-    _showAdaptiveHeatmap = show;
-}
-
-void
-HdEmbreeRenderer::SetFireflyClampThreshold(float threshold)
-{
-    _fireflyClampThreshold = threshold;
-}
-
-void
-HdEmbreeRenderer::SetEnableCaustics(bool enable)
-{
-    _enableCaustics = enable;
-}
-
-void
-HdEmbreeRenderer::SetCausticsClampThreshold(float threshold)
-{
-    _causticsClampThreshold = threshold;
-}
-
-void
-HdEmbreeRenderer::SetApproxTransparentShadows(bool enable)
-{
-    _approxTransparentShadows = enable;
-}
-
-void
-HdEmbreeRenderer::SetDisableShadows(bool disable)
-{
-    _disableShadows = disable;
-}
-
-void
-HdEmbreeRenderer::SetEnableGgxMicrofacetMultipleScattering(bool enable)
-{
-    _enableGgxMicrofacetMultipleScattering = enable;
-    mxcpp::Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(enable);
-}
-
-void
-HdEmbreeRenderer::SetDielectricLayerThroughputMode(TfToken const& mode)
-{
-    if (mode == _tokensDielectricLayerThroughputModeMaterialXGlsl) {
-        _dielectricLayerThroughputMode = mode;
-        mxcpp::Bsdf::SetDielectricLayerThroughputMode(
-            mxcpp::Bsdf::DielectricLayerThroughputMode::MaterialXGlsl);
-        return;
-    }
-
-    if (mode != _tokensDielectricLayerThroughputModeBsdl) {
-        TF_WARN("hdEmbree dielectric layer throughput mode '%s' is unknown; "
-                "falling back to 'bsdl'.",
-                mode.GetText());
-    }
-    _dielectricLayerThroughputMode = _tokensDielectricLayerThroughputModeBsdl;
-    mxcpp::Bsdf::SetDielectricLayerThroughputMode(
-        mxcpp::Bsdf::DielectricLayerThroughputMode::Bsdl);
-}
-
-void
-HdEmbreeRenderer::SetUseAdobeOpenPBR(bool enable)
-{
-    _useAdobeOpenPBR = enable;
-}
-
-void
-HdEmbreeRenderer::SetTextureCacheSize(int sizeMB)
-{
-    // The texture system is always an HdEmbreeOiioTextureSystem (constructed
-    // above); route the cache size to it. Guarded so a future alternate
-    // texture backend is simply left untouched.
-    if (auto* oiio =
-            dynamic_cast<HdEmbreeOiioTextureSystem*>(_textureSystem.get())) {
-        oiio->SetCacheSizeMB(sizeMB);
-    }
-}
-
-void
-HdEmbreeRenderer::SetRandomNumberSeed(int randomNumberSeed)
-{
-    _randomNumberSeed = randomNumberSeed;
 }
 
 void
@@ -460,7 +289,7 @@ HdEmbreeRenderer::_PreRenderSetup()
     }
 
     // Build all per-frame state before mapping validated buffers.
-    if (_enableAdaptiveSampling && _width > 0 && _height > 0) {
+    if (_settings.enableAdaptiveSampling && _width > 0 && _height > 0) {
         const size_t numPixels = _width * _height;
         _pixelMean.resize(numPixels, GfVec3f(0.0f));
         _pixelM2.resize(numPixels, GfVec3f(0.0f));
@@ -501,9 +330,10 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
     // render setting or environment seed overrides the scene frame.
     const uint32_t baseSeed =
         HdEmbreeResolveFrameSeed(
-            _randomNumberSeed, _materialEvalServices.frame);
+            _settings.randomNumberSeed, _materialEvalServices.frame);
 
-    const unsigned int tileSize = HdEmbreeConfig::GetInstance().tileSize;
+    const unsigned int tileSize =
+        static_cast<unsigned int>(_settings.tileSize);
     const unsigned int numTilesX =
         (_dataWindow.GetWidth() + tileSize - 1) / tileSize;
     const unsigned int numTilesY =
@@ -578,7 +408,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
     // the accumulation buffer so the display shows progressively
     // improving quality.
     bool renderFinished = false;
-    for (int i = 0; i < _samplesToConvergence; ++i) {
+    for (int i = 0; i < _settings.samplesToConvergence; ++i) {
         // Pause point.
         while (renderThread->IsPauseRequested()) {
             if (renderThread->IsStopRequested()) {
@@ -618,8 +448,9 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         if (i == 0) {
             bool moreWork = false;
             for (size_t a = 0; a < _aovBindings.size(); ++a) {
-                HdEmbreeRenderBufferInterface *rb = dynamic_cast<HdEmbreeRenderBufferInterface*>(
-                    _aovBindings[a].renderBuffer);
+                HdEmbreeRenderBufferInterface *rb =
+                    dynamic_cast<HdEmbreeRenderBufferInterface*>(
+                        _aovBindings[a].renderBuffer);
                 if (rb->IsMultiSampled()) {
                     moreWork = true;
                 }
@@ -635,7 +466,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         _completedSamples.store(i + 1);
 
         // If adaptive sampling is enabled, check if all pixels converged.
-        if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
+        if (_settings.enableAdaptiveSampling && !_pixelConverged.empty()) {
             HD_TRACE_SCOPE("HdEmbreeRenderer::CheckConvergence");
             bool allConverged = true;
             for (size_t p = 0; p < _pixelConverged.size(); ++p) {
@@ -656,7 +487,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         }
 
         // If this is the last iteration, rendering completed naturally.
-        if (i == _samplesToConvergence - 1) {
+        if (i == _settings.samplesToConvergence - 1) {
             renderFinished = true;
         }
     }
@@ -665,8 +496,9 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
     {
         HD_TRACE_SCOPE("HdEmbreeRenderer::FinalizeAovs");
         for (size_t i = 0; i < _aovBindings.size(); ++i) {
-            HdEmbreeRenderBufferInterface *rb = dynamic_cast<HdEmbreeRenderBufferInterface*>(
-                _aovBindings[i].renderBuffer);
+            HdEmbreeRenderBufferInterface *rb =
+                dynamic_cast<HdEmbreeRenderBufferInterface*>(
+                    _aovBindings[i].renderBuffer);
             rb->Unmap();
             rb->SetConverged(true);
         }
@@ -685,7 +517,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         std::printf("===== hdEmbree Render Statistics =====\n");
         std::printf("  Resolution       : %d x %d\n", w, h);
         std::printf("  Samples/pixel    : %d / %d\n",
-                    completedSamples, _samplesToConvergence);
+                    completedSamples, _settings.samplesToConvergence);
         std::printf("  Total samples    : %lld\n", totalSamples);
         std::printf("  Render time      : %.3f s\n", elapsedSec);
         if (elapsedSec > 0.0f) {
@@ -695,10 +527,11 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
                         (static_cast<double>(w) * h * completedSamples)
                             / elapsedSec);
         }
-        std::printf("  Max bounces      : %d\n", _maxBounces);
-        std::printf("  Light samples    : %d\n", _lightSamplesPerHit);
+        std::printf("  Max bounces      : %d\n", _settings.maxBounces);
+        std::printf("  Light samples    : %d\n", _settings.lightSamplesPerHit);
         std::printf("  Sampler sequence : %s\n",
-                    HdEmbreeGetSamplerSequenceToken(_samplerSequence).GetText());
+                    HdEmbreeGetSamplerSequenceToken(
+                        _settings.samplerSequence).GetText());
         const uint64_t sssCalls = _sssCallCount.load();
         if (sssCalls > 0) {
             const uint64_t sssSuccesses = _sssSuccessCount.load();
@@ -734,7 +567,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
                 avgIntersectionsPerCall);
         }
 
-        if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
+        if (_settings.enableAdaptiveSampling && !_pixelConverged.empty()) {
             size_t convergedCount = 0;
             double avgSamples = 0.0;
             for (size_t p = 0; p < _pixelConverged.size(); ++p) {
@@ -747,7 +580,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
             const double convergedPct =
                 100.0 * convergedCount / _pixelConverged.size();
             std::printf("  Adaptive sampling: on (threshold=%.4f)\n",
-                        _adaptiveThreshold);
+                        _settings.adaptiveThreshold);
             std::printf("  Converged pixels : %zu / %zu (%.1f%%)\n",
                         convergedCount, _pixelConverged.size(), convergedPct);
             std::printf("  Avg samples/pixel: %.1f\n", avgSamples);
@@ -767,7 +600,7 @@ HdEmbreeRenderer::_EvaluatePixelSample(
 {
     _PixelSampleResult result;
     if (_needColor) {
-        result = _enableLighting
+        result = _settings.enableLighting
             ? _IntegratePath(origin, dir, rayDiff, sampler.RootDomain())
             : _IntegrateUnlit(origin, dir, rayDiff, sampler.RootDomain());
         _ApplyWireframe(result.primaryHit, rayDiff, &result.color);
@@ -781,7 +614,7 @@ HdEmbreeRenderer::_EvaluatePixelSample(
         rtcIntersect1(_scene, &result.primaryHit);
     }
 
-    if (_enableAdaptiveSampling && !_pixelConverged.empty()) {
+    if (_settings.enableAdaptiveSampling && !_pixelConverged.empty()) {
         const GfVec3f rgb(
             result.color[0], result.color[1], result.color[2]);
         _UpdateVariance(x, y, rgb);
@@ -815,7 +648,7 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
     }
 
     const unsigned int tileSize =
-        HdEmbreeConfig::GetInstance().tileSize;
+        static_cast<unsigned int>(_settings.tileSize);
     const unsigned int numTilesX =
         (_dataWindow.GetWidth() + tileSize - 1) / tileSize;
 
@@ -851,7 +684,7 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
 
                 // Skip converged pixels in adaptive sampling mode.
                 const size_t pixelIdx = y * _width + x;
-                if (_enableAdaptiveSampling
+                if (_settings.enableAdaptiveSampling
                     && !_pixelConverged.empty()
                     && _pixelConverged[pixelIdx]) {
                     continue;
@@ -863,7 +696,7 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
                     x,
                     y,
                     sampleNum,
-                    _samplerSequence);
+                    _settings.samplerSequence);
 
                 GfVec3f origin;
                 GfVec3f dir;

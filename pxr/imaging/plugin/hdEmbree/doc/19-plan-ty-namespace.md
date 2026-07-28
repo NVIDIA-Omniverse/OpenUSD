@@ -198,6 +198,8 @@ criterion, and an illustrative list would not be checkable.
 | `materials/materialEvalContext.h` | `HdEmbreeMaterialEvalServices` | `ty::MaterialEvalServices` |
 | `materials/oiioTextureSystem.h` | `HdEmbreeOiioTextureSystem` | `ty::OiioTextureSystem` |
 | `renderBuffer.h` | `HdEmbreeRenderBufferInterface` | `ty::RenderBufferInterface` |
+| `renderSettings.h` | `HdEmbreeDielectricLayerThroughputMode` | `ty::DielectricLayerThroughputMode` |
+| | `HdEmbreeRenderSettings` | `ty::RenderSettings` |
 | `renderer.h` | `HdEmbree_RayMask` | `ty::RayMask` |
 | | `HdEmbreeRayDifferential` | `ty::RayDifferential` |
 | | `HdEmbreeCameraDepthOfField` | `ty::CameraDepthOfField` |
@@ -247,6 +249,8 @@ a type-only sweep would leave the invariant false:
 | `HdEmbreeAovTokens` (`TF_DECLARE_PUBLIC_TOKENS`) | `renderer.h:52` | `ty::AovTokens`; check the macro expands correctly inside a nested namespace before committing |
 | `HdEmbreePrimvarSamplingDetail`, an existing **named** detail namespace | `geometry/primvarSampling.h:124-139` | `ty::PrimvarSamplingDetail` — it is already the shape this plan wants, only misprefixed |
 | `mxcppAdapter.h`, `debugCodes.h` declarations | `materials/mxcppAdapter.h`, `debugCodes.h` | `ty::`, prefix dropped. `debugCodes.h`'s `TF_DEBUG_CODES` entry `HDEMBREE_LIGHT_CREATE` is a **runtime-visible name** — leave it alone |
+| `HdEmbreeGetDielectricLayerThroughputModeFromToken`, `HdEmbreeGetDielectricLayerThroughputModeToken` | `renderSettings.h` | `ty::GetDielectricLayerThroughputModeFromToken`, `ty::GetDielectricLayerThroughputModeToken` |
+| Five `HdEmbree`-prefixed defaults/policy constants | `renderSettings.h` | `ty::`, prefix dropped |
 | Constants and tokens surviving `12` and `14` | wherever `14` left them | `ty::`, `_`-prefixed and `static` if TU-contained |
 
 Regenerate the free-function list rather than trusting the count; `12`, `14`,

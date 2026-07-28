@@ -82,7 +82,6 @@ pxr_plugin(hdEmbree
         renderer/integrator/volumeTransport.cpp
 
     PRIVATE_CLASSES
-        renderer/config
         delegate/adaptiveSubdivision
         delegate/instancer
         delegate/light
@@ -135,6 +134,7 @@ pxr_plugin(hdEmbree
 
     PRIVATE_HEADERS
         renderer/colorManagement.h
+        renderer/renderSettings.h
         renderer/geometry/context.h
         renderer/geometry/displacementEvaluation.h
         renderer/geometry/primvarSampling.h

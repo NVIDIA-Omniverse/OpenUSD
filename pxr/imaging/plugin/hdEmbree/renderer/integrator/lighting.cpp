@@ -28,7 +28,8 @@ HdEmbreeRenderer::_AccumulateEnvironment(_PathState* state) const
     }
 
     if (state->isFirstBounce) {
-        if (_lights.GetDomes().empty() || !_domeLightCameraVisibility) {
+        if (_lights.GetDomes().empty() ||
+            !_settings.domeLightCameraVisibility) {
             state->radianceAccumulated = GfVec3f(
                 _colorClearValue[0], _colorClearValue[1], _colorClearValue[2]);
             return;
@@ -73,7 +74,7 @@ HdEmbreeRenderer::_AccumulateEnvironment(_PathState* state) const
             radianceEnvironment *= mxcpp::Bsdf::PowerHeuristic(
                 state->lastBsdfPdf,
                 _GetMultiSampleMisLightPdf(1.0f / sample.pdfSolidAngleInverse,
-                                           _lightSamplesPerHit));
+                                           _settings.lightSamplesPerHit));
         }
         _AddPathRadiance(_WeightPathRadiance(radianceEnvironment, *state),
                          state);
@@ -108,7 +109,7 @@ HdEmbreeRenderer::_AccumulateEnvironment(_PathState* state) const
                 sample.pdfSolidAngleInverse > 0.0f
                     ? 1.0f / sample.pdfSolidAngleInverse
                     : 0.0f,
-                _lightSamplesPerHit);
+                _settings.lightSamplesPerHit);
             radianceEnvironment *= mxcpp::Bsdf::PowerHeuristic(
                 state->lastBsdfPdf, pdfDomeSolidAngle);
         }
@@ -131,7 +132,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
     const _HeroWavelengthState hero{
         spectralActive, heroWavelengthNm, heroWavelengthPdf};
     GfVec3f radianceDirect(0.0f);
-    const int lightSampleCount = _lightSamplesPerHit;
+    const int lightSampleCount = _settings.lightSamplesPerHit;
     const float lightSampleCountInverse =
         1.0f / static_cast<float>(lightSampleCount);
     const HdEmbreeLightSampler::SamplingMode lightSamplingMode =
@@ -143,7 +144,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
     // Find the largest sqrtN such that sqrtN*sqrtN <= lightSampleCount, then
     // use sqrtN x ceilN grid where ceilN = ceil(lightSampleCount / sqrtN).
     int stratDimU = 1, stratDimV = 1;
-    if (_stratifyLightSamples && lightSampleCount > 1) {
+    if (_settings.stratifyLightSamples && lightSampleCount > 1) {
         stratDimU =
             static_cast<int>(std::sqrt(static_cast<float>(lightSampleCount)));
         if (stratDimU < 1) stratDimU = 1;
@@ -178,7 +179,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                     .Draw2D();
             // Generate sample coordinates, optionally stratified.
             float u1, u2;
-            if (_stratifyLightSamples && lightSampleCount > 1) {
+            if (_settings.stratifyLightSamples && lightSampleCount > 1) {
                 int indexStratumU = indexSampleLight % stratDimU;
                 int indexStratumV = indexSampleLight / stratDimU;
                 u1 =
@@ -318,10 +319,10 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 }
             }
 
-            radianceSample = _ClampFireflyContribution(radianceSample,
-                                                       _fireflyClampThreshold,
-                                                       _materialEvalServices
-                                                           .luminanceCoefficients);
+            radianceSample = _ClampFireflyContribution(
+                radianceSample,
+                _settings.fireflyClampThreshold,
+                _materialEvalServices.luminanceCoefficients);
 
             radianceLight += radianceSample;
         }
@@ -345,7 +346,7 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
         return GfVec3f(0.0f);
     }
     const bool useAdobeVolumeTransport =
-        _useAdobeOpenPBR &&
+        _settings.useAdobeOpenPBR &&
         mediumState.medium.transportModel ==
             mxcpp::MediumTransportModel::AdobeOpenPBR;
 
@@ -354,12 +355,12 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
     HdEmbreeCategorySet const& receiverCategories = mediumState.categories
         ? *mediumState.categories
         : emptyCategories;
-    const int lightSampleCount = _lightSamplesPerHit;
+    const int lightSampleCount = _settings.lightSamplesPerHit;
     const float lightSampleCountInverse =
         1.0f / static_cast<float>(lightSampleCount);
 
     int stratDimU = 1, stratDimV = 1;
-    if (_stratifyLightSamples && lightSampleCount > 1) {
+    if (_settings.stratifyLightSamples && lightSampleCount > 1) {
         stratDimU =
             static_cast<int>(std::sqrt(static_cast<float>(lightSampleCount)));
         if (stratDimU < 1) {
@@ -394,7 +395,7 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
                     .Draw2D();
             float u1 = 0.0f;
             float u2 = 0.0f;
-            if (_stratifyLightSamples && lightSampleCount > 1) {
+            if (_settings.stratifyLightSamples && lightSampleCount > 1) {
                 int indexStratumU = indexSampleLight % stratDimU;
                 int indexStratumV = indexSampleLight / stratDimU;
                 u1 =
@@ -469,10 +470,10 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
                                  weightMis;
             }
 
-            radianceSample = _ClampFireflyContribution(radianceSample,
-                                                       _fireflyClampThreshold,
-                                                       _materialEvalServices
-                                                           .luminanceCoefficients);
+            radianceSample = _ClampFireflyContribution(
+                radianceSample,
+                _settings.fireflyClampThreshold,
+                _materialEvalServices.luminanceCoefficients);
 
             radianceLight += radianceSample;
         }

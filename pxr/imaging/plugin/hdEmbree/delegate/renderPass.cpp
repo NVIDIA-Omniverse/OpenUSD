@@ -16,8 +16,8 @@
 #include "pxr/imaging/hd/types.h"
 #include "pxr/imaging/hd/utils.h"
 #include "pxr/imaging/hio/image.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/config.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/colorManagement.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/renderSettings.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/material.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderPass.h"
@@ -349,6 +349,7 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _displacementVersion(displacementVersion)
     , _lastDisplacementVersion(0)
     , _lastSettingsVersion(0)
+    , _hasAppliedRendererSettings(false)
     , _lastRenderSettingsPrimPath()
     , _hasAppliedRenderSettingsPrim(false)
     , _lastBridgedRenderSettings()
@@ -464,7 +465,7 @@ _GetCameraExposureScale(
     const bool enableExposureCompensation =
         renderDelegate->GetRenderSetting<bool>(
             HdEmbreeRenderSettingsTokens->enableExposureCompensation,
-            renderPassState->GetEnableExposureCompensation());
+            HdEmbreeDefaultEnableExposureCompensation);
     if (camera && enableExposureCompensation) {
         return camera->GetLinearExposureScale();
     }
@@ -794,7 +795,8 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     // Likewise the render settings.
     HdRenderDelegate *renderDelegate = GetRenderIndex()->GetRenderDelegate();
     int currentSettingsVersion = renderDelegate->GetRenderSettingsVersion();
-    if (_lastSettingsVersion != currentSettingsVersion) {
+    if (!_hasAppliedRendererSettings ||
+        _lastSettingsVersion != currentSettingsVersion) {
         _renderThread->StopRender();
         _lastSettingsVersion = currentSettingsVersion;
 
@@ -808,7 +810,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             materialRenderContextsChanged = true;
         }
 
-        const HdEmbreeConfig &config = HdEmbreeConfig::GetInstance();
+        const HdEmbreeRenderSettings defaults;
 
         const TfToken renderColorSpaceToken = _GetTokenRenderSetting(
             renderDelegate,
@@ -833,146 +835,154 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                 renderColorSpace;
         _renderer->SetRenderColorSpace(renderColorSpace);
 
-        _renderer->SetSamplesToConvergence(
+        // Resolve Hydra values and cross-setting policy into one renderer
+        // value before applying it while rendering is stopped.
+        HdEmbreeRenderSettings nextSettings = defaults;
+        nextSettings.samplesToConvergence =
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
-                config.samplesToConvergence));
-
-        _renderer->SetTextureCacheSize(
+                defaults.samplesToConvergence);
+        nextSettings.textureCacheSizeMB =
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->textureCacheSize,
-                config.textureCacheSizeMB));
-
-        bool enableLighting =
+                defaults.textureCacheSizeMB);
+        nextSettings.enableLighting =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->enableLighting,
-                config.enableLighting);
-        if (enableLighting) {
-            _renderer->SetEnableLighting(true);
-            _renderer->SetAmbientOcclusionSamples(0);
-        } else {
-            _renderer->SetEnableLighting(false);
-            bool enableAmbientOcclusion =
-                renderDelegate->GetRenderSetting<bool>(
-                    HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
-                    config.enableAmbientOcclusion);
-            if (enableAmbientOcclusion) {
-                _renderer->SetAmbientOcclusionSamples(
-                    renderDelegate->GetRenderSetting<int>(
-                        HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
-                        config.ambientOcclusionSamples));
-            } else {
-                _renderer->SetAmbientOcclusionSamples(0);
-            }
-        }
-
-        _renderer->SetDomeLightCameraVisibility(
+                defaults.enableLighting);
+        const bool enableAmbientOcclusion =
+            renderDelegate->GetRenderSetting<bool>(
+                HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
+                HdEmbreeDefaultEnableAmbientOcclusion);
+        nextSettings.ambientOcclusionSamples =
+            !nextSettings.enableLighting && enableAmbientOcclusion
+                ? renderDelegate->GetRenderSetting<int>(
+                    HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
+                    defaults.ambientOcclusionSamples)
+                : 0;
+        nextSettings.domeLightCameraVisibility =
             renderDelegate->GetRenderSetting<bool>(
                 HdRenderSettingsTokens->domeLightCameraVisibility,
-                config.domeLightCameraVisibility));
-
-        _renderer->SetEnableSceneColors(
+                defaults.domeLightCameraVisibility);
+        nextSettings.enableSceneColors =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->enableSceneColors,
-                config.enableSceneColors));
-
-        _renderer->SetRandomNumberSeed(
+                defaults.enableSceneColors);
+        nextSettings.randomNumberSeed =
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->randomNumberSeed,
-                config.randomNumberSeed));
+                defaults.randomNumberSeed);
+        nextSettings.tileSize =
+            renderDelegate->GetRenderSetting<int>(
+                HdEmbreeRenderSettingsTokens->tileSize,
+                defaults.tileSize);
+        nextSettings.jitterCamera =
+            renderDelegate->GetRenderSetting<bool>(
+                HdEmbreeRenderSettingsTokens->jitterCamera,
+                defaults.jitterCamera);
 
-        HdEmbreeSamplerSequence defaultSamplerSequence =
-            HdEmbreeGetSamplerSequenceFromToken(TfToken(config.samplerSequence));
-        TfToken defaultSamplerSequenceToken =
-            HdEmbreeGetSamplerSequenceToken(defaultSamplerSequence);
-        if (defaultSamplerSequenceToken != TfToken(config.samplerSequence)) {
-            defaultSamplerSequence =
-                HdEmbreeGetDefaultSamplerSequence();
-            defaultSamplerSequenceToken =
-                HdEmbreeGetSamplerSequenceToken(defaultSamplerSequence);
-        }
-        TfToken samplerSequenceToken = _GetTokenRenderSetting(
+        const TfToken defaultSamplerSequenceToken =
+            HdEmbreeGetSamplerSequenceToken(defaults.samplerSequence);
+        const TfToken samplerSequenceToken = _GetTokenRenderSetting(
             renderDelegate,
             HdEmbreeRenderSettingsTokens->samplerSequence,
             defaultSamplerSequenceToken);
-        HdEmbreeSamplerSequence samplerSequence =
+        nextSettings.samplerSequence =
             HdEmbreeGetSamplerSequenceFromToken(samplerSequenceToken);
-        if (HdEmbreeGetSamplerSequenceToken(samplerSequence) !=
+        if (HdEmbreeGetSamplerSequenceToken(nextSettings.samplerSequence) !=
             samplerSequenceToken) {
             TF_WARN("hdEmbree sampler sequence '%s' is unknown; "
                     "falling back to '%s'.",
                     samplerSequenceToken.GetText(),
                     defaultSamplerSequenceToken.GetText());
-            samplerSequence = defaultSamplerSequence;
+            nextSettings.samplerSequence = defaults.samplerSequence;
         }
-        _renderer->SetSamplerSequence(samplerSequence);
-
-        _renderer->SetEnableAdaptiveSampling(
+        nextSettings.enableAdaptiveSampling =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
-                config.enableAdaptiveSampling));
-        _renderer->SetAdaptiveThreshold(
+                defaults.enableAdaptiveSampling);
+        nextSettings.adaptiveThreshold =
             renderDelegate->GetRenderSetting<float>(
                 HdEmbreeRenderSettingsTokens->adaptiveThreshold,
-                config.adaptiveThreshold));
-        _renderer->SetMinSamplesBeforeAdaptive(
+                defaults.adaptiveThreshold);
+        nextSettings.minSamplesBeforeAdaptive =
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->minSamplesBeforeAdaptive,
-                config.minSamplesBeforeAdaptive));
-        _renderer->SetMaxBounces(
+                defaults.minSamplesBeforeAdaptive);
+        nextSettings.maxBounces =
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->maxBounces,
-                config.maxBounces));
-        _renderer->SetMinBouncesBeforeRR(
+                defaults.maxBounces);
+        nextSettings.minBouncesBeforeRR =
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->minBouncesBeforeRR,
-                config.minBouncesBeforeRR));
-        _renderer->SetLightSamplesPerHit(
+                defaults.minBouncesBeforeRR);
+        nextSettings.lightSamplesPerHit =
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->lightSamplesPerHit,
-                config.lightSamplesPerHit));
-        _renderer->SetStratifyLightSamples(
+                defaults.lightSamplesPerHit);
+        nextSettings.stratifyLightSamples =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->stratifyLightSamples,
-                config.stratifyLightSamples));
-        _renderer->SetShowAdaptiveHeatmap(
+                defaults.stratifyLightSamples);
+        nextSettings.showAdaptiveHeatmap =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->showAdaptiveHeatmap,
-                config.showAdaptiveHeatmap));
-        _renderer->SetFireflyClampThreshold(
+                defaults.showAdaptiveHeatmap);
+        nextSettings.fireflyClampThreshold =
             renderDelegate->GetRenderSetting<float>(
                 HdEmbreeRenderSettingsTokens->fireflyClampThreshold,
-                config.fireflyClampThreshold));
-        _renderer->SetEnableCaustics(
+                defaults.fireflyClampThreshold);
+        nextSettings.enableCaustics =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->enableCaustics,
-                config.enableCaustics));
-        _renderer->SetCausticsClampThreshold(
+                defaults.enableCaustics);
+        nextSettings.causticsClampThreshold =
             renderDelegate->GetRenderSetting<float>(
                 HdEmbreeRenderSettingsTokens->causticsClampThreshold,
-                config.causticsClampThreshold));
-        _renderer->SetApproxTransparentShadows(
+                defaults.causticsClampThreshold);
+        nextSettings.approxTransparentShadows =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->approxTransparentShadows,
-                config.approxTransparentShadows));
-        _renderer->SetDisableShadows(
+                defaults.approxTransparentShadows);
+        nextSettings.disableShadows =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->disableShadows,
-                config.disableShadows));
-        _renderer->SetEnableGgxMicrofacetMultipleScattering(
+                defaults.disableShadows);
+        nextSettings.enableGgxMicrofacetMultipleScattering =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens
                     ->enableGgxMicrofacetMultipleScattering,
-                config.enableGgxMicrofacetMultipleScattering));
-        _renderer->SetDielectricLayerThroughputMode(
-            _GetTokenRenderSetting(
-                renderDelegate,
-                HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
-                TfToken(config.dielectricLayerThroughputMode)));
-        _renderer->SetUseAdobeOpenPBR(
+                defaults.enableGgxMicrofacetMultipleScattering);
+
+        const TfToken defaultDielectricModeToken =
+            HdEmbreeGetDielectricLayerThroughputModeToken(
+                defaults.dielectricLayerThroughputMode);
+        const TfToken dielectricModeToken = _GetTokenRenderSetting(
+            renderDelegate,
+            HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
+            defaultDielectricModeToken);
+        nextSettings.dielectricLayerThroughputMode =
+            HdEmbreeGetDielectricLayerThroughputModeFromToken(
+                dielectricModeToken);
+        if (HdEmbreeGetDielectricLayerThroughputModeToken(
+                nextSettings.dielectricLayerThroughputMode) !=
+            dielectricModeToken) {
+            TF_WARN(
+                "hdEmbree dielectric layer throughput mode '%s' is unknown; "
+                "falling back to '%s'.",
+                dielectricModeToken.GetText(),
+                defaultDielectricModeToken.GetText());
+            nextSettings.dielectricLayerThroughputMode =
+                defaults.dielectricLayerThroughputMode;
+        }
+        nextSettings.useAdobeOpenPBR =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
-                config.useAdobeOpenPBR));
+                defaults.useAdobeOpenPBR);
+
+        _renderer->SetRenderSettings(nextSettings);
+        _hasAppliedRendererSettings = true;
 
         if (materialRenderContextsChanged || materialColorSpaceChanged) {
             _ResyncMaterialNetworksForRenderSettingsChange(GetRenderIndex());
@@ -1057,7 +1067,8 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
     const bool dynamicSubdivisionTessellation =
         renderDelegate->GetRenderSetting<bool>(
-            HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation, false);
+            HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
+            HdEmbreeDefaultDynamicSubdvTesselation);
     const bool dynamicSubdivisionTessellationEnabled =
         dynamicSubdivisionTessellation &&
         !_dynamicSubdivisionTessellation;

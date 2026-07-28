@@ -6,7 +6,7 @@
 //
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/config.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/renderSettings.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/instancer.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/light.h"
 #include "pxr/imaging/plugin/hdEmbree/delegate/renderParam.h"
@@ -50,7 +50,7 @@ _GetMaterialRenderContextSetting(const HdRenderDelegate& renderDelegate)
     if (value.IsHolding<TfToken>()) {
         return value.UncheckedGet<TfToken>().GetString();
     }
-    return HdEmbreeConfig::GetInstance().materialRenderContext;
+    return HdEmbreeDefaultMaterialRenderContext;
 }
 
 const TfTokenVector HdEmbreeRenderDelegate::SUPPORTED_RPRIM_TYPES =
@@ -133,95 +133,103 @@ void
 HdEmbreeRenderDelegate::_Initialize()
 {
     // Initialize the settings and settings descriptors.
-    const HdEmbreeConfig &config = HdEmbreeConfig::GetInstance();
+    const HdEmbreeRenderSettings defaults;
     _settingDescriptors = {
         { "Rendering Color Space",
             HdRenderSettingsPrimTokens->renderingColorSpace,
             VtValue(GfColorSpaceNames->LinearRec709) },
         { "Enable Scene Colors",
             HdEmbreeRenderSettingsTokens->enableSceneColors,
-            VtValue(config.enableSceneColors) },
+            VtValue(defaults.enableSceneColors) },
         { "Enable Ambient Occlusion",
             HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
-            VtValue(config.enableAmbientOcclusion) },
+            VtValue(HdEmbreeDefaultEnableAmbientOcclusion) },
         { "Enable Scene Lighting",
             HdEmbreeRenderSettingsTokens->enableLighting,
-            VtValue(config.enableLighting) },
+            VtValue(defaults.enableLighting) },
         { "Ambient Occlusion Samples",
             HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
-            VtValue(int(config.ambientOcclusionSamples)) },
+            VtValue(defaults.ambientOcclusionSamples) },
         { "Samples To Convergence",
             HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
-            VtValue(int(config.samplesToConvergence)) },
+            VtValue(defaults.samplesToConvergence) },
         { "Random Number Seed",
             HdEmbreeRenderSettingsTokens->randomNumberSeed,
-            VtValue(config.randomNumberSeed) },
+            VtValue(defaults.randomNumberSeed) },
+        { "Tile Size",
+            HdEmbreeRenderSettingsTokens->tileSize,
+            VtValue(defaults.tileSize) },
+        { "Jitter Camera Rays",
+            HdEmbreeRenderSettingsTokens->jitterCamera,
+            VtValue(defaults.jitterCamera) },
         { "Sampler Sequence",
             HdEmbreeRenderSettingsTokens->samplerSequence,
-            VtValue(config.samplerSequence) },
+            VtValue(HdEmbreeGetSamplerSequenceToken(
+                defaults.samplerSequence).GetString()) },
         { "Dome Light Camera Visibility",
             HdRenderSettingsTokens->domeLightCameraVisibility,
-            VtValue(config.domeLightCameraVisibility) },
+            VtValue(defaults.domeLightCameraVisibility) },
         { "Enable Exposure Compensation",
             HdEmbreeRenderSettingsTokens->enableExposureCompensation,
-            VtValue(true) },
+            VtValue(HdEmbreeDefaultEnableExposureCompensation) },
         { "Enable Adaptive Sampling",
             HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
-            VtValue(config.enableAdaptiveSampling) },
+            VtValue(defaults.enableAdaptiveSampling) },
         { "Adaptive Threshold",
             HdEmbreeRenderSettingsTokens->adaptiveThreshold,
-            VtValue(config.adaptiveThreshold) },
+            VtValue(defaults.adaptiveThreshold) },
         { "Min Samples Before Adaptive",
             HdEmbreeRenderSettingsTokens->minSamplesBeforeAdaptive,
-            VtValue(config.minSamplesBeforeAdaptive) },
+            VtValue(defaults.minSamplesBeforeAdaptive) },
         { "Max Bounces",
             HdEmbreeRenderSettingsTokens->maxBounces,
-            VtValue(config.maxBounces) },
+            VtValue(defaults.maxBounces) },
         { "Min Bounces Before Russian Roulette",
             HdEmbreeRenderSettingsTokens->minBouncesBeforeRR,
-            VtValue(config.minBouncesBeforeRR) },
+            VtValue(defaults.minBouncesBeforeRR) },
         { "Light Samples Per Hit",
             HdEmbreeRenderSettingsTokens->lightSamplesPerHit,
-            VtValue(config.lightSamplesPerHit) },
+            VtValue(defaults.lightSamplesPerHit) },
         { "Stratify Light Samples",
             HdEmbreeRenderSettingsTokens->stratifyLightSamples,
-            VtValue(config.stratifyLightSamples) },
+            VtValue(defaults.stratifyLightSamples) },
         { "Show Adaptive Heatmap",
             HdEmbreeRenderSettingsTokens->showAdaptiveHeatmap,
-            VtValue(config.showAdaptiveHeatmap) },
+            VtValue(defaults.showAdaptiveHeatmap) },
         { "Firefly Clamp Threshold",
             HdEmbreeRenderSettingsTokens->fireflyClampThreshold,
-            VtValue(config.fireflyClampThreshold) },
+            VtValue(defaults.fireflyClampThreshold) },
         { "Enable Caustics",
             HdEmbreeRenderSettingsTokens->enableCaustics,
-            VtValue(config.enableCaustics) },
+            VtValue(defaults.enableCaustics) },
         { "Caustics Clamp Threshold",
             HdEmbreeRenderSettingsTokens->causticsClampThreshold,
-            VtValue(config.causticsClampThreshold) },
+            VtValue(defaults.causticsClampThreshold) },
         { "Approximate Transparent Shadows",
             HdEmbreeRenderSettingsTokens->approxTransparentShadows,
-            VtValue(config.approxTransparentShadows) },
+            VtValue(defaults.approxTransparentShadows) },
         { "Disable Shadows",
             HdEmbreeRenderSettingsTokens->disableShadows,
-            VtValue(config.disableShadows) },
+            VtValue(defaults.disableShadows) },
         { "Enable GGX Microfacet Multiple Scattering",
             HdEmbreeRenderSettingsTokens->enableGgxMicrofacetMultipleScattering,
-            VtValue(config.enableGgxMicrofacetMultipleScattering) },
+            VtValue(defaults.enableGgxMicrofacetMultipleScattering) },
         { "Material Render Context",
             HdEmbreeRenderSettingsTokens->materialRenderContext,
-            VtValue(config.materialRenderContext) },
+            VtValue(std::string(HdEmbreeDefaultMaterialRenderContext)) },
         { "Use Adobe OpenPBR",
             HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
-            VtValue(config.useAdobeOpenPBR) },
+            VtValue(defaults.useAdobeOpenPBR) },
         { "Dielectric Layer Throughput Mode",
             HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
-            VtValue(config.dielectricLayerThroughputMode) },
+            VtValue(HdEmbreeGetDielectricLayerThroughputModeToken(
+                defaults.dielectricLayerThroughputMode).GetString()) },
         { "Dynamic Subdivision Tessellation",
             HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
-            VtValue(false) },
+            VtValue(HdEmbreeDefaultDynamicSubdvTesselation) },
         { "Texture Cache Size (MB)",
             HdEmbreeRenderSettingsTokens->textureCacheSize,
-            VtValue(int(config.textureCacheSizeMB)) },
+            VtValue(defaults.textureCacheSizeMB) },
     };
     _PopulateDefaultSettings(_settingDescriptors);
 

@@ -102,6 +102,8 @@ private:
 
     // The last settings version we rendered with.
     int _lastSettingsVersion;
+    // Whether renderer settings have been applied at least once.
+    bool _hasAppliedRendererSettings;
 
     // Tracks the RenderSettings prim values that were bridged into the
     // render delegate settings map.

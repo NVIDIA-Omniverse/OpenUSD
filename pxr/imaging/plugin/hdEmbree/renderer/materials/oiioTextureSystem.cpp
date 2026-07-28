@@ -3,7 +3,7 @@
 //
 #include "pxr/imaging/plugin/hdEmbree/renderer/materials/oiioTextureSystem.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/config.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/renderSettings.h"
 #include "pxr/base/tf/diagnostic.h"
 
 #include <algorithm>
@@ -275,9 +275,8 @@ HdEmbreeOiioTextureSystem::HdEmbreeOiioTextureSystem()
     _ConfigureTextureSystem(
         _impl->pngTextureSystem, /* preserveUnassociatedAlpha = */ true);
 
-    // Size the tile cache from configuration so the very first render is not
-    // penalized before the render-setting sync applies any override.
-    SetCacheSizeMB(HdEmbreeConfig::GetInstance().textureCacheSizeMB);
+    // Size the tile cache before the first render-setting sync.
+    SetCacheSizeMB(HdEmbreeRenderSettings{}.textureCacheSizeMB);
 #endif
 }
 

@@ -30,6 +30,10 @@ _RENDERERS = {
                 "category": "Sampling",
                 "order": 20,
             },
+            "ty:jitterCamera": {
+                "category": "Sampling",
+                "order": 25,
+            },
             "ty:samplerSequence": {
                 "category": "Sampling",
                 "order": 30,
@@ -113,6 +117,10 @@ _RENDERERS = {
             "ty:showAdaptiveHeatmap": {
                 "category": "Diagnostics",
                 "order": 10,
+            },
+            "ty:tileSize": {
+                "category": "Diagnostics",
+                "order": 20,
             },
             "ty:enableSceneColors": {
                 "category": "Scene",

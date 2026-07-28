@@ -5,7 +5,6 @@
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_IMPL_H
 
 #include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/config.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/materials/oiioTextureSystem.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/integrator/sss.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graph.h"
@@ -56,11 +55,6 @@ static const TfToken _tokensBitangent("bitangent");
 static const TfToken _tokensComputedTangent("hdEmbreeComputedTangent");
 static const TfToken _tokensComputedBitangent("hdEmbreeComputedBitangent");
 static const TfToken _tokensSt("st");
-static const TfToken _tokensDielectricLayerThroughputModeBsdl(
-    "bsdl", TfToken::Immortal);
-static const TfToken _tokensDielectricLayerThroughputModeMaterialXGlsl(
-    "materialxGlsl", TfToken::Immortal);
-
 inline bool
 _IsFinite(GfVec3f const& value)
 {

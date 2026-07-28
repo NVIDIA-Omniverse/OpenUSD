@@ -232,8 +232,8 @@ Textured assets rendered roughly an order of magnitude slower than the same
 mesh with constant inputs. Because `perf` was unavailable on the test host
 (`perf_event_paranoid=4`), the cause was isolated with A/B render timing on a
 single brass sphere (`ND_UsdPreviewSurface` + two `ND_tiledimage`, 2048x2048
-JPEG color and roughness, `usdrender --renderer Embree --disableGpu`,
-`HDEMBREE_RANDOM_NUMBER_SEED=1`, 64 logical CPUs, renderer time):
+JPEG color and roughness, `usdrender --renderer Embree --disableGpu -s
+"{settings}.ty:randomNumberSeed = 1"`, 64 logical CPUs, renderer time):
 
 | Variant | Time | Isolates |
 | --- | ---: | --- |
@@ -355,7 +355,7 @@ only on the no-lighting fallback path.
 Validation: brass sphere 4.50 s -> 3.08 s renderer time (~32%), `Color mat
 evals` 0.57/sample -> 0 with lighting on, and exact `oiiotool --diff`
 matches for both the lit scene and the
-`HDEMBREE_ENABLE_LIGHTING=false` fallback. All
+`-s "{settings}.ty:enableLighting = false"` fallback. All
 hdEmbree/MaterialXCpp unit tests pass.
 
 Follow-up (2026-07-13): the renderer now selects `_IntegratePath` or

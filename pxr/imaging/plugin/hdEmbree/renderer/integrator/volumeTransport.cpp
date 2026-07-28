@@ -71,7 +71,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
                 1.0f / input.finiteLightHit.pdfSolidAngleInverse;
             const float effectiveLightPdf = _GetMultiSampleMisLightPdf(
                 lightPdf,
-                _lightSamplesPerHit);
+                _settings.lightSamplesPerHit);
             if (effectiveLightPdf > 0.0f) {
                 radianceLight *= mxcpp::Bsdf::PowerHeuristic(state->lastBsdfPdf,
                                                              effectiveLightPdf);
@@ -85,7 +85,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
 
     const mxcpp::MediumProperties& medium = mediumState.medium;
     const bool useAdobeVolumeTransport =
-        _useAdobeOpenPBR &&
+        _settings.useAdobeOpenPBR &&
         medium.transportModel == mxcpp::MediumTransportModel::AdobeOpenPBR;
 
     if (!medium.IsAbsorbingOnly()) {
@@ -187,18 +187,20 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
             const GfVec3f direct = _ComputeMediumDirectLighting(
                 scatterPos, omegaOutWld, mediumState,
                 domain.Fork(HdEmbreeSampleDomainKey::MediumDirectLighting),
-                input.bounce < _maxBounces, hero.active, hero.wavelengthNm,
+                input.bounce < _settings.maxBounces,
+                hero.active,
+                hero.wavelengthNm,
                 hero.pdf);
             _AddPathRadiance(state->hero.active
                                  ? direct * state->throughputSpectral
                                  : GfCompMult(state->throughputRgb, direct),
                              state);
 
-            if (input.bounce >= _maxBounces) {
+            if (input.bounce >= _settings.maxBounces) {
                 return _VolumeTransmissionResult::Terminate;
             }
 
-            if (input.bounce >= _minBouncesBeforeRR) {
+            if (input.bounce >= _settings.minBouncesBeforeRR) {
                 float q =
                     hero.active
                         ? std::max({

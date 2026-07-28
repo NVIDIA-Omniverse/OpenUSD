@@ -19,6 +19,7 @@
 #include "pxr/imaging/plugin/hdEmbree/renderer/integrator/medium.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/integrator/sss.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/materials/materialEvalContext.h"
+#include "pxr/imaging/plugin/hdEmbree/renderer/renderSettings.h"
 #include "pxr/imaging/plugin/hdEmbree/renderer/sampling/sampling.h"
 
 #include "pxr/imaging/hd/aov.h"
@@ -121,7 +122,7 @@ struct _HeroWavelengthState {
 class HdEmbreeRenderer final
 {
 public:
-    /// \brief Construct a renderer with configuration-derived defaults.
+    /// \brief Construct a renderer with hard-coded render-setting defaults.
     ///
     /// No scene or AOV buffers are bound until their setters are called.
     HdEmbreeRenderer();
@@ -239,29 +240,18 @@ public:
         return _aovBindings;
     }
 
-    /// \brief Set the maximum progressive samples per pixel.
+    /// \brief Apply resolved render settings while rendering is stopped.
     ///
-    /// \param samplesToConvergence Positive sample count. Values below one
-    /// produce no full-resolution sample passes and should not be supplied.
-    void SetSamplesToConvergence(int samplesToConvergence);
+    /// Clamps renderer invariants, reapplies process-wide MaterialXCpp and
+    /// texture-cache policy, and stores the normalized settings. The caller
+    /// must not race this operation with rendering.
+    /// \param settings Fully resolved Hydra values with typed token settings.
+    void SetRenderSettings(HdEmbreeRenderSettings const& settings);
 
-    /// \brief Set the ambient-occlusion sample count.
-    ///
-    /// \param ambientOcclusionSamples Zero disables AO; positive values set
-    /// the number of hemisphere rays per surface sample.
-    void SetAmbientOcclusionSamples(int ambientOcclusionSamples);
-
-    /// \brief Control whether camera misses evaluate dome lights.
-    ///
-    /// \param domeLightCameraVisibility True to show visible dome lights in
-    /// primary-ray misses; false to use the color AOV clear value.
-    void SetDomeLightCameraVisibility(bool domeLightCameraVisibility);
-
-    /// \brief Control display-color contribution to synthetic shading.
-    ///
-    /// Material evaluation still receives authored display color and opacity.
-    /// \param enableSceneColors True to use scene colors; false to shade white.
-    void SetEnableSceneColors(bool enableSceneColors);
+    /// Return the normalized settings used by subsequent renders.
+    HdEmbreeRenderSettings const& GetRenderSettings() const {
+        return _settings;
+    }
 
     /// \brief Set Hydra's display wire color and default line width.
     ///
@@ -270,120 +260,6 @@ public:
     /// \param color Linear render-space RGB and blend amount in alpha.
     /// \param lineWidth Positive screen-space width in pixels.
     void SetWireframeStyle(GfVec4f const& color, float lineWidth);
-
-    /// \brief Set the sampler's frame seed override.
-    ///
-    /// \param randomNumberSeed -1 derives the seed from the scene frame;
-    /// every other value is used as the deterministic override.
-    void SetRandomNumberSeed(int randomNumberSeed);
-
-    /// \brief Enable or disable direct scene-light evaluation.
-    ///
-    /// \param enableLighting True to path trace scene lights; false selects
-    /// the unlit/AO fallback configured by SetAmbientOcclusionSamples.
-    void SetEnableLighting(bool enableLighting);
-
-    /// \brief Set the maximum number of scattering bounces.
-    ///
-    /// \param maxBounces Requested count; negative values are clamped to zero.
-    void SetMaxBounces(int maxBounces);
-
-    /// \brief Set the first bounce eligible for Russian roulette.
-    ///
-    /// \param minBounces Non-negative bounce index, normally no greater than
-    /// the maximum bounce count.
-    void SetMinBouncesBeforeRR(int minBounces);
-
-    /// \brief Select the per-pixel sampling sequence.
-    ///
-    /// \param sequence Valid HdEmbree sampler-sequence enum value.
-    void SetSamplerSequence(HdEmbreeSamplerSequence sequence);
-
-    /// \brief Enable or disable per-pixel adaptive convergence.
-    ///
-    /// \param enable True to stop sampling pixels whose estimated error has
-    /// converged; false to sample every pixel to the global limit.
-    void SetEnableAdaptiveSampling(bool enable);
-
-    /// \brief Set the adaptive relative variance threshold.
-    ///
-    /// \param threshold Non-negative threshold; zero retains only the fixed
-    /// absolute-error allowance.
-    void SetAdaptiveThreshold(float threshold);
-
-    /// \brief Set the minimum samples before adaptive convergence tests.
-    ///
-    /// \param minSamples Positive per-pixel sample count.
-    void SetMinSamplesBeforeAdaptive(int minSamples);
-
-    /// \brief Set the direct-light samples evaluated per light and hit.
-    ///
-    /// \param samples Requested count; values below one are clamped to one.
-    void SetLightSamplesPerHit(int samples);
-
-    /// \brief Control stratification of multiple light samples.
-    ///
-    /// \param stratify True to distribute samples across a 2D stratum grid;
-    /// false to draw each sample directly from its sample domain.
-    void SetStratifyLightSamples(bool stratify);
-
-    /// \brief Control heatmap display in the color AOV.
-    ///
-    /// \param show True to replace color output with adaptive sample-count
-    /// colors when adaptive sampling is active.
-    void SetShowAdaptiveHeatmap(bool show);
-
-    /// \brief Set the maximum luminance of an individual contribution.
-    ///
-    /// \param threshold Positive luminance limit; values at or below zero
-    /// disable general firefly clamping.
-    void SetFireflyClampThreshold(float threshold);
-
-    /// \brief Enable indirect caustic paths.
-    ///
-    /// \param enable True to retain and regularize caustics; false to suppress
-    /// paths classified as caustic.
-    void SetEnableCaustics(bool enable);
-
-    /// \brief Set the luminance clamp applied to caustic contributions.
-    ///
-    /// \param threshold Positive maximum luminance; values at or below zero
-    /// disable the caustic-specific clamp.
-    void SetCausticsClampThreshold(float threshold);
-
-    /// \brief Select approximate straight-through transparent shadows.
-    ///
-    /// \param enable True to use the biased approximation; false to trace the
-    /// full configured transparent-shadow response.
-    void SetApproxTransparentShadows(bool enable);
-
-    /// \brief Enable or disable all shadow occlusion.
-    ///
-    /// \param disable True makes visibility queries return full visibility.
-    void SetDisableShadows(bool disable);
-
-    /// \brief Control GGX microfacet multiple-scattering compensation.
-    ///
-    /// Updates the process-wide MaterialXCpp BSDF setting as well as renderer
-    /// state; callers must not race this setter with material evaluation.
-    /// \param enable True to enable compensation.
-    void SetEnableGgxMicrofacetMultipleScattering(bool enable);
-
-    /// \brief Select the rough dielectric layer throughput estimator.
-    ///
-    /// Also updates process-wide MaterialXCpp state and must not race shading.
-    /// \param mode `bsdl` or `materialxGlsl`; unknown tokens warn and fall
-    /// back to `bsdl`.
-    void SetDielectricLayerThroughputMode(TfToken const& mode);
-
-    /// \brief Select the MaterialX OpenPBR evaluation backend.
-    ///
-    /// \param enable True for the Adobe reference implementation; false for
-    /// the native MaterialXCpp implementation.
-    void SetUseAdobeOpenPBR(bool enable);
-
-    /// Set the OpenImageIO texture/tile cache size, in MB.
-    void SetTextureCacheSize(int sizeMB);
 
     /// \brief Progressively render the current scene into bound AOVs.
     ///
@@ -1128,63 +1004,12 @@ private:
     // Our handle to the embree scene.
     RTCScene _scene;
 
-    // How many samples should we render to convergence?
-    int _samplesToConvergence;
-    // How many samples should we use for ambient occlusion?
-    int _ambientOcclusionSamples;
-    // Should we enable scene colors?
-    bool _enableSceneColors;
+    // Normalized renderer-consumed settings applied as one stopped update.
+    HdEmbreeRenderSettings _settings;
+
     // Hydra display wire style. Per-mesh reprs decide whether it is active.
     GfVec4f _wireframeColor;
     float _wireframeLineWidth;
-    // Should we sample dome lights on ray miss?
-    bool _domeLightCameraVisibility;
-    // If other than -1, use this as the OpenQMC frame seed.
-    int _randomNumberSeed;
-    // Should we enable direct lighting from the scene?
-    bool _enableLighting;
-
-    // Path tracing parameters.
-    int _maxBounces;
-    int _minBouncesBeforeRR;
-
-    // Active sampler sequence for per-pixel sample generation.
-    HdEmbreeSamplerSequence _samplerSequence;
-
-    // Adaptive sampling parameters.
-    bool _enableAdaptiveSampling;
-    float _adaptiveThreshold;
-    int _minSamplesBeforeAdaptive;
-
-    // Light sampling parameters.
-    int _lightSamplesPerHit;
-    bool _stratifyLightSamples;
-
-    // Whether to visualize adaptive sampling as a heatmap.
-    bool _showAdaptiveHeatmap;
-
-    // Firefly clamping threshold (max sample luminance). <= 0 disables.
-    float _fireflyClampThreshold;
-
-    // Caustic path handling. When enabled, indirect caustic paths are
-    // regularized and optionally clamped; when disabled, they are suppressed.
-    bool _enableCaustics;
-    float _causticsClampThreshold;
-
-    // Biased straight-through shadow visibility for transparent surfaces.
-    bool _approxTransparentShadows;
-
-    // Whether shadow visibility rays are skipped.
-    bool _disableShadows;
-
-    // Whether GGX reflection uses microfacet multiple scattering compensation.
-    bool _enableGgxMicrofacetMultipleScattering;
-
-    // Rough dielectric top-layer throughput estimate mode.
-    TfToken _dielectricLayerThroughputMode;
-
-    // Whether MaterialX OpenPBR uses the Adobe reference backend.
-    bool _useAdobeOpenPBR;
 
     // Shared MaterialX texture backend for the whole renderer.
     std::unique_ptr<mxcpp::TextureSystem> _textureSystem;

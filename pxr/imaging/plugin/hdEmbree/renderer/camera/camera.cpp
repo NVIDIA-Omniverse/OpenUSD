@@ -21,7 +21,7 @@ HdEmbreeRenderer::_SampleCameraRay(
 {
     // Jitter the camera ray direction.
     GfVec2f jitter(0.0f, 0.0f);
-    if (HdEmbreeConfig::GetInstance().jitterCamera) {
+    if (_settings.jitterCamera) {
         jitter = sampler.RootDomain()
             .Fork(HdEmbreeSampleDomainKey::CameraJitter)
             .Draw2D();
@@ -142,9 +142,9 @@ HdEmbreeRenderer::_SampleCameraRay(
 
         // Scale by 1/sqrt(spp) to match sampling rate.
         if (rayDiff.hasDifferentials &&
-            _samplesToConvergence > 1) {
+            _settings.samplesToConvergence > 1) {
             float scale = 1.0f / std::sqrt(
-                static_cast<float>(_samplesToConvergence));
+                static_cast<float>(_settings.samplesToConvergence));
             if (isOrthographic) {
                 GfVec3f dOx = rayDiff.rxOrigin - origin;
                 GfVec3f dOy = rayDiff.ryOrigin - origin;

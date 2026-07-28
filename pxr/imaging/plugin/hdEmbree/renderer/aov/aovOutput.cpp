@@ -357,7 +357,8 @@ HdEmbreeRenderer::Clear()
         }
 
         HdEmbreeRenderBufferInterface *rb =
-            dynamic_cast<HdEmbreeRenderBufferInterface*>(_aovBindings[i].renderBuffer);
+            dynamic_cast<HdEmbreeRenderBufferInterface*>(
+                _aovBindings[i].renderBuffer);
 
         rb->Map();
         if (_aovNames[i].name == HdAovTokens->color) {
@@ -394,7 +395,8 @@ HdEmbreeRenderer::ResetAccumulation()
 
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
         HdEmbreeRenderBufferInterface *rb =
-            dynamic_cast<HdEmbreeRenderBufferInterface*>(_aovBindings[i].renderBuffer);
+            dynamic_cast<HdEmbreeRenderBufferInterface*>(
+                _aovBindings[i].renderBuffer);
         rb->ClearSamples();
         rb->SetConverged(false);
     }
@@ -410,7 +412,8 @@ HdEmbreeRenderer::MarkAovBuffersUnconverged()
 {
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
         HdEmbreeRenderBufferInterface *rb =
-            dynamic_cast<HdEmbreeRenderBufferInterface*>(_aovBindings[i].renderBuffer);
+            dynamic_cast<HdEmbreeRenderBufferInterface*>(
+                _aovBindings[i].renderBuffer);
         if (rb != nullptr) {
             rb->SetConverged(false);
         }
@@ -421,7 +424,7 @@ void
 HdEmbreeRenderer::_ClassifyAovOutputs()
 {
     _aovOutputs.clear();
-    _needColor = _enableAdaptiveSampling;
+    _needColor = _settings.enableAdaptiveSampling;
     _colorClearValue = GfVec4f(0.0f);
 
     // Find color clear value and set _needColor.
@@ -443,8 +446,8 @@ HdEmbreeRenderer::_ClassifyAovOutputs()
 
         if (aovName.name == HdAovTokens->color) {
             _AovKind const kind =
-                (_showAdaptiveHeatmap &&
-                 _enableAdaptiveSampling &&
+                (_settings.showAdaptiveHeatmap &&
+                 _settings.enableAdaptiveSampling &&
                  !_pixelSampleCount.empty())
                 ? _AovKind::ColorAdaptiveHeatmap
                 : _AovKind::Color;
@@ -476,7 +479,8 @@ HdEmbreeRenderer::_ClassifyAovOutputs()
             _aovOutputs.push_back(
                 _AovOutput{rb, _AovKind::Primvar, aovName.name});
         } else if (aovName.name == HdEmbreeAovTokens->adaptiveHeatmap) {
-            if (_enableAdaptiveSampling && !_pixelSampleCount.empty()) {
+            if (_settings.enableAdaptiveSampling &&
+                !_pixelSampleCount.empty()) {
                 _aovOutputs.push_back(
                     _AovOutput{
                         rb, _AovKind::AdaptiveHeatmap, TfToken()});
@@ -529,7 +533,7 @@ HdEmbreeRenderer::_WriteAov(
             size_t const index = y * _width + x;
             float const fraction =
                 static_cast<float>(_pixelSampleCount[index]) /
-                static_cast<float>(std::max(1, _samplesToConvergence));
+                static_cast<float>(std::max(1, _settings.samplesToConvergence));
             GfVec4f const heatmapColor = _HeatmapColor(fraction);
             aov.buffer->WriteOutput(
                 pixel, 4, heatmapColor.data());
@@ -584,7 +588,7 @@ HdEmbreeRenderer::_WriteAov(
             size_t const index = y * _width + x;
             float const fraction =
                 static_cast<float>(_pixelSampleCount[index] + 1) /
-                static_cast<float>(std::max(1, _samplesToConvergence));
+                static_cast<float>(std::max(1, _settings.samplesToConvergence));
             GfVec4f const heatmapColor = _HeatmapColor(fraction);
             aov.buffer->Write(pixel, 4, heatmapColor.data());
             break;
@@ -604,12 +608,12 @@ HdEmbreeRenderer::_UpdateVariance(
     GfVec3f delta2 = rgb - _pixelMean[idx];
     _pixelM2[idx] += GfCompMult(delta, delta2);
 
-    if (count >= static_cast<uint32_t>(_minSamplesBeforeAdaptive)) {
+    if (count >= static_cast<uint32_t>(_settings.minSamplesBeforeAdaptive)) {
         float fCount = static_cast<float>(count);
         GfVec3f varOfMean = _pixelM2[idx] / (fCount * fCount);
         const GfVec3f &mean = _pixelMean[idx];
         if (_IsPerChannelVarianceConverged(
-                varOfMean, mean, _adaptiveThreshold)) {
+                varOfMean, mean, _settings.adaptiveThreshold)) {
             _pixelConverged[idx] = true;
         }
     }
