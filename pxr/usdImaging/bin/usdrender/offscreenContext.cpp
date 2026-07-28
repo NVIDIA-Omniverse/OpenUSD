@@ -2,18 +2,25 @@
 #if defined(__linux__)
 #include <GL/glx.h>
 #include <X11/Xlib.h>
+
+// Own the native handles behind a platform-neutral interface and keep X11/GLX
+// types out of the public header.
 struct OffscreenContext::Impl
 {
     Display *display = nullptr;
     GLXContext context = nullptr;
     GLXPbuffer pbuffer = 0;
 };
+
 OffscreenContext::OffscreenContext(bool enabled)
     : _impl(new Impl), _enabled(enabled)
 {
     if (!enabled) {
         return;
     }
+
+    // A one-pixel pbuffer is sufficient because Hydra renders into its own
+    // buffers; the context exists only to satisfy GPU delegate initialization.
     _impl->display = XOpenDisplay(nullptr);
     if (!_impl->display) {
         _error = "Could not open X display for GPU rendering";
@@ -51,8 +58,12 @@ OffscreenContext::OffscreenContext(bool enabled)
                                _impl->context))
         _error = "Could not create or bind a GLX offscreen context";
 }
+
 OffscreenContext::~OffscreenContext()
 {
+    // Unbind before destroying GLX resources, then close the display last. All
+    // handles are optional because construction records errors instead of
+    // throwing, so teardown must accept every partially initialized state.
     if (!_impl)
         return;
     if (_impl->display) {
@@ -65,9 +76,11 @@ OffscreenContext::~OffscreenContext()
     }
 }
 #else
+
 struct OffscreenContext::Impl
 {
 };
+
 OffscreenContext::OffscreenContext(bool enabled)
     : _impl(new Impl), _enabled(enabled)
 {
@@ -75,12 +88,15 @@ OffscreenContext::OffscreenContext(bool enabled)
         _error =
             "Native offscreen GPU context is not implemented on this platform";
 }
+
 OffscreenContext::~OffscreenContext() = default;
 #endif
+
 bool OffscreenContext::IsValid() const
 {
     return !_enabled || _error.empty();
 }
+
 const std::string &OffscreenContext::GetError() const
 {
     return _error;

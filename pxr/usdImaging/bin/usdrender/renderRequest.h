@@ -10,11 +10,14 @@
 #include "pxr/usd/usd/stage.h"
 #include <string>
 #include <vector>
+
 struct StageData
 {
     pxr::UsdStageRefPtr stage;
     pxr::SdfLayerRefPtr session;
+    pxr::SdfPath settings, pass;
 };
+
 struct RenderProduct
 {
     pxr::SdfPath path, camera;
@@ -23,6 +26,7 @@ struct RenderProduct
     float pixelAspectRatio;
     std::string name;
 };
+
 struct RenderRequest
 {
     pxr::SdfPath settings, pass, camera;
@@ -30,6 +34,18 @@ struct RenderRequest
     std::vector<RenderProduct> products;
     pxr::VtDictionary customSettings;
 };
+
+/// Open the root and optional user session layers, create the command-line
+/// session wrapper, resolve the active RenderSettings/RenderPass paths, and
+/// apply all attribute overrides. Returns false with a diagnostic on stderr if
+/// any layer, path, mask, or override is invalid. A supplied session layer is
+/// never modified.
 bool LoadStage(const Options &, StageData *);
+
+/// Compute the writable render products, common framing, camera, renderer, and
+/// generic custom settings for one loaded stage. All products must share a
+/// camera, resolution, and data window. Returns false with a diagnostic on
+/// stderr when the authored render request cannot be executed as one render.
 bool BuildRenderRequest(const Options &, const StageData &, RenderRequest *);
+
 #endif

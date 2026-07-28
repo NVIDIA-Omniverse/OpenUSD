@@ -626,15 +626,15 @@ this ordering avoids.
       *mechanism* for its tuning advice, so its recipes need rewriting against
       the render settings prim, not a find-and-replace.
     - `doc/README.md:9` — states the project-wide validation convention
-      ("validate with a fixed `HDEMBREE_RANDOM_NUMBER_SEED` and `oiiotool
-      --diff`"). This is the highest-leverage fix: every plan inherits it.
+      (`usdrender -s "{settings}.ty:randomNumberSeed = 1"` plus
+      `oiiotool --diff`). This is the highest-leverage fix: every plan
+      inherits it.
     - `doc/05-plan-naming-core.md`, `doc/06-plan-aov-dispatch.md`,
       `doc/07-plan-closure-classification.md` — fixed-seed and
       heatmap recipes.
 
-    Replace fixed-seed recipes with an authored `ty:randomNumberSeed` on the
-    active `RenderSettings` prim, and give `OPTIMIZATION.md` a concrete worked
-    example of authoring it before invoking `usdrender`. Where a fixed scene
+    Replace fixed-seed recipes with
+    `usdrender -s "{settings}.ty:randomNumberSeed = 1"`. Where a fixed scene
     frame already yields deterministic sampling (`randomNumberSeed = -1` uses
     the scene frame), say so instead of prescribing a seed.
 13. Confirm the installed tree: clean configure, build, and install into a

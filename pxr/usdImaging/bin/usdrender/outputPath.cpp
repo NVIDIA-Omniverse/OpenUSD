@@ -4,6 +4,10 @@
 #include <filesystem>
 #include <iomanip>
 #include <sstream>
+
+// Expand every {frame} or {frame:WIDTHd} placeholder without treating other
+// braces as formatting syntax. Default time maps to zero because it has no
+// numeric value but still needs a deterministic filename.
 static bool _Expand(const std::string &in, const pxr::UsdTimeCode &t,
                     std::string *out, std::string *err)
 {
@@ -53,15 +57,22 @@ static bool _Expand(const std::string &in, const pxr::UsdTimeCode &t,
     }
     return true;
 }
+
 bool ResolveOutputPath(const std::string &a, const std::string &r,
                        const pxr::UsdTimeCode &t, std::string *out,
                        std::string *err)
 {
+    // outputRoot deliberately replaces the authored anchor while preserving
+    // the authored relative hierarchy. Absolute authored paths lose their root
+    // so a command-line output root always contains every generated product.
     std::filesystem::path p = a;
     if (!r.empty())
         p = std::filesystem::absolute(r) / p.relative_path();
     if (!_Expand(p.string(), t, out, err))
         return false;
+
+    // Create directories before the renderer starts; product-writing failures
+    // should describe renderer behavior rather than a missing parent directory.
     const std::string parent =
         std::filesystem::path(*out).parent_path().string();
     if (!parent.empty() && !pxr::TfMakeDirs(parent, -1, true)) {

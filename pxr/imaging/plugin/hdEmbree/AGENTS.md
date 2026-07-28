@@ -146,10 +146,11 @@ pixi run pytest material-fidelity \
 ```
 
 Profile the printed `usdrender` command directly instead of profiling pytest,
-FLIP comparison, and report generation. Set `HDEMBREE_RANDOM_NUMBER_SEED` to a
-fixed value. Keep resolution, sample count, bounce count, adaptive sampling,
-and other scene-authored render settings unchanged between measurements.
-Scene-authored `ty:` settings take precedence over environment-backed defaults.
+FLIP comparison, and report generation. Set `ty:randomNumberSeed` to a fixed
+value with `--set`. Keep resolution, sample count, bounce count, adaptive
+sampling, and other scene-authored render settings unchanged between
+measurements. Scene-authored `ty:` settings take precedence over
+environment-backed defaults; `--set` takes precedence over both.
 Run the profiling commands below from `/home/anders/code/openusd-omniverse` so
 the `$PWD/.pixi` path identifies the provider environment.
 
@@ -158,9 +159,9 @@ Use at least five `perf stat` repetitions for before-and-after measurements:
 ```sh
 pixi run --clean-env -x /usr/bin/env \
     PATH="$PWD/.pixi/envs/default/bin:/usr/bin:/bin" \
-    HDEMBREE_RANDOM_NUMBER_SEED=1 \
     /usr/bin/perf stat -r 5 -d -o /tmp/hdembree-stat.txt -- \
     usdrender --complexity high --renderer Embree \
+    -s "{settings}.ty:randomNumberSeed = 1" \
     <stage.usda> --outputRoot /tmp/hdembree-profile-stat
 ```
 
@@ -169,10 +170,10 @@ Collect call stacks for the renderer and all worker threads with:
 ```sh
 pixi run --clean-env -x /usr/bin/env \
     PATH="$PWD/.pixi/envs/default/bin:/usr/bin:/bin" \
-    HDEMBREE_RANDOM_NUMBER_SEED=1 \
     /usr/bin/perf record -o /tmp/hdembree.data \
     -F 499 -e cycles:u -g --call-graph fp -- \
     usdrender --complexity high --renderer Embree \
+    -s "{settings}.ty:randomNumberSeed = 1" \
     <stage.usda> --outputRoot /tmp/hdembree-profile-record
 
 perf report -i /tmp/hdembree.data
@@ -189,8 +190,8 @@ OpenUSD tracing complements statistical profiling by measuring coarse phases:
 
 ```sh
 PXR_ENABLE_GLOBAL_TRACE=1 \
-HDEMBREE_RANDOM_NUMBER_SEED=1 \
 pixi run usdrender \
+    -s "{settings}.ty:randomNumberSeed = 1" \
     <stage.usda> --outputRoot /tmp/hdembree-profile-trace \
     > /tmp/hdembree-trace.txt 2>&1
 ```
@@ -640,7 +641,11 @@ true and writes products only when the client explicitly sets it to false.
 `usdrender` is the stage-authored output command;
 its C++ implementation is under `pxr/usdImaging/bin/usdrender/` and drives
 `UsdImagingGLEngine` directly. It owns output roots and frame-placeholder
-expansion; hdEmbree must not expand placeholders. `UsdAppUtilsFrameRecorder`
+expansion; hdEmbree must not expand placeholders. Its repeatable `-s` /
+`--set` option validates attribute targets against the unmodified composed
+stage, parses each USDA value in an isolated scratch layer, and authors only
+the resulting value into an anonymous session layer. `{settings}` resolves
+once before overrides to the active RenderSettings prim. `UsdAppUtilsFrameRecorder`
 remains the legacy `usdrecord` path and is not used by `usdrender`.
 
 ## USD Render References

@@ -7,7 +7,7 @@ overrides into `usdrender`'s session layer:
 ```sh
 usdrender scene.usda -r Embree \
     -s "{settings}.ty:maxBounces = 12" \
-    -s "{settings}.ty:jitterCamera = false" \
+    -s "{settings}.ty:enableAdaptiveSampling = false" \
     -s "/World/Camera.focalLength = 35"
 ```
 
@@ -135,8 +135,8 @@ target     := primPath '.' attributeName
 - `valueText` is handed to the usda parser **in isolation** (see "Applying").
   **usda syntax, not C++ or Python syntax** — booleans are `true`/`false`, not
   `1`/`0`; strings are `"quoted"`; assets are `@path@`; arrays are `[1, 2, 3]`;
-  tuples are `(1, 2, 3)`. The example in the original request,
-  `bool ty:jitterCamera = 1`, must be written `= false` / `= true`.
+  tuples are `(1, 2, 3)`. For example,
+  `bool ty:enableAdaptiveSampling = 1` must be written `= false` / `= true`.
 
 ### Relative asset paths follow standard resolution — document it, do not invent it
 
@@ -416,9 +416,10 @@ arbitrary-prim uses.
 
 ## `--printOverrides`
 
-A flag that dumps the generated session layer via `ExportToString()` and
-continues. Roughly ten lines, and it turns "why did my override not apply" from a
-guess into a read. Worth having given the intended audience is largely agents.
+A flag that, when at least one `--set` is present, dumps the generated session
+layer via `ExportToString()` and continues. Roughly ten lines, and it turns "why
+did my override not apply" from a guess into a read. Worth having given the
+intended audience is largely agents.
 
 # Implementation sequence
 

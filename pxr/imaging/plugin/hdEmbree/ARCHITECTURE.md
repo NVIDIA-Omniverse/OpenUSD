@@ -37,6 +37,14 @@ than authoring USD. Its explicit metadata covers 25 of the 27 `ty:` attributes;
 `ty:disableShadows` and `ty:textureCacheSize` use the default category. Its key
 set must remain a subset of the delegate descriptors.
 
+`usdrender -s` / `--set` is the per-invocation authoring path. It lives outside
+hdEmbree in `pxr/usdImaging/bin/usdrender/`: the tool resolves `{settings}`
+before applying overrides, validates targets against the unmodified composed
+stage, parses each value in an isolated USDA scratch layer, and authors only
+the resulting typed value into an anonymous session layer. This makes the
+command-line opinion stronger than the root stage and a supplied
+`--sessionLayer` without modifying either file.
+
 ## Common-quantity naming
 
 First-party identifiers compose semantic suffixes in this order:

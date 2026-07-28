@@ -15,12 +15,32 @@ endif()
 target_sources(usdrender PRIVATE
     options.cpp
     offscreenContext.cpp
+    overrides.cpp
     outputPath.cpp
     renderRequest.cpp
     renderDriver.cpp
 )
 
+pxr_build_test(testUsdRenderOverrides
+    LIBRARIES
+        gf sdf tf usd vt
+    CPPFILES
+        overrides.cpp
+        testenv/testUsdRenderOverrides.cpp
+)
+
+pxr_register_test(testUsdRenderOverrides
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testUsdRenderOverrides"
+    EXPECTED_RETURN_CODE 0
+)
+
 if (PXR_BUILD_EMBREE_PLUGIN AND BUILD_SHARED_LIBS)
+    pxr_register_test(testUsdRenderSetOverrides
+        COMMAND "${PYTHON_EXECUTABLE} testUsdRenderSetOverrides.py ${CMAKE_INSTALL_PREFIX}/bin/usdrender"
+        EXPECTED_RETURN_CODE 0
+        TESTENV testenv/SetOverrides
+    )
+
     pxr_register_test(testUsdRenderCpuFrames
         COMMAND "${CMAKE_INSTALL_PREFIX}/bin/usdrender test.usda --disableGpu --renderer Embree --enableCameraLight --frames 1:2 --outputRoot outputs"
         IMAGE_DIFF_COMPARE

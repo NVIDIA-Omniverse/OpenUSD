@@ -1,0 +1,14 @@
+#usda 1.0
+
+over "Camera"
+{
+    float focalLength = 30
+}
+
+over "Render"
+{
+    over "Product"
+    {
+        int2 resolution = (30, 20)
+    }
+}

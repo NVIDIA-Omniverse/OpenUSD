@@ -2,6 +2,10 @@
 #define PXR_USDIMAGING_BIN_USDRENDER_OFFSCREEN_CONTEXT_H
 #include <memory>
 #include <string>
+
+/// Own a native offscreen graphics context when GPU rendering is enabled.
+/// Construction records platform/display/context failures for IsValid() and
+/// never throws intentionally. Disabled contexts are always valid.
 class OffscreenContext
 {
 public:
@@ -18,4 +22,5 @@ private:
     std::string _error;
     bool _enabled;
 };
+
 #endif

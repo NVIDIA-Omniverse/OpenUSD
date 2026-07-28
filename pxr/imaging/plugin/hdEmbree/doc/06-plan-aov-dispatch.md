@@ -321,9 +321,9 @@ allow-list and format-specific readback so separate invocations cover:
 - one known primvar;
 - `adaptiveHeatmap`.
 
-Use fixed `HDEMBREE_RANDOM_NUMBER_SEED`, a non-unit camera exposure, and
-background misses. Add a separate color invocation with
-`ty:showAdaptiveHeatmap = true` (or its environment-backed default) for the
+Use `usdrender -s "{settings}.ty:randomNumberSeed = 1"`, a non-unit camera
+exposure, and background misses. Add a separate color invocation with
+`-s "{settings}.ty:showAdaptiveHeatmap = true"` for the
 `ColorAdaptiveHeatmap` case. Compare every invocation before/after; any
 non-zero difference is a bug because the switch move stays within the same
 translation unit.

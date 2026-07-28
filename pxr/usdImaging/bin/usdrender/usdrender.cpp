@@ -6,9 +6,13 @@
 #include "renderRequest.h"
 #include <fstream>
 #include <iostream>
+
 PXR_NAMESPACE_USING_DIRECTIVE
+
 int main(int argc, char **argv)
 {
+    // Resolve all command-line, stage, and render-product state before creating
+    // the Hydra engine, so invalid requests cannot start rendering.
     Options options;
     if (!ParseOptions(argc, argv, &options))
         return 1;
@@ -25,6 +29,9 @@ int main(int argc, char **argv)
     RenderRequest request;
     if (!BuildRenderRequest(options, stage, &request))
         return 1;
+
+    // Rendering may fail after tracing or allocation was enabled. Always emit
+    // requested diagnostics before returning the render result.
     const bool ok = RenderAll(options, stage, request);
     if (!options.traceFile.empty()) {
         TraceCollector::GetInstance().SetEnabled(false);

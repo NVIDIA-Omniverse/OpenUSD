@@ -228,12 +228,14 @@ Validation:
   render independent of an X display:
 
   ```sh
-  HDEMBREE_RANDOM_NUMBER_SEED=1 pixi run usdrender \
+  pixi run usdrender \
       /home/anders/code/aousd-materials-test-suite/test-suite/surfaces/open_pbr_surface/displacement.usda \
+      -s "{settings}.ty:randomNumberSeed = 1" \
       --disableGpu --outputRoot /tmp/hdembree-plan10-before
 
-  HDEMBREE_RANDOM_NUMBER_SEED=1 pixi run usdrender \
+  pixi run usdrender \
       /home/anders/code/aousd-materials-test-suite/test-suite/surfaces/open_pbr_surface/displacement.usda \
+      -s "{settings}.ty:randomNumberSeed = 1" \
       --disableGpu --outputRoot /tmp/hdembree-plan10-after
 
   pixi run oiiotool --diff \

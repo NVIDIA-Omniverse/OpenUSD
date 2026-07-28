@@ -48,7 +48,9 @@ pixi run pytest material-fidelity \
 Use a fixed random seed for repeatable profiling. The
 `input_coat_darkening` fixture authors a 512 by 512 resolution and 64 samples
 per pixel, so the scene-authored sample count is retained to represent the
-actual test workload.
+actual test workload. Add
+`-s "{settings}.ty:randomNumberSeed = 1"` to the direct `usdrender`
+invocation; the anonymous session opinion leaves the fixture unchanged.
 
 ## Hardware Counters
 
@@ -58,10 +60,10 @@ the system paths explicitly:
 ```sh
 pixi run --clean-env -x /usr/bin/env \
     PATH=/home/anders/code/openusd-omniverse/.pixi/envs/default/bin:/usr/bin:/bin \
-    HDEMBREE_RANDOM_NUMBER_SEED=1 \
     /usr/bin/perf stat -r 5 -d \
     -o /tmp/typhoon-input-coat-darkening-stat.txt -- \
     usdrender --complexity high --renderer Embree \
+    -s "{settings}.ty:randomNumberSeed = 1" \
     /home/anders/code/typhoon-tests/material-fidelity/surfaces/open_pbr_surface/input_coat_darkening.usda \
     --outputRoot /tmp/typhoon-profile-stat
 ```
@@ -89,11 +91,11 @@ Collect frame-pointer call stacks for all renderer worker threads:
 ```sh
 pixi run --clean-env -x /usr/bin/env \
     PATH=/home/anders/code/openusd-omniverse/.pixi/envs/default/bin:/usr/bin:/bin \
-    HDEMBREE_RANDOM_NUMBER_SEED=1 \
     /usr/bin/perf record \
     -o /tmp/typhoon-input-coat-darkening.data \
     -F 499 -e cycles:u -g --call-graph fp -- \
     usdrender --complexity high --renderer Embree \
+    -s "{settings}.ty:randomNumberSeed = 1" \
     /home/anders/code/typhoon-tests/material-fidelity/surfaces/open_pbr_surface/input_coat_darkening.usda \
     --outputRoot /tmp/typhoon-profile-record
 ```
@@ -130,8 +132,8 @@ Enable OpenUSD's global trace collector for a direct render:
 
 ```sh
 PXR_ENABLE_GLOBAL_TRACE=1 \
-HDEMBREE_RANDOM_NUMBER_SEED=1 \
 pixi run usdrender \
+    -s "{settings}.ty:randomNumberSeed = 1" \
     /home/anders/code/typhoon-tests/material-fidelity/surfaces/open_pbr_surface/input_coat_darkening.usda \
     --outputRoot /tmp/typhoon-profile-trace \
     > /tmp/typhoon-input-coat-darkening-trace.txt 2>&1
@@ -352,8 +354,9 @@ only on the no-lighting fallback path.
 
 Validation: brass sphere 4.50 s -> 3.08 s renderer time (~32%), `Color mat
 evals` 0.57/sample -> 0 with lighting on, and exact `oiiotool --diff`
-matches for both the lit scene and the `HDEMBREE_ENABLE_LIGHTING=false`
-fallback. All hdEmbree/MaterialXCpp unit tests pass.
+matches for both the lit scene and the
+`HDEMBREE_ENABLE_LIGHTING=false` fallback. All
+hdEmbree/MaterialXCpp unit tests pass.
 
 Follow-up (2026-07-13): the renderer now selects `_IntegratePath` or
 `_IntegrateUnlit` before intersection. Each integrator owns its camera hit and

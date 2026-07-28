@@ -9,8 +9,12 @@ frame and pixel-sample orchestration remains in `renderer.cpp`, while camera
 sampling, lit and unlit integrators, AOVs, lights, materials, geometry, and
 sampling live in dedicated subdirectories. See `ARCHITECTURE.md` for the file map and render-flow guide.
 
-The following settings can be configured via `renderSettings` (Hydra render delegate settings API) and/or environment variables. USD `RenderSettings` prim attributes use the `ty:` namespace. Precedence is:
-built-in default < environment variable < USD `RenderSettings` prim < Hydra renderer setting UI.
+The following settings can be configured via `renderSettings` (Hydra render
+delegate settings API) and/or environment variables. USD `RenderSettings` prim
+attributes use the `ty:` namespace. For `usdrender`, precedence is:
+built-in default < environment variable < USD `RenderSettings` prim <
+command-line `--set`. Interactive applications can place direct Hydra renderer
+settings, including UI changes, above authored USD values.
 
 ## Render-product output
 
@@ -21,6 +25,36 @@ products into their viewport without writing their `productName` paths.
 `usdrender` explicitly selects offline mode. hdEmbree writes products only
 after the frame both passes renderer setup and converges; a failed setup leaves
 the expected product absent so `usdrender` reports an error.
+
+### Per-invocation attribute overrides
+
+`usdrender -s` / `--set` authors repeatable attribute overrides into an
+anonymous session layer without modifying the stage:
+
+```sh
+pixi run usdrender scene.usda -r Embree \
+    -s "{settings}.ty:randomNumberSeed = 1" \
+    -s "{settings}.ty:maxBounces = 8" \
+    -s "/Camera.focalLength = 35"
+```
+
+The grammar is `[uniform|varying] [type] /Prim.attribute = USDA-value`.
+Existing schema or authored attributes infer their type and variability;
+explicit declarations must agree. A new custom attribute requires a type, for
+example `-s "bool {settings}.domeLightCameraVisibility = false"`.
+`{settings}` is case-insensitive and resolves once, before overrides, to the
+RenderSettings prim selected by `--renderSettingsPrimPath`,
+`--renderPassPrimPath`, or stage metadata. Every target prim must already be
+defined and included by `--mask`; typos, type mismatches, malformed values,
+undefined or masked-out prims, and native instance proxies fail before any
+override is authored.
+
+Values use USDA syntax: booleans are `true` / `false`, strings are quoted,
+vectors use tuples, and arrays use brackets. Relative asset paths are
+unanchored and resolve through the active resolver context with the current
+working directory first; use an absolute asset path when resolution must be
+unambiguous. With at least one `--set`, `--printOverrides` prints the generated
+session layer and continues.
 
 ## Subdivision complexity and MaterialX displacement
 
@@ -195,7 +229,10 @@ Set `ty:approxTransparentShadows` to `false` to keep the conservative thick-surf
 When `ty:disableShadows` is `true`, shadow visibility rays return fully visible. Direct light sampling, emitted-light hits, dome evaluation, and camera visibility still run, so this removes occlusion along direct light paths without hiding lights or geometry from the camera. The default is `false`.
 
 ### Random Number Seed (`ty:randomNumberSeed`)
-A value of `-1` (default) chooses a non-deterministic OpenQMC frame seed for each render. Any other value produces deterministic/repeatable sampler sequences.
+A value of `-1` (default) derives the OpenQMC seed from the scene frame. Any
+other value selects an explicit deterministic/repeatable sampler sequence. Use
+`usdrender -s "{settings}.ty:randomNumberSeed = 1"` for fixed-seed comparisons
+without editing the stage.
 
 ## Custom AOVs
 

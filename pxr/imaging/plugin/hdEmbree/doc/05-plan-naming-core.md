@@ -328,8 +328,8 @@ identifiers.
 
 ## Validation
 
-- Every rename-only commit is bit-identical under `oiiotool --diff` with fixed
-  `HDEMBREE_RANDOM_NUMBER_SEED`. Exercise front/back double-sided,
+- Every rename-only commit is bit-identical under `oiiotool --diff` with
+  `usdrender -s "{settings}.ty:randomNumberSeed = 1"`. Exercise front/back double-sided,
   normal-mapped, glass, SSS, lit, volume, and dielectric scenes.
 - `pixi run ctest --test-dir build -R 'testHdEmbree|testMaterialXCpp' --output-on-failure`
   passes.

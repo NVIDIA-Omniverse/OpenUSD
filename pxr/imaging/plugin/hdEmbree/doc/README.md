@@ -6,9 +6,8 @@ reference path tracer). Each plan is self-contained: issue, why it violates a
 goal, exact `file:line` locations, suggested fix, sequencing, and validation.
 
 Unless noted, every change is meant to be **behavior-preserving** — validate
-with a fixed seed and `oiiotool --diff`. Before plan 11 use
-`HDEMBREE_RANDOM_NUMBER_SEED`; from plan 11 onward author
-`ty:randomNumberSeed` with `usdrender -s`.
+with `usdrender -s "{settings}.ty:randomNumberSeed = 1"` and
+`oiiotool --diff`.
 
 Every plan ends with the same mandatory final gate: from
 `~/code/typhoon-test-suite`, run

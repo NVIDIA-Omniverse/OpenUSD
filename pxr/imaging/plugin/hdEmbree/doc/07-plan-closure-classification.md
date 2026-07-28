@@ -99,8 +99,8 @@ tree walk and the branch predictor, but "readability-only" is a claim about
 thing.
 
 Required, per the profiling procedure in `AGENTS.md`: a before/after
-`perf stat -r 5` on a material-heavy scene, using the profile build and a fixed
-`HDEMBREE_RANDOM_NUMBER_SEED`. Report renderer-reported samples/sec alongside
+`perf stat -r 5` on a material-heavy scene, using the profile build and
+`-s "{settings}.ty:randomNumberSeed = 1"`. Report renderer-reported samples/sec alongside
 wall time. If the regression exceeds run-to-run noise, reorder the chain or stop
 and reconsider — do not land a measured slowdown for a readability win.
 
@@ -165,7 +165,7 @@ than transcribing whatever the current cascade happens to return.
 ### 2. Fixed-seed image diff
 
 A material scene reaching `_IsReflectionOnlyNode` must render bit-identically
-(`oiiotool --diff`) with a fixed `HDEMBREE_RANDOM_NUMBER_SEED`. Use an existing
+(`oiiotool --diff`) with `-s "{settings}.ty:randomNumberSeed = 1"`. Use an existing
 scene rather than authoring a synthetic 15-closure stage — the table-driven test
 above is what provides category coverage, and an image is a poor instrument for
 it. A mixed reflection/transmission material scene from the fidelity suite is
