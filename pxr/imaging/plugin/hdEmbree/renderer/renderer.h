@@ -622,8 +622,9 @@ private:
     ///
     /// \param positionWld World-space surface position.
     /// \param normalShdWldOut Normalized material-resolved hemisphere normal.
-    /// \param normalGeomWldExt Authored-exterior geometric normal used for the
-    /// ray-origin offset.
+    /// \param normalGeomWldExt Authored-exterior geometric normal used to
+    /// offset the ray origin along the true surface, avoiding self-intersection
+    /// independently of the shading normal that orients the sample hemisphere.
     /// \param domain Deterministic sample domain reserved for AO draws.
     /// \return Unoccluded fraction in [0,1], or one when AO is disabled.
     float _ComputeAmbientOcclusion(GfVec3f const& positionWld,
@@ -969,14 +970,6 @@ private:
         GfVec3f const& direction,
         HdEmbreeLightSampler::LightSample* outSample,
         TfToken* outLightLink = nullptr) const;
-
-    /// \brief Declare a traversal decision for an intersected primitive.
-    ///
-    /// This reserved helper currently has no definition or call sites and must
-    /// not be called until implemented.
-    /// \param rayHit Initialized intersection result to inspect.
-    /// \return Intended to indicate whether traversal should skip the hit.
-    bool _RayShouldContinue(RTCRayHit const& rayHit) const;
 
     struct _ShadingContextOptions {
         /// \brief Construct shading-context feature options.

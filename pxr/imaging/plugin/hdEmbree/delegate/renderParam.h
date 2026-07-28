@@ -24,7 +24,7 @@ class HdEmbreeRenderer;
 /// The render delegate can create an object of type HdRenderParam, to pass
 /// to each prim during Sync(). HdEmbree uses this class to pass top-level
 /// embree state around.
-/// 
+///
 class HdEmbreeRenderParam final : public HdRenderParam
 {
 public:

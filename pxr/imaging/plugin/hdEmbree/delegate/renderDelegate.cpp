@@ -533,7 +533,6 @@ HdEmbreeRenderDelegate::CreateSprim(TfToken const& typeId,
     } else if (typeId == HdPrimTypeTokens->light ||
                typeId == HdPrimTypeTokens->distantLight ||
                typeId == HdPrimTypeTokens->diskLight ||
-               typeId == HdPrimTypeTokens->distantLight ||
                typeId == HdPrimTypeTokens->domeLight ||
                typeId == HdPrimTypeTokens->rectLight ||
                typeId == HdPrimTypeTokens->sphereLight ||
@@ -560,7 +559,6 @@ HdEmbreeRenderDelegate::CreateFallbackSprim(TfToken const& typeId)
     } else if (typeId == HdPrimTypeTokens->light ||
                typeId == HdPrimTypeTokens->distantLight ||
                typeId == HdPrimTypeTokens->diskLight ||
-               typeId == HdPrimTypeTokens->distantLight ||
                typeId == HdPrimTypeTokens->domeLight ||
                typeId == HdPrimTypeTokens->rectLight ||
                typeId == HdPrimTypeTokens->sphereLight ||

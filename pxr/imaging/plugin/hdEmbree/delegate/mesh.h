@@ -221,7 +221,12 @@ private:
 
     // Compute a smooth tangent frame as face-varying data for coarse triangle
     // meshes. Tangent and bitangent are orthonormalized against the effective
-    // shading normal and uploaded as face-varying primvars.
+    // shading normal and uploaded as face-varying primvars. Corners are
+    // averaged only within groups sharing a vertex index and exact normalized
+    // normal, preserving tangent discontinuities across normal splits. Refined
+    // geometry, a missing prototype context, an invalid or mis-sized derivative
+    // cache, empty topology, or an inconsistent triangulated-corner mapping
+    // clear the outputs and leave the cache invalid.
     void _UpdateTangentFrameCache();
 
     // Populate a single primvar, with given name and data, in the prototype

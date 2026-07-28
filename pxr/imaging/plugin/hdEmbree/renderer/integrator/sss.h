@@ -31,7 +31,6 @@ struct HdEmbreeSssInput {
     GfVec3f albedo;            // Target per-channel diffuse reflectance.
     GfVec3f radius;            // Per-channel world-space scattering radius.
     float anisotropy;          // Clamped to [-0.99, 0.99].
-    float iorInterior;         // Absolute material IOR, clamped to >= 1.0.
     bool usePrecomputedCoefficients = false;
     GfVec3f precomputedAbsorption = GfVec3f(0.0f);
     GfVec3f precomputedScattering = GfVec3f(0.0f);

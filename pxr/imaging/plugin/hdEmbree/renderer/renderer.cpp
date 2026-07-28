@@ -829,7 +829,6 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
         // Compute the pixel location of tile boundaries.
         const unsigned int tileY = tile / numTilesX;
         const unsigned int tileX = tile - tileY * numTilesX;
-        // (Above is equivalent to: tileX = tile % numTilesX)
         const unsigned int x0 = tileX * tileSize + minX;
         const unsigned int y0 = tileY * tileSize + minY;
         // Clamp to data window, in case tileSize doesn't

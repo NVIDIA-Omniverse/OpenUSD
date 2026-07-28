@@ -150,7 +150,7 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
         return 1.0f;
     }
 
-    float occlusionFactor = 0.0f;
+    float visibility = 0.0f;
 
     // For hemisphere sampling we need to choose a coordinate frame at this
     // point. For _CosineWeightedDirection, normalShdWldOut must map to
@@ -202,9 +202,8 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
             (static_cast<float>(i) + yJitter[i]) / _ambientOcclusionSamples;
     }
 
-    // Trace ambient occlusion rays. The occlusion factor is the fraction of
-    // the hemisphere that's occluded when rays are traced to infinity,
-    // computed by random sampling over the hemisphere.
+    // Ambient visibility is the fraction of the hemisphere that is unoccluded
+    // when rays are traced to infinity.
     const GfVec3f rayOrigin =
         _OffsetRayOrigin(positionWld, normalGeomWldExt, normalShdWldOut, 1e-4f);
     for (int i = 0; i < _ambientOcclusionSamples; i++)
@@ -222,19 +221,20 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
           rtcOccluded1(_scene, &shadow);
         }
 
-        // Record this AO ray's contribution to the occlusion factor.
+        // Record this AO ray's contribution to ambient visibility.
         // Since we use cosine-weighted hemisphere sampling (PDF ∝ cos θ),
         // the Monte Carlo estimator for the Lambertian ambient integral
         // reduces to a simple visibility average: 1 if visible, 0 if
         // occluded.
-        // shadow is occluded when shadow.ray.tfar < 0.0f
+        // rtcOccluded1 sets shadow.tfar to -inf on occlusion, so tfar > 0
+        // means the sampled direction is unoccluded.
         if (shadow.tfar > 0.0f)
-            occlusionFactor += 1.0f;
+            visibility += 1.0f;
     }
-    // Compute the average of the occlusion samples.
-    occlusionFactor /= _ambientOcclusionSamples;
+    // Average the ambient-visibility samples.
+    visibility /= _ambientOcclusionSamples;
 
-    return occlusionFactor;
+    return visibility;
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

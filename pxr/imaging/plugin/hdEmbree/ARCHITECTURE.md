@@ -220,7 +220,6 @@ corresponding type without changing the semantic name.
 - `renderBuffer.h`: narrow AOV output interface implemented by the delegate.
 - `config.h/.cpp`: startup defaults from `HDEMBREE_*` environment variables.
 - `debugCodes.h/.cpp`: hdEmbree `TF_DEBUG` symbols.
-- `pxrPbrt/pbrtUtils.h`: small utilities derived from PBRT conventions.
 
 ### `schema/`: render settings
 

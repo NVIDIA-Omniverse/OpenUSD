@@ -98,7 +98,7 @@ public:
     /// scene, and links embree error handling to hydra error handling.
     HdEmbreeRenderDelegate();
     /// Render delegate constructor. This method creates the RTC device and
-    /// scene, and links embree error ahndling to hydra error handling.
+    /// scene, and links embree error handling to hydra error handling.
     /// It also populates initial render settings.
     HdEmbreeRenderDelegate(HdRenderSettingsMap const& settingsMap);
     /// Render delegate destructor. This method destroys the RTC device and

@@ -847,7 +847,8 @@ _ComputeTriangleSurfaceDerivatives(
         }
     }
 
-    // 3. Normal derivatives (dndu, dndv)
+    // Normal derivatives let specular continuations propagate ray-direction
+    // differentials.
     GfVec3f N[3];
     bool haveNormals = false;
     {
@@ -939,9 +940,9 @@ _ComputeSubdivSurfaceDerivatives(
 {
     RTCGeometry const geometry = rtcGetGeometry(rootScene, geomID);
 
-    // 1. Position derivatives. Displaced subdivision needs the derivatives
-    //    of P + D*N; rtcInterpolate itself intentionally returns only the
-    //    undisplaced limit surface.
+    // Position derivatives. Displaced subdivision needs the derivatives
+    // of P + D*N; rtcInterpolate itself intentionally returns only the
+    // undisplaced limit surface.
     bool havePositionDerivs = false;
     if (prototypeContext->displaced) {
         if (displacedFrame && displacedFrame->valid) {
@@ -976,9 +977,7 @@ _ComputeSubdivSurfaceDerivatives(
         return;
     }
 
-    // 2. If st available, transform from parametric to st space.
-    //    Handle both GfVec2f and GfVec3f st buffers.
-    //    Support both vertex and face-varying interpolation modes.
+    // If st available, transform from parametric to st space.
     HdEmbreeSubdivTexcoordJacobian stJacobian;
     auto const stIt = prototypeContext->primvarMap.find(_tokensSt);
     if (stIt != prototypeContext->primvarMap.end()) {
@@ -1004,8 +1003,8 @@ _ComputeSubdivSurfaceDerivatives(
         GfBuildOrthonormalFrame(normal, outDPdu, outDPdv);
     }
 
-    // 3. Normal derivatives
-    //    Support both vertex and face-varying interpolation modes.
+    // Normal derivatives let specular continuations propagate ray-direction
+    // differentials.
     *outDndu = GfVec3f(0.0f);
     *outDndv = GfVec3f(0.0f);
     // Computing derivatives of the displaced normal itself requires another

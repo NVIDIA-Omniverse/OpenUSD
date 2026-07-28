@@ -945,7 +945,6 @@ HdEmbreeRenderer::_TraceSubsurface(
             -0.99f,
             0.99f);
     }
-    walkInput.iorInterior = std::max(input.closure->specularIor, 1.0f);
     walkInput.ownerInstanceId = input.rayHit->hit.instID[0];
     walkInput.ownerGeomId = input.rayHit->hit.geomID;
     walkInput.ownerScene = input.instanceContext->rootScene;

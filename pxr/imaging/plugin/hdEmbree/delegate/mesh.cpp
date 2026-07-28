@@ -1410,6 +1410,9 @@ HdEmbreeMesh::_UpdateSurfaceDerivativeCache()
 void
 HdEmbreeMesh::_UpdateTangentFrameCache()
 {
+    // Build each corner tangent by projecting dPdu off the normal, accumulate
+    // the frames by smoothing group, then re-orthonormalize the group result
+    // for each corner.
     _computedTangents.clear();
     _computedBitangents.clear();
     _tangentFrameValid = false;

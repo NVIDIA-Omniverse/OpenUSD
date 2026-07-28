@@ -147,7 +147,6 @@ pxr_plugin(hdEmbree
         renderer/renderBuffer.h
         delegate/renderParam.h
         renderer/sampling/sampling.h
-        renderer/pxrPbrt/pbrtUtils.h
         renderer/materials/MaterialXCpp/mathTypes.h
         renderer/materials/MaterialXCpp/shadingContext.h
         renderer/materials/MaterialXCpp/spectral.h
