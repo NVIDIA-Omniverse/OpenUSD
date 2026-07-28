@@ -2761,21 +2761,25 @@ static bool TestLuminance() {
     NodeOutputMap out;
     ShadingContext ctx;
     fn(in, ctx, &out);
-    float result = _GetFloat(out);
+    const Vec3f whiteResult = _GetVec3(out);
     // Rec.709: 0.2126 + 0.7152 + 0.0722 = 1.0
-    if (!Test_IsClose(result, 1.0f, 0.01f)) {
-        printf("    luminance of white: %f (expected ~1.0)\n", result);
+    if (!Test_IsClose(whiteResult, Vec3f(1.0f), 0.01f)) {
+        printf("    luminance of white: (%f, %f, %f) "
+               "(expected ~(1.0, 1.0, 1.0))\n",
+               whiteResult[0], whiteResult[1], whiteResult[2]);
         return false;
     }
 
     // Non-trivial color
     in["in"] = Value(Vec3f(0.5f, 0.0f, 0.0f));
     fn(in, ctx, &out);
-    result = _GetFloat(out);
-    float expected = 0.2126f * 0.5f;
-    if (!Test_IsClose(result, expected, 0.001f)) {
-        printf("    luminance of (0.5,0,0): %f (expected %f)\n",
-               result, expected);
+    const Vec3f redResult = _GetVec3(out);
+    constexpr float expected = 0.2126f * 0.5f;
+    if (!Test_IsClose(redResult, Vec3f(expected), 0.001f)) {
+        printf("    luminance of (0.5,0,0): (%f, %f, %f) "
+               "(expected (%f, %f, %f))\n",
+               redResult[0], redResult[1], redResult[2],
+               expected, expected, expected);
         return false;
     }
     return true;
