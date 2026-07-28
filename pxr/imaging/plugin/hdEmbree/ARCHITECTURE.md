@@ -142,7 +142,7 @@ corresponding type without changing the semantic name.
 - `renderPass.h/.cpp`: converts `HdRenderPassState`, camera, framing, AOVs, wire color/width, scene-index render settings/products, and delegate settings into renderer setters. Starts/restarts rendering, reports convergence, and writes active render products.
   It requires an attached `HdCamera` and snapshots the first valid camera/data window for screen-space subdivision. Scene edits reuse that snapshot; `ty:dynamicSubdvTesselation` enables resnapshotting and recomputation after projection or data-window changes.
 - `renderBuffer.h/.cpp`: CPU-backed `HdRenderBuffer` storage, mapping, format conversion, convergence, and renderer write access.
-- `mesh.h/.cpp`: `HdMesh` adapter. Pulls topology, points, transforms, subdivision data, primvars, materials, categories, active repr, and instancing; builds/updates Embree prototypes and instances. It applies levels computed by `adaptiveSubdivision.*`, stores wireframe topology/display state in the prototype context, and supplies the Embree subdivision displacement callback declared in `displacement.h`.
+- `mesh.h/.cpp`: `HdMesh` adapter. Pulls topology, points, transforms, subdivision data, primvars, materials, categories, active repr, and instancing; builds/updates Embree prototypes and instances. The mesh uniquely owns one prototype context and one context in each instance record; Embree borrows their stable addresses as geometry user data. It applies levels computed by `adaptiveSubdivision.*`, stores wireframe topology/display state in the prototype context, and supplies the Embree subdivision displacement callback declared in `displacement.h`.
 - `adaptiveSubdivision.h/.cpp`: deterministic screen-space edge projection, guarded homogeneous view-volume clipping, shared-edge/instance maximum selection, complexity targets, fixed 3x3 displaced-quad chord probes, Embree level clamping, and quad transition balancing.
 - `instancer.h/.cpp`: `HdInstancer` adapter; computes instance transforms and per-instance category/light-linking context.
 - `material.h/.cpp`: `HdMaterial` adapter; pulls Hydra networks, normalizes them through `mxcppAdapter`, owns separate compiled surface and optional displacement `mxcpp::EvalGraph` objects, and updates a stable renderer material-data handle.
@@ -244,7 +244,9 @@ corresponding type without changing the semantic name.
 2. `CreateRprim/CreateSprim/CreateBprim` create mesh, material, light, and render-buffer adapters.
 3. During `HdRenderIndex::SyncAll()`, Hydra calls each adapter's `Sync()`: meshes pull geometry/primvars/bindings/instances; materials compile networks; lights pull Lux/texture/IES/linking data; instancers update transforms and contexts.
 4. Mutating adapters use `HdEmbreeRenderParam::AcquireSceneForEdit()` or `NotifySceneChange()`. This stops background rendering before shared state changes and increments the scene version.
-5. Mesh prototypes/instances are attached to the top-level `RTCScene`. `HdEmbreePrototypeContext` and `HdEmbreeInstanceContext` make synchronized renderer data available at hits without retaining Hydra adapter objects.
+5. Mesh prototypes/instances are attached to the top-level `RTCScene`.
+   `HdEmbreePrototypeContext` and `HdEmbreeInstanceContext` make synchronized
+   renderer data available at hits without retaining Hydra adapter objects.
 6. At low complexity, subdivision meshes render as triangulated control cages.
    For medium and higher, the pass projects authored control edges through the
    stored subdivision view/projection and all instance transforms. Projection

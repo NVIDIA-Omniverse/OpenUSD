@@ -21,6 +21,9 @@
 #include <embree4/rtcore.h>
 #include <embree4/rtcore_ray.h>
 
+#include <memory>
+#include <vector>
+
 PXR_NAMESPACE_OPEN_SCOPE
 
 struct HdEmbreePrototypeContext;
@@ -65,7 +68,7 @@ public:
 
     /// HdEmbreeMesh destructor.
     /// (Note: Embree resources are released in Finalize()).
-    virtual ~HdEmbreeMesh() = default;
+    virtual ~HdEmbreeMesh();
 
     /// Inform the scene graph which state needs to be downloaded in the
     /// first Sync() call: in this case, topology and points data to build
@@ -169,18 +172,26 @@ protected:
     virtual HdDirtyBits _PropagateDirtyBits(HdDirtyBits bits) const override;
 
 private:
-    // Helper functions for getting the prototype and instance contexts.
-    // These don't do null checks, so the user is responsible for calling them
-    // carefully.
-    HdEmbreePrototypeContext* _GetPrototypeContext();
-    HdEmbreeInstanceContext* _GetInstanceContext(RTCScene scene, size_t i);
+    // One record owns all state for one top-level Embree instance. Embree
+    // borrows the stable address owned by context for geometry user data.
+    struct _Instance {
+        unsigned rtcId = RTC_INVALID_GEOMETRY_ID;
+        RTCGeometry geometry = nullptr;
+        std::unique_ptr<HdEmbreeInstanceContext> context;
+    };
 
     // Embree instance bounds depend on the committed state of the instanced
     // scene. Recommit every instance after changing that prototype scene.
     void _CommitPrototypeInstances();
 
+    // Release and clear all raw-owned samplers immediately before destroying
+    // the prototype context. No renderer may be using them. Safe to call more
+    // than once.
+    void _ReleasePrimvarSamplers();
+
     // Synchronize the cached effective displacement state and Embree callback
-    // pointer. Returns true when a geometry recommit is required.
+    // pointer. Requires a live prototype geometry and context. Returns true
+    // when a geometry recommit is required.
     bool _RefreshDisplacementState();
 
     void _WarnIfInstancedDisplacementIsLimited(
@@ -191,7 +202,18 @@ private:
         GfMatrix4d const& projectionMatrix,
         GfRect2i const& dataWindow) const;
 
-    // Populate the embree geometry object based on scene data.
+    // Populate the Embree prototype and instances using only data selected by
+    // dirtyBits. This call may replace the prototype geometry/context and
+    // resize the owned instance records; Embree borrows each context address.
+    //
+    // On failure, geometry created by this call is released, no Embree object
+    // retains destroyed user data, and the prototype members describe either
+    // one live committed prototype or an empty prototype scene. Existing
+    // instances reference that committed prototype scene or its committed
+    // empty state. dirtyBits remain set so Sync can retry.
+    //
+    // The caller has stopped rendering before entry and commits the root scene
+    // after return. This call commits the prototype before its instances.
     void _PopulateRtMesh(HdSceneDelegate *sceneDelegate,
                          RTCScene scene,
                          RTCDevice device,
@@ -242,10 +264,16 @@ private:
     // primvar. Different primvars can author different seams.
     void _ConfigureSubdivAttributeTopologies(RTCGeometry geometry);
 
-    // Utility function to call rtcNewSubdivisionMesh and populate topology.
-    RTCGeometry _CreateEmbreeSubdivMesh(RTCScene scene, RTCDevice device);
-    // Utility function to call rtcNewTriangleMesh and populate topology.
-    RTCGeometry _CreateEmbreeTriangleMesh(RTCScene scene, RTCDevice device);
+    // Create, attach, and populate one subdivision prototype. Outputs are set
+    // only on success; failure releases all geometry created by this call.
+    bool _CreateEmbreeSubdivMesh(
+        RTCScene scene, RTCDevice device,
+        RTCGeometry* geometry, unsigned* rtcId);
+    // Create, attach, and populate one triangle prototype. Outputs are set
+    // only on success; failure releases all geometry created by this call.
+    bool _CreateEmbreeTriangleMesh(
+        RTCScene scene, RTCDevice device,
+        RTCGeometry* geometry, unsigned* rtcId);
 
     // An embree intersection filter callback, for doing backface culling.
     static void _EmbreeCullFaces(const RTCFilterFunctionNArguments* args);
@@ -256,9 +284,13 @@ private:
     // as _rtcMeshId, in _rtcMeshScene.
     unsigned _rtcMeshId;
     RTCScene _rtcMeshScene;
-    // Each instance of the mesh in the top-level scene is stored in
-    // _rtcInstanceIds.
-    std::vector<unsigned> _rtcInstanceIds;
+    // The mesh owns its prototype context while Embree borrows its address as
+    // geometry user data.
+    std::unique_ptr<HdEmbreePrototypeContext> _prototypeContext;
+
+    // Each top-level instance owns its id, geometry handle, and stable context
+    // in one record.
+    std::vector<_Instance> _instances;
 
     // Cached scene data. VtArrays are reference counted, so as long as we
     // only call const accessors keeping them around doesn't incur a buffer
@@ -344,8 +376,7 @@ private:
     // found this to be necessary in the case where multiple threads were
     // commiting to the scene at the same time, and a geometry needed to be
     // referenced again while other threads were committing
-    RTCGeometry _geometry;
-    std::vector<RTCGeometry> _rtcInstanceGeometries;
+    RTCGeometry _geometry = nullptr;
 
     // This class does not support copying.
     HdEmbreeMesh(const HdEmbreeMesh&)             = delete;
