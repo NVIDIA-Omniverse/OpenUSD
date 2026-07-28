@@ -826,7 +826,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                 GfColorSpaceNames->LinearRec709.GetText(),
                 GfColorSpaceNames->LinearRec709.GetText(),
                 GfColorSpaceNames->LinearAP1.GetText(),
-                GfColorSpaceNames->Raw.GetText());
+                GfColorSpaceNames->Data.GetText());
         }
         const bool materialColorSpaceChanged =
             _renderer->GetMaterialEvalServices()->renderColorSpace !=

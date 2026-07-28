@@ -15,7 +15,6 @@
 #include "../../paramMap.h"
 
 #include <algorithm>
-#include <cctype>
 #include <string>
 #include <type_traits>
 
@@ -38,16 +37,6 @@ inline std::string
 NormalizeToken(const std::string& value, const char* fallback)
 {
     return NormalizeSpaceName(value, std::string(fallback));
-}
-
-inline std::string
-NormalizeColorSpace(const std::string& value)
-{
-    std::string normalized = value;
-    std::transform(
-        normalized.begin(), normalized.end(), normalized.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return normalized;
 }
 
 template<typename T>

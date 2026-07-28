@@ -107,7 +107,7 @@ struct ShadingContext
         Vec3f* out);
     ColorTransformFn colorTransform = nullptr;
     const void* colorTransformUserData = nullptr;
-    // Global renderer raw mode overrides authored color-transform nodes.
+    // Global renderer data mode overrides authored color-transform nodes.
     bool bypassColorTransforms = false;
 
     // CIE Y coefficients for renderer-dependent lobe weighting and clamping.

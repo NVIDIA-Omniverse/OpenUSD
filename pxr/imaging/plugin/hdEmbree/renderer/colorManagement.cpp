@@ -10,25 +10,9 @@
 #include "pxr/base/gf/matrix3f.h"
 #include "pxr/base/tf/span.h"
 
-#include <algorithm>
 #include <array>
-#include <cctype>
 
 PXR_NAMESPACE_OPEN_SCOPE
-
-namespace {
-
-std::string
-_NormalizeColorSpaceName(std::string const& name)
-{
-    std::string normalized = name;
-    std::transform(
-        normalized.begin(), normalized.end(), normalized.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return normalized;
-}
-
-} // anonymous namespace
 
 bool
 HdEmbreeParseRenderColorSpace(
@@ -46,8 +30,8 @@ HdEmbreeParseRenderColorSpace(
         *result = HdEmbreeRenderColorSpace::LinearAP1;
         return true;
     }
-    if (token == GfColorSpaceNames->Raw) {
-        *result = HdEmbreeRenderColorSpace::Raw;
+    if (token == GfColorSpaceNames->Data) {
+        *result = HdEmbreeRenderColorSpace::Data;
         return true;
     }
     return false;
@@ -61,8 +45,8 @@ HdEmbreeGetRenderColorSpaceToken(HdEmbreeRenderColorSpace colorSpace)
         return GfColorSpaceNames->LinearRec709;
     case HdEmbreeRenderColorSpace::LinearAP1:
         return GfColorSpaceNames->LinearAP1;
-    case HdEmbreeRenderColorSpace::Raw:
-        return GfColorSpaceNames->Raw;
+    case HdEmbreeRenderColorSpace::Data:
+        return GfColorSpaceNames->Data;
     }
     return GfColorSpaceNames->LinearRec709;
 }
@@ -70,7 +54,7 @@ HdEmbreeGetRenderColorSpaceToken(HdEmbreeRenderColorSpace colorSpace)
 bool
 HdEmbreeBypassesColorTransforms(HdEmbreeRenderColorSpace colorSpace)
 {
-    return colorSpace == HdEmbreeRenderColorSpace::Raw;
+    return colorSpace == HdEmbreeRenderColorSpace::Data;
 }
 
 TfToken const&
@@ -99,45 +83,19 @@ HdEmbreeResolveColorSpace(
         return HdEmbreeColorSpaceResolution::Unsupported;
     }
 
-    const std::string normalized =
-        _NormalizeColorSpaceName(sourceColorSpace);
-    if (normalized.empty() ||
-        normalized == "none" ||
-        normalized == "raw" ||
-        normalized == "data" ||
-        normalized == "auto" ||
-        normalized == "identity") {
+    const TfToken sourceColorSpaceToken(sourceColorSpace);
+    if (sourceColorSpaceToken == GfColorSpaceNames->Data ||
+        sourceColorSpaceToken == GfColorSpaceNames->Raw ||
+        sourceColorSpaceToken == GfColorSpaceNames->Identity ||
+        sourceColorSpaceToken == GfColorSpaceNames->Unknown) {
         return HdEmbreeColorSpaceResolution::NoTransform;
     }
 
-    if (normalized == "srgb_texture" || normalized == "srgb") {
-        *resolvedColorSpace = GfColorSpaceNames->SRGBRec709;
-    } else if (normalized == "lin_rec709" || normalized == "lin_srgb") {
-        *resolvedColorSpace = GfColorSpaceNames->LinearRec709;
-    } else if (normalized == "g22_rec709") {
-        *resolvedColorSpace = GfColorSpaceNames->G22Rec709;
-    } else if (normalized == "g18_rec709") {
-        *resolvedColorSpace = GfColorSpaceNames->G18Rec709;
-    } else if (normalized == "acescg" || normalized == "lin_ap1") {
-        *resolvedColorSpace = GfColorSpaceNames->LinearAP1;
-    } else if (normalized == "g22_ap1") {
-        *resolvedColorSpace = GfColorSpaceNames->G22AP1;
-    } else if (normalized == "adobergb") {
-        *resolvedColorSpace = GfColorSpaceNames->G22AdobeRGB;
-    } else if (normalized == "lin_adobergb") {
-        *resolvedColorSpace = GfColorSpaceNames->LinearAdobeRGB;
-    } else if (normalized == "srgb_displayp3") {
-        *resolvedColorSpace = GfColorSpaceNames->SRGBP3D65;
-    } else if (normalized == "lin_displayp3") {
-        *resolvedColorSpace = GfColorSpaceNames->LinearP3D65;
-    } else {
-        const TfToken directToken(normalized);
-        if (!GfColorSpace::IsValid(directToken)) {
-            return HdEmbreeColorSpaceResolution::Unsupported;
-        }
-        *resolvedColorSpace = directToken;
+    if (!GfColorSpace::IsValid(sourceColorSpaceToken)) {
+        return HdEmbreeColorSpaceResolution::Unsupported;
     }
 
+    *resolvedColorSpace = sourceColorSpaceToken;
     return HdEmbreeColorSpaceResolution::Transform;
 }
 

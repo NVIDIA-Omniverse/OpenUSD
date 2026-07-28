@@ -1945,7 +1945,7 @@ static bool TestUsdUvTextureUsesNativeWrapAndColorSpaceSemantics() {
            request.filterType == TextureFilterType::Linear &&
            Test_IsClose(request.frame, 18.0f) &&
            request.dataRole == TextureDataRole::Color &&
-           request.sourceColorSpace == "srgb" &&
+           request.sourceColorSpace == "srgb_rec709_scene" &&
            request.channelCount == 4 &&
            Test_IsClose(request.channelFillValue, 1.0f) &&
            Test_IsClose(request.defaultValue, Vec4f(0.1f, 0.2f, 0.3f, 0.4f));
@@ -1971,7 +1971,8 @@ static bool TestUsdUvTextureFallsBackToFileColorSpaceMetadata() {
     }
 
     return Test_IsClose(_GetVec3(out, "rgb"), Vec3f(0.2f, 0.3f, 0.4f)) &&
-           textureSystem.lastRequest.sourceColorSpace == "srgb";
+           textureSystem.lastRequest.sourceColorSpace ==
+               "srgb_rec709_scene";
 }
 
 static bool TestMaterialXUsdUvTextureOutputsRgbaAndScaledFallback() {
@@ -2063,7 +2064,7 @@ static bool TestLatLongImageMapsViewdirToLatLongUv() {
            request.filterType == TextureFilterType::Linear &&
            Test_IsClose(request.frame, 7.0f) &&
            request.dataRole == TextureDataRole::Color &&
-           request.sourceColorSpace == "acescg" &&
+           request.sourceColorSpace == "ACEScg" &&
            request.channelCount == 3 &&
            Test_IsClose(request.channelFillValue, 0.0f) &&
            Test_IsClose(request.defaultValue, Vec4f(0.1f, 0.2f, 0.3f, 0.0f));
@@ -2427,7 +2428,7 @@ static bool TestTriplanarProjectionColor3SamplesAxesAndBlends() {
     const std::array<std::string, 3> expectedLayers = {
         "layerX", "layerY", "layerZ"};
     const std::array<std::string, 3> expectedColorSpaces = {
-        "acescg", "srgb_texture", "raw"};
+        "ACEScg", "srgb_texture", "raw"};
     const std::array<Vec2f, 3> expectedSt = {
         Vec2f(2.0f, 3.0f),
         Vec2f(1.0f, 3.0f),
@@ -2906,7 +2907,7 @@ static bool TestColorTransformCallbackReceivesClampedInput() {
            Test_IsClose(_GetVec3(out), Vec3f(0.0f));
 }
 
-static bool TestColorTransformRawBypassesCallbackAndFallback() {
+static bool TestColorTransformDataModeBypassesCallbackAndFallback() {
     ParamMap in;
     const Vec3f authoredValue(-0.25f, 0.5f, 1.5f);
     in["in"] = Value(authoredValue);
@@ -3110,7 +3111,7 @@ Test_RegisterNodeTests()
     _REG(TestColorTransformCallbackOverridesFallback);
     _REG(TestColorTransformCallbackFallbackWhenUnhandled);
     _REG(TestColorTransformCallbackReceivesClampedInput);
-    _REG(TestColorTransformRawBypassesCallbackAndFallback);
+    _REG(TestColorTransformDataModeBypassesCallbackAndFallback);
     _REG(TestParamMapCopyOnWriteForBorrowedValue);
     _REG(TestNodeRegistryLookup);
     _REG(TestNodeRegistryMissing);

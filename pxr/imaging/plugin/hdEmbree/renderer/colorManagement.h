@@ -21,10 +21,10 @@ enum class HdEmbreeRenderColorSpace
 {
     LinearRec709,
     LinearAP1,
-    Raw
+    Data
 };
 
-/// Result of resolving an authored texture color-space name.
+/// Result of resolving an authored source color-space name.
 enum class HdEmbreeColorSpaceResolution
 {
     NoTransform,
@@ -49,7 +49,7 @@ bool HdEmbreeBypassesColorTransforms(
 
 /// Return the linear RGB space used for numerical color algorithms.
 ///
-/// Raw has no primaries, so it deliberately uses Linear Rec.709 as the
+/// Data has no primaries, so it deliberately uses Linear Rec.709 as the
 /// deterministic, backward-compatible fallback for algorithms that require
 /// an RGB basis.
 TfToken const& HdEmbreeGetWorkingColorSpaceToken(
@@ -57,19 +57,19 @@ TfToken const& HdEmbreeGetWorkingColorSpaceToken(
 
 /// Return RGB coefficients that compute CIE Y in the selected working space.
 ///
-/// Raw uses the Linear Rec.709 fallback described above.
+/// Data uses the Linear Rec.709 fallback described above.
 GfVec3f HdEmbreeGetLuminanceCoefficients(
     HdEmbreeRenderColorSpace colorSpace);
 
-/// Resolve MaterialX/USD aliases and native Gf color-space names.
+/// Resolve a canonical Gf color-space name without alias interpretation.
 HdEmbreeColorSpaceResolution HdEmbreeResolveColorSpace(
     std::string const& sourceColorSpace,
     TfToken* resolvedColorSpace);
 
 /// Convert one linear or encoded RGB triplet into the renderer working space.
 ///
-/// Returns false only when the source color-space name is unsupported. Raw,
-/// data-role aliases, and a matching source/destination are successful no-ops.
+/// Returns false only when the source color-space name is unsupported. Data
+/// designations and a matching source/destination are successful no-ops.
 bool HdEmbreeConvertToRenderColorSpace(
     std::string const& sourceColorSpace,
     HdEmbreeRenderColorSpace renderColorSpace,

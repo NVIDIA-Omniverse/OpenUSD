@@ -208,16 +208,16 @@ TestConvertAuthoredSolidColorsToRenderSpace()
         return false;
     }
 
-    const MaterialGraph rawGraph = ConvertHdNetworkToMxcppGraph(
-        network, HdEmbreeRenderColorSpace::Raw);
-    const auto rawNodeIt = rawGraph.nodes.find(surfacePath.GetString());
-    if (rawNodeIt == rawGraph.nodes.end()) {
+    const MaterialGraph dataGraph = ConvertHdNetworkToMxcppGraph(
+        network, HdEmbreeRenderColorSpace::Data);
+    const auto dataNodeIt = dataGraph.nodes.find(surfacePath.GetString());
+    if (dataNodeIt == dataGraph.nodes.end()) {
         return false;
     }
-    const Value& rawValue =
-        rawNodeIt->second.parameters.at("diffuseColor");
-    return ValueHolds<Vec3f>(rawValue) &&
-           _IsClose(ValueGet<Vec3f>(rawValue), authoredAp1);
+    const Value& dataValue =
+        dataNodeIt->second.parameters.at("diffuseColor");
+    return ValueHolds<Vec3f>(dataValue) &&
+           _IsClose(ValueGet<Vec3f>(dataValue), authoredAp1);
 }
 
 static bool

@@ -178,7 +178,7 @@ def Scope "Materials"
         {
             uniform token info:id = "ND_image_color3"
             asset inputs:file = @../images/macbeth_2k_srgb.png@ (
-                colorSpace = "srgb_texture"
+                colorSpace = "srgb_rec709_scene"
             )
             float2 inputs:texcoord.connect = </Materials/MacbethImage/TexCoord.outputs:out>
             color3f outputs:out
@@ -212,7 +212,7 @@ def Scope "Materials"
         {
             uniform token info:id = "ND_image_color3"
             asset inputs:file = @../images/marcie_2k_srgb.png@ (
-                colorSpace = "srgb_texture"
+                colorSpace = "srgb_rec709_scene"
             )
             float2 inputs:texcoord.connect = </Materials/MarcieImage/TexCoord.outputs:out>
             color3f outputs:out
@@ -246,7 +246,7 @@ def Scope "Materials"
         {
             uniform token info:id = "ND_image_color3"
             asset inputs:file = @../images/materialxlogo_720.png@ (
-                colorSpace = "srgb_texture"
+                colorSpace = "srgb_rec709_scene"
             )
             float2 inputs:texcoord.connect = </Materials/MaterialXLogoImage/TexCoord.outputs:out>
             color3f outputs:out
@@ -280,7 +280,7 @@ def Scope "Materials"
         {
             uniform token info:id = "ND_image_color3"
             asset inputs:file = @../images/checkermap.png@ (
-                colorSpace = "srgb_texture"
+                colorSpace = "srgb_rec709_scene"
             )
             float2 inputs:texcoord.connect = </Materials/CheckerImage/TexCoord.outputs:out>
             color3f outputs:out
@@ -314,7 +314,7 @@ def Scope "Materials"
         {
             uniform token info:id = "ND_tiledimage_color3"
             asset inputs:file = @../images/checkermap.png@ (
-                colorSpace = "srgb_texture"
+                colorSpace = "srgb_rec709_scene"
             )
             float2 inputs:texcoord.connect = </Materials/CheckerTiled/TexCoord.outputs:out>
             float2 inputs:uvtiling = (8.0, 8.0)
@@ -382,7 +382,7 @@ def Scope "Materials"
         {
             uniform token info:id = "ND_hextiledimage_color3"
             asset inputs:file = @../images/checkermap.png@ (
-                colorSpace = "srgb_texture"
+                colorSpace = "srgb_rec709_scene"
             )
             float2 inputs:texcoord.connect = </Materials/CheckerHexTiled/TexCoord.outputs:out>
             float2 inputs:tiling = (6.0, 6.0)
@@ -419,13 +419,13 @@ def Scope "Materials"
         {
             uniform token info:id = "ND_triplanarprojection_color3"
             asset inputs:filex = @../images/checkermap.png@ (
-                colorSpace = "srgb_texture"
+                colorSpace = "srgb_rec709_scene"
             )
             asset inputs:filey = @../images/marcie_2k_srgb.png@ (
-                colorSpace = "srgb_texture"
+                colorSpace = "srgb_rec709_scene"
             )
             asset inputs:filez = @../images/materialxlogo_720.png@ (
-                colorSpace = "srgb_texture"
+                colorSpace = "srgb_rec709_scene"
             )
             float inputs:blend = 0.025
             vector3f inputs:position.connect = </Materials/TriplanarProjection/ScalePosition.outputs:out>

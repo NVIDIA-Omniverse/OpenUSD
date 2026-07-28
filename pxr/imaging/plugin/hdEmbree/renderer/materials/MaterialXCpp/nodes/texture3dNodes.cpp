@@ -202,8 +202,8 @@ _SampleTriplanarTexture(const ParamMap& inputs,
         GetAddressMode(inputs, _kFrameEndAction, "constant");
     request.frame = ctx.frame;
     request.dataRole = DataRole;
-    request.sourceColorSpace = NormalizeColorSpace(
-        Get<std::string>(inputs, fileColorSpaceSlot, std::string()));
+    request.sourceColorSpace =
+        Get<std::string>(inputs, fileColorSpaceSlot, std::string());
     request.channelCount = TextureValueTraits<T>::kChannelCount;
     request.defaultValue = defaultColor;
     if constexpr (std::is_same_v<T, Vec4f>) {

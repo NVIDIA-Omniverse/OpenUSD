@@ -235,21 +235,44 @@ _TestColorManagementUtilities()
             GfColorSpaceNames->LinearAP1, &parsed) ||
         parsed != HdEmbreeRenderColorSpace::LinearAP1 ||
         !HdEmbreeParseRenderColorSpace(
-            GfColorSpaceNames->Raw, &parsed) ||
-        parsed != HdEmbreeRenderColorSpace::Raw ||
+            GfColorSpaceNames->Data, &parsed) ||
+        parsed != HdEmbreeRenderColorSpace::Data ||
+        HdEmbreeParseRenderColorSpace(GfColorSpaceNames->Raw, &parsed) ||
         HdEmbreeParseRenderColorSpace(TfToken("acescg"), &parsed)) {
         std::printf("rendering color-space token parsing failed\n");
         return false;
     }
 
     const GfVec3f authored(0.25f, 0.5f, 0.75f);
-    GfVec3f raw = authored;
+    GfVec3f data = authored;
     if (!HdEmbreeConvertToRenderColorSpace(
             GfColorSpaceNames->SRGBRec709.GetString(),
-            HdEmbreeRenderColorSpace::Raw,
-            &raw) ||
-        !GfIsClose(raw, authored, 1.0e-6f)) {
-        std::printf("raw did not bypass a texture color transform\n");
+            HdEmbreeRenderColorSpace::Data,
+            &data) ||
+        !GfIsClose(data, authored, 1.0e-6f)) {
+        std::printf("data did not bypass a texture color transform\n");
+        return false;
+    }
+
+    TfToken resolvedColorSpace;
+    if (HdEmbreeResolveColorSpace(
+            "acescg", &resolvedColorSpace) !=
+            HdEmbreeColorSpaceResolution::Unsupported ||
+        HdEmbreeResolveColorSpace(
+            "lin_ap1", &resolvedColorSpace) !=
+            HdEmbreeColorSpaceResolution::Unsupported ||
+        HdEmbreeResolveColorSpace(
+            "srgb_texture", &resolvedColorSpace) !=
+            HdEmbreeColorSpaceResolution::Unsupported ||
+        HdEmbreeResolveColorSpace(
+            "LIN_AP1_SCENE", &resolvedColorSpace) !=
+            HdEmbreeColorSpaceResolution::Unsupported ||
+        HdEmbreeResolveColorSpace(
+            GfColorSpaceNames->LinearAP1.GetString(),
+            &resolvedColorSpace) !=
+            HdEmbreeColorSpaceResolution::Transform ||
+        resolvedColorSpace != GfColorSpaceNames->LinearAP1) {
+        std::printf("canonical color-space name resolution failed\n");
         return false;
     }
 

@@ -423,8 +423,8 @@ _EvalHexTiledImageNode(const ParamMap& inputs,
     request.filterType = TextureFilterType::SmartBicubic;
     request.frame = ctx.frame;
     request.dataRole = TextureDataRole::Color;
-    request.sourceColorSpace = NormalizeColorSpace(
-        Get<std::string>(inputs, _kFileColorSpace, std::string()));
+    request.sourceColorSpace =
+        Get<std::string>(inputs, _kFileColorSpace, std::string());
     request.channelCount = TextureValueTraits<T>::kChannelCount;
     request.defaultValue = defaultColor;
     if constexpr (std::is_same_v<T, Vec4f>) {
@@ -523,8 +523,8 @@ _EvalHexTiledNormalMap(const ParamMap& inputs,
     request.filterType = TextureFilterType::Linear;
     request.frame = ctx.frame;
     request.dataRole = TextureDataRole::NonColor;
-    request.sourceColorSpace = NormalizeColorSpace(
-        Get<std::string>(inputs, _kFileColorSpace, std::string()));
+    request.sourceColorSpace =
+        Get<std::string>(inputs, _kFileColorSpace, std::string());
     request.channelCount = 3;
     request.channelFillValue = 0.0f;
     request.defaultValue = TextureValueTraits<Vec3f>::ToVec4(defaultValue);
@@ -618,8 +618,8 @@ _EvalTextureNode(const ParamMap& inputs,
         GetAddressMode(inputs, _kFrameEndAction, "constant");
     request.frame = ctx.frame;
     request.dataRole = DataRole;
-    request.sourceColorSpace = NormalizeColorSpace(
-        Get<std::string>(inputs, _kFileColorSpace, std::string()));
+    request.sourceColorSpace =
+        Get<std::string>(inputs, _kFileColorSpace, std::string());
     request.channelCount = TextureValueTraits<T>::kChannelCount;
     request.defaultValue = defaultColor;
 
@@ -731,8 +731,8 @@ _EvalGltfImage(const ParamMap& inputs,
     request.filterType = GetFilterType(inputs, _kFilterType);
     request.frame = ctx.frame;
     request.dataRole = DataRole;
-    request.sourceColorSpace = NormalizeColorSpace(
-        Get<std::string>(inputs, _kFileColorSpace, std::string()));
+    request.sourceColorSpace =
+        Get<std::string>(inputs, _kFileColorSpace, std::string());
     request.channelCount = TextureValueTraits<T>::kChannelCount;
     if constexpr (DataRole == TextureDataRole::Color) {
         request.channelFillValue = 1.0f;
@@ -923,8 +923,8 @@ _EvalLatLongImageNode(const ParamMap& inputs,
     request.filterType = TextureFilterType::Linear;
     request.frame = ctx.frame;
     request.dataRole = TextureDataRole::Color;
-    request.sourceColorSpace = NormalizeColorSpace(
-        Get<std::string>(inputs, _kFileColorSpace, std::string()));
+    request.sourceColorSpace =
+        Get<std::string>(inputs, _kFileColorSpace, std::string());
     request.channelCount = TextureValueTraits<Vec3f>::kChannelCount;
     request.channelFillValue = TextureValueTraits<Vec3f>::kFillValue;
     request.defaultValue = defaultColor;
@@ -958,15 +958,28 @@ _SetUsdUvTextureOutputs(const Vec4f& value, NodeOutputMap* outputs)
 }
 
 static std::string
+_ResolveUsdUvTextureSourceColorSpace(const std::string& sourceColorSpace)
+{
+    if (sourceColorSpace == "sRGB") {
+        return "srgb_rec709_scene";
+    }
+    if (sourceColorSpace == "auto") {
+        // Automatic file-metadata detection is not implemented by this node.
+        return {};
+    }
+    return sourceColorSpace;
+}
+
+static std::string
 _GetUsdSourceColorSpace(const ParamMap& inputs)
 {
     const std::string explicitColorSpace =
         Get<std::string>(inputs, _kSourceColorSpace, std::string());
     if (!explicitColorSpace.empty()) {
-        return NormalizeColorSpace(explicitColorSpace);
+        return _ResolveUsdUvTextureSourceColorSpace(explicitColorSpace);
     }
 
-    return NormalizeColorSpace(
+    return _ResolveUsdUvTextureSourceColorSpace(
         Get<std::string>(inputs, _kFileColorSpace, std::string()));
 }
 

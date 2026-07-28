@@ -126,7 +126,7 @@ TestDomeTextureConvertsToRenderColorSpace()
         HdEmbreeLightSampler::EvaluateDomeLightDirection(
             light,
             direction,
-            HdEmbreeRenderColorSpace::Raw);
+            HdEmbreeRenderColorSpace::Data);
     if (!raw.valid || !_IsClose(raw.Li, source)) {
         std::printf("    raw dome texture values were transformed\n");
         return false;

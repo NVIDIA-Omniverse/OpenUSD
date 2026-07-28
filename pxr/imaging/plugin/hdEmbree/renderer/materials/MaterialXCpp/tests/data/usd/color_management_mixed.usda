@@ -7,7 +7,7 @@
     doc = """Mixed-input counterpart to color_management_lin_rec709.usda.
 
 The intended tristimulus colors are identical to the baseline, but authored
-values mix linear AP1, sRGB Rec.709, raw, and linear Rec.709.  Texture color
+values mix linear AP1, sRGB Rec.709, data, and linear Rec.709.  Texture color
 spaces are attached to the image file inputs, matching hdEmbree's supported
 MaterialX file-color-space path.  The render color space remains linear
 Rec.709, so a correct result matches the baseline scene.  Materials use
@@ -159,7 +159,7 @@ def Xform "World"
                 float inputs:base = 0
                 float inputs:emission = 1
                 color3f inputs:emission_color = (0.12, 0.62, 0.24) (
-                    colorSpace = "raw"
+                    colorSpace = "data"
                 )
                 token outputs:out
             }
