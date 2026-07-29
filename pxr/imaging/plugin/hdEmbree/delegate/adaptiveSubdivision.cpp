@@ -221,9 +221,9 @@ _IsFinite(GfVec3f const& value)
 }
 
 bool
-_ClipEdgeToViewVolume(GfVec4d* p0, GfVec4d* p1)
+_ClipEdgeToViewVolume(GfVec4d* pos0, GfVec4d* pos1)
 {
-    if (!_IsFinite(*p0) || !_IsFinite(*p1)) {
+    if (!_IsFinite(*pos0) || !_IsFinite(*pos1)) {
         return false;
     }
 
@@ -232,8 +232,8 @@ _ClipEdgeToViewVolume(GfVec4d* p0, GfVec4d* p1)
     // can move into view. Doing this before division prevents remote edges or
     // eye-plane crossings from producing huge subdivision levels.
     const auto clipToPlane = [&](auto const& distance) {
-        double d0 = distance(*p0);
-        double d1 = distance(*p1);
+        double d0 = distance(*pos0);
+        double d1 = distance(*pos1);
         const bool inside0 = d0 >= 0.0;
         const bool inside1 = d1 >= 0.0;
         if (!inside0 && !inside1) {
@@ -248,49 +248,55 @@ _ClipEdgeToViewVolume(GfVec4d* p0, GfVec4d* p1)
             return false;
         }
         const double t = std::clamp(d0 / denominator, 0.0, 1.0);
-        const GfVec4d clipped = *p0 + (*p1 - *p0) * t;
+        const GfVec4d clipped = *pos0 + (*pos1 - *pos0) * t;
         if (!_IsFinite(clipped)) {
             return false;
         }
         if (inside0) {
-            *p1 = clipped;
+            *pos1 = clipped;
         } else {
-            *p0 = clipped;
+            *pos0 = clipped;
         }
         return true;
     };
 
     return
-        clipToPlane([](GfVec4d const& p) { return p[3] - _minW; }) &&
-        clipToPlane([](GfVec4d const& p) {
-            return p[0] + _viewGuardScale * p[3];
+        clipToPlane([](GfVec4d const& posClip) {
+            return posClip[3] - _minW;
         }) &&
-        clipToPlane([](GfVec4d const& p) {
-            return _viewGuardScale * p[3] - p[0];
+        clipToPlane([](GfVec4d const& posClip) {
+            return posClip[0] + _viewGuardScale * posClip[3];
         }) &&
-        clipToPlane([](GfVec4d const& p) {
-            return p[1] + _viewGuardScale * p[3];
+        clipToPlane([](GfVec4d const& posClip) {
+            return _viewGuardScale * posClip[3] - posClip[0];
         }) &&
-        clipToPlane([](GfVec4d const& p) {
-            return _viewGuardScale * p[3] - p[1];
+        clipToPlane([](GfVec4d const& posClip) {
+            return posClip[1] + _viewGuardScale * posClip[3];
         }) &&
-        clipToPlane([](GfVec4d const& p) { return p[2] + p[3]; }) &&
-        clipToPlane([](GfVec4d const& p) { return p[3] - p[2]; });
+        clipToPlane([](GfVec4d const& posClip) {
+            return _viewGuardScale * posClip[3] - posClip[1];
+        }) &&
+        clipToPlane([](GfVec4d const& posClip) {
+            return posClip[2] + posClip[3];
+        }) &&
+        clipToPlane([](GfVec4d const& posClip) {
+            return posClip[3] - posClip[2];
+        });
 }
 
 bool
 _ProjectEdge(
-    GfVec3f const& p0,
-    GfVec3f const& p1,
+    GfVec3f const& pos0,
+    GfVec3f const& pos1,
     GfMatrix4d const& objectToClip,
     double width,
     double height,
     double* pixelLength)
 {
     GfVec4d clip0 =
-        GfVec4d(p0[0], p0[1], p0[2], 1.0) * objectToClip;
+        GfVec4d(pos0[0], pos0[1], pos0[2], 1.0) * objectToClip;
     GfVec4d clip1 =
-        GfVec4d(p1[0], p1[1], p1[2], 1.0) * objectToClip;
+        GfVec4d(pos1[0], pos1[1], pos1[2], 1.0) * objectToClip;
     if (!_ClipEdgeToViewVolume(&clip0, &clip1)) {
         return false;
     }

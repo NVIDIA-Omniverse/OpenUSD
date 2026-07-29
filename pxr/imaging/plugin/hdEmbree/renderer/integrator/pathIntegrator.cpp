@@ -42,20 +42,21 @@ _PopulateSssExitRayHit(
         return false;
     }
 
-    GfVec3f rayDir = -sssOut.directionExitWld;
-    if (rayDir.GetLengthSq() <= 1.0e-20f) {
+    GfVec3f dirRayWld = -sssOut.dirExitWld;
+    if (dirRayWld.GetLengthSq() <= 1.0e-20f) {
         return false;
     }
-    rayDir.Normalize();
+    dirRayWld.Normalize();
 
-    ty::PopulateRayHit(rayHit, sssOut.positionExitWld, rayDir, 0.0f, 0.0f,
+    ty::PopulateRayHit(rayHit, sssOut.posExitWld, dirRayWld,
+                       0.0f, 0.0f,
                        ty::RayMask::Camera);
 
     rayHit->hit.primID = sssOut.exitPrimId;
     rayHit->hit.geomID = sssOut.exitGeomId;
     rayHit->hit.instID[0] = sssOut.exitInstanceId;
-    rayHit->hit.u = sssOut.coordinateParametricExitU;
-    rayHit->hit.v = sssOut.coordinateParametricExitV;
+    rayHit->hit.u = sssOut.uExit;
+    rayHit->hit.v = sssOut.vExit;
     rayHit->hit.Ng_x = sssOut.normalGeomExitObjExt[0];
     rayHit->hit.Ng_y = sssOut.normalGeomExitObjExt[1];
     rayHit->hit.Ng_z = sssOut.normalGeomExitObjExt[2];
@@ -97,18 +98,18 @@ ty::Renderer::_AddPathRadiance(GfVec3f radianceContribution,
 
 ty::Renderer::_PixelSampleResult
 ty::Renderer::_IntegratePath(
-    GfVec3f const& origin,
-    GfVec3f const& dir,
-    ty::RayDifferential const& rayDiff,
+    GfVec3f const& posRayOrgWld,
+    GfVec3f const& dirRayWld,
+    ty::RayDifferential const& diffRay,
     ty::SampleDomain const& domain) const
 {
     // Initialize accumulated output and mutable transport state. The
     // primary hit is captured once for AOVs while this state advances.
     _PixelSampleResult result;
     _PathState path;
-    path.positionRayOriginWld = origin;
-    path.directionRayWld = dir;
-    path.rayDifferential = rayDiff;
+    path.posRayOrgWld = posRayOrgWld;
+    path.dirRayWld = dirRayWld;
+    path.diffRay = diffRay;
 
     // Retain surface derivatives until the BSDF sample is known. Specular
     // continuations use them to propagate the camera-ray footprint.
@@ -139,8 +140,8 @@ ty::Renderer::_IntegratePath(
         } else {
             ty::PopulateRayHit(
                 &rayHit,
-                path.positionRayOriginWld,
-                path.directionRayWld,
+                path.posRayOrgWld,
+                path.dirRayWld,
                 path.isFirstBounce ? 0.0f : 1e-4f,
                 std::numeric_limits<float>::max(),
                 emitterOnlyBounce ? ty::RayMask::Light
@@ -166,8 +167,8 @@ ty::Renderer::_IntegratePath(
         TfToken finiteLightLink;
         const bool hitLightGeometry =
             !syntheticLambertianHit &&
-            _EvaluateLightGeometryHit(rayHit, path.positionRayOriginWld,
-                                      path.directionRayWld, &finiteLightHit,
+            _EvaluateLightGeometryHit(rayHit, path.posRayOrgWld,
+                                      path.dirRayWld, &finiteLightHit,
                                       &finiteLightLink);
         const float surfaceDist =
             rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID && !hitLightGeometry
@@ -176,8 +177,8 @@ ty::Renderer::_IntegratePath(
         const bool hasAnalyticFiniteLightHit =
             !syntheticLambertianHit && !hitLightGeometry &&
             !path.isFirstBounce &&
-            _FindNearestFiniteLightHit(path.positionRayOriginWld,
-                                       path.directionRayWld, surfaceDist,
+            _FindNearestFiniteLightHit(path.posRayOrgWld,
+                                       path.dirRayWld, surfaceDist,
                                        &finiteLightHit, &finiteLightLink);
         const bool hasFiniteLightHit =
             hitLightGeometry || hasAnalyticFiniteLightHit;
@@ -251,7 +252,7 @@ ty::Renderer::_IntegratePath(
         // Ordinary surface: recover instance/prototype data, construct
         // shading geometry, evaluate material, add radiance, and continue.
         // -----------------------------------------------------------------
-        const GfVec3f omegaOutWld = -path.directionRayWld;
+        const GfVec3f omegaOutWld = -path.dirRayWld;
         _SurfaceInteraction interaction;
         ty::InstanceContext const* instanceContext = nullptr;
         ty::PrototypeContext const* prototypeContext = nullptr;
@@ -262,7 +263,7 @@ ty::Renderer::_IntegratePath(
 
         // Keep the authored exterior geometric normal immutable. Material
         // evaluation uses the separate exitant-facing surface normal.
-        const GfVec3f positionHitWld = interaction.positionHitWld;
+        const GfVec3f posHitWld = interaction.posHitWld;
         const GfVec3f normalGeomWldExt = interaction.normalGeomWldExt;
         const GfVec3f normalGeomWldOut = interaction.GetNormalGeomWldOut();
         const GfVec3f normalSrfWldOut = interaction.GetNormalSrfWldOut();
@@ -273,7 +274,7 @@ ty::Renderer::_IntegratePath(
         // Build material inputs: interpolated primvars, texture derivatives,
         // tangent frame, and normal derivatives needed after sampling.
         mxcpp::ShadingContext ctx = _BuildShadingContext(
-            rayHit, path.rayDifferential, instanceContext, prototypeContext,
+            rayHit, path.diffRay, instanceContext, prototypeContext,
             interaction, &surfaceDifferentials.dndu,
             &surfaceDifferentials.dndv);
         ty::PrimvarLookup cbData{
@@ -380,13 +381,13 @@ ty::Renderer::_IntegratePath(
         if (hasClosure && closure.presence < 1.0f) {
             const auto advancePastHit = [&]() {
                 const float advance = rayHit.ray.tfar + 1e-4f;
-                path.positionRayOriginWld =
-                    positionHitWld + path.directionRayWld * 1e-4f;
-                if (path.rayDifferential.hasDifferentials) {
-                    path.rayDifferential.rxOrigin +=
-                        path.directionRayWld * advance;
-                    path.rayDifferential.ryOrigin +=
-                        path.directionRayWld * advance;
+                path.posRayOrgWld =
+                    posHitWld + path.dirRayWld * 1e-4f;
+                if (path.diffRay.hasDifferentials) {
+                    path.diffRay.rxOrigin +=
+                        path.dirRayWld * advance;
+                    path.diffRay.ryOrigin +=
+                        path.dirRayWld * advance;
                 }
                 // Null presence pass-through is not a scattering event. Keep
                 // MIS / first-bounce state from the previous real interaction.
@@ -503,11 +504,11 @@ ty::Renderer::_IntegratePath(
             subsurfaceInput.rayHit = &rayHit;
             subsurfaceInput.instanceContext = instanceContext;
             subsurfaceInput.closure = bsdfClosure;
-            subsurfaceInput.positionHitWld = positionHitWld;
+            subsurfaceInput.posHitWld = posHitWld;
             subsurfaceInput.normalShdWldOut = normalShdWldOut;
             subsurfaceInput.normalGeomWldOut = normalGeomWldOut;
             subsurfaceInput.omegaOutWld = omegaOutWld;
-            subsurfaceInput.directionEntryWld = ty::ToGf(bs.omegaInWld);
+            subsurfaceInput.dirEntryWld = ty::ToGf(bs.omegaInWld);
             subsurfaceInput.entryWeight = ty::ToGf(bs.bsdfValue);
             subsurfaceInput.hasSampledEntryDirection =
                 bs.hasSubsurfaceEntryDirection;
@@ -536,7 +537,7 @@ ty::Renderer::_IntegratePath(
         GfVec3f direct(0.0f);
         if (hasBsdfClosure) {
             direct = _ComputeDirectLightingMIS(
-                positionHitWld, normalShdWldOut, normalGeomWldExt, omegaOutWld,
+                posHitWld, normalShdWldOut, normalGeomWldExt, omegaOutWld,
                 bounceDomain.Fork(ty::SampleDomainKey::DirectLighting),
                 interaction.frontFacing, true, bsdfClosure,
                 instanceContext->categories, path.medium, path.hero.active,
@@ -556,7 +557,7 @@ ty::Renderer::_IntegratePath(
             fallback.specularIor = 1.5f;
             fallback.opacity = 1.0f;
             direct = _ComputeDirectLightingMIS(
-                positionHitWld, normalShdWldOut, normalGeomWldExt, omegaOutWld,
+                posHitWld, normalShdWldOut, normalGeomWldExt, omegaOutWld,
                 bounceDomain.Fork(ty::SampleDomainKey::DirectLighting),
                 interaction.frontFacing, false, &fallback,
                 instanceContext->categories, path.medium, path.hero.active,
@@ -572,18 +573,18 @@ ty::Renderer::_IntegratePath(
         // ownership, advance through the surface, and refund the bounce.
         if (volumeOnlyBoundary) {
             const float omegaInDotNormalGeom =
-                GfDot(path.directionRayWld, normalGeomWldExt);
+                GfDot(path.dirRayWld, normalGeomWldExt);
             _UpdatePathMedium(closure, prototypeContext,
                               instanceContext->categories, omegaInDotNormalGeom,
                               &path);
 
             const float advance = rayHit.ray.tfar + 1e-4f;
             const float bias = omegaInDotNormalGeom > 0.0f ? 1e-4f : -1e-4f;
-            path.positionRayOriginWld =
-                positionHitWld + normalGeomWldExt * bias;
-            if (path.rayDifferential.hasDifferentials) {
-                path.rayDifferential.rxOrigin += path.directionRayWld * advance;
-                path.rayDifferential.ryOrigin += path.directionRayWld * advance;
+            path.posRayOrgWld =
+                posHitWld + normalGeomWldExt * bias;
+            if (path.diffRay.hasDifferentials) {
+                path.diffRay.rxOrigin += path.dirRayWld * advance;
+                path.diffRay.ryOrigin += path.dirRayWld * advance;
             }
 
             // Medium-only boundaries are not scattering events.
@@ -724,7 +725,7 @@ ty::Renderer::_IntegratePath(
         // Russian roulette ends low-throughput paths without bias; survivors
         // divide by their probability. Terminal emitter rays skip it.
         if (!traceEmitterOnlySample && bounce >= _settings.minBouncesBeforeRR) {
-            float q =
+            float probabilitySurvival =
                 path.hero.active
                     ? std::max({
                         ty::SpectralScalarToRgb(
@@ -741,17 +742,17 @@ ty::Renderer::_IntegratePath(
                             _renderColorSpace)[2]})
                     : std::max({path.throughputRgb[0], path.throughputRgb[1],
                                 path.throughputRgb[2]});
-            q = std::min(q, 0.95f);
-            if (q <= 0.0f ||
+            probabilitySurvival = std::min(probabilitySurvival, 0.95f);
+            if (probabilitySurvival <= 0.0f ||
                 bounceDomain
                     .Fork(ty::SampleDomainKey::RussianRoulette)
-                    .Draw1D() > q) {
+                    .Draw1D() > probabilitySurvival) {
                 break;
             }
             if (path.hero.active) {
-                path.throughputSpectral /= q;
+                path.throughputSpectral /= probabilitySurvival;
             } else {
-                path.throughputRgb /= q;
+                path.throughputRgb /= probabilitySurvival;
             }
         }
 
@@ -760,7 +761,7 @@ ty::Renderer::_IntegratePath(
         // the cached C/U/V frame here, after all path-termination decisions,
         // so other displaced hits retain the existing three graph samples.
         if (prototypeContext->displaced && displacedFrame.valid &&
-            path.rayDifferential.hasDifferentials && bs.isSpecular &&
+            path.diffRay.hasDifferentials && bs.isSpecular &&
             !traceEmitterOnlySample) {
             GfVec3f displacedDndu;
             GfVec3f displacedDndv;
@@ -788,16 +789,16 @@ ty::Renderer::_IntegratePath(
         // Propagate the camera footprint through delta events; diffuse or
         // glossy scattering invalidates the deterministic differential map.
         const float eta = iorIn / iorOut;
-        _PropagateRayDifferential(surfaceDifferentials, positionHitWld,
+        _PropagateRayDifferential(surfaceDifferentials, posHitWld,
                                   normalShdWldOut, omegaOutWld, omegaInWld, eta,
-                                  bs.isSpecular, &path.rayDifferential);
+                                  bs.isSpecular, &path.diffRay);
 
         // Bias onto the sampled side of the geometric surface, then publish
         // the sampled direction as the next pending segment.
         float bias =
             (GfDot(omegaInWld, normalGeomWldExt) > 0.0f) ? 1e-4f : -1e-4f;
-        path.positionRayOriginWld = positionHitWld + normalGeomWldExt * bias;
-        path.directionRayWld = omegaInWld;
+        path.posRayOrgWld = posHitWld + normalGeomWldExt * bias;
+        path.dirRayWld = omegaInWld;
         ++bounce;
     }
 

@@ -56,17 +56,17 @@ _SampleUniformDiskConcentric(GfVec2f const& sample)
 
 static bool
 _ApplyCameraDepthOfField(ty::CameraDepthOfField const& dof,
-                         GfVec2f const& lensPoint, GfVec3f* origin,
-                         GfVec3f* directionLocal)
+                         GfVec2f const& lensPoint, GfVec3f* posRayOrgCamera,
+                         GfVec3f* dirRayCamera)
 {
     constexpr float eps = 1.0e-7f;
 
-    if (!origin || !directionLocal || !ty::IsFinite(*origin) ||
-        !ty::IsFinite(*directionLocal)) {
+    if (!posRayOrgCamera || !dirRayCamera ||
+        !ty::IsFinite(*posRayOrgCamera) || !ty::IsFinite(*dirRayCamera)) {
         return false;
     }
 
-    const float dz = (*directionLocal)[2];
+    const float dz = (*dirRayCamera)[2];
     if (!std::isfinite(dz) || std::abs(dz) < eps) {
         return false;
     }
@@ -76,15 +76,17 @@ _ApplyCameraDepthOfField(ty::CameraDepthOfField const& dof,
         return false;
     }
 
-    const GfVec3f focusPoint = *origin + (*directionLocal) * focusT;
-    const GfVec3f lensOrigin(lensPoint[0], lensPoint[1], 0.0f);
-    const GfVec3f dofDir = focusPoint - lensOrigin;
-    if (!ty::IsFinite(dofDir) || dofDir.GetLengthSq() <= eps * eps) {
+    const GfVec3f posFocusCamera =
+        *posRayOrgCamera + (*dirRayCamera) * focusT;
+    const GfVec3f posLensCamera(lensPoint[0], lensPoint[1], 0.0f);
+    const GfVec3f dirDofCamera = posFocusCamera - posLensCamera;
+    if (!ty::IsFinite(dirDofCamera) ||
+        dirDofCamera.GetLengthSq() <= eps * eps) {
         return false;
     }
 
-    *origin = lensOrigin;
-    *directionLocal = dofDir;
+    *posRayOrgCamera = posLensCamera;
+    *dirRayCamera = dirDofCamera;
     return true;
 }
 
@@ -93,8 +95,8 @@ ty::Renderer::_SampleCameraRay(
     unsigned int x, unsigned int y,
     unsigned int imageMinX, unsigned int imageMinY,
     ty::Sampler& sampler,
-    GfVec3f& rayOrigin, GfVec3f& rayDirection,
-    ty::RayDifferential& rayDifferential) const
+    GfVec3f& outPosRayOrgWld, GfVec3f& outDirRayWld,
+    ty::RayDifferential& outDiffRay) const
 {
     // Jitter the camera ray direction.
     GfVec2f jitter(0.0f, 0.0f);
@@ -107,12 +109,12 @@ ty::Renderer::_SampleCameraRay(
     // Un-transform the pixel's NDC coordinates through the
     // projection matrix to get the trace of the camera ray in the
     // near plane.
-    const float w(_dataWindow.GetWidth());
-    const float h(_dataWindow.GetHeight());
+    const float imageWidth(_dataWindow.GetWidth());
+    const float imageHeight(_dataWindow.GetHeight());
 
     const GfVec3f ndc(
-        2.0f * ((x + jitter[0] - imageMinX) / w) - 1.0f,
-        2.0f * ((y + jitter[1] - imageMinY) / h) - 1.0f,
+        2.0f * ((x + jitter[0] - imageMinX) / imageWidth) - 1.0f,
+        2.0f * ((y + jitter[1] - imageMinY) / imageHeight) - 1.0f,
         -1.0f);
     const GfVec3f nearPlaneTrace(_inverseProjMatrix.Transform(ndc));
 
@@ -155,21 +157,21 @@ ty::Renderer::_SampleCameraRay(
     }
 
     // Transform camera rays to world space.
-    GfVec3f origin =
+    GfVec3f posRayOrgWld =
         GfVec3f(_inverseViewMatrix.Transform(originCamera));
-    GfVec3f dir = GfVec3f(
+    GfVec3f dirRayWld = GfVec3f(
         _inverseViewMatrix.TransformDir(dirCamera)).GetNormalized();
 
     // --- Ray differential ---
-    ty::RayDifferential rayDiff;
+    ty::RayDifferential diffRay;
     {
         const GfVec3f ndcDx(
-            2.0f * ((x + 1.0f + jitter[0] - imageMinX) / w) - 1.0f,
-            2.0f * ((y + jitter[1] - imageMinY) / h) - 1.0f,
+            2.0f * ((x + 1.0f + jitter[0] - imageMinX) / imageWidth) - 1.0f,
+            2.0f * ((y + jitter[1] - imageMinY) / imageHeight) - 1.0f,
             -1.0f);
         const GfVec3f ndcDy(
-            2.0f * ((x + jitter[0] - imageMinX) / w) - 1.0f,
-            2.0f * ((y + 1.0f + jitter[1] - imageMinY) / h) - 1.0f,
+            2.0f * ((x + jitter[0] - imageMinX) / imageWidth) - 1.0f,
+            2.0f * ((y + 1.0f + jitter[1] - imageMinY) / imageHeight) - 1.0f,
             -1.0f);
         const GfVec3f nearDx(
             _inverseProjMatrix.Transform(ndcDx));
@@ -192,9 +194,9 @@ ty::Renderer::_SampleCameraRay(
             dirDyCamera = nearDy;
         }
 
-        bool rayDiffValid = true;
+        bool diffRayValid = true;
         if (appliedCameraDof) {
-            rayDiffValid =
+            diffRayValid =
                 _ApplyCameraDepthOfField(
                     _cameraDepthOfField, lensPoint,
                     &originDxCamera, &dirDxCamera) &&
@@ -203,44 +205,44 @@ ty::Renderer::_SampleCameraRay(
                     &originDyCamera, &dirDyCamera);
         }
 
-        if (rayDiffValid) {
-            rayDiff.rxOrigin = GfVec3f(
+        if (diffRayValid) {
+            diffRay.rxOrigin = GfVec3f(
                 _inverseViewMatrix.Transform(originDxCamera));
-            rayDiff.ryOrigin = GfVec3f(
+            diffRay.ryOrigin = GfVec3f(
                 _inverseViewMatrix.Transform(originDyCamera));
-            rayDiff.rxDirection = GfVec3f(
+            diffRay.rxDirection = GfVec3f(
                 _inverseViewMatrix.TransformDir(dirDxCamera))
                 .GetNormalized();
-            rayDiff.ryDirection = GfVec3f(
+            diffRay.ryDirection = GfVec3f(
                 _inverseViewMatrix.TransformDir(dirDyCamera))
                 .GetNormalized();
-            rayDiff.hasDifferentials = true;
+            diffRay.hasDifferentials = true;
         }
 
         // Scale by 1/sqrt(spp) to match sampling rate.
-        if (rayDiff.hasDifferentials &&
+        if (diffRay.hasDifferentials &&
             _settings.samplesToConvergence > 1) {
             float scale = 1.0f / std::sqrt(
                 static_cast<float>(_settings.samplesToConvergence));
             if (isOrthographic) {
-                GfVec3f dOx = rayDiff.rxOrigin - origin;
-                GfVec3f dOy = rayDiff.ryOrigin - origin;
-                rayDiff.rxOrigin = origin + dOx * scale;
-                rayDiff.ryOrigin = origin + dOy * scale;
+                GfVec3f dPosOrgdx = diffRay.rxOrigin - posRayOrgWld;
+                GfVec3f dPosOrgdy = diffRay.ryOrigin - posRayOrgWld;
+                diffRay.rxOrigin = posRayOrgWld + dPosOrgdx * scale;
+                diffRay.ryOrigin = posRayOrgWld + dPosOrgdy * scale;
             } else {
-                GfVec3f dDx = rayDiff.rxDirection - dir;
-                GfVec3f dDy = rayDiff.ryDirection - dir;
-                rayDiff.rxDirection =
-                    (dir + dDx * scale).GetNormalized();
-                rayDiff.ryDirection =
-                    (dir + dDy * scale).GetNormalized();
+                GfVec3f dDirRaydx = diffRay.rxDirection - dirRayWld;
+                GfVec3f dDirRaydy = diffRay.ryDirection - dirRayWld;
+                diffRay.rxDirection =
+                    (dirRayWld + dDirRaydx * scale).GetNormalized();
+                diffRay.ryDirection =
+                    (dirRayWld + dDirRaydy * scale).GetNormalized();
             }
         }
     }
 
-    rayOrigin = origin;
-    rayDirection = dir;
-    rayDifferential = rayDiff;
+    outPosRayOrgWld = posRayOrgWld;
+    outDirRayWld = dirRayWld;
+    outDiffRay = diffRay;
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

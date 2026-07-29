@@ -138,16 +138,16 @@ _GetNamespacedRenderSettings(HdRenderSettingsSchema const &rsSchema)
 
 static bool
 _RenderSettingsEqual(
-    _RenderSettingsMap const &a,
-    _RenderSettingsMap const &b)
+    _RenderSettingsMap const &settingsA,
+    _RenderSettingsMap const &settingsB)
 {
-    if (a.size() != b.size()) {
+    if (settingsA.size() != settingsB.size()) {
         return false;
     }
 
-    for (const auto &entry : a) {
-        const auto it = b.find(entry.first);
-        if (it == b.end() || it->second != entry.second) {
+    for (const auto &entry : settingsA) {
+        const auto it = settingsB.find(entry.first);
+        if (it == settingsB.end() || it->second != entry.second) {
             return false;
         }
     }

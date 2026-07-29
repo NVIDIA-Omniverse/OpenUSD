@@ -19,19 +19,19 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 static bool
 _GetDistantLightDirection(
-    ty::LightData const& light, GfVec3f* outDirection)
+    ty::LightData const& light, GfVec3f* outDirWld)
 {
-    if (!outDirection) {
+    if (!outDirWld) {
         return false;
     }
 
-    const GfVec3f direction =
+    const GfVec3f dirWld =
         light.xformLightToWorld.TransformDir(GfVec3f::ZAxis());
-    if (!ty::IsFinite(direction) || direction.GetLengthSq() <= 0.0f) {
+    if (!ty::IsFinite(dirWld) || dirWld.GetLengthSq() <= 0.0f) {
         return false;
     }
 
-    *outDirection = direction.GetNormalized();
+    *outDirWld = dirWld.GetNormalized();
     return true;
 }
 
@@ -91,10 +91,10 @@ _EvalDistantLightRadiance(
 ty::LightSampler::LightSample
 ty::EvaluateDistantLightDirection(
     ty::LightData const& light, ty::DistantLight const& distant,
-    GfVec3f const& direction,
+    GfVec3f const& dirWld,
     ty::RenderColorSpace renderColorSpace)
 {
-    if (!ty::IsFinite(direction) || direction.GetLengthSq() <= 0.0f) {
+    if (!ty::IsFinite(dirWld) || dirWld.GetLengthSq() <= 0.0f) {
         return ty::InvalidLightSample();
     }
 
@@ -104,7 +104,7 @@ ty::EvaluateDistantLightDirection(
     }
 
     const float thetaMax = _DistantHalfAngleRadians(distant);
-    const GfVec3f omegaInWld = direction.GetNormalized();
+    const GfVec3f omegaInWld = dirWld.GetNormalized();
     const float cosTheta = GfDot(omegaInWld, axis);
     const GfVec3f radianceIn =
         _EvalDistantLightRadiance(light, distant, renderColorSpace);

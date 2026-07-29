@@ -151,44 +151,44 @@ _CanonicalOutputName(
 
 // Convert a VtValue to an mxcpp::Value (std::any), handling type coercion.
 mxcpp::Value
-_ConvertValue(const VtValue& v)
+_ConvertValue(const VtValue& value)
 {
-    if (v.IsEmpty()) return mxcpp::Value();
+    if (value.IsEmpty()) return mxcpp::Value();
 
     // Scalars
-    if (v.IsHolding<float>())
-        return mxcpp::Value(v.UncheckedGet<float>());
-    if (v.IsHolding<double>())
+    if (value.IsHolding<float>())
+        return mxcpp::Value(value.UncheckedGet<float>());
+    if (value.IsHolding<double>())
         return mxcpp::Value(
-            static_cast<float>(v.UncheckedGet<double>()));
-    if (v.IsHolding<int>())
-        return mxcpp::Value(v.UncheckedGet<int>());
-    if (v.IsHolding<bool>())
-        return mxcpp::Value(v.UncheckedGet<bool>());
+            static_cast<float>(value.UncheckedGet<double>()));
+    if (value.IsHolding<int>())
+        return mxcpp::Value(value.UncheckedGet<int>());
+    if (value.IsHolding<bool>())
+        return mxcpp::Value(value.UncheckedGet<bool>());
 
     // Vectors
-    if (v.IsHolding<GfVec2f>()) {
-        auto gf = v.UncheckedGet<GfVec2f>();
+    if (value.IsHolding<GfVec2f>()) {
+        auto gf = value.UncheckedGet<GfVec2f>();
         return mxcpp::Value(mxcpp::Vec2f(gf[0], gf[1]));
     }
-    if (v.IsHolding<GfVec3f>()) {
-        auto gf = v.UncheckedGet<GfVec3f>();
+    if (value.IsHolding<GfVec3f>()) {
+        auto gf = value.UncheckedGet<GfVec3f>();
         return mxcpp::Value(mxcpp::Vec3f(gf[0], gf[1], gf[2]));
     }
-    if (v.IsHolding<GfVec3d>()) {
-        auto gf = v.UncheckedGet<GfVec3d>();
+    if (value.IsHolding<GfVec3d>()) {
+        auto gf = value.UncheckedGet<GfVec3d>();
         return mxcpp::Value(mxcpp::Vec3f(
             static_cast<float>(gf[0]),
             static_cast<float>(gf[1]),
             static_cast<float>(gf[2])));
     }
-    if (v.IsHolding<GfVec4f>()) {
-        auto gf = v.UncheckedGet<GfVec4f>();
+    if (value.IsHolding<GfVec4f>()) {
+        auto gf = value.UncheckedGet<GfVec4f>();
         return mxcpp::Value(
             mxcpp::Vec4f(gf[0], gf[1], gf[2], gf[3]));
     }
-    if (v.IsHolding<GfMatrix3f>()) {
-        const auto gf = v.UncheckedGet<GfMatrix3f>();
+    if (value.IsHolding<GfMatrix3f>()) {
+        const auto gf = value.UncheckedGet<GfMatrix3f>();
         mxcpp::Mat3f result;
         for (int row = 0; row < 3; ++row) {
             for (int col = 0; col < 3; ++col) {
@@ -197,8 +197,8 @@ _ConvertValue(const VtValue& v)
         }
         return mxcpp::Value(result);
     }
-    if (v.IsHolding<GfMatrix3d>()) {
-        const auto gf = v.UncheckedGet<GfMatrix3d>();
+    if (value.IsHolding<GfMatrix3d>()) {
+        const auto gf = value.UncheckedGet<GfMatrix3d>();
         mxcpp::Mat3f result;
         for (int row = 0; row < 3; ++row) {
             for (int col = 0; col < 3; ++col) {
@@ -207,8 +207,8 @@ _ConvertValue(const VtValue& v)
         }
         return mxcpp::Value(result);
     }
-    if (v.IsHolding<GfMatrix4f>()) {
-        auto gf = v.UncheckedGet<GfMatrix4f>();
+    if (value.IsHolding<GfMatrix4f>()) {
+        auto gf = value.UncheckedGet<GfMatrix4f>();
         mxcpp::Mat4f result;
         for (int row = 0; row < 4; ++row) {
             for (int col = 0; col < 4; ++col) {
@@ -217,8 +217,8 @@ _ConvertValue(const VtValue& v)
         }
         return mxcpp::Value(result);
     }
-    if (v.IsHolding<GfMatrix4d>()) {
-        auto gf = v.UncheckedGet<GfMatrix4d>();
+    if (value.IsHolding<GfMatrix4d>()) {
+        auto gf = value.UncheckedGet<GfMatrix4d>();
         mxcpp::Mat4f result;
         for (int row = 0; row < 4; ++row) {
             for (int col = 0; col < 4; ++col) {
@@ -229,13 +229,13 @@ _ConvertValue(const VtValue& v)
     }
 
     // Strings / asset paths
-    if (v.IsHolding<std::string>())
-        return mxcpp::Value(v.UncheckedGet<std::string>());
-    if (v.IsHolding<TfToken>())
-        return mxcpp::Value(v.UncheckedGet<TfToken>().GetString());
-    if (v.IsHolding<SdfAssetPath>())
+    if (value.IsHolding<std::string>())
+        return mxcpp::Value(value.UncheckedGet<std::string>());
+    if (value.IsHolding<TfToken>())
+        return mxcpp::Value(value.UncheckedGet<TfToken>().GetString());
+    if (value.IsHolding<SdfAssetPath>())
         return mxcpp::Value(
-            v.UncheckedGet<SdfAssetPath>().GetResolvedPath());
+            value.UncheckedGet<SdfAssetPath>().GetResolvedPath());
 
     // Unsupported type — return empty.
     return mxcpp::Value();

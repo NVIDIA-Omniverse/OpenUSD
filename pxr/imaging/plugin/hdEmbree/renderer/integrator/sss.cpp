@@ -45,8 +45,8 @@ constexpr float _kExtinctionEps = 1.0e-6f;
 
 struct _SssWalkState {
     // Walk state.
-    GfVec3f positionRayOriginWld;
-    GfVec3f directionRayWld;
+    GfVec3f posRayOrgWld;
+    GfVec3f dirRayWld;
     GfVec3f throughputRgb; // walk-internal throughput; starts at min-alpha
                            // correction factor (Phase 2).
 
@@ -59,7 +59,7 @@ struct _SssWalkState {
     // Opposite-interface state used by backward Dwivedi guiding.
     bool haveOppositeInterface = false;
     float distanceOppositeWld = 0.0f;
-    GfVec3f positionEntryWld;
+    GfVec3f posEntryWld;
     GfVec3f normalShdGuideWldOut;
     unsigned int ownerInstanceId = 0;
     unsigned int ownerGeomId = 0;
@@ -81,14 +81,14 @@ struct _SssTraceResult {
     bool foundSurface = false;
     bool hitOwner = false;
     float distanceWld = 0.0f;
-    GfVec3f positionHitWld = GfVec3f(0.0f);
+    GfVec3f posHitWld = GfVec3f(0.0f);
     GfVec3f normalGeomWldExt = GfVec3f(0.0f);
     GfVec3f normalGeomObjExt = GfVec3f(0.0f);
     unsigned int instanceId = RTC_INVALID_GEOMETRY_ID;
     unsigned int geomId = RTC_INVALID_GEOMETRY_ID;
     unsigned int primId = RTC_INVALID_GEOMETRY_ID;
-    float coordinateParametricU = 0.0f;
-    float coordinateParametricV = 0.0f;
+    float u = 0.0f;
+    float v = 0.0f;
 };
 
 // Phase 2: Chiang polynomial remap + min-alpha throughput correction.
@@ -235,12 +235,12 @@ _EvalTransmittance(GfVec3f const& extinction, float distanceWld)
 }
 
 static float
-_MinPositiveComponent(GfVec3f const& v)
+_MinPositiveComponent(GfVec3f const& value)
 {
     float result = std::numeric_limits<float>::max();
     for (int indexChannel = 0; indexChannel < 3; ++indexChannel) {
-        if (v[indexChannel] > _kExtinctionEps) {
-            result = std::min(result, v[indexChannel]);
+        if (value[indexChannel] > _kExtinctionEps) {
+            result = std::min(result, value[indexChannel]);
         }
     }
     return result;
@@ -264,27 +264,27 @@ _TraceSssBoundary(_SssWalkState const& state, ty::SssInput const& input,
 
     // Trace coordinates are world space for the top-level scene and owner
     // object space for a prototype scene.
-    GfVec3f positionRayOriginScene = state.positionRayOriginWld;
-    GfVec3f directionRayScene = state.directionRayWld;
+    GfVec3f posRayOrgScene = state.posRayOrgWld;
+    GfVec3f dirRayScene = state.dirRayWld;
     if (useOwnerScene) {
-        positionRayOriginScene =
-            input.worldToObjectMatrix.Transform(state.positionRayOriginWld);
-        directionRayScene =
-            input.worldToObjectMatrix.TransformDir(state.directionRayWld);
+        posRayOrgScene =
+            input.worldToObjectMatrix.Transform(state.posRayOrgWld);
+        dirRayScene =
+            input.worldToObjectMatrix.TransformDir(state.dirRayWld);
     }
-    if (directionRayScene.GetLengthSq() <= 1.0e-20f) {
+    if (dirRayScene.GetLengthSq() <= 1.0e-20f) {
         return result;
     }
 
     RTCRayHit rayHit;
     rayHit.ray.flags = 0;
-    rayHit.ray.org_x = positionRayOriginScene[0];
-    rayHit.ray.org_y = positionRayOriginScene[1];
-    rayHit.ray.org_z = positionRayOriginScene[2];
+    rayHit.ray.org_x = posRayOrgScene[0];
+    rayHit.ray.org_y = posRayOrgScene[1];
+    rayHit.ray.org_z = posRayOrgScene[2];
     rayHit.ray.tnear = _kBias;
-    rayHit.ray.dir_x = directionRayScene[0];
-    rayHit.ray.dir_y = directionRayScene[1];
-    rayHit.ray.dir_z = directionRayScene[2];
+    rayHit.ray.dir_x = dirRayScene[0];
+    rayHit.ray.dir_y = dirRayScene[1];
+    rayHit.ray.dir_z = dirRayScene[2];
     rayHit.ray.time = 0.0f;
     rayHit.ray.tfar = rayTfar;
     rayHit.ray.mask = static_cast<uint32_t>(ty::RayMask::Camera);
@@ -305,14 +305,14 @@ _TraceSssBoundary(_SssWalkState const& state, ty::SssInput const& input,
     result.hitOwner = useOwnerScene ? (rayHit.hit.geomID == state.ownerGeomId)
                                     : _HitOwnerGeometry(rayHit, state);
     result.distanceWld = rayHit.ray.tfar;
-    result.positionHitWld =
-        state.positionRayOriginWld + state.directionRayWld * result.distanceWld;
+    result.posHitWld =
+        state.posRayOrgWld + state.dirRayWld * result.distanceWld;
     result.instanceId =
         useOwnerScene ? state.ownerInstanceId : rayHit.hit.instID[0];
     result.geomId = rayHit.hit.geomID;
     result.primId = rayHit.hit.primID;
-    result.coordinateParametricU = rayHit.hit.u;
-    result.coordinateParametricV = rayHit.hit.v;
+    result.u = rayHit.hit.u;
+    result.v = rayHit.hit.v;
 
     float orientationSign = 1.0f;
     if (useOwnerScene) {
@@ -337,7 +337,7 @@ _TraceSssBoundary(_SssWalkState const& state, ty::SssInput const& input,
     if (normalGeomWldExt.GetLengthSq() > 1.0e-20f) {
         normalGeomWldExt.Normalize();
     } else {
-        normalGeomWldExt = -state.directionRayWld;
+        normalGeomWldExt = -state.dirRayWld;
     }
     result.normalGeomWldExt = normalGeomWldExt;
 
@@ -523,10 +523,10 @@ ty::RandomWalkSSS(ty::SssInput const& input,
                                 &state.alpha, &throughputCorrection);
     }
     state.throughputRgb = throughputCorrection;
-    state.positionRayOriginWld = input.positionEntryWld;
-    state.directionRayWld = input.directionEntryWld;
+    state.posRayOrgWld = input.posEntryWld;
+    state.dirRayWld = input.dirEntryWld;
     state.anisotropy = std::clamp(input.anisotropy, -0.99f, 0.99f);
-    state.positionEntryWld = input.positionEntryWld;
+    state.posEntryWld = input.posEntryWld;
     state.normalShdGuideWldOut = input.normalShdEntryGuideWldOut;
     state.ownerInstanceId = input.ownerInstanceId;
     state.ownerGeomId = input.ownerGeomId;
@@ -602,7 +602,7 @@ ty::RandomWalkSSS(ty::SssInput const& input,
 
             if (state.haveOppositeInterface) {
                 const float distanceFromEntryPlaneWld =
-                    GfDot(state.positionRayOriginWld - state.positionEntryWld,
+                    GfDot(state.posRayOrgWld - state.posEntryWld,
                           -state.normalShdGuideWldOut);
                 backwardFraction = ty::BackwardDwivediFraction(
                     state.distanceOppositeWld, distanceFromEntryPlaneWld,
@@ -622,7 +622,7 @@ ty::RandomWalkSSS(ty::SssInput const& input,
             const float u1 = phaseSample[0];
             const float u2 = phaseSample[1];
 
-            GfVec3f directionScatteredWld;
+            GfVec3f dirScatteredWld;
             float cosThetaEntry = 0.0f;
             float pdfHenyeyGreenstein = 1.0f;
 
@@ -644,45 +644,45 @@ ty::RandomWalkSSS(ty::SssInput const& input,
                 const float sinTheta =
                     std::sqrt(std::max(0.0f, 1.0f - cosTheta * cosTheta));
                 const float phi = kTwoPi * u2;
-                directionScatteredWld =
+                dirScatteredWld =
                     axisGuideX * (sinTheta * std::cos(phi)) +
                     axisGuideY * (sinTheta * std::sin(phi)) +
                     guideAxis * cosTheta;
-                if (directionScatteredWld.GetLengthSq() > 1.0e-20f) {
-                    directionScatteredWld.Normalize();
+                if (dirScatteredWld.GetLengthSq() > 1.0e-20f) {
+                    dirScatteredWld.Normalize();
                 } else {
-                    directionScatteredWld = guideAxis;
+                    dirScatteredWld = guideAxis;
                 }
 
                 pdfHenyeyGreenstein = mxcpp::PdfHenyeyGreenstein(
-                    mxcpp::Vec3f(directionScatteredWld[0],
-                                 directionScatteredWld[1],
-                                 directionScatteredWld[2]),
-                    mxcpp::Vec3f(-state.directionRayWld[0],
-                                 -state.directionRayWld[1],
-                                 -state.directionRayWld[2]),
+                    mxcpp::Vec3f(dirScatteredWld[0],
+                                 dirScatteredWld[1],
+                                 dirScatteredWld[2]),
+                    mxcpp::Vec3f(-state.dirRayWld[0],
+                                 -state.dirRayWld[1],
+                                 -state.dirRayWld[2]),
                     anisotropyEffective);
             } else {
                 // Classic HG sampling around the incoming ray direction.
-                const mxcpp::Vec3f omegaOutWld(-state.directionRayWld[0],
-                                               -state.directionRayWld[1],
-                                               -state.directionRayWld[2]);
+                const mxcpp::Vec3f omegaOutWld(-state.dirRayWld[0],
+                                               -state.dirRayWld[1],
+                                               -state.dirRayWld[2]);
                 const mxcpp::Vec3f sampled = mxcpp::SampleHenyeyGreenstein(
                     omegaOutWld, anisotropyEffective, u1, u2);
-                directionScatteredWld =
+                dirScatteredWld =
                     GfVec3f(sampled[0], sampled[1], sampled[2]);
-                cosThetaEntry = GfDot(directionScatteredWld, guideAxis);
+                cosThetaEntry = GfDot(dirScatteredWld, guideAxis);
                 pdfHenyeyGreenstein = mxcpp::PdfHenyeyGreenstein(
-                    mxcpp::Vec3f(directionScatteredWld[0],
-                                 directionScatteredWld[1],
-                                 directionScatteredWld[2]),
-                    mxcpp::Vec3f(-state.directionRayWld[0],
-                                 -state.directionRayWld[1],
-                                 -state.directionRayWld[2]),
+                    mxcpp::Vec3f(dirScatteredWld[0],
+                                 dirScatteredWld[1],
+                                 dirScatteredWld[2]),
+                    mxcpp::Vec3f(-state.dirRayWld[0],
+                                 -state.dirRayWld[1],
+                                 -state.dirRayWld[2]),
                     anisotropyEffective);
             }
 
-            state.directionRayWld = directionScatteredWld;
+            state.dirRayWld = dirScatteredWld;
 
             // Guided PDF factor used later to mix into the classic PDF.
             // pdfFactorForward converts the classic (scattering * T) PDF into
@@ -739,7 +739,7 @@ ty::RandomWalkSSS(ty::SssInput const& input,
         if (bounce == 0) {
             if (trace.foundSurface && trace.hitOwner) {
                 const float distanceOppositeWld =
-                    GfDot(trace.positionHitWld - state.positionEntryWld,
+                    GfDot(trace.posHitWld - state.posEntryWld,
                           -state.normalShdGuideWldOut);
                 if (distanceOppositeWld > _kBias) {
                     state.haveOppositeInterface = true;
@@ -839,21 +839,21 @@ ty::RandomWalkSSS(ty::SssInput const& input,
 
         if (hit) {
             // Build exit info from the surface intersection.
-            const GfVec3f positionHitWld = trace.positionHitWld;
+            const GfVec3f posHitWld = trace.posHitWld;
             GfVec3f normalGeomWldExt = trace.normalGeomWldExt;
             GfVec3f normalGeomObjExt = trace.normalGeomObjExt;
             if (normalGeomWldExt.GetLengthSq() > 1.0e-20f) {
                 normalGeomWldExt.Normalize();
             } else {
-                normalGeomWldExt = -state.directionRayWld; // fallback
+                normalGeomWldExt = -state.dirRayWld; // fallback
                 normalGeomObjExt = ty::TransformNormalToObject(
                     input.objectToWorldMatrix, normalGeomWldExt);
             }
             // Orient outward: the exit normal should align with the ray
             // direction (the ray leaves the medium, so the outward face's
-            // normal is in the same half-space as directionRayWld). Flip only
+            // normal is in the same half-space as dirRayWld). Flip only
             // if Embree returned an inward Ng.
-            if (GfDot(normalGeomWldExt, state.directionRayWld) < 0.0f) {
+            if (GfDot(normalGeomWldExt, state.dirRayWld) < 0.0f) {
                 normalGeomWldExt = -normalGeomWldExt;
                 normalGeomObjExt = -normalGeomObjExt;
             }
@@ -862,22 +862,22 @@ ty::RandomWalkSSS(ty::SssInput const& input,
             }
 
             output.success = true;
-            output.positionExitWld = positionHitWld;
+            output.posExitWld = posHitWld;
             output.normalGeomExitWldExt = normalGeomWldExt;
-            output.directionExitWld = state.directionRayWld;
+            output.dirExitWld = state.dirRayWld;
             output.normalGeomExitObjExt = normalGeomObjExt;
             output.exitInstanceId = trace.instanceId;
             output.exitGeomId = trace.geomId;
             output.exitPrimId = trace.primId;
-            output.coordinateParametricExitU = trace.coordinateParametricU;
-            output.coordinateParametricExitV = trace.coordinateParametricV;
+            output.uExit = trace.u;
+            output.vExit = trace.v;
             output.throughputWeight = state.throughputRgb;
             return output;
         }
 
         // Advance ray origin to the scatter point for the next bounce.
-        state.positionRayOriginWld +=
-            state.directionRayWld * distanceSegmentWld;
+        state.posRayOrgWld +=
+            state.dirRayWld * distanceSegmentWld;
     }
 
     return output; // max bounces exceeded
@@ -894,23 +894,23 @@ ty::Renderer::_TraceSubsurface(
         return _SubsurfaceResult::Terminate;
     }
 
-    GfVec3f entryDirection = input.directionEntryWld;
+    GfVec3f dirEntryWld = input.dirEntryWld;
     if (!input.hasSampledEntryDirection) {
         const GfVec2f sample =
             domain.Fork(ty::SampleDomainKey::SssEntryDirection).Draw2D();
-        mxcpp::Vec3f sampledDirection;
+        mxcpp::Vec3f dirSampledWld;
         if (!mxcpp::Bsdf::SampleSubsurfaceEntry(
                 *input.closure, ty::ToMx(input.normalShdWldOut),
                 ty::ToMx(input.omegaOutWld), sample[0], sample[1],
-                sampledDirection)) {
+                dirSampledWld)) {
             return _SubsurfaceResult::Terminate;
         }
-        entryDirection = ty::ToGf(sampledDirection);
+        dirEntryWld = ty::ToGf(dirSampledWld);
     }
 
     // A direction that is inward in the shading frame can still point out of
     // the true face when a normal map strongly tilts the frame.
-    if (GfDot(input.normalGeomWldOut, entryDirection) >= 0.0f) {
+    if (GfDot(input.normalGeomWldOut, dirEntryWld) >= 0.0f) {
         return _SubsurfaceResult::Terminate;
     }
 
@@ -928,9 +928,9 @@ ty::Renderer::_TraceSubsurface(
     }
 
     ty::SssInput walkInput;
-    walkInput.positionEntryWld = input.positionHitWld;
+    walkInput.posEntryWld = input.posHitWld;
     walkInput.normalShdEntryGuideWldOut = input.normalShdWldOut;
-    walkInput.directionEntryWld = entryDirection;
+    walkInput.dirEntryWld = dirEntryWld;
     walkInput.albedo = ty::ToGf(input.closure->subsurfaceColor);
     walkInput.radius = GfCompMult(
         ty::ToGf(input.closure->subsurfaceRadius),
@@ -985,9 +985,9 @@ ty::Renderer::_TraceSubsurface(
         return _SubsurfaceResult::Terminate;
     }
 
-    state->positionRayOriginWld = output.positionExitWld;
-    state->directionRayWld = -output.directionExitWld;
-    state->rayDifferential.hasDifferentials = false;
+    state->posRayOrgWld = output.posExitWld;
+    state->dirRayWld = -output.dirExitWld;
+    state->diffRay.hasDifferentials = false;
     state->lastBsdfPdf = 0.0f;
     state->lastScatterWasMedium = false;
     state->hasDiffuseLikeAncestor = true;

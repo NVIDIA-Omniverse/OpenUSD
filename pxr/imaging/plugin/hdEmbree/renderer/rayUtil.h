@@ -26,21 +26,22 @@ CalculateHitPosition(RTCRayHit const& rayHit)
                    rayHit.ray.org_z + rayHit.ray.tfar * rayHit.ray.dir_z);
 }
 
-/// Fill in an RTCRay structure from the given parameters.
+/// Fill an RTCRay using an origin and direction in the same caller-selected
+/// coordinate space.
 inline void
-PopulateRay(RTCRay* ray, GfVec3f const& origin, GfVec3f const& directionLocal,
+PopulateRay(RTCRay* ray, GfVec3f const& posRayOrg, GfVec3f const& dirRay,
              float nearest,
              float furthest = std::numeric_limits<float>::infinity(),
              RayMask mask = RayMask::All)
 {
-    ray->org_x = origin[0];
-    ray->org_y = origin[1];
-    ray->org_z = origin[2];
+    ray->org_x = posRayOrg[0];
+    ray->org_y = posRayOrg[1];
+    ray->org_z = posRayOrg[2];
     ray->tnear = nearest;
 
-    ray->dir_x = directionLocal[0];
-    ray->dir_y = directionLocal[1];
-    ray->dir_z = directionLocal[2];
+    ray->dir_x = dirRay[0];
+    ray->dir_y = dirRay[1];
+    ray->dir_z = dirRay[2];
     ray->time = 0.0f;
 
     ray->tfar = furthest;
@@ -51,43 +52,43 @@ PopulateRay(RTCRay* ray, GfVec3f const& origin, GfVec3f const& directionLocal,
 
 /// \brief Bias a ray origin off a surface to avoid self-intersection.
 ///
-/// \param positionWld World-space point to offset.
-/// \param directionOffsetReferenceWld Axis to push along, faced toward
-/// \p directionRayWld. Surface events supply their geometric normal. A
+/// \param posWld World-space point to offset.
+/// \param dirOffsetReferenceWld Axis to push along, faced toward
+/// \p dirRayWld. Surface events supply their geometric normal. A
 /// zero-length value is a supported input meaning "no surface frame is
 /// known"; callers rely on it, so keep that branch.
-/// \param directionRayWld Normalized direction the offset ray travels.
+/// \param dirRayWld Normalized direction the offset ray travels.
 /// \param bias Positive offset distance.
-/// \return The biased origin; \p positionWld advanced along
-/// \p directionRayWld when no reference axis is available.
+/// \return The biased origin; \p posWld advanced along
+/// \p dirRayWld when no reference axis is available.
 inline GfVec3f
 OffsetRayOrigin(
-    GfVec3f const& positionWld,
-    GfVec3f const& directionOffsetReferenceWld,
-    GfVec3f const& directionRayWld,
+    GfVec3f const& posWld,
+    GfVec3f const& dirOffsetReferenceWld,
+    GfVec3f const& dirRayWld,
     float bias = 1.0e-4f)
 {
-    if (directionOffsetReferenceWld.GetLengthSq() < 1e-18f) {
-        return positionWld + directionRayWld * bias;
+    if (dirOffsetReferenceWld.GetLengthSq() < 1e-18f) {
+        return posWld + dirRayWld * bias;
     }
 
-    GfVec3f offsetNormal = directionOffsetReferenceWld.GetNormalized();
-    if (GfDot(offsetNormal, directionRayWld) < 0.0f) {
+    GfVec3f offsetNormal = dirOffsetReferenceWld.GetNormalized();
+    if (GfDot(offsetNormal, dirRayWld) < 0.0f) {
         offsetNormal = -offsetNormal;
     }
-    return positionWld + offsetNormal * bias;
+    return posWld + offsetNormal * bias;
 }
 
-/// Fill in an RTCRayHit structure from the given parameters.
-// note this containts a Ray and a RayHit
+/// Fill an RTCRayHit using an origin and direction in the same caller-selected
+/// coordinate space.
 inline void
-PopulateRayHit(RTCRayHit* rayHit, GfVec3f const& origin,
-                GfVec3f const& directionLocal, float nearest,
+PopulateRayHit(RTCRayHit* rayHit, GfVec3f const& posRayOrg,
+                GfVec3f const& dirRay, float nearest,
                 float furthest = std::numeric_limits<float>::infinity(),
                 RayMask mask = RayMask::All)
 {
     // Fill in defaults for the ray
-    PopulateRay(&rayHit->ray, origin, directionLocal, nearest, furthest, mask);
+    PopulateRay(&rayHit->ray, posRayOrg, dirRay, nearest, furthest, mask);
 
     // Fill in defaults for the hit
     rayHit->hit.primID = RTC_INVALID_GEOMETRY_ID;

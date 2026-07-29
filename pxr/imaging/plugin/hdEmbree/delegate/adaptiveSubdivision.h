@@ -23,7 +23,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 /// Evaluates one final object-space position on a displaced subdivision
 /// face. An empty callback disables displacement-aware level refinement.
 using HdEmbreeDisplacedPositionProbe = std::function<bool(
-    unsigned int primID, float u, float v, GfVec3f* position)>;
+    unsigned int primID, float u, float v, GfVec3f* posObj)>;
 
 /// Returns the target screen-space edge length for a Hydra refine level.
 double HdEmbreeGetTargetSubdivisionEdgePixels(int refineLevel);

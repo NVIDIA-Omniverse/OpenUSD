@@ -278,11 +278,11 @@ ty::Renderer::_PreRenderSetup()
         // Mark usable buffers converged so Hydra parks instead of retrying a
         // terminal setup failure.
         for (size_t i = 0; i < _aovBindings.size(); ++i) {
-            ty::RenderBufferInterface *rb =
+            ty::RenderBufferInterface *renderBuffer =
                 dynamic_cast<ty::RenderBufferInterface*>(
                     _aovBindings[i].renderBuffer);
-            if (rb != nullptr) {
-                rb->SetConverged(true);
+            if (renderBuffer != nullptr) {
+                renderBuffer->SetConverged(true);
             }
         }
         return false;
@@ -308,10 +308,10 @@ ty::Renderer::_PreRenderSetup()
     // A validated interface Map is non-failing aside from allocation failure,
     // which is outside this non-exception setup contract.
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
-        ty::RenderBufferInterface *rb =
+        ty::RenderBufferInterface *renderBuffer =
             dynamic_cast<ty::RenderBufferInterface*>(
                 _aovBindings[i].renderBuffer);
-        rb->Map();
+        renderBuffer->Map();
     }
     return true;
 }
@@ -378,12 +378,12 @@ ty::Renderer::Render(HdRenderThread *renderThread)
             {
                 HD_TRACE_SCOPE("ty::Renderer::ResolvePreviewPass");
                 auto lock = renderThread->LockFramebuffer();
-                for (size_t a = 0; a < _aovBindings.size(); ++a) {
-                    ty::RenderBufferInterface *rb =
+                for (size_t i = 0; i < _aovBindings.size(); ++i) {
+                    ty::RenderBufferInterface *renderBuffer =
                         dynamic_cast<ty::RenderBufferInterface*>(
-                            _aovBindings[a].renderBuffer);
-                    rb->Resolve();
-                    rb->BlockFill(stride);
+                            _aovBindings[i].renderBuffer);
+                    renderBuffer->Resolve();
+                    renderBuffer->BlockFill(stride);
                 }
             }
         }
@@ -392,11 +392,11 @@ ty::Renderer::Render(HdRenderThread *renderThread)
         // start from a clean slate, while the display buffer retains
         // the coarse preview for visual continuity.
         if (!renderThread->IsStopRequested()) {
-            for (size_t a = 0; a < _aovBindings.size(); ++a) {
-                ty::RenderBufferInterface *rb =
+            for (size_t i = 0; i < _aovBindings.size(); ++i) {
+                ty::RenderBufferInterface *renderBuffer =
                     dynamic_cast<ty::RenderBufferInterface*>(
-                        _aovBindings[a].renderBuffer);
-                rb->ClearSamples();
+                        _aovBindings[i].renderBuffer);
+                renderBuffer->ClearSamples();
             }
             // Reset adaptive sampling state that was partially filled
             // by the coarse passes.
@@ -440,11 +440,11 @@ ty::Renderer::Render(HdRenderThread *renderThread)
         {
             HD_TRACE_SCOPE("ty::Renderer::ResolveSamplePass");
             auto lock = renderThread->LockFramebuffer();
-            for (size_t a = 0; a < _aovBindings.size(); ++a) {
-                ty::RenderBufferInterface *rb =
+            for (size_t i = 0; i < _aovBindings.size(); ++i) {
+                ty::RenderBufferInterface *renderBuffer =
                     dynamic_cast<ty::RenderBufferInterface*>(
-                        _aovBindings[a].renderBuffer);
-                rb->Resolve();
+                        _aovBindings[i].renderBuffer);
+                renderBuffer->Resolve();
             }
         }
 
@@ -453,11 +453,11 @@ ty::Renderer::Render(HdRenderThread *renderThread)
         // we are done.
         if (i == 0) {
             bool moreWork = false;
-            for (size_t a = 0; a < _aovBindings.size(); ++a) {
-                ty::RenderBufferInterface *rb =
+            for (size_t i = 0; i < _aovBindings.size(); ++i) {
+                ty::RenderBufferInterface *renderBuffer =
                     dynamic_cast<ty::RenderBufferInterface*>(
-                        _aovBindings[a].renderBuffer);
-                if (rb->IsMultiSampled()) {
+                        _aovBindings[i].renderBuffer);
+                if (renderBuffer->IsMultiSampled()) {
                     moreWork = true;
                 }
             }
@@ -475,8 +475,10 @@ ty::Renderer::Render(HdRenderThread *renderThread)
         if (_settings.enableAdaptiveSampling && !_pixelConverged.empty()) {
             HD_TRACE_SCOPE("ty::Renderer::CheckConvergence");
             bool allConverged = true;
-            for (size_t p = 0; p < _pixelConverged.size(); ++p) {
-                if (!_pixelConverged[p]) {
+            for (size_t indexPixel = 0;
+                 indexPixel < _pixelConverged.size();
+                 ++indexPixel) {
+                if (!_pixelConverged[indexPixel]) {
                     allConverged = false;
                     break;
                 }
@@ -502,11 +504,11 @@ ty::Renderer::Render(HdRenderThread *renderThread)
     {
         HD_TRACE_SCOPE("ty::Renderer::FinalizeAovs");
         for (size_t i = 0; i < _aovBindings.size(); ++i) {
-            ty::RenderBufferInterface *rb =
+            ty::RenderBufferInterface *renderBuffer =
                 dynamic_cast<ty::RenderBufferInterface*>(
                     _aovBindings[i].renderBuffer);
-            rb->Unmap();
-            rb->SetConverged(true);
+            renderBuffer->Unmap();
+            renderBuffer->SetConverged(true);
         }
     }
 
@@ -514,14 +516,16 @@ ty::Renderer::Render(HdRenderThread *renderThread)
     if (renderFinished) {
         const float elapsedSec = GetRenderElapsedSeconds();
         const int completedSamples = _completedSamples.load();
-        const int w = _dataWindow.GetWidth();
-        const int h = _dataWindow.GetHeight();
+        const int imageWidth = _dataWindow.GetWidth();
+        const int imageHeight = _dataWindow.GetHeight();
         const long long totalSamples =
-            static_cast<long long>(w) * h * completedSamples;
+            static_cast<long long>(imageWidth) *
+            imageHeight * completedSamples;
 
         std::printf("\n");
         std::printf("===== hdEmbree Render Statistics =====\n");
-        std::printf("  Resolution       : %d x %d\n", w, h);
+        std::printf(
+            "  Resolution       : %d x %d\n", imageWidth, imageHeight);
         std::printf("  Samples/pixel    : %d / %d\n",
                     completedSamples, _settings.samplesToConvergence);
         std::printf("  Total samples    : %lld\n", totalSamples);
@@ -530,7 +534,8 @@ ty::Renderer::Render(HdRenderThread *renderThread)
             std::printf("  Samples/sec      : %.0f\n",
                         totalSamples / static_cast<double>(elapsedSec));
             std::printf("  Pixels/sec       : %.0f\n",
-                        (static_cast<double>(w) * h * completedSamples)
+                (static_cast<double>(imageWidth) *
+                 imageHeight * completedSamples)
                             / elapsedSec);
         }
         std::printf("  Max bounces      : %d\n", _settings.maxBounces);
@@ -576,11 +581,13 @@ ty::Renderer::Render(HdRenderThread *renderThread)
         if (_settings.enableAdaptiveSampling && !_pixelConverged.empty()) {
             size_t convergedCount = 0;
             double avgSamples = 0.0;
-            for (size_t p = 0; p < _pixelConverged.size(); ++p) {
-                if (_pixelConverged[p]) {
+            for (size_t indexPixel = 0;
+                 indexPixel < _pixelConverged.size();
+                 ++indexPixel) {
+                if (_pixelConverged[indexPixel]) {
                     ++convergedCount;
                 }
-                avgSamples += _pixelSampleCount[p];
+                avgSamples += _pixelSampleCount[indexPixel];
             }
             avgSamples /= _pixelConverged.size();
             const double convergedPct =
@@ -600,21 +607,23 @@ ty::Renderer::Render(HdRenderThread *renderThread)
 void
 ty::Renderer::_EvaluatePixelSample(
     unsigned int x, unsigned int y,
-    GfVec3f const& origin, GfVec3f const& dir,
+    GfVec3f const& posRayOrgWld, GfVec3f const& dirRayWld,
     ty::Sampler const& sampler,
-    ty::RayDifferential const& rayDiff)
+    ty::RayDifferential const& diffRay)
 {
     _PixelSampleResult result;
     if (_needColor) {
         result = _settings.enableLighting
-            ? _IntegratePath(origin, dir, rayDiff, sampler.RootDomain())
-            : _IntegrateUnlit(origin, dir, rayDiff, sampler.RootDomain());
-        _ApplyWireframe(result.primaryHit, rayDiff, &result.color);
+            ? _IntegratePath(
+                  posRayOrgWld, dirRayWld, diffRay, sampler.RootDomain())
+            : _IntegrateUnlit(
+                  posRayOrgWld, dirRayWld, diffRay, sampler.RootDomain());
+        _ApplyWireframe(result.primaryHit, diffRay, &result.color);
     } else {
         // Geometric AOV-only renders need the primary hit but no radiance.
         result.primaryHit.ray.flags = 0;
         ty::PopulateRayHit(
-            &result.primaryHit, origin, dir, 0.0f,
+            &result.primaryHit, posRayOrgWld, dirRayWld, 0.0f,
             std::numeric_limits<float>::max(),
             ty::RayMask::Camera);
         rtcIntersect1(_scene, &result.primaryHit);
@@ -689,10 +698,10 @@ ty::Renderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
                 }
 
                 // Skip converged pixels in adaptive sampling mode.
-                const size_t pixelIdx = y * _width + x;
+                const size_t idx = y * _width + x;
                 if (_settings.enableAdaptiveSampling
                     && !_pixelConverged.empty()
-                    && _pixelConverged[pixelIdx]) {
+                    && _pixelConverged[idx]) {
                     continue;
                 }
 
@@ -704,15 +713,18 @@ ty::Renderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
                     sampleNum,
                     _settings.samplerSequence);
 
-                GfVec3f origin;
-                GfVec3f dir;
-                ty::RayDifferential rayDiff;
+                GfVec3f posRayOrgWld;
+                GfVec3f dirRayWld;
+                ty::RayDifferential diffRay;
                 _SampleCameraRay(
                     x, y, minX, minY, sampler,
-                    origin, dir, rayDiff);
+                    posRayOrgWld, dirRayWld, diffRay);
 
                 // Evaluate and write this pixel sample.
-                _EvaluatePixelSample(x, y, origin, dir, sampler, rayDiff);
+                _EvaluatePixelSample(
+                    x, y,
+                    posRayOrgWld, dirRayWld,
+                    sampler, diffRay);
             }
         }
     }

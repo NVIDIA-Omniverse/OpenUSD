@@ -37,8 +37,8 @@ static const TfToken _tokensComputedBitangent("hdEmbreeComputedBitangent");
 static const TfToken _tokensSt("st");
 
 static void
-_ComputeScreenSpaceDerivatives(ty::RayDifferential const& rayDifferential,
-                               GfVec3f const& positionHitWld,
+_ComputeScreenSpaceDerivatives(ty::RayDifferential const& diffRay,
+                               GfVec3f const& posHitWld,
                                GfVec3f const& normalTangentPlaneWld,
                                GfVec3f const& dPdu, GfVec3f const& dPdv,
                                GfMatrix4d const& viewMatrix,
@@ -49,34 +49,34 @@ _ComputeScreenSpaceDerivatives(ty::RayDifferential const& rayDifferential,
     GfVec3f dPdx(0.0f);
     GfVec3f dPdy(0.0f);
 
-    if (rayDifferential.hasDifferentials) {
-        // Intersect differential rays with the tangent plane at positionHitWld.
-        float planeOffset = -GfDot(normalTangentPlaneWld, positionHitWld);
+    if (diffRay.hasDifferentials) {
+        // Intersect differential rays with the tangent plane at posHitWld.
+        float planeOffset = -GfDot(normalTangentPlaneWld, posHitWld);
         float rxDotN =
-            GfDot(normalTangentPlaneWld, rayDifferential.rxDirection);
+            GfDot(normalTangentPlaneWld, diffRay.rxDirection);
         if (std::abs(rxDotN) > 1e-10f) {
-            float tx =
-                -(GfDot(normalTangentPlaneWld, rayDifferential.rxOrigin) +
+            const float tRayX =
+                -(GfDot(normalTangentPlaneWld, diffRay.rxOrigin) +
                   planeOffset) /
                 rxDotN;
-            GfVec3f px =
-                rayDifferential.rxOrigin + tx * rayDifferential.rxDirection;
-            dPdx = px - positionHitWld;
+            const GfVec3f posRayXWld =
+                diffRay.rxOrigin + tRayX * diffRay.rxDirection;
+            dPdx = posRayXWld - posHitWld;
         }
         float ryDotN =
-            GfDot(normalTangentPlaneWld, rayDifferential.ryDirection);
+            GfDot(normalTangentPlaneWld, diffRay.ryDirection);
         if (std::abs(ryDotN) > 1e-10f) {
-            float ty =
-                -(GfDot(normalTangentPlaneWld, rayDifferential.ryOrigin) +
+            const float tRayY =
+                -(GfDot(normalTangentPlaneWld, diffRay.ryOrigin) +
                   planeOffset) /
                 ryDotN;
-            GfVec3f py =
-                rayDifferential.ryOrigin + ty * rayDifferential.ryDirection;
-            dPdy = py - positionHitWld;
+            const GfVec3f posRayYWld =
+                diffRay.ryOrigin + tRayY * diffRay.ryDirection;
+            dPdy = posRayYWld - posHitWld;
         }
     } else {
         // Fallback: approximate dPdx/dPdy from camera projection.
-        GfVec3f hitCamera = GfVec3f(viewMatrix.Transform(positionHitWld));
+        GfVec3f hitCamera = GfVec3f(viewMatrix.Transform(posHitWld));
         float distanceCameraWld = hitCamera.GetLength();
         if (distanceCameraWld > 1e-6f) {
             GfVec3f ndcCenter(0.0f, 0.0f, -1.0f);
@@ -227,7 +227,7 @@ ty::Renderer::_IsEdgeOnlyWireframeHit(
 void
 ty::Renderer::_ApplyWireframe(
     RTCRayHit const& primaryHit,
-    ty::RayDifferential const& rayDiff,
+    ty::RayDifferential const& diffRay,
     GfVec4f* color) const
 {
     if (!color ||
@@ -263,7 +263,7 @@ ty::Renderer::_ApplyWireframe(
         return;
     }
 
-    const GfVec3f positionHitWld = ty::CalculateHitPosition(primaryHit);
+    const GfVec3f posHitWld = ty::CalculateHitPosition(primaryHit);
     ty::DisplacedSubdivFrame displacedFrame;
     GfVec3f normalSrfWldExt = ty::ResolveObjectSpaceNormal(
         prototypeContext, instanceContext->rootScene, primaryHit.hit.geomID,
@@ -281,7 +281,7 @@ ty::Renderer::_ApplyWireframe(
         return;
     }
     mxcpp::ShadingContext wireframeContext;
-    _ComputeScreenSpaceDerivatives(rayDiff, positionHitWld, normalSrfWldExt,
+    _ComputeScreenSpaceDerivatives(diffRay, posHitWld, normalSrfWldExt,
                                    parametricFrame->dPdu, parametricFrame->dPdv,
                                    _viewMatrix, _inverseProjMatrix,
                                    static_cast<float>(_dataWindow.GetWidth()),
@@ -356,19 +356,19 @@ ty::Renderer::_ApplyWireframe(
 
 void
 ty::Renderer::_PropagateRayDifferential(
-    _SurfaceDifferentials const& surface, GfVec3f const& positionHitWld,
+    _SurfaceDifferentials const& surface, GfVec3f const& posHitWld,
     GfVec3f const& normalShdWldOut, GfVec3f const& omegaOutWld,
     GfVec3f const& omegaInWld, float eta, bool specular,
-    ty::RayDifferential* rayDifferential) const
+    ty::RayDifferential* diffRay) const
 {
-    if (!rayDifferential) {
+    if (!diffRay) {
         return;
     }
     if (!specular) {
-        rayDifferential->hasDifferentials = false;
+        diffRay->hasDifferentials = false;
         return;
     }
-    if (!rayDifferential->hasDifferentials) {
+    if (!diffRay->hasDifferentials) {
         return;
     }
 
@@ -387,22 +387,22 @@ ty::Renderer::_PropagateRayDifferential(
     const GfVec3f dndy = hasResolvedNormalDerivatives
         ? surface.dndu * surface.dudy + surface.dndv * surface.dvdy
         : GfVec3f(0.0f);
-    rayDifferential->rxOrigin = positionHitWld + surface.dpdx;
-    rayDifferential->ryOrigin = positionHitWld + surface.dpdy;
+    diffRay->rxOrigin = posHitWld + surface.dpdx;
+    diffRay->ryOrigin = posHitWld + surface.dpdy;
 
-    const GfVec3f dwodx = -rayDifferential->rxDirection - omegaOutWld;
-    const GfVec3f dwody = -rayDifferential->ryDirection - omegaOutWld;
+    const GfVec3f dwodx = -diffRay->rxDirection - omegaOutWld;
+    const GfVec3f dwody = -diffRay->ryDirection - omegaOutWld;
     const float dwoDotnDx =
         GfDot(dwodx, normalShdWldOut) + GfDot(omegaOutWld, dndx);
     const float dwoDotnDy =
         GfDot(dwody, normalShdWldOut) + GfDot(omegaOutWld, dndy);
 
     if (eta == 1.0f) {
-        rayDifferential->rxDirection =
+        diffRay->rxDirection =
             omegaInWld - dwodx +
             2.0f * (GfDot(omegaOutWld, normalShdWldOut) * dndx +
                     dwoDotnDx * normalShdWldOut);
-        rayDifferential->ryDirection =
+        diffRay->ryDirection =
             omegaInWld - dwody +
             2.0f * (GfDot(omegaOutWld, normalShdWldOut) * dndy +
                     dwoDotnDy * normalShdWldOut);
@@ -417,25 +417,21 @@ ty::Renderer::_PropagateRayDifferential(
                              (eta * eta * omegaInDotNormalShdSafe);
         const float dmuDx = dwoDotnDx * derivativeScale;
         const float dmuDy = dwoDotnDy * derivativeScale;
-        rayDifferential->rxDirection =
+        diffRay->rxDirection =
             omegaInWld - eta * dwodx + mu * dndx + dmuDx * normalShdWldOut;
-        rayDifferential->ryDirection =
+        diffRay->ryDirection =
             omegaInWld - eta * dwody + mu * dndy + dmuDy * normalShdWldOut;
     } else {
-        rayDifferential->hasDifferentials = false;
+        diffRay->hasDifferentials = false;
         return;
     }
 
     constexpr float maxDifferentialLengthSquared = 1e16f;
-    if (rayDifferential->rxDirection.GetLengthSq() >
-            maxDifferentialLengthSquared ||
-        rayDifferential->ryDirection.GetLengthSq() >
-            maxDifferentialLengthSquared ||
-        rayDifferential->rxOrigin.GetLengthSq() >
-            maxDifferentialLengthSquared ||
-        rayDifferential->ryOrigin.GetLengthSq() >
-            maxDifferentialLengthSquared) {
-        rayDifferential->hasDifferentials = false;
+    if (diffRay->rxDirection.GetLengthSq() > maxDifferentialLengthSquared ||
+        diffRay->ryDirection.GetLengthSq() > maxDifferentialLengthSquared ||
+        diffRay->rxOrigin.GetLengthSq() > maxDifferentialLengthSquared ||
+        diffRay->ryOrigin.GetLengthSq() > maxDifferentialLengthSquared) {
+        diffRay->hasDifferentials = false;
     }
 }
 
@@ -497,7 +493,7 @@ ty::Renderer::_TryBuildSurfaceInteraction(
     }
 
     _SurfaceInteraction interaction;
-    interaction.positionHitWld = ty::CalculateHitPosition(rayHit);
+    interaction.posHitWld = ty::CalculateHitPosition(rayHit);
     interaction.normalGeomWldExt = normalGeomWldExt;
     interaction.normalSrfWldExt = normalSrfWldExt;
     interaction.displacedFrame = displacedFrame;
@@ -517,7 +513,7 @@ ty::Renderer::_TryBuildSurfaceInteraction(
 mxcpp::ShadingContext
 ty::Renderer::_BuildShadingContext(
     RTCRayHit const& rayHit,
-    ty::RayDifferential const& rayDiff,
+    ty::RayDifferential const& diffRay,
     ty::InstanceContext const* instanceContext,
     ty::PrototypeContext const* prototypeContext,
     _SurfaceInteraction const& interaction,
@@ -525,7 +521,7 @@ ty::Renderer::_BuildShadingContext(
     GfVec3f* outDndv,
     _ShadingContextOptions options) const
 {
-    const GfVec3f positionHitWld = interaction.positionHitWld;
+    const GfVec3f posHitWld = interaction.posHitWld;
     const GfVec3f normalSrfWldOut = interaction.GetNormalSrfWldOut();
     const GfVec3f normalSrfWldExt = interaction.normalSrfWldExt;
     ty::DisplacedSubdivFrame const* displacedFrame =
@@ -587,8 +583,8 @@ ty::Renderer::_BuildShadingContext(
             &dPdu, &dPdv, &dndu, &dndv);
     }
 
-    const GfVec3f objectHitPos =
-        instanceContext->worldToObjectMatrix.Transform(positionHitWld);
+    const GfVec3f posHitObj =
+        instanceContext->worldToObjectMatrix.Transform(posHitWld);
     const GfVec3f objectDPdu = dPdu;
     const GfVec3f objectDPdv = dPdv;
 
@@ -683,7 +679,7 @@ ty::Renderer::_BuildShadingContext(
     }
 
     mxcpp::ShadingContext ctx;
-    ctx.position = ty::ToMx(objectHitPos);
+    ctx.position = ty::ToMx(posHitObj);
     ctx.normal = ty::ToMx(normalSrfWldOut);
     ctx.tangent = ty::ToMx(tangent);
     ctx.bitangent = ty::ToMx(bitangent);
@@ -721,7 +717,7 @@ ty::Renderer::_BuildShadingContext(
 
     if (options.computeScreenSpaceDerivatives) {
         _ComputeScreenSpaceDerivatives(
-            rayDiff, positionHitWld, normalSrfWldOut, dPdu, dPdv, _viewMatrix,
+            diffRay, posHitWld, normalSrfWldOut, dPdu, dPdv, _viewMatrix,
             _inverseProjMatrix, static_cast<float>(_dataWindow.GetWidth()),
             static_cast<float>(_dataWindow.GetHeight()),
             _settings.samplesToConvergence,

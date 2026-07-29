@@ -23,6 +23,26 @@ Typhoon is a **reference path tracer**. It should be easily readable by a human 
    `absorption`, `scattering`, and `extinction` roots defined by the
    authoritative naming table in `ARCHITECTURE.md`; IOR sides use the optics
    incident/transmitted convention, and `eta` means only `iorIn / iorOut`.
+   Use `pos` for position quantities, `dir` for direction quantities, and
+   `diffRay` for `RayDifferential` values.
+   Bare `u` and `v` are allowed for direct texture or surface-parametric
+   coordinates. Bare `x` and `y` are allowed for pixel column and row indices.
+   Bare `c` is allowed for a pixel or RGB channel index when clear from
+   context. Use `bary` as the prefix for barycentric-coordinate components,
+   such as `baryU`, `baryV`, and `baryW`.
+   Output pointer and reference parameters use `outFoo`; an `Out` suffix
+   within `foo` retains its exitant transport-side meaning.
+   Bare `t` is allowed as a local ray or interpolation parameter. Bare `i`,
+   `j`, and `k` are allowed only as pure positional loop indices; name any
+   semantic index. `idx` is allowed for an obvious local index when a more
+   specific name adds no useful information.
+   A single-letter local may abbreviate a clearly named value in a short
+   function when its meaning is obvious and it is consumed immediately.
+   `F0` is allowed for normal-incidence Fresnel reflectance. Within a
+   microfacet BSDF, `D` and `G` may denote its normal-distribution and
+   masking-shadowing terms. Within conductor Fresnel calculations, `n` and
+   `k` may denote the real and imaginary refractive indices. Mix operations
+   may use `fg` and `bg` for foreground and background operands.
    Derivatives use `d<Quantity>d<Variable>`, such as
    `dPdu`/`dPdv` for surface parameterization and `dPdx`/`dPdy` for
    screen-space ray differentials.

@@ -92,7 +92,7 @@ LookupBsdlDielectricReflFrontFilter(
 {
     namespace lut = bsdf_luts;
 
-    const float c = Clamp01(cosTheta);
+    const float clampedCosTheta = Clamp01(cosTheta);
     const float roughness = Clamp01(perceptualRoughness);
     const float clampedIor = std::clamp(
         ior,
@@ -131,15 +131,16 @@ LookupBsdlDielectricReflFrontFilter(
     int cos1 = 0;
     float cosT = 0.0f;
     float prevCos = _BsdlDielectricReflFrontCosine(0);
-    if (c > prevCos) {
+    if (clampedCosTheta > prevCos) {
         cos0 = lut::kBsdlDielectricReflFrontCosThetaCount - 1;
         cos1 = cos0;
         for (int i = 1; i < lut::kBsdlDielectricReflFrontCosThetaCount; ++i) {
             const float nextCos = _BsdlDielectricReflFrontCosine(i);
-            if (c < nextCos) {
+            if (clampedCosTheta < nextCos) {
                 cos0 = i - 1;
                 cos1 = i;
-                cosT = (c - prevCos) / (nextCos - prevCos);
+                cosT =
+                    (clampedCosTheta - prevCos) / (nextCos - prevCos);
                 break;
             }
             prevCos = nextCos;
@@ -172,7 +173,7 @@ _LookupBsdlDielectricBothMissingEnergy(
 {
     namespace lut = bsdf_luts;
 
-    const float c = Clamp01(cosTheta);
+    const float clampedCosTheta = Clamp01(cosTheta);
     const float roughness = Clamp01(perceptualRoughness);
     const float clampedIor = std::clamp(
         ior,
@@ -202,7 +203,7 @@ _LookupBsdlDielectricBothMissingEnergy(
     const float roughnessT =
         roughnessCoord - static_cast<float>(roughness0);
 
-    const float cosCoord = c * static_cast<float>(
+    const float cosCoord = clampedCosTheta * static_cast<float>(
         lut::kBsdlDielectricBothCosThetaCount - 1);
     const int cos0 = std::clamp(
         static_cast<int>(cosCoord),
@@ -245,7 +246,7 @@ LookupBsdlDielectricTransmissionSingleScatterAlbedo(
 {
     namespace lut = bsdf_luts;
 
-    const float c = Clamp01(cosTheta);
+    const float clampedCosTheta = Clamp01(cosTheta);
     const float roughness = Clamp01(perceptualRoughness);
     const float clampedIor = std::clamp(
         ior,
@@ -279,7 +280,7 @@ LookupBsdlDielectricTransmissionSingleScatterAlbedo(
     const float roughnessT =
         roughnessCoord - static_cast<float>(roughness0);
 
-    const float cosCoord = c * static_cast<float>(
+    const float cosCoord = clampedCosTheta * static_cast<float>(
         lut::kBsdlDielectricTransmissionCosThetaCount - 1);
     const int cos0 = std::clamp(
         static_cast<int>(cosCoord),

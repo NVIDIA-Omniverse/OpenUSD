@@ -24,28 +24,28 @@ PXR_NAMESPACE_OPEN_SCOPE
 static GfVec3f
 _CosineWeightedDirection(GfVec2f const& uniformSamples)
 {
-    GfVec3f directionLocal;
+    GfVec3f dirTangent;
     float angleAzimuth = 2.0f * ty::Pi<float> * uniformSamples[0];
     float u2 = uniformSamples[1];
     float radiusDisk = sqrtf(u2);
-    directionLocal[0] = cosf(angleAzimuth) * radiusDisk;
-    directionLocal[1] = sinf(angleAzimuth) * radiusDisk;
-    directionLocal[2] = sqrtf(1.0f - u2);
-    return directionLocal;
+    dirTangent[0] = cosf(angleAzimuth) * radiusDisk;
+    dirTangent[1] = sinf(angleAzimuth) * radiusDisk;
+    dirTangent[2] = sqrtf(1.0f - u2);
+    return dirTangent;
 }
 
 ty::Renderer::_PixelSampleResult
 ty::Renderer::_IntegrateUnlit(
-    GfVec3f const& origin,
-    GfVec3f const& dir,
-    ty::RayDifferential const& rayDiff,
+    GfVec3f const& posRayOrgWld,
+    GfVec3f const& dirRayWld,
+    ty::RayDifferential const& diffRay,
     ty::SampleDomain const& domain)
 {
     _PixelSampleResult result;
     RTCRayHit& rayHit = result.primaryHit;
     rayHit.ray.flags = 0;
     ty::PopulateRayHit(
-        &rayHit, origin, dir, 0.0f,
+        &rayHit, posRayOrgWld, dirRayWld, 0.0f,
         std::numeric_limits<float>::max(),
         ty::RayMask::Camera);
     rtcIntersect1(_scene, &rayHit);
@@ -83,12 +83,12 @@ ty::Renderer::_IntegrateUnlit(
         result.color = GfVec4f(0.0f, 0.0f, 0.0f, 1.0f);
         return result;
     }
-    const GfVec3f positionHitWld = interaction.positionHitWld;
+    const GfVec3f posHitWld = interaction.posHitWld;
     GfVec3f normalShdWldOut = interaction.GetNormalSrfWldOut();
     // Build shading context via shared helper (texcoord, displayColor,
     // tangent frame all constructed consistently).
     mxcpp::ShadingContext ctx = _BuildShadingContext(
-        rayHit, rayDiff, instanceContext, prototypeContext, interaction);
+        rayHit, diffRay, instanceContext, prototypeContext, interaction);
     ty::PrimvarLookup cbData{
         &prototypeContext->geomPropSamplers,
         rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
@@ -143,13 +143,13 @@ ty::Renderer::_IntegrateUnlit(
 
     // The unlit integrator uses a camera-facing headlight, optionally
     // attenuated by ambient occlusion, with the resolved material normal.
-    const GfVec3f rawDir(
+    const GfVec3f dirCameraRayWld(
         rayHit.ray.dir_x, rayHit.ray.dir_y, rayHit.ray.dir_z);
-    float diffuseLight = fabs(GfDot(-rawDir, normalShdWldOut)) *
+    float diffuseLight = fabs(GfDot(-dirCameraRayWld, normalShdWldOut)) *
                          ty::CameraLightIntensity;
 
     float aoLightIntensity = _ComputeAmbientOcclusion(
-        positionHitWld, normalShdWldOut, interaction.normalGeomWldExt,
+        posHitWld, normalShdWldOut, interaction.normalGeomWldExt,
         domain.Fork(ty::SampleDomainKey::AmbientOcclusion));
 
     const GfVec3f lightingColor =
@@ -165,7 +165,7 @@ ty::Renderer::_IntegrateUnlit(
 }
 
 float
-ty::Renderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
+ty::Renderer::_ComputeAmbientOcclusion(GfVec3f const& posWld,
                                            GfVec3f const& normalShdWldOut,
                                            GfVec3f const& normalGeomWldExt,
                                            ty::SampleDomain const& domain)
@@ -231,19 +231,19 @@ ty::Renderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
 
     // Ambient visibility is the fraction of the hemisphere that is unoccluded
     // when rays are traced to infinity.
-    const GfVec3f rayOrigin = ty::OffsetRayOrigin(
-        positionWld, normalGeomWldExt, normalShdWldOut, 1e-4f);
+    const GfVec3f posRayOrgWld = ty::OffsetRayOrigin(
+        posWld, normalGeomWldExt, normalShdWldOut, 1e-4f);
     for (int i = 0; i < _settings.ambientOcclusionSamples; i++)
     {
         // Sample in the hemisphere centered on normalShdWldOut. Use
         // cosine-weighting to favor directions with more influence on AO.
-        GfVec3f shadowDir = basis * _CosineWeightedDirection(samples[i]);
+        GfVec3f dirShadowWld = basis * _CosineWeightedDirection(samples[i]);
 
         // Trace shadow ray, using the fast interface (rtcOccluded) since
         // we only care about intersection status, not intersection id.
         RTCRay shadow;
         shadow.flags = 0;
-        ty::PopulateRay(&shadow, rayOrigin, shadowDir, 1e-4f);
+        ty::PopulateRay(&shadow, posRayOrgWld, dirShadowWld, 1e-4f);
         {
           rtcOccluded1(_scene, &shadow);
         }

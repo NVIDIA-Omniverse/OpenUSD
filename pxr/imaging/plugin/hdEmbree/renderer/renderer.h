@@ -388,16 +388,18 @@ private:
     /// \param imageMinY Y origin after renderer line-order conversion.
     /// \param sampler Per-pixel sampler; must remain valid for this call and
     /// is advanced through its camera-jitter and camera-lens domains.
-    /// \param rayOrigin Receives the finite world-space primary-ray origin.
-    /// \param rayDirection Receives a normalized finite world-space direction.
-    /// \param rayDifferential Receives matching primary-ray differentials;
+    /// \param outPosRayOrgWld Receives the finite world-space primary-ray
+    /// origin.
+    /// \param outDirRayWld Receives a normalized finite world-space
+    /// primary-ray direction.
+    /// \param outDiffRay Receives matching primary-ray differentials;
     /// hasDifferentials is false if depth-of-field projection is invalid.
     void _SampleCameraRay(
         unsigned int x, unsigned int y,
         unsigned int imageMinX, unsigned int imageMinY,
         Sampler& sampler,
-        GfVec3f& rayOrigin, GfVec3f& rayDirection,
-        RayDifferential& rayDifferential) const;
+        GfVec3f& outPosRayOrgWld, GfVec3f& outDirRayWld,
+        RayDifferential& outDiffRay) const;
 
     /// \brief Render a half-open range of square tiles.
     ///
@@ -421,29 +423,29 @@ private:
     /// integrator owns its camera intersection and returns the retained hit.
     /// \param x Render-buffer x coordinate within the active data window.
     /// \param y Render-buffer y coordinate within the active data window.
-    /// \param origin Finite world-space camera-ray origin.
-    /// \param dir Normalized finite world-space camera-ray direction.
+    /// \param posRayOrgWld Finite world-space camera-ray origin.
+    /// \param dirRayWld Normalized finite world-space camera-ray direction.
     /// \param sampler Per-pixel sampler that remains valid for the call.
-    /// \param rayDiff Pixel-footprint differentials for this camera ray.
+    /// \param diffRay Pixel-footprint differentials for this camera ray.
     void _EvaluatePixelSample(
         unsigned int x, unsigned int y,
-        GfVec3f const& origin, GfVec3f const& dir,
+        GfVec3f const& posRayOrgWld, GfVec3f const& dirRayWld,
         Sampler const& sampler,
-        RayDifferential const& rayDiff);
+        RayDifferential const& diffRay);
 
     /// \brief Integrate a single-hit camera-light and ambient-occlusion sample.
     ///
     /// This integrator owns the primary intersection and performs no indirect
     /// light transport.
-    /// \param origin Finite world-space camera-ray origin.
-    /// \param dir Normalized finite world-space camera-ray direction.
-    /// \param rayDiff Initial pixel-footprint differential state.
+    /// \param posRayOrgWld Finite world-space camera-ray origin.
+    /// \param dirRayWld Normalized finite world-space camera-ray direction.
+    /// \param diffRay Initial pixel-footprint differential state.
     /// \param domain Root sample domain used for ambient occlusion.
     /// \return Unlit radiance and the unchanged primary intersection.
     _PixelSampleResult _IntegrateUnlit(
-        GfVec3f const& origin,
-        GfVec3f const& dir,
-        RayDifferential const& rayDiff,
+        GfVec3f const& posRayOrgWld,
+        GfVec3f const& dirRayWld,
+        RayDifferential const& diffRay,
         SampleDomain const& domain);
 
     /// Return true when the camera hit requests unlit edge-only display.
@@ -452,7 +454,7 @@ private:
     /// Composite the active mesh repr's display wire over one camera sample.
     void _ApplyWireframe(
         RTCRayHit const& primaryHit,
-        RayDifferential const& rayDiff,
+        RayDifferential const& diffRay,
         GfVec4f* color) const;
 
     /// \brief Compute camera or normalized clip depth for a hit.
@@ -496,14 +498,14 @@ private:
 
     /// \brief Estimate hemispherical ambient visibility at a surface point.
     ///
-    /// \param positionWld World-space surface position.
+    /// \param posWld World-space surface position.
     /// \param normalShdWldOut Normalized material-resolved hemisphere normal.
     /// \param normalGeomWldExt Authored-exterior geometric normal used to
     /// offset the ray origin along the true surface, avoiding self-intersection
     /// independently of the shading normal that orients the sample hemisphere.
     /// \param domain Deterministic sample domain reserved for AO draws.
     /// \return Unoccluded fraction in [0,1], or one when AO is disabled.
-    float _ComputeAmbientOcclusion(GfVec3f const& positionWld,
+    float _ComputeAmbientOcclusion(GfVec3f const& posWld,
                                    GfVec3f const& normalShdWldOut,
                                    GfVec3f const& normalGeomWldExt,
                                    SampleDomain const& domain);
@@ -512,7 +514,7 @@ private:
     ///
     /// Uses MIS and MaterialXCpp BSDF evaluation when a closure is supplied;
     /// otherwise it evaluates a synthetic Lambertian response.
-    /// \param positionWld World-space shading position.
+    /// \param posWld World-space shading position.
     /// \param normalShdWldOut Normalized material-resolved shading normal.
     /// \param normalGeomWldExt Immutable authored-exterior geometric normal
     /// used for topology and ray offsets.
@@ -533,7 +535,7 @@ private:
     /// valid for the call and corresponding to \p closure.
     /// \return Linear RGB direct-light contribution before path throughput.
     GfVec3f _ComputeDirectLightingMIS(
-        GfVec3f const& positionWld, GfVec3f const& normalShdWldOut,
+        GfVec3f const& posWld, GfVec3f const& normalShdWldOut,
         GfVec3f const& normalGeomWldExt, GfVec3f const& omegaOutWld,
         SampleDomain const& domain, bool frontFacing,
         bool includeBsdfSamplingMis, mxcpp::SurfaceClosure const* closure,
@@ -547,7 +549,7 @@ private:
     /// \brief Estimate direct lighting at a participating-medium event.
     ///
     /// Samples every linked light and evaluates the active volume phase model.
-    /// \param positionWld World-space scattering position.
+    /// \param posWld World-space scattering position.
     /// \param omegaOutWld Normalized direction toward the previous path vertex.
     /// \param mediumState Active, scattering medium and receiver categories.
     /// \param domain Sample domain reserved for this medium-lighting event.
@@ -558,7 +560,7 @@ private:
     /// \param heroWavelengthPdf Positive wavelength PDF when active.
     /// \return Linear RGB direct-light contribution before path throughput;
     /// black when the medium is inactive or absorption-only.
-    GfVec3f _ComputeMediumDirectLighting(GfVec3f const& positionWld,
+    GfVec3f _ComputeMediumDirectLighting(GfVec3f const& posWld,
                                          GfVec3f const& omegaOutWld,
                                          MediumState const& mediumState,
                                          SampleDomain const& domain,
@@ -575,9 +577,9 @@ private:
         float throughputSpectral = 1.0f;
         HeroWavelengthState hero;
 
-        GfVec3f positionRayOriginWld = GfVec3f(0.0f);
-        GfVec3f directionRayWld = GfVec3f(0.0f);
-        RayDifferential rayDifferential;
+        GfVec3f posRayOrgWld = GfVec3f(0.0f);
+        GfVec3f dirRayWld = GfVec3f(0.0f);
+        RayDifferential diffRay;
         MediumState medium;
 
         float lastBsdfPdf = 0.0f;
@@ -685,11 +687,11 @@ private:
         RTCRayHit const* rayHit = nullptr;
         InstanceContext const* instanceContext = nullptr;
         mxcpp::SurfaceClosure const* closure = nullptr;
-        GfVec3f positionHitWld = GfVec3f(0.0f);
+        GfVec3f posHitWld = GfVec3f(0.0f);
         GfVec3f normalShdWldOut = GfVec3f(0.0f);
         GfVec3f normalGeomWldOut = GfVec3f(0.0f);
         GfVec3f omegaOutWld = GfVec3f(0.0f);
-        GfVec3f directionEntryWld = GfVec3f(0.0f);
+        GfVec3f dirEntryWld = GfVec3f(0.0f);
         GfVec3f entryWeight = GfVec3f(0.0f);
         bool hasSampledEntryDirection = false;
     };
@@ -738,7 +740,7 @@ private:
     /// separate. Both normals are normalized world-space values with authored
     /// exterior orientation and are never faced toward the current path.
     struct _SurfaceInteraction {
-        GfVec3f positionHitWld = GfVec3f(0.0f);
+        GfVec3f posHitWld = GfVec3f(0.0f);
         GfVec3f normalGeomWldExt = GfVec3f(0.0f);
         GfVec3f normalSrfWldExt = GfVec3f(0.0f);
         DisplacedSubdivFrame displacedFrame;
@@ -761,51 +763,51 @@ private:
     /// \brief Propagate or discard ray differentials after a BSDF sample.
     ///
     /// \param surface Differential geometry at the sampled surface.
-    /// \param positionHitWld World-space surface position.
+    /// \param posHitWld World-space surface position.
     /// \param normalShdWldOut Face-forwarded world-space shading normal.
     /// \param omegaOutWld Normalized direction toward the previous path vertex.
     /// \param omegaInWld Normalized sampled continuation direction.
     /// \param eta Explicit iorIn/iorOut ratio. One denotes reflection; zero
     /// disables refracted differential propagation.
     /// \param specular Whether the sampled event is delta/specular.
-    /// \param rayDifferential Non-null in/out differential state.
+    /// \param diffRay Non-null in/out differential state.
     void _PropagateRayDifferential(
-        _SurfaceDifferentials const& surface, GfVec3f const& positionHitWld,
+        _SurfaceDifferentials const& surface, GfVec3f const& posHitWld,
         GfVec3f const& normalShdWldOut, GfVec3f const& omegaOutWld,
         GfVec3f const& omegaInWld, float eta, bool specular,
-        RayDifferential* rayDifferential) const;
+        RayDifferential* diffRay) const;
 
     /// \brief Integrate a complete multi-bounce camera path with MIS.
     ///
     /// Owns the primary intersection and handles camera/secondary light hits
     /// and misses in the same path loop with segment-specific policy.
-    /// \param origin Finite world-space camera-ray origin.
-    /// \param dir Normalized finite world-space camera-ray direction.
-    /// \param rayDiff Initial pixel-footprint differential state.
+    /// \param posRayOrgWld Finite world-space camera-ray origin.
+    /// \param dirRayWld Normalized finite world-space camera-ray direction.
+    /// \param diffRay Initial pixel-footprint differential state.
     /// \param domain Root path sample domain with lifetime covering the call.
     /// \return Path radiance and the unchanged primary intersection.
     _PixelSampleResult _IntegratePath(
-        GfVec3f const& origin,
-        GfVec3f const& dir,
-        RayDifferential const& rayDiff,
+        GfVec3f const& posRayOrgWld,
+        GfVec3f const& dirRayWld,
+        RayDifferential const& diffRay,
         SampleDomain const& domain) const;
 
     /// \brief Trace colored shadow visibility along a segment.
     ///
     /// Accounts for linking, transparent surfaces, and participating media.
-    /// \param positionWld World-space segment origin at a surface or medium
+    /// \param posWld World-space segment origin at a surface or medium
     /// event.
-    /// \param directionOffsetReferenceWld Direction used to bias the origin.
+    /// \param dirOffsetReferenceWld Direction used to bias the ray origin.
     /// Surface events supply their geometric normal; medium events supply
-    /// \p directionShadowWld because no surface frame exists.
-    /// \param directionShadowWld Normalized direction toward the light.
+    /// \p dirShadowWld because no surface frame exists.
+    /// \param dirShadowWld Normalized direction toward the light.
     /// \param distanceWld Positive maximum trace distance.
     /// \param shadowLink Light shadow-link token to test against blockers.
     /// \param mediumState Medium initially containing the shadow segment.
     /// \return Per-channel visibility in [0,1].
     GfVec3f _Visibility(
-        GfVec3f const& positionWld, GfVec3f const& directionOffsetReferenceWld,
-        GfVec3f const& directionShadowWld, float distanceWld,
+        GfVec3f const& posWld, GfVec3f const& dirOffsetReferenceWld,
+        GfVec3f const& dirShadowWld, float distanceWld,
         TfToken const& shadowLink,
         MediumState const& mediumState = MediumState()) const;
 
@@ -869,7 +871,7 @@ private:
     /// frame. Borrowed context pointers and sampler data must remain valid for
     /// the call; the returned context borrows this renderer's texture system.
     /// \param rayHit Valid hit belonging to \p prototypeContext.
-    /// \param rayDiff Differential state for the incident ray.
+    /// \param diffRay Differential state for the incident ray.
     /// \param instanceContext Non-null instance context for the hit.
     /// \param prototypeContext Non-null prototype context for the hit.
     /// \param interaction Valid central hit state. Its outward base frame
@@ -881,7 +883,7 @@ private:
     /// pointers installed by the caller remain alive.
     mxcpp::ShadingContext _BuildShadingContext(
         RTCRayHit const& rayHit,
-        RayDifferential const& rayDiff,
+        RayDifferential const& diffRay,
         InstanceContext const* instanceContext,
         PrototypeContext const* prototypeContext,
         _SurfaceInteraction const& interaction,

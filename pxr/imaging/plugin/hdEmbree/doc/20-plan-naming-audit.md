@@ -17,10 +17,37 @@ Audit these families explicitly:
 
 - every single-letter variable or parameter (`N`, `n`, `w`, `L`, `p`, `t`,
   `f`, `g`, `q`, `u`, `v`, `x`, `y`, `i`, `j`, `k`, and uppercase variants);
-  `u1` / `u2` uniform random samples are the explicit exception;
+  `u1` / `u2` uniform random samples, `u` / `v` direct texture or
+  surface-parametric coordinates, and `x` / `y` pixel column and row indices
+  are explicit exceptions. `c` is also allowed for a pixel or RGB channel
+  index when that role is clear from context. A
+  single-letter local is also allowed in a short
+  function when it is an obvious abbreviation of an already clearly named
+  input or intermediate, has no competing meaning in scope, and is consumed
+  immediately, such as `r` for clamped `frontReflectance` in
+  `_ThinWalledWindowReflectance`, or `g1` through `g4` and `gOverPi` for the
+  fitted intermediate terms in `_FonDirectionalAlbedoApprox`. This also
+  permits `c` for the locally clamped `cosTheta` in
+  `LookupGgxMissingEnergy`; expanding it to `valueC` adds no semantic
+  information. Do not apply that exception when the value persists through a
+  longer function: `_LookupBsdlDielectricBothMissingEnergy` uses
+  `clampedCosTheta`, not the opaque `c` or `valueC`. `F0` is the standard
+  literature notation for normal-incidence Fresnel reflectance.
+  Within a microfacet BSDF, `D` is allowed for the normal-distribution term
+  and `G` for the masking-shadowing term. Within conductor Fresnel
+  calculations, `n` and `k` are allowed for the real and imaginary refractive
+  indices. `fg` and `bg` are allowed for the foreground and background
+  operands of a mix operation;
 - every compound abbreviation derived from a single-letter root (`Ng`, `wi`,
-  `wo`, `Li`, `Le`, `hitPos`, `rayDir`, `entryPos`, `exitDir`, `pdfW`,
-  `invPdfA`, etc.);
+  `wo`, `Li`, `Le`, `pdfW`, `invPdfA`, etc.). Use `pos` as the quantity root
+  for position and `dir` as the quantity root for direction, with quantity
+  first and semantic role/space suffixes such as `posHitWld`, `dirRayWld`,
+  `posEntryWld`, and `dirExitWld`. Use `diffRay` for a `RayDifferential`
+  value, keeping the ray family symmetric with `posRayOrg` and `dirRay`.
+  Use `bary` as the prefix for barycentric-coordinate components, such as
+  `baryU`, `baryV`, and `baryW`. Output pointer and reference parameters use
+  the established `outFoo` convention; an `Out` suffix within `foo` retains
+  its transport-side meaning;
 - every spatial value missing its `Obj`, `Wld`, `Tangent`, `Texture`, or
   named-local-frame suffix at a shared-state or function boundary;
 - every `In`/`Out` suffix, verifying that it means the incident/exitant
@@ -33,11 +60,17 @@ Audit these families explicitly:
   preserving external API names and authored tokens used by the tests.
 
 Known remaining rename families include `_SurfaceInteraction::p`, residual
-`hitPos` names outside the integrator-core pass, and bare helper parameters
-such as `dir`. Choose semantic replacements from their actual consumers; do
-not perform blind substitutions. For example, ray `t` becomes
-`distanceAlongRayWld`, a Russian-roulette `q` becomes
-`probabilitySurvival`, and a channel loop `i` becomes `indexChannel`.
+role-first names such as `hitPos`, and ambiguous bare `dir` parameters. Use
+the `pos` and `dir` quantity roots, then append the actual role and space from
+their consumers; do not perform blind substitutions. For example, a
+Russian-roulette `q` becomes `probabilitySurvival`. Ray parameter `t` is
+explicitly allowed, as is `t` for a conventional local interpolation factor.
+The `i`, `j`, `k` loop indices are allowed as long as they don't carry
+additional semantic meaning other than the index in the array.
+`idx` is allowed for an obvious local index when a more specific name adds no
+useful information.
+Bare `u` and `v` are allowed only when they directly denote texture or
+surface-parametric coordinates.
 
 Record each necessary exception beside its declaration with the external
 constraint that requires it. Land one semantic rename family per commit.

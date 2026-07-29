@@ -653,7 +653,7 @@ TestIesDirectionalDistributionBuildsAndSamples()
     }
 
     const float evaluatedPdf =
-        ty::DirectionalShapingPdf(shaping, sample.localDirection);
+        ty::DirectionalShapingPdf(shaping, sample.dirLight);
     if (!_IsClose(sample.pdfSolidAngle, evaluatedPdf, 1e-5f)) {
         std::printf("    sampled/evaluated IES pdf mismatch: %f vs %f\n",
                     sample.pdfSolidAngle, evaluatedPdf);
@@ -686,14 +686,14 @@ _CheckDirectionalSamplesConfined(
                             label, u1, u2);
                 return false;
             }
-            const float z = sample.localDirection[2];
+            const float z = sample.dirLight[2];
             if (z < zMin - 1e-4f || z > zMax + 1e-4f) {
                 std::printf("    %s: sample outside support: z=%f\n",
                             label, z);
                 return false;
             }
             const float evaluatedPdf = ty::DirectionalShapingPdf(
-                shaping, sample.localDirection);
+                shaping, sample.dirLight);
             if (!_IsClose(sample.pdfSolidAngle, evaluatedPdf,
                           1e-4f * sample.pdfSolidAngle)) {
                 std::printf("    %s: sampled/evaluated pdf mismatch: "
@@ -1052,7 +1052,7 @@ TestRectFocusDirectionalSampleFoldsToEmissionHemisphere()
     for (float shapingU1 : {0.55f, 0.65f, 0.75f, 0.85f, 0.95f}) {
         const ty::DirectionalShapingSample proposal =
             ty::SampleDirectionalShaping(light.shaping, shapingU1, 0.37f);
-        if (proposal.valid && proposal.localDirection[2] < 0.0f) {
+        if (proposal.valid && proposal.dirLight[2] < 0.0f) {
             samplerU1 = 0.5f + 0.5f * shapingU1;
             foundBackHemisphereProposal = true;
             break;

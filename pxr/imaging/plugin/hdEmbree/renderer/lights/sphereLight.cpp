@@ -20,77 +20,93 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 static float
-_AreaSphere(GfMatrix4f const& xf, float radius)
+_AreaSphere(GfMatrix4f const& lightToWorld, float radius)
 {
     // Approximate transformed sphere area as an ellipsoid.
-    const float a =
-        xf.TransformDir(GfVec3f{radius, 0.0f, 0.0f}).GetLength();
-    const float b =
-        xf.TransformDir(GfVec3f{0.0f, radius, 0.0f}).GetLength();
-    const float c =
-        xf.TransformDir(GfVec3f{0.0f, 0.0f, radius}).GetLength();
-    const float ab = powf(a * b, 1.6f);
-    const float ac = powf(a * c, 1.6f);
-    const float bc = powf(b * c, 1.6f);
-    return powf((ab + ac + bc) / 3.0f, 1.0f / 1.6f) *
+    const float radiusAxisXWld =
+        lightToWorld.TransformDir(GfVec3f{radius, 0.0f, 0.0f}).GetLength();
+    const float radiusAxisYWld =
+        lightToWorld.TransformDir(GfVec3f{0.0f, radius, 0.0f}).GetLength();
+    const float radiusAxisZWld =
+        lightToWorld.TransformDir(GfVec3f{0.0f, 0.0f, radius}).GetLength();
+    const float areaPowerXY =
+        powf(radiusAxisXWld * radiusAxisYWld, 1.6f);
+    const float areaPowerXZ =
+        powf(radiusAxisXWld * radiusAxisZWld, 1.6f);
+    const float areaPowerYZ =
+        powf(radiusAxisYWld * radiusAxisZWld, 1.6f);
+    return powf(
+               (areaPowerXY + areaPowerXZ + areaPowerYZ) / 3.0f,
+               1.0f / 1.6f) *
            4.0f * ty::Pi<float>;
 }
 
 static ty::ShapeSample
-_SampleSphere(GfMatrix4f const& xf, GfMatrix3f const& normalXform, float radius,
-              float u1, float u2)
+_SampleSphere(
+    GfMatrix4f const& lightToWorld,
+    GfMatrix3f const& normalLightToWorld,
+    float radius, float u1, float u2)
 {
-    const float z = 1.0 - 2.0 * u1;
-    const float r = sqrtf(std::max(0.0f, 1.0f - z * z));
+    const float coordinateSphereZ = 1.0 - 2.0 * u1;
+    const float radiusSphereXy = sqrtf(
+        std::max(
+            0.0f,
+            1.0f - coordinateSphereZ * coordinateSphereZ));
     const float phi = 2.0f * ty::Pi<float> * u2;
-    GfVec3f pLight{r * std::cos(phi), r * std::sin(phi), z};
-    const GfVec3f nLight = pLight;
-    pLight *= radius;
+    GfVec3f posLight{
+        radiusSphereXy * std::cos(phi),
+        radiusSphereXy * std::sin(phi),
+        coordinateSphereZ};
+    const GfVec3f normalGeomLightExt = posLight;
+    posLight *= radius;
     return ty::ShapeSample{
-        xf.Transform(pLight), (nLight * normalXform).GetNormalized(),
-        GfVec2f(u2, z), _AreaSphere(xf, radius)};
+        lightToWorld.Transform(posLight),
+        (normalGeomLightExt * normalLightToWorld).GetNormalized(),
+        GfVec2f(u2, coordinateSphereZ), _AreaSphere(lightToWorld, radius)};
 }
 
 static bool
 _CanSampleSphereBySolidAngle(ty::LightData const& light)
 {
-    const GfVec3f x =
+    const GfVec3f axisXWld =
         light.xformLightToWorld.TransformDir(GfVec3f::XAxis());
-    const GfVec3f y =
+    const GfVec3f axisYWld =
         light.xformLightToWorld.TransformDir(GfVec3f::YAxis());
-    const GfVec3f z =
+    const GfVec3f axisZWld =
         light.xformLightToWorld.TransformDir(GfVec3f::ZAxis());
 
-    const float lx = x.GetLength();
-    const float ly = y.GetLength();
-    const float lz = z.GetLength();
-    const float maxLen = std::max({lx, ly, lz});
-    if (maxLen <= 0.0f) {
+    const float lengthAxisXWld = axisXWld.GetLength();
+    const float lengthAxisYWld = axisYWld.GetLength();
+    const float lengthAxisZWld = axisZWld.GetLength();
+    const float maximumAxisLengthWld =
+        std::max({lengthAxisXWld, lengthAxisYWld, lengthAxisZWld});
+    if (maximumAxisLengthWld <= 0.0f) {
         return false;
     }
 
     // Solid-angle sampling assumes a uniformly scaled orthogonal transform.
-    const float scaleEps = 1.0e-4f * maxLen;
-    const float orthoEps = 1.0e-4f * maxLen * maxLen;
-    return std::abs(lx - ly) <= scaleEps &&
-           std::abs(lx - lz) <= scaleEps &&
-           std::abs(GfDot(x, y)) <= orthoEps &&
-           std::abs(GfDot(x, z)) <= orthoEps &&
-           std::abs(GfDot(y, z)) <= orthoEps;
+    const float scaleEpsilon = 1.0e-4f * maximumAxisLengthWld;
+    const float orthogonalityEpsilon =
+        1.0e-4f * maximumAxisLengthWld * maximumAxisLengthWld;
+    return std::abs(lengthAxisXWld - lengthAxisYWld) <= scaleEpsilon &&
+           std::abs(lengthAxisXWld - lengthAxisZWld) <= scaleEpsilon &&
+           std::abs(GfDot(axisXWld, axisYWld)) <= orthogonalityEpsilon &&
+           std::abs(GfDot(axisXWld, axisZWld)) <= orthogonalityEpsilon &&
+           std::abs(GfDot(axisYWld, axisZWld)) <= orthogonalityEpsilon;
 }
 
 static float
 _SphereSolidAngle(
     ty::LightData const& light, ty::SphereLight const& sphere,
-    GfVec3f const& position)
+    GfVec3f const& posWld)
 {
     if (!_CanSampleSphereBySolidAngle(light) ||
         sphere.radius <= 0.0f) {
         return 0.0f;
     }
 
-    const GfVec3f pLight = light.xformWorldToLight.Transform(position);
-    const float dist2 = pLight.GetLengthSq();
+    const GfVec3f posLight = light.xformWorldToLight.Transform(posWld);
+    const float dist2 = posLight.GetLengthSq();
     const float radius2 = sphere.radius * sphere.radius;
     if (dist2 <= radius2 || !std::isfinite(dist2)) {
         return 0.0f;
@@ -109,52 +125,62 @@ _SphereSolidAngle(
 static bool
 _IntersectSphereLight(
     ty::LightData const& light, ty::SphereLight const& sphere,
-    GfVec3f const& position, GfVec3f const& direction,
+    GfVec3f const& posWld, GfVec3f const& dirWld,
     ty::ShapeSample* outSample)
 {
     if (!outSample) {
         return false;
     }
 
-    const GfVec3f pLight = light.xformWorldToLight.Transform(position);
-    const GfVec3f dLight = light.xformWorldToLight.TransformDir(direction);
-    const float a = GfDot(dLight, dLight);
-    const float b = 2.0f * GfDot(pLight, dLight);
-    const float c = GfDot(pLight, pLight) - sphere.radius * sphere.radius;
-    const float disc = b * b - 4.0f * a * c;
-    if (a <= 0.0f || disc < 0.0f) {
+    const GfVec3f posLight = light.xformWorldToLight.Transform(posWld);
+    const GfVec3f dirLight = light.xformWorldToLight.TransformDir(dirWld);
+    const float quadraticCoefficientA =
+        GfDot(dirLight, dirLight);
+    const float quadraticCoefficientB =
+        2.0f * GfDot(posLight, dirLight);
+    const float quadraticCoefficientC =
+        GfDot(posLight, posLight) -
+        sphere.radius * sphere.radius;
+    const float discriminant =
+        quadraticCoefficientB * quadraticCoefficientB -
+        4.0f * quadraticCoefficientA * quadraticCoefficientC;
+    if (quadraticCoefficientA <= 0.0f || discriminant < 0.0f) {
         return false;
     }
 
-    const float sqrtDisc = std::sqrt(disc);
-    float t0 = (-b - sqrtDisc) / (2.0f * a);
-    float t1 = (-b + sqrtDisc) / (2.0f * a);
-    if (t0 > t1) {
-        std::swap(t0, t1);
+    const float sqrtDiscriminant = std::sqrt(discriminant);
+    float rayParameterNear = (-quadraticCoefficientB - sqrtDiscriminant) /
+        (2.0f * quadraticCoefficientA);
+    float rayParameterFar = (-quadraticCoefficientB + sqrtDiscriminant) /
+        (2.0f * quadraticCoefficientA);
+    if (rayParameterNear > rayParameterFar) {
+        std::swap(rayParameterNear, rayParameterFar);
     }
-    const float t = (t0 > 1.0e-6f) ? t0 : t1;
+    const float t =
+        (rayParameterNear > 1.0e-6f) ? rayParameterNear : rayParameterFar;
     if (t <= 1.0e-6f || !std::isfinite(t)) {
         return false;
     }
 
-    const GfVec3f hitLight = pLight + dLight * t;
-    GfVec3f nLight = hitLight;
+    const GfVec3f posHitLight = posLight + dirLight * t;
+    GfVec3f normalGeomLightExt = posHitLight;
     if (sphere.radius != 0.0f) {
-        nLight /= sphere.radius;
+        normalGeomLightExt /= sphere.radius;
     }
-    nLight.Normalize();
+    normalGeomLightExt.Normalize();
 
-    float phi = std::atan2(hitLight[1], hitLight[0]);
+    float phi = std::atan2(posHitLight[1], posHitLight[0]);
     if (phi < 0.0f) {
         phi += 2.0f * ty::Pi<float>;
     }
 
     *outSample = ty::MakeAreaShapeSample(
-        light.xformLightToWorld, light.normalXformLightToWorld, hitLight, nLight,
+        light.xformLightToWorld, light.normalXformLightToWorld,
+        posHitLight, normalGeomLightExt,
         GfVec2f(
             phi / (2.0f * ty::Pi<float>),
             (sphere.radius != 0.0f)
-                ? (hitLight[2] / sphere.radius)
+                ? (posHitLight[2] / sphere.radius)
                 : 0.0f),
         _AreaSphere(light.xformLightToWorld, sphere.radius));
     return true;
@@ -163,17 +189,17 @@ _IntersectSphereLight(
 static ty::LightSampler::LightSample
 _EvalSphereLightSolidAngle(
     ty::LightData const& light, ty::SphereLight const& sphere,
-    GfVec3f const& position, float u1, float u2,
+    GfVec3f const& posWld, float u1, float u2,
     ty::RenderColorSpace renderColorSpace)
 {
     const float solidAngle =
-        _SphereSolidAngle(light, sphere, position);
+        _SphereSolidAngle(light, sphere, posWld);
     if (solidAngle <= 0.0f) {
         return ty::InvalidLightSample();
     }
 
-    const GfVec3f pLight = light.xformWorldToLight.Transform(position);
-    const GfVec3f axis = (-pLight).GetNormalized();
+    const GfVec3f posLight = light.xformWorldToLight.Transform(posWld);
+    const GfVec3f axis = (-posLight).GetNormalized();
     GfVec3f tangent;
     GfVec3f bitangent;
     GfBuildOrthonormalFrame(axis, &tangent, &bitangent);
@@ -186,22 +212,22 @@ _EvalSphereLightSolidAngle(
         sqrtf(std::max(0.0f, 1.0f - ty::Sqr(cosTheta)));
     const float phi =
         2.0f * ty::Pi<float> * ty::ClampUnitHalfOpen(u2);
-    const GfVec3f localDirection =
+    const GfVec3f dirLight =
         (tangent * (sinTheta * cosf(phi)) +
          bitangent * (sinTheta * sinf(phi)) +
          axis * cosTheta).GetNormalized();
-    const GfVec3f worldDirection =
+    const GfVec3f dirWld =
         light.xformLightToWorld.TransformDir(
-            localDirection).GetNormalized();
+            dirLight).GetNormalized();
 
     ty::ShapeSample shapeSample;
     if (!_IntersectSphereLight(
-            light, sphere, position, worldDirection, &shapeSample)) {
+            light, sphere, posWld, dirWld, &shapeSample)) {
         return ty::InvalidLightSample();
     }
 
     ty::LightSampler::LightSample sample =
-        ty::EvalAreaLight(light, shapeSample, position, renderColorSpace);
+        ty::EvalAreaLight(light, shapeSample, posWld, renderColorSpace);
     sample.pdfSolidAngleInverse = solidAngle;
     sample.valid = sample.valid && sample.pdfSolidAngleInverse > 0.0f;
     return sample;
@@ -210,12 +236,12 @@ _EvalSphereLightSolidAngle(
 ty::LightSampler::LightSample
 ty::SampleSphereLight(
     ty::LightData const& light, ty::SphereLight const& sphere,
-    GfVec3f const& position, float u1, float u2,
+    GfVec3f const& posWld, float u1, float u2,
     ty::RenderColorSpace renderColorSpace)
 {
     const ty::LightSampler::LightSample solidAngleSample =
         _EvalSphereLightSolidAngle(
-            light, sphere, position, u1, u2, renderColorSpace);
+            light, sphere, posWld, u1, u2, renderColorSpace);
     if (solidAngleSample.valid) {
         return solidAngleSample;
     }
@@ -223,25 +249,25 @@ ty::SampleSphereLight(
     ty::ShapeSample shapeSample = _SampleSphere(
         light.xformLightToWorld, light.normalXformLightToWorld,
         sphere.radius, u1, u2);
-    return ty::EvalAreaLight(light, shapeSample, position, renderColorSpace);
+    return ty::EvalAreaLight(light, shapeSample, posWld, renderColorSpace);
 }
 
 ty::LightSampler::LightSample
 ty::EvaluateSphereLightDirection(
     ty::LightData const& light, ty::SphereLight const& sphere,
-    GfVec3f const& position, GfVec3f const& direction,
+    GfVec3f const& posWld, GfVec3f const& dirWld,
     ty::RenderColorSpace renderColorSpace)
 {
     ty::ShapeSample shapeSample;
     if (!_IntersectSphereLight(
-            light, sphere, position, direction.GetNormalized(), &shapeSample)) {
+            light, sphere, posWld, dirWld.GetNormalized(), &shapeSample)) {
         return ty::InvalidLightSample();
     }
 
     ty::LightSampler::LightSample sample =
-        ty::EvalAreaLight(light, shapeSample, position, renderColorSpace);
+        ty::EvalAreaLight(light, shapeSample, posWld, renderColorSpace);
     const float solidAngle =
-        _SphereSolidAngle(light, sphere, position);
+        _SphereSolidAngle(light, sphere, posWld);
     if (solidAngle > 0.0f) {
         sample.pdfSolidAngleInverse = solidAngle;
         sample.valid = sample.valid && sample.pdfSolidAngleInverse > 0.0f;

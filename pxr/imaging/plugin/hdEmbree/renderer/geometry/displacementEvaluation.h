@@ -88,7 +88,7 @@ bool ComputeDisplacedSubdivPosition(
     unsigned int primID,
     float u,
     float v,
-    GfVec3f* outPosition);
+    GfVec3f* outPosObj);
 
 /// Compute a smooth object-space frame for the displaced subdivision surface.
 ///

@@ -40,24 +40,29 @@ _BlackbodyTemperatureAsRgb(
 
 GfVec3f
 ty::SampleLightTexture(
-    ty::LightTexture const& texture, float s, float t,
+    ty::LightTexture const& texture,
+    float coordinateTextureS,
+    float coordinateTextureT,
     ty::RenderColorSpace renderColorSpace)
 {
     if (texture.pixels.empty()) {
         return GfVec3f(0.0f);
     }
 
-    const int x = std::clamp(
-        static_cast<int>(static_cast<float>(texture.width) * ty::WrapUnit(s)),
+    const int indexTexelX = std::clamp(
+        static_cast<int>(
+            static_cast<float>(texture.width) *
+            ty::WrapUnit(coordinateTextureS)),
         0,
         texture.width - 1);
-    const int y = std::clamp(
+    const int indexTexelY = std::clamp(
         static_cast<int>(static_cast<float>(texture.height) *
-                         ty::ClampUnitHalfOpen(t)),
+                         ty::ClampUnitHalfOpen(coordinateTextureT)),
         0,
         texture.height - 1);
 
-    GfVec3f result = texture.pixels.at(y * texture.width + x);
+    GfVec3f result =
+        texture.pixels.at(indexTexelY * texture.width + indexTexelX);
     ty::ConvertToRenderColorSpace(
         texture.colorSpaceName.GetString(), renderColorSpace, &result);
     return result;
@@ -65,7 +70,7 @@ ty::SampleLightTexture(
 
 static GfVec3f
 _SampleRectLightTexture(
-    ty::LightTexture const& texture, GfVec2f const& uv,
+    ty::LightTexture const& texture, GfVec2f const& coordinateTexture,
     ty::RenderColorSpace renderColorSpace)
 {
     if (texture.pixels.empty() || texture.width <= 0 || texture.height <= 0) {
@@ -74,18 +79,19 @@ _SampleRectLightTexture(
 
     // Rect texture coordinates retain the delegate's established flipped
     // local-axis convention.
-    const float s = 1.0f - uv[0];
-    const float t = 1.0f - uv[1];
-    const int x = std::clamp(
+    const float coordinateTextureS = 1.0f - coordinateTexture[0];
+    const float coordinateTextureT = 1.0f - coordinateTexture[1];
+    const int indexTexelX = std::clamp(
         static_cast<int>(static_cast<float>(texture.width) *
-                         ty::ClampUnitHalfOpen(s)),
+                         ty::ClampUnitHalfOpen(coordinateTextureS)),
         0, texture.width - 1);
-    const int y = std::clamp(
+    const int indexTexelY = std::clamp(
         static_cast<int>(static_cast<float>(texture.height) *
-                         ty::ClampUnitHalfOpen(t)),
+                         ty::ClampUnitHalfOpen(coordinateTextureT)),
         0, texture.height - 1);
 
-    GfVec3f result = texture.pixels.at(y * texture.width + x);
+    GfVec3f result =
+        texture.pixels.at(indexTexelY * texture.width + indexTexelX);
     ty::ConvertToRenderColorSpace(
         texture.colorSpaceName.GetString(), renderColorSpace, &result);
     return result;
@@ -119,15 +125,15 @@ _PdfSolidAngleFromInverse(float pdfSolidAngleInverse)
 
 static float
 _WorldToLocalDirectionPdfScale(
-    ty::LightData const& light, GfVec3f const& worldDirection,
-    GfVec3f* localDirection)
+    ty::LightData const& light, GfVec3f const& dirWld,
+    GfVec3f* dirLight)
 {
-    if (!localDirection || worldDirection.GetLengthSq() <= 0.0f ||
-        !ty::IsFinite(worldDirection)) {
+    if (!dirLight || dirWld.GetLengthSq() <= 0.0f ||
+        !ty::IsFinite(dirWld)) {
         return 0.0f;
     }
 
-    const GfVec3f omegaInWld = worldDirection.GetNormalized();
+    const GfVec3f omegaInWld = dirWld.GetNormalized();
     const GfVec3f localUnnormalized =
         light.xformWorldToLight.TransformDir(omegaInWld);
     const float localLength = localUnnormalized.GetLength();
@@ -146,35 +152,35 @@ _WorldToLocalDirectionPdfScale(
         return 0.0f;
     }
 
-    *localDirection = localUnnormalized / localLength;
+    *dirLight = localUnnormalized / localLength;
     return detWorldToLight / (localLength * localLength * localLength);
 }
 
 static float
 _DirectionalShapingPdfSolidAngle(
-    ty::LightData const& light, GfVec3f const& worldDirection,
+    ty::LightData const& light, GfVec3f const& dirWld,
     bool foldToFrontHemisphere)
 {
     if (!light.shaping.directionalDistribution.IsValid() ||
-        worldDirection.GetLengthSq() <= 0.0f ||
-        !ty::IsFinite(worldDirection)) {
+        dirWld.GetLengthSq() <= 0.0f ||
+        !ty::IsFinite(dirWld)) {
         return 0.0f;
     }
 
-    GfVec3f localDirection;
+    GfVec3f dirLight;
     const float pdfScale =
-        _WorldToLocalDirectionPdfScale(light, worldDirection, &localDirection);
+        _WorldToLocalDirectionPdfScale(light, dirWld, &dirLight);
     if (pdfScale <= 0.0f) {
         return 0.0f;
     }
     float localPdf =
-        ty::DirectionalShapingPdf(light.shaping, localDirection);
+        ty::DirectionalShapingPdf(light.shaping, dirLight);
     if (foldToFrontHemisphere) {
-        if (localDirection[2] < 0.0f) {
+        if (dirLight[2] < 0.0f) {
             return 0.0f;
         }
         const GfVec3f mirrored(
-            localDirection[0], localDirection[1], -localDirection[2]);
+            dirLight[0], dirLight[1], -dirLight[2]);
         localPdf += ty::DirectionalShapingPdf(light.shaping, mirrored);
     }
     return localPdf * pdfScale;
@@ -183,7 +189,7 @@ _DirectionalShapingPdfSolidAngle(
 static float
 _ShapingAwareFinitePdfSolidAngle(
     ty::LightData const& light, float pdfAreaProposalSolidAngleInverse,
-    GfVec3f const& worldDirection,
+    GfVec3f const& dirWld,
     bool foldToFrontHemisphere)
 {
     const float pdfAreaProposalSolidAngle =
@@ -196,7 +202,7 @@ _ShapingAwareFinitePdfSolidAngle(
     // proposal only changes how we sample it, so both proposals contribute to
     // the PDF used by direct-light and emitter-hit MIS.
     const float pdfShapingSolidAngle = _DirectionalShapingPdfSolidAngle(
-        light, worldDirection, foldToFrontHemisphere);
+        light, dirWld, foldToFrontHemisphere);
     return ty::ShapingAwareFiniteAreaProposalWeight *
             pdfAreaProposalSolidAngle +
         ty::ShapingAwareFiniteDirectionalProposalWeight *
@@ -223,18 +229,18 @@ ty::ApplyShapingAwareFinitePdf(
 ty::LightSampler::LightSample
 ty::EvalAreaLight(
     ty::LightData const& light, ty::ShapeSample const& ss,
-    GfVec3f const& position,
+    GfVec3f const& posWld,
     ty::RenderColorSpace renderColorSpace)
 {
     // Transform the PDF from area measure to solid-angle measure.
-    GfVec3f omegaInWld = ss.pWorld - position;
+    GfVec3f omegaInWld = ss.posWld - posWld;
     const float distanceWld = omegaInWld.GetLength();
     if (distanceWld <= 0.0f || !std::isfinite(distanceWld)) {
         return ty::InvalidLightSample();
     }
     omegaInWld /= distanceWld;
     const float cosThetaOffNormal =
-        _DotZeroClip(-omegaInWld, ss.nWorld);
+        _DotZeroClip(-omegaInWld, ss.normalGeomWldExt);
     const float pdfSolidAngleInverse =
         cosThetaOffNormal / ty::Sqr(distanceWld) * ss.pdfAreaInverse;
 
@@ -250,9 +256,10 @@ ty::EvalAreaLight(
         const GfVec3f textureColor =
             std::holds_alternative<ty::RectLight>(light.lightVariant)
             ? _SampleRectLightTexture(
-                  light.texture, ss.uv, renderColorSpace)
+                  light.texture, ss.coordinateTexture, renderColorSpace)
             : ty::SampleLightTexture(
-                  light.texture, ss.uv[0], 1.0f - ss.uv[1],
+                  light.texture, ss.coordinateTexture[0],
+                  1.0f - ss.coordinateTexture[1],
                   renderColorSpace);
         radianceEmitted = GfCompMult(radianceEmitted, textureColor);
     }

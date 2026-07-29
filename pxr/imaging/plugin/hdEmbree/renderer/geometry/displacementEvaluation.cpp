@@ -552,9 +552,9 @@ ty::ComputeDisplacedSubdivPosition(
     unsigned int primID,
     float u,
     float v,
-    GfVec3f* outPosition)
+    GfVec3f* outPosObj)
 {
-    if (!geometry || !context || !outPosition ||
+    if (!geometry || !context || !outPosObj ||
         !std::isfinite(u) || !std::isfinite(v)) {
         return false;
     }
@@ -585,7 +585,7 @@ ty::ComputeDisplacedSubdivPosition(
         return false;
     }
 
-    *outPosition = displacedPosition;
+    *outPosObj = displacedPosition;
     return true;
 }
 

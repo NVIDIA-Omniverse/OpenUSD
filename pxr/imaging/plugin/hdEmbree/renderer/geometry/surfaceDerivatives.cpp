@@ -223,7 +223,7 @@ ty::ComputeTriangleSurfaceDerivatives(
 
     // Normal derivatives let specular continuations propagate ray-direction
     // differentials.
-    GfVec3f N[3];
+    GfVec3f normalsSrfObjExt[3];
     bool haveNormals = false;
     {
         auto it = prototypeContext->primvarMap.find(HdTokens->normals);
@@ -233,7 +233,8 @@ ty::ComputeTriangleSurfaceDerivatives(
                     it->second.get());
             if (vtxSampler) {
                 haveNormals = vtxSampler->SampleVertices(
-                    primID, &N[0], &N[1], &N[2]);
+                    primID, &normalsSrfObjExt[0], &normalsSrfObjExt[1],
+                    &normalsSrfObjExt[2]);
             }
             if (!haveNormals) {
                 auto* fvSampler =
@@ -241,16 +242,22 @@ ty::ComputeTriangleSurfaceDerivatives(
                         it->second.get());
                 if (fvSampler) {
                     haveNormals = fvSampler->SampleVertices(
-                        primID, &N[0], &N[1], &N[2]);
+                        primID, &normalsSrfObjExt[0], &normalsSrfObjExt[1],
+                        &normalsSrfObjExt[2]);
                 }
             }
         }
     }
 
     if (haveNormals) {
-        const GfVec3f dN1 = N[1] - N[0];
-        const GfVec3f dN2 = N[2] - N[0];
-        const GfVec3f sampledNormal = N[0] + u * dN1 + v * dN2;
+        const GfVec3f normalDeltaEdge1Obj =
+            normalsSrfObjExt[1] - normalsSrfObjExt[0];
+        const GfVec3f normalDeltaEdge2Obj =
+            normalsSrfObjExt[2] - normalsSrfObjExt[0];
+        const GfVec3f sampledNormal =
+            normalsSrfObjExt[0] +
+            u * normalDeltaEdge1Obj +
+            v * normalDeltaEdge2Obj;
         if (haveSt) {
             GfVec2f dst1 = st[1] - st[0];
             GfVec2f dst2 = st[2] - st[0];
@@ -258,15 +265,19 @@ ty::ComputeTriangleSurfaceDerivatives(
                 dst1[0], dst2[1], dst1[1], dst2[0]);
             if (std::abs(det) > 1e-9f) {
                 float invDet = 1.0f / det;
-                *outDndu = ( dst2[1] * dN1 - dst1[1] * dN2) * invDet;
-                *outDndv = (-dst2[0] * dN1 + dst1[0] * dN2) * invDet;
+                *outDndu =
+                    (dst2[1] * normalDeltaEdge1Obj -
+                     dst1[1] * normalDeltaEdge2Obj) * invDet;
+                *outDndv =
+                    (-dst2[0] * normalDeltaEdge1Obj +
+                     dst1[0] * normalDeltaEdge2Obj) * invDet;
             } else {
-                *outDndu = dN1;
-                *outDndv = dN2;
+                *outDndu = normalDeltaEdge1Obj;
+                *outDndv = normalDeltaEdge2Obj;
             }
         } else {
-            *outDndu = dN1;
-            *outDndv = dN2;
+            *outDndu = normalDeltaEdge1Obj;
+            *outDndv = normalDeltaEdge2Obj;
         }
 
         // Primvar interpolation produces an unnormalized vector. Differentiate
@@ -494,7 +505,9 @@ ty::TryComputeDisplacedSubdivNormalDerivativesToWorld(
     if (stIt != prototypeContext->primvarMap.end()) {
         const ty::SubdivTexcoordJacobian stJacobian =
             ty::ComputeSubdivTexcoordJacobian(
-                stIt->second.get(), frame.primID, frame.u, frame.v);
+                stIt->second.get(), frame.primID,
+                frame.u,
+                frame.v);
         if (stJacobian.valid) {
             const GfVec3f dNduParam = objectDndu;
             const GfVec3f dNdvParam = objectDndv;

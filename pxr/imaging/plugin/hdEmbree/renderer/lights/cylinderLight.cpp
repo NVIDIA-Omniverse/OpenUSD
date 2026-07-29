@@ -21,110 +21,126 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 static float
-_AreaCylinder(GfMatrix4f const& xf, float radius, float length)
+_AreaCylinder(GfMatrix4f const& lightToWorld, float radius, float length)
 {
-    const float c =
-        xf.TransformDir(GfVec3f{length, 0.0f, 0.0f}).GetLength();
-    const float a =
-        xf.TransformDir(GfVec3f{0.0f, radius, 0.0f}).GetLength();
-    const float b =
-        xf.TransformDir(GfVec3f{0.0f, 0.0f, radius}).GetLength();
+    const float lengthWld =
+        lightToWorld.TransformDir(GfVec3f{length, 0.0f, 0.0f}).GetLength();
+    const float radiusAxisYWld =
+        lightToWorld.TransformDir(GfVec3f{0.0f, radius, 0.0f}).GetLength();
+    const float radiusAxisZWld =
+        lightToWorld.TransformDir(GfVec3f{0.0f, 0.0f, radius}).GetLength();
     // Ramanujan's ellipse-perimeter approximation preserves the established
     // transformed-cylinder area estimate.
-    const float e =
+    const float perimeterWld =
         ty::Pi<float> *
-        (3.0f * (a + b) - sqrtf((3.0f * a + b) * (a + 3.0f * b)));
-    return e * c;
+        (3.0f * (radiusAxisYWld + radiusAxisZWld) -
+         sqrtf((3.0f * radiusAxisYWld + radiusAxisZWld) *
+               (radiusAxisYWld + 3.0f * radiusAxisZWld)));
+    return perimeterWld * lengthWld;
 }
 
 static ty::ShapeSample
-_SampleCylinder(GfMatrix4f const& xf, GfMatrix3f const& normalXform,
-                float radius, float length, float u1, float u2)
+_SampleCylinder(
+    GfMatrix4f const& lightToWorld,
+    GfMatrix3f const& normalLightToWorld,
+    float radius, float length, float u1, float u2)
 {
-    const float z = GfLerp(u1, -length / 2.0f, length / 2.0f);
+    const float posAxisLight =
+        GfLerp(u1, -length / 2.0f, length / 2.0f);
     const float phi = u2 * 2.0f * ty::Pi<float>;
-    GfVec3f pLight(z, radius * cosf(phi), radius * sinf(phi));
+    GfVec3f posLight(
+        posAxisLight, radius * cosf(phi), radius * sinf(phi));
 
     // Keep the sampled point exactly on the lateral surface despite
     // trigonometric roundoff.
-    const float hitRad =
-        sqrtf(ty::Sqr(pLight[1]) + ty::Sqr(pLight[2]));
-    pLight[1] *= radius / hitRad;
-    pLight[2] *= radius / hitRad;
+    const float radiusHit =
+        sqrtf(ty::Sqr(posLight[1]) + ty::Sqr(posLight[2]));
+    posLight[1] *= radius / radiusHit;
+    posLight[2] *= radius / radiusHit;
 
-    GfVec3f nLight(0.0f, pLight[1], pLight[2]);
-    nLight.Normalize();
+    GfVec3f normalGeomLightExt(0.0f, posLight[1], posLight[2]);
+    normalGeomLightExt.Normalize();
 
     return ty::ShapeSample{
-        xf.Transform(pLight), (nLight * normalXform).GetNormalized(),
-        GfVec2f(u2, u1), _AreaCylinder(xf, radius, length)};
+        lightToWorld.Transform(posLight),
+        (normalGeomLightExt * normalLightToWorld).GetNormalized(),
+        GfVec2f(u2, u1), _AreaCylinder(lightToWorld, radius, length)};
 }
 
 static bool
 _IntersectCylinderLight(
     ty::LightData const& light, ty::CylinderLight const& cylinder,
-    GfVec3f const& position, GfVec3f const& direction,
+    GfVec3f const& posWld, GfVec3f const& dirWld,
     ty::ShapeSample* outSample)
 {
     if (!outSample) {
         return false;
     }
 
-    const GfVec3f pLight = light.xformWorldToLight.Transform(position);
-    const GfVec3f dLight = light.xformWorldToLight.TransformDir(direction);
+    const GfVec3f posLight = light.xformWorldToLight.Transform(posWld);
+    const GfVec3f dirLight = light.xformWorldToLight.TransformDir(dirWld);
 
-    const float a =
-        dLight[1] * dLight[1] + dLight[2] * dLight[2];
-    const float b =
-        2.0f * (pLight[1] * dLight[1] + pLight[2] * dLight[2]);
-    const float c =
-        pLight[1] * pLight[1] + pLight[2] * pLight[2] -
+    const float quadraticCoefficientA =
+        dirLight[1] * dirLight[1] + dirLight[2] * dirLight[2];
+    const float quadraticCoefficientB =
+        2.0f * (posLight[1] * dirLight[1] + posLight[2] * dirLight[2]);
+    const float quadraticCoefficientC =
+        posLight[1] * posLight[1] + posLight[2] * posLight[2] -
         cylinder.radius * cylinder.radius;
-    const float disc = b * b - 4.0f * a * c;
-    if (a <= 0.0f || disc < 0.0f) {
+    const float discriminant =
+        quadraticCoefficientB * quadraticCoefficientB -
+        4.0f * quadraticCoefficientA * quadraticCoefficientC;
+    if (quadraticCoefficientA <= 0.0f || discriminant < 0.0f) {
         return false;
     }
 
-    const float sqrtDisc = std::sqrt(disc);
-    float t0 = (-b - sqrtDisc) / (2.0f * a);
-    float t1 = (-b + sqrtDisc) / (2.0f * a);
-    if (t0 > t1) {
-        std::swap(t0, t1);
+    const float sqrtDiscriminant = std::sqrt(discriminant);
+    float rayParameterNear = (-quadraticCoefficientB - sqrtDiscriminant) /
+        (2.0f * quadraticCoefficientA);
+    float rayParameterFar = (-quadraticCoefficientB + sqrtDiscriminant) /
+        (2.0f * quadraticCoefficientA);
+    if (rayParameterNear > rayParameterFar) {
+        std::swap(rayParameterNear, rayParameterFar);
     }
 
     // Accept only roots on the open lateral surface, excluding both end caps.
     const float halfLength = cylinder.length * 0.5f;
     float t = std::numeric_limits<float>::infinity();
-    if (t0 > 1.0e-6f) {
-        const float x = pLight[0] + dLight[0] * t0;
-        if (x >= -halfLength && x <= halfLength) {
-            t = t0;
+    if (rayParameterNear > 1.0e-6f) {
+        const float posAxisLight =
+            posLight[0] + dirLight[0] * rayParameterNear;
+        if (posAxisLight >= -halfLength &&
+            posAxisLight <= halfLength) {
+            t = rayParameterNear;
         }
     }
-    if (!std::isfinite(t) && t1 > 1.0e-6f) {
-        const float x = pLight[0] + dLight[0] * t1;
-        if (x >= -halfLength && x <= halfLength) {
-            t = t1;
+    if (!std::isfinite(t) && rayParameterFar > 1.0e-6f) {
+        const float posAxisLight =
+            posLight[0] + dirLight[0] * rayParameterFar;
+        if (posAxisLight >= -halfLength &&
+            posAxisLight <= halfLength) {
+            t = rayParameterFar;
         }
     }
     if (!std::isfinite(t)) {
         return false;
     }
 
-    const GfVec3f hitLight = pLight + dLight * t;
-    GfVec3f nLight(0.0f, hitLight[1], hitLight[2]);
-    nLight.Normalize();
-    float phi = std::atan2(hitLight[2], hitLight[1]);
+    const GfVec3f posHitLight = posLight + dirLight * t;
+    GfVec3f normalGeomLightExt(0.0f, posHitLight[1], posHitLight[2]);
+    normalGeomLightExt.Normalize();
+    float phi = std::atan2(posHitLight[2], posHitLight[1]);
     if (phi < 0.0f) {
         phi += 2.0f * ty::Pi<float>;
     }
 
     *outSample = ty::MakeAreaShapeSample(
-        light.xformLightToWorld, light.normalXformLightToWorld, hitLight, nLight,
+        light.xformLightToWorld, light.normalXformLightToWorld,
+        posHitLight, normalGeomLightExt,
         GfVec2f(
             phi / (2.0f * ty::Pi<float>),
             (cylinder.length != 0.0f)
-                ? ((hitLight[0] + halfLength) / cylinder.length)
+                ? ((posHitLight[0] + halfLength) / cylinder.length)
                 : 0.0f),
         _AreaCylinder(
             light.xformLightToWorld, cylinder.radius, cylinder.length));
@@ -134,28 +150,28 @@ _IntersectCylinderLight(
 ty::LightSampler::LightSample
 ty::SampleCylinderLight(
     ty::LightData const& light, ty::CylinderLight const& cylinder,
-    GfVec3f const& position, float u1, float u2,
+    GfVec3f const& posWld, float u1, float u2,
     ty::RenderColorSpace renderColorSpace)
 {
     ty::ShapeSample shapeSample = _SampleCylinder(
         light.xformLightToWorld, light.normalXformLightToWorld,
         cylinder.radius, cylinder.length, u1, u2);
-    return ty::EvalAreaLight(light, shapeSample, position, renderColorSpace);
+    return ty::EvalAreaLight(light, shapeSample, posWld, renderColorSpace);
 }
 
 ty::LightSampler::LightSample
 ty::EvaluateCylinderLightDirection(
     ty::LightData const& light, ty::CylinderLight const& cylinder,
-    GfVec3f const& position, GfVec3f const& direction,
+    GfVec3f const& posWld, GfVec3f const& dirWld,
     ty::RenderColorSpace renderColorSpace)
 {
     ty::ShapeSample shapeSample;
     if (!_IntersectCylinderLight(
-            light, cylinder, position, direction.GetNormalized(),
+            light, cylinder, posWld, dirWld.GetNormalized(),
             &shapeSample)) {
         return ty::InvalidLightSample();
     }
-    return ty::EvalAreaLight(light, shapeSample, position, renderColorSpace);
+    return ty::EvalAreaLight(light, shapeSample, posWld, renderColorSpace);
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

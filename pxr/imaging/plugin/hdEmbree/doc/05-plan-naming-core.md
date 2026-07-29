@@ -88,7 +88,9 @@ Rules:
    instead of `N`/`n`, `omega` instead of `w`, `radiance` instead of `L`,
    `position` instead of `p`, `distance` instead of `t`, `anisotropy` instead
    of `g`, and `index` or a role-specific index instead of `i`/`j`/`k`.
-   `u1` and `u2` are the explicit exception for uniform random samples.
+   Exceptions include `u1`/`u2` for uniform random samples, `u`/`v` for direct
+   texture or surface-parametric coordinates, `x`/`y` for pixel column/row
+   indices, and `c` for a pixel or RGB channel index when clear from context.
    Derivatives are the other explicit exception: name them with the
    `d<Quantity>d<Variable>` convention - `dPdu`/`dPdv` for surface
    parameterization derivatives and `dPdx`/`dPdy` for screen-space (ray
@@ -104,13 +106,17 @@ Rules:
    shading), `Wld` (world space), `Obj` (object space), `Ext` (authored
    exterior), and `Out` / `In` for facing `omegaOut` / `omegaIn`. Other suffixes
    remain unabbreviated unless this table explicitly defines an abbreviation.
-   Do not invent alternative spellings or shorten quantity roots.
-4. **The quantity is always the root.** Use `positionHitWld`, not
-   `hitPositionWorld`; `directionRayWld`, not `rayDirectionWorld`; and
+   `pos` and `dir` are the fixed quantity roots for position and direction.
+   Use `bary` as the prefix for barycentric-coordinate components, such as
+   `baryU`, `baryV`, and `baryW`.
+   Do not invent alternative spellings or shorten other quantity roots.
+4. **The quantity is always the root.** Use `posHitWld`, not
+   `hitPositionWorld`; `dirRayWld`, not `rayDirectionWorld`; and
    `normalGeomBlockerWldExt`, not `blockerNg`; and
    `pdfAreaInverse`, not `pdfInverseArea`. Prefixes such as
-   `out...` are not output conventions because `Out` has transport meaning; use
-   an `Output` or `Result` suffix when a parameter's output role needs naming.
+   `out...` use lowercase `out` to mark output pointer or reference parameters;
+   uppercase `Out` within the quantity retains its transport meaning, as in
+   `outNormalShdWldOut`.
 5. **Add coordinate space after kind and role.** Use `Obj`, `Wld`, `Tangent`,
    `Texture`, or a more specific named local frame. Spatial values in shared
    state and function interfaces must never rely on an implicit space.
@@ -153,8 +159,8 @@ changing the semantic name.
 
 | Name | Type | Meaning and invariants |
 | --- | --- | --- |
-| `positionWld` | `GfVec3f` | World-space point. Add event/usage suffixes before space, such as `positionHitWld`, `positionEntryWld`, or `positionRayOriginWld`, when multiple positions coexist. |
-| `positionObj` | `GfVec3f` | Object-space point belonging to the current prototype. |
+| `posWld` | `GfVec3f` | World-space point. Add event/usage suffixes before space, such as `posHitWld`, `posEntryWld`, or `posRayOrgWld`, when multiple positions coexist. |
+| `posObj` | `GfVec3f` | Object-space point belonging to the current prototype. |
 | `normalGeomWldExt` | `GfVec3f` | Normalized geometric normal transformed from Embree `RTCHit::Ng`, corrected for authored orientation, and pointing toward the authored exterior. Immutable topology and boundary authority. |
 | `normalGeomWldOut` | `GfVec3f` | Geometric exterior normal faced toward `omegaOutWld`. Never material-resolved. |
 | `normalGeomObjExt` | `GfVec3f` | Object-space counterpart used only where object and world geometric normals coexist. |
@@ -164,7 +170,8 @@ changing the semantic name.
 | `tangentWld`, `bitangentWld` | `GfVec3f` | World-space material frame paired with `normalShdWldOut`; use `Obj` or `Tangent` suffixes for other spaces. |
 | `omegaInWld` | `GfVec3f` | Normalized incident direction from the interaction toward the sampled next vertex or light. Replaces `wi`, `wI`, and ambiguous `direction` when this meaning applies. |
 | `omegaOutWld` | `GfVec3f` | Normalized exitant direction from the interaction toward the previous path vertex or camera. Replaces `wo` and `wO`. |
-| `positionRayOriginWld`, `directionRayWld` | `GfVec3f` | Origin and forward travel direction of a generic ray segment. Use `directionShadowWld`, `directionEntryWld`, etc. when it is not a local scattering omega. |
+| `posRayOrgWld`, `dirRayWld` | `GfVec3f` | Origin and forward travel direction of a generic ray segment. Use `dirShadowWld`, `dirEntryWld`, etc. when it is not a local scattering omega. |
+| `diffRay` | `RayDifferential` | Screen-space differential rays associated with `posRayOrgWld` and `dirRayWld`. |
 | `iorIn`, `iorOut` | `float` | Absolute IORs in the optics convention: incident medium before a crossing and transmitted medium after it. They do not name the `omegaIn`/`omegaOut` sides. `1.0f` represents vacuum/air and glass is commonly about `1.5f`. |
 | `eta` | `float` | Explicit ratio `iorIn / iorOut`. `1.0f` means no IOR change; special sentinel behavior such as zero must be documented by the owning API. |
 | `radianceIn` | `GfVec3f` | Incident RGB radiance carried from a sampled/evaluated light. Replaces `Li`. Use `radianceInSpectral` for a hero-wavelength scalar. |
@@ -177,7 +184,7 @@ changing the semantic name.
 | `pdfSolidAngle`, `pdfSolidAngleInverse` | `float` | Density and reciprocal density with respect to solid angle. Replace `pdfW` / `invPdfW`. |
 | `pdfArea`, `pdfAreaInverse` | `float` | Density and reciprocal density with respect to surface area. Replace `pdfA` / `invPdfA`. |
 | `distanceWld` | `float` | World-space distance. Add roles such as `distanceRemainingWld`, `distanceScatterWld`, or `distanceOppositeWld`. Replace `dist` and ray-parameter `t` where they represent distance. |
-| `u1`, `u2` | `float` | Independent uniform random samples in `[0, 1)`. These are the explicit short-name exception. Use `coordinateParametricU` / `coordinateParametricV` or `coordinateTextureU` / `coordinateTextureV` for coordinates rather than random samples. |
+| `u1`, `u2` | `float` | Independent uniform random samples in `[0, 1)`. Bare `u` / `v` are also allowed when they directly denote texture or surface-parametric coordinates. |
 | `absorption` | `GfVec3f` | Per-channel absorption coefficient in inverse world units. Replaces `sigmaA`. |
 | `scattering` | `GfVec3f` | Per-channel scattering coefficient in inverse world units. Replaces `sigmaS`. |
 | `extinction` | `GfVec3f` | Per-channel extinction coefficient: `absorption + scattering`. Replaces `sigmaT`; do not call this transmission. |
@@ -185,7 +192,7 @@ changing the semantic name.
 | `anisotropy` | `float` | Henyey-Greenstein anisotropy, clamped to the owning model's documented range. Replaces bare `g`. |
 | `albedo` | `GfVec3f` | Unitless per-channel scattering/reflectance ratio, normally in `[0, 1]`; qualify surface or volume variants when both coexist. |
 | `cosTheta` | `float` | Cosine of the relevant angle. Add a role suffix such as `cosThetaIn`, `cosThetaOut`, or `cosThetaLight` when multiple angles coexist. Keep bare `cosTheta` only when the role is unambiguous. |
-| `index` | `int` or unsigned index type | Generic collection index. Prefer `indexBounce`, `indexChannel`, `indexLight`, etc.; replace loop variables `i`, `j`, and `k`. |
+| `index` | `int` or unsigned index type | Generic collection index. Prefer `indexBounce`, `indexChannel`, `indexLight`, etc. when the index has that semantic role; `i`, `j`, and `k` are allowed for purely positional loop indices, and `idx` for an obvious local index where a longer name adds no useful information. |
 
 The table deliberately uses longer names where they preserve physical role,
 space, orientation, or measure. Apply the whole schema rather than performing
@@ -222,9 +229,9 @@ blind textual substitutions.
    geometric normal would change rendered output and requires separate design
    and reference-image validation.
 5. **Name ray-offset inputs by role.** `_Visibility::normal` →
-   `directionOffsetReferenceWld`; surface callers supply a geometric normal,
+   `dirOffsetReferenceWld`; surface callers supply a geometric normal,
    while medium callers use `omegaInWld` because no surface exists.
-   `_Visibility::direction` → `directionShadowWld`. Keep a WHY comment at
+   `_Visibility::direction` → `dirShadowWld`. Keep a WHY comment at
    the medium call.
 6. **Keep API outputs distinguishable.** `_TryEvalSurfaceClosureAtHit` should
    use `normalSrfWldOut` and `normalShdWldOut`
@@ -262,8 +269,8 @@ Rename first-party scattering directions consistently:
 - `wi` / `wI` → `omegaInWld`;
 - `wo` / `wO` → `omegaOutWld`;
 - transformed variants → `omegaInObj`, `omegaInLocal`, etc.;
-- generic traversal values remain `directionRayWld`,
-  `directionShadowWld`, `directionEntryWld`, or `directionExitWld`.
+- generic traversal values remain `dirRayWld`,
+  `dirShadowWld`, `dirEntryWld`, or `dirExitWld`.
 
 This includes `LightSample::wI`, all usages in lighting and visibility,
 `renderer/lights/lightSamplers.cpp`, `delegate/light.cpp`, integrator and medium

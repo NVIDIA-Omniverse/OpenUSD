@@ -268,11 +268,11 @@ _SampleTriangleCorners(ty::PrimvarSampler const* sampler,
 }
 
 GfVec3f
-_BuildGeometricFaceNormal(GfVec3f const& p0,
-                          GfVec3f const& p1,
-                          GfVec3f const& p2)
+_BuildGeometricFaceNormal(GfVec3f const& pos0,
+                          GfVec3f const& pos1,
+                          GfVec3f const& pos2)
 {
-    GfVec3f normal = GfCross(p1 - p0, p2 - p0);
+    GfVec3f normal = GfCross(pos1 - pos0, pos2 - pos0);
     if (normal.GetLengthSq() > 1e-18f) {
         normal.Normalize();
         return normal;
@@ -622,9 +622,10 @@ HdEmbreeMesh::_ComputeAdaptiveSubdivisionLevels(
                 unsigned int primID,
                 float u,
                 float v,
-                GfVec3f* position) {
+                GfVec3f* posObj) {
                 return ty::ComputeDisplacedSubdivPosition(
-                    geometry, prototypeContext, primID, u, v, position);
+                    geometry, prototypeContext, primID, u,
+                    v, posObj);
             };
     }
 
@@ -1447,11 +1448,11 @@ HdEmbreeMesh::_UpdateSurfaceDerivativeCache()
             continue;
         }
 
-        GfVec3f const& p0 = _points[tri[0]];
-        GfVec3f const& p1 = _points[tri[1]];
-        GfVec3f const& p2 = _points[tri[2]];
-        GfVec3f dP1 = p1 - p0;
-        GfVec3f dP2 = p2 - p0;
+        GfVec3f const& pos0 = _points[tri[0]];
+        GfVec3f const& pos1 = _points[tri[1]];
+        GfVec3f const& pos2 = _points[tri[2]];
+        GfVec3f dP1 = pos1 - pos0;
+        GfVec3f dP2 = pos2 - pos0;
 
         GfVec3f dPdu = dP1;
         GfVec3f dPdv = dP2;
@@ -1472,7 +1473,8 @@ HdEmbreeMesh::_UpdateSurfaceDerivativeCache()
         }
 
         if (GfCross(dPdu, dPdv).GetLengthSq() < 1e-18f) {
-            GfVec3f geometricNormal = _BuildGeometricFaceNormal(p0, p1, p2);
+            GfVec3f geometricNormal =
+                _BuildGeometricFaceNormal(pos0, pos1, pos2);
             GfBuildOrthonormalFrame(geometricNormal, &dPdu, &dPdv);
         }
 

@@ -45,7 +45,7 @@ ty::Renderer::_AccumulateEnvironment(_PathState* state) const
             if (dome->visible) {
                 state->radianceAccumulated +=
                     ty::LightSampler::EvaluateDomeLightDirection(
-                        *dome, state->directionRayWld, _renderColorSpace)
+                        *dome, state->dirRayWld, _renderColorSpace)
                         .radianceIn;
             }
         }
@@ -69,7 +69,7 @@ ty::Renderer::_AccumulateEnvironment(_PathState* state) const
 
         const ty::LightSampler::LightSample sample =
             ty::LightSampler::EvaluateLightDirection(
-                light, state->positionRayOriginWld, state->directionRayWld,
+                light, state->posRayOrgWld, state->dirRayWld,
                 _renderColorSpace);
         if (!sample.valid) {
             continue;
@@ -104,11 +104,11 @@ ty::Renderer::_AccumulateEnvironment(_PathState* state) const
             samplingMode ==
                     ty::LightSampler::SamplingMode::ReflectionHemisphere
                 ? ty::LightSampler::EvaluateDomeLightDirection(
-                      *dome, state->directionRayWld,
+                      *dome, state->dirRayWld,
                       state->lastLightSamplingNormal, samplingMode,
                       _renderColorSpace)
                 : ty::LightSampler::EvaluateDomeLightDirection(
-                      *dome, state->directionRayWld, _renderColorSpace);
+                      *dome, state->dirRayWld, _renderColorSpace);
 
         GfVec3f radianceEnvironment = sample.radianceIn;
         if (state->lastBsdfPdf > 0.0f) {
@@ -127,7 +127,7 @@ ty::Renderer::_AccumulateEnvironment(_PathState* state) const
 
 GfVec3f
 ty::Renderer::_ComputeDirectLightingMIS(
-    GfVec3f const& positionWld, GfVec3f const& normalShdWldOut,
+    GfVec3f const& posWld, GfVec3f const& normalShdWldOut,
     GfVec3f const& normalGeomWldExt, GfVec3f const& omegaOutWld,
     ty::SampleDomain const& domain, bool frontFacing,
     bool includeBsdfSamplingMis, mxcpp::SurfaceClosure const* closure,
@@ -199,10 +199,9 @@ ty::Renderer::_ComputeDirectLightingMIS(
             }
 
             ty::LightSampler::LightSample ls =
-                ty::LightSampler::GetLightSample(light, positionWld,
-                                                     normalShdWldOut, u1, u2,
-                                                     lightSamplingMode,
-                                                     _renderColorSpace);
+                ty::LightSampler::GetLightSample(light, posWld,
+                    normalShdWldOut, u1, u2, lightSamplingMode,
+                    _renderColorSpace);
             if (GfIsClose(
                     ls.radianceIn,
                     GfVec3f(0.0f),
@@ -231,7 +230,7 @@ ty::Renderer::_ComputeDirectLightingMIS(
             }
 
             GfVec3f visibility = _Visibility(
-                positionWld, normalGeomWldExt, ls.omegaInWld,
+                posWld, normalGeomWldExt, ls.omegaInWld,
                 ls.distanceWld * 0.99f, light.shadowLink, mediumState);
             if (ty::IsNearlyBlack(visibility)) {
                 continue;
@@ -345,7 +344,7 @@ ty::Renderer::_ComputeDirectLightingMIS(
 
 GfVec3f
 ty::Renderer::_ComputeMediumDirectLighting(
-    GfVec3f const& positionWld, GfVec3f const& omegaOutWld,
+    GfVec3f const& posWld, GfVec3f const& omegaOutWld,
     ty::MediumState const& mediumState, ty::SampleDomain const& domain,
     bool includePhaseSamplingMis, bool spectralActive, float heroWavelengthNm,
     float heroWavelengthPdf) const
@@ -418,7 +417,7 @@ ty::Renderer::_ComputeMediumDirectLighting(
             }
 
             const ty::LightSampler::LightSample ls =
-                ty::LightSampler::GetLightSample(light, positionWld,
+                ty::LightSampler::GetLightSample(light, posWld,
                                                      GfVec3f(0.0f), u1, u2,
                                                      ty::LightSampler::
                                                          SamplingMode::
@@ -434,7 +433,7 @@ ty::Renderer::_ComputeMediumDirectLighting(
             // A medium event has no surface normal. Use omegaInWld as the
             // ray-offset reference so the origin advances toward the light.
             const GfVec3f visibility = _Visibility(
-                positionWld, ls.omegaInWld, ls.omegaInWld,
+                posWld, ls.omegaInWld, ls.omegaInWld,
                 ls.distanceWld * 0.99f, light.shadowLink, mediumState);
             if (ty::IsNearlyBlack(visibility)) {
                 continue;

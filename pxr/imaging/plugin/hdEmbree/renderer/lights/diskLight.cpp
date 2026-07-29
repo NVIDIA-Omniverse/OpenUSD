@@ -19,13 +19,13 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 static float
-_AreaDisk(GfMatrix4f const& xf, float radius)
+_AreaDisk(GfMatrix4f const& lightToWorld, float radius)
 {
-    const float a =
-        xf.TransformDir(GfVec3f{radius, 0.0f, 0.0f}).GetLength();
-    const float b =
-        xf.TransformDir(GfVec3f{0.0f, radius, 0.0f}).GetLength();
-    return ty::Pi<float> * a * b;
+    const float radiusAxisXWld =
+        lightToWorld.TransformDir(GfVec3f{radius, 0.0f, 0.0f}).GetLength();
+    const float radiusAxisYWld =
+        lightToWorld.TransformDir(GfVec3f{0.0f, radius, 0.0f}).GetLength();
+    return ty::Pi<float> * radiusAxisXWld * radiusAxisYWld;
 }
 
 static GfVec3f
@@ -38,55 +38,59 @@ _SampleDiskPolar(float u1, float u2)
 }
 
 static ty::ShapeSample
-_SampleDisk(GfMatrix4f const& xf, GfMatrix3f const& normalXform, float radius,
-            float u1, float u2)
+_SampleDisk(
+    GfMatrix4f const& lightToWorld,
+    GfMatrix3f const& normalLightToWorld,
+    float radius, float u1, float u2)
 {
-    GfVec3f pLight = _SampleDiskPolar(u1, u2);
-    const GfVec3f nLight(0.0f, 0.0f, -1.0f);
-    const GfVec2f uv(pLight[0], pLight[1]);
-    pLight *= radius;
+    GfVec3f posLight = _SampleDiskPolar(u1, u2);
+    const GfVec3f normalGeomLightExt(0.0f, 0.0f, -1.0f);
+    const GfVec2f coordinateTexture(posLight[0], posLight[1]);
+    posLight *= radius;
     return ty::ShapeSample{
-        xf.Transform(pLight), (nLight * normalXform).GetNormalized(), uv,
-        _AreaDisk(xf, radius)};
+        lightToWorld.Transform(posLight),
+        (normalGeomLightExt * normalLightToWorld).GetNormalized(),
+        coordinateTexture,
+        _AreaDisk(lightToWorld, radius)};
 }
 
 static bool
 _IntersectDiskLight(
     ty::LightData const& light, ty::DiskLight const& disk,
-    GfVec3f const& position, GfVec3f const& direction,
+    GfVec3f const& posWld, GfVec3f const& dirWld,
     ty::ShapeSample* outSample)
 {
     if (!outSample) {
         return false;
     }
 
-    const GfVec3f pLight = light.xformWorldToLight.Transform(position);
-    const GfVec3f dLight = light.xformWorldToLight.TransformDir(direction);
-    if (std::abs(dLight[2]) <= 1.0e-6f) {
+    const GfVec3f posLight = light.xformWorldToLight.Transform(posWld);
+    const GfVec3f dirLight = light.xformWorldToLight.TransformDir(dirWld);
+    if (std::abs(dirLight[2]) <= 1.0e-6f) {
         return false;
     }
 
-    const float t = -pLight[2] / dLight[2];
+    const float t = -posLight[2] / dirLight[2];
     if (t <= 1.0e-6f || !std::isfinite(t)) {
         return false;
     }
 
-    const GfVec3f hitLight = pLight + dLight * t;
-    if (hitLight[0] * hitLight[0] +
-            hitLight[1] * hitLight[1] >
+    const GfVec3f posHitLight = posLight + dirLight * t;
+    if (posHitLight[0] * posHitLight[0] +
+            posHitLight[1] * posHitLight[1] >
         disk.radius * disk.radius) {
         return false;
     }
 
     *outSample = ty::MakeAreaShapeSample(
-        light.xformLightToWorld, light.normalXformLightToWorld, hitLight,
+        light.xformLightToWorld, light.normalXformLightToWorld, posHitLight,
         GfVec3f(0.0f, 0.0f, -1.0f),
         GfVec2f(
             (disk.radius != 0.0f)
-                ? (hitLight[0] / disk.radius)
+                ? (posHitLight[0] / disk.radius)
                 : 0.0f,
             (disk.radius != 0.0f)
-                ? (hitLight[1] / disk.radius)
+                ? (posHitLight[1] / disk.radius)
                 : 0.0f),
         _AreaDisk(light.xformLightToWorld, disk.radius));
     return true;
@@ -95,7 +99,7 @@ _IntersectDiskLight(
 static ty::LightSampler::LightSample
 _SampleDiskDirectionalShaping(
     ty::LightData const& light, ty::DiskLight const& disk,
-    GfVec3f const& position, float u1, float u2,
+    GfVec3f const& posWld, float u1, float u2,
     ty::RenderColorSpace renderColorSpace)
 {
     const ty::DirectionalShapingSample directionalSample =
@@ -104,22 +108,22 @@ _SampleDiskDirectionalShaping(
         return ty::InvalidLightSample();
     }
 
-    GfVec3f localDirection = directionalSample.localDirection;
-    if (localDirection[2] < 0.0f) {
-        localDirection[2] = -localDirection[2];
+    GfVec3f dirLight = directionalSample.dirLight;
+    if (dirLight[2] < 0.0f) {
+        dirLight[2] = -dirLight[2];
     }
 
-    const GfVec3f worldDirection =
+    const GfVec3f dirWld =
         light.xformLightToWorld.TransformDir(
-            localDirection).GetNormalized();
+            dirLight).GetNormalized();
     ty::ShapeSample shapeSample;
     if (!_IntersectDiskLight(
-            light, disk, position, worldDirection, &shapeSample)) {
+            light, disk, posWld, dirWld, &shapeSample)) {
         return ty::InvalidLightSample();
     }
 
     ty::LightSampler::LightSample sample =
-        ty::EvalAreaLight(light, shapeSample, position, renderColorSpace);
+        ty::EvalAreaLight(light, shapeSample, posWld, renderColorSpace);
     ty::ApplyShapingAwareFinitePdf(light, &sample, true);
     return sample;
 }
@@ -127,7 +131,7 @@ _SampleDiskDirectionalShaping(
 ty::LightSampler::LightSample
 ty::SampleDiskLight(
     ty::LightData const& light, ty::DiskLight const& disk,
-    GfVec3f const& position, float u1, float u2,
+    GfVec3f const& posWld, float u1, float u2,
     ty::RenderColorSpace renderColorSpace)
 {
     const bool useShapingAwareSampling =
@@ -135,7 +139,7 @@ ty::SampleDiskLight(
     if (useShapingAwareSampling &&
         u1 >= ty::ShapingAwareFiniteAreaProposalWeight) {
         return _SampleDiskDirectionalShaping(
-            light, disk, position,
+            light, disk, posWld,
             (u1 - ty::ShapingAwareFiniteAreaProposalWeight) /
                 ty::ShapingAwareFiniteDirectionalProposalWeight,
             u2, renderColorSpace);
@@ -148,7 +152,7 @@ ty::SampleDiskLight(
             : u1,
         u2);
     ty::LightSampler::LightSample sample =
-        ty::EvalAreaLight(light, shapeSample, position, renderColorSpace);
+        ty::EvalAreaLight(light, shapeSample, posWld, renderColorSpace);
     if (useShapingAwareSampling) {
         ty::ApplyShapingAwareFinitePdf(light, &sample, true);
     }
@@ -158,17 +162,17 @@ ty::SampleDiskLight(
 ty::LightSampler::LightSample
 ty::EvaluateDiskLightDirection(
     ty::LightData const& light, ty::DiskLight const& disk,
-    GfVec3f const& position, GfVec3f const& direction,
+    GfVec3f const& posWld, GfVec3f const& dirWld,
     ty::RenderColorSpace renderColorSpace)
 {
     ty::ShapeSample shapeSample;
     if (!_IntersectDiskLight(
-            light, disk, position, direction.GetNormalized(), &shapeSample)) {
+            light, disk, posWld, dirWld.GetNormalized(), &shapeSample)) {
         return ty::InvalidLightSample();
     }
 
     ty::LightSampler::LightSample sample =
-        ty::EvalAreaLight(light, shapeSample, position, renderColorSpace);
+        ty::EvalAreaLight(light, shapeSample, posWld, renderColorSpace);
     ty::ApplyShapingAwareFinitePdf(light, &sample, true);
     return sample;
 }

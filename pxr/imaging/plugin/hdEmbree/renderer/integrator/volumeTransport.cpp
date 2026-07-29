@@ -189,11 +189,11 @@ ty::Renderer::_TraceVolumeTransmission(
                 return _VolumeTransmissionResult::Terminate;
             }
 
-            const GfVec3f scatterPos = state->positionRayOriginWld +
-                                       state->directionRayWld * scatterDist;
-            const GfVec3f omegaOutWld = -state->directionRayWld;
+            const GfVec3f posScatterWld = state->posRayOrgWld +
+                state->dirRayWld * scatterDist;
+            const GfVec3f omegaOutWld = -state->dirRayWld;
             const GfVec3f direct = _ComputeMediumDirectLighting(
-                scatterPos, omegaOutWld, mediumState,
+                posScatterWld, omegaOutWld, mediumState,
                 domain.Fork(ty::SampleDomainKey::MediumDirectLighting),
                 input.bounce < _settings.maxBounces,
                 hero.active,
@@ -209,7 +209,7 @@ ty::Renderer::_TraceVolumeTransmission(
             }
 
             if (input.bounce >= _settings.minBouncesBeforeRR) {
-                float q =
+                float probabilitySurvival =
                     hero.active
                         ? std::max({
                             ty::SpectralScalarToRgb(
@@ -227,17 +227,18 @@ ty::Renderer::_TraceVolumeTransmission(
                         : std::max({state->throughputRgb[0],
                                     state->throughputRgb[1],
                                     state->throughputRgb[2]});
-                q = std::min(q, 0.95f);
-                if (q <= 0.0f ||
+                probabilitySurvival =
+                    std::min(probabilitySurvival, 0.95f);
+                if (probabilitySurvival <= 0.0f ||
                     domain
                         .Fork(ty::SampleDomainKey::MediumRussianRoulette)
-                        .Draw1D() > q) {
+                        .Draw1D() > probabilitySurvival) {
                     return _VolumeTransmissionResult::Terminate;
                 }
                 if (hero.active) {
-                    state->throughputSpectral /= q;
+                    state->throughputSpectral /= probabilitySurvival;
                 } else {
-                    state->throughputRgb /= q;
+                    state->throughputRgb /= probabilitySurvival;
                 }
             }
 
@@ -262,10 +263,11 @@ ty::Renderer::_TraceVolumeTransmission(
                 return _VolumeTransmissionResult::Terminate;
             }
 
-            state->positionRayOriginWld =
-                ty::OffsetRayOrigin(scatterPos, omegaInWld, omegaInWld, 1e-4f);
-            state->directionRayWld = omegaInWld;
-            state->rayDifferential.hasDifferentials = false;
+            state->posRayOrgWld =
+                ty::OffsetRayOrigin(
+                    posScatterWld, omegaInWld, omegaInWld, 1e-4f);
+            state->dirRayWld = omegaInWld;
+            state->diffRay.hasDifferentials = false;
             state->lastBsdfPdf = phasePdf;
             state->lastScatterWasMedium = true;
             state->lastScatterCategories = mediumState.categories;

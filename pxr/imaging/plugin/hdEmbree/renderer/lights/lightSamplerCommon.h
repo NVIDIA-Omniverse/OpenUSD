@@ -45,24 +45,24 @@ WrapUnit(float u)
 }
 
 struct ShapeSample {
-    GfVec3f pWorld;
-    GfVec3f nWorld;
-    GfVec2f uv;
+    GfVec3f posWld;
+    GfVec3f normalGeomWldExt;
+    GfVec2f coordinateTexture;
     float pdfAreaInverse;
 };
 
 inline ShapeSample
-MakeAreaShapeSample(GfMatrix4f const& transform,
-                    GfMatrix3f const& normalTransform,
-                    GfVec3f const& positionLight,
-                    GfVec3f const& normalLight,
-                    GfVec2f const& uv,
+MakeAreaShapeSample(GfMatrix4f const& lightToWorld,
+                    GfMatrix3f const& normalLightToWorld,
+                    GfVec3f const& posLight,
+                    GfVec3f const& normalGeomLightExt,
+                    GfVec2f const& coordinateTexture,
                     float area)
 {
     return ShapeSample{
-        transform.Transform(positionLight),
-        (normalLight * normalTransform).GetNormalized(),
-        uv,
+        lightToWorld.Transform(posLight),
+        (normalGeomLightExt * normalLightToWorld).GetNormalized(),
+        coordinateTexture,
         area};
 }
 
@@ -83,13 +83,14 @@ inline constexpr float ShapingAwareFiniteAreaProposalWeight = 1.0f -
 GfVec3f EvalLightBasic(LightData const& light,
                        RenderColorSpace renderColorSpace);
 
-GfVec3f SampleLightTexture(LightTexture const& texture, float s,
-                           float t,
+GfVec3f SampleLightTexture(LightTexture const& texture,
+                           float coordinateTextureS,
+                           float coordinateTextureT,
                            RenderColorSpace renderColorSpace);
 
 LightSampler::LightSample EvalAreaLight(
     LightData const& light, ShapeSample const& sample,
-    GfVec3f const& position, RenderColorSpace renderColorSpace);
+    GfVec3f const& posWld, RenderColorSpace renderColorSpace);
 
 void ApplyShapingAwareFinitePdf(LightData const& light,
                                 LightSampler::LightSample* sample,

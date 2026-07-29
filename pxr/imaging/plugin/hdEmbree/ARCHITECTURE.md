@@ -51,14 +51,33 @@ First-party identifiers compose semantic suffixes in this order:
 
 `<quantity><kind><transport/event role><coordinate space><orientation><representation or measure><reciprocal>`
 
-Use full quantity roots: `normal`, `omega`, `radiance`, `position`, `distance`,
-`anisotropy`, and role-specific `index`. The exceptions are uniform random
-samples `u1`/`u2` and derivatives such as `dPdu`, `dPdv`, `dPdx`, and `dPdy`.
-Use the fixed abbreviations `Geom`, `Srf`, `Shd`, `Wld`, `Obj`, and `Ext`;
+Use the fixed quantity roots `normal`, `omega`, `radiance`, `pos`, `dir`,
+`distance`, `anisotropy`, `bary`, and role-specific `index`. Use `bary` as the
+prefix for barycentric-coordinate components, such as `baryU`, `baryV`, and
+`baryW`. The short-name exceptions are uniform random samples `u1`/`u2`,
+direct texture or surface-parametric coordinates `u`/`v`, pixel column/row
+indices `x`/`y`, pixel or RGB channel index `c` when clear from context, a
+conventional local ray or interpolation parameter `t`, and `i`/`j`/`k` when
+they are pure positional loop indices with no additional meaning. `idx` is
+allowed for an obvious local index when a more specific name adds no useful
+information.
+A single-letter local may abbreviate an already clearly named input or
+intermediate in a short function when it has no competing meaning and is
+consumed immediately.
+`F0` retains the standard literature meaning of normal-incidence Fresnel
+reflectance. Within a microfacet BSDF, `D` denotes the normal-distribution
+term and `G` the masking-shadowing term. Within conductor Fresnel
+calculations, `n` and `k` denote the real and imaginary refractive indices.
+Mix operations may use `fg` and `bg` for their foreground and background
+operands.
+Derivatives such as `dPdu`, `dPdv`, `dPdx`, and `dPdy` retain mathematical
+notation.
+Use the fixed abbreviations `Geom`, `Srf`, `Shd`, `Wld`, `Obj`, `Org`, and `Ext`;
 other suffixes remain unabbreviated. `pdf`, `bsdf`, `rgb`, and `ior` are the
 standard multi-letter acronym roots. The quantity always comes first:
-`positionHitWld`, not `hitPositionWorld`; an output parameter appends
-`Output` or `Result` rather than using an `Out` prefix.
+`posHitWld`, not `hitPositionWorld`. Output pointer and reference parameters
+use the established `outFoo` convention; `Out` inside the quantity still
+means the exitant transport side, as in `outNormalShdWldOut`.
 
 A spatial value in shared state or a function interface states its coordinate
 space. Transforms use `<from>To<to>`, such as `objToWld`. Omit a suffix only
@@ -77,16 +96,19 @@ optics exception: `iorIn` is the incident medium before a crossing and
 Probability-density names state their measure and append `Inverse` for a
 reciprocal.
 
-External, generated, and authored names are boundaries. Embree fields such as
-`RTCHit::Ng`, MaterialX port tokens, and vendored BSDL identifiers retain their
-external spelling; first-party code copies them immediately into a name below.
+External, generated, authored, and vendored names are boundaries. Embree fields
+such as `RTCHit::Ng`, MaterialX port tokens, BSDL identifiers, and the vendored
+Cycles IES parser in `renderer/lights/pxrIES/ies.*` retain their external
+spelling; first-party code copies them immediately into a name below. Keep an
+adjacent comment when a first-party declaration must retain an external
+callback or ABI spelling.
 Types below are renderer-native; first-party MaterialXCpp uses its
 corresponding type without changing the semantic name.
 
 | Name | Type | Meaning and invariants |
 | --- | --- | --- |
-| `positionWld` | `GfVec3f` | World-space point. Add event/usage suffixes before space, such as `positionHitWld`, `positionEntryWld`, or `positionRayOriginWld`, when multiple positions coexist. |
-| `positionObj` | `GfVec3f` | Object-space point belonging to the current prototype. |
+| `posWld` | `GfVec3f` | World-space point. Add event/usage suffixes before space, such as `posHitWld`, `posEntryWld`, or `posRayOrgWld`, when multiple positions coexist. |
+| `posObj` | `GfVec3f` | Object-space point belonging to the current prototype. |
 | `normalGeomWldExt` | `GfVec3f` | Normalized geometric normal transformed from Embree `RTCHit::Ng`, corrected for authored orientation, and pointing toward the authored exterior. Immutable topology and boundary authority. |
 | `normalGeomWldOut` | `GfVec3f` | Geometric exterior normal faced toward `omegaOutWld`. Never material-resolved. |
 | `normalGeomObjExt` | `GfVec3f` | Object-space counterpart used only where object and world geometric normals coexist. |
@@ -96,7 +118,8 @@ corresponding type without changing the semantic name.
 | `tangentWld`, `bitangentWld` | `GfVec3f` | World-space material frame paired with `normalShdWldOut`; use `Obj` or `Tangent` suffixes for other spaces. |
 | `omegaInWld` | `GfVec3f` | Normalized incident direction from the interaction toward the sampled next vertex or light. Replaces `wi`, `wI`, and ambiguous `direction` when this meaning applies. |
 | `omegaOutWld` | `GfVec3f` | Normalized exitant direction from the interaction toward the previous path vertex or camera. Replaces `wo` and `wO`. |
-| `positionRayOriginWld`, `directionRayWld` | `GfVec3f` | Origin and forward travel direction of a generic ray segment. Use `directionShadowWld`, `directionEntryWld`, etc. when it is not a local scattering omega. |
+| `posRayOrgWld`, `dirRayWld` | `GfVec3f` | Origin and forward travel direction of a generic ray segment. Use `dirShadowWld`, `dirEntryWld`, etc. when it is not a local scattering omega. |
+| `diffRay` | `RayDifferential` | Screen-space differential rays associated with `posRayOrgWld` and `dirRayWld`. |
 | `iorIn`, `iorOut` | `float` | Absolute IORs in the optics convention: incident medium before a crossing and transmitted medium after it. They do not name the `omegaIn`/`omegaOut` sides. `1.0f` represents vacuum/air and glass is commonly about `1.5f`. |
 | `eta` | `float` | Explicit ratio `iorIn / iorOut`. `1.0f` means no IOR change; special sentinel behavior such as zero must be documented by the owning API. |
 | `radianceIn` | `GfVec3f` | Incident RGB radiance carried from a sampled/evaluated light. Replaces `Li`. Use `radianceInSpectral` for a hero-wavelength scalar. |
@@ -108,8 +131,9 @@ corresponding type without changing the semantic name.
 | `pdf` | `float` | Non-negative probability density whose measure is explicit in its suffix or declaration contract. |
 | `pdfSolidAngle`, `pdfSolidAngleInverse` | `float` | Density and reciprocal density with respect to solid angle. Replace `pdfW` / `invPdfW`. |
 | `pdfArea`, `pdfAreaInverse` | `float` | Density and reciprocal density with respect to surface area. Replace `pdfA` / `invPdfA`. |
-| `distanceWld` | `float` | World-space distance. Add roles such as `distanceRemainingWld`, `distanceScatterWld`, or `distanceOppositeWld`. Replace `dist` and ray-parameter `t` where they represent distance. |
-| `u1`, `u2` | `float` | Independent uniform random samples in `[0, 1)`. These are the explicit short-name exception. Use `coordinateParametricU` / `coordinateParametricV` or `coordinateTextureU` / `coordinateTextureV` for coordinates rather than random samples. |
+| `distanceWld` | `float` | World-space distance. Add roles such as `distanceRemainingWld`, `distanceScatterWld`, or `distanceOppositeWld`. Replace `dist`; retain `t` only while it is used algebraically as a local ray parameter, not after conversion to a world-space distance. |
+| `u1`, `u2` | `float` | Independent uniform random samples in `[0, 1)`. These are an explicit short-name exception. |
+| `u`, `v` | `float` | Direct texture or surface-parametric coordinates. Retain these conventional names only when they denote the two coordinate axes. |
 | `absorption` | `GfVec3f` | Per-channel absorption coefficient in inverse world units. Replaces `sigmaA`. |
 | `scattering` | `GfVec3f` | Per-channel scattering coefficient in inverse world units. Replaces `sigmaS`. |
 | `extinction` | `GfVec3f` | Per-channel extinction coefficient: `absorption + scattering`. Replaces `sigmaT`; do not call this transmission. |
@@ -117,7 +141,7 @@ corresponding type without changing the semantic name.
 | `anisotropy` | `float` | Henyey-Greenstein anisotropy, clamped to the owning model's documented range. Replaces bare `g`. |
 | `albedo` | `GfVec3f` | Unitless per-channel scattering/reflectance ratio, normally in `[0, 1]`; qualify surface or volume variants when both coexist. |
 | `cosTheta` | `float` | Cosine of the relevant angle. Add a role suffix such as `cosThetaIn`, `cosThetaOut`, or `cosThetaLight` when multiple angles coexist. Keep bare `cosTheta` only when the role is unambiguous. |
-| `index` | `int` or unsigned index type | Generic collection index. Prefer `indexBounce`, `indexChannel`, `indexLight`, etc.; replace loop variables `i`, `j`, and `k`. |
+| `index` | `int` or unsigned index type | Generic collection index. Prefer `indexBounce`, `indexChannel`, `indexLight`, etc. Retain `i`, `j`, or `k` only for pure positional loop indices; name the role when the index has any additional meaning. |
 
 ## Repository map
 

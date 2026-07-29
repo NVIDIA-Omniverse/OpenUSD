@@ -46,7 +46,7 @@ public:
 
     static LightSample
     GetLightSample(LightData const& lightData,
-                   GfVec3f const& positionHitWld,
+                   GfVec3f const& posHitWld,
                    GfVec3f const& normalShdWldOut, float u1, float u2,
                    SamplingMode samplingMode = SamplingMode::FullSphere,
                    RenderColorSpace renderColorSpace =
@@ -73,7 +73,7 @@ public:
     /// intersects the light shape.
     static LightSample
     EvaluateLightDirection(LightData const& lightData,
-                           GfVec3f const& positionHitWld,
+                           GfVec3f const& posHitWld,
                            GfVec3f const& omegaInWld,
                            RenderColorSpace renderColorSpace =
                                RenderColorSpace::LinearRec709);
@@ -88,18 +88,18 @@ public:
 
 private:
     LightSampler(LightData const& lightData,
-                         GfVec3f const& positionHitWld,
+                         GfVec3f const& posHitWld,
                          GfVec3f const& normalShdWldOut, float u1, float u2,
                          SamplingMode samplingMode,
                          RenderColorSpace renderColorSpace)
-        : _lightData(lightData), _positionHitWld(positionHitWld),
+        : _lightData(lightData), _posHitWld(posHitWld),
           _normalShdWldOut(normalShdWldOut), _u1(u1), _u2(u2),
           _samplingMode(samplingMode), _renderColorSpace(renderColorSpace)
     {
     }
 
     LightData const& _lightData;
-    GfVec3f const& _positionHitWld;
+    GfVec3f const& _posHitWld;
     GfVec3f const& _normalShdWldOut;
     float _u1;
     float _u2;

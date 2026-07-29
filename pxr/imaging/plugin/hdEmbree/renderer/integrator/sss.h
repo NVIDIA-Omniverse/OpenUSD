@@ -24,11 +24,11 @@ namespace ty {
 struct SampleDomain;
 
 struct SssInput {
-    GfVec3f positionEntryWld;
+    GfVec3f posEntryWld;
     // Material-resolved, exitant-facing guide used by Dwivedi sampling. It is
     // not geometric boundary state.
     GfVec3f normalShdEntryGuideWldOut;
-    GfVec3f directionEntryWld; // Into the medium from the entry point.
+    GfVec3f dirEntryWld; // Into the medium from the entry point.
     GfVec3f albedo;            // Target per-channel diffuse reflectance.
     GfVec3f radius;            // Per-channel world-space scattering radius.
     float anisotropy;          // Clamped to [-0.99, 0.99].
@@ -44,15 +44,15 @@ struct SssInput {
 
 struct SssOutput {
     bool success = false; // False when no exit was found.
-    GfVec3f positionExitWld = GfVec3f(0.0f);
+    GfVec3f posExitWld = GfVec3f(0.0f);
     GfVec3f normalGeomExitWldExt = GfVec3f(0.0f);
-    GfVec3f directionExitWld = GfVec3f(0.0f); // Interior to exterior.
+    GfVec3f dirExitWld = GfVec3f(0.0f); // Interior to exterior.
     GfVec3f normalGeomExitObjExt = GfVec3f(0.0f);
     unsigned int exitInstanceId = RTC_INVALID_GEOMETRY_ID;
     unsigned int exitGeomId = RTC_INVALID_GEOMETRY_ID;
     unsigned int exitPrimId = RTC_INVALID_GEOMETRY_ID;
-    float coordinateParametricExitU = 0.0f;
-    float coordinateParametricExitV = 0.0f;
+    float uExit = 0.0f;
+    float vExit = 0.0f;
     GfVec3f throughputWeight = GfVec3f(0.0f);    // multiplier applied by caller
     uint32_t walkSteps = 0;                      // random-walk loop iterations
     uint32_t intersectionTests = 0;              // Embree rtcIntersect1 calls

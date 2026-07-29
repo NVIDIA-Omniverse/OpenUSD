@@ -661,21 +661,22 @@ ty::Renderer::_ComputeId(RTCRayHit const& rayHit, TfToken const& idType,
 
 bool
 ty::Renderer::_ComputeDepth(RTCRayHit const& rayHit,
-                                float *depth,
-                                bool clip)
+                            float *depth,
+                            bool clip)
 {
     if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
         return false;
     }
 
     if (clip) {
-        GfVec3f hitPos = ty::CalculateHitPosition(rayHit);
-
-        hitPos = GfVec3f(_viewMatrix.Transform(hitPos));
-        hitPos = GfVec3f(_projMatrix.Transform(hitPos));
+        const GfVec3f posHitWld = ty::CalculateHitPosition(rayHit);
+        const GfVec3f posHitCamera =
+            GfVec3f(_viewMatrix.Transform(posHitWld));
+        const GfVec3f posHitNdc =
+            GfVec3f(_projMatrix.Transform(posHitCamera));
 
         // For the depth range transform, we assume [0,1].
-        *depth = (hitPos[2] + 1.0f) / 2.0f;
+        *depth = (posHitNdc[2] + 1.0f) / 2.0f;
     } else {
         *depth = rayHit.ray.tfar;
     }
@@ -684,8 +685,8 @@ ty::Renderer::_ComputeDepth(RTCRayHit const& rayHit,
 
 bool
 ty::Renderer::_ComputeNormal(RTCRayHit const& rayHit,
-                                 GfVec3f *normal,
-                                 bool eye)
+                             GfVec3f *normal,
+                             bool eye)
 {
     if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
         return false;
@@ -701,17 +702,18 @@ ty::Renderer::_ComputeNormal(RTCRayHit const& rayHit,
         return false;
     }
 
-    GfVec3f n = ty::ResolveObjectSpaceNormal(
+    const GfVec3f normalGeomObjExt = ty::ResolveObjectSpaceNormal(
         prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
         rayHit);
 
-    n = ty::TransformNormalToWorld(instanceContext, n);
-    if (eye) {
-        n = GfVec3f(_viewMatrix.TransformDir(n));
-    }
-    n.Normalize();
+    const GfVec3f normalGeomWldExt =
+        ty::TransformNormalToWorld(instanceContext, normalGeomObjExt);
+    GfVec3f normalGeomResult = eye
+        ? GfVec3f(_viewMatrix.TransformDir(normalGeomWldExt))
+        : normalGeomWldExt;
+    normalGeomResult.Normalize();
 
-    *normal = n;
+    *normal = normalGeomResult;
     return true;
 }
 

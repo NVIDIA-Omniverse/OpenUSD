@@ -54,16 +54,16 @@ _Smoothstep(float t, float edge0, float edge1)
 }
 
 float
-_Theta(GfVec3f const& v)
+_Theta(GfVec3f const& dirLight)
 {
-    return std::acos(GfClamp(v[2], -1.0f, 1.0f));
+    return std::acos(GfClamp(dirLight[2], -1.0f, 1.0f));
 }
 
 float
-_Phi(GfVec3f const& v)
+_Phi(GfVec3f const& dirLight)
 {
-    const float p = std::atan2(v[1], v[0]);
-    return p < 0.0f ? (p + 2.0f * _pi) : p;
+    const float phi = std::atan2(dirLight[1], dirLight[0]);
+    return phi < 0.0f ? (phi + 2.0f * _pi) : phi;
 }
 
 bool
@@ -106,7 +106,9 @@ _NormalizeColorSpaceName(const std::string& name)
 }
 
 bool
-_ResolveColorSpaceName(const std::string& sourceColorSpace, TfToken* outColorSpaceName)
+_ResolveColorSpaceName(
+    const std::string& sourceColorSpace,
+    TfToken* outColorSpaceName)
 {
     if (!outColorSpaceName) {
         return false;
@@ -263,9 +265,11 @@ _LoadLightTexture(std::string const& path)
 }
 
 bool
-_IsFinitePoint(GfVec3f const& p)
+_IsFinitePoint(GfVec3f const& pos)
 {
-    return std::isfinite(p[0]) && std::isfinite(p[1]) && std::isfinite(p[2]);
+    return std::isfinite(pos[0]) &&
+           std::isfinite(pos[1]) &&
+           std::isfinite(pos[2]);
 }
 
 bool
@@ -413,10 +417,16 @@ _AppendCylinderVisibleGeometry(
     for (int i = 0; i < segments; ++i) {
         const float phi = 2.0f * _pi * static_cast<float>(i) /
             static_cast<float>(segments);
-        const float y = cylinder.radius * std::cos(phi);
-        const float z = cylinder.radius * std::sin(phi);
-        _AppendPoint(light, GfVec3f(-halfLength, y, z), points);
-        _AppendPoint(light, GfVec3f( halfLength, y, z), points);
+        const float posYLight = cylinder.radius * std::cos(phi);
+        const float posZLight = cylinder.radius * std::sin(phi);
+        _AppendPoint(
+            light,
+            GfVec3f(-halfLength, posYLight, posZLight),
+            points);
+        _AppendPoint(
+            light,
+            GfVec3f(halfLength, posYLight, posZLight),
+            points);
     }
     for (int i = 0; i < segments; ++i) {
         const int next = (i + 1) % segments;
@@ -565,16 +575,16 @@ PXR_NAMESPACE_OPEN_SCOPE
 GfVec3f
 ty::EvaluateDirectionalShaping(
     ty::Shaping const& shaping,
-    GfVec3f const& localDirection)
+    GfVec3f const& dirLight)
 {
-    if (localDirection.GetLengthSq() <= 0.0f ||
-        !std::isfinite(localDirection[0]) ||
-        !std::isfinite(localDirection[1]) ||
-        !std::isfinite(localDirection[2])) {
+    if (dirLight.GetLengthSq() <= 0.0f ||
+        !std::isfinite(dirLight[0]) ||
+        !std::isfinite(dirLight[1]) ||
+        !std::isfinite(dirLight[2])) {
         return GfVec3f(0.0f);
     }
 
-    const GfVec3f omegaInLocal = localDirection.GetNormalized();
+    const GfVec3f omegaInLocal = dirLight.GetNormalized();
     const float cosThetaOffZ = GfClamp(omegaInLocal[2], -1.0f, 1.0f);
     GfVec3f shapingWeight(1.0f);
 
@@ -610,10 +620,10 @@ ty::EvaluateDirectionalShaping(
 float
 ty::DirectionalShapingImportance(
     ty::Shaping const& shaping,
-    GfVec3f const& localDirection)
+    GfVec3f const& dirLight)
 {
     const GfVec3f shapingWeight =
-        ty::EvaluateDirectionalShaping(shaping, localDirection);
+        ty::EvaluateDirectionalShaping(shaping, dirLight);
     // This is a proposal weight only.  Max-component importance avoids
     // embedding working-space-specific luminance coefficients in light sync.
     return std::max(
@@ -648,9 +658,10 @@ ty::BuildDirectionalShapingDistribution(ty::Shaping* shaping)
     // whole rows and cannot vanish when the cell weights are integrated.
     std::vector<float> thetaBounds;
     thetaBounds.reserve(static_cast<size_t>(numBaseTheta) + 3);
-    for (int v = 0; v <= numBaseTheta; ++v) {
+    for (int indexRow = 0; indexRow <= numBaseTheta; ++indexRow) {
         thetaBounds.push_back(
-            _pi * static_cast<float>(v) / static_cast<float>(numBaseTheta));
+            _pi * static_cast<float>(indexRow) /
+            static_cast<float>(numBaseTheta));
     }
     if (shaping->coneAngle < 180.0f) {
         const float thetaConeUnclamped = GfDegreesToRadians(shaping->coneAngle);
@@ -685,9 +696,9 @@ ty::BuildDirectionalShapingDistribution(ty::Shaping* shaping)
     const int numCells = numRows * numPhi;
 
     distribution.rowCosThetaBounds.resize(static_cast<size_t>(numRows + 1));
-    for (int v = 0; v <= numRows; ++v) {
-        distribution.rowCosThetaBounds[static_cast<size_t>(v)] =
-            std::cos(rowTheta[static_cast<size_t>(v)]);
+    for (int indexRow = 0; indexRow <= numRows; ++indexRow) {
+        distribution.rowCosThetaBounds[static_cast<size_t>(indexRow)] =
+            std::cos(rowTheta[static_cast<size_t>(indexRow)]);
     }
     distribution.rowCosThetaBounds.front() = 1.0f;
     distribution.rowCosThetaBounds.back() = -1.0f;
@@ -707,10 +718,11 @@ ty::BuildDirectionalShapingDistribution(ty::Shaping* shaping)
     float weightSum = 0.0f;
     float peakWeight = 0.0f;
 
-    for (int v = 0; v < numRows; ++v) {
-        const float z0 = distribution.rowCosThetaBounds[static_cast<size_t>(v)];
+    for (int indexRow = 0; indexRow < numRows; ++indexRow) {
+        const float z0 =
+            distribution.rowCosThetaBounds[static_cast<size_t>(indexRow)];
         const float z1 =
-            distribution.rowCosThetaBounds[static_cast<size_t>(v + 1)];
+            distribution.rowCosThetaBounds[static_cast<size_t>(indexRow + 1)];
         const float cellSolidAngle =
             2.0f * _pi * (z0 - z1) / static_cast<float>(numPhi);
         if (cellSolidAngle <= 0.0f) {
@@ -720,38 +732,41 @@ ty::BuildDirectionalShapingDistribution(ty::Shaping* shaping)
         const float rCenter =
             std::sqrt(std::max(0.0f, 1.0f - zCenter * zCenter));
 
-        for (int h = 0; h < numPhi; ++h) {
+        for (int indexPhi = 0; indexPhi < numPhi; ++indexPhi) {
             float importanceSum = 0.0f;
             for (int sz = 0; sz < numSubZ; ++sz) {
-                const float z = GfLerp(
+                const float cosTheta = GfLerp(
                     (static_cast<float>(sz) + 0.5f) /
                         static_cast<float>(numSubZ),
                     z0, z1);
-                const float r = std::sqrt(std::max(0.0f, 1.0f - z * z));
+                const float sinTheta =
+                    std::sqrt(std::max(
+                        0.0f, 1.0f - cosTheta * cosTheta));
                 for (int sp = 0; sp < numSubPhi; ++sp) {
                     const float phi = 2.0f * _pi *
-                        (static_cast<float>(h) +
+                        (static_cast<float>(indexPhi) +
                          (static_cast<float>(sp) + 0.5f) /
                              static_cast<float>(numSubPhi)) /
                         static_cast<float>(numPhi);
                     const float importance =
                         ty::DirectionalShapingImportance(
                             *shaping,
-                            GfVec3f(r * std::cos(phi),
-                                    r * std::sin(phi),
-                                    z));
+                            GfVec3f(sinTheta * std::cos(phi),
+                                    sinTheta * std::sin(phi),
+                                    cosTheta));
                     importanceSum += importance;
                     peakWeight = std::max(peakWeight, importance);
                 }
             }
             const float weight = importanceSum * cellSolidAngle /
                 static_cast<float>(numSubZ * numSubPhi);
-            const int idx = v * numPhi + h;
+            const int idx = indexRow * numPhi + indexPhi;
             cellWeights[static_cast<size_t>(idx)] = weight;
             weightSum += weight;
 
             const float phiCenter = 2.0f * _pi *
-                (static_cast<float>(h) + 0.5f) / static_cast<float>(numPhi);
+                (static_cast<float>(indexPhi) + 0.5f) /
+                static_cast<float>(numPhi);
             principal += GfVec3f(rCenter * std::cos(phiCenter),
                                  rCenter * std::sin(phiCenter),
                                  zCenter) * weight;
@@ -768,14 +783,15 @@ ty::BuildDirectionalShapingDistribution(ty::Shaping* shaping)
 
     float cumulative = 0.0f;
     distribution.cdf[0] = 0.0f;
-    for (int v = 0; v < numRows; ++v) {
-        const float z0 = distribution.rowCosThetaBounds[static_cast<size_t>(v)];
+    for (int indexRow = 0; indexRow < numRows; ++indexRow) {
+        const float z0 =
+            distribution.rowCosThetaBounds[static_cast<size_t>(indexRow)];
         const float z1 =
-            distribution.rowCosThetaBounds[static_cast<size_t>(v + 1)];
+            distribution.rowCosThetaBounds[static_cast<size_t>(indexRow + 1)];
         const float cellSolidAngle =
             2.0f * _pi * (z0 - z1) / static_cast<float>(numPhi);
-        for (int h = 0; h < numPhi; ++h) {
-            const int idx = v * numPhi + h;
+        for (int indexPhi = 0; indexPhi < numPhi; ++indexPhi) {
+            const int idx = indexRow * numPhi + indexPhi;
             cumulative += cellWeights[static_cast<size_t>(idx)] / weightSum;
             distribution.cdf[static_cast<size_t>(idx + 1)] = cumulative;
             distribution.cellPdfSolidAngle[static_cast<size_t>(idx)] =
@@ -828,12 +844,13 @@ ty::SampleDirectionalShaping(
         ? ((sample - cdf0) / (cdf1 - cdf0))
         : 0.0f;
 
-    const int v = idx / numPhi;
-    const int h = idx - v * numPhi;
-    const float z0 = distribution.rowCosThetaBounds[static_cast<size_t>(v)];
+    const int indexRow = idx / numPhi;
+    const int indexPhi = idx - indexRow * numPhi;
+    const float z0 =
+        distribution.rowCosThetaBounds[static_cast<size_t>(indexRow)];
     const float z1 =
-        distribution.rowCosThetaBounds[static_cast<size_t>(v + 1)];
-    float z = GfLerp(cellU, z0, z1);
+        distribution.rowCosThetaBounds[static_cast<size_t>(indexRow + 1)];
+    float cosTheta = GfLerp(cellU, z0, z1);
     // Keep the sample strictly inside the row (bounds are descending, so
     // z1 < z <= z0 nominally): rounding in the lerp or renormalization in
     // the PDF lookup can otherwise re-bin a boundary sample into the
@@ -846,27 +863,28 @@ ty::SampleDirectionalShaping(
         zHi = std::nextafter(zHi, z1);
     }
     if (zLo <= zHi) {
-        z = GfClamp(z, zLo, zHi);
+        cosTheta = GfClamp(cosTheta, zLo, zHi);
     }
-    const float r = std::sqrt(std::max(0.0f, 1.0f - z * z));
+    const float sinTheta =
+        std::sqrt(std::max(0.0f, 1.0f - cosTheta * cosTheta));
     const float phi = 2.0f * _pi *
-        (static_cast<float>(h) +
+        (static_cast<float>(indexPhi) +
          GfClamp(u2, 0.0f, std::nextafter(1.0f, 0.0f))) /
         static_cast<float>(numPhi);
 
-    result.localDirection = GfVec3f(
-        r * std::cos(phi),
-        r * std::sin(phi),
-        z);
+    result.dirLight = GfVec3f(
+        sinTheta * std::cos(phi),
+        sinTheta * std::sin(phi),
+        cosTheta);
     // Report the PDF through the same lookup MIS uses instead of reading
     // cellPdfSolidAngle[idx] directly: float rounding can land the sampled z
     // exactly on a row boundary, where the lookup resolves to the neighboring
     // row. Sharing one source of truth keeps sample and evaluation consistent
     // (a sample that rounds into a zero-weight row is simply discarded).
     result.pdfSolidAngle =
-        ty::DirectionalShapingPdf(shaping, result.localDirection);
+        ty::DirectionalShapingPdf(shaping, result.dirLight);
     result.importance =
-        ty::DirectionalShapingImportance(shaping, result.localDirection);
+        ty::DirectionalShapingImportance(shaping, result.dirLight);
     result.valid =
         result.pdfSolidAngle > 0.0f && std::isfinite(result.pdfSolidAngle);
     return result;
@@ -875,38 +893,38 @@ ty::SampleDirectionalShaping(
 float
 ty::DirectionalShapingPdf(
     ty::Shaping const& shaping,
-    GfVec3f const& localDirection)
+    GfVec3f const& dirLight)
 {
     ty::DirectionalShapingDistribution const& distribution =
         shaping.directionalDistribution;
     if (!distribution.IsValid() ||
-        localDirection.GetLengthSq() <= 0.0f ||
-        !std::isfinite(localDirection[0]) ||
-        !std::isfinite(localDirection[1]) ||
-        !std::isfinite(localDirection[2])) {
+        dirLight.GetLengthSq() <= 0.0f ||
+        !std::isfinite(dirLight[0]) ||
+        !std::isfinite(dirLight[1]) ||
+        !std::isfinite(dirLight[2])) {
         return 0.0f;
     }
 
     constexpr int numPhi = ty::DirectionalShapingDistribution::NumPhi;
     const int numRows = distribution.NumRows();
-    const GfVec3f omegaInLocal = localDirection.GetNormalized();
-    const float z = GfClamp(omegaInLocal[2], -1.0f, 1.0f);
+    const GfVec3f omegaInLocal = dirLight.GetNormalized();
+    const float cosTheta = GfClamp(omegaInLocal[2], -1.0f, 1.0f);
     const float phi = _Phi(omegaInLocal);
     // Row boundaries are descending in cos(theta); row v covers
     // (bounds[v + 1], bounds[v]].
     const auto& bounds = distribution.rowCosThetaBounds;
     const auto rowIt = std::upper_bound(
-        bounds.begin(), bounds.end(), z, std::greater<float>());
-    const int v = std::clamp(
+        bounds.begin(), bounds.end(), cosTheta, std::greater<float>());
+    const int indexRow = std::clamp(
         static_cast<int>(rowIt - bounds.begin()) - 1,
         0,
         numRows - 1);
-    const int h = std::clamp(
+    const int indexPhi = std::clamp(
         static_cast<int>(
             phi * static_cast<float>(numPhi) / (2.0f * _pi)),
         0,
         numPhi - 1);
-    const int idx = v * numPhi + h;
+    const int idx = indexRow * numPhi + indexPhi;
     return distribution.cellPdfSolidAngle[static_cast<size_t>(idx)];
 }
 
@@ -940,51 +958,58 @@ ty::BuildDomeLightSamplingDistribution(ty::LightTexture* texture)
     float totalWeight = 0.0f;
     texture->marginalCdf[0] = 0.0f;
 
-    for (int y = 0; y < height; ++y) {
+    for (int indexTexelY = 0; indexTexelY < height; ++indexTexelY) {
         const float theta0 =
-            _pi * (static_cast<float>(y) / static_cast<float>(height));
+            _pi * (static_cast<float>(indexTexelY) /
+                   static_cast<float>(height));
         const float theta1 =
-            _pi * ((static_cast<float>(y) + 1.0f) / static_cast<float>(height));
+            _pi * ((static_cast<float>(indexTexelY) + 1.0f) /
+                   static_cast<float>(height));
         const float rowMeasure = std::max(
             0.0f, std::cos(theta0) - std::cos(theta1));
 
         float rowWeight = 0.0f;
         float* const rowCdf = texture->conditionalCdf.data() +
-            static_cast<size_t>(y) * static_cast<size_t>(width + 1);
+            static_cast<size_t>(indexTexelY) * static_cast<size_t>(width + 1);
         rowCdf[0] = 0.0f;
 
-        for (int x = 0; x < width; ++x) {
+        for (int indexTexelX = 0; indexTexelX < width; ++indexTexelX) {
             const size_t idx =
-                static_cast<size_t>(y) * static_cast<size_t>(width) + x;
+                static_cast<size_t>(indexTexelY) *
+                    static_cast<size_t>(width) +
+                indexTexelX;
             const float luminance =
-                _SanitizeWeight(_GetLuminance(texture->pixels[idx], colorSpaceName));
+                _SanitizeWeight(
+                    _GetLuminance(texture->pixels[idx], colorSpaceName));
             const float weight = luminance * rowMeasure;
             texture->texelWeights[idx] = weight;
             rowWeight += weight;
-            rowCdf[x + 1] = rowWeight;
+            rowCdf[indexTexelX + 1] = rowWeight;
         }
 
         if (rowWeight <= 0.0f) {
             rowWeight = 0.0f;
-            for (int x = 0; x < width; ++x) {
+            for (int indexTexelX = 0; indexTexelX < width; ++indexTexelX) {
                 const size_t idx =
-                    static_cast<size_t>(y) * static_cast<size_t>(width) + x;
+                    static_cast<size_t>(indexTexelY) *
+                        static_cast<size_t>(width) +
+                    indexTexelX;
                 texture->texelWeights[idx] = rowMeasure;
                 rowWeight += rowMeasure;
-                rowCdf[x + 1] = rowWeight;
+                rowCdf[indexTexelX + 1] = rowWeight;
             }
         }
 
         if (rowWeight > 0.0f) {
             const float invRowWeight = 1.0f / rowWeight;
-            for (int x = 1; x <= width; ++x) {
-                rowCdf[x] *= invRowWeight;
+            for (int indexTexelX = 1; indexTexelX <= width; ++indexTexelX) {
+                rowCdf[indexTexelX] *= invRowWeight;
             }
             rowCdf[width] = 1.0f;
         }
 
         totalWeight += rowWeight;
-        texture->marginalCdf[y + 1] = totalWeight;
+        texture->marginalCdf[indexTexelY + 1] = totalWeight;
     }
 
     if (totalWeight <= 0.0f) {

@@ -28,7 +28,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 static GfVec3f
 _TransparentShadowTransmission(mxcpp::SurfaceClosure const& closure,
-                               GfVec3f const& directionShadowWld,
+                               GfVec3f const& dirShadowWld,
                                GfVec3f const& normalGeomWldExt,
                                bool includeSurfaceTint)
 {
@@ -39,7 +39,7 @@ _TransparentShadowTransmission(mxcpp::SurfaceClosure const& closure,
 
     const float interfaceTransmission =
         mxcpp::Bsdf::StraightShadowDielectricTransmission(
-            closure, GfDot(directionShadowWld, normalGeomWldExt));
+            closure, GfDot(dirShadowWld, normalGeomWldExt));
     GfVec3f attenuation(transmission * interfaceTransmission);
     if (includeSurfaceTint) {
         attenuation = GfCompMult(
@@ -64,11 +64,11 @@ _CombinePresenceAndTransmissionVisibility(
 }
 
 GfVec3f
-ty::Renderer::_Visibility(GfVec3f const& positionWld,
-                              GfVec3f const& directionOffsetReferenceWld,
-                              GfVec3f const& directionShadowWld,
-                              float distanceWld, TfToken const& shadowLink,
-                              ty::MediumState const& mediumState) const
+ty::Renderer::_Visibility(GfVec3f const& posWld,
+                          GfVec3f const& dirOffsetReferenceWld,
+                          GfVec3f const& dirShadowWld,
+                          float distanceWld, TfToken const& shadowLink,
+                          ty::MediumState const& mediumState) const
 {
     constexpr int kMaxTransparentHits = 16;
     constexpr int kMaxIntersections = 256;
@@ -82,8 +82,8 @@ ty::Renderer::_Visibility(GfVec3f const& positionWld,
     GfVec3f visibility(1.0f);
     ty::MediumState shadowMedium = mediumState;
     ty::PrototypeContext const* straightTransparentOwner = nullptr;
-    GfVec3f positionRayOriginWld = ty::OffsetRayOrigin(
-        positionWld, directionOffsetReferenceWld, directionShadowWld, kRayBias);
+    GfVec3f posRayOrgWld = ty::OffsetRayOrigin(
+        posWld, dirOffsetReferenceWld, dirShadowWld, kRayBias);
     float distanceRemainingWld = distanceWld;
 
     const auto evalShadowTransmittance = [&](float distance) {
@@ -105,8 +105,8 @@ ty::Renderer::_Visibility(GfVec3f const& positionWld,
         rayHit.ray.flags = 0;
         ty::PopulateRayHit(
             &rayHit,
-            positionRayOriginWld,
-            directionShadowWld,
+            posRayOrgWld,
+            dirShadowWld,
             kRayBias,
             distanceRemainingWld,
             ty::RayMask::Camera);
@@ -151,11 +151,11 @@ ty::Renderer::_Visibility(GfVec3f const& positionWld,
             if (distanceRemainingWld <= 0.001f) {
                 return visibility;
             }
-            const GfVec3f positionHitWld =
-                positionRayOriginWld + directionShadowWld * distanceHitWld;
-            positionRayOriginWld =
-                ty::OffsetRayOrigin(positionHitWld, directionShadowWld,
-                                    directionShadowWld, kRayBias);
+            const GfVec3f posHitWld =
+                posRayOrgWld + dirShadowWld * distanceHitWld;
+            posRayOrgWld =
+                ty::OffsetRayOrigin(posHitWld, dirShadowWld,
+                                    dirShadowWld, kRayBias);
             continue;
         }
 
@@ -168,14 +168,14 @@ ty::Renderer::_Visibility(GfVec3f const& positionWld,
         // _TryEvalSurfaceClosureAtHit only writes this after it builds an
         // interaction. Every consumer that needs a real normal is guarded by
         // hasClosure; the trailing ty::OffsetRayOrigin is not, and relies on
-        // its zero-length case to advance along directionShadowWld instead.
+        // its zero-length case to advance along dirShadowWld instead.
         // Do not seed this from the caller's offset reference: that is the
         // shading point's normal, not this blocker's, and medium callers pass
         // a light direction.
         GfVec3f normalGeomBlockerWldExt(0.0f);
         ty::PrototypeContext const* hitMesh = nullptr;
         const bool hasClosure = _TryEvalSurfaceClosureAtHit(
-            rayHit, -directionShadowWld, &closure, nullptr,
+            rayHit, -dirShadowWld, &closure, nullptr,
             &normalGeomBlockerWldExt, &hitMesh);
 
         const bool exitsCurrentMedium =
@@ -206,7 +206,7 @@ ty::Renderer::_Visibility(GfVec3f const& positionWld,
                          !exitsCurrentMedium &&
                          !exitsStraightTransparent);
                     transmissionVisibility = _TransparentShadowTransmission(
-                        closure, directionShadowWld, normalGeomBlockerWldExt,
+                        closure, dirShadowWld, normalGeomBlockerWldExt,
                         includeSurfaceTint);
                 }
                 surfaceVisibility =
@@ -238,14 +238,14 @@ ty::Renderer::_Visibility(GfVec3f const& positionWld,
         } else if (exitsStraightTransparent) {
             straightTransparentOwner = nullptr;
         } else if (volumeOnlyBoundary && !shadowMedium.active && hitMesh &&
-                   GfDot(directionShadowWld, normalGeomBlockerWldExt) < 0.0f) {
+                   GfDot(dirShadowWld, normalGeomBlockerWldExt) < 0.0f) {
             shadowMedium.active = true;
             shadowMedium.medium = closure.interiorMedium;
             shadowMedium.ownerGeometry = hitMesh;
         } else if (_settings.approxTransparentShadows && !shadowMedium.active &&
                    hasClosure && !closure.thinWalled &&
                    closure.transmission > 0.0f && hitMesh &&
-                   GfDot(directionShadowWld, normalGeomBlockerWldExt) < 0.0f) {
+                   GfDot(dirShadowWld, normalGeomBlockerWldExt) < 0.0f) {
             if (closure.hasInteriorMedium) {
                 shadowMedium.active = true;
                 shadowMedium.medium = closure.interiorMedium;
@@ -255,13 +255,13 @@ ty::Renderer::_Visibility(GfVec3f const& positionWld,
             }
         }
 
-        GfVec3f positionHitWld =
+        GfVec3f posHitWld =
             GfVec3f(rayHit.ray.org_x + distanceHitWld * rayHit.ray.dir_x,
                     rayHit.ray.org_y + distanceHitWld * rayHit.ray.dir_y,
                     rayHit.ray.org_z + distanceHitWld * rayHit.ray.dir_z);
-        positionRayOriginWld =
-            ty::OffsetRayOrigin(positionHitWld, normalGeomBlockerWldExt,
-                             directionShadowWld, kRayBias);
+        posRayOrgWld =
+            ty::OffsetRayOrigin(posHitWld, normalGeomBlockerWldExt,
+                             dirShadowWld, kRayBias);
     }
 
     // Reaching the defensive intersection limit indicates malformed or

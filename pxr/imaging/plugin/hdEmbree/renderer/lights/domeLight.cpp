@@ -36,34 +36,43 @@ _HasDomeDistribution(ty::LightTexture const& texture)
 }
 
 static GfVec2f
-_DirectionToLatLongUv(GfVec3f const& localDirection)
+_DirectionToLatLongUv(GfVec3f const& dirLight)
 {
-    const GfVec3f normalized = localDirection.GetNormalized();
-    const float t = acosf(GfClamp(normalized[1], -1.0f, 1.0f)) /
+    const GfVec3f normalized = dirLight.GetNormalized();
+    const float coordinateTextureT =
+        acosf(GfClamp(normalized[1], -1.0f, 1.0f)) /
         ty::Pi<float>;
-    const float s = ty::WrapUnit(
+    const float coordinateTextureS = ty::WrapUnit(
         0.5f - atan2f(normalized[0], normalized[2]) /
             (2.0f * ty::Pi<float>));
-    return GfVec2f(s, ty::ClampUnitHalfOpen(t));
+    return GfVec2f(
+        coordinateTextureS,
+        ty::ClampUnitHalfOpen(coordinateTextureT));
 }
 
 static GfVec3f
-_LatLongUvToDirection(GfVec2f const& uv)
+_LatLongUvToDirection(GfVec2f const& coordinateTexture)
 {
-    const float theta = ty::Pi<float> * ty::ClampUnitHalfOpen(uv[1]);
+    const float theta =
+        ty::Pi<float> * ty::ClampUnitHalfOpen(coordinateTexture[1]);
     const float sinTheta = sinf(theta);
     const float cosTheta = cosf(theta);
-    const float phi = 2.0f * ty::Pi<float> * (0.5f - uv[0]);
+    const float phi = 2.0f * ty::Pi<float> * (0.5f - coordinateTexture[0]);
     return GfVec3f(
         sinTheta * sinf(phi), cosTheta, sinTheta * cosf(phi));
 }
 
 static float
 _TexelDirectionalPdf(
-    ty::LightTexture const& texture, int x, int y, float theta)
+    ty::LightTexture const& texture,
+    int indexTexelX,
+    int indexTexelY,
+    float theta)
 {
-    if (!_HasDomeDistribution(texture) || x < 0 || y < 0 ||
-        x >= texture.width || y >= texture.height) {
+    if (!_HasDomeDistribution(texture) ||
+        indexTexelX < 0 || indexTexelY < 0 ||
+        indexTexelX >= texture.width ||
+        indexTexelY >= texture.height) {
         return 0.0f;
     }
 
@@ -72,9 +81,12 @@ _TexelDirectionalPdf(
         return 0.0f;
     }
 
-    const size_t idx =
-        static_cast<size_t>(y) * static_cast<size_t>(texture.width) + x;
-    const float texelMass = texture.texelWeights[idx] / texture.weightSum;
+    const size_t indexTexel =
+        static_cast<size_t>(indexTexelY) *
+            static_cast<size_t>(texture.width) +
+        indexTexelX;
+    const float texelMass =
+        texture.texelWeights[indexTexel] / texture.weightSum;
     const float pdfUv =
         texelMass * static_cast<float>(texture.width * texture.height);
     return pdfUv /
@@ -90,239 +102,252 @@ _SampleDomeUv(ty::LightTexture const& texture, float u1, float u2)
     const auto marginalBegin = texture.marginalCdf.begin();
     const auto marginalIt = std::upper_bound(
         marginalBegin + 1, texture.marginalCdf.end(), sampleY);
-    const int y = std::clamp(
+    const int indexTexelY = std::clamp(
         static_cast<int>(marginalIt - (marginalBegin + 1)),
         0, texture.height - 1);
 
-    const float cdfY0 = texture.marginalCdf[y];
-    const float cdfY1 = texture.marginalCdf[y + 1];
+    const float cdfY0 = texture.marginalCdf[indexTexelY];
+    const float cdfY1 = texture.marginalCdf[indexTexelY + 1];
     const float remappedY = (cdfY1 > cdfY0)
         ? ((sampleY - cdfY0) / (cdfY1 - cdfY0))
         : 0.0f;
 
     const float* const rowBegin = texture.conditionalCdf.data() +
-        static_cast<size_t>(y) *
+        static_cast<size_t>(indexTexelY) *
             static_cast<size_t>(texture.width + 1);
     const float* const rowIt = std::upper_bound(
         rowBegin + 1, rowBegin + texture.width + 1, sampleX);
-    const int x = std::clamp(
+    const int indexTexelX = std::clamp(
         static_cast<int>(rowIt - (rowBegin + 1)),
         0, texture.width - 1);
 
-    const float cdfX0 = rowBegin[x];
-    const float cdfX1 = rowBegin[x + 1];
+    const float cdfX0 = rowBegin[indexTexelX];
+    const float cdfX1 = rowBegin[indexTexelX + 1];
     const float remappedX = (cdfX1 > cdfX0)
         ? ((sampleX - cdfX0) / (cdfX1 - cdfX0))
         : 0.0f;
 
     return GfVec2f(
-        (static_cast<float>(x) + remappedX) / static_cast<float>(texture.width),
-        (static_cast<float>(y) + remappedY) /
+        (static_cast<float>(indexTexelX) + remappedX) /
+            static_cast<float>(texture.width),
+        (static_cast<float>(indexTexelY) + remappedY) /
         static_cast<float>(texture.height));
 }
 
 static float
 _DomeDirectionalPdf(
-    ty::LightData const& light, GfVec2f const& uv)
+    ty::LightData const& light, GfVec2f const& coordinateTexture)
 {
     float pdfSolidAngle = 1.0f / (4.0f * ty::Pi<float>);
     if (_HasDomeDistribution(light.texture)) {
-        const int x = std::clamp(
+        const int indexTexelX = std::clamp(
             static_cast<int>(
                 static_cast<float>(light.texture.width) *
-                ty::WrapUnit(uv[0])),
+                ty::WrapUnit(coordinateTexture[0])),
             0,
             light.texture.width - 1);
-        const int y = std::clamp(
+        const int indexTexelY = std::clamp(
             static_cast<int>(
                 static_cast<float>(light.texture.height) *
-                ty::ClampUnitHalfOpen(uv[1])),
+                ty::ClampUnitHalfOpen(coordinateTexture[1])),
             0,
             light.texture.height - 1);
-        const float theta = ty::Pi<float> * ty::ClampUnitHalfOpen(uv[1]);
-        pdfSolidAngle = _TexelDirectionalPdf(light.texture, x, y, theta);
+        const float theta =
+            ty::Pi<float> * ty::ClampUnitHalfOpen(coordinateTexture[1]);
+        pdfSolidAngle = _TexelDirectionalPdf(
+            light.texture, indexTexelX, indexTexelY, theta);
     }
     return pdfSolidAngle;
 }
 
 static float
 _DomeDirectionalPdf(
-    ty::LightData const& light, GfVec3f const& worldDirection)
+    ty::LightData const& light, GfVec3f const& dirWld)
 {
-    if (!ty::IsFinite(worldDirection) || worldDirection.GetLengthSq() <= 0.0f) {
+    if (!ty::IsFinite(dirWld) || dirWld.GetLengthSq() <= 0.0f) {
         return 0.0f;
     }
 
-    const GfVec3f localDirection =
+    const GfVec3f dirLight =
         light.xformWorldToLight.TransformDir(
-            worldDirection.GetNormalized()).GetNormalized();
-    return _DomeDirectionalPdf(light, _DirectionToLatLongUv(localDirection));
+            dirWld.GetNormalized()).GetNormalized();
+    return _DomeDirectionalPdf(light, _DirectionToLatLongUv(dirLight));
 }
 
 static bool
 _GetReflectionHemisphereNormal(
-    GfVec3f const& normal, GfVec3f* normalizedNormal)
+    GfVec3f const& normalShdWldOut,
+    GfVec3f* outNormalShdWldOutNormalized)
 {
-    if (!normalizedNormal || !ty::IsFinite(normal) ||
-        normal.GetLengthSq() <= 0.0f) {
+    if (!outNormalShdWldOutNormalized ||
+        !ty::IsFinite(normalShdWldOut) ||
+        normalShdWldOut.GetLengthSq() <= 0.0f) {
         return false;
     }
-    *normalizedNormal = normal.GetNormalized();
+    *outNormalShdWldOutNormalized = normalShdWldOut.GetNormalized();
     return true;
 }
 
 static GfVec3f
 _ReflectAcrossPlane(
-    GfVec3f const& direction, GfVec3f const& normal)
+    GfVec3f const& dirWld, GfVec3f const& normalShdWldOut)
 {
-    return (direction - normal * (2.0f * GfDot(direction, normal)))
+    return (dirWld -
+            normalShdWldOut * (2.0f * GfDot(dirWld, normalShdWldOut)))
         .GetNormalized();
 }
 
 static float
 _ReflectionHemispherePdf(
-    ty::LightData const& light, GfVec3f const& normal,
-    GfVec3f const& direction)
+    ty::LightData const& light, GfVec3f const& normalShdWldOut,
+    GfVec3f const& dirWld)
 {
-    GfVec3f n;
-    if (!_GetReflectionHemisphereNormal(normal, &n) ||
-        !ty::IsFinite(direction) ||
-        direction.GetLengthSq() <= 0.0f) {
+    GfVec3f normalShdWldOutNormalized;
+    if (!_GetReflectionHemisphereNormal(
+            normalShdWldOut, &normalShdWldOutNormalized) ||
+        !ty::IsFinite(dirWld) ||
+        dirWld.GetLengthSq() <= 0.0f) {
         return 0.0f;
     }
 
-    const GfVec3f omegaInWld = direction.GetNormalized();
-    if (GfDot(n, omegaInWld) <= 0.0f) {
+    const GfVec3f omegaInWld = dirWld.GetNormalized();
+    if (GfDot(normalShdWldOutNormalized, omegaInWld) <= 0.0f) {
         return 0.0f;
     }
 
-    const GfVec3f mirrored = _ReflectAcrossPlane(omegaInWld, n);
+    const GfVec3f dirMirroredWld =
+        _ReflectAcrossPlane(omegaInWld, normalShdWldOutNormalized);
     return _DomeDirectionalPdf(light, omegaInWld) +
-           _DomeDirectionalPdf(light, mirrored);
+           _DomeDirectionalPdf(light, dirMirroredWld);
 }
 
 static GfVec3f
 _FoldDirectionToReflectionHemisphere(
-    GfVec3f const& direction, GfVec3f const& normal)
+    GfVec3f const& dirWld, GfVec3f const& normalShdWldOut)
 {
-    GfVec3f n;
-    if (!_GetReflectionHemisphereNormal(normal, &n) ||
-        !ty::IsFinite(direction) ||
-        direction.GetLengthSq() <= 0.0f) {
+    GfVec3f normalShdWldOutNormalized;
+    if (!_GetReflectionHemisphereNormal(
+            normalShdWldOut, &normalShdWldOutNormalized) ||
+        !ty::IsFinite(dirWld) ||
+        dirWld.GetLengthSq() <= 0.0f) {
         return GfVec3f(0.0f);
     }
 
-    const GfVec3f omegaInWld = direction.GetNormalized();
-    return GfDot(n, omegaInWld) > 0.0f
+    const GfVec3f omegaInWld = dirWld.GetNormalized();
+    return GfDot(normalShdWldOutNormalized, omegaInWld) > 0.0f
         ? omegaInWld
-        : _ReflectAcrossPlane(omegaInWld, n);
+        : _ReflectAcrossPlane(omegaInWld, normalShdWldOutNormalized);
 }
 
 ty::LightSampler::LightSample
 ty::EvaluateDomeLightDirection(
-    ty::LightData const& light, GfVec3f const& direction,
+    ty::LightData const& light, GfVec3f const& dirWld,
     ty::RenderColorSpace renderColorSpace)
 {
-    if (!ty::IsFinite(direction) || direction.GetLengthSq() <= 0.0f) {
+    if (!ty::IsFinite(dirWld) || dirWld.GetLengthSq() <= 0.0f) {
         return ty::InvalidLightSample();
     }
 
-    const GfVec3f normalizedDirection = direction.GetNormalized();
-    const GfVec3f localDirection =
+    const GfVec3f dirWldNormalized = dirWld.GetNormalized();
+    const GfVec3f dirLight =
         light.xformWorldToLight.TransformDir(
-            normalizedDirection).GetNormalized();
-    const GfVec2f uv = _DirectionToLatLongUv(localDirection);
+            dirWldNormalized).GetNormalized();
+    const GfVec2f coordinateTexture = _DirectionToLatLongUv(dirLight);
 
     GfVec3f radianceIn = light.texture.pixels.empty()
         ? GfVec3f(1.0f)
         : ty::SampleLightTexture(
-              light.texture, uv[0], uv[1], renderColorSpace);
+              light.texture, coordinateTexture[0], coordinateTexture[1],
+              renderColorSpace);
     // Apply LightAPI radiometric parameters consistently with area lights.
     radianceIn = GfCompMult(
         radianceIn, ty::EvalLightBasic(light, renderColorSpace));
 
-    const float pdfSolidAngle = _DomeDirectionalPdf(light, uv);
+    const float pdfSolidAngle = _DomeDirectionalPdf(light, coordinateTexture);
     return ty::LightSampler::LightSample{
-        radianceIn, normalizedDirection, std::numeric_limits<float>::max(),
+        radianceIn, dirWldNormalized, std::numeric_limits<float>::max(),
         (pdfSolidAngle > 0.0f) ? (1.0f / pdfSolidAngle) : 0.0f,
         pdfSolidAngle > 0.0f};
 }
 
 ty::LightSampler::LightSample
 ty::EvaluateDomeLightDirection(
-    ty::LightData const& light, GfVec3f const& direction,
-    GfVec3f const& normal,
+    ty::LightData const& light, GfVec3f const& dirWld,
+    GfVec3f const& normalShdWldOut,
     ty::LightSampler::SamplingMode samplingMode,
     ty::RenderColorSpace renderColorSpace)
 {
     if (samplingMode !=
         ty::LightSampler::SamplingMode::ReflectionHemisphere) {
         return ty::EvaluateDomeLightDirection(
-            light, direction, renderColorSpace);
+            light, dirWld, renderColorSpace);
     }
 
-    if (!ty::IsFinite(direction) || direction.GetLengthSq() <= 0.0f) {
+    if (!ty::IsFinite(dirWld) || dirWld.GetLengthSq() <= 0.0f) {
         return ty::InvalidLightSample();
     }
 
-    const GfVec3f normalizedDirection = direction.GetNormalized();
-    const GfVec3f localDirection =
+    const GfVec3f dirWldNormalized = dirWld.GetNormalized();
+    const GfVec3f dirLight =
         light.xformWorldToLight.TransformDir(
-            normalizedDirection).GetNormalized();
-    const GfVec2f uv = _DirectionToLatLongUv(localDirection);
+            dirWldNormalized).GetNormalized();
+    const GfVec2f coordinateTexture = _DirectionToLatLongUv(dirLight);
 
     GfVec3f radianceIn = light.texture.pixels.empty()
         ? GfVec3f(1.0f)
         : ty::SampleLightTexture(
-              light.texture, uv[0], uv[1], renderColorSpace);
+              light.texture, coordinateTexture[0], coordinateTexture[1],
+              renderColorSpace);
     radianceIn = GfCompMult(
         radianceIn, ty::EvalLightBasic(light, renderColorSpace));
 
     const float pdfSolidAngle =
-        _ReflectionHemispherePdf(light, normal, normalizedDirection);
+        _ReflectionHemispherePdf(
+            light, normalShdWldOut, dirWldNormalized);
     return ty::LightSampler::LightSample{
-        radianceIn, normalizedDirection, std::numeric_limits<float>::max(),
+        radianceIn, dirWldNormalized, std::numeric_limits<float>::max(),
         (pdfSolidAngle > 0.0f) ? (1.0f / pdfSolidAngle) : 0.0f,
         pdfSolidAngle > 0.0f};
 }
 
 ty::LightSampler::LightSample
 ty::SampleDomeLight(
-    ty::LightData const& light, GfVec3f const& normal,
+    ty::LightData const& light, GfVec3f const& normalShdWldOut,
     float u1, float u2,
     ty::LightSampler::SamplingMode samplingMode,
     ty::RenderColorSpace renderColorSpace)
 {
-    GfVec3f worldDirection;
+    GfVec3f dirWld;
     if (!_HasDomeDistribution(light.texture)) {
         const float localY = 1.0f - 2.0f * ty::ClampUnitHalfOpen(u1);
         const float localR =
             sqrtf(std::max(0.0f, 1.0f - ty::Sqr(localY)));
         const float phi = 2.0f * ty::Pi<float> * ty::ClampUnitHalfOpen(u2);
-        const GfVec3f localDirection(
+        const GfVec3f dirLight(
             localR * sinf(phi), localY, localR * cosf(phi));
-        worldDirection =
-            light.xformLightToWorld.TransformDir(localDirection).GetNormalized();
+        dirWld =
+            light.xformLightToWorld.TransformDir(dirLight).GetNormalized();
     } else {
-        const GfVec2f uv = _SampleDomeUv(light.texture, u1, u2);
-        const GfVec3f localDirection = _LatLongUvToDirection(uv);
-        worldDirection =
-            light.xformLightToWorld.TransformDir(localDirection).GetNormalized();
+        const GfVec2f coordinateTexture = _SampleDomeUv(light.texture, u1, u2);
+        const GfVec3f dirLight = _LatLongUvToDirection(coordinateTexture);
+        dirWld =
+            light.xformLightToWorld.TransformDir(dirLight).GetNormalized();
     }
 
     if (samplingMode ==
         ty::LightSampler::SamplingMode::ReflectionHemisphere) {
-        const GfVec3f hemisphereDirection =
-            _FoldDirectionToReflectionHemisphere(worldDirection, normal);
-        if (hemisphereDirection.GetLengthSq() > 0.0f) {
+        const GfVec3f dirHemisphereWld =
+            _FoldDirectionToReflectionHemisphere(
+                dirWld, normalShdWldOut);
+        if (dirHemisphereWld.GetLengthSq() > 0.0f) {
             return ty::EvaluateDomeLightDirection(
-                light, hemisphereDirection, normal, samplingMode,
+                light, dirHemisphereWld, normalShdWldOut, samplingMode,
                 renderColorSpace);
         }
     }
 
     return ty::EvaluateDomeLightDirection(
-        light, worldDirection, renderColorSpace);
+        light, dirWld, renderColorSpace);
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

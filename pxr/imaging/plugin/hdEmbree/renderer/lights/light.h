@@ -125,7 +125,7 @@ struct DirectionalShapingDistribution
 
 struct DirectionalShapingSample
 {
-    GfVec3f localDirection = GfVec3f(0.0f, 0.0f, 1.0f);
+    GfVec3f dirLight = GfVec3f(0.0f, 0.0f, 1.0f);
     float pdfSolidAngle = 0.0f;
     float importance = 0.0f;
     bool valid = false;
@@ -143,11 +143,11 @@ struct Shaping
 
 GfVec3f EvaluateDirectionalShaping(
     Shaping const& shaping,
-    GfVec3f const& localDirection);
+    GfVec3f const& dirLight);
 
 float DirectionalShapingImportance(
     Shaping const& shaping,
-    GfVec3f const& localDirection);
+    GfVec3f const& dirLight);
 
 void BuildDirectionalShapingDistribution(Shaping* shaping);
 
@@ -158,7 +158,7 @@ DirectionalShapingSample SampleDirectionalShaping(
 
 float DirectionalShapingPdf(
     Shaping const& shaping,
-    GfVec3f const& localDirection);
+    GfVec3f const& dirLight);
 
 struct LightData
 {
