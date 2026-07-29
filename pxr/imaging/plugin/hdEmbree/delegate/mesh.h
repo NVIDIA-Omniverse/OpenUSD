@@ -186,6 +186,29 @@ private:
         std::unique_ptr<HdEmbreeInstanceContext> context;
     };
 
+    // Rebuild this rprim's top-level Embree instances from the current
+    // instancer state. Sizes _instances to the instancer's instance count
+    // (one identity instance when the rprim is un-instanced), creating and
+    // releasing Embree instance geometries and their
+    // HdEmbreeInstanceContexts as the count changes, then writes each
+    // instance's object-to-world/world-to-object transform and its resolved
+    // light-linking category set.
+    //
+    // Requires _rtcMeshScene to exist, current _transform and _categories,
+    // and completed _UpdateInstancer() and
+    // HdInstancer::_SyncInstancerAndParents() calls. _rtcMeshScene must be
+    // committed before the caller commits these instances. Commits neither
+    // the instance geometries nor the root scene; the caller must run
+    // _CommitPrototypeInstances() and then commit the root scene.
+    //
+    // An empty instancer id yields exactly one identity instance; an existing
+    // instancer returning no instance data yields none. Embree errors use the
+    // configured device callback; this method has no local recovery or
+    // failure result.
+    void _UpdateInstances(HdSceneDelegate* sceneDelegate,
+                          RTCScene scene,
+                          RTCDevice device);
+
     // Embree instance bounds depend on the committed state of the instanced
     // scene. Recommit every instance after changing that prototype scene.
     void _CommitPrototypeInstances();

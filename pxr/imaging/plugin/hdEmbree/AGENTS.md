@@ -271,8 +271,9 @@ plugin in the active Pixi environment.
   classification of compiled material closures.
 - `renderer/integrator/transportPolicy.h`: shared contribution cutoff,
   firefly-clamping, and multi-sample MIS policy.
-- `delegate/mesh.*`: `HdEmbreeMesh`; translates Hydra mesh data into Embree prototype
-  geometry and top-level instances.
+- `delegate/mesh.*`: `HdEmbreeMesh`; translates Hydra mesh data into Embree
+  prototype geometry. `_UpdateInstances()` separately materializes the
+  top-level Embree instances after prototype updates.
 - `delegate/instancer.*`: Hydra instancer support for per-instance transforms and
   instance contexts.
 - `renderer/geometry/context.h`: Embree geometry user data used by ray hits: owning Rprim,
@@ -439,9 +440,10 @@ binding data.
 
 `HdEmbreeMesh::Sync()` receives a `HdEmbreeRenderParam`, obtains the Embree
 scene/device, and calls `_PopulateRtMesh()`. `_PopulateRtMesh()` updates
-triangle or subdivision prototype geometry, top-level instances, contexts,
-primitive params, double-sided/refined state, normals, tangents, and cached
-surface derivatives.
+triangle or subdivision prototype geometry, prototype contexts, primitive
+params, double-sided/refined state, normals, tangents, and cached surface
+derivatives, then calls `_UpdateInstances()` to resize and populate top-level
+instance geometry and contexts when instance state is dirty.
 
 Primvars are pulled into `_primvarSourceMap` by `_UpdatePrimvarSources()` and
 `_UpdateComputedPrimvarSources()`, then converted into `HdEmbreePrimvarSampler`

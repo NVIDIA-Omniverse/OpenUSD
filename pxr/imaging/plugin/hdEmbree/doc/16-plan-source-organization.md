@@ -6,6 +6,11 @@ extraction that `13-plan-mesh-ownership.md` explicitly declines (see its
 Non-goals, `13-plan-mesh-ownership.md:51-55`) so that plan 13 stays a
 bisectable lifetime-only commit.
 
+Implementation measurement: after plans 13 and 15, the guarded instance
+update body was 69 physical lines, 61 nonblank, and required only the planned
+`sceneDelegate`, `scene`, and `device` parameters. Both counts exceed the
+40-line abort threshold, so the extraction proceeded.
+
 The file-splitting work for `bsdf.cpp` and `lightSamplers.cpp` that earlier
 drafts of this plan listed as "candidates" is now designed and measured in
 `17-plan-bsdf-split.md` and `18-plan-light-samplers-split.md`. This plan
@@ -69,12 +74,16 @@ into one private method:
 // then writes each instance's object-to-world/world-to-object transform and
 // its resolved light-linking category set.
 //
-// Requires: the prototype scene _rtcMeshScene exists and has been committed;
-// _transform and _categories are current; the caller has already run
-// _UpdateInstancer() and HdInstancer::_SyncInstancerAndParents().
-// Does not commit `scene` — the caller owns that ordering.
-// Cannot fail; an absent or empty instancer yields exactly one identity
-// instance.
+// Requires: _rtcMeshScene exists; _transform and _categories are current; the
+// caller has already run _UpdateInstancer() and
+// HdInstancer::_SyncInstancerAndParents(). _rtcMeshScene must be committed
+// before the caller commits these instances.
+// Commits neither the instance geometries nor the root scene; the caller must
+// run _CommitPrototypeInstances() and then commit the root scene.
+// An empty instancer id yields exactly one identity instance; an existing
+// instancer returning no instance data yields none. Embree errors use the
+// configured device callback; this method has no local recovery or failure
+// result.
 void _UpdateInstances(HdSceneDelegate* sceneDelegate,
                       RTCScene scene,
                       RTCDevice device);

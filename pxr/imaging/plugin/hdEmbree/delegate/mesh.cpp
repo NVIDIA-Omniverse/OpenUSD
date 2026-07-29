@@ -1734,6 +1734,82 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
 }
 
 void
+HdEmbreeMesh::_UpdateInstances(HdSceneDelegate* sceneDelegate,
+                               RTCScene scene,
+                               RTCDevice device)
+{
+    std::vector<HdEmbreeInstanceData> instances;
+    if (!GetInstancerId().IsEmpty()) {
+        // Retrieve instance transforms from the instancer.
+        HdRenderIndex &renderIndex = sceneDelegate->GetRenderIndex();
+        HdInstancer *instancer =
+            renderIndex.GetInstancer(GetInstancerId());
+        instances = static_cast<HdEmbreeInstancer*>(instancer)->
+            ComputeInstanceData(GetId());
+        for (HdEmbreeInstanceData& instance : instances) {
+            HdEmbreeMergeCategories(
+                _categories, &instance.categories);
+        }
+    } else {
+        // If there's no instancer, add a single instance with transform I.
+        instances.emplace_back();
+        instances.back().categories = _categories;
+    }
+
+    const size_t oldSize = _instances.size();
+    const size_t newSize = instances.size();
+
+    // Release removed instance geometry before destroying the stable user
+    // data address owned by its record.
+    for(size_t i = newSize; i < oldSize; ++i) {
+        _Instance& instance = _instances[i];
+        rtcDetachGeometry(scene, instance.rtcId);
+        rtcReleaseGeometry(instance.geometry);
+        instance.geometry = nullptr;
+        instance.rtcId = RTC_INVALID_GEOMETRY_ID;
+        instance.context.reset();
+    }
+    _instances.resize(newSize);
+
+    // Size up (if necessary).
+    for(size_t i = oldSize; i < newSize; ++i) {
+        _Instance& instance = _instances[i];
+
+        // Create the new instance.
+        RTCGeometry geom = rtcNewGeometry (device, RTC_GEOMETRY_TYPE_INSTANCE);
+        rtcSetGeometryInstancedScene(geom,_rtcMeshScene);
+        rtcSetGeometryTimeStepCount(geom,1);
+        rtcSetGeometryMask(geom, HdEmbree_RayMask::Scene);
+        instance.rtcId = rtcAttachGeometry(scene,geom);
+        instance.geometry = geom;
+
+        // Embree borrows the context address owned by this record.
+        instance.context =
+            std::make_unique<HdEmbreeInstanceContext>();
+        instance.context->rootScene = _rtcMeshScene;
+        instance.context->instanceId = i;
+        rtcSetGeometryUserData(geom, instance.context.get());
+    }
+
+    // Update transform
+    for (size_t i = 0; i < instances.size(); ++i) {
+        _Instance& instance = _instances[i];
+
+        // Combine the local transform and the instance transform.
+        GfMatrix4f matf =
+            _transform * GfMatrix4f(instances[i].transform);
+
+        // Update the transform in the BVH.
+        rtcSetGeometryTransform(instance.geometry,
+            0, RTC_FORMAT_FLOAT4X4_COLUMN_MAJOR, matf.GetArray());
+        // Update the renderer data exposed through Embree user data.
+        instance.context->objectToWorldMatrix = matf;
+        instance.context->worldToObjectMatrix = matf.GetInverse();
+        instance.context->categories = instances[i].categories;
+    }
+}
+
+void
 HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
                               RTCScene         scene,
                               RTCDevice        device,
@@ -2255,76 +2331,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         HdChangeTracker::IsTransformDirty(*dirtyBits, id) ||
         (*dirtyBits & HdChangeTracker::DirtyCategories);
     if (instancesDirty) {
-
-        std::vector<HdEmbreeInstanceData> instances;
-        if (!GetInstancerId().IsEmpty()) {
-            // Retrieve instance transforms from the instancer.
-            HdRenderIndex &renderIndex = sceneDelegate->GetRenderIndex();
-            HdInstancer *instancer =
-                renderIndex.GetInstancer(GetInstancerId());
-            instances = static_cast<HdEmbreeInstancer*>(instancer)->
-                ComputeInstanceData(GetId());
-            for (HdEmbreeInstanceData& instance : instances) {
-                HdEmbreeMergeCategories(
-                    _categories, &instance.categories);
-            }
-        } else {
-            // If there's no instancer, add a single instance with transform I.
-            instances.emplace_back();
-            instances.back().categories = _categories;
-        }
-
-        const size_t oldSize = _instances.size();
-        const size_t newSize = instances.size();
-
-        // Release removed instance geometry before destroying the stable user
-        // data address owned by its record.
-        for(size_t i = newSize; i < oldSize; ++i) {
-            _Instance& instance = _instances[i];
-            rtcDetachGeometry(scene, instance.rtcId);
-            rtcReleaseGeometry(instance.geometry);
-            instance.geometry = nullptr;
-            instance.rtcId = RTC_INVALID_GEOMETRY_ID;
-            instance.context.reset();
-        }
-        _instances.resize(newSize);
-
-        // Size up (if necessary).
-        for(size_t i = oldSize; i < newSize; ++i) {
-            _Instance& instance = _instances[i];
-
-            // Create the new instance.
-            RTCGeometry geom = rtcNewGeometry (device, RTC_GEOMETRY_TYPE_INSTANCE);
-            rtcSetGeometryInstancedScene(geom,_rtcMeshScene);
-            rtcSetGeometryTimeStepCount(geom,1);
-            rtcSetGeometryMask(geom, HdEmbree_RayMask::Scene);
-            instance.rtcId = rtcAttachGeometry(scene,geom);
-            instance.geometry = geom;
-
-            // Embree borrows the context address owned by this record.
-            instance.context =
-                std::make_unique<HdEmbreeInstanceContext>();
-            instance.context->rootScene = _rtcMeshScene;
-            instance.context->instanceId = i;
-            rtcSetGeometryUserData(geom, instance.context.get());
-        }
-
-        // Update transform
-        for (size_t i = 0; i < instances.size(); ++i) {
-            _Instance& instance = _instances[i];
-
-            // Combine the local transform and the instance transform.
-            GfMatrix4f matf =
-                _transform * GfMatrix4f(instances[i].transform);
-
-            // Update the transform in the BVH.
-            rtcSetGeometryTransform(instance.geometry,
-                0, RTC_FORMAT_FLOAT4X4_COLUMN_MAJOR, matf.GetArray());
-            // Update the renderer data exposed through Embree user data.
-            instance.context->objectToWorldMatrix = matf;
-            instance.context->worldToObjectMatrix = matf.GetInverse();
-            instance.context->categories = instances[i].categories;
-        }
+        _UpdateInstances(sceneDelegate, scene, device);
     }
 
     // A changed prototype invalidates every referencing instance bound; a
