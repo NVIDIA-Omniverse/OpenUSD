@@ -9,7 +9,8 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_MATH_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_MATH_H
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/mathTypes.h"
+#include <renderer/materials/MaterialXCpp/mathTypes.h>
+
 #include "pxr/base/gf/matrix4d.h"
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/vec2f.h"

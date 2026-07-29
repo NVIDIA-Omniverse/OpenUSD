@@ -4,10 +4,11 @@
 #ifndef MXCPP_VALUE_H
 #define MXCPP_VALUE_H
 
-#include "../../integrator/medium.h"
-#include "materials/closureTree.h"
 #include "mathTypes.h"
 #include "surfaceClosure.h"
+
+#include <renderer/integrator/medium.h>
+#include <renderer/materials/MaterialXCpp/materials/closureTree.h>
 
 #include <string>
 #include <variant>

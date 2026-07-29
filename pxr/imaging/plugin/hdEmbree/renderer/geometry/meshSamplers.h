@@ -7,10 +7,11 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_MESH_SAMPLERS_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_MESH_SAMPLERS_H
 
-#include "pxr/pxr.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampler.h"
-#include "pxr/imaging/hd/meshUtil.h"
+#include "primvarSampler.h"
+
 #include "pxr/base/vt/types.h"
+#include "pxr/imaging/hd/meshUtil.h"
+#include "pxr/pxr.h"
 
 #include <embree4/rtcore.h>
 #include <embree4/rtcore_geometry.h>

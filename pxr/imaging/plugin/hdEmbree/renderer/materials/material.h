@@ -7,8 +7,8 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_MATERIAL_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_MATERIAL_H
 
-#include "pxr/pxr.h"
 #include "pxr/base/tf/token.h"
+#include "pxr/pxr.h"
 
 #include <string>
 #include <vector>

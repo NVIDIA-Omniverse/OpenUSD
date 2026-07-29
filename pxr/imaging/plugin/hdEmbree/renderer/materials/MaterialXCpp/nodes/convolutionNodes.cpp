@@ -5,10 +5,11 @@
 // https://openusd.org/license.
 //
 #include "convolutionNodes.h"
-#include "helpers/inputEvaluationHelpers.h"
-#include "helpers/mathHelpers.h"
-#include "helpers/shadingContextHelpers.h"
-#include "../nodeRegistry.h"
+
+#include <renderer/materials/MaterialXCpp/nodeRegistry.h>
+#include <renderer/materials/MaterialXCpp/nodes/helpers/inputEvaluationHelpers.h>
+#include <renderer/materials/MaterialXCpp/nodes/helpers/mathHelpers.h>
+#include <renderer/materials/MaterialXCpp/nodes/helpers/shadingContextHelpers.h>
 
 namespace mxcpp {
 

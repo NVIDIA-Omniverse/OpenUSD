@@ -7,9 +7,12 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_RENDER_BUFFER_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_RENDER_BUFFER_H
 
-#include "pxr/pxr.h"
 #include "pxr/base/gf/vec3i.h"
 #include "pxr/imaging/hd/enums.h"
+#include "pxr/imaging/hd/types.h"
+#include "pxr/pxr.h"
+
+#include <cstddef>
 
 PXR_NAMESPACE_OPEN_SCOPE
 

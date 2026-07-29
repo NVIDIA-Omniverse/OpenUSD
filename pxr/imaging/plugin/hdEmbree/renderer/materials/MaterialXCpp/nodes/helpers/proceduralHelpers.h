@@ -10,8 +10,9 @@
 #include "colorHelpers.h"
 #include "hashHelper.h"
 #include "mathHelpers.h"
-#include "../../paramMap.h"
 #include "valueHelper.h"
+
+#include <renderer/materials/MaterialXCpp/paramMap.h>
 
 #include <algorithm>
 #include <array>

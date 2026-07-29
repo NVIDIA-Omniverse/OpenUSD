@@ -6,8 +6,8 @@
 //
 // Camera and lens sampling, primary-ray construction, and ray differentials.
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
+#include <renderer/renderer.h>
+#include <renderer/rendererMath.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
 

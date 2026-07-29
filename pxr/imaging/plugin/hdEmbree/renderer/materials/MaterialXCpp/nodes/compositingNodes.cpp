@@ -5,11 +5,12 @@
 // https://openusd.org/license.
 //
 #include "compositingNodes.h"
-#include "../surfaceShaderUtils.h"
-#include "../nodeRegistry.h"
 
-#include <cmath>
+#include <renderer/materials/MaterialXCpp/nodeRegistry.h>
+#include <renderer/materials/MaterialXCpp/surfaceShaderUtils.h>
+
 #include <algorithm>
+#include <cmath>
 
 namespace mxcpp {
 

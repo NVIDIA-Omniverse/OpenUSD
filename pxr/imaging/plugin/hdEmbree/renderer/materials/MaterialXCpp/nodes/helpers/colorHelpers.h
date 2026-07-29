@@ -7,7 +7,7 @@
 #ifndef MXCPP_NODES_COLOR_HELPERS_H
 #define MXCPP_NODES_COLOR_HELPERS_H
 
-#include "../../mathTypes.h"
+#include <renderer/materials/MaterialXCpp/mathTypes.h>
 
 #include <algorithm>
 #include <cmath>

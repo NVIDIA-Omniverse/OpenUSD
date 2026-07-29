@@ -4,11 +4,10 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightSamplers.h"
+#include "lightSamplers.h"
 
 #include "pxr/base/gf/color.h"
 #include "pxr/base/gf/colorSpace.h"
-
 #include "pxr/base/gf/vec2f.h"
 #include "pxr/base/gf/vec3f.h"
 

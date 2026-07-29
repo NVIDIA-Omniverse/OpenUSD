@@ -221,6 +221,22 @@ corresponding type without changing the semantic name.
   BSDF tree nor their medium state. Terminal support validation uses the same
   dispatch function as evaluation so the accepted model set cannot drift
   separately.
+- `materials/MaterialXCpp/materials/bsdf.cpp`: public `mxcpp::Bsdf` namespace
+  API. Internal BSDF code is layered under `materials/bsdf/` in this dependency
+  order: `mathPrimitives` -> `shadingFrame` -> `fresnel` ->
+  `energyCompensation`/`thinFilm` -> `microfacet` -> `sheen`/`diffuse` ->
+  `reflectionOnlyInterfaces` -> `dielectric` -> `legacySurface` ->
+  `closureTraversal`. Dependencies only point left-to-right; table data lives
+  in `bsdf/*Lut.h` and is consumed by `energyCompensation.cpp`.
+  `mathPrimitives`, `shadingFrame`, `fresnel`, and `sheen` are header-only.
+  Hot distributions, visibility terms, sampling/PDF primitives, and predicates
+  in `microfacet`, `diffuse`, `reflectionOnlyInterfaces`, and `dielectric`
+  remain inline; their larger lobe evaluators and samplers stay out of line.
+  Cold helpers and mutable configuration state remain translation-unit-local.
+- First-party includes are resolved from the private hdEmbree source-root
+  include directory. Cross-directory includes use angle-bracket
+  `<delegate/...>` or `<renderer/...>` paths; same-directory includes use a
+  quoted basename. hdEmbree headers remain uninstalled implementation details.
 - `materials/BSDL/`: BSDF support library and generated lookup tables.
 - `geometry/context.h`: Embree prototype and instance hit data: identities,
   properties, `std::unordered_map`-owned primvar samplers,
@@ -669,7 +685,9 @@ than reading one monolithic translation unit:
 Read `renderer.h` for persistent state and function contracts,
 `geometry/context.h` for hit data, `sampling/sampling.h` for random domains,
 `lights/lightSamplers.*` for light PDFs, and
-`materials/MaterialXCpp/materials/bsdf.*` for closure evaluation and sampling.
+`materials/MaterialXCpp/materials/bsdf.cpp` for the public BSDF API and
+`materials/MaterialXCpp/materials/bsdf/` for foundations, lobe evaluation, and
+closure traversal.
 
 ## Changing the plugin
 

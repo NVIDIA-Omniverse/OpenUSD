@@ -7,16 +7,16 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_MESH_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_MESH_H
 
-#include "pxr/pxr.h"
-#include "pxr/imaging/hd/mesh.h"
-#include "pxr/imaging/hd/enums.h"
-#include "pxr/imaging/hd/vertexAdjacency.h"
-#include "pxr/base/gf/matrix4f.h"
-#include "pxr/base/gf/matrix4d.h"
-#include "pxr/base/gf/rect2i.h"
+#include <renderer/geometry/meshSamplers.h>
+#include <renderer/lights/lightLinking.h>
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/meshSamplers.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightLinking.h"
+#include "pxr/base/gf/matrix4d.h"
+#include "pxr/base/gf/matrix4f.h"
+#include "pxr/base/gf/rect2i.h"
+#include "pxr/imaging/hd/enums.h"
+#include "pxr/imaging/hd/mesh.h"
+#include "pxr/imaging/hd/vertexAdjacency.h"
+#include "pxr/pxr.h"
 
 #include <embree4/rtcore.h>
 #include <embree4/rtcore_ray.h>

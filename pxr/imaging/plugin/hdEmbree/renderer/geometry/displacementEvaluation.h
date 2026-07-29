@@ -7,9 +7,8 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_DISPLACEMENT_EVALUATION_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_DISPLACEMENT_EVALUATION_H
 
-#include "pxr/pxr.h"
-
 #include "pxr/base/gf/vec3f.h"
+#include "pxr/pxr.h"
 
 #include <embree4/rtcore_geometry.h>
 

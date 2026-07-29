@@ -4,9 +4,10 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_OIIO_TEXTURE_SYSTEM_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_OIIO_TEXTURE_SYSTEM_H
 
+#include <renderer/colorManagement.h>
+#include <renderer/materials/MaterialXCpp/textureSystem.h>
+
 #include "pxr/pxr.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/colorManagement.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/textureSystem.h"
 
 #include <memory>
 

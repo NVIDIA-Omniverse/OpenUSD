@@ -7,10 +7,11 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_PARAM_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_PARAM_H
 
-#include "pxr/pxr.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/materialEvalContext.h"
+#include <renderer/materials/materialEvalContext.h>
+
 #include "pxr/imaging/hd/renderDelegate.h"
 #include "pxr/imaging/hd/renderThread.h"
+#include "pxr/pxr.h"
 
 #include <embree4/rtcore.h>
 

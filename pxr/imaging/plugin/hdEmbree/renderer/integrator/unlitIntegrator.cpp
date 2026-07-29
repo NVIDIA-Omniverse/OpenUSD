@@ -6,12 +6,12 @@
 //
 // Single-hit unlit, camera-light, and ambient-occlusion integration.
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampling.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graph.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/shadingContext.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/rayUtil.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
+#include <renderer/geometry/primvarSampling.h>
+#include <renderer/materials/MaterialXCpp/graph.h>
+#include <renderer/materials/MaterialXCpp/shadingContext.h>
+#include <renderer/rayUtil.h>
+#include <renderer/renderer.h>
+#include <renderer/rendererMath.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
 

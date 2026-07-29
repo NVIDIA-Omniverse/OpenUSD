@@ -7,7 +7,7 @@
 #ifndef MXCPP_MATERIALS_BSDF_H
 #define MXCPP_MATERIALS_BSDF_H
 
-#include "../surfaceClosure.h"
+#include <renderer/materials/MaterialXCpp/surfaceClosure.h>
 
 namespace mxcpp {
 

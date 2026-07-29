@@ -6,18 +6,18 @@
 //
 // Subdivision and triangle surface-frame resolution.
 //
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/surfaceDerivatives.h"
+#include "surfaceDerivatives.h"
+#include "context.h"
+#include "displacementEvaluation.h"
+#include "meshSamplers.h"
+#include "normalTransforms.h"
+#include "primvarSampling.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/context.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/displacementEvaluation.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/meshSamplers.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/normalTransforms.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampling.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
+#include <renderer/rendererMath.h>
 
+#include "pxr/base/tf/token.h"
 #include "pxr/imaging/hd/meshUtil.h"
 #include "pxr/imaging/hd/tokens.h"
-#include "pxr/base/tf/token.h"
 
 #include <algorithm>
 #include <cmath>

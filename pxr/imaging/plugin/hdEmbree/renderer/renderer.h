@@ -7,27 +7,26 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_H
 
-#include "pxr/pxr.h"
+#include "colorManagement.h"
+#include "renderSettings.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/colorManagement.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/context.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/displacementEvaluation.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/lights/light.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightSamplers.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightLinking.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightRegistry.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/medium.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/sss.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/materialEvalContext.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderSettings.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/sampling/sampling.h"
-
-#include "pxr/imaging/hd/aov.h"
-#include "pxr/imaging/hd/renderThread.h"
+#include <renderer/geometry/context.h>
+#include <renderer/geometry/displacementEvaluation.h>
+#include <renderer/integrator/medium.h>
+#include <renderer/integrator/sss.h>
+#include <renderer/lights/light.h>
+#include <renderer/lights/lightLinking.h>
+#include <renderer/lights/lightRegistry.h>
+#include <renderer/lights/lightSamplers.h>
+#include <renderer/materials/materialEvalContext.h>
+#include <renderer/sampling/sampling.h>
 
 #include "pxr/base/gf/matrix4d.h"
 #include "pxr/base/gf/rect2i.h"
 #include "pxr/base/tf/token.h"
+#include "pxr/imaging/hd/aov.h"
+#include "pxr/imaging/hd/renderThread.h"
+#include "pxr/pxr.h"
 
 #include <embree4/rtcore.h>
 #include <embree4/rtcore_device.h>

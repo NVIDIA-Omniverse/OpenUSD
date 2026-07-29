@@ -4,9 +4,10 @@
 #ifndef MXCPP_SURFACE_CLOSURE_H
 #define MXCPP_SURFACE_CLOSURE_H
 
-#include "../../integrator/medium.h"
 #include "mathTypes.h"
-#include "materials/closureTree.h"
+
+#include <renderer/integrator/medium.h>
+#include <renderer/materials/MaterialXCpp/materials/closureTree.h>
 
 #include <algorithm>
 #include <cmath>

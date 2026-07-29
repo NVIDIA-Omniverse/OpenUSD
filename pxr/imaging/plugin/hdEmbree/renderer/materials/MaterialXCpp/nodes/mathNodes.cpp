@@ -5,13 +5,14 @@
 // https://openusd.org/license.
 //
 #include "mathNodes.h"
-#include "helpers/mathHelpers.h"
-#include "helpers/spaceHelpers.h"
-#include "../surfaceShaderUtils.h"
-#include "../nodeRegistry.h"
 
-#include <cmath>
+#include <renderer/materials/MaterialXCpp/nodeRegistry.h>
+#include <renderer/materials/MaterialXCpp/nodes/helpers/mathHelpers.h>
+#include <renderer/materials/MaterialXCpp/nodes/helpers/spaceHelpers.h>
+#include <renderer/materials/MaterialXCpp/surfaceShaderUtils.h>
+
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 namespace mxcpp {

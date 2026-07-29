@@ -7,7 +7,7 @@
 #ifndef MXCPP_NODES_SHADING_CONTEXT_HELPERS_H
 #define MXCPP_NODES_SHADING_CONTEXT_HELPERS_H
 
-#include "../../shadingContext.h"
+#include <renderer/materials/MaterialXCpp/shadingContext.h>
 
 namespace mxcpp {
 

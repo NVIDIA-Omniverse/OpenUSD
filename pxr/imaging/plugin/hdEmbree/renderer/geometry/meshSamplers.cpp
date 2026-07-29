@@ -4,7 +4,7 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/meshSamplers.h"
+#include "meshSamplers.h"
 
 #include "pxr/imaging/hd/meshUtil.h"
 #include "pxr/imaging/hd/vtBufferSource.h"

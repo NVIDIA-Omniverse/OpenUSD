@@ -7,8 +7,9 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_PXRIES_PXRIES_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_PXRIES_PXRIES_H
 
+#include "ies.h"
+
 #include "pxr/pxr.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/lights/pxrIES/ies.h"
 
 #include <string>
 

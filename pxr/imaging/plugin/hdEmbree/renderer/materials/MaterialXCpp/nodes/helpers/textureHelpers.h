@@ -7,12 +7,13 @@
 #ifndef MXCPP_NODES_TEXTURE_HELPERS_H
 #define MXCPP_NODES_TEXTURE_HELPERS_H
 
-#include "inputEvaluationHelpers.h"
 #include "colorHelpers.h"
+#include "inputEvaluationHelpers.h"
 #include "mathHelpers.h"
-#include "spaceHelpers.h"
 #include "shadingContextHelpers.h"
-#include "../../paramMap.h"
+#include "spaceHelpers.h"
+
+#include <renderer/materials/MaterialXCpp/paramMap.h>
 
 #include <algorithm>
 #include <string>

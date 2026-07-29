@@ -7,9 +7,9 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_LINKING_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_LINKING_H
 
-#include "pxr/pxr.h"
 #include "pxr/base/tf/token.h"
 #include "pxr/base/vt/array.h"
+#include "pxr/pxr.h"
 
 #include <algorithm>
 

@@ -7,11 +7,10 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_SETTINGS_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_SETTINGS_H
 
-#include "pxr/pxr.h"
-
-#include "pxr/imaging/plugin/hdEmbree/renderer/sampling/sampling.h"
+#include <renderer/sampling/sampling.h>
 
 #include "pxr/base/tf/token.h"
+#include "pxr/pxr.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 

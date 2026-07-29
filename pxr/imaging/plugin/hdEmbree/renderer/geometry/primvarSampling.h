@@ -7,17 +7,17 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_PRIMVAR_SAMPLING_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_PRIMVAR_SAMPLING_H
 
-#include "pxr/pxr.h"
+#include "meshSamplers.h"
+#include "primvarSampler.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/meshSamplers.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampler.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/value.h"
+#include <renderer/materials/MaterialXCpp/value.h>
 
 #include "pxr/base/gf/matrix4d.h"
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/vec2f.h"
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/gf/vec4f.h"
+#include "pxr/pxr.h"
 
 #include <cmath>
 #include <vector>

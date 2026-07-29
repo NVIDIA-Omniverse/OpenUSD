@@ -4,15 +4,15 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
+#include <renderer/materials/MaterialXCpp/graph.h>
+#include <renderer/materials/mxcppAdapter.h>
+
 #include "pxr/base/gf/color.h"
 #include "pxr/base/gf/colorSpace.h"
 #include "pxr/base/gf/vec2f.h"
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/gf/vec4f.h"
-#include "../graph.h"
 #include "pxr/base/vt/value.h"
-
-#include "../../mxcppAdapter.h"
 
 #include <cmath>
 #include <cstdio>

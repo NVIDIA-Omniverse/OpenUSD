@@ -4,9 +4,10 @@
 #ifndef MXCPP_MATERIALS_ADOBE_OPEN_PBR_H
 #define MXCPP_MATERIALS_ADOBE_OPEN_PBR_H
 
-#include "../paramMap.h"
-#include "../surfaceClosure.h"
 #include "bsdf.h"
+
+#include <renderer/materials/MaterialXCpp/paramMap.h>
+#include <renderer/materials/MaterialXCpp/surfaceClosure.h>
 
 #include <memory>
 

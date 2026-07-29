@@ -7,8 +7,8 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_DEBUG_CODES_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_DEBUG_CODES_H
 
-#include "pxr/pxr.h"
 #include "pxr/base/tf/debug.h"
+#include "pxr/pxr.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 

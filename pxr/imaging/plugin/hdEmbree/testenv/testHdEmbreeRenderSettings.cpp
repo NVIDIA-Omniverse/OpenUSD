@@ -4,30 +4,30 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderBuffer.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/colorManagement.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderSettings.h"
+#include <delegate/renderBuffer.h>
+#include <delegate/renderDelegate.h>
+#include <renderer/colorManagement.h>
+#include <renderer/renderSettings.h>
 
-#include "pxr/base/gf/colorSpace.h"
+#include "pxr/base/arch/fileSystem.h"
+#include "pxr/base/arch/systemInfo.h"
 #include "pxr/base/gf/color.h"
+#include "pxr/base/gf/colorSpace.h"
 #include "pxr/base/gf/math.h"
 #include "pxr/base/gf/vec2i.h"
+#include "pxr/base/plug/registry.h"
+#include "pxr/base/tf/stringUtils.h"
 #include "pxr/imaging/hd/renderIndex.h"
 #include "pxr/imaging/hd/renderPass.h"
 #include "pxr/imaging/hd/renderPassState.h"
-#include "pxr/imaging/hd/renderSettingsSchema.h"
 #include "pxr/imaging/hd/renderProductSchema.h"
+#include "pxr/imaging/hd/renderSettingsSchema.h"
 #include "pxr/imaging/hd/retainedDataSource.h"
 #include "pxr/imaging/hd/retainedSceneIndex.h"
 #include "pxr/imaging/hd/sceneGlobalsSchema.h"
 #include "pxr/imaging/hd/tokens.h"
-#include "pxr/base/arch/fileSystem.h"
-#include "pxr/base/arch/systemInfo.h"
-#include "pxr/base/plug/registry.h"
-#include "pxr/base/tf/stringUtils.h"
-#include "pxr/usd/sdf/types.h"
 #include "pxr/usd/sdf/schema.h"
+#include "pxr/usd/sdf/types.h"
 #include "pxr/usd/usd/attribute.h"
 #include "pxr/usd/usd/primDefinition.h"
 #include "pxr/usd/usd/schemaRegistry.h"

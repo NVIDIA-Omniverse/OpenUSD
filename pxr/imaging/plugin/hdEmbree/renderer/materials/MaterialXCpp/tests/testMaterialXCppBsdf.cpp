@@ -4,26 +4,28 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "../materials/bsdf.h"
-#include "../materials/bsdfDielectricReflFrontLut.h"
-#include "../materials/bsdfDielectricTransmissionLut.h"
+#include <renderer/materials/MaterialXCpp/materials/bsdf.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf/dielectricReflFrontLut.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf/dielectricTransmissionLut.h>
+
 #define BSDL_UNROLL()
 #include <BSDL/MTX/bsdf_dielectric_decl.h>
 #include <BSDL/MTX/bsdf_dielectric_transback_luts.h>
 #include <BSDL/MTX/bsdf_dielectric_transfront_luts.h>
 #undef BSDL_UNROLL
-#include "../materials/openPbr.h"
-#include "../materials/standardSurface.h"
-#include "../materials/usdPreviewSurface.h"
-#include "../spectral.h"
-#include "../nodes/helpers/mathHelpers.h"
-#include "../../../integrator/medium.h"
-#include "../../../integrator/sss.h"
+
+#include <renderer/integrator/medium.h>
+#include <renderer/integrator/sss.h>
+#include <renderer/materials/MaterialXCpp/materials/openPbr.h>
+#include <renderer/materials/MaterialXCpp/materials/standardSurface.h>
+#include <renderer/materials/MaterialXCpp/materials/usdPreviewSurface.h>
+#include <renderer/materials/MaterialXCpp/nodes/helpers/mathHelpers.h>
+#include <renderer/materials/MaterialXCpp/spectral.h>
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 #include <functional>
 #include <optional>
 #include <variant>

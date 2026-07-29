@@ -7,18 +7,18 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_SAMPLING_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_SAMPLING_H
 
-#include "pxr/pxr.h"
 #include "pxr/base/gf/vec2f.h"
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/gf/vec4f.h"
 #include "pxr/base/tf/token.h"
+#include "pxr/pxr.h"
 
 #include <oqmc/oqmc.h>
 
 #include <algorithm>
 #include <array>
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 #include <type_traits>
 #include <variant>
 

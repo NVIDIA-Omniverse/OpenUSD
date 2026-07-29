@@ -7,8 +7,8 @@
 #ifndef MXCPP_MATERIALS_DISNEY_PRINCIPLED_H
 #define MXCPP_MATERIALS_DISNEY_PRINCIPLED_H
 
-#include "../paramMap.h"
-#include "../surfaceClosure.h"
+#include <renderer/materials/MaterialXCpp/paramMap.h>
+#include <renderer/materials/MaterialXCpp/surfaceClosure.h>
 
 namespace mxcpp {
 

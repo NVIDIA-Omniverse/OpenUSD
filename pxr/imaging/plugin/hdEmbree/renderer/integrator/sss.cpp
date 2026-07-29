@@ -1,16 +1,16 @@
 //
 // hdEmbree random-walk SSS helpers.
 //
-#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/sss.h"
+#include "sss.h"
+#include "medium.h"
+#include "transportPolicy.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/normalTransforms.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/heroWavelength.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/medium.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/transportPolicy.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/bsdf.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/sampling/sampling.h"
+#include <renderer/geometry/normalTransforms.h>
+#include <renderer/heroWavelength.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf.h>
+#include <renderer/renderer.h>
+#include <renderer/rendererMath.h>
+#include <renderer/sampling/sampling.h>
 
 #include "pxr/base/gf/math.h"
 

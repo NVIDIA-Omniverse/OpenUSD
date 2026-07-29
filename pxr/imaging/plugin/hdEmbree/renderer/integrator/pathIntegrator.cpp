@@ -6,23 +6,24 @@
 //
 // Main multi-bounce path integration loop.
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampling.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/surfaceDerivatives.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/heroWavelength.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/closureClassification.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/transportPolicy.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graph.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/bsdf.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/shadingContext.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/rayUtil.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
+#include "closureClassification.h"
+#include "transportPolicy.h"
 
-#include "pxr/imaging/hd/perfLog.h"
+#include <renderer/geometry/primvarSampling.h>
+#include <renderer/geometry/surfaceDerivatives.h>
+#include <renderer/heroWavelength.h>
+#include <renderer/materials/MaterialXCpp/graph.h>
+#include <renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf.h>
+#include <renderer/materials/MaterialXCpp/shadingContext.h>
+#include <renderer/rayUtil.h>
+#include <renderer/renderBuffer.h>
+#include <renderer/renderer.h>
+#include <renderer/rendererMath.h>
+
 #include "pxr/base/work/loops.h"
 #include "pxr/base/work/threadLimits.h"
+#include "pxr/imaging/hd/perfLog.h"
 
 #include <chrono>
 #include <cstdio>

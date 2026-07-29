@@ -5,7 +5,8 @@
 #define MXCPP_NODE_REGISTRY_H
 
 #include "paramMap.h"
-#include "nodes/helpers/valueHelper.h"
+
+#include <renderer/materials/MaterialXCpp/nodes/helpers/valueHelper.h>
 
 #include <algorithm>
 #include <string>

@@ -4,10 +4,21 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
+#include "renderPass.h"
+#include "material.h"
+#include "renderDelegate.h"
+
+#include <renderer/colorManagement.h>
+#include <renderer/renderSettings.h>
+
+#include "pxr/base/gf/colorSpace.h"
+#include "pxr/base/gf/half.h"
+#include "pxr/base/tf/diagnostic.h"
+#include "pxr/base/tf/enum.h"
 #include "pxr/imaging/hd/camera.h"
 #include "pxr/imaging/hd/changeTracker.h"
-#include "pxr/imaging/hd/renderPassState.h"
 #include "pxr/imaging/hd/material.h"
+#include "pxr/imaging/hd/renderPassState.h"
 #include "pxr/imaging/hd/renderProductSchema.h"
 #include "pxr/imaging/hd/renderSettingsSchema.h"
 #include "pxr/imaging/hd/renderVarSchema.h"
@@ -16,15 +27,6 @@
 #include "pxr/imaging/hd/types.h"
 #include "pxr/imaging/hd/utils.h"
 #include "pxr/imaging/hio/image.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/colorManagement.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderSettings.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/material.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderPass.h"
-#include "pxr/base/gf/colorSpace.h"
-#include "pxr/base/gf/half.h"
-#include "pxr/base/tf/diagnostic.h"
-#include "pxr/base/tf/enum.h"
 
 #include <algorithm>
 #include <cmath>

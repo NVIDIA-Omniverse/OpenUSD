@@ -7,10 +7,9 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_COLOR_MANAGEMENT_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_COLOR_MANAGEMENT_H
 
-#include "pxr/pxr.h"
-
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/tf/token.h"
+#include "pxr/pxr.h"
 
 #include <string>
 

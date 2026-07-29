@@ -6,11 +6,12 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_SAMPLERS_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_SAMPLERS_H
 
-#include "pxr/pxr.h"
-#include "pxr/base/gf/vec3f.h"
+#include "light.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/colorManagement.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/lights/light.h"
+#include <renderer/colorManagement.h>
+
+#include "pxr/base/gf/vec3f.h"
+#include "pxr/pxr.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 

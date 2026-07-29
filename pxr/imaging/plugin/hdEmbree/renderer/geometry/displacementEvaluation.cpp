@@ -4,12 +4,12 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/displacementEvaluation.h"
+#include "displacementEvaluation.h"
+#include "context.h"
+#include "primvarSampling.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/context.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampling.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graph.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/shadingContext.h"
+#include <renderer/materials/MaterialXCpp/graph.h>
+#include <renderer/materials/MaterialXCpp/shadingContext.h>
 
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/vec2f.h"

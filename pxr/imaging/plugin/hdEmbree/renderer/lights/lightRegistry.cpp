@@ -4,8 +4,9 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightRegistry.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
+#include "lightRegistry.h"
+
+#include <renderer/renderer.h>
 
 #include <algorithm>
 #include <iterator>

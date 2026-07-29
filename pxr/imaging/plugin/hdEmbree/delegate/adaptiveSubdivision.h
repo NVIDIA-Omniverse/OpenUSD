@@ -7,13 +7,13 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_ADAPTIVE_SUBDIVISION_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_ADAPTIVE_SUBDIVISION_H
 
-#include "pxr/pxr.h"
 #include "pxr/base/gf/matrix4d.h"
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/rect2i.h"
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/vt/array.h"
 #include "pxr/base/vt/types.h"
+#include "pxr/pxr.h"
 
 #include <functional>
 #include <vector>

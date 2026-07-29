@@ -7,10 +7,10 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_MATERIAL_EVAL_CONTEXT_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_MATERIAL_EVAL_CONTEXT_H
 
-#include "pxr/pxr.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/colorManagement.h"
+#include <renderer/colorManagement.h>
 
 #include "pxr/base/gf/vec3f.h"
+#include "pxr/pxr.h"
 
 namespace mxcpp {
 class TextureSystem;

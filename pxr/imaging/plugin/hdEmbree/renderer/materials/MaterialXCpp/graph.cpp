@@ -4,12 +4,13 @@
 #include "graph.h"
 #include "paramMap.h"
 #include "surfaceShaderUtils.h"
-#include "materials/disneyPrincipled.h"
-#include "materials/gltfPbr.h"
-#include "materials/standardSurface.h"
-#include "materials/adobeOpenPbr.h"
-#include "materials/openPbr.h"
-#include "materials/usdPreviewSurface.h"
+
+#include <renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h>
+#include <renderer/materials/MaterialXCpp/materials/disneyPrincipled.h>
+#include <renderer/materials/MaterialXCpp/materials/gltfPbr.h>
+#include <renderer/materials/MaterialXCpp/materials/openPbr.h>
+#include <renderer/materials/MaterialXCpp/materials/standardSurface.h>
+#include <renderer/materials/MaterialXCpp/materials/usdPreviewSurface.h>
 
 #include <algorithm>
 #include <functional>

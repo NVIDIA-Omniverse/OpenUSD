@@ -4,7 +4,7 @@
 #ifndef MXCPP_MATERIALS_CLOSURE_TREE_H
 #define MXCPP_MATERIALS_CLOSURE_TREE_H
 
-#include "../mathTypes.h"
+#include <renderer/materials/MaterialXCpp/mathTypes.h>
 
 #include <cstdint>
 #include <limits>

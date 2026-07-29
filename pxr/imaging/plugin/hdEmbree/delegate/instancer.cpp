@@ -4,18 +4,18 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/delegate/instancer.h"
+#include "instancer.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampler.h"
-#include "pxr/imaging/hd/sceneDelegate.h"
-#include "pxr/imaging/hd/tokens.h"
+#include <renderer/geometry/primvarSampler.h>
 
+#include "pxr/base/gf/matrix4d.h"
+#include "pxr/base/gf/quaternion.h"
+#include "pxr/base/gf/rotation.h"
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/gf/vec4f.h"
-#include "pxr/base/gf/matrix4d.h"
-#include "pxr/base/gf/rotation.h"
-#include "pxr/base/gf/quaternion.h"
 #include "pxr/base/tf/staticTokens.h"
+#include "pxr/imaging/hd/sceneDelegate.h"
+#include "pxr/imaging/hd/tokens.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 

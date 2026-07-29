@@ -4,7 +4,7 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/delegate/adaptiveSubdivision.h"
+#include "adaptiveSubdivision.h"
 
 #include "pxr/base/gf/vec2d.h"
 #include "pxr/base/gf/vec4d.h"

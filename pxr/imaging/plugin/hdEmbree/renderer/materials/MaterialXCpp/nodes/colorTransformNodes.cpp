@@ -5,7 +5,8 @@
 // https://openusd.org/license.
 //
 #include "colorTransformNodes.h"
-#include "../nodeRegistry.h"
+
+#include <renderer/materials/MaterialXCpp/nodeRegistry.h>
 
 #include <algorithm>
 #include <cmath>

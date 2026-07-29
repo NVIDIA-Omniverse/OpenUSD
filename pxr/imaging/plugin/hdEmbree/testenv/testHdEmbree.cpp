@@ -4,24 +4,19 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/pxr.h"
-
-#include "pxr/imaging/hio/image.h"
-
-#include "pxr/imaging/hd/engine.h"
-#include "pxr/imaging/hdSt/unitTestGLDrawing.h"
-#include "pxr/imaging/hd/unitTestDelegate.h"
-#include "pxr/imaging/hdSt/hioConversions.h"
-
-#include "pxr/imaging/hdx/renderTask.h"
-
-#include "pxr/imaging/hd/camera.h"
-#include "pxr/imaging/hd/renderBuffer.h"
-
-#include "pxr/imaging/plugin/hdEmbree/delegate/rendererPlugin.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
+#include <delegate/renderDelegate.h>
+#include <delegate/rendererPlugin.h>
 
 #include "pxr/base/tf/errorMark.h"
+#include "pxr/imaging/hd/camera.h"
+#include "pxr/imaging/hd/engine.h"
+#include "pxr/imaging/hd/renderBuffer.h"
+#include "pxr/imaging/hd/unitTestDelegate.h"
+#include "pxr/imaging/hdSt/hioConversions.h"
+#include "pxr/imaging/hdSt/unitTestGLDrawing.h"
+#include "pxr/imaging/hdx/renderTask.h"
+#include "pxr/imaging/hio/image.h"
+#include "pxr/pxr.h"
 
 #include <embree4/rtcore.h>
 

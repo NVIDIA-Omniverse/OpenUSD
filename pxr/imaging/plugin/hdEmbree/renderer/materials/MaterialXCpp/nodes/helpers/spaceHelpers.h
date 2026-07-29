@@ -8,7 +8,8 @@
 #define MXCPP_NODES_SPACE_HELPERS_H
 
 #include "mathHelpers.h"
-#include "../../shadingContext.h"
+
+#include <renderer/materials/MaterialXCpp/shadingContext.h>
 
 #include <algorithm>
 #include <cctype>

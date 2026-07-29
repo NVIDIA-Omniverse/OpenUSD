@@ -6,10 +6,10 @@
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_PXRIES_IES_H
 
 
+#include "pxr/pxr.h"
+
 #include <string>
 #include <vector>
-
-#include "pxr/pxr.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 

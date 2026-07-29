@@ -6,8 +6,8 @@
 //
 #include "gltfPbr.h"
 
-#include "../paramMap.h"
-#include "../nodes/helpers/mathHelpers.h"
+#include <renderer/materials/MaterialXCpp/nodes/helpers/mathHelpers.h>
+#include <renderer/materials/MaterialXCpp/paramMap.h>
 
 #include <algorithm>
 #include <cmath>

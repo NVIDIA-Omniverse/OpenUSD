@@ -7,14 +7,13 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_INSTANCER_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_INSTANCER_H
 
-#include "pxr/pxr.h"
-
-#include "pxr/imaging/hd/instancer.h"
-#include "pxr/imaging/hd/vtBufferSource.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightLinking.h"
+#include <renderer/lights/lightLinking.h>
 
 #include "pxr/base/tf/hashmap.h"
 #include "pxr/base/tf/token.h"
+#include "pxr/imaging/hd/instancer.h"
+#include "pxr/imaging/hd/vtBufferSource.h"
+#include "pxr/pxr.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 

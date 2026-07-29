@@ -7,25 +7,25 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_CONTEXT_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_CONTEXT_H
 
-#include "pxr/pxr.h"
+#include "primvarSampler.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampler.h"
-#include "pxr/imaging/hd/enums.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/lights/lightLinking.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/material.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/materialEvalContext.h"
+#include <renderer/lights/lightLinking.h>
+#include <renderer/materials/material.h>
+#include <renderer/materials/materialEvalContext.h>
+#include <renderer/materials/MaterialXCpp/value.h>
 
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/vt/array.h"
+#include "pxr/imaging/hd/enums.h"
+#include "pxr/pxr.h"
+
+#include <embree4/rtcore.h>
 
 #include <atomic>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/value.h"
-
-#include <embree4/rtcore.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
 

@@ -4,27 +4,28 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/delegate/mesh.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/adaptiveSubdivision.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/displacement.h"
+#include "mesh.h"
+#include "adaptiveSubdivision.h"
+#include "displacement.h"
+#include "instancer.h"
+#include "material.h"
+#include "renderParam.h"
+#include "renderPass.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/context.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/displacementEvaluation.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampling.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graph.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/instancer.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/material.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderParam.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderPass.h"
+#include <renderer/geometry/context.h>
+#include <renderer/geometry/displacementEvaluation.h>
+#include <renderer/geometry/primvarSampling.h>
+#include <renderer/materials/MaterialXCpp/graph.h>
+
+#include "pxr/base/gf/matrix4d.h"
+#include "pxr/base/gf/matrix4f.h"
+#include "pxr/base/tf/diagnostic.h"
+#include "pxr/base/vt/typeHeaders.h"
+#include "pxr/base/vt/visitValue.h"
 #include "pxr/imaging/hd/extComputationUtils.h"
 #include "pxr/imaging/hd/meshUtil.h"
 #include "pxr/imaging/hd/smoothNormals.h"
 #include "pxr/imaging/pxOsd/tokens.h"
-#include "pxr/base/gf/matrix4f.h"
-#include "pxr/base/gf/matrix4d.h"
-#include "pxr/base/tf/diagnostic.h"
-#include "pxr/base/vt/typeHeaders.h"
-#include "pxr/base/vt/visitValue.h"
 #include "pxr/usd/sdf/assetPath.h"
 
 #include <algorithm> // sort

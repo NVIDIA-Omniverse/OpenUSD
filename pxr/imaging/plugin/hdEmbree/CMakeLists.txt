@@ -104,6 +104,14 @@ pxr_plugin(hdEmbree
         renderer/materials/MaterialXCpp/slots
         renderer/materials/MaterialXCpp/nodeRegistry
         renderer/materials/MaterialXCpp/materials/bsdf
+        renderer/materials/MaterialXCpp/materials/bsdf/energyCompensation
+        renderer/materials/MaterialXCpp/materials/bsdf/thinFilm
+        renderer/materials/MaterialXCpp/materials/bsdf/microfacet
+        renderer/materials/MaterialXCpp/materials/bsdf/diffuse
+        renderer/materials/MaterialXCpp/materials/bsdf/reflectionOnlyInterfaces
+        renderer/materials/MaterialXCpp/materials/bsdf/dielectric
+        renderer/materials/MaterialXCpp/materials/bsdf/legacySurface
+        renderer/materials/MaterialXCpp/materials/bsdf/closureTraversal
         renderer/materials/MaterialXCpp/materials/adobeOpenPbr
         renderer/materials/MaterialXCpp/materials/disneyPrincipled
         renderer/materials/MaterialXCpp/materials/gltfPbr
@@ -160,6 +168,14 @@ pxr_plugin(hdEmbree
         renderer/materials/MaterialXCpp/surfaceClosure.h
         renderer/materials/MaterialXCpp/surfaceShaderUtils.h
         renderer/materials/MaterialXCpp/materials/closureTree.h
+        renderer/materials/MaterialXCpp/materials/bsdf/mathPrimitives.h
+        renderer/materials/MaterialXCpp/materials/bsdf/shadingFrame.h
+        renderer/materials/MaterialXCpp/materials/bsdf/fresnel.h
+        renderer/materials/MaterialXCpp/materials/bsdf/sheen.h
+        renderer/materials/MaterialXCpp/materials/bsdf/ggxEnergyLut.h
+        renderer/materials/MaterialXCpp/materials/bsdf/dielectricReflFrontLut.h
+        renderer/materials/MaterialXCpp/materials/bsdf/dielectricBothLut.h
+        renderer/materials/MaterialXCpp/materials/bsdf/dielectricTransmissionLut.h
         renderer/materials/MaterialXCpp/paramMap.h
         renderer/materials/MaterialXCpp/textureSystem.h
         renderer/materials/MaterialXCpp/value.h
@@ -172,6 +188,13 @@ pxr_plugin(hdEmbree
 
     DOXYGEN_FILES
         overview.dox
+)
+
+# First-party plugin headers use paths relative to the hdEmbree source root.
+# Keep this build-only: hdEmbree does not install or expose a C++ header API.
+target_include_directories(hdEmbree
+    PRIVATE
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>"
 )
 
 if (X11_FOUND OR APPLE)
@@ -373,6 +396,14 @@ pxr_build_test(testMaterialXCpp
         renderer/materials/mxcppAdapter.cpp
         renderer/integrator/sss.cpp
         renderer/materials/MaterialXCpp/materials/bsdf.cpp
+        renderer/materials/MaterialXCpp/materials/bsdf/energyCompensation.cpp
+        renderer/materials/MaterialXCpp/materials/bsdf/thinFilm.cpp
+        renderer/materials/MaterialXCpp/materials/bsdf/microfacet.cpp
+        renderer/materials/MaterialXCpp/materials/bsdf/diffuse.cpp
+        renderer/materials/MaterialXCpp/materials/bsdf/reflectionOnlyInterfaces.cpp
+        renderer/materials/MaterialXCpp/materials/bsdf/dielectric.cpp
+        renderer/materials/MaterialXCpp/materials/bsdf/legacySurface.cpp
+        renderer/materials/MaterialXCpp/materials/bsdf/closureTraversal.cpp
         renderer/materials/MaterialXCpp/materials/adobeOpenPbr.cpp
         renderer/materials/MaterialXCpp/materials/disneyPrincipled.cpp
         renderer/materials/MaterialXCpp/materials/gltfPbr.cpp

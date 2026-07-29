@@ -4,9 +4,9 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "../graph.h"
-#include "../nodeRegistry.h"
-#include "../surfaceShaderUtils.h"
+#include <renderer/materials/MaterialXCpp/graph.h>
+#include <renderer/materials/MaterialXCpp/nodeRegistry.h>
+#include <renderer/materials/MaterialXCpp/surfaceShaderUtils.h>
 
 #include <cstdio>
 #include <functional>

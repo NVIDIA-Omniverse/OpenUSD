@@ -7,7 +7,8 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_H
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/lights/light.h"
+#include <renderer/lights/light.h>
+
 #include "pxr/imaging/hd/light.h"
 
 #include <embree4/rtcore_common.h>

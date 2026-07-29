@@ -5,7 +5,8 @@
 // https://openusd.org/license.
 //
 #include "applicationNodes.h"
-#include "../nodeRegistry.h"
+
+#include <renderer/materials/MaterialXCpp/nodeRegistry.h>
 
 namespace mxcpp {
 

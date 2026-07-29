@@ -7,12 +7,13 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_LIGHT_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_LIGHT_H
 
-#include "pxr/pxr.h"
+#include <renderer/lights/pxrIES/pxrIES.h>
+
 #include "pxr/base/gf/matrix3f.h"
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/tf/token.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/lights/pxrIES/pxrIES.h"
+#include "pxr/pxr.h"
 
 #include <limits>
 #include <variant>

@@ -4,7 +4,7 @@
 #ifndef MXCPP_NODES_VALUE_HELPER_H
 #define MXCPP_NODES_VALUE_HELPER_H
 
-#include "../../value.h"
+#include <renderer/materials/MaterialXCpp/value.h>
 
 #include <string>
 

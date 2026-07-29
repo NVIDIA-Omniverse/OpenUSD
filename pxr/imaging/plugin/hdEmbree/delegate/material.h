@@ -7,10 +7,11 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_MATERIAL_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_MATERIAL_H
 
-#include "pxr/pxr.h"
+#include <renderer/materials/material.h>
+#include <renderer/materials/MaterialXCpp/graph.h>
+
 #include "pxr/imaging/hd/material.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graph.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/material.h"
+#include "pxr/pxr.h"
 
 #include <memory>
 

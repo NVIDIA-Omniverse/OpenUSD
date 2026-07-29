@@ -4,12 +4,11 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/renderer/lights/pxrIES/pxrIES.h"
+#include "pxrIES.h"
 
 #include "pxr/base/gf/math.h"
 
 #include <algorithm>
-
 
 #define _USE_MATH_DEFINES
 #include <cmath>

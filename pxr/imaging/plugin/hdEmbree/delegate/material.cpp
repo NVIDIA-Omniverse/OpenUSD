@@ -4,12 +4,13 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/delegate/material.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/mxcppAdapter.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderParam.h"
+#include "material.h"
+#include "renderParam.h"
 
-#include "pxr/imaging/hd/sceneDelegate.h"
+#include <renderer/materials/mxcppAdapter.h>
+
 #include "pxr/base/tf/diagnostic.h"
+#include "pxr/imaging/hd/sceneDelegate.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 

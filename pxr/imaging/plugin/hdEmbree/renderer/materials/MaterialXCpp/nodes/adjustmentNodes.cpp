@@ -5,12 +5,13 @@
 // https://openusd.org/license.
 //
 #include "adjustmentNodes.h"
-#include "helpers/colorHelpers.h"
-#include "helpers/mathHelpers.h"
-#include "../nodeRegistry.h"
 
-#include <cmath>
+#include <renderer/materials/MaterialXCpp/nodeRegistry.h>
+#include <renderer/materials/MaterialXCpp/nodes/helpers/colorHelpers.h>
+#include <renderer/materials/MaterialXCpp/nodes/helpers/mathHelpers.h>
+
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 namespace mxcpp {

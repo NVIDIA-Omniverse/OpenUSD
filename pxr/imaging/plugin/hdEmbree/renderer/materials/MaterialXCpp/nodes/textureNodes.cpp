@@ -5,8 +5,9 @@
 // https://openusd.org/license.
 //
 #include "textureNodes.h"
-#include "helpers/textureHelpers.h"
-#include "../nodeRegistry.h"
+
+#include <renderer/materials/MaterialXCpp/nodeRegistry.h>
+#include <renderer/materials/MaterialXCpp/nodes/helpers/textureHelpers.h>
 
 #include <algorithm>
 #include <array>

@@ -9,7 +9,7 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_RAY_UTIL_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RAY_UTIL_H
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
+#include "renderer.h"
 
 #include <embree4/rtcore_ray.h>
 

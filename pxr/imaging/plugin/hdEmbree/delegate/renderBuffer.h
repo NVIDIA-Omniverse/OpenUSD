@@ -7,9 +7,10 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_BUFFER_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_BUFFER_H
 
-#include "pxr/pxr.h"
+#include <renderer/renderBuffer.h>
+
 #include "pxr/imaging/hd/renderBuffer.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
+#include "pxr/pxr.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 

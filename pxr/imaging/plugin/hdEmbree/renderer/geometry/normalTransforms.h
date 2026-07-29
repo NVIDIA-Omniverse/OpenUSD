@@ -9,8 +9,9 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_GEOMETRY_NORMAL_TRANSFORMS_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_GEOMETRY_NORMAL_TRANSFORMS_H
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/context.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
+#include "context.h"
+
+#include <renderer/rendererMath.h>
 
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/vec3f.h"

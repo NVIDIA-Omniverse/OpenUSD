@@ -6,9 +6,9 @@
 //
 #include "pbrNodes.h"
 
-#include "helpers/spaceHelpers.h"
-#include "../nodeRegistry.h"
-#include "../paramMap.h"
+#include <renderer/materials/MaterialXCpp/nodeRegistry.h>
+#include <renderer/materials/MaterialXCpp/nodes/helpers/spaceHelpers.h>
+#include <renderer/materials/MaterialXCpp/paramMap.h>
 
 #include <algorithm>
 #include <cmath>

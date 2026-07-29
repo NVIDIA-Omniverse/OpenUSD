@@ -1,19 +1,20 @@
 //
 // Adapter: converts pxr types into pxr-independent mxcpp types.
 //
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/mxcppAdapter.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/mathTypes.h"
+#include "mxcppAdapter.h"
 
-#include "pxr/base/vt/value.h"
-#include "pxr/base/gf/matrix4d.h"
+#include <renderer/materials/MaterialXCpp/mathTypes.h>
+
 #include "pxr/base/gf/matrix3d.h"
 #include "pxr/base/gf/matrix3f.h"
+#include "pxr/base/gf/matrix4d.h"
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/vec2f.h"
-#include "pxr/base/gf/vec3f.h"
 #include "pxr/base/gf/vec3d.h"
+#include "pxr/base/gf/vec3f.h"
 #include "pxr/base/gf/vec4f.h"
 #include "pxr/base/tf/diagnostic.h"
+#include "pxr/base/vt/value.h"
 #include "pxr/usd/sdf/assetPath.h"
 
 PXR_NAMESPACE_OPEN_SCOPE

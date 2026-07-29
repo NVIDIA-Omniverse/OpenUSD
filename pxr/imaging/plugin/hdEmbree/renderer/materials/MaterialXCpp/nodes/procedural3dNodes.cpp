@@ -5,8 +5,9 @@
 // https://openusd.org/license.
 //
 #include "procedural3dNodes.h"
-#include "helpers/proceduralHelpers.h"
-#include "../nodeRegistry.h"
+
+#include <renderer/materials/MaterialXCpp/nodeRegistry.h>
+#include <renderer/materials/MaterialXCpp/nodes/helpers/proceduralHelpers.h>
 
 namespace mxcpp {
 

@@ -6,18 +6,18 @@
 //
 // Frame orchestration and renderer configuration.
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/bsdf.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/oiioTextureSystem.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/rayUtil.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
+#include "renderer.h"
+#include "rayUtil.h"
+#include "renderBuffer.h"
 
-#include "pxr/imaging/hd/perfLog.h"
-#include "pxr/imaging/hd/renderBuffer.h"
+#include <renderer/materials/MaterialXCpp/materials/bsdf.h>
+#include <renderer/materials/oiioTextureSystem.h>
+
 #include "pxr/base/work/loops.h"
 #include "pxr/base/work/threadLimits.h"
-
 #include "pxr/base/work/workTBB/tbb_version.h"
+#include "pxr/imaging/hd/perfLog.h"
+#include "pxr/imaging/hd/renderBuffer.h"
 
 #include <chrono>
 #include <cstdio>
@@ -33,8 +33,9 @@
 // -------------------------------------------------------------------------
 #if TBB_INTERFACE_VERSION_MAJOR < 12
 
-#include <optional>
 #include <tbb/task_scheduler_init.h>
+
+#include <optional>
 
 namespace {
 

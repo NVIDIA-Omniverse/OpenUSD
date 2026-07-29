@@ -4,14 +4,18 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderBuffer.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderParam.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderPass.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
-#include "../renderer/materials/MaterialXCpp/materials/bsdf.h"
+#include <delegate/renderBuffer.h>
+#include <delegate/renderDelegate.h>
+#include <delegate/renderParam.h>
+#include <delegate/renderPass.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf.h>
+#include <renderer/renderBuffer.h>
+#include <renderer/renderer.h>
 
+#include "pxr/base/gf/matrix4f.h"
+#include "pxr/base/gf/vec2i.h"
+#include "pxr/base/tf/diagnostic.h"
+#include "pxr/base/tf/diagnosticMgr.h"
 #include "pxr/imaging/hd/renderBuffer.h"
 #include "pxr/imaging/hd/renderIndex.h"
 #include "pxr/imaging/hd/renderPassState.h"
@@ -19,11 +23,6 @@
 #include "pxr/imaging/hd/rprim.h"
 #include "pxr/imaging/hd/tokens.h"
 #include "pxr/imaging/hd/unitTestDelegate.h"
-
-#include "pxr/base/gf/matrix4f.h"
-#include "pxr/base/gf/vec2i.h"
-#include "pxr/base/tf/diagnostic.h"
-#include "pxr/base/tf/diagnosticMgr.h"
 
 #include <embree4/rtcore.h>
 

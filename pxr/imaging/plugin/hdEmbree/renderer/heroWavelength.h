@@ -9,9 +9,10 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_HERO_WAVELENGTH_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_HERO_WAVELENGTH_H
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/spectral.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
+#include "renderer.h"
+#include "rendererMath.h"
+
+#include <renderer/materials/MaterialXCpp/spectral.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
 namespace ty {

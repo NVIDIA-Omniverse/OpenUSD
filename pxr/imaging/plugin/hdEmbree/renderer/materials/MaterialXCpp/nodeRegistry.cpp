@@ -4,22 +4,22 @@
 #include "nodeRegistry.h"
 #include "surfaceShaderUtils.h"
 
-#include "nodes/mathNodes.h"
-#include "nodes/convolutionNodes.h"
-#include "nodes/nprNodes.h"
-#include "nodes/adjustmentNodes.h"
-#include "nodes/channelNodes.h"
-#include "nodes/conditionalNodes.h"
-#include "nodes/compositingNodes.h"
-#include "nodes/geometricNodes.h"
-#include "nodes/applicationNodes.h"
-#include "nodes/textureNodes.h"
-#include "nodes/texture3dNodes.h"
-#include "nodes/proceduralNodes.h"
-#include "nodes/procedural2dNodes.h"
-#include "nodes/procedural3dNodes.h"
-#include "nodes/pbrNodes.h"
-#include "nodes/colorTransformNodes.h"
+#include <renderer/materials/MaterialXCpp/nodes/adjustmentNodes.h>
+#include <renderer/materials/MaterialXCpp/nodes/applicationNodes.h>
+#include <renderer/materials/MaterialXCpp/nodes/channelNodes.h>
+#include <renderer/materials/MaterialXCpp/nodes/colorTransformNodes.h>
+#include <renderer/materials/MaterialXCpp/nodes/compositingNodes.h>
+#include <renderer/materials/MaterialXCpp/nodes/conditionalNodes.h>
+#include <renderer/materials/MaterialXCpp/nodes/convolutionNodes.h>
+#include <renderer/materials/MaterialXCpp/nodes/geometricNodes.h>
+#include <renderer/materials/MaterialXCpp/nodes/mathNodes.h>
+#include <renderer/materials/MaterialXCpp/nodes/nprNodes.h>
+#include <renderer/materials/MaterialXCpp/nodes/pbrNodes.h>
+#include <renderer/materials/MaterialXCpp/nodes/procedural2dNodes.h>
+#include <renderer/materials/MaterialXCpp/nodes/procedural3dNodes.h>
+#include <renderer/materials/MaterialXCpp/nodes/proceduralNodes.h>
+#include <renderer/materials/MaterialXCpp/nodes/texture3dNodes.h>
+#include <renderer/materials/MaterialXCpp/nodes/textureNodes.h>
 
 #include <mutex>
 

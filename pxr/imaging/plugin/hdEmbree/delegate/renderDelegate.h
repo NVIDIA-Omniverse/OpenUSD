@@ -7,13 +7,14 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_DELEGATE_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_DELEGATE_H
 
-#include "pxr/pxr.h"
-#include "pxr/imaging/hd/renderDelegate.h"
-#include "pxr/imaging/hd/renderThread.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "pxr/base/tf/staticTokens.h"
+#include <renderer/renderer.h>
+
 #include "pxr/base/gf/matrix4d.h"
 #include "pxr/base/gf/rect2i.h"
+#include "pxr/base/tf/staticTokens.h"
+#include "pxr/imaging/hd/renderDelegate.h"
+#include "pxr/imaging/hd/renderThread.h"
+#include "pxr/pxr.h"
 
 #include <embree4/rtcore.h>
 

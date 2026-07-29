@@ -7,8 +7,8 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_WIREFRAME_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_WIREFRAME_H
 
-#include "pxr/pxr.h"
 #include "pxr/base/gf/vec4f.h"
+#include "pxr/pxr.h"
 
 #include <cstddef>
 

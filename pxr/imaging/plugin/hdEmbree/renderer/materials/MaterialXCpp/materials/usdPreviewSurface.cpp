@@ -6,7 +6,7 @@
 //
 #include "usdPreviewSurface.h"
 
-#include "../paramMap.h"
+#include <renderer/materials/MaterialXCpp/paramMap.h>
 
 #include <algorithm>
 #include <cmath>

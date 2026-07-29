@@ -6,8 +6,8 @@
 //
 #include "disneyPrincipled.h"
 
-#include "../../../integrator/medium.h"
-#include "../paramMap.h"
+#include <renderer/integrator/medium.h>
+#include <renderer/materials/MaterialXCpp/paramMap.h>
 
 #include <algorithm>
 #include <cmath>

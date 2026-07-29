@@ -1,9 +1,10 @@
 //
 // hdEmbree OpenImageIO-backed texture system for MaterialXCpp.
 //
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/oiioTextureSystem.h"
+#include "oiioTextureSystem.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderSettings.h"
+#include <renderer/renderSettings.h>
+
 #include "pxr/base/tf/diagnostic.h"
 
 #include <algorithm>
@@ -17,7 +18,6 @@
 #if defined(PXR_OIIO_PLUGIN_ENABLED)
 #include <OpenImageIO/texture.h>
 #include <OpenImageIO/ustring.h>
-
 #include <tbb/concurrent_unordered_map.h>
 #endif
 

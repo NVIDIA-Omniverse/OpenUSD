@@ -5,10 +5,10 @@
 // https://openusd.org/license.
 //
 
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderParam.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/context.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/wireframe.h"
+#include <delegate/renderDelegate.h>
+#include <delegate/renderParam.h>
+#include <renderer/geometry/context.h>
+#include <renderer/geometry/wireframe.h>
 
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/imaging/hd/changeTracker.h"

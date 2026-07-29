@@ -4,7 +4,7 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_MEDIUM_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_MEDIUM_H
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/mathTypes.h"
+#include <renderer/materials/MaterialXCpp/mathTypes.h>
 
 namespace mxcpp {
 

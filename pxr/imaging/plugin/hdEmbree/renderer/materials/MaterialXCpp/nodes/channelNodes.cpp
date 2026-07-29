@@ -5,8 +5,9 @@
 // https://openusd.org/license.
 //
 #include "channelNodes.h"
-#include "../surfaceShaderUtils.h"
-#include "../nodeRegistry.h"
+
+#include <renderer/materials/MaterialXCpp/nodeRegistry.h>
+#include <renderer/materials/MaterialXCpp/surfaceShaderUtils.h>
 
 #include <string>
 

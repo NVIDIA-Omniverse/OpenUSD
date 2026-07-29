@@ -4,9 +4,9 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/closureClassification.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/bsdf.h"
+#include <renderer/integrator/closureClassification.h>
+#include <renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf.h>
 
 #include <cstdio>
 #include <functional>

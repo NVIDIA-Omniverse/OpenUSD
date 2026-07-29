@@ -103,12 +103,12 @@ to `$CONDA_PREFIX`.
 
 The `build` task runs `cmake --build build --target install` and writes an
 `openusd-pxr.pth` file so Python imports resolve to the installed OpenUSD Python
-modules inside the Pixi environment. Prefer running direct CMake or test
-commands through Pixi so the same dependency, plugin, and Python environment is
-used:
+modules inside the Pixi environment. Always use `pixi run build` for normal
+builds and `pixi run build-profile` for profiling builds. Do not invoke Ninja
+or `cmake --build` directly, including through `pixi run`; the build tasks own
+configuration, installation, and environment consistency. Run tests through
+Pixi after the corresponding build:
 
-- `pixi run cmake --build build --target hdEmbree`
-- `pixi run cmake --build build --target testHdEmbreeRenderSettings`
 - `pixi run ctest --test-dir build -R testHdEmbreeRenderSettings --output-on-failure`
 
 Relevant Pixi-managed dependencies include Python 3.11, Embree 4.4, OpenQMC
@@ -217,9 +217,20 @@ plugin in the active Pixi environment.
 - `delegate/` contains the Hydra-facing plugin, render delegate/pass, scene primitives, and AOV bridge.
 - `renderer/` contains the path tracer and its rendering, sampling, shading, texture, and third-party support components.
 - Dependencies should flow from `delegate/` to `renderer/`; new renderer code should not depend on Hydra-facing delegate implementation details.
-- Include first-party hdEmbree headers by their absolute project path, starting
-  with `pxr/imaging/plugin/hdEmbree/`; do not use same-directory or `../`
-  relative paths.
+- The hdEmbree source root is a private build include directory. Include
+  first-party headers from another directory with angle brackets and a path
+  starting with `delegate/` or `renderer/`, such as
+  `<renderer/geometry/context.h>`. Include a header from the same directory
+  with quotes and its basename, such as `"renderer.h"`. Do not use the
+  repository-wide `pxr/imaging/plugin/hdEmbree/` prefix or `../` paths.
+- Keep every include section grouped from nearest to furthest: the translation
+  unit's own header first, then other same-directory headers, cross-directory
+  hdEmbree headers, OpenUSD `pxr/` headers, third-party headers, and finally
+  C/C++ standard-library headers. Separate groups with one blank line and sort
+  headers within each group. Preserve this structure whenever includes change;
+  keep macro-sensitive or conditional include sequences intact. This rule
+  applies to hdEmbree-owned code only: do not reformat or otherwise modify the
+  vendored `renderer/materials/BSDL/` subtree for hdEmbree style consistency.
 - `schema/` contains the authored and generated `TyphoonRenderSettingsAPI` schema files. Runtime plugin metadata remains in root `plugInfo.json`.
 - No hand-written hdEmbree header is installed or supported as a C++ API or extension point.
 
@@ -286,8 +297,11 @@ plugin in the active Pixi environment.
   dielectric straight shadows use exact Fresnel through alpha 0.002, blend
   to the BSDL-generated directional transmission LUT through alpha 0.07, and
   use the LUT directly above that band; regenerate the committed
-  runtime table when its analytic endpoint, quadratic roughness mapping, or MIS
-  bake changes.
+  runtime tables in `materials/bsdf/*Lut.h` when the analytic endpoint,
+  quadratic roughness mapping, or MIS bake in
+  `materials/bsdf/energyCompensation.*` changes. BSDF foundations, lobe kinds,
+  closure traversal, and the public namespace API are split under
+  `materials/bsdf/`; `materials/bsdf.cpp` contains only that public API.
 - `renderer/materials/oiioTextureSystem.*`: texture lookup implementation used by MaterialXCpp.
 
 - `delegate/light.*`: Hydra/USD Lux light Sprim adapter. Populates renderer-owned light data for cylinder, disk,
@@ -312,10 +326,11 @@ Keep transmissive model policy explicit in compiled closures. OpenPBR and
 metalness-workflow UsdPreviewSurface coupled interfaces enable combined
 reflection/refraction energy compensation through an additive cosine
 multiple-scattering lobe, and choose glossy rough branches from the sampled
-microfacet Fresnel response. Standard Surface retains separate
-reflection and transmission lobes, with `thin_walled` using IOR 1. OpenPBR
-`geometry_thin_walled` uses the coupled thin-sheet interface and retains
-authored-IOR Fresnel.
+microfacet Fresnel response in `materials/bsdf/dielectric.*`; closure layering
+and branch dispatch live in `materials/bsdf/closureTraversal.*`. Standard
+Surface retains separate reflection and transmission lobes, with `thin_walled`
+using IOR 1. OpenPBR `geometry_thin_walled` uses the coupled thin-sheet
+interface and retains authored-IOR Fresnel.
 
 ## USD To Hydra To hdEmbree Flow
 
@@ -708,17 +723,13 @@ For stage-authored render data, read these before changing output behavior:
 
 Common focused checks:
 
-- `pixi run cmake --build build --target testHdEmbreeRenderSetup`
+- `pixi run build`
 - `pixi run ctest --test-dir build -R testHdEmbreeRenderSetup --output-on-failure`
-- `pixi run cmake --build build --target testHdEmbreeRenderSettings`
 - `pixi run ctest --test-dir build -R testHdEmbreeRenderSettings --output-on-failure`
-- `pixi run cmake --build build --target testHdEmbreeSampling`
-- `pixi run cmake --build build --target testHdEmbreeWireframe`
+- `pixi run ctest --test-dir build -R testHdEmbreeSampling --output-on-failure`
 - `pixi run ctest --test-dir build -R testHdEmbreeWireframe --output-on-failure`
-- `pixi run cmake --build build --target testHdEmbreeLightSamplers`
-- `pixi run cmake --build build --target testMaterialXCpp`
+- `pixi run ctest --test-dir build -R testHdEmbreeLightSamplers --output-on-failure`
 - `pixi run build/pxr/imaging/plugin/hdEmbree/testMaterialXCpp`
-- `pixi run cmake --build build --target testHdEmbreeSubdivision`
 - `pixi run ctest --test-dir build -R testHdEmbreeSubdivision --output-on-failure`
 - Collect the AOUSD displacement fixture: `cd /home/anders/code/aousd-materials-test-suite && pixi run pytest test-suite/surfaces/open_pbr_surface/displacement.usda --collect-only -q`
 - Render that fixture with this checkout’s installed `usdrender` when validating displacement or complexity; the test-suite Pixi environment may resolve a separately packaged renderer.

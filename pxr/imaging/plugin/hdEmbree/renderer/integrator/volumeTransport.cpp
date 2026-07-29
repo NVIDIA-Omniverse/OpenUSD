@@ -6,13 +6,14 @@
 //
 // Path-segment transport through participating media.
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/heroWavelength.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/transportPolicy.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/bsdf.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/rayUtil.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
+#include "transportPolicy.h"
+
+#include <renderer/heroWavelength.h>
+#include <renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf.h>
+#include <renderer/rayUtil.h>
+#include <renderer/renderer.h>
+#include <renderer/rendererMath.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
 

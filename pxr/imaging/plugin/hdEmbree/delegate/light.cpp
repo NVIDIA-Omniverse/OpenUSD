@@ -4,12 +4,12 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/delegate/light.h"
-
 #include "light.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/debugCodes.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderParam.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
+#include "light.h"
+#include "renderParam.h"
+
+#include <renderer/debugCodes.h>
+#include <renderer/renderer.h>
 
 #include "pxr/base/gf/color.h"
 #include "pxr/base/gf/colorSpace.h"

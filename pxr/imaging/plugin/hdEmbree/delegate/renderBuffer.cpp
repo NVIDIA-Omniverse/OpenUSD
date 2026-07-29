@@ -4,8 +4,9 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderBuffer.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderParam.h"
+#include "renderBuffer.h"
+#include "renderParam.h"
+
 #include "pxr/base/gf/half.h"
 
 PXR_NAMESPACE_OPEN_SCOPE

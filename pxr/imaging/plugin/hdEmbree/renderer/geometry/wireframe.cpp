@@ -5,7 +5,7 @@
 // https://openusd.org/license.
 //
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/wireframe.h"
+#include "wireframe.h"
 
 #include <algorithm>
 #include <cmath>

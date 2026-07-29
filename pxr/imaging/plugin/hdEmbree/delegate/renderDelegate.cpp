@@ -4,28 +4,23 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderDelegate.h"
+#include "renderDelegate.h"
+#include "instancer.h"
+#include "light.h"
+#include "material.h"
+#include "mesh.h"
+#include "renderParam.h"
+#include "renderPass.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderSettings.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/instancer.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/light.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderParam.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderPass.h"
-
-#include "pxr/imaging/hd/extComputation.h"
-#include "pxr/imaging/hd/resourceRegistry.h"
-#include "pxr/imaging/hd/tokens.h"
+#include <renderer/renderSettings.h>
 
 #include "pxr/base/gf/colorSpace.h"
 #include "pxr/base/tf/diagnostic.h"
-
-#include "pxr/imaging/plugin/hdEmbree/delegate/mesh.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/material.h"
-//XXX: Add other Rprim types later
-#include "pxr/imaging/hd/camera.h"
-//XXX: Add other Sprim types later
 #include "pxr/imaging/hd/bprim.h"
-//XXX: Add bprim types
+#include "pxr/imaging/hd/camera.h"
+#include "pxr/imaging/hd/extComputation.h"
+#include "pxr/imaging/hd/resourceRegistry.h"
+#include "pxr/imaging/hd/tokens.h"
 
 #include <algorithm>
 #include <string>
@@ -53,11 +48,13 @@ _GetMaterialRenderContextSetting(const HdRenderDelegate& renderDelegate)
     return HdEmbreeDefaultMaterialRenderContext;
 }
 
+// XXX: Add other Rprim types later.
 const TfTokenVector HdEmbreeRenderDelegate::SUPPORTED_RPRIM_TYPES =
 {
     HdPrimTypeTokens->mesh,
 };
 
+// XXX: Add other Sprim types later.
 const TfTokenVector HdEmbreeRenderDelegate::SUPPORTED_SPRIM_TYPES =
 {
     HdPrimTypeTokens->camera,
@@ -71,6 +68,7 @@ const TfTokenVector HdEmbreeRenderDelegate::SUPPORTED_SPRIM_TYPES =
     HdPrimTypeTokens->sphereLight,
 };
 
+// XXX: Add Bprim types later.
 const TfTokenVector HdEmbreeRenderDelegate::SUPPORTED_BPRIM_TYPES =
 {
     HdPrimTypeTokens->renderBuffer,

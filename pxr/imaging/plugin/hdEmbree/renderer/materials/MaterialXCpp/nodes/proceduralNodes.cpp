@@ -5,8 +5,9 @@
 // https://openusd.org/license.
 //
 #include "proceduralNodes.h"
-#include "helpers/proceduralHelpers.h"
-#include "../nodeRegistry.h"
+
+#include <renderer/materials/MaterialXCpp/nodeRegistry.h>
+#include <renderer/materials/MaterialXCpp/nodes/helpers/proceduralHelpers.h>
 
 #include <algorithm>
 #include <cmath>

@@ -5,9 +5,10 @@
 // https://openusd.org/license.
 //
 #include "nprNodes.h"
-#include "helpers/spaceHelpers.h"
-#include "helpers/shadingContextHelpers.h"
-#include "../nodeRegistry.h"
+
+#include <renderer/materials/MaterialXCpp/nodeRegistry.h>
+#include <renderer/materials/MaterialXCpp/nodes/helpers/shadingContextHelpers.h>
+#include <renderer/materials/MaterialXCpp/nodes/helpers/spaceHelpers.h>
 
 #include <algorithm>
 #include <cmath>

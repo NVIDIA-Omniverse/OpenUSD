@@ -4,7 +4,7 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#include "../nodeRegistry.h"
+#include <renderer/materials/MaterialXCpp/nodeRegistry.h>
 
 #include <algorithm>
 #include <array>

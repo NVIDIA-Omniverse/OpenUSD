@@ -2,11 +2,11 @@
 // Adobe OpenPBR adapter for MaterialXCpp.
 //
 #include "adobeOpenPbr.h"
-
-#include "../../../integrator/medium.h"
-#include "../nodes/helpers/mathHelpers.h"
-#include "../paramMap.h"
 #include "openPbr.h"
+
+#include <renderer/integrator/medium.h>
+#include <renderer/materials/MaterialXCpp/nodes/helpers/mathHelpers.h>
+#include <renderer/materials/MaterialXCpp/paramMap.h>
 
 #include <algorithm>
 #include <cmath>

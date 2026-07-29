@@ -5,10 +5,11 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_MXCPP_ADAPTER_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_MXCPP_ADAPTER_H
 
-#include "pxr/pxr.h"
+#include <renderer/colorManagement.h>
+#include <renderer/materials/MaterialXCpp/graphTypes.h>
+
 #include "pxr/imaging/hd/material.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/colorManagement.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graphTypes.h"
+#include "pxr/pxr.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 

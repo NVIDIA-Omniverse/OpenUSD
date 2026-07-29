@@ -6,18 +6,18 @@
 //
 // AOV validation, accumulation, dispatch, and hit outputs.
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/normalTransforms.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/surfaceDerivatives.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/rayUtil.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
+#include <renderer/geometry/normalTransforms.h>
+#include <renderer/geometry/surfaceDerivatives.h>
+#include <renderer/rayUtil.h>
+#include <renderer/renderBuffer.h>
+#include <renderer/renderer.h>
 
-#include "pxr/imaging/hd/perfLog.h"
-#include "pxr/imaging/hd/renderBuffer.h"
-#include "pxr/imaging/hd/meshUtil.h"
-#include "pxr/imaging/hd/tokens.h"
 #include "pxr/base/work/loops.h"
 #include "pxr/base/work/threadLimits.h"
+#include "pxr/imaging/hd/meshUtil.h"
+#include "pxr/imaging/hd/perfLog.h"
+#include "pxr/imaging/hd/renderBuffer.h"
+#include "pxr/imaging/hd/tokens.h"
 
 #include <chrono>
 #include <cstdio>

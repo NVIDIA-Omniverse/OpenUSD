@@ -6,21 +6,21 @@
 //
 // Hit interpretation and shading-context construction.
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/normalTransforms.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/primvarSampling.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/surfaceDerivatives.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/geometry/wireframe.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/graph.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/shadingContext.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/rayUtil.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderBuffer.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/rendererMath.h"
+#include <renderer/geometry/normalTransforms.h>
+#include <renderer/geometry/primvarSampling.h>
+#include <renderer/geometry/surfaceDerivatives.h>
+#include <renderer/geometry/wireframe.h>
+#include <renderer/materials/MaterialXCpp/graph.h>
+#include <renderer/materials/MaterialXCpp/shadingContext.h>
+#include <renderer/rayUtil.h>
+#include <renderer/renderBuffer.h>
+#include <renderer/renderer.h>
+#include <renderer/rendererMath.h>
 
-#include "pxr/imaging/hd/perfLog.h"
-#include "pxr/imaging/hd/tokens.h"
 #include "pxr/base/work/loops.h"
 #include "pxr/base/work/threadLimits.h"
+#include "pxr/imaging/hd/perfLog.h"
+#include "pxr/imaging/hd/tokens.h"
 
 #include <algorithm>
 #include <chrono>

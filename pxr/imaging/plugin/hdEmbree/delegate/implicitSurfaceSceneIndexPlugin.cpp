@@ -4,7 +4,7 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 
-#include "pxr/imaging/plugin/hdEmbree/delegate/implicitSurfaceSceneIndexPlugin.h"
+#include "implicitSurfaceSceneIndexPlugin.h"
 
 #include "pxr/imaging/hd/retainedDataSource.h"
 #include "pxr/imaging/hd/sceneIndexPluginRegistry.h"

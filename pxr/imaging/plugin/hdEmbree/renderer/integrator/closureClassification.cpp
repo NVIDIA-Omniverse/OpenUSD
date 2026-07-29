@@ -6,10 +6,10 @@
 //
 // Transport classification of compiled material closures.
 //
-#include "pxr/imaging/plugin/hdEmbree/renderer/integrator/closureClassification.h"
+#include "closureClassification.h"
 
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/materials/MaterialXCpp/materials/bsdf.h"
+#include <renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf.h>
 
 #include <variant>
 

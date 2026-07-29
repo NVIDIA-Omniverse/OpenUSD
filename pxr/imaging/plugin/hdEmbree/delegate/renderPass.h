@@ -7,19 +7,19 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_PASS_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_PASS_H
 
-#include "pxr/pxr.h"
+#include "renderBuffer.h"
 
-#include "pxr/imaging/hd/aov.h"
-#include "pxr/imaging/hd/renderPass.h"
-#include "pxr/imaging/hd/renderThread.h"
-#include "pxr/imaging/plugin/hdEmbree/renderer/renderer.h"
-#include "pxr/imaging/plugin/hdEmbree/delegate/renderBuffer.h"
+#include <renderer/renderer.h>
 
 #include "pxr/base/gf/matrix4d.h"
+#include "pxr/base/gf/rect2i.h"
 #include "pxr/base/tf/hashmap.h"
 #include "pxr/base/tf/token.h"
 #include "pxr/base/vt/value.h"
-#include "pxr/base/gf/rect2i.h"
+#include "pxr/imaging/hd/aov.h"
+#include "pxr/imaging/hd/renderPass.h"
+#include "pxr/imaging/hd/renderThread.h"
+#include "pxr/pxr.h"
 #include "pxr/usd/sdf/path.h"
 
 #include <atomic>
