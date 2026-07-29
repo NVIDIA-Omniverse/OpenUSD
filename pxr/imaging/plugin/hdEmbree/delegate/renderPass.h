@@ -33,7 +33,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 /// scene (the HdRprimCollection) for a specific viewer (the camera/viewport
 /// parameters in HdRenderPassState) to the current draw target.
 ///
-/// This class does so by raycasting into the embree scene via HdEmbreeRenderer.
+/// This class does so by raycasting into the embree scene via ty::Renderer.
 ///
 class HdEmbreeRenderPass final : public HdRenderPass
 {
@@ -46,7 +46,7 @@ public:
     HdEmbreeRenderPass(HdRenderIndex *index,
                        HdRprimCollection const &collection,
                        HdRenderThread *renderThread,
-                       HdEmbreeRenderer *renderer,
+                       ty::Renderer *renderer,
                        std::atomic<int> *sceneVersion,
                        std::atomic<int> *materialVersion);
 
@@ -88,7 +88,7 @@ private:
     HdRenderThread *_renderThread;
 
     // A handle to the global renderer.
-    HdEmbreeRenderer *_renderer;
+    ty::Renderer *_renderer;
 
     // A reference to the global scene version.
     std::atomic<int> *_sceneVersion;
@@ -142,7 +142,7 @@ private:
     // The linear camera exposure scale applied to color output.
     float _cameraExposureScale;
     // The active camera's physical depth-of-field state.
-    HdEmbreeCameraDepthOfField _cameraDepthOfField;
+    ty::CameraDepthOfField _cameraDepthOfField;
     // Last Hydra display wire style forwarded to the renderer.
     GfVec4f _wireframeColor;
     float _wireframeLineWidth;

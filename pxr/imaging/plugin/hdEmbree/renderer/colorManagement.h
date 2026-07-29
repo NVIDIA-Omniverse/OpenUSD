@@ -14,9 +14,10 @@
 #include <string>
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
 /// Renderer working spaces supported by hdEmbree.
-enum class HdEmbreeRenderColorSpace
+enum class RenderColorSpace
 {
     LinearRec709,
     LinearAP1,
@@ -24,7 +25,7 @@ enum class HdEmbreeRenderColorSpace
 };
 
 /// Result of resolving an authored source color-space name.
-enum class HdEmbreeColorSpaceResolution
+enum class ColorSpaceResolution
 {
     NoTransform,
     Transform,
@@ -34,34 +35,34 @@ enum class HdEmbreeColorSpaceResolution
 /// Parse a standard UsdRenderSettings renderingColorSpace token.
 ///
 /// Returns false for unsupported tokens and leaves \p result unchanged.
-bool HdEmbreeParseRenderColorSpace(
+bool ParseRenderColorSpace(
     TfToken const& token,
-    HdEmbreeRenderColorSpace* result);
+    RenderColorSpace* result);
 
 /// Return the standard token corresponding to \p colorSpace.
-TfToken const& HdEmbreeGetRenderColorSpaceToken(
-    HdEmbreeRenderColorSpace colorSpace);
+TfToken const& GetRenderColorSpaceToken(
+    RenderColorSpace colorSpace);
 
 /// Return true when renderer-managed color transforms must be bypassed.
-bool HdEmbreeBypassesColorTransforms(
-    HdEmbreeRenderColorSpace colorSpace);
+bool BypassesColorTransforms(
+    RenderColorSpace colorSpace);
 
 /// Return the linear RGB space used for numerical color algorithms.
 ///
 /// Data has no primaries, so it deliberately uses Linear Rec.709 as the
 /// deterministic, backward-compatible fallback for algorithms that require
 /// an RGB basis.
-TfToken const& HdEmbreeGetWorkingColorSpaceToken(
-    HdEmbreeRenderColorSpace colorSpace);
+TfToken const& GetWorkingColorSpaceToken(
+    RenderColorSpace colorSpace);
 
 /// Return RGB coefficients that compute CIE Y in the selected working space.
 ///
 /// Data uses the Linear Rec.709 fallback described above.
-GfVec3f HdEmbreeGetLuminanceCoefficients(
-    HdEmbreeRenderColorSpace colorSpace);
+GfVec3f GetLuminanceCoefficients(
+    RenderColorSpace colorSpace);
 
 /// Resolve a canonical Gf color-space name without alias interpretation.
-HdEmbreeColorSpaceResolution HdEmbreeResolveColorSpace(
+ColorSpaceResolution ResolveColorSpace(
     std::string const& sourceColorSpace,
     TfToken* resolvedColorSpace);
 
@@ -69,11 +70,12 @@ HdEmbreeColorSpaceResolution HdEmbreeResolveColorSpace(
 ///
 /// Returns false only when the source color-space name is unsupported. Data
 /// designations and a matching source/destination are successful no-ops.
-bool HdEmbreeConvertToRenderColorSpace(
+bool ConvertToRenderColorSpace(
     std::string const& sourceColorSpace,
-    HdEmbreeRenderColorSpace renderColorSpace,
+    RenderColorSpace renderColorSpace,
     GfVec3f* rgb);
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif // PXR_IMAGING_PLUGIN_HD_EMBREE_COLOR_MANAGEMENT_H

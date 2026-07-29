@@ -196,7 +196,7 @@ pixi run usdrender \
     > /tmp/hdembree-trace.txt 2>&1
 ```
 
-`HdEmbreeRenderer` traces pre-render setup, Embree scene commit, preview trace
+`ty::Renderer` traces pre-render setup, Embree scene commit, preview trace
 and resolve, full-resolution sample trace and resolve, convergence checks, and
 AOV finalization. Keep trace scopes outside per-ray, per-hit, and per-BSDF
 loops so instrumentation does not materially perturb the render.
@@ -236,17 +236,24 @@ plugin in the active Pixi environment.
 
 ## Renderer Namespace And Linkage
 
-- Shared renderer helpers declared in headers live in
-  `PXR_NAMESPACE::ty` and have no leading underscore.
+- Shared renderer declarations under `renderer/` live in `PXR_NAMESPACE::ty`,
+  have no leading underscore, and use role names without a redundant
+  `HdEmbree`/`HdEmbree_` prefix.
 - Translation-unit-contained renderer functions and constants must not live in
   `ty`: use `static _Foo` directly at `PXR_NAMESPACE` scope, or preserve an
   existing anonymous namespace when it groups file-local implementation.
   Do not churn between those two internal-linkage forms for style alone.
-- `renderer/materials/MaterialXCpp/` keeps its existing `mxcpp` and anonymous
-  namespace conventions. Do not introduce `mxcpp::ty`.
-- Renderer types remain at `PXR_NAMESPACE` scope with their existing
-  `HdEmbree` or leading-underscore names as an interim state. Plan 19 moves
-  renderer types into `ty` and completes the namespace pass.
+- `renderer/materials/MaterialXCpp/` and the pxr-independent
+  `renderer/integrator/medium.*` API keep their existing `mxcpp` and anonymous
+  namespace conventions. Do not introduce `mxcpp::ty`. Do not put an anonymous
+  namespace in a header; use `inline`/`inline constexpr` for header-defined
+  MaterialXCpp helpers and constants.
+- `TF_DEBUG_CODES` must remain directly at `PXR_NAMESPACE` scope because the
+  macro specializes `TfDebug::_Traits`; `HDEMBREE_LIGHT_CREATE` keeps its
+  runtime-visible name.
+- Renderer source definitions qualify shared `ty::` declarations explicitly;
+  this keeps file-local implementation at its existing `PXR_NAMESPACE` or
+  anonymous-namespace scope.
 
 ## Directory Map
 
@@ -258,7 +265,7 @@ plugin in the active Pixi environment.
 - `delegate/renderPass.*`: `HdEmbreeRenderPass`; consumes `HdRenderPassState`, active
   `RenderSettings` data, cameras, AOV bindings, convergence state, and active
   `RenderProduct` writing.
-- `renderer/renderer.*`: `HdEmbreeRenderer` façade, persistent frame/settings
+- `renderer/renderer.*`: `ty::Renderer` façade, persistent frame/settings
   state, progressive preview/full-resolution orchestration, and per-pixel
   integrator selection/AOV output classification.
 - `renderer/camera/camera.cpp`: camera/lens sampling, primary-ray construction, and ray differentials; tile traversal stays in `renderer/renderer.cpp`.
@@ -358,9 +365,9 @@ interface and retains authored-IOR Fresnel.
    shared scene version so the render pass restarts accumulation.
 6. `HdEmbreeRenderPass::_Execute()` observes scene version, render settings
    version, frame/time, camera state, data window, and AOV binding changes. It
-   pushes updated state into `HdEmbreeRenderer` and starts or restarts the
+   pushes updated state into `ty::Renderer` and starts or restarts the
    background `HdRenderThread`.
-7. `HdEmbreeRenderer::Render()` first validates the scene, AOV interface types,
+7. `ty::Renderer::Render()` first validates the scene, AOV interface types,
    formats, dimensions, and data-window containment before scene commit or
    buffer mapping. Failure maps no buffers, traces no tiles, marks usable
    buffers converged, and returns. Successful setup commits or reuses the
@@ -426,8 +433,8 @@ delegate-setting overrides.
 
 `_Execute()` then reads final values back from `HdRenderDelegate`, resolves
 cross-setting policy and token values, and pushes one
-`HdEmbreeRenderSettings` value through
-`HdEmbreeRenderer::SetRenderSettings()`. Material-context handling remains
+`ty::RenderSettings` value through
+`ty::Renderer::SetRenderSettings()`. Material-context handling remains
 pass-owned.
 
 When adding or changing a render setting, update all relevant surfaces:
@@ -436,7 +443,7 @@ When adding or changing a render setting, update all relevant surfaces:
 - `delegate/renderDelegate.cpp`: descriptor label and default population.
 - `renderer/renderSettings.h`: hard-coded default and renderer field, or a
   named pass-owned default.
-- `delegate/renderPass.cpp`: bridge and `_Execute()` push into `HdEmbreeRenderer`.
+- `delegate/renderPass.cpp`: bridge and `_Execute()` push into `ty::Renderer`.
 - `renderer/renderer.h/.cpp`: setting storage and frame orchestration; runtime behavior lives in the owning `renderer/aov/`, `renderer/camera/`, or `renderer/integrator/` implementation.
 - `schema/schema.usda` and `schema/generatedSchema.usda`: `TyphoonRenderSettingsAPI`.
 - `plugInfo.json`: schema registration only if schema identity changes.
@@ -465,9 +472,9 @@ derivatives, then calls `_UpdateInstances()` to resize and populate top-level
 instance geometry and contexts when instance state is dirty.
 
 Primvars are pulled into `_primvarSourceMap` by `_UpdatePrimvarSources()` and
-`_UpdateComputedPrimvarSources()`, then converted into `HdEmbreePrimvarSampler`
+`_UpdateComputedPrimvarSources()`, then converted into `ty::PrimvarSampler`
 objects in `renderer/geometry/meshSamplers.*`. The sampler map is stored in
-`HdEmbreePrototypeContext` so the renderer can evaluate primvars at ray hits.
+`ty::PrototypeContext` so the renderer can evaluate primvars at ray hits.
 The context owns samplers in `primvarMap`. Material compilation assigns each
 constant `geomprop` name one integer handle shared by the surface and
 displacement graphs; each mesh resolves that handle table to observing sampler
@@ -481,10 +488,10 @@ default without invalidating the terminal.
 
 For refined primvars, preserve indexed face-varying data rather than flattening it: each face-varying primvar needs an independent Embree attribute topology because different primvars can have different seams. Topology 1 is reserved for linear `varying` data; face-varying topologies start at 2. Embree maps `none` to `SMOOTH_BOUNDARY`, the three OpenSubdiv corner variants to `PIN_CORNERS`, `boundaries` to `PIN_BOUNDARY`, and `all` to `PIN_ALL`. Embree interpolation buffers and outputs must remain 16-byte padded. Low-complexity triangle samplers still need indexed values flattened before triangulation.
 
-At `low` complexity, subdivision meshes use their triangulated control cage. `medium`, `high`, and `veryhigh` use screen-space adaptive subdivision targeting 4, 1, and 0.5 pixel edges. `HdEmbreeRenderPass` requires an attached `HdCamera` and snapshots the first valid camera/data window and triggers `HdEmbreeRenderDelegate::UpdateAdaptiveSubdivision()` for initial geometry and later scene edits using that frozen view. `ty:dynamicSubdvTesselation = true` additionally refreshes the snapshot and levels after projection or data-window changes. `delegate/adaptiveSubdivision.*` projects every coarse edge through all instance transforms and clips edges to the homogeneous view volume. Displaced quads additionally evaluate final positions on a fixed 3x3 `(u,v)` grid; midpoint-to-chord errors above 0.5 pixel at medium or 0.25 pixel at high/very-high can raise only the affected parametric direction, capped at 2x the fresh camera baseline. Propagate the 2x factor through shared edges and quad-opposite pairs along the complete edge strip before changing levels; a one-sided propagated level creates Embree transition-fan triangles that can fold after displacement. Non-quads and failed probes retain the baseline except where they share a boosted edge. Always run shared-edge consolidation and quad 2:1 balancing after displacement refinement, write shared-edge-consistent `RTC_BUFFER_TYPE_LEVEL` values, and let `HdEmbreeMesh` recommit the prototype scene. Keep levels in Embree’s `[1, 4096]` range and never multiply the previously cached levels, which would ratchet across updates. Surface shading, displacement callbacks, and dicing probes share `HdEmbreeSamplePrimvar`, so constant, uniform, vertex, varying, and face-varying geomprops use the same production samplers in all paths. Instance primvars cannot vary prototype displacement because Embree tessellates the shared prototype before applying instance transforms.
+At `low` complexity, subdivision meshes use their triangulated control cage. `medium`, `high`, and `veryhigh` use screen-space adaptive subdivision targeting 4, 1, and 0.5 pixel edges. `HdEmbreeRenderPass` requires an attached `HdCamera` and snapshots the first valid camera/data window and triggers `HdEmbreeRenderDelegate::UpdateAdaptiveSubdivision()` for initial geometry and later scene edits using that frozen view. `ty:dynamicSubdvTesselation = true` additionally refreshes the snapshot and levels after projection or data-window changes. `delegate/adaptiveSubdivision.*` projects every coarse edge through all instance transforms and clips edges to the homogeneous view volume. Displaced quads additionally evaluate final positions on a fixed 3x3 `(u,v)` grid; midpoint-to-chord errors above 0.5 pixel at medium or 0.25 pixel at high/very-high can raise only the affected parametric direction, capped at 2x the fresh camera baseline. Propagate the 2x factor through shared edges and quad-opposite pairs along the complete edge strip before changing levels; a one-sided propagated level creates Embree transition-fan triangles that can fold after displacement. Non-quads and failed probes retain the baseline except where they share a boosted edge. Always run shared-edge consolidation and quad 2:1 balancing after displacement refinement, write shared-edge-consistent `RTC_BUFFER_TYPE_LEVEL` values, and let `HdEmbreeMesh` recommit the prototype scene. Keep levels in Embree’s `[1, 4096]` range and never multiply the previously cached levels, which would ratchet across updates. Surface shading, displacement callbacks, and dicing probes share `ty::SamplePrimvar`, so constant, uniform, vertex, varying, and face-varying geomprops use the same production samplers in all paths. Instance primvars cannot vary prototype displacement because Embree tessellates the shared prototype before applying instance transforms.
 
 Hydra `wireOnSurf`/`refinedWireOnSurf` and `wire`/`refinedWire` reprs are
-carried through `HdEmbreePrototypeContext`. `renderer/geometry/wireframe.*`
+carried through `ty::PrototypeContext`. `renderer/geometry/wireframe.*`
 computes screen-space edge coverage: coarse hits use triangle barycentrics;
 refined hits decode quad or n-gon sub-patch UVs and the live subdivision level
 buffer to reconstruct the final diced grid. Restore the one-pixel derivative
@@ -615,7 +622,7 @@ for Hydra material network selection. When that setting changes,
 `HdEmbreeRenderPass::_ResyncMaterialNetworksForRenderContextChange()` asks
 materials to recompile.
 
-Textures go through `HdEmbreeOiioTextureSystem`, which implements the
+Textures go through `ty::OiioTextureSystem`, which implements the
 MaterialXCpp texture system over OpenImageIO.
 PNG image nodes expect source alpha to remain straight/unassociated. PNG
 textures use a dedicated OIIO texture system with `unassociatedalpha` enabled
@@ -651,7 +658,7 @@ Dome lights are sampled in `renderer/lights/domeLight.cpp` with distributions
 built from lat-long texture luminance and solid angle. Finite light geometry
 can be visible to primary rays through `visibleInPrimaryRay`; those shapes are
 inserted as Embree geometry and tracked by
-`HdEmbreeRenderer::AddLightGeometry()`/`RemoveLightGeometry()`.
+`ty::Renderer::AddLightGeometry()`/`RemoveLightGeometry()`.
 
 Camera visibility for dome-light backgrounds is controlled by the generic
 `domeLightCameraVisibility` render setting, not a light prim attribute.
@@ -663,7 +670,7 @@ category tokens. Mesh and instancer category memberships come from
 `HdSceneDelegate::GetCategories()` and native-instance memberships from
 `GetInstanceCategories()`. Flattened instance records keep transforms and
 categories together; their complete, immutable membership snapshot is stored
-on `HdEmbreeInstanceContext` for renderer hit tests.
+on `ty::InstanceContext` for renderer hit tests.
 
 Light links filter surface and medium next-event estimation as well as finite,
 distant, and dome emitters reached through BSDF or phase sampling. Shadow
@@ -681,7 +688,7 @@ per-proxy data.
 
 ## Rendering And Output
 
-`HdEmbreeRenderer` owns the path tracing loop. Key responsibilities include:
+`ty::Renderer` owns the path tracing loop. Key responsibilities include:
 
 - camera ray generation, depth of field, exposure compensation, and frame/time;
 - tile scheduling and progressive accumulation;

@@ -20,10 +20,10 @@ PXR_NAMESPACE_OPEN_SCOPE
 static constexpr float _volumePdfEps = 1.0e-20f;
 
 void
-HdEmbreeRenderer::_UpdatePathMedium(
+ty::Renderer::_UpdatePathMedium(
     mxcpp::SurfaceClosure const& closure,
-    HdEmbreePrototypeContext const* geometry,
-    HdEmbreeCategorySet const& categories,
+    ty::PrototypeContext const* geometry,
+    ty::CategorySet const& categories,
     float directionDotNormal,
     _PathState* state) const
 {
@@ -33,7 +33,7 @@ HdEmbreeRenderer::_UpdatePathMedium(
     if (state->medium.active &&
         state->medium.ownerGeometry == geometry &&
         directionDotNormal > 0.0f) {
-        state->medium = HdEmbreeMediumState();
+        state->medium = ty::MediumState();
     } else if (!state->medium.active &&
                closure.hasInteriorMedium &&
                directionDotNormal < 0.0f) {
@@ -44,18 +44,18 @@ HdEmbreeRenderer::_UpdatePathMedium(
     }
 }
 
-HdEmbreeRenderer::_VolumeTransmissionResult
-HdEmbreeRenderer::_TraceVolumeTransmission(
+ty::Renderer::_VolumeTransmissionResult
+ty::Renderer::_TraceVolumeTransmission(
     _VolumeTransmissionInput const& input,
-    HdEmbreeSampleDomain const& domain,
+    ty::SampleDomain const& domain,
     _PathState* state) const
 {
     if (!state || !state->medium.active) {
         return _VolumeTransmissionResult::ContinueSurface;
     }
 
-    const HdEmbreeMediumState& mediumState = state->medium;
-    const _HeroWavelengthState hero{
+    const ty::MediumState& mediumState = state->medium;
+    const ty::HeroWavelengthState hero{
         state->hero.active,
         state->hero.wavelengthNm,
         state->hero.pdf};
@@ -68,7 +68,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
     const auto addFiniteLightHit = [&]() {
         if (!input.finiteLightLink.IsEmpty() &&
             (!state->lastScatterCategories ||
-             !HdEmbreeMatchesLink(
+             !ty::MatchesLink(
                  input.finiteLightLink, *state->lastScatterCategories))) {
             return _VolumeTransmissionResult::Terminate;
         }
@@ -117,7 +117,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
             channel = mxcpp::ChannelMIS(
                 ty::ToMx(_GetPathThroughputRgb(*state)),
                 ty::ToMx(albedo),
-                domain.Fork(HdEmbreeSampleDomainKey::MediumChannel).Draw1D(),
+                domain.Fork(ty::SampleDomainKey::MediumChannel).Draw1D(),
                 &channelPdfMx);
             channelPdf =
                 GfVec3f(channelPdfMx[0], channelPdfMx[1], channelPdfMx[2]);
@@ -171,13 +171,13 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
                   medium,
                   ty::ToMx(_GetPathThroughputRgb(*state)),
                   domain
-                      .Fork(HdEmbreeSampleDomainKey::MediumFreeFlight)
+                      .Fork(ty::SampleDomainKey::MediumFreeFlight)
                       .Draw1D())
             : mxcpp::SampleFreeFlightChannel(
                   medium,
                   channel,
                   domain
-                      .Fork(HdEmbreeSampleDomainKey::MediumFreeFlight)
+                      .Fork(ty::SampleDomainKey::MediumFreeFlight)
                       .Draw1D());
         const float maxTravelDist =
             std::min(input.surfaceDist, input.finiteLightDist);
@@ -194,7 +194,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
             const GfVec3f omegaOutWld = -state->directionRayWld;
             const GfVec3f direct = _ComputeMediumDirectLighting(
                 scatterPos, omegaOutWld, mediumState,
-                domain.Fork(HdEmbreeSampleDomainKey::MediumDirectLighting),
+                domain.Fork(ty::SampleDomainKey::MediumDirectLighting),
                 input.bounce < _settings.maxBounces,
                 hero.active,
                 hero.wavelengthNm,
@@ -230,7 +230,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
                 q = std::min(q, 0.95f);
                 if (q <= 0.0f ||
                     domain
-                        .Fork(HdEmbreeSampleDomainKey::MediumRussianRoulette)
+                        .Fork(ty::SampleDomainKey::MediumRussianRoulette)
                         .Draw1D() > q) {
                     return _VolumeTransmissionResult::Terminate;
                 }
@@ -242,7 +242,7 @@ HdEmbreeRenderer::_TraceVolumeTransmission(
             }
 
             const GfVec2f phaseSample =
-                domain.Fork(HdEmbreeSampleDomainKey::MediumPhase).Draw2D();
+                domain.Fork(ty::SampleDomainKey::MediumPhase).Draw2D();
             const GfVec3f omegaInWld =
                 ty::ToGf(useAdobeVolumeTransport
                           ? mxcpp::AdobeOpenPbrSampleVolumePhase(

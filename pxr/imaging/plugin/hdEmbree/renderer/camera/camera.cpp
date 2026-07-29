@@ -12,7 +12,7 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 static bool
-_IsCameraDepthOfFieldEnabled(HdEmbreeCameraDepthOfField const& dof,
+_IsCameraDepthOfFieldEnabled(ty::CameraDepthOfField const& dof,
                              bool isOrthographic)
 {
     return !isOrthographic &&
@@ -25,7 +25,7 @@ _IsCameraDepthOfFieldEnabled(HdEmbreeCameraDepthOfField const& dof,
 }
 
 static float
-_GetLensRadius(HdEmbreeCameraDepthOfField const& dof)
+_GetLensRadius(ty::CameraDepthOfField const& dof)
 {
     return dof.focalLength / (2.0f * dof.fStop);
 }
@@ -55,7 +55,7 @@ _SampleUniformDiskConcentric(GfVec2f const& sample)
 }
 
 static bool
-_ApplyCameraDepthOfField(HdEmbreeCameraDepthOfField const& dof,
+_ApplyCameraDepthOfField(ty::CameraDepthOfField const& dof,
                          GfVec2f const& lensPoint, GfVec3f* origin,
                          GfVec3f* directionLocal)
 {
@@ -89,18 +89,18 @@ _ApplyCameraDepthOfField(HdEmbreeCameraDepthOfField const& dof,
 }
 
 void
-HdEmbreeRenderer::_SampleCameraRay(
+ty::Renderer::_SampleCameraRay(
     unsigned int x, unsigned int y,
     unsigned int imageMinX, unsigned int imageMinY,
-    HdEmbreeSampler& sampler,
+    ty::Sampler& sampler,
     GfVec3f& rayOrigin, GfVec3f& rayDirection,
-    HdEmbreeRayDifferential& rayDifferential) const
+    ty::RayDifferential& rayDifferential) const
 {
     // Jitter the camera ray direction.
     GfVec2f jitter(0.0f, 0.0f);
     if (_settings.jitterCamera) {
         jitter = sampler.RootDomain()
-            .Fork(HdEmbreeSampleDomainKey::CameraJitter)
+            .Fork(ty::SampleDomainKey::CameraJitter)
             .Draw2D();
     }
 
@@ -140,7 +140,7 @@ HdEmbreeRenderer::_SampleCameraRay(
     if (cameraDofEnabled) {
         const GfVec2f lensSample =
             sampler.RootDomain()
-                .Fork(HdEmbreeSampleDomainKey::CameraLens)
+                .Fork(ty::SampleDomainKey::CameraLens)
                 .Draw2D();
         const GfVec2f lensDisk =
             _SampleUniformDiskConcentric(lensSample);
@@ -161,7 +161,7 @@ HdEmbreeRenderer::_SampleCameraRay(
         _inverseViewMatrix.TransformDir(dirCamera)).GetNormalized();
 
     // --- Ray differential ---
-    HdEmbreeRayDifferential rayDiff;
+    ty::RayDifferential rayDiff;
     {
         const GfVec3f ndcDx(
             2.0f * ((x + 1.0f + jitter[0] - imageMinX) / w) - 1.0f,

@@ -15,11 +15,12 @@
 #include <cstddef>
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
-class HdEmbreeRenderBufferInterface
+class RenderBufferInterface
 {
 public:
-    virtual ~HdEmbreeRenderBufferInterface() = default;
+    virtual ~RenderBufferInterface() = default;
 
     virtual unsigned int GetWidth() const = 0;
     virtual unsigned int GetHeight() const = 0;
@@ -42,6 +43,7 @@ public:
     virtual void Clear(size_t components, int const* value) = 0;
 };
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif

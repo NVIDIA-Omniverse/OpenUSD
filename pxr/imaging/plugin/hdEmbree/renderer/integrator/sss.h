@@ -13,6 +13,7 @@
 #include <cstdint>
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
 // =============================================================================
 // New SSS API (Phase 1 of Chiang + Dwivedi rewrite).
@@ -20,9 +21,9 @@ PXR_NAMESPACE_OPEN_SCOPE
 // See agent-docs/designs/2026-04-16-design-sss-chiang-dwivedi.md.
 // =============================================================================
 
-struct HdEmbreeSampleDomain;
+struct SampleDomain;
 
-struct HdEmbreeSssInput {
+struct SssInput {
     GfVec3f positionEntryWld;
     // Material-resolved, exitant-facing guide used by Dwivedi sampling. It is
     // not geometric boundary state.
@@ -41,7 +42,7 @@ struct HdEmbreeSssInput {
     GfMatrix4f worldToObjectMatrix = GfMatrix4f(1.0f);
 };
 
-struct HdEmbreeSssOutput {
+struct SssOutput {
     bool success = false; // False when no exit was found.
     GfVec3f positionExitWld = GfVec3f(0.0f);
     GfVec3f normalGeomExitWldExt = GfVec3f(0.0f);
@@ -57,8 +58,8 @@ struct HdEmbreeSssOutput {
     uint32_t intersectionTests = 0;              // Embree rtcIntersect1 calls
 };
 
-HdEmbreeSssOutput HdEmbreeRandomWalkSSS(HdEmbreeSssInput const& input,
-                                        HdEmbreeSampleDomain const& domain,
+SssOutput RandomWalkSSS(SssInput const& input,
+                                        SampleDomain const& domain,
                                         RTCScene scene);
 
 /// Chiang 2016 random-walk SSS coefficient remap.
@@ -76,7 +77,7 @@ HdEmbreeSssOutput HdEmbreeRandomWalkSSS(HdEmbreeSssInput const& input,
 ///
 /// Visible here for unit testing (Phase 2 Task 2.3-2.4).
 /// Source: Blender Cycles `subsurface_random_walk_remap` (Apache 2.0).
-void HdEmbreeChiangRemap(const GfVec3f& albedo, const GfVec3f& radius,
+void ChiangRemap(const GfVec3f& albedo, const GfVec3f& radius,
                          float anisotropy, GfVec3f* extinctionOutput,
                          GfVec3f* alphaOutput,
                          GfVec3f* rawAlphaOutput = nullptr);
@@ -94,27 +95,28 @@ void HdEmbreeChiangRemap(const GfVec3f& albedo, const GfVec3f& radius,
 /// Compute the diffusion length v = 1/sqrt(1 - alpha^k) where the exponent k
 /// is a polynomial approximation of the zero-variance form. (Eq. 67 from
 /// d'Eon-Křivánek 2020, via Cycles.)
-float HdEmbreeDiffusionLengthDwivedi(float alpha);
+float DiffusionLengthDwivedi(float alpha);
 
 /// Evaluate the Dwivedi phase function at cosTheta given the precomputed
 /// `phaseLog = log((L+1)/(L-1))`, where L is diffusion length.
 /// (Eq. 9 from Meng et al 2016.)
-float HdEmbreeEvalPhaseDwivedi(float diffusionLength, float phaseLog,
+float EvalPhaseDwivedi(float diffusionLength, float phaseLog,
                                float cosTheta);
 
 /// Sample cosTheta from the Dwivedi distribution given phaseLog. Inverse CDF.
 /// (Eq. 10 from Meng et al 2016.)
-float HdEmbreeSamplePhaseDwivedi(float diffusionLength, float phaseLog,
+float SamplePhaseDwivedi(float diffusionLength, float phaseLog,
                                  float u1);
 
 /// Probability of using the backward Dwivedi guide when an opposite interface
 /// is known. `distanceFromEntryPlaneWld` is the clamped distance from the
 /// entry tangent plane toward that interface. Visible for unit testing
 /// ticket #403.
-float HdEmbreeBackwardDwivediFraction(float distanceOppositeWld,
+float BackwardDwivediFraction(float distanceOppositeWld,
                                       float distanceFromEntryPlaneWld,
                                       float diffusionLength);
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif  // PXR_IMAGING_PLUGIN_HD_EMBREE_SSS_H

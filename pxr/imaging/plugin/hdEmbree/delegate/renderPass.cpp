@@ -338,7 +338,7 @@ _WriteFloatRgbaImage(const std::string &filename,
 HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
                                        HdRprimCollection const &collection,
                                        HdRenderThread *renderThread,
-                                       HdEmbreeRenderer *renderer,
+                                       ty::Renderer *renderer,
                                        std::atomic<int> *sceneVersion,
                                        std::atomic<int> *materialVersion)
     : HdRenderPass(index, collection)
@@ -467,7 +467,7 @@ _GetCameraExposureScale(
     const bool enableExposureCompensation =
         renderDelegate->GetRenderSetting<bool>(
             HdEmbreeRenderSettingsTokens->enableExposureCompensation,
-            HdEmbreeDefaultEnableExposureCompensation);
+            ty::DefaultEnableExposureCompensation);
     if (camera && enableExposureCompensation) {
         return camera->GetLinearExposureScale();
     }
@@ -480,15 +480,15 @@ _FiniteOrZero(float value)
     return std::isfinite(value) ? value : 0.0f;
 }
 
-static HdEmbreeCameraDepthOfField
+static ty::CameraDepthOfField
 _GetCameraDepthOfField(HdRenderPassStateSharedPtr const& renderPassState)
 {
     HdCamera const * const camera = renderPassState->GetCamera();
     if (!camera) {
-        return HdEmbreeCameraDepthOfField();
+        return ty::CameraDepthOfField();
     }
 
-    HdEmbreeCameraDepthOfField result;
+    ty::CameraDepthOfField result;
     result.fStop = _FiniteOrZero(camera->GetFStop());
     result.focusDistance = _FiniteOrZero(camera->GetFocusDistance());
     result.focalLength = _FiniteOrZero(camera->GetFocalLength());
@@ -812,15 +812,15 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             materialRenderContextsChanged = true;
         }
 
-        const HdEmbreeRenderSettings defaults;
+        const ty::RenderSettings defaults;
 
         const TfToken renderColorSpaceToken = _GetTokenRenderSetting(
             renderDelegate,
             HdRenderSettingsPrimTokens->renderingColorSpace,
             GfColorSpaceNames->LinearRec709);
-        HdEmbreeRenderColorSpace renderColorSpace =
-            HdEmbreeRenderColorSpace::LinearRec709;
-        if (!HdEmbreeParseRenderColorSpace(
+        ty::RenderColorSpace renderColorSpace =
+            ty::RenderColorSpace::LinearRec709;
+        if (!ty::ParseRenderColorSpace(
                 renderColorSpaceToken, &renderColorSpace)) {
             TF_WARN(
                 "hdEmbree rendering color space '%s' is unsupported; "
@@ -839,7 +839,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
         // Resolve Hydra values and cross-setting policy into one renderer
         // value before applying it while rendering is stopped.
-        HdEmbreeRenderSettings nextSettings = defaults;
+        ty::RenderSettings nextSettings = defaults;
         nextSettings.samplesToConvergence =
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
@@ -855,7 +855,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         const bool enableAmbientOcclusion =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
-                HdEmbreeDefaultEnableAmbientOcclusion);
+                ty::DefaultEnableAmbientOcclusion);
         nextSettings.ambientOcclusionSamples =
             !nextSettings.enableLighting && enableAmbientOcclusion
                 ? renderDelegate->GetRenderSetting<int>(
@@ -884,14 +884,14 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                 defaults.jitterCamera);
 
         const TfToken defaultSamplerSequenceToken =
-            HdEmbreeGetSamplerSequenceToken(defaults.samplerSequence);
+            ty::GetSamplerSequenceToken(defaults.samplerSequence);
         const TfToken samplerSequenceToken = _GetTokenRenderSetting(
             renderDelegate,
             HdEmbreeRenderSettingsTokens->samplerSequence,
             defaultSamplerSequenceToken);
         nextSettings.samplerSequence =
-            HdEmbreeGetSamplerSequenceFromToken(samplerSequenceToken);
-        if (HdEmbreeGetSamplerSequenceToken(nextSettings.samplerSequence) !=
+            ty::GetSamplerSequenceFromToken(samplerSequenceToken);
+        if (ty::GetSamplerSequenceToken(nextSettings.samplerSequence) !=
             samplerSequenceToken) {
             TF_WARN("hdEmbree sampler sequence '%s' is unknown; "
                     "falling back to '%s'.",
@@ -958,16 +958,16 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
                 defaults.enableGgxMicrofacetMultipleScattering);
 
         const TfToken defaultDielectricModeToken =
-            HdEmbreeGetDielectricLayerThroughputModeToken(
+            ty::GetDielectricLayerThroughputModeToken(
                 defaults.dielectricLayerThroughputMode);
         const TfToken dielectricModeToken = _GetTokenRenderSetting(
             renderDelegate,
             HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
             defaultDielectricModeToken);
         nextSettings.dielectricLayerThroughputMode =
-            HdEmbreeGetDielectricLayerThroughputModeFromToken(
+            ty::GetDielectricLayerThroughputModeFromToken(
                 dielectricModeToken);
-        if (HdEmbreeGetDielectricLayerThroughputModeToken(
+        if (ty::GetDielectricLayerThroughputModeToken(
                 nextSettings.dielectricLayerThroughputMode) !=
             dielectricModeToken) {
             TF_WARN(
@@ -1012,7 +1012,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     const GfMatrix4d proj = renderPassState->GetProjectionMatrix();
     const float cameraExposureScale =
         _GetCameraExposureScale(renderPassState, renderDelegate);
-    const HdEmbreeCameraDepthOfField cameraDepthOfField =
+    const ty::CameraDepthOfField cameraDepthOfField =
         _GetCameraDepthOfField(renderPassState);
     const bool projectionChanged =
         _viewMatrix != view || _projMatrix != proj;
@@ -1070,7 +1070,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     const bool dynamicSubdivisionTessellation =
         renderDelegate->GetRenderSetting<bool>(
             HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
-            HdEmbreeDefaultDynamicSubdvTesselation);
+            ty::DefaultDynamicSubdvTesselation);
     const bool dynamicSubdivisionTessellationEnabled =
         dynamicSubdivisionTessellation &&
         !_dynamicSubdivisionTessellation;

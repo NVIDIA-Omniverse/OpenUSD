@@ -71,10 +71,10 @@ _LatLongUvToDirection(float s, float t)
         sinTheta * std::cos(phi));
 }
 
-HdEmbree_LightData
+ty::LightData
 _MakeDomeLight(const std::vector<GfVec3f>& pixels, int width, int height)
 {
-    HdEmbree_LightData light;
+    ty::LightData light;
     light.xformLightToWorld = GfMatrix4f(1.0f);
     light.xformWorldToLight = GfMatrix4f(1.0f);
     light.normalXformLightToWorld = GfMatrix3f(1.0f);
@@ -83,34 +83,34 @@ _MakeDomeLight(const std::vector<GfVec3f>& pixels, int width, int height)
     light.texture.width = width;
     light.texture.height = height;
     light.texture.colorSpaceName = GfColorSpaceNames->LinearRec709;
-    light.lightVariant = HdEmbree_Dome{};
-    HdEmbreeBuildDomeLightSamplingDistribution(&light.texture);
+    light.lightVariant = ty::DomeLight{};
+    ty::BuildDomeLightSamplingDistribution(&light.texture);
     return light;
 }
 
-HdEmbree_LightData
+ty::LightData
 _MakeSphereLight(const GfVec3f& center, float radius)
 {
-    HdEmbree_LightData light;
+    ty::LightData light;
     light.xformLightToWorld = GfMatrix4f(1.0f);
     light.xformLightToWorld.SetTranslate(center);
     light.xformWorldToLight = light.xformLightToWorld.GetInverse();
     light.normalXformLightToWorld = GfMatrix3f(1.0f);
     light.color = GfVec3f(1.0f);
-    light.lightVariant = HdEmbree_Sphere{radius};
+    light.lightVariant = ty::SphereLight{radius};
     return light;
 }
 
-HdEmbree_LightData
+ty::LightData
 _MakeRectLight(const GfVec3f& center, float width, float height)
 {
-    HdEmbree_LightData light;
+    ty::LightData light;
     light.xformLightToWorld = GfMatrix4f(1.0f);
     light.xformLightToWorld.SetTranslate(center);
     light.xformWorldToLight = light.xformLightToWorld.GetInverse();
     light.normalXformLightToWorld = GfMatrix3f(1.0f);
     light.color = GfVec3f(1.0f);
-    light.lightVariant = HdEmbree_Rect{width, height};
+    light.lightVariant = ty::RectLight{width, height};
     return light;
 }
 
@@ -118,25 +118,25 @@ bool
 TestDomeTextureConvertsToRenderColorSpace()
 {
     const GfVec3f source(0.25f, 0.5f, 0.75f);
-    const HdEmbree_LightData light =
+    const ty::LightData light =
         _MakeDomeLight({source}, 1, 1);
     const GfVec3f direction(0.0f, 0.0f, 1.0f);
 
     const auto raw =
-        HdEmbreeLightSampler::EvaluateDomeLightDirection(
+        ty::LightSampler::EvaluateDomeLightDirection(
             light,
             direction,
-            HdEmbreeRenderColorSpace::Data);
+            ty::RenderColorSpace::Data);
     if (!raw.valid || !_IsClose(raw.radianceIn, source)) {
         std::printf("    raw dome texture values were transformed\n");
         return false;
     }
 
     const auto ap1 =
-        HdEmbreeLightSampler::EvaluateDomeLightDirection(
+        ty::LightSampler::EvaluateDomeLightDirection(
             light,
             direction,
-            HdEmbreeRenderColorSpace::LinearAP1);
+            ty::RenderColorSpace::LinearAP1);
     const GfVec3f expected = GfColorSpace(
         GfColorSpaceNames->LinearAP1).Convert(
             GfColorSpace(GfColorSpaceNames->LinearRec709), source).GetRGB();
@@ -147,53 +147,53 @@ TestDomeTextureConvertsToRenderColorSpace()
     return true;
 }
 
-HdEmbree_LightData
+ty::LightData
 _MakeDiskLight(const GfVec3f& center, float radius)
 {
-    HdEmbree_LightData light;
+    ty::LightData light;
     light.xformLightToWorld = GfMatrix4f(1.0f);
     light.xformLightToWorld.SetTranslate(center);
     light.xformWorldToLight = light.xformLightToWorld.GetInverse();
     light.normalXformLightToWorld = GfMatrix3f(1.0f);
     light.color = GfVec3f(1.0f);
-    light.lightVariant = HdEmbree_Disk{radius};
+    light.lightVariant = ty::DiskLight{radius};
     return light;
 }
 
-HdEmbree_LightData
+ty::LightData
 _MakeDistantLight(float angle)
 {
-    HdEmbree_LightData light;
+    ty::LightData light;
     light.xformLightToWorld = GfMatrix4f(1.0f);
     light.xformWorldToLight = GfMatrix4f(1.0f);
     light.normalXformLightToWorld = GfMatrix3f(1.0f);
     light.color = GfVec3f(1.0f);
     light.intensity = 1.0f;
     light.diffuse = 1.0f;
-    light.lightVariant = HdEmbree_Distant{angle};
+    light.lightVariant = ty::DistantLight{angle};
     return light;
 }
 
-HdEmbree_LightData
+ty::LightData
 _MakeCylinderLight(
     const GfVec3f& center,
     float radius,
     float length)
 {
-    HdEmbree_LightData light;
+    ty::LightData light;
     light.xformLightToWorld = GfMatrix4f(1.0f);
     light.xformLightToWorld.SetTranslate(center);
     light.xformWorldToLight = light.xformLightToWorld.GetInverse();
     light.normalXformLightToWorld = GfMatrix3f(1.0f);
     light.color = GfVec3f(1.0f);
-    light.lightVariant = HdEmbree_Cylinder{radius, length};
+    light.lightVariant = ty::CylinderLight{radius, length};
     return light;
 }
 
 bool
 TestDomeDistributionBuildsCdfs()
 {
-    const HdEmbree_LightData light = _MakeDomeLight(
+    const ty::LightData light = _MakeDomeLight(
         {
             GfVec3f(1.0f), GfVec3f(4.0f), GfVec3f(1.0f), GfVec3f(1.0f),
             GfVec3f(1.0f), GfVec3f(1.0f), GfVec3f(1.0f), GfVec3f(1.0f)
@@ -201,7 +201,7 @@ TestDomeDistributionBuildsCdfs()
         4,
         2);
 
-    const HdEmbree_LightTexture& texture = light.texture;
+    const ty::LightTexture& texture = light.texture;
     if (texture.weightSum <= 0.0f) {
         std::printf("    expected positive weight sum\n");
         return false;
@@ -232,13 +232,13 @@ TestDomeDistributionBuildsCdfs()
 bool
 TestDomeDistributionRespectsTextureColorSpace()
 {
-    HdEmbree_LightTexture texture;
+    ty::LightTexture texture;
     texture.pixels = {GfVec3f(0.5f)};
     texture.width = 1;
     texture.height = 1;
     texture.colorSpaceName = GfColorSpaceNames->G22Rec709;
 
-    HdEmbreeBuildDomeLightSamplingDistribution(&texture);
+    ty::BuildDomeLightSamplingDistribution(&texture);
 
     const float expectedLuminance = std::pow(0.5f, 2.2f);
     const float measuredLuminance = texture.weightSum * 0.5f;
@@ -256,7 +256,7 @@ TestDomeDistributionRespectsTextureColorSpace()
 bool
 TestDomeDirectionalPdfPrefersBrightTexel()
 {
-    const HdEmbree_LightData light = _MakeDomeLight(
+    const ty::LightData light = _MakeDomeLight(
         {
             GfVec3f(1.0f), GfVec3f(40.0f), GfVec3f(1.0f), GfVec3f(1.0f),
             GfVec3f(1.0f), GfVec3f(1.0f),  GfVec3f(1.0f), GfVec3f(1.0f)
@@ -270,9 +270,9 @@ TestDomeDirectionalPdfPrefersBrightTexel()
         _LatLongUvToDirection((2.0f + 0.5f) / 4.0f, (0.0f + 0.5f) / 2.0f);
 
     const auto bright =
-        HdEmbreeLightSampler::EvaluateDomeLightDirection(light, brightDir);
+        ty::LightSampler::EvaluateDomeLightDirection(light, brightDir);
     const auto dark =
-        HdEmbreeLightSampler::EvaluateDomeLightDirection(light, darkDir);
+        ty::LightSampler::EvaluateDomeLightDirection(light, darkDir);
 
     const float brightPdf = (bright.pdfSolidAngleInverse > 0.0f)
                                 ? (1.0f / bright.pdfSolidAngleInverse)
@@ -292,7 +292,7 @@ TestDomeDirectionalPdfPrefersBrightTexel()
 bool
 TestDomeSampleMatchesDirectionalEvaluation()
 {
-    const HdEmbree_LightData light = _MakeDomeLight(
+    const ty::LightData light = _MakeDomeLight(
         {
             GfVec3f(1.0f), GfVec3f(8.0f), GfVec3f(2.0f), GfVec3f(1.0f),
             GfVec3f(1.0f), GfVec3f(3.0f), GfVec3f(1.0f), GfVec3f(6.0f)
@@ -308,9 +308,9 @@ TestDomeSampleMatchesDirectionalEvaluation()
     };
 
     for (const GfVec2f& u : samples) {
-        const auto sampled = HdEmbreeLightSampler::GetLightSample(
+        const auto sampled = ty::LightSampler::GetLightSample(
             light, GfVec3f(0.0f), GfVec3f::YAxis(), u[0], u[1]);
-        const auto evaluated = HdEmbreeLightSampler::EvaluateDomeLightDirection(
+        const auto evaluated = ty::LightSampler::EvaluateDomeLightDirection(
             light, sampled.omegaInWld);
 
         if (!_IsClose(sampled.radianceIn, evaluated.radianceIn, 1e-5f)) {
@@ -332,15 +332,15 @@ TestDomeSampleMatchesDirectionalEvaluation()
 bool
 TestDomeReflectionHemisphereSampleUsesHemispherePdf()
 {
-    const HdEmbree_LightData light = _MakeDomeLight({}, 0, 0);
+    const ty::LightData light = _MakeDomeLight({}, 0, 0);
     const GfVec3f normal = GfVec3f::YAxis();
-    const auto sampled = HdEmbreeLightSampler::GetLightSample(
+    const auto sampled = ty::LightSampler::GetLightSample(
         light,
         GfVec3f(0.0f),
         normal,
         0.25f,
         0.5f,
-        HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere);
+        ty::LightSampler::SamplingMode::ReflectionHemisphere);
 
     if (!sampled.valid) {
         std::printf("    expected valid hemisphere sample\n");
@@ -367,18 +367,18 @@ TestDomeReflectionHemisphereSampleUsesHemispherePdf()
 bool
 TestDomeReflectionHemisphereDirectionalPdf()
 {
-    const HdEmbree_LightData light = _MakeDomeLight({}, 0, 0);
+    const ty::LightData light = _MakeDomeLight({}, 0, 0);
     const GfVec3f normal = GfVec3f::YAxis();
-    const auto above = HdEmbreeLightSampler::EvaluateDomeLightDirection(
+    const auto above = ty::LightSampler::EvaluateDomeLightDirection(
         light,
         GfVec3f::YAxis(),
         normal,
-        HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere);
-    const auto below = HdEmbreeLightSampler::EvaluateDomeLightDirection(
+        ty::LightSampler::SamplingMode::ReflectionHemisphere);
+    const auto below = ty::LightSampler::EvaluateDomeLightDirection(
         light,
         -GfVec3f::YAxis(),
         normal,
-        HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere);
+        ty::LightSampler::SamplingMode::ReflectionHemisphere);
 
     if (!above.valid) {
         std::printf("    expected direction above the surface to be valid\n");
@@ -404,7 +404,7 @@ TestDomeReflectionHemisphereDirectionalPdf()
 bool
 TestDomeReflectionHemisphereSampleMatchesDirectionalEvaluation()
 {
-    const HdEmbree_LightData light = _MakeDomeLight(
+    const ty::LightData light = _MakeDomeLight(
         {
             GfVec3f(1.0f), GfVec3f(8.0f), GfVec3f(2.0f), GfVec3f(1.0f),
             GfVec3f(1.0f), GfVec3f(3.0f), GfVec3f(1.0f), GfVec3f(6.0f)
@@ -420,16 +420,16 @@ TestDomeReflectionHemisphereSampleMatchesDirectionalEvaluation()
     };
 
     for (const GfVec2f& u : samples) {
-        const auto sampled = HdEmbreeLightSampler::GetLightSample(
+        const auto sampled = ty::LightSampler::GetLightSample(
             light,
             GfVec3f(0.0f),
             normal,
             u[0],
             u[1],
-            HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere);
-        const auto evaluated = HdEmbreeLightSampler::EvaluateDomeLightDirection(
+            ty::LightSampler::SamplingMode::ReflectionHemisphere);
+        const auto evaluated = ty::LightSampler::EvaluateDomeLightDirection(
             light, sampled.omegaInWld, normal,
-            HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere);
+            ty::LightSampler::SamplingMode::ReflectionHemisphere);
 
         if (!sampled.valid || !(GfDot(sampled.omegaInWld, normal) > 0.0f)) {
             std::printf("    expected valid hemisphere sample\n");
@@ -455,7 +455,7 @@ TestDomeReflectionHemisphereSampleMatchesDirectionalEvaluation()
 bool
 TestSphereSampleMatchesDirectionalEvaluation()
 {
-    const HdEmbree_LightData light =
+    const ty::LightData light =
         _MakeSphereLight(GfVec3f(0.0f, 0.0f, 4.0f), 1.0f);
     const GfVec3f position(0.0f);
     const GfVec3f normal = GfVec3f::ZAxis();
@@ -470,9 +470,9 @@ TestSphereSampleMatchesDirectionalEvaluation()
         2.0f * static_cast<float>(M_PI) * (1.0f - cosThetaMax);
 
     for (const GfVec2f& u : samples) {
-        const auto sampled = HdEmbreeLightSampler::GetLightSample(
+        const auto sampled = ty::LightSampler::GetLightSample(
             light, position, normal, u[0], u[1]);
-        const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
+        const auto evaluated = ty::LightSampler::EvaluateLightDirection(
             light, position, sampled.omegaInWld);
 
         if (!sampled.valid || !evaluated.valid) {
@@ -502,7 +502,7 @@ TestSphereSampleMatchesDirectionalEvaluation()
 bool
 TestCylinderSampleMatchesDirectionalEvaluation()
 {
-    HdEmbree_LightData light =
+    ty::LightData light =
         _MakeCylinderLight(GfVec3f(0.0f, 0.0f, 4.0f), 1.0f, 2.0f);
     light.texture.pixels = {
         GfVec3f(1.0f, 0.0f, 0.0f), GfVec3f(0.0f, 1.0f, 0.0f),
@@ -514,8 +514,8 @@ TestCylinderSampleMatchesDirectionalEvaluation()
     light.texture.colorSpaceName = GfColorSpaceNames->LinearRec709;
     const GfVec3f position(0.0f);
     const GfVec3f normal = GfVec3f::ZAxis();
-    const HdEmbreeLightSampler::LightSample centerSideSample =
-        HdEmbreeLightSampler::GetLightSample(
+    const ty::LightSampler::LightSample centerSideSample =
+        ty::LightSampler::GetLightSample(
             light, position, normal, 0.5f, 0.75f);
     const float expectedPdfSolidAngleInverse =
         4.0f * static_cast<float>(M_PI) / 9.0f;
@@ -530,8 +530,8 @@ TestCylinderSampleMatchesDirectionalEvaluation()
         return false;
     }
 
-    const HdEmbreeLightSampler::LightSample openEnd =
-        HdEmbreeLightSampler::EvaluateLightDirection(
+    const ty::LightSampler::LightSample openEnd =
+        ty::LightSampler::EvaluateLightDirection(
             light,
             GfVec3f(3.0f, 0.0f, 4.0f),
             GfVec3f(-1.0f, 0.0f, 0.1f));
@@ -547,11 +547,11 @@ TestCylinderSampleMatchesDirectionalEvaluation()
     };
 
     for (const GfVec2f& u : samples) {
-        const HdEmbreeLightSampler::LightSample sampled =
-            HdEmbreeLightSampler::GetLightSample(
+        const ty::LightSampler::LightSample sampled =
+            ty::LightSampler::GetLightSample(
                 light, position, normal, u[0], u[1]);
-        const HdEmbreeLightSampler::LightSample evaluated =
-            HdEmbreeLightSampler::EvaluateLightDirection(
+        const ty::LightSampler::LightSample evaluated =
+            ty::LightSampler::EvaluateLightDirection(
                 light, position, sampled.omegaInWld);
 
         if (!sampled.valid || !evaluated.valid) {
@@ -578,20 +578,20 @@ TestCylinderSampleMatchesDirectionalEvaluation()
 bool
 TestDirectionalShapingDistributionPdfNormalizes()
 {
-    HdEmbree_Shaping shaping;
+    ty::Shaping shaping;
     shaping.coneAngle = 35.0f;
     shaping.coneSoftness = 0.25f;
     shaping.focus = 3.0f;
-    HdEmbreeBuildDirectionalShapingDistribution(&shaping);
+    ty::BuildDirectionalShapingDistribution(&shaping);
 
     if (!shaping.directionalDistribution.IsValid()) {
         std::printf("    expected valid directional shaping distribution\n");
         return false;
     }
 
-    const HdEmbree_DirectionalShapingDistribution& distribution =
+    const ty::DirectionalShapingDistribution& distribution =
         shaping.directionalDistribution;
-    constexpr int numPhi = HdEmbree_DirectionalShapingDistribution::NumPhi;
+    constexpr int numPhi = ty::DirectionalShapingDistribution::NumPhi;
     float integral = 0.0f;
     for (int v = 0; v < distribution.NumRows(); ++v) {
         const float cellSolidAngle =
@@ -629,12 +629,12 @@ TestIesDirectionalDistributionBuildsAndSamples()
         "0\n"
         "100 10 0\n";
 
-    HdEmbree_Shaping shaping;
+    ty::Shaping shaping;
     if (!shaping.ies.iesFile.load(iesText)) {
         std::printf("    could not load synthetic IES profile\n");
         return false;
     }
-    HdEmbreeBuildDirectionalShapingDistribution(&shaping);
+    ty::BuildDirectionalShapingDistribution(&shaping);
     if (!shaping.directionalDistribution.IsValid()) {
         std::printf("    expected valid IES directional distribution\n");
         return false;
@@ -645,15 +645,15 @@ TestIesDirectionalDistributionBuildsAndSamples()
         return false;
     }
 
-    const HdEmbree_DirectionalShapingSample sample =
-        HdEmbreeSampleDirectionalShaping(shaping, 0.25f, 0.75f);
+    const ty::DirectionalShapingSample sample =
+        ty::SampleDirectionalShaping(shaping, 0.25f, 0.75f);
     if (!sample.valid || sample.pdfSolidAngle <= 0.0f) {
         std::printf("    expected valid IES directional sample\n");
         return false;
     }
 
     const float evaluatedPdf =
-        HdEmbreeDirectionalShapingPdf(shaping, sample.localDirection);
+        ty::DirectionalShapingPdf(shaping, sample.localDirection);
     if (!_IsClose(sample.pdfSolidAngle, evaluatedPdf, 1e-5f)) {
         std::printf("    sampled/evaluated IES pdf mismatch: %f vs %f\n",
                     sample.pdfSolidAngle, evaluatedPdf);
@@ -668,7 +668,7 @@ TestIesDirectionalDistributionBuildsAndSamples()
 // the PDF lookup for the sampled direction.
 bool
 _CheckDirectionalSamplesConfined(
-    const HdEmbree_Shaping& shaping,
+    const ty::Shaping& shaping,
     float zMin,
     float zMax,
     const char* label)
@@ -679,8 +679,8 @@ _CheckDirectionalSamplesConfined(
         for (int j = 0; j < numU2; ++j) {
             const float u1 = (i + 0.5f) / numU1;
             const float u2 = (j + 0.5f) / numU2;
-            const HdEmbree_DirectionalShapingSample sample =
-                HdEmbreeSampleDirectionalShaping(shaping, u1, u2);
+            const ty::DirectionalShapingSample sample =
+                ty::SampleDirectionalShaping(shaping, u1, u2);
             if (!sample.valid || sample.pdfSolidAngle <= 0.0f) {
                 std::printf("    %s: expected valid sample at u1=%f u2=%f\n",
                             label, u1, u2);
@@ -692,7 +692,7 @@ _CheckDirectionalSamplesConfined(
                             label, z);
                 return false;
             }
-            const float evaluatedPdf = HdEmbreeDirectionalShapingPdf(
+            const float evaluatedPdf = ty::DirectionalShapingPdf(
                 shaping, sample.localDirection);
             if (!_IsClose(sample.pdfSolidAngle, evaluatedPdf,
                           1e-4f * sample.pdfSolidAngle)) {
@@ -710,7 +710,7 @@ _CheckDirectionalSamplesConfined(
 // an independent grid; the result must be ~1 for any valid distribution.
 bool
 _CheckDirectionalPdfIntegratesToOne(
-    const HdEmbree_Shaping& shaping,
+    const ty::Shaping& shaping,
     const char* label)
 {
     constexpr int numZ = 20000;
@@ -724,7 +724,7 @@ _CheckDirectionalPdfIntegratesToOne(
             const float phi = 2.0f * pi * (j + 0.5f) / numPhi;
             const GfVec3f direction(
                 r * std::cos(phi), r * std::sin(phi), z);
-            integral += HdEmbreeDirectionalShapingPdf(shaping, direction);
+            integral += ty::DirectionalShapingPdf(shaping, direction);
         }
     }
     integral *= 4.0 * pi / (static_cast<double>(numZ) * numPhi);
@@ -742,10 +742,10 @@ TestNarrowConeDirectionalDistributionSamplesWithinCone()
     // A hard 10 degree cone is narrower than a base distribution cell, so
     // the build must not lose it to discretization (weightSum == 0) and
     // every directional sample must land inside the cone.
-    HdEmbree_Shaping shaping;
+    ty::Shaping shaping;
     shaping.coneAngle = 10.0f;
     shaping.coneSoftness = 0.0f;
-    HdEmbreeBuildDirectionalShapingDistribution(&shaping);
+    ty::BuildDirectionalShapingDistribution(&shaping);
 
     if (!shaping.directionalDistribution.IsValid()) {
         std::printf("    expected valid distribution for 10 degree cone\n");
@@ -764,7 +764,7 @@ TestNarrowConeDirectionalDistributionSamplesWithinCone()
     const GfVec3f outsideDirection(
         std::sin(thetaOutside), 0.0f, std::cos(thetaOutside));
     const float outsidePdf =
-        HdEmbreeDirectionalShapingPdf(shaping, outsideDirection);
+        ty::DirectionalShapingPdf(shaping, outsideDirection);
     if (outsidePdf != 0.0f) {
         std::printf("    expected zero pdf outside cone, got %f\n",
                     outsidePdf);
@@ -777,10 +777,10 @@ TestNarrowConeDirectionalDistributionSamplesWithinCone()
 
     // A soft narrow cone must behave the same way; softness only narrows
     // the full-intensity core, so the support stays within the cone angle.
-    HdEmbree_Shaping softShaping;
+    ty::Shaping softShaping;
     softShaping.coneAngle = 10.0f;
     softShaping.coneSoftness = 0.8f;
-    HdEmbreeBuildDirectionalShapingDistribution(&softShaping);
+    ty::BuildDirectionalShapingDistribution(&softShaping);
     if (!softShaping.directionalDistribution.IsValid()) {
         std::printf("    expected valid distribution for soft cone\n");
         return false;
@@ -792,10 +792,10 @@ TestNarrowConeDirectionalDistributionSamplesWithinCone()
 
     // A degenerate zero-angle cone has no sampleable support; the build
     // must fall back to an invalid distribution rather than produce NaNs.
-    HdEmbree_Shaping degenerateShaping;
+    ty::Shaping degenerateShaping;
     degenerateShaping.coneAngle = 0.0f;
     degenerateShaping.coneSoftness = 0.0f;
-    HdEmbreeBuildDirectionalShapingDistribution(&degenerateShaping);
+    ty::BuildDirectionalShapingDistribution(&degenerateShaping);
     if (degenerateShaping.directionalDistribution.IsValid()) {
         std::printf("    expected invalid distribution for zero cone\n");
         return false;
@@ -818,12 +818,12 @@ TestNarrowIesBeamDirectionalDistributionIsValid()
         "0\n"
         "1000 0 0\n";
 
-    HdEmbree_Shaping shaping;
+    ty::Shaping shaping;
     if (!shaping.ies.iesFile.load(iesText)) {
         std::printf("    could not load synthetic IES profile\n");
         return false;
     }
-    HdEmbreeBuildDirectionalShapingDistribution(&shaping);
+    ty::BuildDirectionalShapingDistribution(&shaping);
 
     if (!shaping.directionalDistribution.IsValid()) {
         std::printf("    expected valid distribution for 1 degree beam\n");
@@ -841,7 +841,7 @@ TestNarrowIesBeamDirectionalDistributionIsValid()
     const GfVec3f outsideDirection(
         std::sin(thetaOutside), 0.0f, std::cos(thetaOutside));
     const float outsidePdf =
-        HdEmbreeDirectionalShapingPdf(shaping, outsideDirection);
+        ty::DirectionalShapingPdf(shaping, outsideDirection);
     if (outsidePdf != 0.0f) {
         std::printf("    expected zero pdf outside beam, got %f\n",
                     outsidePdf);
@@ -867,13 +867,13 @@ TestIesAngleScaleCompressesBeamKnots()
         "0\n"
         "1000 0 0\n";
 
-    HdEmbree_Shaping shaping;
+    ty::Shaping shaping;
     if (!shaping.ies.iesFile.load(iesText)) {
         std::printf("    could not load synthetic IES profile\n");
         return false;
     }
     shaping.ies.angleScale = 0.02f;
-    HdEmbreeBuildDirectionalShapingDistribution(&shaping);
+    ty::BuildDirectionalShapingDistribution(&shaping);
 
     if (!shaping.directionalDistribution.IsValid()) {
         std::printf("    expected valid distribution for scaled beam\n");
@@ -901,13 +901,13 @@ TestIesNegativeAngleScaleAnchorsBeamAtTop()
         "0\n"
         "1000 0 0\n";
 
-    HdEmbree_Shaping shaping;
+    ty::Shaping shaping;
     if (!shaping.ies.iesFile.load(iesText)) {
         std::printf("    could not load synthetic IES profile\n");
         return false;
     }
     shaping.ies.angleScale = -0.005f;
-    HdEmbreeBuildDirectionalShapingDistribution(&shaping);
+    ty::BuildDirectionalShapingDistribution(&shaping);
 
     if (!shaping.directionalDistribution.IsValid()) {
         std::printf(
@@ -924,11 +924,11 @@ TestIesNegativeAngleScaleAnchorsBeamAtTop()
 bool
 TestRectShapingAwareSampleMatchesDirectionalEvaluation()
 {
-    HdEmbree_LightData light =
+    ty::LightData light =
         _MakeRectLight(GfVec3f(0.0f, 0.0f, 4.0f), 100.0f, 100.0f);
     light.shaping.coneAngle = 25.0f;
     light.shaping.coneSoftness = 0.1f;
-    HdEmbreeBuildDirectionalShapingDistribution(&light.shaping);
+    ty::BuildDirectionalShapingDistribution(&light.shaping);
 
     const GfVec3f position(0.0f);
     const GfVec3f normal = GfVec3f::ZAxis();
@@ -938,14 +938,14 @@ TestRectShapingAwareSampleMatchesDirectionalEvaluation()
     };
 
     for (const GfVec2f& u : samples) {
-        const auto sampled = HdEmbreeLightSampler::GetLightSample(
+        const auto sampled = ty::LightSampler::GetLightSample(
             light, position, normal, u[0], u[1]);
         if (!sampled.valid) {
             std::printf("    expected valid rect light sample\n");
             return false;
         }
 
-        const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
+        const auto evaluated = ty::LightSampler::EvaluateLightDirection(
             light, position, sampled.omegaInWld);
         if (!evaluated.valid) {
             std::printf("    expected rect sample direction to evaluate\n");
@@ -970,7 +970,7 @@ TestRectShapingAwareSampleMatchesDirectionalEvaluation()
 bool
 TestRectTextureOriginUsesLocalPositiveXY()
 {
-    HdEmbree_LightData light =
+    ty::LightData light =
         _MakeRectLight(GfVec3f(0.0f, 0.0f, 4.0f), 2.0f, 2.0f);
     light.texture.width = 2;
     light.texture.height = 2;
@@ -1005,7 +1005,7 @@ TestRectTextureOriginUsesLocalPositiveXY()
     for (const auto& testCase : cases) {
         const GfVec3f direction =
             (testCase.hitPoint - position).GetNormalized();
-        const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
+        const auto evaluated = ty::LightSampler::EvaluateLightDirection(
             light, position, direction);
         if (!evaluated.valid) {
             std::printf("    expected textured rect direction to evaluate\n");
@@ -1020,7 +1020,7 @@ TestRectTextureOriginUsesLocalPositiveXY()
             return false;
         }
 
-        const auto sampled = HdEmbreeLightSampler::GetLightSample(
+        const auto sampled = ty::LightSampler::GetLightSample(
             light, position, normal, testCase.sampleUv[0], testCase.sampleUv[1]);
         if (!sampled.valid) {
             std::printf("    expected textured rect sample to be valid\n");
@@ -1042,16 +1042,16 @@ TestRectTextureOriginUsesLocalPositiveXY()
 bool
 TestRectFocusDirectionalSampleFoldsToEmissionHemisphere()
 {
-    HdEmbree_LightData light =
+    ty::LightData light =
         _MakeRectLight(GfVec3f(0.0f, 0.0f, 4.0f), 100.0f, 100.0f);
     light.shaping.focus = 4.0f;
-    HdEmbreeBuildDirectionalShapingDistribution(&light.shaping);
+    ty::BuildDirectionalShapingDistribution(&light.shaping);
 
     float samplerU1 = 0.0f;
     bool foundBackHemisphereProposal = false;
     for (float shapingU1 : {0.55f, 0.65f, 0.75f, 0.85f, 0.95f}) {
-        const HdEmbree_DirectionalShapingSample proposal =
-            HdEmbreeSampleDirectionalShaping(light.shaping, shapingU1, 0.37f);
+        const ty::DirectionalShapingSample proposal =
+            ty::SampleDirectionalShaping(light.shaping, shapingU1, 0.37f);
         if (proposal.valid && proposal.localDirection[2] < 0.0f) {
             samplerU1 = 0.5f + 0.5f * shapingU1;
             foundBackHemisphereProposal = true;
@@ -1065,14 +1065,14 @@ TestRectFocusDirectionalSampleFoldsToEmissionHemisphere()
     }
 
     const GfVec3f position(0.0f);
-    const auto sampled = HdEmbreeLightSampler::GetLightSample(
+    const auto sampled = ty::LightSampler::GetLightSample(
         light, position, GfVec3f::ZAxis(), samplerU1, 0.37f);
     if (!sampled.valid || sampled.omegaInWld[2] <= 0.0f) {
         std::printf("    expected folded rect focus sample to hit +Z side\n");
         return false;
     }
 
-    const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
+    const auto evaluated = ty::LightSampler::EvaluateLightDirection(
         light, position, sampled.omegaInWld);
     if (!evaluated.valid) {
         std::printf("    expected folded rect focus direction to evaluate\n");
@@ -1096,11 +1096,11 @@ TestRectFocusDirectionalSampleFoldsToEmissionHemisphere()
 bool
 TestDiskShapingAwareSampleMatchesDirectionalEvaluation()
 {
-    HdEmbree_LightData light =
+    ty::LightData light =
         _MakeDiskLight(GfVec3f(0.0f, 0.0f, 4.0f), 50.0f);
     light.shaping.coneAngle = 25.0f;
     light.shaping.coneSoftness = 0.1f;
-    HdEmbreeBuildDirectionalShapingDistribution(&light.shaping);
+    ty::BuildDirectionalShapingDistribution(&light.shaping);
 
     const GfVec3f position(0.0f);
     const GfVec3f normal = GfVec3f::ZAxis();
@@ -1110,14 +1110,14 @@ TestDiskShapingAwareSampleMatchesDirectionalEvaluation()
     };
 
     for (const GfVec2f& u : samples) {
-        const auto sampled = HdEmbreeLightSampler::GetLightSample(
+        const auto sampled = ty::LightSampler::GetLightSample(
             light, position, normal, u[0], u[1]);
         if (!sampled.valid) {
             std::printf("    expected valid disk light sample\n");
             return false;
         }
 
-        const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
+        const auto evaluated = ty::LightSampler::EvaluateLightDirection(
             light, position, sampled.omegaInWld);
         if (!evaluated.valid) {
             std::printf("    expected disk sample direction to evaluate\n");
@@ -1142,9 +1142,9 @@ TestDiskShapingAwareSampleMatchesDirectionalEvaluation()
 bool
 TestDistantDeltaSamplesLocalPositiveZ()
 {
-    const HdEmbree_LightData light = _MakeDistantLight(0.0f);
+    const ty::LightData light = _MakeDistantLight(0.0f);
 
-    const auto sampled = HdEmbreeLightSampler::GetLightSample(
+    const auto sampled = ty::LightSampler::GetLightSample(
         light,
         GfVec3f(0.0f),
         GfVec3f::ZAxis(),
@@ -1167,9 +1167,9 @@ TestDistantDeltaSamplesLocalPositiveZ()
         return false;
     }
 
-    const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
+    const auto evaluated = ty::LightSampler::EvaluateLightDirection(
         light, GfVec3f(0.0f), GfVec3f::ZAxis());
-    const auto opposite = HdEmbreeLightSampler::EvaluateLightDirection(
+    const auto opposite = ty::LightSampler::EvaluateLightDirection(
         light, GfVec3f(0.0f), -GfVec3f::ZAxis());
     if (!evaluated.valid || !evaluated.delta || opposite.valid) {
         std::printf("    expected only the +Z delta direction to evaluate\n");
@@ -1182,7 +1182,7 @@ TestDistantDeltaSamplesLocalPositiveZ()
 bool
 TestDistantConeSampleMatchesDirectionalEvaluation()
 {
-    const HdEmbree_LightData light = _MakeDistantLight(60.0f);
+    const ty::LightData light = _MakeDistantLight(60.0f);
     const float thetaMax = 0.5f * 60.0f *
         static_cast<float>(M_PI) / 180.0f;
     const float pdfSolidAngleInverseExpected =
@@ -1195,9 +1195,9 @@ TestDistantConeSampleMatchesDirectionalEvaluation()
     };
 
     for (const GfVec2f& u : samples) {
-        const auto sampled = HdEmbreeLightSampler::GetLightSample(
+        const auto sampled = ty::LightSampler::GetLightSample(
             light, GfVec3f(0.0f), GfVec3f::ZAxis(), u[0], u[1]);
-        const auto evaluated = HdEmbreeLightSampler::EvaluateLightDirection(
+        const auto evaluated = ty::LightSampler::EvaluateLightDirection(
             light, GfVec3f(0.0f), sampled.omegaInWld);
 
         if (!sampled.valid || sampled.delta || !evaluated.valid ||
@@ -1228,11 +1228,11 @@ TestDistantConeSampleMatchesDirectionalEvaluation()
 bool
 TestDistantNormalizeUsesUsdLuxSizeFactor()
 {
-    HdEmbree_LightData light = _MakeDistantLight(60.0f);
+    ty::LightData light = _MakeDistantLight(60.0f);
     light.normalize = true;
     light.intensity = 10.0f;
 
-    const auto sampled = HdEmbreeLightSampler::GetLightSample(
+    const auto sampled = ty::LightSampler::GetLightSample(
         light, GfVec3f(0.0f), GfVec3f::ZAxis(), 0.5f, 0.25f);
 
     const float thetaMax = 0.5f * 60.0f *
@@ -1255,7 +1255,7 @@ TestDistantNormalizeUsesUsdLuxSizeFactor()
 bool
 TestDomePdfApproximatelyNormalizes()
 {
-    const HdEmbree_LightData light = _MakeDomeLight(
+    const ty::LightData light = _MakeDomeLight(
         {
             GfVec3f(1.0f), GfVec3f(8.0f), GfVec3f(2.0f), GfVec3f(1.0f),
             GfVec3f(1.0f), GfVec3f(3.0f), GfVec3f(1.0f), GfVec3f(6.0f)
@@ -1277,7 +1277,7 @@ TestDomePdfApproximatelyNormalizes()
             const float u = (static_cast<float>(x) + 0.5f) / static_cast<float>(nu);
             const GfVec3f dir = _LatLongUvToDirection(u, v);
             const auto evaluated =
-                HdEmbreeLightSampler::EvaluateDomeLightDirection(light, dir);
+                ty::LightSampler::EvaluateDomeLightDirection(light, dir);
             const float pdfSolidAngle =
                 (evaluated.pdfSolidAngleInverse > 0.0f)
                     ? (1.0f / evaluated.pdfSolidAngleInverse)

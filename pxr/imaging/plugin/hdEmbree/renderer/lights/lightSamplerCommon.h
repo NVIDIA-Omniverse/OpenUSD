@@ -25,8 +25,8 @@
 #include <limits>
 
 PXR_NAMESPACE_OPEN_SCOPE
-
 namespace ty {
+
 
 inline float Sqr(float x) { return x * x; }
 
@@ -66,9 +66,9 @@ MakeAreaShapeSample(GfMatrix4f const& transform,
         area};
 }
 
-inline HdEmbreeLightSampler::LightSample InvalidLightSample()
+inline LightSampler::LightSample InvalidLightSample()
 {
-    return HdEmbreeLightSampler::LightSample{
+    return LightSampler::LightSample{
         GfVec3f(0.0f), GfVec3f(0.0f), 0.0f, 0.0f, false};
 }
 
@@ -80,23 +80,23 @@ inline constexpr float ShapingAwareFiniteDirectionalProposalWeight = 0.5f;
 inline constexpr float ShapingAwareFiniteAreaProposalWeight = 1.0f -
     ShapingAwareFiniteDirectionalProposalWeight;
 
-GfVec3f EvalLightBasic(HdEmbree_LightData const& light,
-                       HdEmbreeRenderColorSpace renderColorSpace);
+GfVec3f EvalLightBasic(LightData const& light,
+                       RenderColorSpace renderColorSpace);
 
-GfVec3f SampleLightTexture(HdEmbree_LightTexture const& texture, float s,
+GfVec3f SampleLightTexture(LightTexture const& texture, float s,
                            float t,
-                           HdEmbreeRenderColorSpace renderColorSpace);
+                           RenderColorSpace renderColorSpace);
 
-HdEmbreeLightSampler::LightSample EvalAreaLight(
-    HdEmbree_LightData const& light, ShapeSample const& sample,
-    GfVec3f const& position, HdEmbreeRenderColorSpace renderColorSpace);
+LightSampler::LightSample EvalAreaLight(
+    LightData const& light, ShapeSample const& sample,
+    GfVec3f const& position, RenderColorSpace renderColorSpace);
 
-void ApplyShapingAwareFinitePdf(HdEmbree_LightData const& light,
-                                HdEmbreeLightSampler::LightSample* sample,
+void ApplyShapingAwareFinitePdf(LightData const& light,
+                                LightSampler::LightSample* sample,
                                 bool foldToFrontHemisphere);
 
-} // namespace ty
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif // PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_SAMPLER_COMMON_H

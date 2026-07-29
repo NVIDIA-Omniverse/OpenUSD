@@ -17,7 +17,9 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-class HdEmbreeRenderer;
+namespace ty {
+class Renderer;
+} // namespace ty
 
 ///
 /// \class HdEmbreeRenderParam
@@ -31,8 +33,8 @@ class HdEmbreeRenderParam final : public HdRenderParam
 public:
     HdEmbreeRenderParam(RTCDevice device, RTCScene scene,
                         HdRenderThread *renderThread,
-                        HdEmbreeRenderer *renderer,
-                        HdEmbreeMaterialEvalServices const* materialEvalServices,
+                        ty::Renderer *renderer,
+                        ty::MaterialEvalServices const* materialEvalServices,
                         std::atomic<int> *sceneVersion,
                         std::atomic<int> *materialVersion)
         : _scene(scene), _device(device)
@@ -61,10 +63,10 @@ public:
     /// Accessor for the top-level embree device (library handle).
     RTCDevice GetEmbreeDevice() { return _device; }
 
-    HdEmbreeRenderer* GetRenderer() { return _renderer; }
+    ty::Renderer* GetRenderer() { return _renderer; }
 
     /// Return non-owning renderer services shared by all material evaluation.
-    HdEmbreeMaterialEvalServices const* GetMaterialEvalServices() const {
+    ty::MaterialEvalServices const* GetMaterialEvalServices() const {
         return _materialEvalServices;
     }
 
@@ -75,9 +77,9 @@ private:
     RTCDevice _device;
     /// A handle to the global render thread.
     HdRenderThread *_renderThread;
-    HdEmbreeRenderer* _renderer;
+    ty::Renderer* _renderer;
     /// Renderer-owned state; valid for this render parameter's lifetime.
-    HdEmbreeMaterialEvalServices const* _materialEvalServices;
+    ty::MaterialEvalServices const* _materialEvalServices;
     /// A version counter for edits to _scene.
     std::atomic<int> *_sceneVersion;
     /// A narrower version for compiled material edits.

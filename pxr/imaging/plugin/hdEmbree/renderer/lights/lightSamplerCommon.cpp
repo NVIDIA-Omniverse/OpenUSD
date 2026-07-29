@@ -25,23 +25,23 @@ _DotZeroClip(GfVec3f const& a, GfVec3f const& b)
 
 static GfVec3f
 _BlackbodyTemperatureAsRgb(
-    float kelvinColorTemp, HdEmbreeRenderColorSpace renderColorSpace)
+    float kelvinColorTemp, ty::RenderColorSpace renderColorSpace)
 {
     // Recreate the UsdLux utility without adding a USD dependency to imaging.
     const GfColorSpace workingColorSpace(
-        HdEmbreeGetWorkingColorSpaceToken(renderColorSpace));
+        ty::GetWorkingColorSpaceToken(renderColorSpace));
     GfColor tempColor(workingColorSpace);
     tempColor.SetFromPlanckianLocus(kelvinColorTemp, 1.0f);
     const GfVec3f tempColorRGB = tempColor.GetRGB();
     const float luminance = GfDot(
-        tempColorRGB, HdEmbreeGetLuminanceCoefficients(renderColorSpace));
+        tempColorRGB, ty::GetLuminanceCoefficients(renderColorSpace));
     return luminance > 0.0f ? tempColorRGB / luminance : GfVec3f(1.0f);
 }
 
 GfVec3f
 ty::SampleLightTexture(
-    HdEmbree_LightTexture const& texture, float s, float t,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::LightTexture const& texture, float s, float t,
+    ty::RenderColorSpace renderColorSpace)
 {
     if (texture.pixels.empty()) {
         return GfVec3f(0.0f);
@@ -58,15 +58,15 @@ ty::SampleLightTexture(
         texture.height - 1);
 
     GfVec3f result = texture.pixels.at(y * texture.width + x);
-    HdEmbreeConvertToRenderColorSpace(
+    ty::ConvertToRenderColorSpace(
         texture.colorSpaceName.GetString(), renderColorSpace, &result);
     return result;
 }
 
 static GfVec3f
 _SampleRectLightTexture(
-    HdEmbree_LightTexture const& texture, GfVec2f const& uv,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::LightTexture const& texture, GfVec2f const& uv,
+    ty::RenderColorSpace renderColorSpace)
 {
     if (texture.pixels.empty() || texture.width <= 0 || texture.height <= 0) {
         return GfVec3f(0.0f);
@@ -86,15 +86,15 @@ _SampleRectLightTexture(
         0, texture.height - 1);
 
     GfVec3f result = texture.pixels.at(y * texture.width + x);
-    HdEmbreeConvertToRenderColorSpace(
+    ty::ConvertToRenderColorSpace(
         texture.colorSpaceName.GetString(), renderColorSpace, &result);
     return result;
 }
 
 GfVec3f
 ty::EvalLightBasic(
-    HdEmbree_LightData const& light,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::LightData const& light,
+    ty::RenderColorSpace renderColorSpace)
 {
     // The material model is fully diffuse, so the USD diffuse parameter is a
     // direct radiance multiplier.
@@ -119,7 +119,7 @@ _PdfSolidAngleFromInverse(float pdfSolidAngleInverse)
 
 static float
 _WorldToLocalDirectionPdfScale(
-    HdEmbree_LightData const& light, GfVec3f const& worldDirection,
+    ty::LightData const& light, GfVec3f const& worldDirection,
     GfVec3f* localDirection)
 {
     if (!localDirection || worldDirection.GetLengthSq() <= 0.0f ||
@@ -152,7 +152,7 @@ _WorldToLocalDirectionPdfScale(
 
 static float
 _DirectionalShapingPdfSolidAngle(
-    HdEmbree_LightData const& light, GfVec3f const& worldDirection,
+    ty::LightData const& light, GfVec3f const& worldDirection,
     bool foldToFrontHemisphere)
 {
     if (!light.shaping.directionalDistribution.IsValid() ||
@@ -168,21 +168,21 @@ _DirectionalShapingPdfSolidAngle(
         return 0.0f;
     }
     float localPdf =
-        HdEmbreeDirectionalShapingPdf(light.shaping, localDirection);
+        ty::DirectionalShapingPdf(light.shaping, localDirection);
     if (foldToFrontHemisphere) {
         if (localDirection[2] < 0.0f) {
             return 0.0f;
         }
         const GfVec3f mirrored(
             localDirection[0], localDirection[1], -localDirection[2]);
-        localPdf += HdEmbreeDirectionalShapingPdf(light.shaping, mirrored);
+        localPdf += ty::DirectionalShapingPdf(light.shaping, mirrored);
     }
     return localPdf * pdfScale;
 }
 
 static float
 _ShapingAwareFinitePdfSolidAngle(
-    HdEmbree_LightData const& light, float pdfAreaProposalSolidAngleInverse,
+    ty::LightData const& light, float pdfAreaProposalSolidAngleInverse,
     GfVec3f const& worldDirection,
     bool foldToFrontHemisphere)
 {
@@ -205,7 +205,7 @@ _ShapingAwareFinitePdfSolidAngle(
 
 void
 ty::ApplyShapingAwareFinitePdf(
-    HdEmbree_LightData const& light, HdEmbreeLightSampler::LightSample* sample,
+    ty::LightData const& light, ty::LightSampler::LightSample* sample,
     bool foldToFrontHemisphere)
 {
     if (!sample || !sample->valid || sample->delta) {
@@ -220,11 +220,11 @@ ty::ApplyShapingAwareFinitePdf(
     sample->valid = sample->valid && sample->pdfSolidAngleInverse > 0.0f;
 }
 
-HdEmbreeLightSampler::LightSample
+ty::LightSampler::LightSample
 ty::EvalAreaLight(
-    HdEmbree_LightData const& light, ty::ShapeSample const& ss,
+    ty::LightData const& light, ty::ShapeSample const& ss,
     GfVec3f const& position,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
     // Transform the PDF from area measure to solid-angle measure.
     GfVec3f omegaInWld = ss.pWorld - position;
@@ -248,7 +248,7 @@ ty::EvalAreaLight(
     // behavior is changed and image-tested independently.
     if (!light.texture.pixels.empty()) {
         const GfVec3f textureColor =
-            std::holds_alternative<HdEmbree_Rect>(light.lightVariant)
+            std::holds_alternative<ty::RectLight>(light.lightVariant)
             ? _SampleRectLightTexture(
                   light.texture, ss.uv, renderColorSpace)
             : ty::SampleLightTexture(
@@ -266,9 +266,9 @@ ty::EvalAreaLight(
         light.xformWorldToLight.TransformDir(omegaInWld).GetNormalized();
     radianceEmitted = GfCompMult(
         radianceEmitted,
-        HdEmbreeEvaluateDirectionalShaping(light.shaping, omegaInLocal));
+        ty::EvaluateDirectionalShaping(light.shaping, omegaInLocal));
 
-    return HdEmbreeLightSampler::LightSample{
+    return ty::LightSampler::LightSample{
         radianceEmitted, omegaInWld, distanceWld, pdfSolidAngleInverse,
         pdfSolidAngleInverse > 0.0f && std::isfinite(distanceWld)};
 }

@@ -61,7 +61,7 @@ TestConvertNativeUsdNodesToCanonicalMxcppNodes()
     transformNode.inputConnections[TfToken("in")].push_back(transformInputConn);
     network.nodes[transformPath] = transformNode;
 
-    MaterialGraph graph = ConvertHdNetworkToMxcppGraph(network);
+    MaterialGraph graph = ty::ConvertHdNetworkToMxcppGraph(network);
 
     const auto primvarIt = graph.nodes.find(primvarPath.GetString());
     if (primvarIt == graph.nodes.end()) {
@@ -150,8 +150,8 @@ TestConvertAuthoredSolidColorsToRenderSpace()
         VtValue(GfColorSpaceNames->SRGBRec709);
     network.nodes[surfacePath] = surfaceNode;
 
-    const MaterialGraph graph = ConvertHdNetworkToMxcppGraph(
-        network, HdEmbreeRenderColorSpace::LinearRec709);
+    const MaterialGraph graph = ty::ConvertHdNetworkToMxcppGraph(
+        network, ty::RenderColorSpace::LinearRec709);
     const auto nodeIt = graph.nodes.find(surfacePath.GetString());
     if (nodeIt == graph.nodes.end()) {
         std::printf("    Missing converted solid-color node\n");
@@ -208,8 +208,8 @@ TestConvertAuthoredSolidColorsToRenderSpace()
         return false;
     }
 
-    const MaterialGraph dataGraph = ConvertHdNetworkToMxcppGraph(
-        network, HdEmbreeRenderColorSpace::Data);
+    const MaterialGraph dataGraph = ty::ConvertHdNetworkToMxcppGraph(
+        network, ty::RenderColorSpace::Data);
     const auto dataNodeIt = dataGraph.nodes.find(surfacePath.GetString());
     if (dataNodeIt == dataGraph.nodes.end()) {
         return false;
@@ -245,8 +245,8 @@ TestConnectedColorInputSkipsConstantColorTransform()
         HdMaterialConnection2{upstreamPath, TfToken("out")});
     network.nodes[surfacePath] = surfaceNode;
 
-    const MaterialGraph graph = ConvertHdNetworkToMxcppGraph(
-        network, HdEmbreeRenderColorSpace::LinearRec709);
+    const MaterialGraph graph = ty::ConvertHdNetworkToMxcppGraph(
+        network, ty::RenderColorSpace::LinearRec709);
     const Value& fallback =
         graph.nodes.at(surfacePath.GetString())
             .parameters.at("diffuseColor");
@@ -268,7 +268,7 @@ TestConvertMaterialXUsdPrimvarReaderStringToCanonicalNode()
         VtValue(std::string("fallback.usd"));
     network.nodes[primvarPath] = primvarNode;
 
-    MaterialGraph graph = ConvertHdNetworkToMxcppGraph(network);
+    MaterialGraph graph = ty::ConvertHdNetworkToMxcppGraph(network);
 
     const auto primvarIt = graph.nodes.find(primvarPath.GetString());
     if (primvarIt == graph.nodes.end()) {
@@ -318,7 +318,7 @@ TestConvertAndCompileSurfaceAndDisplacementTerminals()
     network.terminals[TfToken("displacement")] =
         HdMaterialConnection2{displacementPath, TfToken("out")};
 
-    MaterialGraph graph = ConvertHdNetworkToMxcppGraph(network);
+    MaterialGraph graph = ty::ConvertHdNetworkToMxcppGraph(network);
     if (graph.terminals.count("surface") != 1 ||
         graph.terminals.count("displacement") != 1) {
         std::printf("    Surface or displacement terminal was lost\n");

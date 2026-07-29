@@ -50,7 +50,7 @@ TransformNormalToWorld(
 
 inline GfVec3f
 TransformNormalToWorld(
-    HdEmbreeInstanceContext const* instanceContext,
+    InstanceContext const* instanceContext,
     GfVec3f const& objectNormal)
 {
     if (!instanceContext) {
@@ -84,7 +84,7 @@ TransformNormalToObject(
 
 inline GfVec3f
 TransformNormalToObject(
-    HdEmbreeInstanceContext const* instanceContext,
+    InstanceContext const* instanceContext,
     GfVec3f const& worldNormal)
 {
     if (!instanceContext) {
@@ -100,7 +100,7 @@ TransformNormalToObject(
 /// normalization operation.
 inline GfVec3f
 TransformNormalDerivativeToWorld(
-    HdEmbreeInstanceContext const* instanceContext,
+    InstanceContext const* instanceContext,
     GfVec3f const& objectNormal,
     GfVec3f const& objectNormalDerivative)
 {

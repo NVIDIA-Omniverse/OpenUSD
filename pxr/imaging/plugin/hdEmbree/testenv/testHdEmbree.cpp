@@ -188,7 +188,7 @@ void HdEmbree_TestGLDrawing::InitTest()
             aovBinding.clearValue = VtValue(GfVec3f(0.0f));
         } else if (_aov == "adaptiveHeatmap") {
             format = HdFormatFloat32Vec4;
-            aovBinding.aovName = HdEmbreeAovTokens->adaptiveHeatmap;
+            aovBinding.aovName = ty::AovTokens->adaptiveHeatmap;
             aovBinding.clearValue = VtValue(GfVec4f(0.0f));
         }
         aovBinding.renderBufferId = renderBuffer;

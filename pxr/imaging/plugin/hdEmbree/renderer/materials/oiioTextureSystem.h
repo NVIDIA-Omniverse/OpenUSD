@@ -12,14 +12,15 @@
 #include <memory>
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
-class HdEmbreeOiioTextureSystem final : public mxcpp::TextureSystem
+class OiioTextureSystem final : public mxcpp::TextureSystem
 {
 public:
     struct _Impl;
 
-    HdEmbreeOiioTextureSystem();
-    ~HdEmbreeOiioTextureSystem() override;
+    OiioTextureSystem();
+    ~OiioTextureSystem() override;
 
     mxcpp::Texture2DResult Sample2D(
         const mxcpp::Texture2DRequest& request) const override;
@@ -30,14 +31,15 @@ public:
     void SetCacheSizeMB(int sizeMB);
 
     /// Select the destination working space for color-role texture samples.
-    void SetRenderColorSpace(HdEmbreeRenderColorSpace colorSpace);
+    void SetRenderColorSpace(RenderColorSpace colorSpace);
 
 private:
     std::unique_ptr<_Impl> _impl;
-    HdEmbreeRenderColorSpace _renderColorSpace =
-        HdEmbreeRenderColorSpace::LinearRec709;
+    RenderColorSpace _renderColorSpace =
+        RenderColorSpace::LinearRec709;
 };
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif

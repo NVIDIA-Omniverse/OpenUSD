@@ -62,7 +62,7 @@ _SampleCylinder(GfMatrix4f const& xf, GfMatrix3f const& normalXform,
 
 static bool
 _IntersectCylinderLight(
-    HdEmbree_LightData const& light, HdEmbree_Cylinder const& cylinder,
+    ty::LightData const& light, ty::CylinderLight const& cylinder,
     GfVec3f const& position, GfVec3f const& direction,
     ty::ShapeSample* outSample)
 {
@@ -131,11 +131,11 @@ _IntersectCylinderLight(
     return true;
 }
 
-HdEmbreeLightSampler::LightSample
+ty::LightSampler::LightSample
 ty::SampleCylinderLight(
-    HdEmbree_LightData const& light, HdEmbree_Cylinder const& cylinder,
+    ty::LightData const& light, ty::CylinderLight const& cylinder,
     GfVec3f const& position, float u1, float u2,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
     ty::ShapeSample shapeSample = _SampleCylinder(
         light.xformLightToWorld, light.normalXformLightToWorld,
@@ -143,11 +143,11 @@ ty::SampleCylinderLight(
     return ty::EvalAreaLight(light, shapeSample, position, renderColorSpace);
 }
 
-HdEmbreeLightSampler::LightSample
+ty::LightSampler::LightSample
 ty::EvaluateCylinderLightDirection(
-    HdEmbree_LightData const& light, HdEmbree_Cylinder const& cylinder,
+    ty::LightData const& light, ty::CylinderLight const& cylinder,
     GfVec3f const& position, GfVec3f const& direction,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
     ty::ShapeSample shapeSample;
     if (!_IntersectCylinderLight(

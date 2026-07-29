@@ -37,7 +37,7 @@ static const TfToken _tokensComputedBitangent("hdEmbreeComputedBitangent");
 static const TfToken _tokensSt("st");
 
 static void
-_ComputeScreenSpaceDerivatives(HdEmbreeRayDifferential const& rayDifferential,
+_ComputeScreenSpaceDerivatives(ty::RayDifferential const& rayDifferential,
                                GfVec3f const& positionHitWld,
                                GfVec3f const& normalTangentPlaneWld,
                                GfVec3f const& dPdu, GfVec3f const& dPdv,
@@ -147,8 +147,8 @@ std::optional<_WireframeParametricFrame>
 _GetWireframeParametricFrame(
     RTCGeometry prototypeGeometry,
     RTCRayHit const& primaryHit,
-    HdEmbreeInstanceContext const* instanceContext,
-    HdEmbreeDisplacedSubdivFrame const* displacedFrame)
+    ty::InstanceContext const* instanceContext,
+    ty::DisplacedSubdivFrame const* displacedFrame)
 {
     if (!prototypeGeometry || !instanceContext) {
         return std::nullopt;
@@ -197,7 +197,7 @@ _GetWireframeParametricFrame(
 } // anonymous namespace
 
 bool
-HdEmbreeRenderer::_IsEdgeOnlyWireframeHit(
+ty::Renderer::_IsEdgeOnlyWireframeHit(
     RTCRayHit const& primaryHit) const
 {
     if (primaryHit.hit.geomID == RTC_INVALID_GEOMETRY_ID ||
@@ -209,25 +209,25 @@ HdEmbreeRenderer::_IsEdgeOnlyWireframeHit(
     RTCGeometry const instanceGeometry =
         rtcGetGeometry(_scene, primaryHit.hit.instID[0]);
     auto const* const instanceContext = instanceGeometry
-        ? static_cast<HdEmbreeInstanceContext const*>(
+        ? static_cast<ty::InstanceContext const*>(
             rtcGetGeometryUserData(instanceGeometry))
         : nullptr;
     RTCGeometry const prototypeGeometry = instanceContext
         ? rtcGetGeometry(instanceContext->rootScene, primaryHit.hit.geomID)
         : nullptr;
     auto const* const prototypeContext = prototypeGeometry
-        ? static_cast<HdEmbreePrototypeContext const*>(
+        ? static_cast<ty::PrototypeContext const*>(
             rtcGetGeometryUserData(prototypeGeometry))
         : nullptr;
     return prototypeContext &&
         prototypeContext->wireframeMode ==
-            HdEmbreeWireframeMode::edgeOnly;
+            ty::WireframeMode::edgeOnly;
 }
 
 void
-HdEmbreeRenderer::_ApplyWireframe(
+ty::Renderer::_ApplyWireframe(
     RTCRayHit const& primaryHit,
-    HdEmbreeRayDifferential const& rayDiff,
+    ty::RayDifferential const& rayDiff,
     GfVec4f* color) const
 {
     if (!color ||
@@ -243,7 +243,7 @@ HdEmbreeRenderer::_ApplyWireframe(
         return;
     }
     auto const* const instanceContext =
-        static_cast<HdEmbreeInstanceContext const*>(
+        static_cast<ty::InstanceContext const*>(
             rtcGetGeometryUserData(instanceGeometry));
     if (!instanceContext) {
         return;
@@ -255,16 +255,16 @@ HdEmbreeRenderer::_ApplyWireframe(
         return;
     }
     auto const* const prototypeContext =
-        static_cast<HdEmbreePrototypeContext const*>(
+        static_cast<ty::PrototypeContext const*>(
             rtcGetGeometryUserData(prototypeGeometry));
     if (!prototypeContext ||
         prototypeContext->wireframeMode ==
-            HdEmbreeWireframeMode::disabled) {
+            ty::WireframeMode::disabled) {
         return;
     }
 
     const GfVec3f positionHitWld = ty::CalculateHitPosition(primaryHit);
-    HdEmbreeDisplacedSubdivFrame displacedFrame;
+    ty::DisplacedSubdivFrame displacedFrame;
     GfVec3f normalSrfWldExt = ty::ResolveObjectSpaceNormal(
         prototypeContext, instanceContext->rootScene, primaryHit.hit.geomID,
         primaryHit, &displacedFrame);
@@ -289,8 +289,8 @@ HdEmbreeRenderer::_ApplyWireframe(
                                    _settings.samplesToConvergence,
                                    wireframeContext);
     const float derivativeScale =
-        HdEmbreeComputeWireframeDerivativeScale(_settings.samplesToConvergence);
-    const HdEmbreeWireframeSample sample{
+        ty::ComputeWireframeDerivativeScale(_settings.samplesToConvergence);
+    const ty::WireframeSample sample{
         primaryHit.hit.u,
         primaryHit.hit.v,
         wireframeContext.dudx * derivativeScale,
@@ -304,7 +304,7 @@ HdEmbreeRenderer::_ApplyWireframe(
     float opacity = 0.0f;
     if (prototypeContext->refined) {
         auto const* const levels = prototypeContext->subdivisionLevels;
-        HdEmbreeSubdivWireframeTopology const topology{
+        ty::SubdivWireframeTopology const topology{
             prototypeContext->faceVertexCounts.empty()
                 ? nullptr
                 : prototypeContext->faceVertexCounts.cdata(),
@@ -315,17 +315,17 @@ HdEmbreeRenderer::_ApplyWireframe(
             prototypeContext->faceVertexOffsets.size(),
             !levels || levels->empty() ? nullptr : levels->data(),
             levels ? levels->size() : 0};
-        opacity = HdEmbreeComputeSubdivisionWireframeOpacity(
+        opacity = ty::ComputeSubdivisionWireframeOpacity(
             sample, primaryHit.hit.primID, topology, lineWidth);
     } else {
-        opacity = HdEmbreeComputeTriangleWireframeOpacity(
+        opacity = ty::ComputeTriangleWireframeOpacity(
             sample, lineWidth);
     }
     opacity = std::clamp(opacity, 0.0f, 1.0f);
 
     if (prototypeContext->wireframeMode ==
-            HdEmbreeWireframeMode::edgeOnly) {
-        *color = HdEmbreeCompositeEdgeOnlyWireframe(
+            ty::WireframeMode::edgeOnly) {
+        *color = ty::CompositeEdgeOnlyWireframe(
             _colorClearValue, opacity);
         return;
     }
@@ -336,7 +336,7 @@ HdEmbreeRenderer::_ApplyWireframe(
     if (_wireframeColor == GfVec4f(0.0f)) {
         // Match Storm's unset edge-on-surface color: dim the shaded result.
         if (prototypeContext->wireframeMode ==
-                HdEmbreeWireframeMode::edgeOnSurface) {
+                ty::WireframeMode::edgeOnSurface) {
             const float scale = 1.0f - 0.5f * opacity;
             (*color)[0] *= scale;
             (*color)[1] *= scale;
@@ -355,11 +355,11 @@ HdEmbreeRenderer::_ApplyWireframe(
 }
 
 void
-HdEmbreeRenderer::_PropagateRayDifferential(
+ty::Renderer::_PropagateRayDifferential(
     _SurfaceDifferentials const& surface, GfVec3f const& positionHitWld,
     GfVec3f const& normalShdWldOut, GfVec3f const& omegaOutWld,
     GfVec3f const& omegaInWld, float eta, bool specular,
-    HdEmbreeRayDifferential* rayDifferential) const
+    ty::RayDifferential* rayDifferential) const
 {
     if (!rayDifferential) {
         return;
@@ -440,11 +440,11 @@ HdEmbreeRenderer::_PropagateRayDifferential(
 }
 
 bool
-HdEmbreeRenderer::_TryBuildSurfaceInteraction(
+ty::Renderer::_TryBuildSurfaceInteraction(
     RTCRayHit const& rayHit, GfVec3f const& omegaOutWld,
     _SurfaceInteraction* outInteraction,
-    HdEmbreeInstanceContext const** outInstance,
-    HdEmbreePrototypeContext const** outPrototype) const
+    ty::InstanceContext const** outInstance,
+    ty::PrototypeContext const** outPrototype) const
 {
     if (!outInteraction ||
         rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID ||
@@ -452,15 +452,15 @@ HdEmbreeRenderer::_TryBuildSurfaceInteraction(
         return false;
     }
 
-    HdEmbreeInstanceContext const* instanceContext =
-        static_cast<HdEmbreeInstanceContext const*>(
+    ty::InstanceContext const* instanceContext =
+        static_cast<ty::InstanceContext const*>(
             rtcGetGeometryUserData(
                 rtcGetGeometry(_scene, rayHit.hit.instID[0])));
     if (!instanceContext) {
         return false;
     }
-    HdEmbreePrototypeContext const* prototypeContext =
-        static_cast<HdEmbreePrototypeContext const*>(
+    ty::PrototypeContext const* prototypeContext =
+        static_cast<ty::PrototypeContext const*>(
             rtcGetGeometryUserData(
                 rtcGetGeometry(
                     instanceContext->rootScene, rayHit.hit.geomID)));
@@ -479,7 +479,7 @@ HdEmbreeRenderer::_TryBuildSurfaceInteraction(
     }
 
     // The shared resolver remains the only smooth/displaced normal source.
-    HdEmbreeDisplacedSubdivFrame displacedFrame;
+    ty::DisplacedSubdivFrame displacedFrame;
     GfVec3f normalSrfWldExt =
         ty::ResolveObjectSpaceNormal(
             prototypeContext,
@@ -515,11 +515,11 @@ HdEmbreeRenderer::_TryBuildSurfaceInteraction(
 }
 
 mxcpp::ShadingContext
-HdEmbreeRenderer::_BuildShadingContext(
+ty::Renderer::_BuildShadingContext(
     RTCRayHit const& rayHit,
-    HdEmbreeRayDifferential const& rayDiff,
-    HdEmbreeInstanceContext const* instanceContext,
-    HdEmbreePrototypeContext const* prototypeContext,
+    ty::RayDifferential const& rayDiff,
+    ty::InstanceContext const* instanceContext,
+    ty::PrototypeContext const* prototypeContext,
     _SurfaceInteraction const& interaction,
     GfVec3f* outDndu,
     GfVec3f* outDndv,
@@ -528,7 +528,7 @@ HdEmbreeRenderer::_BuildShadingContext(
     const GfVec3f positionHitWld = interaction.positionHitWld;
     const GfVec3f normalSrfWldOut = interaction.GetNormalSrfWldOut();
     const GfVec3f normalSrfWldExt = interaction.normalSrfWldExt;
-    HdEmbreeDisplacedSubdivFrame const* displacedFrame =
+    ty::DisplacedSubdivFrame const* displacedFrame =
         interaction.displacedFrame.valid
             ? &interaction.displacedFrame
             : nullptr;
@@ -538,7 +538,7 @@ HdEmbreeRenderer::_BuildShadingContext(
     {
         auto it = prototypeContext->primvarMap.find(_tokensSt);
         if (it != prototypeContext->primvarMap.end()) {
-            HdEmbreeSampleTexcoord(
+            ty::SampleTexcoord(
                 it->second.get(), rayHit.hit.primID,
                 rayHit.hit.u, rayHit.hit.v,
                 &texcoordVal);
@@ -696,14 +696,14 @@ HdEmbreeRenderer::_BuildShadingContext(
     ctx.texcoord = texcoordVal;
     ctx.displayColor = ty::ToMx(displayColor);
     ctx.displayOpacity = displayOpacity;
-    HdEmbreeMaterialEvalServices const* materialEvalServices =
+    ty::MaterialEvalServices const* materialEvalServices =
         prototypeContext->materialEvalServices
             ? prototypeContext->materialEvalServices
             : &_materialEvalServices;
     ctx.textureSystem = materialEvalServices->textureSystem;
     ctx.frame = materialEvalServices->frame;
     ctx.time = materialEvalServices->time;
-    ctx.bypassColorTransforms = HdEmbreeBypassesColorTransforms(
+    ctx.bypassColorTransforms = ty::BypassesColorTransforms(
         materialEvalServices->renderColorSpace);
     ctx.luminanceCoefficients =
         ty::ToMx(materialEvalServices->luminanceCoefficients);
@@ -737,15 +737,15 @@ HdEmbreeRenderer::_BuildShadingContext(
 }
 
 bool
-HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
+ty::Renderer::_TryEvalSurfaceClosureAtHit(
     RTCRayHit const& rayHit, GfVec3f const& omegaOutWld,
     mxcpp::SurfaceClosure* outClosure, GfVec3f* normalShdWldOutOutput,
     GfVec3f* normalGeomWldExtOutput,
-    HdEmbreePrototypeContext const** outGeometry) const
+    ty::PrototypeContext const** outGeometry) const
 {
     _SurfaceInteraction interaction;
-    HdEmbreeInstanceContext const* instanceContext = nullptr;
-    HdEmbreePrototypeContext const* prototypeContext = nullptr;
+    ty::InstanceContext const* instanceContext = nullptr;
+    ty::PrototypeContext const* prototypeContext = nullptr;
     if (!_TryBuildSurfaceInteraction(rayHit, omegaOutWld, &interaction,
                                      &instanceContext, &prototypeContext)) {
         return false;
@@ -767,7 +767,7 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
 
     const GfVec3f normalSrfWldOut = interaction.GetNormalSrfWldOut();
     GfVec3f normalShdWldOut = normalSrfWldOut;
-    HdEmbreeRayDifferential defaultRayDiff;
+    ty::RayDifferential defaultRayDiff;
     const _ShadingContextOptions options(false);
     mxcpp::ShadingContext ctx = _BuildShadingContext(
         rayHit,
@@ -778,12 +778,12 @@ HdEmbreeRenderer::_TryEvalSurfaceClosureAtHit(
         nullptr,
         nullptr,
         options);
-    HdEmbreePrimvarLookup cbData{
+    ty::PrimvarLookup cbData{
         &prototypeContext->geomPropSamplers,
         rayHit.hit.primID,
         rayHit.hit.u,
         rayHit.hit.v};
-    ctx.geomPropLookup = &HdEmbreeSamplePrimvar;
+    ctx.geomPropLookup = &ty::SamplePrimvar;
     ctx.geomPropUserData = &cbData;
     ctx.uniformProps = &prototypeContext->geomPropUniformValues;
     mxcpp::EvalOptions evalOptions;

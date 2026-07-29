@@ -55,34 +55,34 @@ public:
 bool
 TestDefaultLinkMatchesEveryReceiver()
 {
-    return HdEmbreeMatchesLink(TfToken(), {}) &&
-        HdEmbreeMatchesLink(TfToken(), {TfToken("receiver")});
+    return ty::MatchesLink(TfToken(), {}) &&
+        ty::MatchesLink(TfToken(), {TfToken("receiver")});
 }
 
 bool
 TestAuthoredLinkRequiresExactMembership()
 {
     const TfToken link("collection:lightLink");
-    return !HdEmbreeMatchesLink(link, {}) &&
-        !HdEmbreeMatchesLink(link, {TfToken("other")}) &&
-        HdEmbreeMatchesLink(
+    return !ty::MatchesLink(link, {}) &&
+        !ty::MatchesLink(link, {TfToken("other")}) &&
+        ty::MatchesLink(
             link, {TfToken("other"), TfToken("collection:lightLink")});
 }
 
 bool
 TestLightAndShadowLinksRemainIndependent()
 {
-    const HdEmbreeCategorySet categories{TfToken("lightMembership")};
-    return HdEmbreeMatchesLink(TfToken("lightMembership"), categories) &&
-        !HdEmbreeMatchesLink(TfToken("shadowMembership"), categories);
+    const ty::CategorySet categories{TfToken("lightMembership")};
+    return ty::MatchesLink(TfToken("lightMembership"), categories) &&
+        !ty::MatchesLink(TfToken("shadowMembership"), categories);
 }
 
 bool
 TestCategoryMergeIsStableAndDeduplicated()
 {
-    HdEmbreeCategorySet categories{
+    ty::CategorySet categories{
         TfToken("prototype"), TfToken("shared")};
-    HdEmbreeMergeCategories(
+    ty::MergeCategories(
         {TfToken("shared"), TfToken("instance")}, &categories);
 
     return categories.size() == 3 &&
@@ -167,16 +167,16 @@ TestSparseNestedInstancesKeepTransformsAndCategoriesPaired()
                 GfVec3d(21.0, 0.0, 0.0) &&
             instances[3].transform.ExtractTranslation() ==
                 GfVec3d(23.0, 0.0, 0.0) &&
-            instances[0].categories == HdEmbreeCategorySet{
+            instances[0].categories == ty::CategorySet{
                 TfToken("parentWhole"), TfToken("parent0"),
                 TfToken("childWhole"), TfToken("child0")} &&
-            instances[1].categories == HdEmbreeCategorySet{
+            instances[1].categories == ty::CategorySet{
                 TfToken("parentWhole"), TfToken("parent0"),
                 TfToken("childWhole"), TfToken("child2")} &&
-            instances[2].categories == HdEmbreeCategorySet{
+            instances[2].categories == ty::CategorySet{
                 TfToken("parentWhole"), TfToken("parent1"),
                 TfToken("childWhole"), TfToken("child0")} &&
-            instances[3].categories == HdEmbreeCategorySet{
+            instances[3].categories == ty::CategorySet{
                 TfToken("parentWhole"), TfToken("parent1"),
                 TfToken("childWhole"), TfToken("child2")};
     }

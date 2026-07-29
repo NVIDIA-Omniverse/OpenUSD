@@ -46,15 +46,16 @@ class TextureSystem;
 }  // namespace mxcpp
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
 #define HDEMBREE_AOV_TOKENS \
     (adaptiveHeatmap)
 
-TF_DECLARE_PUBLIC_TOKENS(HdEmbreeAovTokens, HDEMBREE_AOV_TOKENS);
+TF_DECLARE_PUBLIC_TOKENS(AovTokens, HDEMBREE_AOV_TOKENS);
 
-class HdEmbreeRenderBufferInterface;
+class RenderBufferInterface;
 
-enum HdEmbree_RayMask : uint32_t {
+enum RayMask : uint32_t {
     None = 0,
 
     Camera = 1 << 0,
@@ -67,14 +68,14 @@ enum HdEmbree_RayMask : uint32_t {
 };
 
 /// Ray differential for tracking pixel footprint through bounces.
-struct HdEmbreeRayDifferential {
+struct RayDifferential {
     bool hasDifferentials = false;
     GfVec3f rxOrigin, ryOrigin;       // offset ray origins (x/y pixel shift)
     GfVec3f rxDirection, ryDirection;  // offset ray directions
 };
 
 /// Physical depth-of-field state for the active camera.
-struct HdEmbreeCameraDepthOfField {
+struct CameraDepthOfField {
     float fStop = 0.0f;
     float focusDistance = 0.0f;
     float focalLength = 0.0f;
@@ -83,7 +84,7 @@ struct HdEmbreeCameraDepthOfField {
     ///
     /// \param other Value to compare; no tolerance or enablement rules apply.
     /// \return True when f-stop, focus distance, and focal length are equal.
-    bool operator==(HdEmbreeCameraDepthOfField const& other) const {
+    bool operator==(CameraDepthOfField const& other) const {
         return fStop == other.fStop &&
                focusDistance == other.focusDistance &&
                focalLength == other.focalLength;
@@ -93,43 +94,43 @@ struct HdEmbreeCameraDepthOfField {
     ///
     /// \param other Value to compare using exact floating-point equality.
     /// \return Logical negation of \ref operator==.
-    bool operator!=(HdEmbreeCameraDepthOfField const& other) const {
+    bool operator!=(CameraDepthOfField const& other) const {
         return !(*this == other);
     }
 };
 
-struct HdEmbreeMediumState {
+struct MediumState {
     bool active = false;
     mxcpp::MediumProperties medium;
-    HdEmbreePrototypeContext const* ownerGeometry = nullptr;
-    HdEmbreeCategorySet const* categories = nullptr;
+    PrototypeContext const* ownerGeometry = nullptr;
+    CategorySet const* categories = nullptr;
 };
 
 /// Hero-wavelength sampling state shared by path-transport helpers.
-struct _HeroWavelengthState {
+struct HeroWavelengthState {
     bool active = false;
     float wavelengthNm = 0.0f;
     float pdf = 0.0f;
 };
 
-/// \class HdEmbreeRenderer
+/// \class Renderer
 /// \brief Progressive CPU path tracer built on Embree.
 ///
 /// Owns progressive sampling state and MaterialX texture services while
 /// borrowing the Embree scene, renderer light records, and Hydra AOV buffers.
 /// The delegate must stop rendering before mutating or replacing borrowed data.
-class HdEmbreeRenderer final
+class Renderer final
 {
 public:
     /// \brief Construct a renderer with hard-coded render-setting defaults.
     ///
     /// No scene or AOV buffers are bound until their setters are called.
-    HdEmbreeRenderer();
+    Renderer();
 
     /// \brief Destroy renderer-owned sampling and texture state.
     ///
     /// Does not release the borrowed Embree scene, lights, or AOV buffers.
-    ~HdEmbreeRenderer();
+    ~Renderer();
 
     /// \brief Select the Embree scene used for ray traversal.
     ///
@@ -164,7 +165,7 @@ public:
     /// values are finite and positive; other values select a pinhole camera.
     /// \param cameraDepthOfField Value copied for subsequent renders.
     void SetCameraDepthOfField(
-        HdEmbreeCameraDepthOfField const& cameraDepthOfField);
+        CameraDepthOfField const& cameraDepthOfField);
 
     /// \brief Set application frame and time values visible to materials.
     ///
@@ -178,21 +179,21 @@ public:
     /// Supported values are Linear Rec.709, Linear AP1, and Raw. Raw bypasses
     /// all renderer-managed color transforms while retaining Rec.709 as the
     /// fallback basis for numerical algorithms that require RGB primaries.
-    void SetRenderColorSpace(HdEmbreeRenderColorSpace colorSpace);
+    void SetRenderColorSpace(RenderColorSpace colorSpace);
 
     /// \brief Return renderer-owned services used for material evaluation.
     ///
     /// The returned observer has a stable address for this renderer's
     /// lifetime. The delegate must stop rendering before changing its frame
     /// or time values through \ref SetSceneFrameAndTime.
-    HdEmbreeMaterialEvalServices const* GetMaterialEvalServices() const {
+    MaterialEvalServices const* GetMaterialEvalServices() const {
         return &_materialEvalServices;
     }
 
     /// \brief Bind the AOVs written by subsequent renders.
     ///
     /// Copies the bindings but borrows each render-buffer pointer. Every
-    /// non-null buffer must implement HdEmbreeRenderBufferInterface and remain
+    /// non-null buffer must implement RenderBufferInterface and remain
     /// valid and unmodified until rendering stops or bindings are replaced.
     /// \param aovBindings Hydra AOV bindings to copy and later validate.
     void SetAovBindings(HdRenderPassAovBindingVector const& aovBindings);
@@ -203,7 +204,7 @@ public:
     /// \param lightPath Stable, unique key for the light.
     /// \param light Borrowed non-null record that must remain valid and
     /// unchanged until removed while rendering is stopped.
-    void AddLight(SdfPath const& lightPath, HdEmbree_LightData const* light);
+    void AddLight(SdfPath const& lightPath, LightData const* light);
 
     /// \brief Remove a renderer light and any matching dome entry.
     ///
@@ -211,7 +212,7 @@ public:
     /// \param light Exact borrowed pointer registered for that path; it is
     /// used to remove dome bookkeeping and must be passed before destruction.
     void RemoveLight(SdfPath const& lightPath,
-                     HdEmbree_LightData const* light);
+                     LightData const* light);
 
     /// \brief Associate top-level Embree geometry with a finite light.
     ///
@@ -219,7 +220,7 @@ public:
     /// \param geometryId Committed top-level scene geometry ID.
     /// \param light Borrowed light record that must outlive the registration.
     void AddLightGeometry(unsigned int geometryId,
-                          HdEmbree_LightData const* light);
+                          LightData const* light);
 
     /// \brief Remove a finite-light geometry association.
     ///
@@ -228,7 +229,7 @@ public:
     /// \param light Expected registered pointer. A null pointer removes any
     /// record for \p geometryId; a non-null mismatch leaves it unchanged.
     void RemoveLightGeometry(unsigned int geometryId,
-                             HdEmbree_LightData const* light);
+                             LightData const* light);
 
     /// \brief Return the currently copied AOV bindings.
     ///
@@ -245,10 +246,10 @@ public:
     /// texture-cache policy, and stores the normalized settings. The caller
     /// must not race this operation with rendering.
     /// \param settings Fully resolved Hydra values with typed token settings.
-    void SetRenderSettings(HdEmbreeRenderSettings const& settings);
+    void SetRenderSettings(RenderSettings const& settings);
 
     /// Return the normalized settings used by subsequent renders.
-    HdEmbreeRenderSettings const& GetRenderSettings() const {
+    RenderSettings const& GetRenderSettings() const {
         return _settings;
     }
 
@@ -349,7 +350,7 @@ private:
     /// \brief Prepare shared state immediately before tracing.
     ///
     /// The borrowed scene must be non-null. At least one AOV must be bound;
-    /// every binding must expose HdEmbreeRenderBufferInterface, have a
+    /// every binding must expose RenderBufferInterface, have a
     /// supported format and matching non-zero dimensions, and contain the
     /// non-empty data window.
     ///
@@ -394,9 +395,9 @@ private:
     void _SampleCameraRay(
         unsigned int x, unsigned int y,
         unsigned int imageMinX, unsigned int imageMinY,
-        HdEmbreeSampler& sampler,
+        Sampler& sampler,
         GfVec3f& rayOrigin, GfVec3f& rayDirection,
-        HdEmbreeRayDifferential& rayDifferential) const;
+        RayDifferential& rayDifferential) const;
 
     /// \brief Render a half-open range of square tiles.
     ///
@@ -427,8 +428,8 @@ private:
     void _EvaluatePixelSample(
         unsigned int x, unsigned int y,
         GfVec3f const& origin, GfVec3f const& dir,
-        HdEmbreeSampler const& sampler,
-        HdEmbreeRayDifferential const& rayDiff);
+        Sampler const& sampler,
+        RayDifferential const& rayDiff);
 
     /// \brief Integrate a single-hit camera-light and ambient-occlusion sample.
     ///
@@ -442,8 +443,8 @@ private:
     _PixelSampleResult _IntegrateUnlit(
         GfVec3f const& origin,
         GfVec3f const& dir,
-        HdEmbreeRayDifferential const& rayDiff,
-        HdEmbreeSampleDomain const& domain);
+        RayDifferential const& rayDiff,
+        SampleDomain const& domain);
 
     /// Return true when the camera hit requests unlit edge-only display.
     bool _IsEdgeOnlyWireframeHit(RTCRayHit const& primaryHit) const;
@@ -451,7 +452,7 @@ private:
     /// Composite the active mesh repr's display wire over one camera sample.
     void _ApplyWireframe(
         RTCRayHit const& primaryHit,
-        HdEmbreeRayDifferential const& rayDiff,
+        RayDifferential const& rayDiff,
         GfVec4f* color) const;
 
     /// \brief Compute camera or normalized clip depth for a hit.
@@ -505,7 +506,7 @@ private:
     float _ComputeAmbientOcclusion(GfVec3f const& positionWld,
                                    GfVec3f const& normalShdWldOut,
                                    GfVec3f const& normalGeomWldExt,
-                                   HdEmbreeSampleDomain const& domain);
+                                   SampleDomain const& domain);
 
     /// \brief Estimate direct surface lighting from all linked scene lights.
     ///
@@ -534,10 +535,10 @@ private:
     GfVec3f _ComputeDirectLightingMIS(
         GfVec3f const& positionWld, GfVec3f const& normalShdWldOut,
         GfVec3f const& normalGeomWldExt, GfVec3f const& omegaOutWld,
-        HdEmbreeSampleDomain const& domain, bool frontFacing,
+        SampleDomain const& domain, bool frontFacing,
         bool includeBsdfSamplingMis, mxcpp::SurfaceClosure const* closure,
-        HdEmbreeCategorySet const& receiverCategories,
-        HdEmbreeMediumState const& mediumState = HdEmbreeMediumState(),
+        CategorySet const& receiverCategories,
+        MediumState const& mediumState = MediumState(),
         bool spectralActive = false, float heroWavelengthNm = 0.0f,
         float heroWavelengthPdf = 0.0f,
         mxcpp::AdobeOpenPbrPreparedSurface const* adobeOpenPbrSurface =
@@ -559,8 +560,8 @@ private:
     /// black when the medium is inactive or absorption-only.
     GfVec3f _ComputeMediumDirectLighting(GfVec3f const& positionWld,
                                          GfVec3f const& omegaOutWld,
-                                         HdEmbreeMediumState const& mediumState,
-                                         HdEmbreeSampleDomain const& domain,
+                                         MediumState const& mediumState,
+                                         SampleDomain const& domain,
                                          bool includePhaseSamplingMis,
                                          bool spectralActive = false,
                                          float heroWavelengthNm = 0.0f,
@@ -572,18 +573,18 @@ private:
         GfVec3f radianceAccumulated = GfVec3f(0.0f);
         GfVec3f throughputRgb = GfVec3f(1.0f);
         float throughputSpectral = 1.0f;
-        _HeroWavelengthState hero;
+        HeroWavelengthState hero;
 
         GfVec3f positionRayOriginWld = GfVec3f(0.0f);
         GfVec3f directionRayWld = GfVec3f(0.0f);
-        HdEmbreeRayDifferential rayDifferential;
-        HdEmbreeMediumState medium;
+        RayDifferential rayDifferential;
+        MediumState medium;
 
         float lastBsdfPdf = 0.0f;
         bool lastScatterWasMedium = false;
-        HdEmbreeCategorySet const* lastScatterCategories = nullptr;
-        HdEmbreeLightSampler::SamplingMode lastLightSamplingMode =
-            HdEmbreeLightSampler::SamplingMode::FullSphere;
+        CategorySet const* lastScatterCategories = nullptr;
+        LightSampler::SamplingMode lastLightSamplingMode =
+            LightSampler::SamplingMode::FullSphere;
         GfVec3f lastLightSamplingNormal = GfVec3f(0.0f);
 
         bool isFirstBounce = true;
@@ -591,13 +592,13 @@ private:
         bool currentPathIsCaustic = false;
 
         bool useSyntheticLambertian = false;
-        HdEmbreeSssOutput syntheticLambertianExit;
+        SssOutput syntheticLambertianExit;
     };
 
     struct _VolumeTransmissionInput {
         float surfaceDist = std::numeric_limits<float>::infinity();
         bool hasFiniteLightHit = false;
-        HdEmbreeLightSampler::LightSample finiteLightHit;
+        LightSampler::LightSample finiteLightHit;
         TfToken finiteLightLink;
         float finiteLightDist = std::numeric_limits<float>::infinity();
         int bounce = 0;
@@ -650,7 +651,7 @@ private:
     /// a new volume-scattered ray, or Terminate to end the path.
     _VolumeTransmissionResult _TraceVolumeTransmission(
         _VolumeTransmissionInput const& input,
-        HdEmbreeSampleDomain const& domain,
+        SampleDomain const& domain,
         _PathState* state) const;
 
     /// \brief Enter or leave the single active interior medium.
@@ -663,8 +664,8 @@ private:
     /// \param state Non-null path state whose medium ownership is updated.
     void _UpdatePathMedium(
         mxcpp::SurfaceClosure const& closure,
-        HdEmbreePrototypeContext const* geometry,
-        HdEmbreeCategorySet const& categories,
+        PrototypeContext const* geometry,
+        CategorySet const& categories,
         float directionDotNormal,
         _PathState* state) const;
 
@@ -682,7 +683,7 @@ private:
 
     struct _SubsurfaceInput {
         RTCRayHit const* rayHit = nullptr;
-        HdEmbreeInstanceContext const* instanceContext = nullptr;
+        InstanceContext const* instanceContext = nullptr;
         mxcpp::SurfaceClosure const* closure = nullptr;
         GfVec3f positionHitWld = GfVec3f(0.0f);
         GfVec3f normalShdWldOut = GfVec3f(0.0f);
@@ -703,7 +704,7 @@ private:
     /// Terminate when entry validation or the random walk fails.
     _SubsurfaceResult _TraceSubsurface(
         _SubsurfaceInput const& input,
-        HdEmbreeSampleDomain const& domain,
+        SampleDomain const& domain,
         _PathState* state) const;
 
     enum class _BaseNormalDerivativeStatus {
@@ -740,7 +741,7 @@ private:
         GfVec3f positionHitWld = GfVec3f(0.0f);
         GfVec3f normalGeomWldExt = GfVec3f(0.0f);
         GfVec3f normalSrfWldExt = GfVec3f(0.0f);
-        HdEmbreeDisplacedSubdivFrame displacedFrame;
+        DisplacedSubdivFrame displacedFrame;
         bool frontFacing = true;
         bool doubleSided = false;
 
@@ -772,7 +773,7 @@ private:
         _SurfaceDifferentials const& surface, GfVec3f const& positionHitWld,
         GfVec3f const& normalShdWldOut, GfVec3f const& omegaOutWld,
         GfVec3f const& omegaInWld, float eta, bool specular,
-        HdEmbreeRayDifferential* rayDifferential) const;
+        RayDifferential* rayDifferential) const;
 
     /// \brief Integrate a complete multi-bounce camera path with MIS.
     ///
@@ -786,8 +787,8 @@ private:
     _PixelSampleResult _IntegratePath(
         GfVec3f const& origin,
         GfVec3f const& dir,
-        HdEmbreeRayDifferential const& rayDiff,
-        HdEmbreeSampleDomain const& domain) const;
+        RayDifferential const& rayDiff,
+        SampleDomain const& domain) const;
 
     /// \brief Trace colored shadow visibility along a segment.
     ///
@@ -806,7 +807,7 @@ private:
         GfVec3f const& positionWld, GfVec3f const& directionOffsetReferenceWld,
         GfVec3f const& directionShadowWld, float distanceWld,
         TfToken const& shadowLink,
-        HdEmbreeMediumState const& mediumState = HdEmbreeMediumState()) const;
+        MediumState const& mediumState = MediumState()) const;
 
     /// \brief Find the nearest analytic finite light along a ray.
     ///
@@ -821,7 +822,7 @@ private:
         GfVec3f const& position,
         GfVec3f const& direction,
         float maxDist,
-        HdEmbreeLightSampler::LightSample* outSample,
+        LightSampler::LightSample* outSample,
         TfToken* outLightLink) const;
 
     /// \brief Resolve a top-level Embree hit to its registered finite light.
@@ -829,7 +830,7 @@ private:
     /// \param rayHit Initialized hit; instanced geometry is not a light hit.
     /// \return Borrowed registered light pointer, valid until unregistered, or
     /// null when the hit is not finite-light geometry.
-    HdEmbree_LightData const* _GetLightGeometryHit(
+    LightData const* _GetLightGeometryHit(
         RTCRayHit const& rayHit) const;
 
     /// \brief Evaluate radiance for a registered finite-light geometry hit.
@@ -845,14 +846,14 @@ private:
         RTCRayHit const& rayHit,
         GfVec3f const& position,
         GfVec3f const& direction,
-        HdEmbreeLightSampler::LightSample* outSample,
+        LightSampler::LightSample* outSample,
         TfToken* outLightLink = nullptr) const;
 
     struct _ShadingContextOptions {
         /// \brief Construct shading-context feature options.
         ///
         /// \param computeScreenSpaceDerivatives True to derive texture
-        /// differentials from \ref HdEmbreeRayDifferential.
+        /// differentials from \ref RayDifferential.
         explicit _ShadingContextOptions(
             bool computeScreenSpaceDerivatives = true)
             : computeScreenSpaceDerivatives(computeScreenSpaceDerivatives)
@@ -880,9 +881,9 @@ private:
     /// pointers installed by the caller remain alive.
     mxcpp::ShadingContext _BuildShadingContext(
         RTCRayHit const& rayHit,
-        HdEmbreeRayDifferential const& rayDiff,
-        HdEmbreeInstanceContext const* instanceContext,
-        HdEmbreePrototypeContext const* prototypeContext,
+        RayDifferential const& rayDiff,
+        InstanceContext const* instanceContext,
+        PrototypeContext const* prototypeContext,
         _SurfaceInteraction const& interaction,
         GfVec3f* outDndu = nullptr,
         GfVec3f* outDndv = nullptr,
@@ -896,8 +897,8 @@ private:
     bool _TryBuildSurfaceInteraction(
         RTCRayHit const& rayHit, GfVec3f const& omegaOutWld,
         _SurfaceInteraction* outInteraction,
-        HdEmbreeInstanceContext const** outInstance = nullptr,
-        HdEmbreePrototypeContext const** outPrototype = nullptr) const;
+        InstanceContext const** outInstance = nullptr,
+        PrototypeContext const** outPrototype = nullptr) const;
 
     /// \brief Evaluate the visibility-only material closure at a hit.
     ///
@@ -918,7 +919,7 @@ private:
         mxcpp::SurfaceClosure* outClosure,
         GfVec3f* normalShdWldOutOutput = nullptr,
         GfVec3f* normalGeomWldExtOutput = nullptr,
-        HdEmbreePrototypeContext const** outGeometry = nullptr) const;
+        PrototypeContext const** outGeometry = nullptr) const;
 
     // ---- AOV output classification (built once in _PreRenderSetup) ----
 
@@ -935,7 +936,7 @@ private:
     };
 
     struct _AovOutput {
-        HdEmbreeRenderBufferInterface* buffer;
+        RenderBufferInterface* buffer;
         _AovKind kind;
         TfToken token;
     };
@@ -1000,13 +1001,13 @@ private:
     // Linear exposure scale from the active camera.
     float _cameraExposureScale;
     // Physical depth-of-field state from the active camera.
-    HdEmbreeCameraDepthOfField _cameraDepthOfField;
+    CameraDepthOfField _cameraDepthOfField;
 
     // Our handle to the embree scene.
     RTCScene _scene;
 
     // Normalized renderer-consumed settings applied as one stopped update.
-    HdEmbreeRenderSettings _settings;
+    RenderSettings _settings;
 
     // Hydra display wire style. Per-mesh reprs decide whether it is active.
     GfVec4f _wireframeColor;
@@ -1016,12 +1017,12 @@ private:
     std::unique_ptr<mxcpp::TextureSystem> _textureSystem;
 
     // Working color space selected by UsdRenderSettings.
-    HdEmbreeRenderColorSpace _renderColorSpace;
+    RenderColorSpace _renderColorSpace;
 
     // Stable-address services shared by geometry-build and hit-time material
     // evaluation. _textureSystem is declared first so it is initialized before
     // this non-owning observer is constructed.
-    HdEmbreeMaterialEvalServices _materialEvalServices;
+    MaterialEvalServices _materialEvalServices;
 
     // Per-pixel adaptive sampling state (Welford online variance).
     std::vector<GfVec3f> _pixelMean;
@@ -1048,7 +1049,7 @@ private:
     std::chrono::steady_clock::time_point _renderStartTime;
 
     // Renderer-side light lookup and dome/geometry registration.
-    HdEmbreeLightRegistry _lights;
+    LightRegistry _lights;
 
     // Pre-resolved per-frame state (built in _PreRenderSetup).
     bool _needColor = false;
@@ -1056,6 +1057,7 @@ private:
     std::vector<_AovOutput> _aovOutputs;
 };
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif  // PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_H

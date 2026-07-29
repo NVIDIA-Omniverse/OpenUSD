@@ -23,13 +23,14 @@
 #include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
 // Surface shading and subdivision displacement evaluate the same MaterialX
 // geomprop nodes at different times. Keeping their lookup here ensures both
 // consumers use the interpolation mode chosen by the mesh primvar sampler.
-struct HdEmbreePrimvarLookup
+struct PrimvarLookup
 {
-    std::vector<HdEmbreePrimvarSampler*> const* primvars;
+    std::vector<PrimvarSampler*> const* primvars;
     unsigned int primId;
     float u;
     float v;
@@ -37,7 +38,7 @@ struct HdEmbreePrimvarLookup
 
 /// Inverse Jacobian that converts Embree patch-coordinate derivatives to
 /// authored texture-coordinate derivatives.
-struct HdEmbreeSubdivTexcoordJacobian
+struct SubdivTexcoordJacobian
 {
     float duDs = 1.0f;
     float dvDs = 0.0f;
@@ -50,16 +51,16 @@ struct HdEmbreeSubdivTexcoordJacobian
 ///
 /// Both displacement-time and hit-time material evaluation use this helper so
 /// dPdu/dPdv and object-position derivatives have identical `st` semantics.
-inline HdEmbreeSubdivTexcoordJacobian
-HdEmbreeComputeSubdivTexcoordJacobian(
-    HdEmbreePrimvarSampler const* sampler,
+inline SubdivTexcoordJacobian
+ComputeSubdivTexcoordJacobian(
+    PrimvarSampler const* sampler,
     unsigned int primId,
     float u,
     float v)
 {
-    HdEmbreeSubdivTexcoordJacobian result;
+    SubdivTexcoordJacobian result;
     auto const* subdivSampler =
-        dynamic_cast<HdEmbreeSubdivSampler const*>(sampler);
+        dynamic_cast<SubdivSampler const*>(sampler);
     if (!subdivSampler) {
         return result;
     }
@@ -120,7 +121,7 @@ HdEmbreeComputeSubdivTexcoordJacobian(
     return result;
 }
 
-namespace HdEmbreePrimvarSamplingDetail {
+namespace PrimvarSamplingDetail {
 
 template <class Matrix>
 inline mxcpp::Mat4f
@@ -135,14 +136,14 @@ ToMxMatrix(Matrix const& matrix)
     return result;
 }
 
-} // namespace HdEmbreePrimvarSamplingDetail
+} // namespace PrimvarSamplingDetail
 
 // MaterialX treats both float2 and float3 texcoords as a 2D lookup domain.
 // Centralizing the fallback keeps displacement-time and hit-time evaluation on
 // the same authored primvar representation.
 inline bool
-HdEmbreeSampleTexcoord(
-    HdEmbreePrimvarSampler const* sampler,
+SampleTexcoord(
+    PrimvarSampler const* sampler,
     unsigned int primId,
     float u,
     float v,
@@ -165,14 +166,14 @@ HdEmbreeSampleTexcoord(
 }
 
 inline mxcpp::Value
-HdEmbreeSamplePrimvar(void const* userData, int geomPropHandle)
+SamplePrimvar(void const* userData, int geomPropHandle)
 {
-    auto const* lookup = static_cast<HdEmbreePrimvarLookup const*>(userData);
+    auto const* lookup = static_cast<PrimvarLookup const*>(userData);
     if (!lookup || !lookup->primvars || geomPropHandle < 0 ||
         static_cast<size_t>(geomPropHandle) >= lookup->primvars->size()) {
         return mxcpp::Value();
     }
-    HdEmbreePrimvarSampler* const sampler =
+    PrimvarSampler* const sampler =
         (*lookup->primvars)[geomPropHandle];
     if (!sampler) {
         return mxcpp::Value();
@@ -208,16 +209,17 @@ HdEmbreeSamplePrimvar(void const* userData, int geomPropHandle)
     GfMatrix4f matrix4f;
     if (sampler->Sample(lookup->primId, lookup->u, lookup->v, &matrix4f)) {
         return mxcpp::Value(
-            HdEmbreePrimvarSamplingDetail::ToMxMatrix(matrix4f));
+            PrimvarSamplingDetail::ToMxMatrix(matrix4f));
     }
     GfMatrix4d matrix4d;
     if (sampler->Sample(lookup->primId, lookup->u, lookup->v, &matrix4d)) {
         return mxcpp::Value(
-            HdEmbreePrimvarSamplingDetail::ToMxMatrix(matrix4d));
+            PrimvarSamplingDetail::ToMxMatrix(matrix4d));
     }
     return mxcpp::Value();
 }
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif // PXR_IMAGING_PLUGIN_HD_EMBREE_PRIMVAR_SAMPLING_H

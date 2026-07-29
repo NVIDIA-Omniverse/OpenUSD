@@ -64,11 +64,11 @@ _CombinePresenceAndTransmissionVisibility(
 }
 
 GfVec3f
-HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
+ty::Renderer::_Visibility(GfVec3f const& positionWld,
                               GfVec3f const& directionOffsetReferenceWld,
                               GfVec3f const& directionShadowWld,
                               float distanceWld, TfToken const& shadowLink,
-                              HdEmbreeMediumState const& mediumState) const
+                              ty::MediumState const& mediumState) const
 {
     constexpr int kMaxTransparentHits = 16;
     constexpr int kMaxIntersections = 256;
@@ -80,8 +80,8 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
     }
 
     GfVec3f visibility(1.0f);
-    HdEmbreeMediumState shadowMedium = mediumState;
-    HdEmbreePrototypeContext const* straightTransparentOwner = nullptr;
+    ty::MediumState shadowMedium = mediumState;
+    ty::PrototypeContext const* straightTransparentOwner = nullptr;
     GfVec3f positionRayOriginWld = ty::OffsetRayOrigin(
         positionWld, directionOffsetReferenceWld, directionShadowWld, kRayBias);
     float distanceRemainingWld = distanceWld;
@@ -109,7 +109,7 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
             directionShadowWld,
             kRayBias,
             distanceRemainingWld,
-            HdEmbree_RayMask::Camera);
+            ty::RayMask::Camera);
         rtcIntersect1(_scene, &rayHit);
 
         if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
@@ -134,19 +134,19 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
             return GfVec3f(0.0f);
         }
 
-        HdEmbreeInstanceContext const* blockerContext = nullptr;
+        ty::InstanceContext const* blockerContext = nullptr;
         if (!shadowLink.IsEmpty() &&
             rayHit.hit.instID[0] != RTC_INVALID_GEOMETRY_ID) {
             RTCGeometry instanceGeometry =
                 rtcGetGeometry(_scene, rayHit.hit.instID[0]);
             if (instanceGeometry) {
-                blockerContext = static_cast<HdEmbreeInstanceContext const*>(
+                blockerContext = static_cast<ty::InstanceContext const*>(
                     rtcGetGeometryUserData(instanceGeometry));
             }
         }
 
         if (blockerContext &&
-            !HdEmbreeMatchesLink(shadowLink, blockerContext->categories)) {
+            !ty::MatchesLink(shadowLink, blockerContext->categories)) {
             distanceRemainingWld -= distanceHitWld;
             if (distanceRemainingWld <= 0.001f) {
                 return visibility;
@@ -173,7 +173,7 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
         // shading point's normal, not this blocker's, and medium callers pass
         // a light direction.
         GfVec3f normalGeomBlockerWldExt(0.0f);
-        HdEmbreePrototypeContext const* hitMesh = nullptr;
+        ty::PrototypeContext const* hitMesh = nullptr;
         const bool hasClosure = _TryEvalSurfaceClosureAtHit(
             rayHit, -directionShadowWld, &closure, nullptr,
             &normalGeomBlockerWldExt, &hitMesh);
@@ -234,7 +234,7 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
         }
 
         if (exitsCurrentMedium) {
-            shadowMedium = HdEmbreeMediumState();
+            shadowMedium = ty::MediumState();
         } else if (exitsStraightTransparent) {
             straightTransparentOwner = nullptr;
         } else if (volumeOnlyBoundary && !shadowMedium.active && hitMesh &&
@@ -271,11 +271,11 @@ HdEmbreeRenderer::_Visibility(GfVec3f const& positionWld,
 }
 
 bool
-HdEmbreeRenderer::_FindNearestFiniteLightHit(
+ty::Renderer::_FindNearestFiniteLightHit(
     GfVec3f const& position,
     GfVec3f const& direction,
     float maxDist,
-    HdEmbreeLightSampler::LightSample* outSample,
+    ty::LightSampler::LightSample* outSample,
     TfToken* outLightLink) const
 {
     if (!outSample || maxDist <= 0.0f) {
@@ -284,7 +284,7 @@ HdEmbreeRenderer::_FindNearestFiniteLightHit(
 
     bool found = false;
     float closestDist = maxDist;
-    HdEmbreeLightSampler::LightSample closestSample{};
+    ty::LightSampler::LightSample closestSample{};
     TfToken closestLightLink;
 
     for (auto const& it : _lights.GetLights()) {
@@ -297,8 +297,8 @@ HdEmbreeRenderer::_FindNearestFiniteLightHit(
             continue;
         }
 
-        const HdEmbreeLightSampler::LightSample ls =
-            HdEmbreeLightSampler::EvaluateLightDirection(
+        const ty::LightSampler::LightSample ls =
+            ty::LightSampler::EvaluateLightDirection(
                 light, position, direction, _renderColorSpace);
         if (!ls.valid || ls.distanceWld <= 0.0f ||
             !std::isfinite(ls.distanceWld)) {
@@ -323,8 +323,8 @@ HdEmbreeRenderer::_FindNearestFiniteLightHit(
     return found;
 }
 
-HdEmbree_LightData const*
-HdEmbreeRenderer::_GetLightGeometryHit(RTCRayHit const& rayHit) const
+ty::LightData const*
+ty::Renderer::_GetLightGeometryHit(RTCRayHit const& rayHit) const
 {
     if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID ||
         rayHit.hit.instID[0] != RTC_INVALID_GEOMETRY_ID) {
@@ -335,20 +335,20 @@ HdEmbreeRenderer::_GetLightGeometryHit(RTCRayHit const& rayHit) const
 }
 
 bool
-HdEmbreeRenderer::_EvaluateLightGeometryHit(
+ty::Renderer::_EvaluateLightGeometryHit(
     RTCRayHit const& rayHit,
     GfVec3f const& position,
     GfVec3f const& direction,
-    HdEmbreeLightSampler::LightSample* outSample,
+    ty::LightSampler::LightSample* outSample,
     TfToken* outLightLink) const
 {
-    HdEmbree_LightData const* light = _GetLightGeometryHit(rayHit);
+    ty::LightData const* light = _GetLightGeometryHit(rayHit);
     if (!light || !outSample) {
         return false;
     }
 
-    HdEmbreeLightSampler::LightSample sample =
-        HdEmbreeLightSampler::EvaluateLightDirection(
+    ty::LightSampler::LightSample sample =
+        ty::LightSampler::EvaluateLightDirection(
             *light, position, direction, _renderColorSpace);
     if (!sample.valid) {
         sample.radianceIn = GfVec3f(0.0f);

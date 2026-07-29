@@ -17,22 +17,24 @@ class TextureSystem;
 }  // namespace mxcpp
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
 /// Renderer-owned services shared by geometry-build and hit-time material
 /// evaluation. The render delegate stops rendering before updating frame or
 /// time, and Embree callbacks only receive a const observer to this state.
-struct HdEmbreeMaterialEvalServices
+struct MaterialEvalServices
 {
     mxcpp::TextureSystem const* textureSystem = nullptr;
     float frame = 0.0f;
     float time = 0.0f;
-    HdEmbreeRenderColorSpace renderColorSpace =
-        HdEmbreeRenderColorSpace::LinearRec709;
+    RenderColorSpace renderColorSpace =
+        RenderColorSpace::LinearRec709;
     GfVec3f luminanceCoefficients =
-        HdEmbreeGetLuminanceCoefficients(
-            HdEmbreeRenderColorSpace::LinearRec709);
+        GetLuminanceCoefficients(
+            RenderColorSpace::LinearRec709);
 };
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif // PXR_IMAGING_PLUGIN_HD_EMBREE_MATERIAL_EVAL_CONTEXT_H

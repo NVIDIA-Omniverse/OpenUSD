@@ -118,7 +118,7 @@ samples. The main self-cost ranges across P-cores and E-cores were:
 | String comparison | 3.4-3.8% |
 | `oqmc::sobolReversedIndex` | 3.1-4.1% |
 | String hashing | 2.7-3.2% |
-| `HdEmbreeRenderer::_BuildShadingContext` | 2.6-3.1% |
+| `ty::Renderer::_BuildShadingContext` | 2.6-3.1% |
 | `malloc` and `free` combined | approximately 2.3-3.5% |
 
 Dome texture sampling, directional PDF evaluation, and lat-long conversion
@@ -139,12 +139,12 @@ pixi run usdrender \
     > /tmp/typhoon-input-coat-darkening-trace.txt 2>&1
 ```
 
-`HdEmbreeRenderer` has coarse trace scopes around pre-render setup, Embree
+`ty::Renderer` has coarse trace scopes around pre-render setup, Embree
 scene commit, preview tracing and resolve, full-resolution sample tracing and
 resolve, convergence checks, and AOV finalization. The scopes deliberately sit
 outside per-ray and per-BSDF loops to avoid materially perturbing the render.
 
-The initial trace split 2.111 seconds in `HdEmbreeRenderer::Render()` as:
+The initial trace split 2.111 seconds in `ty::Renderer::Render()` as:
 
 | Phase | Time | Share |
 | --- | ---: | ---: |
@@ -168,14 +168,14 @@ result or its startup breakdown for optimization decisions.
 
 ## Prioritized Opportunities
 
-### 1. Cache `HdEmbreeBufferSampler` metadata
+### 1. Cache `ty::BufferSampler` metadata
 
 Every primvar sample currently calls `HdVtBufferSource::GetData()`,
 `GetTupleType()`, and `HdDataSizeOfTupleType()`. `GetData()` reaches
 `HdGetValueData`, which consumes 5.9-7.2% of sampled cycles in the initial
 profile.
 
-`HdEmbreeBufferSampler` references an immutable buffer source owned alongside
+`ty::BufferSampler` references an immutable buffer source owned alongside
 the sampler. Cache its base pointer, element size, tuple type, and element
 count in the sampler. This is the most focused, comparatively low-risk first
 optimization.
@@ -310,14 +310,14 @@ Fixes (all output bit-identical, `oiiotool --diff` PASS on the repro and the
 brass scene; 297/297 MaterialXCpp tests pass):
 
 1. `_SampleGeomProp` now looks up samplers in a string-keyed mirror map
-   (`HdEmbreePrototypeContext::primvarMapByString`) instead of constructing a
+   (`ty::PrototypeContext::primvarMapByString`) instead of constructing a
    TfToken per call. This was the dominant fix: 155 s -> 22 s on the repro
    scene (19.4 us -> 0.44 us per re-evaluation).
 2. Texture footprints read the base texcoord from the cached input value and
    only re-evaluate the upstream subgraph for the dx/dy probes (21 -> 14
    re-evaluations per eval): 22 s -> 17 s.
 3. `_SampleGeomProp` tries common primvar types (Vec2f/Vec3f/float) before
-   matrices — `HdEmbreeBufferSampler::Sample` only accepts an exact
+   matrices — `ty::BufferSampler::Sample` only accepts an exact
    tuple-type match, so order does not affect results.
 4. `_EvalGeomPropValue` reads the primvar name by reference instead of
    copying the string per evaluation, and nested input re-evaluations reuse

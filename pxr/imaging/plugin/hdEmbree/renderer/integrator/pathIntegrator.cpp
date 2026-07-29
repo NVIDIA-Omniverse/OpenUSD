@@ -34,7 +34,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 static bool
 _PopulateSssExitRayHit(
     RTCRayHit* rayHit,
-    HdEmbreeSssOutput const& sssOut)
+    ty::SssOutput const& sssOut)
 {
     if (sssOut.exitInstanceId == RTC_INVALID_GEOMETRY_ID ||
         sssOut.exitGeomId == RTC_INVALID_GEOMETRY_ID ||
@@ -49,7 +49,7 @@ _PopulateSssExitRayHit(
     rayDir.Normalize();
 
     ty::PopulateRayHit(rayHit, sssOut.positionExitWld, rayDir, 0.0f, 0.0f,
-                       HdEmbree_RayMask::Camera);
+                       ty::RayMask::Camera);
 
     rayHit->hit.primID = sssOut.exitPrimId;
     rayHit->hit.geomID = sssOut.exitGeomId;
@@ -63,13 +63,13 @@ _PopulateSssExitRayHit(
 }
 
 GfVec3f
-HdEmbreeRenderer::_WeightPathRadiance(GfVec3f const& radiance,
+ty::Renderer::_WeightPathRadiance(GfVec3f const& radiance,
                                       _PathState const& state) const
 {
     if (!state.hero.active) {
         return GfCompMult(state.throughputRgb, radiance);
     }
-    const _HeroWavelengthState hero{
+    const ty::HeroWavelengthState hero{
         true, state.hero.wavelengthNm, state.hero.pdf};
     return ty::SpectralValueToRgb(
         state.throughputSpectral *
@@ -78,7 +78,7 @@ HdEmbreeRenderer::_WeightPathRadiance(GfVec3f const& radiance,
 }
 
 void
-HdEmbreeRenderer::_AddPathRadiance(GfVec3f radianceContribution,
+ty::Renderer::_AddPathRadiance(GfVec3f radianceContribution,
                                    _PathState* state) const
 {
     if (!state) {
@@ -95,12 +95,12 @@ HdEmbreeRenderer::_AddPathRadiance(GfVec3f radianceContribution,
             _materialEvalServices.luminanceCoefficients);
 }
 
-HdEmbreeRenderer::_PixelSampleResult
-HdEmbreeRenderer::_IntegratePath(
+ty::Renderer::_PixelSampleResult
+ty::Renderer::_IntegratePath(
     GfVec3f const& origin,
     GfVec3f const& dir,
-    HdEmbreeRayDifferential const& rayDiff,
-    HdEmbreeSampleDomain const& domain) const
+    ty::RayDifferential const& rayDiff,
+    ty::SampleDomain const& domain) const
 {
     // Initialize accumulated output and mutable transport state. The
     // primary hit is captured once for AOVs while this state advances.
@@ -123,8 +123,8 @@ HdEmbreeRenderer::_IntegratePath(
          bounce <= maxBounces + 1;
          ++pathEvent) {
         const bool emitterOnlyBounce = bounce > maxBounces;
-        const HdEmbreeSampleDomain bounceDomain =
-            domain.Chain(HdEmbreeSampleDomainKey::PathBounce, pathEvent);
+        const ty::SampleDomain bounceDomain =
+            domain.Chain(ty::SampleDomainKey::PathBounce, pathEvent);
 
         // Find the pending segment endpoint. Synthetic SSS exits already
         // carry Embree identity/barycentrics; other segments trace the scene.
@@ -143,8 +143,8 @@ HdEmbreeRenderer::_IntegratePath(
                 path.directionRayWld,
                 path.isFirstBounce ? 0.0f : 1e-4f,
                 std::numeric_limits<float>::max(),
-                emitterOnlyBounce ? HdEmbree_RayMask::Light
-                                  : HdEmbree_RayMask::Camera);
+                emitterOnlyBounce ? ty::RayMask::Light
+                                  : ty::RayMask::Camera);
             rtcIntersect1(_scene, &rayHit);
         }
 
@@ -162,7 +162,7 @@ HdEmbreeRenderer::_IntegratePath(
 
         // Resolve competing endpoints. Analytic finite lights are searched
         // on indirect rays and compete with Embree geometry by distance.
-        HdEmbreeLightSampler::LightSample finiteLightHit{};
+        ty::LightSampler::LightSample finiteLightHit{};
         TfToken finiteLightLink;
         const bool hitLightGeometry =
             !syntheticLambertianHit &&
@@ -212,7 +212,7 @@ HdEmbreeRenderer::_IntegratePath(
         if (hasFiniteLightHit && finiteLightDist < surfaceDist) {
             if (!path.isFirstBounce && !finiteLightLink.IsEmpty() &&
                 (!path.lastScatterCategories ||
-                 !HdEmbreeMatchesLink(
+                 !ty::MatchesLink(
                      finiteLightLink, *path.lastScatterCategories))) {
                 break;
             }
@@ -253,8 +253,8 @@ HdEmbreeRenderer::_IntegratePath(
         // -----------------------------------------------------------------
         const GfVec3f omegaOutWld = -path.directionRayWld;
         _SurfaceInteraction interaction;
-        HdEmbreeInstanceContext const* instanceContext = nullptr;
-        HdEmbreePrototypeContext const* prototypeContext = nullptr;
+        ty::InstanceContext const* instanceContext = nullptr;
+        ty::PrototypeContext const* prototypeContext = nullptr;
         if (!_TryBuildSurfaceInteraction(rayHit, omegaOutWld, &interaction,
                                          &instanceContext, &prototypeContext)) {
             break;
@@ -267,7 +267,7 @@ HdEmbreeRenderer::_IntegratePath(
         const GfVec3f normalGeomWldOut = interaction.GetNormalGeomWldOut();
         const GfVec3f normalSrfWldOut = interaction.GetNormalSrfWldOut();
         GfVec3f normalShdWldOut = normalSrfWldOut;
-        HdEmbreeDisplacedSubdivFrame& displacedFrame =
+        ty::DisplacedSubdivFrame& displacedFrame =
             interaction.displacedFrame;
 
         // Build material inputs: interpolated primvars, texture derivatives,
@@ -276,10 +276,10 @@ HdEmbreeRenderer::_IntegratePath(
             rayHit, path.rayDifferential, instanceContext, prototypeContext,
             interaction, &surfaceDifferentials.dndu,
             &surfaceDifferentials.dndv);
-        HdEmbreePrimvarLookup cbData{
+        ty::PrimvarLookup cbData{
             &prototypeContext->geomPropSamplers,
             rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
-        ctx.geomPropLookup = &HdEmbreeSamplePrimvar;
+        ctx.geomPropLookup = &ty::SamplePrimvar;
         ctx.geomPropUserData = &cbData;
         ctx.uniformProps = &prototypeContext->geomPropUniformValues;
 
@@ -321,7 +321,7 @@ HdEmbreeRenderer::_IntegratePath(
         }
 
         // SSS exit synthesis: at the exit-side surface hit immediately
-        // following HdEmbreeRandomWalkSSS, replace the evaluated closure
+        // following ty::RandomWalkSSS, replace the evaluated closure
         // with a weight-1.0 Lambertian so the random-walk's albedo isn't
         // double-counted. Cycles uses the same trick.
         if (path.useSyntheticLambertian) {
@@ -344,7 +344,7 @@ HdEmbreeRenderer::_IntegratePath(
             }
             // Always clear flag; even on mismatch we don't want it to linger.
             path.useSyntheticLambertian = false;
-            path.syntheticLambertianExit = HdEmbreeSssOutput{};
+            path.syntheticLambertianExit = ty::SssOutput{};
         }
 
         // Resolve every material normal in the exitant frame. Invalid,
@@ -401,7 +401,7 @@ HdEmbreeRenderer::_IntegratePath(
             // u < presence test keeps endpoint-zero sampler values from
             // interacting when the surface is fully absent.
             if (bounceDomain
-                    .Fork(HdEmbreeSampleDomainKey::Presence)
+                    .Fork(ty::SampleDomainKey::Presence)
                     .Draw1D() >= presence) {
                 advancePastHit();
                 continue;
@@ -444,7 +444,7 @@ HdEmbreeRenderer::_IntegratePath(
             path.hero.wavelengthNm =
                 mxcpp::Spectral::SampleHeroWavelength(
                     bounceDomain
-                        .Fork(HdEmbreeSampleDomainKey::Wavelength)
+                        .Fork(ty::SampleDomainKey::Wavelength)
                         .Draw1D());
             path.hero.pdf = mxcpp::Spectral::HeroWavelengthPdf();
             path.throughputSpectral =
@@ -470,7 +470,7 @@ HdEmbreeRenderer::_IntegratePath(
         if (hasBsdfClosure) {
             const GfVec3f bsdfSample =
                 bounceDomain
-                    .Fork(HdEmbreeSampleDomainKey::BsdfSample)
+                    .Fork(ty::SampleDomainKey::BsdfSample)
                     .Draw3D();
             if (adobeOpenPbrSurface.valid) {
                 bs = mxcpp::SamplePreparedAdobeOpenPbrSurface(
@@ -537,7 +537,7 @@ HdEmbreeRenderer::_IntegratePath(
         if (hasBsdfClosure) {
             direct = _ComputeDirectLightingMIS(
                 positionHitWld, normalShdWldOut, normalGeomWldExt, omegaOutWld,
-                bounceDomain.Fork(HdEmbreeSampleDomainKey::DirectLighting),
+                bounceDomain.Fork(ty::SampleDomainKey::DirectLighting),
                 interaction.frontFacing, true, bsdfClosure,
                 instanceContext->categories, path.medium, path.hero.active,
                 path.hero.wavelengthNm, path.hero.pdf,
@@ -557,7 +557,7 @@ HdEmbreeRenderer::_IntegratePath(
             fallback.opacity = 1.0f;
             direct = _ComputeDirectLightingMIS(
                 positionHitWld, normalShdWldOut, normalGeomWldExt, omegaOutWld,
-                bounceDomain.Fork(HdEmbreeSampleDomainKey::DirectLighting),
+                bounceDomain.Fork(ty::SampleDomainKey::DirectLighting),
                 interaction.frontFacing, false, &fallback,
                 instanceContext->categories, path.medium, path.hero.active,
                 path.hero.wavelengthNm, path.hero.pdf);
@@ -656,7 +656,7 @@ HdEmbreeRenderer::_IntegratePath(
                     bs.bsdfValue,
                     path.hero.wavelengthNm,
                     _renderColorSpace ==
-                            HdEmbreeRenderColorSpace::LinearAP1
+                            ty::RenderColorSpace::LinearAP1
                         ? mxcpp::Spectral::RgbColorSpace::LinearAP1
                         : mxcpp::Spectral::RgbColorSpace::LinearRec709);
             } else {
@@ -666,7 +666,7 @@ HdEmbreeRenderer::_IntegratePath(
                     bs.bsdfValue,
                     path.hero.wavelengthNm,
                     _renderColorSpace ==
-                            HdEmbreeRenderColorSpace::LinearAP1
+                            ty::RenderColorSpace::LinearAP1
                         ? mxcpp::Spectral::RgbColorSpace::LinearAP1
                         : mxcpp::Spectral::RgbColorSpace::LinearRec709) *
                     cosTheta / bs.pdfSolidAngle;
@@ -705,8 +705,8 @@ HdEmbreeRenderer::_IntegratePath(
         path.lastScatterCategories = &instanceContext->categories;
         path.lastLightSamplingMode =
             (!bs.isSpecular && ty::IsReflectionOnlyClosure(closure))
-                ? HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere
-                : HdEmbreeLightSampler::SamplingMode::FullSphere;
+                ? ty::LightSampler::SamplingMode::ReflectionHemisphere
+                : ty::LightSampler::SamplingMode::FullSphere;
         path.lastLightSamplingNormal = normalShdWldOut;
         if (bs.isDiffuseLike) {
             path.hasDiffuseLikeAncestor = true;
@@ -744,7 +744,7 @@ HdEmbreeRenderer::_IntegratePath(
             q = std::min(q, 0.95f);
             if (q <= 0.0f ||
                 bounceDomain
-                    .Fork(HdEmbreeSampleDomainKey::RussianRoulette)
+                    .Fork(ty::SampleDomainKey::RussianRoulette)
                     .Draw1D() > q) {
                 break;
             }

@@ -15,72 +15,72 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 bool
-HdEmbreeParseRenderColorSpace(
+ty::ParseRenderColorSpace(
     TfToken const& token,
-    HdEmbreeRenderColorSpace* result)
+    ty::RenderColorSpace* result)
 {
     if (!result) {
         return false;
     }
     if (token == GfColorSpaceNames->LinearRec709) {
-        *result = HdEmbreeRenderColorSpace::LinearRec709;
+        *result = ty::RenderColorSpace::LinearRec709;
         return true;
     }
     if (token == GfColorSpaceNames->LinearAP1) {
-        *result = HdEmbreeRenderColorSpace::LinearAP1;
+        *result = ty::RenderColorSpace::LinearAP1;
         return true;
     }
     if (token == GfColorSpaceNames->Data) {
-        *result = HdEmbreeRenderColorSpace::Data;
+        *result = ty::RenderColorSpace::Data;
         return true;
     }
     return false;
 }
 
 TfToken const&
-HdEmbreeGetRenderColorSpaceToken(HdEmbreeRenderColorSpace colorSpace)
+ty::GetRenderColorSpaceToken(ty::RenderColorSpace colorSpace)
 {
     switch (colorSpace) {
-    case HdEmbreeRenderColorSpace::LinearRec709:
+    case ty::RenderColorSpace::LinearRec709:
         return GfColorSpaceNames->LinearRec709;
-    case HdEmbreeRenderColorSpace::LinearAP1:
+    case ty::RenderColorSpace::LinearAP1:
         return GfColorSpaceNames->LinearAP1;
-    case HdEmbreeRenderColorSpace::Data:
+    case ty::RenderColorSpace::Data:
         return GfColorSpaceNames->Data;
     }
     return GfColorSpaceNames->LinearRec709;
 }
 
 bool
-HdEmbreeBypassesColorTransforms(HdEmbreeRenderColorSpace colorSpace)
+ty::BypassesColorTransforms(ty::RenderColorSpace colorSpace)
 {
-    return colorSpace == HdEmbreeRenderColorSpace::Data;
+    return colorSpace == ty::RenderColorSpace::Data;
 }
 
 TfToken const&
-HdEmbreeGetWorkingColorSpaceToken(HdEmbreeRenderColorSpace colorSpace)
+ty::GetWorkingColorSpaceToken(ty::RenderColorSpace colorSpace)
 {
-    return colorSpace == HdEmbreeRenderColorSpace::LinearAP1
+    return colorSpace == ty::RenderColorSpace::LinearAP1
         ? GfColorSpaceNames->LinearAP1
         : GfColorSpaceNames->LinearRec709;
 }
 
 GfVec3f
-HdEmbreeGetLuminanceCoefficients(HdEmbreeRenderColorSpace colorSpace)
+ty::GetLuminanceCoefficients(ty::RenderColorSpace colorSpace)
 {
     const GfMatrix3f rgbToXyz =
-        GfColorSpace(HdEmbreeGetWorkingColorSpaceToken(colorSpace))
+        GfColorSpace(ty::GetWorkingColorSpaceToken(colorSpace))
             .GetRGBToXYZ();
     return GfVec3f(rgbToXyz[1][0], rgbToXyz[1][1], rgbToXyz[1][2]);
 }
 
-HdEmbreeColorSpaceResolution
-HdEmbreeResolveColorSpace(
+ty::ColorSpaceResolution
+ty::ResolveColorSpace(
     std::string const& sourceColorSpace,
     TfToken* resolvedColorSpace)
 {
     if (!resolvedColorSpace) {
-        return HdEmbreeColorSpaceResolution::Unsupported;
+        return ty::ColorSpaceResolution::Unsupported;
     }
 
     const TfToken sourceColorSpaceToken(sourceColorSpace);
@@ -88,43 +88,43 @@ HdEmbreeResolveColorSpace(
         sourceColorSpaceToken == GfColorSpaceNames->Raw ||
         sourceColorSpaceToken == GfColorSpaceNames->Identity ||
         sourceColorSpaceToken == GfColorSpaceNames->Unknown) {
-        return HdEmbreeColorSpaceResolution::NoTransform;
+        return ty::ColorSpaceResolution::NoTransform;
     }
 
     if (!GfColorSpace::IsValid(sourceColorSpaceToken)) {
-        return HdEmbreeColorSpaceResolution::Unsupported;
+        return ty::ColorSpaceResolution::Unsupported;
     }
 
     *resolvedColorSpace = sourceColorSpaceToken;
-    return HdEmbreeColorSpaceResolution::Transform;
+    return ty::ColorSpaceResolution::Transform;
 }
 
 bool
-HdEmbreeConvertToRenderColorSpace(
+ty::ConvertToRenderColorSpace(
     std::string const& sourceColorSpace,
-    HdEmbreeRenderColorSpace renderColorSpace,
+    ty::RenderColorSpace renderColorSpace,
     GfVec3f* rgb)
 {
     if (!rgb) {
         return false;
     }
-    if (HdEmbreeBypassesColorTransforms(renderColorSpace)) {
+    if (ty::BypassesColorTransforms(renderColorSpace)) {
         return true;
     }
 
     TfToken sourceColorSpaceToken;
-    const HdEmbreeColorSpaceResolution resolution =
-        HdEmbreeResolveColorSpace(
+    const ty::ColorSpaceResolution resolution =
+        ty::ResolveColorSpace(
             sourceColorSpace, &sourceColorSpaceToken);
-    if (resolution == HdEmbreeColorSpaceResolution::NoTransform) {
+    if (resolution == ty::ColorSpaceResolution::NoTransform) {
         return true;
     }
-    if (resolution == HdEmbreeColorSpaceResolution::Unsupported) {
+    if (resolution == ty::ColorSpaceResolution::Unsupported) {
         return false;
     }
 
     const TfToken& destinationColorSpaceToken =
-        HdEmbreeGetWorkingColorSpaceToken(renderColorSpace);
+        ty::GetWorkingColorSpaceToken(renderColorSpace);
     if (sourceColorSpaceToken == destinationColorSpaceToken) {
         return true;
     }

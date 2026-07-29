@@ -45,7 +45,7 @@ _GetMaterialRenderContextSetting(const HdRenderDelegate& renderDelegate)
     if (value.IsHolding<TfToken>()) {
         return value.UncheckedGet<TfToken>().GetString();
     }
-    return HdEmbreeDefaultMaterialRenderContext;
+    return ty::DefaultMaterialRenderContext;
 }
 
 // XXX: Add other Rprim types later.
@@ -107,7 +107,7 @@ void HdEmbreeRenderDelegate::HandleRtcError (void* userPtr, RTCError code, const
     }
 }
 
-static void _RenderCallback(HdEmbreeRenderer *renderer,
+static void _RenderCallback(ty::Renderer *renderer,
                             HdRenderThread *renderThread)
 {
     renderer->ResetAccumulation();
@@ -131,7 +131,7 @@ void
 HdEmbreeRenderDelegate::_Initialize()
 {
     // Initialize the settings and settings descriptors.
-    const HdEmbreeRenderSettings defaults;
+    const ty::RenderSettings defaults;
     _settingDescriptors = {
         { "Rendering Color Space",
             HdRenderSettingsPrimTokens->renderingColorSpace,
@@ -141,7 +141,7 @@ HdEmbreeRenderDelegate::_Initialize()
             VtValue(defaults.enableSceneColors) },
         { "Enable Ambient Occlusion",
             HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
-            VtValue(HdEmbreeDefaultEnableAmbientOcclusion) },
+            VtValue(ty::DefaultEnableAmbientOcclusion) },
         { "Enable Scene Lighting",
             HdEmbreeRenderSettingsTokens->enableLighting,
             VtValue(defaults.enableLighting) },
@@ -162,14 +162,14 @@ HdEmbreeRenderDelegate::_Initialize()
             VtValue(defaults.jitterCamera) },
         { "Sampler Sequence",
             HdEmbreeRenderSettingsTokens->samplerSequence,
-            VtValue(HdEmbreeGetSamplerSequenceToken(
+            VtValue(ty::GetSamplerSequenceToken(
                 defaults.samplerSequence).GetString()) },
         { "Dome Light Camera Visibility",
             HdRenderSettingsTokens->domeLightCameraVisibility,
             VtValue(defaults.domeLightCameraVisibility) },
         { "Enable Exposure Compensation",
             HdEmbreeRenderSettingsTokens->enableExposureCompensation,
-            VtValue(HdEmbreeDefaultEnableExposureCompensation) },
+            VtValue(ty::DefaultEnableExposureCompensation) },
         { "Enable Adaptive Sampling",
             HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
             VtValue(defaults.enableAdaptiveSampling) },
@@ -214,17 +214,17 @@ HdEmbreeRenderDelegate::_Initialize()
             VtValue(defaults.enableGgxMicrofacetMultipleScattering) },
         { "Material Render Context",
             HdEmbreeRenderSettingsTokens->materialRenderContext,
-            VtValue(std::string(HdEmbreeDefaultMaterialRenderContext)) },
+            VtValue(std::string(ty::DefaultMaterialRenderContext)) },
         { "Use Adobe OpenPBR",
             HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
             VtValue(defaults.useAdobeOpenPBR) },
         { "Dielectric Layer Throughput Mode",
             HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
-            VtValue(HdEmbreeGetDielectricLayerThroughputModeToken(
+            VtValue(ty::GetDielectricLayerThroughputModeToken(
                 defaults.dielectricLayerThroughputMode).GetString()) },
         { "Dynamic Subdivision Tessellation",
             HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
-            VtValue(HdEmbreeDefaultDynamicSubdvTesselation) },
+            VtValue(ty::DefaultDynamicSubdvTesselation) },
         { "Texture Cache Size (MB)",
             HdEmbreeRenderSettingsTokens->textureCacheSize,
             VtValue(defaults.textureCacheSizeMB) },
@@ -276,7 +276,7 @@ HdEmbreeRenderDelegate::_Initialize()
     _renderer.SetScene(_rtcScene);
 
     // Set the background render thread's rendering entrypoint to
-    // HdEmbreeRenderer::Render.
+    // ty::Renderer::Render.
     _renderThread.SetRenderCallback(
         std::bind(_RenderCallback, &_renderer, &_renderThread));
     // Start the background render thread.
@@ -394,7 +394,7 @@ HdEmbreeRenderDelegate::GetDefaultAovDescriptor(TfToken const& name) const
                name == HdAovTokens->instanceId ||
                name == HdAovTokens->elementId) {
         return HdAovDescriptor(HdFormatInt32, false, VtValue(-1));
-    } else if (name == HdEmbreeAovTokens->adaptiveHeatmap) {
+    } else if (name == ty::AovTokens->adaptiveHeatmap) {
         return HdAovDescriptor(HdFormatFloat32Vec4, true,
                                VtValue(GfVec4f(0.0f)));
     } else {

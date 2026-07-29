@@ -50,23 +50,23 @@ _InUnitInterval(GfVec4f const& sample)
 bool
 TestDomainKeyValuesAreStable()
 {
-    if (HdEmbreeSampleDomainKeyValue(
-            HdEmbreeSampleDomainKey::CameraJitter) != 0x0010u) {
+    if (ty::SampleDomainKeyValue(
+            ty::SampleDomainKey::CameraJitter) != 0x0010u) {
         std::printf("    CameraJitter key changed\n");
         return false;
     }
-    if (HdEmbreeSampleDomainKeyValue(
-            HdEmbreeSampleDomainKey::CameraLens) != 0x0011u) {
+    if (ty::SampleDomainKeyValue(
+            ty::SampleDomainKey::CameraLens) != 0x0011u) {
         std::printf("    CameraLens key changed\n");
         return false;
     }
-    if (HdEmbreeSampleDomainKeyValue(
-            HdEmbreeSampleDomainKey::PathBounce) != 0x0100u) {
+    if (ty::SampleDomainKeyValue(
+            ty::SampleDomainKey::PathBounce) != 0x0100u) {
         std::printf("    PathBounce key changed\n");
         return false;
     }
-    if (HdEmbreeSampleDomainKeyValue(
-            HdEmbreeSampleDomainKey::SssFreeFlight) != 0x0324u) {
+    if (ty::SampleDomainKeyValue(
+            ty::SampleDomainKey::SssFreeFlight) != 0x0324u) {
         std::printf("    SssFreeFlight key changed\n");
         return false;
     }
@@ -77,8 +77,8 @@ TestDomainKeyValuesAreStable()
 bool
 TestDefaultSamplerSequence()
 {
-    if (HdEmbreeGetDefaultSamplerSequence() !=
-        HdEmbreeSamplerSequence::OpenQMCSobolBN) {
+    if (ty::GetDefaultSamplerSequence() !=
+        ty::SamplerSequence::OpenQMCSobolBN) {
         std::printf("    default sampler sequence was unexpected\n");
         return false;
     }
@@ -89,26 +89,26 @@ TestDefaultSamplerSequence()
 bool
 TestSamplerSequenceTokens()
 {
-    const HdEmbreeSamplerSequence sequences[] = {
-        HdEmbreeSamplerSequence::OpenQMCSobol,
-        HdEmbreeSamplerSequence::OpenQMCSobolBN,
-        HdEmbreeSamplerSequence::OpenQMCPMJ,
-        HdEmbreeSamplerSequence::OpenQMCPMJBN,
-        HdEmbreeSamplerSequence::OpenQMCLattice,
-        HdEmbreeSamplerSequence::OpenQMCLatticeBN,
+    const ty::SamplerSequence sequences[] = {
+        ty::SamplerSequence::OpenQMCSobol,
+        ty::SamplerSequence::OpenQMCSobolBN,
+        ty::SamplerSequence::OpenQMCPMJ,
+        ty::SamplerSequence::OpenQMCPMJBN,
+        ty::SamplerSequence::OpenQMCLattice,
+        ty::SamplerSequence::OpenQMCLatticeBN,
     };
 
-    for (HdEmbreeSamplerSequence sequence : sequences) {
-        const TfToken token = HdEmbreeGetSamplerSequenceToken(sequence);
-        if (HdEmbreeGetSamplerSequenceFromToken(token) != sequence) {
+    for (ty::SamplerSequence sequence : sequences) {
+        const TfToken token = ty::GetSamplerSequenceToken(sequence);
+        if (ty::GetSamplerSequenceFromToken(token) != sequence) {
             std::printf("    sampler sequence token did not round-trip: %s\n",
                         token.GetText());
             return false;
         }
     }
 
-    if (HdEmbreeGetSamplerSequenceFromToken(TfToken("unknown")) !=
-        HdEmbreeGetDefaultSamplerSequence()) {
+    if (ty::GetSamplerSequenceFromToken(TfToken("unknown")) !=
+        ty::GetDefaultSamplerSequence()) {
         std::printf("    unknown token did not map to default\n");
         return false;
     }
@@ -119,12 +119,12 @@ TestSamplerSequenceTokens()
 bool
 TestFrameSeedUsesSceneFrameUnlessOverridden()
 {
-    if (HdEmbreeResolveFrameSeed(-1, 24.0f) != 0x41c00000u ||
-        HdEmbreeResolveFrameSeed(-1, 24.5f) != 0x41c40000u) {
+    if (ty::ResolveFrameSeed(-1, 24.0f) != 0x41c00000u ||
+        ty::ResolveFrameSeed(-1, 24.5f) != 0x41c40000u) {
         std::printf("    default seed did not preserve scene frame bits\n");
         return false;
     }
-    if (HdEmbreeResolveFrameSeed(91, 24.0f) != 91u) {
+    if (ty::ResolveFrameSeed(91, 24.0f) != 91u) {
         std::printf("    configured seed did not override the scene frame\n");
         return false;
     }
@@ -134,18 +134,18 @@ TestFrameSeedUsesSceneFrameUnlessOverridden()
 bool
 TestOpenQmcDomainsAreDeterministicAndSeparated()
 {
-    HdEmbreeSampler sampler(
-        1234u, 8u, 16u, 7u, HdEmbreeSamplerSequence::OpenQMCSobolBN);
-    const HdEmbreeSampleDomain root = sampler.RootDomain();
+    ty::Sampler sampler(
+        1234u, 8u, 16u, 7u, ty::SamplerSequence::OpenQMCSobolBN);
+    const ty::SampleDomain root = sampler.RootDomain();
 
     const GfVec2f cameraA =
-        root.Fork(HdEmbreeSampleDomainKey::CameraJitter).Draw2D();
+        root.Fork(ty::SampleDomainKey::CameraJitter).Draw2D();
     const GfVec2f cameraB =
-        root.Fork(HdEmbreeSampleDomainKey::CameraJitter).Draw2D();
+        root.Fork(ty::SampleDomainKey::CameraJitter).Draw2D();
     const GfVec2f direct =
-        root.Fork(HdEmbreeSampleDomainKey::DirectLightSample).Draw2D();
+        root.Fork(ty::SampleDomainKey::DirectLightSample).Draw2D();
     const GfVec2f lens =
-        root.Fork(HdEmbreeSampleDomainKey::CameraLens).Draw2D();
+        root.Fork(ty::SampleDomainKey::CameraLens).Draw2D();
 
     if (!_Same(cameraA, cameraB) ||
         !_Different(cameraA, direct) ||
@@ -160,28 +160,28 @@ TestOpenQmcDomainsAreDeterministicAndSeparated()
 bool
 TestOpenQmcSplitAndChainAreStable()
 {
-    HdEmbreeSampler sampler(
-        4321u, 4u, 5u, 3u, HdEmbreeSamplerSequence::OpenQMCSobolBN);
-    const HdEmbreeSampleDomain root = sampler.RootDomain();
+    ty::Sampler sampler(
+        4321u, 4u, 5u, 3u, ty::SamplerSequence::OpenQMCSobolBN);
+    const ty::SampleDomain root = sampler.RootDomain();
 
     const GfVec2f splitA =
-        root.Split(HdEmbreeSampleDomainKey::DirectLightSample, 4, 1).Draw2D();
+        root.Split(ty::SampleDomainKey::DirectLightSample, 4, 1).Draw2D();
     const GfVec2f splitB =
-        root.Split(HdEmbreeSampleDomainKey::DirectLightSample, 4, 1).Draw2D();
+        root.Split(ty::SampleDomainKey::DirectLightSample, 4, 1).Draw2D();
     const GfVec2f splitC =
-        root.Split(HdEmbreeSampleDomainKey::DirectLightSample, 4, 2).Draw2D();
+        root.Split(ty::SampleDomainKey::DirectLightSample, 4, 2).Draw2D();
     if (!_Same(splitA, splitB) || !_Different(splitA, splitC)) {
         std::printf("    OpenQMC split domain was not stable by index\n");
         return false;
     }
 
     const GfVec3f bounce0 =
-        root.Chain(HdEmbreeSampleDomainKey::PathBounce, 0)
-            .Fork(HdEmbreeSampleDomainKey::BsdfSample)
+        root.Chain(ty::SampleDomainKey::PathBounce, 0)
+            .Fork(ty::SampleDomainKey::BsdfSample)
             .Draw3D();
     const GfVec3f bounce1 =
-        root.Chain(HdEmbreeSampleDomainKey::PathBounce, 1)
-            .Fork(HdEmbreeSampleDomainKey::BsdfSample)
+        root.Chain(ty::SampleDomainKey::PathBounce, 1)
+            .Fork(ty::SampleDomainKey::BsdfSample)
             .Draw3D();
     if (!_Different(bounce0, bounce1)) {
         std::printf("    OpenQMC chained bounce domains matched\n");
@@ -194,24 +194,24 @@ TestOpenQmcSplitAndChainAreStable()
 bool
 TestAllOpenQmcSequencesDrawSamples()
 {
-    const HdEmbreeSamplerSequence sequences[] = {
-        HdEmbreeSamplerSequence::OpenQMCSobol,
-        HdEmbreeSamplerSequence::OpenQMCSobolBN,
-        HdEmbreeSamplerSequence::OpenQMCPMJ,
-        HdEmbreeSamplerSequence::OpenQMCPMJBN,
-        HdEmbreeSamplerSequence::OpenQMCLattice,
-        HdEmbreeSamplerSequence::OpenQMCLatticeBN,
+    const ty::SamplerSequence sequences[] = {
+        ty::SamplerSequence::OpenQMCSobol,
+        ty::SamplerSequence::OpenQMCSobolBN,
+        ty::SamplerSequence::OpenQMCPMJ,
+        ty::SamplerSequence::OpenQMCPMJBN,
+        ty::SamplerSequence::OpenQMCLattice,
+        ty::SamplerSequence::OpenQMCLatticeBN,
     };
 
-    for (HdEmbreeSamplerSequence sequence : sequences) {
-        HdEmbreeSampler sampler(2468u, 2u, 3u, 4u, sequence);
+    for (ty::SamplerSequence sequence : sequences) {
+        ty::Sampler sampler(2468u, 2u, 3u, 4u, sequence);
         const GfVec4f sample =
             sampler.RootDomain()
-                .Fork(HdEmbreeSampleDomainKey::CameraJitter)
+                .Fork(ty::SampleDomainKey::CameraJitter)
                 .Draw4D();
         if (!_InUnitInterval(sample)) {
             std::printf("    OpenQMC sequence produced out-of-range sample: %s\n",
-                        HdEmbreeGetSamplerSequenceToken(sequence).GetText());
+                        ty::GetSamplerSequenceToken(sequence).GetText());
             return false;
         }
     }

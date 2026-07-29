@@ -193,7 +193,7 @@ samplers once per prototype, instead of hashing a `std::string` against
 two independent graphs from **one** network, so the handle space is owned by the
 material — one name table, one resolved table per prototype, no per-call-site
 choice to get wrong. Also adds the missing invalidation path: a material
-recompiles behind a *stable* `HdEmbreeMaterialData` handle without necessarily
+recompiles behind a *stable* `ty::MaterialData` handle without necessarily
 dirtying bound meshes, so `HdEmbreeRenderPass::_Execute()` runs an ungated
 `RefreshMaterialBindings()` walk over the `_meshes` registry after `SyncAll()` —
 reusing the existing `_displacementVersion` signal (which only material
@@ -283,19 +283,15 @@ Independent of 16 and 17._
 ownership invariant over `renderer/`: **every renderer-owned declaration lives in
 `PXR_NAMESPACE::ty`**, renderer types drop their redundant `HdEmbree`/`HdEmbree_`
 prefix (`HdEmbreePrototypeContext` → `ty::PrototypeContext`, `HdEmbree_Rect` →
-`ty::RectLight`, `HdEmbreeRenderer` → `ty::Renderer`), and **every anonymous
-namespace block** in Typhoon-owned and MaterialXCpp code becomes `static` at
-`ty` or `mxcpp` scope. Vendored `BSDL/` and `pxrIES/` keep theirs. The plan
-carries a measured inventory but tells the implementer to regenerate it — 14,
-17, and 18 all change the file set before it runs. Carries a complete per-header **type** inventory, a **non-type**
-inventory (22 prefixed free functions, `HdEmbreeAovTokens`,
-`HdEmbreePrimvarSamplingDetail`, `mxcppAdapter.h`, `debugCodes.h`), and four
-mechanical `rg` checks, so the completion criterion is checkable rather than
-illustrative. The one gap is types — `static` cannot apply to a `struct`, so the
-six TU-contained types keep external linkage and need a tree-uniqueness check in
-CI. Exempt: `ty` ownership only for `MaterialXCpp/` (still loses its anonymous
-namespaces, to `mxcpp`), vendored `BSDL/`
-and `lights/pxrIES/` entirely, all of `delegate/` (`HdEmbreeMesh` reads as
+`ty::RectLight`, `HdEmbreeRenderer` → `ty::Renderer`). Its amendment preserves
+existing translation-unit linkage and anonymous namespaces: file-local
+implementation stays outside `ty`, while shared definitions are explicitly
+qualified. `MaterialXCpp/` and the pxr-independent `integrator/medium.*` API
+remain in `mxcpp`; `TF_DEBUG_CODES` remains at `PXR_NAMESPACE` scope because
+the macro specializes `TfDebug::_Traits`. The one header-level anonymous
+namespace in `proceduralHelpers.h` was removed separately by making its
+existing inline entities externally coherent. Exempt: vendored `BSDL/` and
+`lights/pxrIES/` entirely, all of `delegate/` (`HdEmbreeMesh` reads as
 "hdEmbree's `HdMesh`", which `ty::Mesh` loses), and the two
 `plugInfo.json`-registered types — `TfType` lookup is by string and the failure
 mode is a silent load failure, not a build error.

@@ -13,10 +13,10 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-// HdEmbreeRTCBufferAllocator
+// ty::RtcBufferAllocator
 
 int
-HdEmbreeRTCBufferAllocator::Allocate()
+ty::RtcBufferAllocator::Allocate()
 {
     for (size_t i = 0; i < _bitset.size(); ++i) {
         if (!_bitset.test(i)) {
@@ -28,14 +28,14 @@ HdEmbreeRTCBufferAllocator::Allocate()
 }
 
 void
-HdEmbreeRTCBufferAllocator::Free(int bufferIndex)
+ty::RtcBufferAllocator::Free(int bufferIndex)
 {
     _bitset.reset(bufferIndex);
 }
 
 
 unsigned int
-HdEmbreeRTCBufferAllocator::NumBuffers()
+ty::RtcBufferAllocator::NumBuffers()
 {
     // Technically this may overcount, since a buffer may have been freed
     // but we don't move back to fill the slot, however it will be filled
@@ -50,19 +50,19 @@ HdEmbreeRTCBufferAllocator::NumBuffers()
     return 0;
 }
 
-// HdEmbreeConstantSampler
+// ty::ConstantSampler
 
 bool
-HdEmbreeConstantSampler::Sample(unsigned int element, float u, float v,
+ty::ConstantSampler::Sample(unsigned int element, float u, float v,
     void* value, HdTupleType dataType) const
 {
     return _sampler.Sample(0, value, dataType);
 }
 
-// HdEmbreeUniformSampler
+// ty::UniformSampler
 
 bool
-HdEmbreeUniformSampler::Sample(unsigned int element, float u, float v,
+ty::UniformSampler::Sample(unsigned int element, float u, float v,
     void* value, HdTupleType dataType) const
 {
     if (_primitiveParams.empty()) {
@@ -77,16 +77,16 @@ HdEmbreeUniformSampler::Sample(unsigned int element, float u, float v,
         value, dataType);
 }
 
-// HdEmbreeTriangleVertexSampler
+// ty::TriangleVertexSampler
 
 bool
-HdEmbreeTriangleVertexSampler::Sample(unsigned int element, float u, float v,
+ty::TriangleVertexSampler::Sample(unsigned int element, float u, float v,
     void* value, HdTupleType dataType) const
 {
     if (element >= _indices.size()) {
         return false;
     }
-    HdEmbreeTypeHelper::PrimvarTypeContainer corners[3];
+    ty::TypeHelper::PrimvarTypeContainer corners[3];
     if (!_sampler.Sample(_indices[element][0], &corners[0], dataType) ||
         !_sampler.Sample(_indices[element][1], &corners[1], dataType) ||
         !_sampler.Sample(_indices[element][2], &corners[2], dataType)) {
@@ -102,7 +102,7 @@ HdEmbreeTriangleVertexSampler::Sample(unsigned int element, float u, float v,
 }
 
 bool
-HdEmbreeTriangleVertexSampler::SampleVertices(unsigned int element,
+ty::TriangleVertexSampler::SampleVertices(unsigned int element,
     void* v0, void* v1, void* v2, HdTupleType dataType) const
 {
     if (element >= _indices.size()) {
@@ -113,13 +113,13 @@ HdEmbreeTriangleVertexSampler::SampleVertices(unsigned int element,
            _sampler.Sample(_indices[element][2], v2, dataType);
 }
 
-// HdEmbreeTriangleFaceVaryingSampler
+// ty::TriangleFaceVaryingSampler
 
 bool
-HdEmbreeTriangleFaceVaryingSampler::Sample(unsigned int element, float u,
+ty::TriangleFaceVaryingSampler::Sample(unsigned int element, float u,
     float v, void* value, HdTupleType dataType) const
 {
-    HdEmbreeTypeHelper::PrimvarTypeContainer corners[3];
+    ty::TypeHelper::PrimvarTypeContainer corners[3];
     if (!_sampler.Sample(element*3 + 0, &corners[0], dataType) ||
         !_sampler.Sample(element*3 + 1, &corners[1], dataType) ||
         !_sampler.Sample(element*3 + 2, &corners[2], dataType)) {
@@ -135,7 +135,7 @@ HdEmbreeTriangleFaceVaryingSampler::Sample(unsigned int element, float u,
 }
 
 bool
-HdEmbreeTriangleFaceVaryingSampler::SampleVertices(unsigned int element,
+ty::TriangleFaceVaryingSampler::SampleVertices(unsigned int element,
     void* v0, void* v1, void* v2, HdTupleType dataType) const
 {
     return _sampler.Sample(element * 3 + 0, v0, dataType) &&
@@ -144,7 +144,7 @@ HdEmbreeTriangleFaceVaryingSampler::SampleVertices(unsigned int element,
 }
 
 /* static */ VtValue
-HdEmbreeTriangleFaceVaryingSampler::_Triangulate(TfToken const& name,
+ty::TriangleFaceVaryingSampler::_Triangulate(TfToken const& name,
     VtValue const& value, HdMeshUtil &meshUtil)
 {
     HdVtBufferSource buffer(name, value);
@@ -281,13 +281,13 @@ _SampleSubdivAttribute(
 
 } // namespace
 
-// HdEmbreeSubdivSampler
+// ty::SubdivSampler
 
-HdEmbreeSubdivSampler::HdEmbreeSubdivSampler(
+ty::SubdivSampler::SubdivSampler(
     TfToken const& name,
     VtValue const& value,
     RTCGeometry geometry,
-    HdEmbreeRTCBufferAllocator* allocator,
+    ty::RtcBufferAllocator* allocator,
     char const* interpolation,
     int topologyId)
     : _embreeBufferId(allocator->Allocate())
@@ -319,7 +319,7 @@ HdEmbreeSubdivSampler::HdEmbreeSubdivSampler(
     }
 }
 
-HdEmbreeSubdivSampler::~HdEmbreeSubdivSampler()
+ty::SubdivSampler::~SubdivSampler()
 {
     if (_embreeBufferId != -1) {
         _allocator->Free(_embreeBufferId);
@@ -327,7 +327,7 @@ HdEmbreeSubdivSampler::~HdEmbreeSubdivSampler()
 }
 
 bool
-HdEmbreeSubdivSampler::Sample(
+ty::SubdivSampler::Sample(
     unsigned int element, float u, float v,
     void* value, HdTupleType dataType) const
 {
@@ -337,7 +337,7 @@ HdEmbreeSubdivSampler::Sample(
 }
 
 bool
-HdEmbreeSubdivSampler::SampleWithDerivatives(
+ty::SubdivSampler::SampleWithDerivatives(
     unsigned int element, float u, float v,
     void* value, void* dPdu, void* dPdv,
     HdTupleType dataType) const
@@ -347,33 +347,33 @@ HdEmbreeSubdivSampler::SampleWithDerivatives(
         element, u, v, value, dPdu, dPdv, dataType);
 }
 
-HdEmbreeSubdivVertexSampler::HdEmbreeSubdivVertexSampler(
+ty::SubdivVertexSampler::SubdivVertexSampler(
     TfToken const& name,
     VtValue const& value,
     RTCGeometry geometry,
-    HdEmbreeRTCBufferAllocator* allocator)
-    : HdEmbreeSubdivSampler(
+    ty::RtcBufferAllocator* allocator)
+    : ty::SubdivSampler(
         name, value, geometry, allocator, "vertex")
 {
 }
 
-HdEmbreeSubdivVaryingSampler::HdEmbreeSubdivVaryingSampler(
+ty::SubdivVaryingSampler::SubdivVaryingSampler(
     TfToken const& name,
     VtValue const& value,
     RTCGeometry geometry,
-    HdEmbreeRTCBufferAllocator* allocator)
-    : HdEmbreeSubdivSampler(
+    ty::RtcBufferAllocator* allocator)
+    : ty::SubdivSampler(
         name, value, geometry, allocator, "varying", 1)
 {
 }
 
-HdEmbreeSubdivFaceVaryingSampler::HdEmbreeSubdivFaceVaryingSampler(
+ty::SubdivFaceVaryingSampler::SubdivFaceVaryingSampler(
     TfToken const& name,
     VtValue const& value,
     RTCGeometry geometry,
     unsigned int topologyId,
-    HdEmbreeRTCBufferAllocator* allocator)
-    : HdEmbreeSubdivSampler(
+    ty::RtcBufferAllocator* allocator)
+    : ty::SubdivSampler(
         name, value, geometry, allocator, "face-varying", topologyId)
 {
 }

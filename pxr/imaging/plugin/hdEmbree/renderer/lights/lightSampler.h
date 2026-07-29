@@ -18,10 +18,11 @@
 #include "pxr/pxr.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
 /// Utility class that dispatches sampling and fixed-direction evaluation to
 /// the active light type.
-class HdEmbreeLightSampler {
+class LightSampler {
 public:
     enum class SamplingMode {
         FullSphere,
@@ -44,68 +45,69 @@ public:
     };
 
     static LightSample
-    GetLightSample(HdEmbree_LightData const& lightData,
+    GetLightSample(LightData const& lightData,
                    GfVec3f const& positionHitWld,
                    GfVec3f const& normalShdWldOut, float u1, float u2,
                    SamplingMode samplingMode = SamplingMode::FullSphere,
-                   HdEmbreeRenderColorSpace renderColorSpace =
-                       HdEmbreeRenderColorSpace::LinearRec709);
+                   RenderColorSpace renderColorSpace =
+                       RenderColorSpace::LinearRec709);
 
     /// Evaluates a dome light along a fixed direction and returns the
     /// corresponding radiance and directional PDF.
     static LightSample
-    EvaluateDomeLightDirection(HdEmbree_LightData const& lightData,
+    EvaluateDomeLightDirection(LightData const& lightData,
                                GfVec3f const& omegaInWld,
-                               HdEmbreeRenderColorSpace renderColorSpace =
-                                   HdEmbreeRenderColorSpace::LinearRec709);
+                               RenderColorSpace renderColorSpace =
+                                   RenderColorSpace::LinearRec709);
 
     /// Evaluates a dome light along a fixed direction with the PDF used by
     /// the selected dome-light sampling mode.
     static LightSample EvaluateDomeLightDirection(
-        HdEmbree_LightData const& lightData, GfVec3f const& omegaInWld,
+        LightData const& lightData, GfVec3f const& omegaInWld,
         GfVec3f const& normalShdWldOut, SamplingMode samplingMode,
-        HdEmbreeRenderColorSpace renderColorSpace =
-            HdEmbreeRenderColorSpace::LinearRec709);
+        RenderColorSpace renderColorSpace =
+            RenderColorSpace::LinearRec709);
 
     /// Evaluates a light along a fixed direction from a point and returns the
     /// corresponding radiance, distance, and directional PDF when the ray
     /// intersects the light shape.
     static LightSample
-    EvaluateLightDirection(HdEmbree_LightData const& lightData,
+    EvaluateLightDirection(LightData const& lightData,
                            GfVec3f const& positionHitWld,
                            GfVec3f const& omegaInWld,
-                           HdEmbreeRenderColorSpace renderColorSpace =
-                               HdEmbreeRenderColorSpace::LinearRec709);
+                           RenderColorSpace renderColorSpace =
+                               RenderColorSpace::LinearRec709);
 
-    LightSample operator()(HdEmbree_UnknownLight const& unknown);
-    LightSample operator()(HdEmbree_Rect const& rect);
-    LightSample operator()(HdEmbree_Sphere const& sphere);
-    LightSample operator()(HdEmbree_Disk const& disk);
-    LightSample operator()(HdEmbree_Distant const& distant);
-    LightSample operator()(HdEmbree_Cylinder const& cylinder);
-    LightSample operator()(HdEmbree_Dome const& dome);
+    LightSample operator()(UnknownLight const& unknown);
+    LightSample operator()(RectLight const& rect);
+    LightSample operator()(SphereLight const& sphere);
+    LightSample operator()(DiskLight const& disk);
+    LightSample operator()(DistantLight const& distant);
+    LightSample operator()(CylinderLight const& cylinder);
+    LightSample operator()(DomeLight const& dome);
 
 private:
-    HdEmbreeLightSampler(HdEmbree_LightData const& lightData,
+    LightSampler(LightData const& lightData,
                          GfVec3f const& positionHitWld,
                          GfVec3f const& normalShdWldOut, float u1, float u2,
                          SamplingMode samplingMode,
-                         HdEmbreeRenderColorSpace renderColorSpace)
+                         RenderColorSpace renderColorSpace)
         : _lightData(lightData), _positionHitWld(positionHitWld),
           _normalShdWldOut(normalShdWldOut), _u1(u1), _u2(u2),
           _samplingMode(samplingMode), _renderColorSpace(renderColorSpace)
     {
     }
 
-    HdEmbree_LightData const& _lightData;
+    LightData const& _lightData;
     GfVec3f const& _positionHitWld;
     GfVec3f const& _normalShdWldOut;
     float _u1;
     float _u2;
     SamplingMode _samplingMode;
-    HdEmbreeRenderColorSpace _renderColorSpace;
+    RenderColorSpace _renderColorSpace;
 };
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif // PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_SAMPLER_H

@@ -53,8 +53,8 @@ static const TfToken _tokensSt("st");
 bool
 _IsMatrixPrimvarType(HdTupleType tupleType)
 {
-    return tupleType == HdEmbreeTypeHelper::GetTupleType<GfMatrix4f>() ||
-           tupleType == HdEmbreeTypeHelper::GetTupleType<GfMatrix4d>();
+    return tupleType == ty::TypeHelper::GetTupleType<GfMatrix4f>() ||
+           tupleType == ty::TypeHelper::GetTupleType<GfMatrix4d>();
 }
 
 const char*
@@ -220,7 +220,7 @@ _DifferenceOfProducts(float a, float b, float c, float d)
 
 template <typename T>
 bool
-_SampleTriangleCorners(HdEmbreePrimvarSampler const* sampler,
+_SampleTriangleCorners(ty::PrimvarSampler const* sampler,
                        unsigned int primID,
                        T* v0, T* v1, T* v2)
 {
@@ -229,12 +229,12 @@ _SampleTriangleCorners(HdEmbreePrimvarSampler const* sampler,
     }
 
     if (auto* vertexSampler =
-            dynamic_cast<HdEmbreeTriangleVertexSampler const*>(sampler)) {
+            dynamic_cast<ty::TriangleVertexSampler const*>(sampler)) {
         return vertexSampler->SampleVertices(primID, v0, v1, v2);
     }
 
     if (auto* faceVaryingSampler =
-            dynamic_cast<HdEmbreeTriangleFaceVaryingSampler const*>(sampler)) {
+            dynamic_cast<ty::TriangleFaceVaryingSampler const*>(sampler)) {
         return faceVaryingSampler->SampleVertices(primID, v0, v1, v2);
     }
 
@@ -247,7 +247,7 @@ _SampleTriangleCorners(HdEmbreePrimvarSampler const* sampler,
 }
 
 bool
-_SampleTriangleCorners(HdEmbreePrimvarSampler const* sampler,
+_SampleTriangleCorners(ty::PrimvarSampler const* sampler,
                        unsigned int primID,
                        GfVec2f* v0, GfVec2f* v1, GfVec2f* v2)
 {
@@ -352,26 +352,26 @@ _GeomStyleShouldHonorRefineLevel(HdMeshGeomStyle geomStyle)
     return false;
 }
 
-HdEmbreeWireframeMode
+ty::WireframeMode
 _GetWireframeMode(HdMeshGeomStyle geomStyle)
 {
     switch (geomStyle) {
         case HdMeshGeomStyleEdgeOnly:
         case HdMeshGeomStyleHullEdgeOnly:
-            return HdEmbreeWireframeMode::edgeOnly;
+            return ty::WireframeMode::edgeOnly;
 
         case HdMeshGeomStyleEdgeOnSurf:
         case HdMeshGeomStyleHullEdgeOnSurf:
-            return HdEmbreeWireframeMode::edgeOnSurface;
+            return ty::WireframeMode::edgeOnSurface;
 
         case HdMeshGeomStyleInvalid:
         case HdMeshGeomStyleSurf:
         case HdMeshGeomStyleHull:
         case HdMeshGeomStylePoints:
-            return HdEmbreeWireframeMode::disabled;
+            return ty::WireframeMode::disabled;
     }
 
-    return HdEmbreeWireframeMode::disabled;
+    return ty::WireframeMode::disabled;
 }
 
 VtIntArray
@@ -459,7 +459,7 @@ void
 HdEmbreeDisplacementFunction(
     const RTCDisplacementFunctionNArguments* args)
 {
-    auto* prototypeContext = static_cast<HdEmbreePrototypeContext*>(
+    auto* prototypeContext = static_cast<ty::PrototypeContext*>(
         args->geometryUserPtr);
     // A missing terminal means the Embree limit surface is already the
     // desired result. Treat it as a no-op so the same geometry path supports
@@ -508,7 +508,7 @@ HdEmbreeDisplacementFunction(
             // The shared evaluator supplies texture/frame/time, transforms,
             // st, and geomprops. Authored failures return false; exceptional
             // backend failures are contained by this C boundary.
-            if (!HdEmbreeEvaluateDisplacement(
+            if (!ty::EvaluateDisplacement(
                     prototypeContext,
                     args->primID,
                     args->u[i],
@@ -526,7 +526,7 @@ HdEmbreeDisplacementFunction(
             // space before modifying Embree's positions. This preserves both
             // direction and magnitude under non-uniform transforms.
             GfVec3f objectOffset;
-            if (!HdEmbreeComputeObjectSpaceDisplacementOffset(
+            if (!ty::ComputeObjectSpaceDisplacementOffset(
                     prototypeContext, normal, displacement, &objectOffset)) {
                 continue;
             }
@@ -613,7 +613,7 @@ HdEmbreeMesh::_ComputeAdaptiveSubdivisionLevels(
     }
 
     HdEmbreeDisplacedPositionProbe displacedPositionProbe;
-    HdEmbreePrototypeContext const* const prototypeContext =
+    ty::PrototypeContext const* const prototypeContext =
         _prototypeContext.get();
     if (prototypeContext && prototypeContext->displaced) {
         const RTCGeometry geometry = _geometry;
@@ -623,7 +623,7 @@ HdEmbreeMesh::_ComputeAdaptiveSubdivisionLevels(
                 float u,
                 float v,
                 GfVec3f* position) {
-                return HdEmbreeComputeDisplacedSubdivPosition(
+                return ty::ComputeDisplacedSubdivPosition(
                     geometry, prototypeContext, primID, u, v, position);
             };
     }
@@ -650,7 +650,7 @@ HdEmbreeMesh::UpdateSubdivisionLevels(
     // without dirtying every bound mesh. Refresh the effective state before
     // any viewport/instance early exit so disabling or replacing a terminal
     // cannot leave the prototype context stale.
-    HdEmbreePrototypeContext* const prototypeContext =
+    ty::PrototypeContext* const prototypeContext =
         _prototypeContext.get();
     const bool wasDisplaced = prototypeContext->displaced;
     const bool displacementStateChanged = _RefreshDisplacementState();
@@ -704,7 +704,7 @@ HdEmbreeMesh::_CommitPrototypeInstances()
 bool
 HdEmbreeMesh::_RefreshDisplacementState()
 {
-    HdEmbreePrototypeContext* const prototypeContext =
+    ty::PrototypeContext* const prototypeContext =
         _prototypeContext.get();
     const bool displaced =
         _refined &&
@@ -733,7 +733,7 @@ HdEmbreeMesh::_RefreshDisplacementState()
 void
 HdEmbreeMesh::_ResolveGeomPropBindings()
 {
-    HdEmbreePrototypeContext* const context = _prototypeContext.get();
+    ty::PrototypeContext* const context = _prototypeContext.get();
     if (!context || !context->material) {
         if (context) {
             context->geomPropSamplers.clear();
@@ -778,7 +778,7 @@ HdEmbreeMesh::RefreshMaterialBindings()
 
 void
 HdEmbreeMesh::_WarnIfInstancedDisplacementIsLimited(
-    HdEmbreePrototypeContext const* prototypeContext)
+    ty::PrototypeContext const* prototypeContext)
 {
     if (_warnedInstancedDisplacementIsLimited || !prototypeContext ||
         !prototypeContext->displaced || GetInstancerId().IsEmpty()) {
@@ -929,8 +929,8 @@ void HdEmbreeMesh::_EmbreeCullFaces(const RTCFilterFunctionNArguments* args)
     // Only HdEmbreeMesh gets HdEmbreeMesh::_EmbreeCullFaces bound
     // as an intersection filter. The filter is bound to the prototype,
     // whose renderer context contains all values needed by the filter.
-    HdEmbreePrototypeContext *ctx =
-        static_cast<HdEmbreePrototypeContext*>(args->geometryUserPtr);
+    ty::PrototypeContext *ctx =
+        static_cast<ty::PrototypeContext*>(args->geometryUserPtr);
     if (!ctx) {
         TF_CODING_ERROR("_EmbreeCullFaces got NULL prototype context");
         return;
@@ -945,7 +945,7 @@ void HdEmbreeMesh::_EmbreeCullFaces(const RTCFilterFunctionNArguments* args)
             continue;
         }
         if (RTCRayN_id(args->ray, args->N, i) ==
-            HdEmbreeFaceCullBypassRayId) {
+            ty::FaceCullBypassRayId) {
             continue;
         }
 
@@ -1039,7 +1039,7 @@ HdEmbreeMesh::_CreateEmbreeSubdivMesh(
     // low-quality rebuild is required for these production update paths.
     rtcSetGeometryBuildQuality(geom, RTC_BUILD_QUALITY_LOW);
     rtcSetGeometryTimeStepCount(geom,1);
-    rtcSetGeometryMask(geom, HdEmbree_RayMask::Scene);
+    rtcSetGeometryMask(geom, ty::RayMask::Scene);
     const unsigned attachedId = rtcAttachGeometry(scene,geom);
     if (attachedId == RTC_INVALID_GEOMETRY_ID) {
         TF_CODING_ERROR("Couldn't attach RTC subdivision geometry");
@@ -1250,7 +1250,7 @@ HdEmbreeMesh::_CreateEmbreeTriangleMesh(
     // when the Embree-owned vertex buffer is updated and then instanced.
     rtcSetGeometryBuildQuality(geom, RTC_BUILD_QUALITY_LOW);
     rtcSetGeometryTimeStepCount(geom,1);
-    rtcSetGeometryMask(geom, HdEmbree_RayMask::Scene);
+    rtcSetGeometryMask(geom, ty::RayMask::Scene);
     const unsigned attachedId = rtcAttachGeometry(scene,geom);
     if (attachedId == RTC_INVALID_GEOMETRY_ID) {
         TF_CODING_ERROR("Couldn't attach RTC triangle geometry");
@@ -1431,8 +1431,8 @@ HdEmbreeMesh::_UpdateSurfaceDerivativeCache()
     _triangleDPdu.resize(_triangulatedIndices.size(), GfVec3f(0.0f));
     _triangleDPdv.resize(_triangulatedIndices.size(), GfVec3f(0.0f));
 
-    HdEmbreePrimvarSampler const* stSampler = nullptr;
-    if (HdEmbreePrototypeContext* ctx = _prototypeContext.get()) {
+    ty::PrimvarSampler const* stSampler = nullptr;
+    if (ty::PrototypeContext* ctx = _prototypeContext.get()) {
         auto it = ctx->primvarMap.find(_tokensSt);
         if (it != ctx->primvarMap.end()) {
             stSampler = it->second.get();
@@ -1493,7 +1493,7 @@ HdEmbreeMesh::_UpdateTangentFrameCache()
     _computedBitangents.clear();
     _tangentFrameValid = false;
 
-    HdEmbreePrototypeContext* ctx = _prototypeContext.get();
+    ty::PrototypeContext* ctx = _prototypeContext.get();
     if (_refined || !ctx || !_surfaceDerivativesValid ||
         _triangleDPdu.size() != _triangulatedIndices.size()) {
         return;
@@ -1509,7 +1509,7 @@ HdEmbreeMesh::_UpdateTangentFrameCache()
         return;
     }
 
-    HdEmbreePrimvarSampler const* normalSampler = nullptr;
+    ty::PrimvarSampler const* normalSampler = nullptr;
     auto normalIt = ctx->primvarMap.find(HdTokens->normals);
     if (normalIt != ctx->primvarMap.end()) {
         normalSampler = normalIt->second.get();
@@ -1666,7 +1666,7 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
                                     unsigned int topologyId)
 {
     // Replace the old sampler, if it exists.
-    HdEmbreePrototypeContext *ctx = _prototypeContext.get();
+    ty::PrototypeContext *ctx = _prototypeContext.get();
     ctx->primvarMap.erase(name);
 
     HdVtBufferSource buffer(name, data);
@@ -1680,46 +1680,46 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
 
     // Construct the correct type of sampler from the interpolation mode and
     // geometry mode.
-    std::unique_ptr<HdEmbreePrimvarSampler> sampler;
+    std::unique_ptr<ty::PrimvarSampler> sampler;
     switch(interpolation) {
         case HdInterpolationConstant:
-            sampler = std::make_unique<HdEmbreeConstantSampler>(name, data);
+            sampler = std::make_unique<ty::ConstantSampler>(name, data);
             break;
         case HdInterpolationUniform:
             if (refined) {
-                sampler = std::make_unique<HdEmbreeUniformSampler>(name, data);
+                sampler = std::make_unique<ty::UniformSampler>(name, data);
             } else {
-                sampler = std::make_unique<HdEmbreeUniformSampler>(
+                sampler = std::make_unique<ty::UniformSampler>(
                     name, data, _trianglePrimitiveParams);
             }
             break;
         case HdInterpolationVertex:
             if (refined) {
-                sampler = std::make_unique<HdEmbreeSubdivVertexSampler>(
+                sampler = std::make_unique<ty::SubdivVertexSampler>(
                     name, data, _geometry, &_embreeBufferAllocator);
             } else {
-                sampler = std::make_unique<HdEmbreeTriangleVertexSampler>(
+                sampler = std::make_unique<ty::TriangleVertexSampler>(
                     name, data, _triangulatedIndices);
             }
             break;
         case HdInterpolationVarying:
             if (refined) {
-                sampler = std::make_unique<HdEmbreeSubdivVaryingSampler>(
+                sampler = std::make_unique<ty::SubdivVaryingSampler>(
                     name, data, _geometry, &_embreeBufferAllocator);
             } else {
-                sampler = std::make_unique<HdEmbreeTriangleVertexSampler>(
+                sampler = std::make_unique<ty::TriangleVertexSampler>(
                     name, data, _triangulatedIndices);
             }
             break;
         case HdInterpolationFaceVarying:
             if (refined) {
-                sampler = std::make_unique<HdEmbreeSubdivFaceVaryingSampler>(
+                sampler = std::make_unique<ty::SubdivFaceVaryingSampler>(
                     name, data, _geometry, topologyId,
                     &_embreeBufferAllocator);
             } else {
                 HdMeshUtil meshUtil(&_topology, GetId());
                 sampler =
-                    std::make_unique<HdEmbreeTriangleFaceVaryingSampler>(
+                    std::make_unique<ty::TriangleFaceVaryingSampler>(
                         name, data, meshUtil);
             }
             break;
@@ -1748,7 +1748,7 @@ HdEmbreeMesh::_UpdateInstances(HdSceneDelegate* sceneDelegate,
         instances = static_cast<HdEmbreeInstancer*>(instancer)->
             ComputeInstanceData(GetId());
         for (HdEmbreeInstanceData& instance : instances) {
-            HdEmbreeMergeCategories(
+            ty::MergeCategories(
                 _categories, &instance.categories);
         }
     } else {
@@ -1780,13 +1780,13 @@ HdEmbreeMesh::_UpdateInstances(HdSceneDelegate* sceneDelegate,
         RTCGeometry geom = rtcNewGeometry (device, RTC_GEOMETRY_TYPE_INSTANCE);
         rtcSetGeometryInstancedScene(geom,_rtcMeshScene);
         rtcSetGeometryTimeStepCount(geom,1);
-        rtcSetGeometryMask(geom, HdEmbree_RayMask::Scene);
+        rtcSetGeometryMask(geom, ty::RayMask::Scene);
         instance.rtcId = rtcAttachGeometry(scene,geom);
         instance.geometry = geom;
 
         // Embree borrows the context address owned by this record.
         instance.context =
-            std::make_unique<HdEmbreeInstanceContext>();
+            std::make_unique<ty::InstanceContext>();
         instance.context->rootScene = _rtcMeshScene;
         instance.context->instanceId = i;
         rtcSetGeometryUserData(geom, instance.context.get());
@@ -1814,7 +1814,7 @@ void
 HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
                               RTCScene         scene,
                               RTCDevice        device,
-                              HdEmbreeMaterialEvalServices const*
+                              ty::MaterialEvalServices const*
                                   materialEvalServices,
                               HdDirtyBits*     dirtyBits,
                               HdMeshReprDesc const &desc)
@@ -1999,7 +1999,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         // Prototype geometry gets tagged with a prototype context, that the
         // ray-hit algorithm can use to look up data.
         _prototypeContext =
-            std::make_unique<HdEmbreePrototypeContext>();
+            std::make_unique<ty::PrototypeContext>();
         rtcSetGeometryUserData(_geometry, _prototypeContext.get());
         _prototypeContext->primId = GetPrimId();
         _prototypeContext->cullStyle = _cullStyle;
@@ -2047,7 +2047,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
     // evaluated in the rprim's prototype transform. Point-instancer transforms
     // are intentionally unavailable at prototype-commit time.
     {
-        HdEmbreePrototypeContext* const context = _prototypeContext.get();
+        ty::PrototypeContext* const context = _prototypeContext.get();
         context->materialEvalServices = materialEvalServices;
         context->displacementEnabled =
             _displacementEnabled && desc.useCustomDisplacement;
@@ -2120,7 +2120,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
     // there's no "normals" sampler so the renderpass can use its fallback
     // behavior.
     if (!_smoothNormals && !authoredNormals) {
-        HdEmbreePrototypeContext *ctx = _prototypeContext.get();
+        ty::PrototypeContext *ctx = _prototypeContext.get();
         ctx->primvarMap.erase(HdTokens->normals);
 
         // Force the smooth normals code to rebuild the "normals" primvar the
@@ -2141,7 +2141,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
             if (_refined &&
                 it->first == HdTokens->normals &&
                 it->second.interpolation == HdInterpolationFaceVarying) {
-                HdEmbreePrototypeContext* const context =
+                ty::PrototypeContext* const context =
                     _prototypeContext.get();
                 auto samplerIt = context->primvarMap.find(it->first);
                 if (samplerIt != context->primvarMap.end()) {
@@ -2180,7 +2180,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         _CreatePrimvarSampler(_tokensComputedBitangent, VtValue(_computedBitangents),
                               HdInterpolationFaceVarying, false);
     } else {
-        HdEmbreePrototypeContext* ctx = _prototypeContext.get();
+        ty::PrototypeContext* ctx = _prototypeContext.get();
         if (ctx) {
             for (TfToken const& name :
                      {_tokensComputedTangent, _tokensComputedBitangent}) {
@@ -2204,14 +2204,14 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
                         HdPrimTypeTokens->material, materialId);
                 mat = dynamic_cast<HdEmbreeMaterial*>(sprim);
             }
-            HdEmbreePrototypeContext* prototypeContext =
+            ty::PrototypeContext* prototypeContext =
                 _prototypeContext.get();
             prototypeContext->material =
                 mat ? mat->GetRenderMaterial() : nullptr;
         }
     }
     _ResolveGeomPropBindings();
-    HdEmbreePrototypeContext* const prototypeContext =
+    ty::PrototypeContext* const prototypeContext =
         _prototypeContext.get();
     const bool displacementStateChanged = _RefreshDisplacementState();
 
@@ -2348,7 +2348,7 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
     //
 
     if (_geometry) {
-        HdEmbreePrototypeContext* const context = _prototypeContext.get();
+        ty::PrototypeContext* const context = _prototypeContext.get();
         context->cullStyle = _cullStyle;
         context->doubleSided = _doubleSided;
         context->refined = _refined;

@@ -28,14 +28,15 @@
 #include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
 /// Reserved ray ID used only by owner-prototype SSS boundary queries. Such
 /// rays must see both sides of the closed surface regardless of display cull
 /// style, while ordinary renderer rays always use ID zero.
-constexpr unsigned int HdEmbreeFaceCullBypassRayId = 0x48444543u;
+constexpr unsigned int FaceCullBypassRayId = 0x48444543u;
 
 /// Surface display mode selected by the active Hydra mesh representation.
-enum class HdEmbreeWireframeMode
+enum class WireframeMode
 {
     disabled,
     edgeOnly,
@@ -43,19 +44,19 @@ enum class HdEmbreeWireframeMode
 };
 
 
-/// \class HdEmbreePrototypeContext
+/// \class PrototypeContext
 ///
 /// A small bit of state attached to each bit of prototype geometry in embree,
 /// for renderer integrators and geometric AOV evaluation.
 ///
-struct HdEmbreePrototypeContext
+struct PrototypeContext
 {
     int32_t primId = 0;
     HdCullStyle cullStyle = HdCullStyleDontCare;
     bool doubleSided = false;
     bool refined = false;
-    HdEmbreeWireframeMode wireframeMode =
-        HdEmbreeWireframeMode::disabled;
+    WireframeMode wireframeMode =
+        WireframeMode::disabled;
     bool blendWireframeColor = true;
     float wireframeLineWidth = 0.0f;
     /// Coarse-face layout and live Embree edge levels used to reconstruct the
@@ -77,7 +78,7 @@ struct HdEmbreePrototypeContext
     /// Renderer-owned material evaluation services. Geometry callbacks borrow
     /// this state; it is updated only while rendering is stopped and remains
     /// read-only throughout geometry commits and rendering.
-    HdEmbreeMaterialEvalServices const* materialEvalServices = nullptr;
+    MaterialEvalServices const* materialEvalServices = nullptr;
     /// Prototype-level transforms used while Embree evaluates displacement.
     /// Per-instance transforms are unavailable when a shared prototype scene
     /// is committed, so these default to object-space identity.
@@ -88,26 +89,26 @@ struct HdEmbreePrototypeContext
     /// Name-indexed owning storage for primvar samplers.
     std::unordered_map<
         TfToken,
-        std::unique_ptr<HdEmbreePrimvarSampler>,
+        std::unique_ptr<PrimvarSampler>,
         TfToken::HashFunctor> primvarMap;
     /// A copy of the primitive params for this rprim.
     VtIntArray primitiveParams;
     /// The bound material, or nullptr if none.
-    HdEmbreeMaterialData const* material = nullptr;
+    MaterialData const* material = nullptr;
     /// Handle-indexed against material->geomPropNames. Both vectors are
     /// rebuilt after every material-table or primvarMap mutation; sampler
     /// pointers observe the unique_ptr-owned entries in primvarMap.
-    std::vector<HdEmbreePrimvarSampler*> geomPropSamplers;
+    std::vector<PrimvarSampler*> geomPropSamplers;
     std::vector<mxcpp::Value> geomPropUniformValues;
 };
 
 ///
-/// \class HdEmbreeInstanceContext
+/// \class InstanceContext
 ///
 /// A small bit of state attached to each bit of instanced geometry in embree,
 /// for renderer integrators and geometric AOV evaluation.
 ///
-struct HdEmbreeInstanceContext
+struct InstanceContext
 {
     /// The object-to-world transform, for transforming normals to worldspace.
     GfMatrix4f objectToWorldMatrix;
@@ -119,10 +120,11 @@ struct HdEmbreeInstanceContext
     /// The instance id of this instance.
     int32_t instanceId;
     /// Resolved Hydra light- and shadow-link category memberships.
-    HdEmbreeCategorySet categories;
+    CategorySet categories;
 };
 
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif // PXR_IMAGING_PLUGIN_HD_EMBREE_CONTEXT_H

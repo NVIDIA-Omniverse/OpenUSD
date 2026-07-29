@@ -31,7 +31,7 @@ inline void
 PopulateRay(RTCRay* ray, GfVec3f const& origin, GfVec3f const& directionLocal,
              float nearest,
              float furthest = std::numeric_limits<float>::infinity(),
-             HdEmbree_RayMask mask = HdEmbree_RayMask::All)
+             RayMask mask = RayMask::All)
 {
     ray->org_x = origin[0];
     ray->org_y = origin[1];
@@ -84,7 +84,7 @@ inline void
 PopulateRayHit(RTCRayHit* rayHit, GfVec3f const& origin,
                 GfVec3f const& directionLocal, float nearest,
                 float furthest = std::numeric_limits<float>::infinity(),
-                HdEmbree_RayMask mask = HdEmbree_RayMask::All)
+                RayMask mask = RayMask::All)
 {
     // Fill in defaults for the ray
     PopulateRay(&rayHit->ray, origin, directionLocal, nearest, furthest, mask);

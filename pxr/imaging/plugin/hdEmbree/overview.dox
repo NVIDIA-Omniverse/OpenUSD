@@ -63,7 +63,7 @@ repr token).
 
 HdEmbree provides HdEmbreeRenderPass, which draws by raycasting into the embree
 scene that's been populated by HdEmbree prim objects. The raycasting is done
-in the helper HdEmbreeRenderer class.  Outputs are written into HdRenderBuffer
+in the helper ty::Renderer class.  Outputs are written into HdRenderBuffer
 objects, which represent image data.  Typically, auxiliary tasks in hdx will
 blit these into the GL framebuffer.
 

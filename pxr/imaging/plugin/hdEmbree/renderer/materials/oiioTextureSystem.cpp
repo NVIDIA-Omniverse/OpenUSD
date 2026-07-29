@@ -23,7 +23,7 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-struct HdEmbreeOiioTextureSystem::_Impl
+struct ty::OiioTextureSystem::_Impl
 {
 #if defined(PXR_OIIO_PLUGIN_ENABLED)
     OIIO::TextureSystem* textureSystem = nullptr;
@@ -88,7 +88,7 @@ _MakeDefaultResult(const mxcpp::Texture2DRequest& request,
 }
 
 bool
-_ShouldWarnOnce(HdEmbreeOiioTextureSystem::_Impl* const impl,
+_ShouldWarnOnce(ty::OiioTextureSystem::_Impl* const impl,
                 const std::string& key)
 {
     if (impl == nullptr || key.empty()) {
@@ -111,15 +111,15 @@ void
 _ApplyColorTransform(
     const mxcpp::Texture2DRequest& request,
     float* sampled,
-    HdEmbreeOiioTextureSystem::_Impl* impl,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::OiioTextureSystem::_Impl* impl,
+    ty::RenderColorSpace renderColorSpace)
 {
     if (!_ShouldApplyColorTransform(request) || !sampled) {
         return;
     }
 
     GfVec3f rgb(sampled[0], sampled[1], sampled[2]);
-    if (!HdEmbreeConvertToRenderColorSpace(
+    if (!ty::ConvertToRenderColorSpace(
             request.sourceColorSpace, renderColorSpace, &rgb)) {
         const std::string warningKey =
             request.filePath + "|" + request.sourceColorSpace;
@@ -247,7 +247,7 @@ _HasPngExtension(const std::string& filePath)
 
 OIIO::TextureSystem*
 _SelectTextureSystem(
-    HdEmbreeOiioTextureSystem::_Impl* const impl,
+    ty::OiioTextureSystem::_Impl* const impl,
     const std::string& filePath)
 {
     if (impl && impl->pngTextureSystem && _HasPngExtension(filePath)) {
@@ -260,7 +260,7 @@ _SelectTextureSystem(
 
 }  // namespace
 
-HdEmbreeOiioTextureSystem::HdEmbreeOiioTextureSystem()
+ty::OiioTextureSystem::OiioTextureSystem()
     : _impl(std::make_unique<_Impl>())
 {
 #if defined(PXR_OIIO_PLUGIN_ENABLED)
@@ -276,12 +276,12 @@ HdEmbreeOiioTextureSystem::HdEmbreeOiioTextureSystem()
         _impl->pngTextureSystem, /* preserveUnassociatedAlpha = */ true);
 
     // Size the tile cache before the first render-setting sync.
-    SetCacheSizeMB(HdEmbreeRenderSettings{}.textureCacheSizeMB);
+    SetCacheSizeMB(ty::RenderSettings{}.textureCacheSizeMB);
 #endif
 }
 
 void
-HdEmbreeOiioTextureSystem::SetCacheSizeMB(int sizeMB)
+ty::OiioTextureSystem::SetCacheSizeMB(int sizeMB)
 {
 #if defined(PXR_OIIO_PLUGIN_ENABLED)
     const float mb = static_cast<float>(std::max(1, sizeMB));
@@ -297,13 +297,13 @@ HdEmbreeOiioTextureSystem::SetCacheSizeMB(int sizeMB)
 }
 
 void
-HdEmbreeOiioTextureSystem::SetRenderColorSpace(
-    HdEmbreeRenderColorSpace colorSpace)
+ty::OiioTextureSystem::SetRenderColorSpace(
+    ty::RenderColorSpace colorSpace)
 {
     _renderColorSpace = colorSpace;
 }
 
-HdEmbreeOiioTextureSystem::~HdEmbreeOiioTextureSystem()
+ty::OiioTextureSystem::~OiioTextureSystem()
 {
 #if defined(PXR_OIIO_PLUGIN_ENABLED)
     if (_impl && _impl->pngTextureSystem) {
@@ -318,7 +318,7 @@ HdEmbreeOiioTextureSystem::~HdEmbreeOiioTextureSystem()
 }
 
 mxcpp::Texture2DResult
-HdEmbreeOiioTextureSystem::Sample2D(
+ty::OiioTextureSystem::Sample2D(
     const mxcpp::Texture2DRequest& request) const
 {
     if (request.filePath.empty()) {

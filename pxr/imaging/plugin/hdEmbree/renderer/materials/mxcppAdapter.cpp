@@ -254,7 +254,7 @@ void
 _ConvertAuthoredColorParameters(
     mxcpp::GraphNode* node,
     const std::string& nodePath,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
     if (!node) {
         return;
@@ -295,7 +295,7 @@ _ConvertAuthoredColorParameters(
             continue;
         }
 
-        if (!HdEmbreeConvertToRenderColorSpace(
+        if (!ty::ConvertToRenderColorSpace(
                 sourceColorSpace, renderColorSpace, &rgb)) {
             TF_WARN(
                 "Unsupported color space '%s' for material input '%s' on "
@@ -319,9 +319,9 @@ _ConvertAuthoredColorParameters(
 } // anonymous namespace
 
 mxcpp::MaterialGraph
-ConvertHdNetworkToMxcppGraph(
+ty::ConvertHdNetworkToMxcppGraph(
     const HdMaterialNetwork2& network,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
     mxcpp::MaterialGraph graph;
 

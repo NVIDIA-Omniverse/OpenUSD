@@ -27,7 +27,7 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 void
-HdEmbreeRenderer::_AccumulateEnvironment(_PathState* state) const
+ty::Renderer::_AccumulateEnvironment(_PathState* state) const
 {
     if (!state) {
         return;
@@ -44,7 +44,7 @@ HdEmbreeRenderer::_AccumulateEnvironment(_PathState* state) const
         for (auto* dome : _lights.GetDomes()) {
             if (dome->visible) {
                 state->radianceAccumulated +=
-                    HdEmbreeLightSampler::EvaluateDomeLightDirection(
+                    ty::LightSampler::EvaluateDomeLightDirection(
                         *dome, state->directionRayWld, _renderColorSpace)
                         .radianceIn;
             }
@@ -59,16 +59,16 @@ HdEmbreeRenderer::_AccumulateEnvironment(_PathState* state) const
 
         auto const& light = *it.second;
         if (!light.visible ||
-            !std::holds_alternative<HdEmbree_Distant>(light.lightVariant) ||
+            !std::holds_alternative<ty::DistantLight>(light.lightVariant) ||
             (!light.lightLink.IsEmpty() &&
              (!state->lastScatterCategories ||
-              !HdEmbreeMatchesLink(
+              !ty::MatchesLink(
                   light.lightLink, *state->lastScatterCategories)))) {
             continue;
         }
 
-        const HdEmbreeLightSampler::LightSample sample =
-            HdEmbreeLightSampler::EvaluateLightDirection(
+        const ty::LightSampler::LightSample sample =
+            ty::LightSampler::EvaluateLightDirection(
                 light, state->positionRayOriginWld, state->directionRayWld,
                 _renderColorSpace);
         if (!sample.valid) {
@@ -91,23 +91,23 @@ HdEmbreeRenderer::_AccumulateEnvironment(_PathState* state) const
         if (!dome->visible ||
             (!dome->lightLink.IsEmpty() &&
              (!state->lastScatterCategories ||
-              !HdEmbreeMatchesLink(
+              !ty::MatchesLink(
                   dome->lightLink, *state->lastScatterCategories)))) {
             continue;
         }
 
-        const HdEmbreeLightSampler::SamplingMode samplingMode =
+        const ty::LightSampler::SamplingMode samplingMode =
             state->lastScatterWasMedium
-                ? HdEmbreeLightSampler::SamplingMode::FullSphere
+                ? ty::LightSampler::SamplingMode::FullSphere
                 : state->lastLightSamplingMode;
-        HdEmbreeLightSampler::LightSample sample =
+        ty::LightSampler::LightSample sample =
             samplingMode ==
-                    HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere
-                ? HdEmbreeLightSampler::EvaluateDomeLightDirection(
+                    ty::LightSampler::SamplingMode::ReflectionHemisphere
+                ? ty::LightSampler::EvaluateDomeLightDirection(
                       *dome, state->directionRayWld,
                       state->lastLightSamplingNormal, samplingMode,
                       _renderColorSpace)
-                : HdEmbreeLightSampler::EvaluateDomeLightDirection(
+                : ty::LightSampler::EvaluateDomeLightDirection(
                       *dome, state->directionRayWld, _renderColorSpace);
 
         GfVec3f radianceEnvironment = sample.radianceIn;
@@ -126,26 +126,26 @@ HdEmbreeRenderer::_AccumulateEnvironment(_PathState* state) const
 }
 
 GfVec3f
-HdEmbreeRenderer::_ComputeDirectLightingMIS(
+ty::Renderer::_ComputeDirectLightingMIS(
     GfVec3f const& positionWld, GfVec3f const& normalShdWldOut,
     GfVec3f const& normalGeomWldExt, GfVec3f const& omegaOutWld,
-    HdEmbreeSampleDomain const& domain, bool frontFacing,
+    ty::SampleDomain const& domain, bool frontFacing,
     bool includeBsdfSamplingMis, mxcpp::SurfaceClosure const* closure,
-    HdEmbreeCategorySet const& receiverCategories,
-    HdEmbreeMediumState const& mediumState, bool spectralActive,
+    ty::CategorySet const& receiverCategories,
+    ty::MediumState const& mediumState, bool spectralActive,
     float heroWavelengthNm, float heroWavelengthPdf,
     mxcpp::AdobeOpenPbrPreparedSurface const* adobeOpenPbrSurface) const
 {
-    const _HeroWavelengthState hero{
+    const ty::HeroWavelengthState hero{
         spectralActive, heroWavelengthNm, heroWavelengthPdf};
     GfVec3f radianceDirect(0.0f);
     const int lightSampleCount = _settings.lightSamplesPerHit;
     const float lightSampleCountInverse =
         1.0f / static_cast<float>(lightSampleCount);
-    const HdEmbreeLightSampler::SamplingMode lightSamplingMode =
+    const ty::LightSampler::SamplingMode lightSamplingMode =
         (closure && ty::IsReflectionOnlyClosure(*closure))
-            ? HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere
-            : HdEmbreeLightSampler::SamplingMode::FullSphere;
+            ? ty::LightSampler::SamplingMode::ReflectionHemisphere
+            : ty::LightSampler::SamplingMode::FullSphere;
 
     // For stratification: compute grid dimensions for lightSampleCount samples.
     // Find the largest sqrtN such that sqrtN*sqrtN <= lightSampleCount, then
@@ -167,12 +167,12 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
         }
         auto const& light = *it.second;
         if (!light.visible ||
-            !HdEmbreeMatchesLink(light.lightLink, receiverCategories)) {
+            !ty::MatchesLink(light.lightLink, receiverCategories)) {
             ++lightIndex;
             continue;
         }
-        const HdEmbreeSampleDomain lightDomain =
-            domain.Chain(HdEmbreeSampleDomainKey::DirectLightSelect,
+        const ty::SampleDomain lightDomain =
+            domain.Chain(ty::SampleDomainKey::DirectLightSelect,
                          lightIndex);
 
         GfVec3f radianceLight(0.0f);
@@ -181,7 +181,7 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
              ++indexSampleLight) {
             const GfVec2f sample =
                 lightDomain
-                    .Split(HdEmbreeSampleDomainKey::DirectLightSample,
+                    .Split(ty::SampleDomainKey::DirectLightSample,
                            lightSampleCount, indexSampleLight)
                     .Draw2D();
             // Generate sample coordinates, optionally stratified.
@@ -198,8 +198,8 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
                 u2 = sample[1];
             }
 
-            HdEmbreeLightSampler::LightSample ls =
-                HdEmbreeLightSampler::GetLightSample(light, positionWld,
+            ty::LightSampler::LightSample ls =
+                ty::LightSampler::GetLightSample(light, positionWld,
                                                      normalShdWldOut, u1, u2,
                                                      lightSamplingMode,
                                                      _renderColorSpace);
@@ -344,13 +344,13 @@ HdEmbreeRenderer::_ComputeDirectLightingMIS(
 }
 
 GfVec3f
-HdEmbreeRenderer::_ComputeMediumDirectLighting(
+ty::Renderer::_ComputeMediumDirectLighting(
     GfVec3f const& positionWld, GfVec3f const& omegaOutWld,
-    HdEmbreeMediumState const& mediumState, HdEmbreeSampleDomain const& domain,
+    ty::MediumState const& mediumState, ty::SampleDomain const& domain,
     bool includePhaseSamplingMis, bool spectralActive, float heroWavelengthNm,
     float heroWavelengthPdf) const
 {
-    const _HeroWavelengthState hero{
+    const ty::HeroWavelengthState hero{
         spectralActive, heroWavelengthNm, heroWavelengthPdf};
     if (!mediumState.active || mediumState.medium.IsAbsorbingOnly()) {
         return GfVec3f(0.0f);
@@ -361,8 +361,8 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
             mxcpp::MediumTransportModel::AdobeOpenPBR;
 
     GfVec3f radianceDirect(0.0f);
-    const HdEmbreeCategorySet emptyCategories;
-    HdEmbreeCategorySet const& receiverCategories = mediumState.categories
+    const ty::CategorySet emptyCategories;
+    ty::CategorySet const& receiverCategories = mediumState.categories
         ? *mediumState.categories
         : emptyCategories;
     const int lightSampleCount = _settings.lightSamplesPerHit;
@@ -387,12 +387,12 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
         }
         auto const& light = *it.second;
         if (!light.visible ||
-            !HdEmbreeMatchesLink(light.lightLink, receiverCategories)) {
+            !ty::MatchesLink(light.lightLink, receiverCategories)) {
             ++lightIndex;
             continue;
         }
-        const HdEmbreeSampleDomain lightDomain =
-            domain.Chain(HdEmbreeSampleDomainKey::MediumDirectLightSelect,
+        const ty::SampleDomain lightDomain =
+            domain.Chain(ty::SampleDomainKey::MediumDirectLightSelect,
                          lightIndex);
 
         GfVec3f radianceLight(0.0f);
@@ -400,7 +400,7 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
              ++indexSampleLight) {
             const GfVec2f sample =
                 lightDomain
-                    .Split(HdEmbreeSampleDomainKey::MediumDirectLightSample,
+                    .Split(ty::SampleDomainKey::MediumDirectLightSample,
                            lightSampleCount, indexSampleLight)
                     .Draw2D();
             float u1 = 0.0f;
@@ -417,10 +417,10 @@ HdEmbreeRenderer::_ComputeMediumDirectLighting(
                 u2 = sample[1];
             }
 
-            const HdEmbreeLightSampler::LightSample ls =
-                HdEmbreeLightSampler::GetLightSample(light, positionWld,
+            const ty::LightSampler::LightSample ls =
+                ty::LightSampler::GetLightSample(light, positionWld,
                                                      GfVec3f(0.0f), u1, u2,
-                                                     HdEmbreeLightSampler::
+                                                     ty::LightSampler::
                                                          SamplingMode::
                                                              FullSphere,
                                                      _renderColorSpace);

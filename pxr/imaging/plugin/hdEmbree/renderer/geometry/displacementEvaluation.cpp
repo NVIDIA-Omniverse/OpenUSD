@@ -168,7 +168,7 @@ _TryBuildNormalFromTangents(
 
 bool
 _TryBuildWorldFrame(
-    HdEmbreePrototypeContext const& context,
+    ty::PrototypeContext const& context,
     GfVec3f const& objectNormal,
     GfVec3f const& objectDPdu,
     GfVec3f const& objectDPdv,
@@ -308,7 +308,7 @@ _TryFiniteDifference(
 bool
 _EvaluateDisplacedSubdivProbe(
     RTCGeometry geometry,
-    HdEmbreePrototypeContext const* context,
+    ty::PrototypeContext const* context,
     unsigned int primID,
     float u,
     float v,
@@ -333,12 +333,12 @@ _EvaluateDisplacedSubdivProbe(
     }
 
     float displacement = 0.0f;
-    if (!HdEmbreeEvaluateDisplacement(
+    if (!ty::EvaluateDisplacement(
             context, primID, u, v,
             position, normal, dPdu, dPdv, &displacement)) {
         return false;
     }
-    if (!HdEmbreeComputeObjectSpaceDisplacementOffset(
+    if (!ty::ComputeObjectSpaceDisplacementOffset(
             context, normal, displacement, outObjectOffset)) {
         return false;
     }
@@ -408,8 +408,8 @@ _TryBuildDisplacedNormal(
 } // namespace
 
 bool
-HdEmbreeEvaluateDisplacement(
-    HdEmbreePrototypeContext const* context,
+ty::EvaluateDisplacement(
+    ty::PrototypeContext const* context,
     unsigned int primID,
     float u,
     float v,
@@ -432,8 +432,8 @@ HdEmbreeEvaluateDisplacement(
     GfVec3f objectDPdv = dPdv;
     auto const stIt = context->primvarMap.find(_tokensSt);
     if (stIt != context->primvarMap.end()) {
-        const HdEmbreeSubdivTexcoordJacobian stJacobian =
-            HdEmbreeComputeSubdivTexcoordJacobian(
+        const ty::SubdivTexcoordJacobian stJacobian =
+            ty::ComputeSubdivTexcoordJacobian(
                 stIt->second.get(), primID, u, v);
         if (stJacobian.valid) {
             objectDPdu =
@@ -480,13 +480,13 @@ HdEmbreeEvaluateDisplacement(
     // derivatives at their zero defaults makes callback-time and hit-time
     // image filtering identical.
     if (stIt != context->primvarMap.end()) {
-        HdEmbreeSampleTexcoord(
+        ty::SampleTexcoord(
             stIt->second.get(), primID, u, v, &shadingContext.texcoord);
     }
 
-    HdEmbreePrimvarLookup primvarLookup{
+    ty::PrimvarLookup primvarLookup{
         &context->geomPropSamplers, primID, u, v};
-    shadingContext.geomPropLookup = &HdEmbreeSamplePrimvar;
+    shadingContext.geomPropLookup = &ty::SamplePrimvar;
     shadingContext.geomPropUserData = &primvarLookup;
     shadingContext.uniformProps = &context->geomPropUniformValues;
 
@@ -498,10 +498,10 @@ HdEmbreeEvaluateDisplacement(
     }
 
     shadingContext.objectToWorldMatrix =
-        HdEmbreePrimvarSamplingDetail::ToMxMatrix(
+        ty::PrimvarSamplingDetail::ToMxMatrix(
             context->displacementObjectToWorldMatrix);
     shadingContext.worldToObjectMatrix =
-        HdEmbreePrimvarSamplingDetail::ToMxMatrix(
+        ty::PrimvarSamplingDetail::ToMxMatrix(
             context->displacementWorldToObjectMatrix);
     shadingContext.hasObjectToWorldTransform = true;
     shadingContext.hasWorldToObjectTransform = true;
@@ -517,8 +517,8 @@ HdEmbreeEvaluateDisplacement(
 }
 
 bool
-HdEmbreeComputeObjectSpaceDisplacementOffset(
-    HdEmbreePrototypeContext const* context,
+ty::ComputeObjectSpaceDisplacementOffset(
+    ty::PrototypeContext const* context,
     GfVec3f const& objectNormal,
     float displacement,
     GfVec3f* objectOffset)
@@ -546,9 +546,9 @@ HdEmbreeComputeObjectSpaceDisplacementOffset(
 }
 
 bool
-HdEmbreeComputeDisplacedSubdivPosition(
+ty::ComputeDisplacedSubdivPosition(
     RTCGeometry geometry,
-    HdEmbreePrototypeContext const* context,
+    ty::PrototypeContext const* context,
     unsigned int primID,
     float u,
     float v,
@@ -571,7 +571,7 @@ HdEmbreeComputeDisplacedSubdivPosition(
     }
 
     float displacement = 0.0f;
-    if (!HdEmbreeEvaluateDisplacement(
+    if (!ty::EvaluateDisplacement(
             context, primID, u, v,
             position, normal, dPdu, dPdv, &displacement)) {
         return false;
@@ -579,7 +579,7 @@ HdEmbreeComputeDisplacedSubdivPosition(
 
     GfVec3f objectOffset;
     GfVec3f displacedPosition;
-    if (!HdEmbreeComputeObjectSpaceDisplacementOffset(
+    if (!ty::ComputeObjectSpaceDisplacementOffset(
             context, normal, displacement, &objectOffset) ||
         !_TryAddOffset(position, objectOffset, &displacedPosition)) {
         return false;
@@ -590,13 +590,13 @@ HdEmbreeComputeDisplacedSubdivPosition(
 }
 
 bool
-HdEmbreeComputeDisplacedSubdivFrame(
+ty::ComputeDisplacedSubdivFrame(
     RTCGeometry geometry,
-    HdEmbreePrototypeContext const* context,
+    ty::PrototypeContext const* context,
     unsigned int primID,
     float u,
     float v,
-    HdEmbreeDisplacedSubdivFrame* outFrame)
+    ty::DisplacedSubdivFrame* outFrame)
 {
     if (!geometry || !context || !outFrame ||
         !std::isfinite(u) || !std::isfinite(v)) {
@@ -652,7 +652,7 @@ HdEmbreeComputeDisplacedSubdivFrame(
         return false;
     }
 
-    HdEmbreeDisplacedSubdivFrame result;
+    ty::DisplacedSubdivFrame result;
     result.normal = displacedNormal;
     result.dPdu = displacedDPdu;
     result.dPdv = displacedDPdv;
@@ -673,9 +673,9 @@ HdEmbreeComputeDisplacedSubdivFrame(
 }
 
 bool
-HdEmbreeComputeDisplacedSubdivFrame(
+ty::ComputeDisplacedSubdivFrame(
     RTCGeometry geometry,
-    HdEmbreePrototypeContext const* context,
+    ty::PrototypeContext const* context,
     unsigned int primID,
     float u,
     float v,
@@ -687,8 +687,8 @@ HdEmbreeComputeDisplacedSubdivFrame(
         return false;
     }
 
-    HdEmbreeDisplacedSubdivFrame frame;
-    if (!HdEmbreeComputeDisplacedSubdivFrame(
+    ty::DisplacedSubdivFrame frame;
+    if (!ty::ComputeDisplacedSubdivFrame(
             geometry, context, primID, u, v, &frame)) {
         return false;
     }
@@ -699,10 +699,10 @@ HdEmbreeComputeDisplacedSubdivFrame(
 }
 
 bool
-HdEmbreeComputeDisplacedSubdivNormalDerivatives(
+ty::ComputeDisplacedSubdivNormalDerivatives(
     RTCGeometry geometry,
-    HdEmbreePrototypeContext const* context,
-    HdEmbreeDisplacedSubdivFrame const& frame,
+    ty::PrototypeContext const* context,
+    ty::DisplacedSubdivFrame const& frame,
     GfVec3f* outDndu,
     GfVec3f* outDndv)
 {

@@ -57,8 +57,8 @@ bool
 _GetHitContexts(
     RTCScene scene,
     RTCRayHit const& rayHit,
-    HdEmbreeInstanceContext const** instanceContextOutput,
-    HdEmbreePrototypeContext const** prototypeContextOutput)
+    ty::InstanceContext const** instanceContextOutput,
+    ty::PrototypeContext const** prototypeContextOutput)
 {
     if (instanceContextOutput == nullptr ||
         prototypeContextOutput == nullptr ||
@@ -75,8 +75,8 @@ _GetHitContexts(
     if (instanceGeometry == nullptr) {
         return false;
     }
-    HdEmbreeInstanceContext const* instanceContext =
-        static_cast<HdEmbreeInstanceContext const*>(
+    ty::InstanceContext const* instanceContext =
+        static_cast<ty::InstanceContext const*>(
             rtcGetGeometryUserData(instanceGeometry));
     if (instanceContext == nullptr || instanceContext->rootScene == nullptr) {
         return false;
@@ -87,8 +87,8 @@ _GetHitContexts(
     if (prototypeGeometry == nullptr) {
         return false;
     }
-    HdEmbreePrototypeContext const* prototypeContext =
-        static_cast<HdEmbreePrototypeContext const*>(
+    ty::PrototypeContext const* prototypeContext =
+        static_cast<ty::PrototypeContext const*>(
             rtcGetGeometryUserData(prototypeGeometry));
     if (prototypeContext == nullptr) {
         return false;
@@ -102,7 +102,7 @@ _GetHitContexts(
 } // anonymous namespace
 
 void
-HdEmbreeRenderer::SetAovBindings(
+ty::Renderer::SetAovBindings(
     HdRenderPassAovBindingVector const& aovBindings)
 {
     _aovBindings = aovBindings;
@@ -113,7 +113,7 @@ HdEmbreeRenderer::SetAovBindings(
 }
 
 bool
-HdEmbreeRenderer::_ValidateAovBindings()
+ty::Renderer::_ValidateAovBindings()
 {
     if (_aovBindings.empty()) {
         TF_WARN("Cannot render without an AOV binding");
@@ -134,8 +134,8 @@ HdEmbreeRenderer::_ValidateAovBindings()
             continue;
         }
 
-        HdEmbreeRenderBufferInterface *rb =
-            dynamic_cast<HdEmbreeRenderBufferInterface*>(
+        ty::RenderBufferInterface *rb =
+            dynamic_cast<ty::RenderBufferInterface*>(
                 _aovBindings[i].renderBuffer);
         if (rb == nullptr) {
             TF_WARN("Aov '%s' renderbuffer is not an hdEmbree render buffer",
@@ -152,7 +152,7 @@ HdEmbreeRenderer::_ValidateAovBindings()
             _aovNames[i].name != HdAovTokens->elementId &&
             _aovNames[i].name != HdAovTokens->Neye &&
             _aovNames[i].name != HdAovTokens->normal &&
-            _aovNames[i].name != HdEmbreeAovTokens->adaptiveHeatmap &&
+            _aovNames[i].name != ty::AovTokens->adaptiveHeatmap &&
             !_aovNames[i].isPrimvar) {
             TF_WARN("Unsupported attachment with Aov '%s' won't be rendered to",
                     _aovNames[i].name.GetText());
@@ -201,7 +201,7 @@ HdEmbreeRenderer::_ValidateAovBindings()
         }
 
         // The adaptive heatmap writes four float color components.
-        if (_aovNames[i].name == HdEmbreeAovTokens->adaptiveHeatmap &&
+        if (_aovNames[i].name == ty::AovTokens->adaptiveHeatmap &&
             format != HdFormatFloat32Vec4) {
             TF_WARN("Aov '%s' has unsupported format '%s'",
                     _aovNames[i].name.GetText(),
@@ -311,7 +311,7 @@ HdEmbreeRenderer::_ValidateAovBindings()
 }
 
 GfVec4f
-HdEmbreeRenderer::_GetClearColor(VtValue const& clearValue)
+ty::Renderer::_GetClearColor(VtValue const& clearValue)
 {
     HdTupleType type = HdGetValueTupleType(clearValue);
     if (type.count != 1) {
@@ -349,7 +349,7 @@ HdEmbreeRenderer::_GetClearColor(VtValue const& clearValue)
 }
 
 void
-HdEmbreeRenderer::Clear()
+ty::Renderer::Clear()
 {
     if (!_ValidateAovBindings()) {
         return;
@@ -360,8 +360,8 @@ HdEmbreeRenderer::Clear()
             continue;
         }
 
-        HdEmbreeRenderBufferInterface *rb =
-            dynamic_cast<HdEmbreeRenderBufferInterface*>(
+        ty::RenderBufferInterface *rb =
+            dynamic_cast<ty::RenderBufferInterface*>(
                 _aovBindings[i].renderBuffer);
 
         rb->Map();
@@ -391,15 +391,15 @@ HdEmbreeRenderer::Clear()
 }
 
 void
-HdEmbreeRenderer::ResetAccumulation()
+ty::Renderer::ResetAccumulation()
 {
     if (!_ValidateAovBindings()) {
         return;
     }
 
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
-        HdEmbreeRenderBufferInterface *rb =
-            dynamic_cast<HdEmbreeRenderBufferInterface*>(
+        ty::RenderBufferInterface *rb =
+            dynamic_cast<ty::RenderBufferInterface*>(
                 _aovBindings[i].renderBuffer);
         rb->ClearSamples();
         rb->SetConverged(false);
@@ -412,11 +412,11 @@ HdEmbreeRenderer::ResetAccumulation()
 }
 
 void
-HdEmbreeRenderer::MarkAovBuffersUnconverged()
+ty::Renderer::MarkAovBuffersUnconverged()
 {
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
-        HdEmbreeRenderBufferInterface *rb =
-            dynamic_cast<HdEmbreeRenderBufferInterface*>(
+        ty::RenderBufferInterface *rb =
+            dynamic_cast<ty::RenderBufferInterface*>(
                 _aovBindings[i].renderBuffer);
         if (rb != nullptr) {
             rb->SetConverged(false);
@@ -425,7 +425,7 @@ HdEmbreeRenderer::MarkAovBuffersUnconverged()
 }
 
 void
-HdEmbreeRenderer::_ClassifyAovOutputs()
+ty::Renderer::_ClassifyAovOutputs()
 {
     _aovOutputs.clear();
     _needColor = _settings.enableAdaptiveSampling;
@@ -443,8 +443,8 @@ HdEmbreeRenderer::_ClassifyAovOutputs()
     // Borrow interfaces from buffers mapped earlier in _PreRenderSetup.
     // They remain valid only until the next setup remaps the buffers.
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
-        HdEmbreeRenderBufferInterface* rb =
-            dynamic_cast<HdEmbreeRenderBufferInterface*>(
+        ty::RenderBufferInterface* rb =
+            dynamic_cast<ty::RenderBufferInterface*>(
                 _aovBindings[i].renderBuffer);
         HdParsedAovToken const& aovName = _aovNames[i];
 
@@ -482,7 +482,7 @@ HdEmbreeRenderer::_ClassifyAovOutputs()
                    rb->GetFormat() == HdFormatFloat32Vec3) {
             _aovOutputs.push_back(
                 _AovOutput{rb, _AovKind::Primvar, aovName.name});
-        } else if (aovName.name == HdEmbreeAovTokens->adaptiveHeatmap) {
+        } else if (aovName.name == ty::AovTokens->adaptiveHeatmap) {
             if (_settings.enableAdaptiveSampling &&
                 !_pixelSampleCount.empty()) {
                 _aovOutputs.push_back(
@@ -494,7 +494,7 @@ HdEmbreeRenderer::_ClassifyAovOutputs()
 }
 
 GfVec4f
-HdEmbreeRenderer::_HeatmapColor(float t)
+ty::Renderer::_HeatmapColor(float t)
 {
     t = std::min(t, 1.0f);
     float r, g, b;
@@ -515,7 +515,7 @@ HdEmbreeRenderer::_HeatmapColor(float t)
 }
 
 void
-HdEmbreeRenderer::_WriteAov(
+ty::Renderer::_WriteAov(
     _AovOutput const& aov,
     RTCRayHit const& rayHit,
     GfVec4f const& color,
@@ -601,7 +601,7 @@ HdEmbreeRenderer::_WriteAov(
 }
 
 void
-HdEmbreeRenderer::_UpdateVariance(
+ty::Renderer::_UpdateVariance(
     unsigned int x, unsigned int y,
     GfVec3f const& rgb)
 {
@@ -624,7 +624,7 @@ HdEmbreeRenderer::_UpdateVariance(
 }
 
 bool
-HdEmbreeRenderer::_ComputeId(RTCRayHit const& rayHit, TfToken const& idType,
+ty::Renderer::_ComputeId(RTCRayHit const& rayHit, TfToken const& idType,
                              int32_t *id)
 {
     if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
@@ -634,8 +634,8 @@ HdEmbreeRenderer::_ComputeId(RTCRayHit const& rayHit, TfToken const& idType,
         return false;
     }
 
-    HdEmbreeInstanceContext const* instanceContext;
-    HdEmbreePrototypeContext const* prototypeContext;
+    ty::InstanceContext const* instanceContext;
+    ty::PrototypeContext const* prototypeContext;
     if (!_GetHitContexts(
             _scene, rayHit, &instanceContext, &prototypeContext)) {
         return false;
@@ -660,7 +660,7 @@ HdEmbreeRenderer::_ComputeId(RTCRayHit const& rayHit, TfToken const& idType,
 }
 
 bool
-HdEmbreeRenderer::_ComputeDepth(RTCRayHit const& rayHit,
+ty::Renderer::_ComputeDepth(RTCRayHit const& rayHit,
                                 float *depth,
                                 bool clip)
 {
@@ -683,7 +683,7 @@ HdEmbreeRenderer::_ComputeDepth(RTCRayHit const& rayHit,
 }
 
 bool
-HdEmbreeRenderer::_ComputeNormal(RTCRayHit const& rayHit,
+ty::Renderer::_ComputeNormal(RTCRayHit const& rayHit,
                                  GfVec3f *normal,
                                  bool eye)
 {
@@ -694,8 +694,8 @@ HdEmbreeRenderer::_ComputeNormal(RTCRayHit const& rayHit,
         return false;
     }
 
-    HdEmbreeInstanceContext const* instanceContext;
-    HdEmbreePrototypeContext const* prototypeContext;
+    ty::InstanceContext const* instanceContext;
+    ty::PrototypeContext const* prototypeContext;
     if (!_GetHitContexts(
             _scene, rayHit, &instanceContext, &prototypeContext)) {
         return false;
@@ -716,7 +716,7 @@ HdEmbreeRenderer::_ComputeNormal(RTCRayHit const& rayHit,
 }
 
 bool
-HdEmbreeRenderer::_ComputePrimvar(RTCRayHit const& rayHit,
+ty::Renderer::_ComputePrimvar(RTCRayHit const& rayHit,
                                   TfToken const& primvar,
                                   GfVec3f *value)
 {
@@ -729,8 +729,8 @@ HdEmbreeRenderer::_ComputePrimvar(RTCRayHit const& rayHit,
 
     // Primvar sampling needs only the prototype, but a valid instance context
     // remains part of the complete hit-context invariant.
-    HdEmbreeInstanceContext const* validatedInstanceContext;
-    HdEmbreePrototypeContext const* prototypeContext;
+    ty::InstanceContext const* validatedInstanceContext;
+    ty::PrototypeContext const* prototypeContext;
     if (!_GetHitContexts(
             _scene, rayHit, &validatedInstanceContext, &prototypeContext)) {
         return false;
@@ -740,7 +740,7 @@ HdEmbreeRenderer::_ComputePrimvar(RTCRayHit const& rayHit,
     // types don't match.
     auto it = prototypeContext->primvarMap.find(primvar);
     if (it != prototypeContext->primvarMap.end()) {
-        const HdEmbreePrimvarSampler *sampler = it->second.get();
+        const ty::PrimvarSampler *sampler = it->second.get();
         if (sampler->Sample(rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
                             value)) {
             return true;

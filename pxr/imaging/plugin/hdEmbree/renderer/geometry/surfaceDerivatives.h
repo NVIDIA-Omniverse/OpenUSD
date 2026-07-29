@@ -16,12 +16,12 @@
 #include <embree4/rtcore_scene.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
-
-struct HdEmbreePrototypeContext;
-struct HdEmbreeInstanceContext;
-struct HdEmbreeDisplacedSubdivFrame;
-
 namespace ty {
+
+struct PrototypeContext;
+struct InstanceContext;
+struct DisplacedSubdivFrame;
+
 
 /// Resolve an object-space shading normal for a valid Embree hit.
 ///
@@ -30,11 +30,11 @@ namespace ty {
 /// oriented Embree geometric normal. When supplied, `displacedFrame` is always
 /// initialized and is valid only when displaced-frame evaluation succeeds.
 GfVec3f ResolveObjectSpaceNormal(
-    HdEmbreePrototypeContext const* prototypeContext,
+    PrototypeContext const* prototypeContext,
     RTCScene rootScene,
     unsigned int geomID,
     RTCRayHit const& rayHit,
-    HdEmbreeDisplacedSubdivFrame* displacedFrame = nullptr);
+    DisplacedSubdivFrame* displacedFrame = nullptr);
 
 /// Compute object-space triangle surface and normal derivatives.
 ///
@@ -42,7 +42,7 @@ GfVec3f ResolveObjectSpaceNormal(
 /// triangle data. Degenerate position derivatives fall back to an orthonormal
 /// frame; unavailable normal derivatives are returned as zero.
 void ComputeTriangleSurfaceDerivatives(
-    HdEmbreePrototypeContext const* prototypeContext,
+    PrototypeContext const* prototypeContext,
     unsigned int primID,
     float u,
     float v,
@@ -58,7 +58,7 @@ void ComputeTriangleSurfaceDerivatives(
 /// valid. Invalid or degenerate interpolation falls back to an orthonormal
 /// position frame and zero normal derivatives.
 void ComputeSubdivSurfaceDerivatives(
-    HdEmbreePrototypeContext const* prototypeContext,
+    PrototypeContext const* prototypeContext,
     RTCScene rootScene,
     unsigned int geomID,
     unsigned int primID,
@@ -69,18 +69,18 @@ void ComputeSubdivSurfaceDerivatives(
     GfVec3f* outDPdv,
     GfVec3f* outDndu,
     GfVec3f* outDndv,
-    HdEmbreeDisplacedSubdivFrame const* displacedFrame = nullptr);
+    DisplacedSubdivFrame const* displacedFrame = nullptr);
 
 /// Complete displaced-normal derivatives and transform them to world space.
 ///
 /// Returns false for null inputs, invalid cached frames, failed displacement
 /// evaluation, or non-finite results. Outputs are written only on success.
 bool TryComputeDisplacedSubdivNormalDerivativesToWorld(
-    HdEmbreePrototypeContext const* prototypeContext,
-    HdEmbreeInstanceContext const* instanceContext,
+    PrototypeContext const* prototypeContext,
+    InstanceContext const* instanceContext,
     RTCScene rootScene,
     unsigned int geomID,
-    HdEmbreeDisplacedSubdivFrame const& frame,
+    DisplacedSubdivFrame const& frame,
     GfVec3f const& faceForwardedWorldNormal,
     GfVec3f* outDndu,
     GfVec3f* outDndv);

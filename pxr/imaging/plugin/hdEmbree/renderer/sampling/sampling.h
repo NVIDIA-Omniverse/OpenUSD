@@ -23,12 +23,13 @@
 #include <variant>
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
 // ---------------------------------------------------------------------------
 // Sampler sequence selection
 // ---------------------------------------------------------------------------
 
-enum class HdEmbreeSamplerSequence : uint8_t
+enum class SamplerSequence : uint8_t
 {
     OpenQMCSobol,
     OpenQMCSobolBN,
@@ -39,57 +40,57 @@ enum class HdEmbreeSamplerSequence : uint8_t
 };
 
 inline TfToken
-HdEmbreeGetSamplerSequenceToken(HdEmbreeSamplerSequence sequence)
+GetSamplerSequenceToken(SamplerSequence sequence)
 {
     switch (sequence) {
-    case HdEmbreeSamplerSequence::OpenQMCSobol:
+    case SamplerSequence::OpenQMCSobol:
         return TfToken("openqmc_sobol");
-    case HdEmbreeSamplerSequence::OpenQMCSobolBN:
+    case SamplerSequence::OpenQMCSobolBN:
         return TfToken("openqmc_sobolbn");
-    case HdEmbreeSamplerSequence::OpenQMCPMJ:
+    case SamplerSequence::OpenQMCPMJ:
         return TfToken("openqmc_pmj");
-    case HdEmbreeSamplerSequence::OpenQMCPMJBN:
+    case SamplerSequence::OpenQMCPMJBN:
         return TfToken("openqmc_pmjbn");
-    case HdEmbreeSamplerSequence::OpenQMCLattice:
+    case SamplerSequence::OpenQMCLattice:
         return TfToken("openqmc_lattice");
-    case HdEmbreeSamplerSequence::OpenQMCLatticeBN:
+    case SamplerSequence::OpenQMCLatticeBN:
         return TfToken("openqmc_latticebn");
     }
     return TfToken("openqmc_sobolbn");
 }
 
-inline HdEmbreeSamplerSequence
-HdEmbreeGetDefaultSamplerSequence()
+inline SamplerSequence
+GetDefaultSamplerSequence()
 {
-    return HdEmbreeSamplerSequence::OpenQMCSobolBN;
+    return SamplerSequence::OpenQMCSobolBN;
 }
 
-inline HdEmbreeSamplerSequence
-HdEmbreeGetSamplerSequenceFromToken(TfToken const& token)
+inline SamplerSequence
+GetSamplerSequenceFromToken(TfToken const& token)
 {
     if (token == TfToken("openqmc_sobol")) {
-        return HdEmbreeSamplerSequence::OpenQMCSobol;
+        return SamplerSequence::OpenQMCSobol;
     }
     if (token == TfToken("openqmc_sobolbn")) {
-        return HdEmbreeSamplerSequence::OpenQMCSobolBN;
+        return SamplerSequence::OpenQMCSobolBN;
     }
     if (token == TfToken("openqmc_pmj")) {
-        return HdEmbreeSamplerSequence::OpenQMCPMJ;
+        return SamplerSequence::OpenQMCPMJ;
     }
     if (token == TfToken("openqmc_pmjbn")) {
-        return HdEmbreeSamplerSequence::OpenQMCPMJBN;
+        return SamplerSequence::OpenQMCPMJBN;
     }
     if (token == TfToken("openqmc_lattice")) {
-        return HdEmbreeSamplerSequence::OpenQMCLattice;
+        return SamplerSequence::OpenQMCLattice;
     }
     if (token == TfToken("openqmc_latticebn")) {
-        return HdEmbreeSamplerSequence::OpenQMCLatticeBN;
+        return SamplerSequence::OpenQMCLatticeBN;
     }
-    return HdEmbreeGetDefaultSamplerSequence();
+    return GetDefaultSamplerSequence();
 }
 
 inline uint32_t
-HdEmbreeResolveFrameSeed(int configuredSeed, float sceneFrame)
+ResolveFrameSeed(int configuredSeed, float sceneFrame)
 {
     if (configuredSeed != -1) {
         return static_cast<uint32_t>(configuredSeed);
@@ -104,7 +105,7 @@ HdEmbreeResolveFrameSeed(int configuredSeed, float sceneFrame)
 // Domain-aware sampler API
 // ---------------------------------------------------------------------------
 
-enum class HdEmbreeSampleDomainKey : uint32_t
+enum class SampleDomainKey : uint32_t
 {
     Pixel = 0x0001u,
     CameraJitter = 0x0010u,
@@ -138,12 +139,12 @@ enum class HdEmbreeSampleDomainKey : uint32_t
 };
 
 inline uint32_t
-HdEmbreeSampleDomainKeyValue(HdEmbreeSampleDomainKey key)
+SampleDomainKeyValue(SampleDomainKey key)
 {
     return static_cast<uint32_t>(key);
 }
 
-using HdEmbreeOpenQMCVariant = std::variant<
+using OpenQmcVariant = std::variant<
     std::monostate,
     oqmc::SobolSampler,
     oqmc::SobolBnSampler,
@@ -152,55 +153,55 @@ using HdEmbreeOpenQMCVariant = std::variant<
     oqmc::LatticeSampler,
     oqmc::LatticeBnSampler>;
 
-struct HdEmbreeSampleDomain
+struct SampleDomain
 {
-    HdEmbreeSamplerSequence sequence =
-        HdEmbreeGetDefaultSamplerSequence();
-    HdEmbreeOpenQMCVariant openQmcDomain;
+    SamplerSequence sequence =
+        GetDefaultSamplerSequence();
+    OpenQmcVariant openQmcDomain;
 
-    HdEmbreeSampleDomain() = default;
+    SampleDomain() = default;
 
-    HdEmbreeSampleDomain(HdEmbreeSamplerSequence samplerSequence,
-                         HdEmbreeOpenQMCVariant openQmcSampler)
+    SampleDomain(SamplerSequence samplerSequence,
+                         OpenQmcVariant openQmcSampler)
         : sequence(samplerSequence)
         , openQmcDomain(openQmcSampler)
     {
     }
 
-    HdEmbreeSampleDomain Fork(HdEmbreeSampleDomainKey key) const
+    SampleDomain Fork(SampleDomainKey key) const
     {
         const int domainKey =
-            static_cast<int>(HdEmbreeSampleDomainKeyValue(key));
+            static_cast<int>(SampleDomainKeyValue(key));
         return std::visit(
             [this, domainKey](auto const& sampler)
-                -> HdEmbreeSampleDomain {
+                -> SampleDomain {
                 using SamplerT = std::decay_t<decltype(sampler)>;
                 if constexpr (std::is_same_v<SamplerT, std::monostate>) {
-                    return HdEmbreeSampleDomain();
+                    return SampleDomain();
                 } else {
-                    return HdEmbreeSampleDomain(
+                    return SampleDomain(
                         sequence, sampler.newDomain(domainKey));
                 }
             },
             openQmcDomain);
     }
 
-    HdEmbreeSampleDomain Split(HdEmbreeSampleDomainKey key,
+    SampleDomain Split(SampleDomainKey key,
                                int size,
                                int index) const
     {
         const int safeSize = std::max(size, 1);
         const int safeIndex = std::max(index, 0);
         const int domainKey =
-            static_cast<int>(HdEmbreeSampleDomainKeyValue(key));
+            static_cast<int>(SampleDomainKeyValue(key));
         return std::visit(
             [this, domainKey, safeSize, safeIndex](auto const& sampler)
-                -> HdEmbreeSampleDomain {
+                -> SampleDomain {
                 using SamplerT = std::decay_t<decltype(sampler)>;
                 if constexpr (std::is_same_v<SamplerT, std::monostate>) {
-                    return HdEmbreeSampleDomain();
+                    return SampleDomain();
                 } else {
-                    return HdEmbreeSampleDomain(
+                    return SampleDomain(
                         sequence,
                         sampler.newDomainSplit(
                             domainKey, safeSize, safeIndex));
@@ -209,20 +210,20 @@ struct HdEmbreeSampleDomain
             openQmcDomain);
     }
 
-    HdEmbreeSampleDomain Distrib(HdEmbreeSampleDomainKey key,
+    SampleDomain Distrib(SampleDomainKey key,
                                  int index) const
     {
         const int safeIndex = std::max(index, 0);
         const int domainKey =
-            static_cast<int>(HdEmbreeSampleDomainKeyValue(key));
+            static_cast<int>(SampleDomainKeyValue(key));
         return std::visit(
             [this, domainKey, safeIndex](auto const& sampler)
-                -> HdEmbreeSampleDomain {
+                -> SampleDomain {
                 using SamplerT = std::decay_t<decltype(sampler)>;
                 if constexpr (std::is_same_v<SamplerT, std::monostate>) {
-                    return HdEmbreeSampleDomain();
+                    return SampleDomain();
                 } else {
-                    return HdEmbreeSampleDomain(
+                    return SampleDomain(
                         sequence,
                         sampler.newDomainDistrib(domainKey, safeIndex));
                 }
@@ -230,20 +231,20 @@ struct HdEmbreeSampleDomain
             openQmcDomain);
     }
 
-    HdEmbreeSampleDomain Chain(HdEmbreeSampleDomainKey key,
+    SampleDomain Chain(SampleDomainKey key,
                                int index) const
     {
         const int safeIndex = std::max(index, 0);
         const int domainKey =
-            static_cast<int>(HdEmbreeSampleDomainKeyValue(key));
+            static_cast<int>(SampleDomainKeyValue(key));
         return std::visit(
             [this, domainKey, safeIndex](auto const& sampler)
-                -> HdEmbreeSampleDomain {
+                -> SampleDomain {
                 using SamplerT = std::decay_t<decltype(sampler)>;
                 if constexpr (std::is_same_v<SamplerT, std::monostate>) {
-                    return HdEmbreeSampleDomain();
+                    return SampleDomain();
                 } else {
-                    return HdEmbreeSampleDomain(
+                    return SampleDomain(
                         sequence,
                         sampler.newDomainChain(domainKey, safeIndex));
                 }
@@ -294,17 +295,17 @@ private:
     }
 };
 
-struct HdEmbreeSampler
+struct Sampler
 {
-    HdEmbreeSamplerSequence sequence =
-        HdEmbreeGetDefaultSamplerSequence();
-    HdEmbreeOpenQMCVariant openQmcRoot;
+    SamplerSequence sequence =
+        GetDefaultSamplerSequence();
+    OpenQmcVariant openQmcRoot;
 
-    HdEmbreeSampler(uint32_t frameSeed,
+    Sampler(uint32_t frameSeed,
                     uint32_t pixelX,
                     uint32_t pixelY,
                     uint32_t sampleIdx,
-                    HdEmbreeSamplerSequence samplerSequence)
+                    SamplerSequence samplerSequence)
         : sequence(samplerSequence)
     {
         const int x = static_cast<int>(pixelX);
@@ -313,36 +314,36 @@ struct HdEmbreeSampler
         const int index = static_cast<int>(sampleIdx);
 
         switch (sequence) {
-        case HdEmbreeSamplerSequence::OpenQMCSobol:
+        case SamplerSequence::OpenQMCSobol:
             openQmcRoot = oqmc::SobolSampler(
                 x, y, frame, index, _GetOpenQMCCache<oqmc::SobolSampler>());
             break;
-        case HdEmbreeSamplerSequence::OpenQMCSobolBN:
+        case SamplerSequence::OpenQMCSobolBN:
             openQmcRoot = oqmc::SobolBnSampler(
                 x, y, frame, index, _GetOpenQMCCache<oqmc::SobolBnSampler>());
             break;
-        case HdEmbreeSamplerSequence::OpenQMCPMJ:
+        case SamplerSequence::OpenQMCPMJ:
             openQmcRoot = oqmc::PmjSampler(
                 x, y, frame, index, _GetOpenQMCCache<oqmc::PmjSampler>());
             break;
-        case HdEmbreeSamplerSequence::OpenQMCPMJBN:
+        case SamplerSequence::OpenQMCPMJBN:
             openQmcRoot = oqmc::PmjBnSampler(
                 x, y, frame, index, _GetOpenQMCCache<oqmc::PmjBnSampler>());
             break;
-        case HdEmbreeSamplerSequence::OpenQMCLattice:
+        case SamplerSequence::OpenQMCLattice:
             openQmcRoot = oqmc::LatticeSampler(
                 x, y, frame, index, _GetOpenQMCCache<oqmc::LatticeSampler>());
             break;
-        case HdEmbreeSamplerSequence::OpenQMCLatticeBN:
+        case SamplerSequence::OpenQMCLatticeBN:
             openQmcRoot = oqmc::LatticeBnSampler(
                 x, y, frame, index, _GetOpenQMCCache<oqmc::LatticeBnSampler>());
             break;
         }
     }
 
-    HdEmbreeSampleDomain RootDomain() const
+    SampleDomain RootDomain() const
     {
-        return HdEmbreeSampleDomain(sequence, openQmcRoot);
+        return SampleDomain(sequence, openQmcRoot);
     }
 
 private:
@@ -361,6 +362,7 @@ private:
     }
 };
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif // PXR_IMAGING_PLUGIN_HD_EMBREE_SAMPLING_H

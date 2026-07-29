@@ -20,7 +20,7 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 static bool
-_HasDomeDistribution(HdEmbree_LightTexture const& texture)
+_HasDomeDistribution(ty::LightTexture const& texture)
 {
     const size_t texelCount =
         static_cast<size_t>(texture.width) * static_cast<size_t>(texture.height);
@@ -60,7 +60,7 @@ _LatLongUvToDirection(GfVec2f const& uv)
 
 static float
 _TexelDirectionalPdf(
-    HdEmbree_LightTexture const& texture, int x, int y, float theta)
+    ty::LightTexture const& texture, int x, int y, float theta)
 {
     if (!_HasDomeDistribution(texture) || x < 0 || y < 0 ||
         x >= texture.width || y >= texture.height) {
@@ -82,7 +82,7 @@ _TexelDirectionalPdf(
 }
 
 static GfVec2f
-_SampleDomeUv(HdEmbree_LightTexture const& texture, float u1, float u2)
+_SampleDomeUv(ty::LightTexture const& texture, float u1, float u2)
 {
     const float sampleX = ty::ClampUnitHalfOpen(u1);
     const float sampleY = ty::ClampUnitHalfOpen(u2);
@@ -123,7 +123,7 @@ _SampleDomeUv(HdEmbree_LightTexture const& texture, float u1, float u2)
 
 static float
 _DomeDirectionalPdf(
-    HdEmbree_LightData const& light, GfVec2f const& uv)
+    ty::LightData const& light, GfVec2f const& uv)
 {
     float pdfSolidAngle = 1.0f / (4.0f * ty::Pi<float>);
     if (_HasDomeDistribution(light.texture)) {
@@ -147,7 +147,7 @@ _DomeDirectionalPdf(
 
 static float
 _DomeDirectionalPdf(
-    HdEmbree_LightData const& light, GfVec3f const& worldDirection)
+    ty::LightData const& light, GfVec3f const& worldDirection)
 {
     if (!ty::IsFinite(worldDirection) || worldDirection.GetLengthSq() <= 0.0f) {
         return 0.0f;
@@ -181,7 +181,7 @@ _ReflectAcrossPlane(
 
 static float
 _ReflectionHemispherePdf(
-    HdEmbree_LightData const& light, GfVec3f const& normal,
+    ty::LightData const& light, GfVec3f const& normal,
     GfVec3f const& direction)
 {
     GfVec3f n;
@@ -218,10 +218,10 @@ _FoldDirectionToReflectionHemisphere(
         : _ReflectAcrossPlane(omegaInWld, n);
 }
 
-HdEmbreeLightSampler::LightSample
+ty::LightSampler::LightSample
 ty::EvaluateDomeLightDirection(
-    HdEmbree_LightData const& light, GfVec3f const& direction,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::LightData const& light, GfVec3f const& direction,
+    ty::RenderColorSpace renderColorSpace)
 {
     if (!ty::IsFinite(direction) || direction.GetLengthSq() <= 0.0f) {
         return ty::InvalidLightSample();
@@ -242,21 +242,21 @@ ty::EvaluateDomeLightDirection(
         radianceIn, ty::EvalLightBasic(light, renderColorSpace));
 
     const float pdfSolidAngle = _DomeDirectionalPdf(light, uv);
-    return HdEmbreeLightSampler::LightSample{
+    return ty::LightSampler::LightSample{
         radianceIn, normalizedDirection, std::numeric_limits<float>::max(),
         (pdfSolidAngle > 0.0f) ? (1.0f / pdfSolidAngle) : 0.0f,
         pdfSolidAngle > 0.0f};
 }
 
-HdEmbreeLightSampler::LightSample
+ty::LightSampler::LightSample
 ty::EvaluateDomeLightDirection(
-    HdEmbree_LightData const& light, GfVec3f const& direction,
+    ty::LightData const& light, GfVec3f const& direction,
     GfVec3f const& normal,
-    HdEmbreeLightSampler::SamplingMode samplingMode,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::LightSampler::SamplingMode samplingMode,
+    ty::RenderColorSpace renderColorSpace)
 {
     if (samplingMode !=
-        HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere) {
+        ty::LightSampler::SamplingMode::ReflectionHemisphere) {
         return ty::EvaluateDomeLightDirection(
             light, direction, renderColorSpace);
     }
@@ -280,18 +280,18 @@ ty::EvaluateDomeLightDirection(
 
     const float pdfSolidAngle =
         _ReflectionHemispherePdf(light, normal, normalizedDirection);
-    return HdEmbreeLightSampler::LightSample{
+    return ty::LightSampler::LightSample{
         radianceIn, normalizedDirection, std::numeric_limits<float>::max(),
         (pdfSolidAngle > 0.0f) ? (1.0f / pdfSolidAngle) : 0.0f,
         pdfSolidAngle > 0.0f};
 }
 
-HdEmbreeLightSampler::LightSample
+ty::LightSampler::LightSample
 ty::SampleDomeLight(
-    HdEmbree_LightData const& light, GfVec3f const& normal,
+    ty::LightData const& light, GfVec3f const& normal,
     float u1, float u2,
-    HdEmbreeLightSampler::SamplingMode samplingMode,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::LightSampler::SamplingMode samplingMode,
+    ty::RenderColorSpace renderColorSpace)
 {
     GfVec3f worldDirection;
     if (!_HasDomeDistribution(light.texture)) {
@@ -311,7 +311,7 @@ ty::SampleDomeLight(
     }
 
     if (samplingMode ==
-        HdEmbreeLightSampler::SamplingMode::ReflectionHemisphere) {
+        ty::LightSampler::SamplingMode::ReflectionHemisphere) {
         const GfVec3f hemisphereDirection =
             _FoldDirectionToReflectionHemisphere(worldDirection, normal);
         if (hemisphereDirection.GetLengthSq() > 0.0f) {

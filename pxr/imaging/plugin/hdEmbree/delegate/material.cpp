@@ -90,10 +90,10 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
     }
 
     if (haveNetwork) {
-        HdEmbreeRenderColorSpace renderColorSpace =
-            HdEmbreeRenderColorSpace::LinearRec709;
+        ty::RenderColorSpace renderColorSpace =
+            ty::RenderColorSpace::LinearRec709;
         if (renderParam) {
-            HdEmbreeMaterialEvalServices const* const services =
+            ty::MaterialEvalServices const* const services =
                 static_cast<HdEmbreeRenderParam*>(renderParam)
                     ->GetMaterialEvalServices();
             if (services) {
@@ -106,7 +106,7 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
         // independently so either consumer can run without evaluating the
         // other.
         const mxcpp::MaterialGraph mxcppGraph =
-            ConvertHdNetworkToMxcppGraph(network, renderColorSpace);
+            ty::ConvertHdNetworkToMxcppGraph(network, renderColorSpace);
         _renderMaterial.geomPropNames =
             mxcpp::CollectGeomPropNames(mxcppGraph);
         _renderMaterial.geomPropTokens.reserve(

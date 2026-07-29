@@ -13,8 +13,9 @@
 #include <embree4/rtcore_geometry.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
-struct HdEmbreePrototypeContext;
+struct PrototypeContext;
 
 /// Hit-local displaced subdivision frame and the three probes needed to
 /// complete its normal derivatives lazily.
@@ -23,7 +24,7 @@ struct HdEmbreePrototypeContext;
 /// The remaining fields cache the center/U/V displacement evaluations so a
 /// later derivative request needs only the outer UU/UV/VV ring. This is a
 /// short-lived value; it does not retain or own the geometry or context.
-struct HdEmbreeDisplacedSubdivFrame
+struct DisplacedSubdivFrame
 {
     GfVec3f normal = GfVec3f(0.0f);
     GfVec3f dPdu = GfVec3f(0.0f);
@@ -52,8 +53,8 @@ struct HdEmbreeDisplacedSubdivFrame
 /// derivatives to the prototype's displacement world space while retaining
 /// object-space position derivatives for MaterialX position nodes.
 /// \p displacement is written only on success.
-bool HdEmbreeEvaluateDisplacement(
-    HdEmbreePrototypeContext const* context,
+bool EvaluateDisplacement(
+    PrototypeContext const* context,
     unsigned int primID,
     float u,
     float v,
@@ -69,8 +70,8 @@ bool HdEmbreeEvaluateDisplacement(
 /// The offset is chosen so transforming it by the prototype object-to-world
 /// matrix produces exactly `displacement * worldNormal`, including under
 /// non-uniform scale and reflection.
-bool HdEmbreeComputeObjectSpaceDisplacementOffset(
-    HdEmbreePrototypeContext const* context,
+bool ComputeObjectSpaceDisplacementOffset(
+    PrototypeContext const* context,
     GfVec3f const& objectNormal,
     float displacement,
     GfVec3f* objectOffset);
@@ -81,9 +82,9 @@ bool HdEmbreeComputeObjectSpaceDisplacementOffset(
 /// This follows the same limit-surface interpolation, MaterialX evaluation,
 /// orientation, and world-distance conversion as the Embree displacement
 /// callback. The output is written only when the complete result is finite.
-bool HdEmbreeComputeDisplacedSubdivPosition(
+bool ComputeDisplacedSubdivPosition(
     RTCGeometry geometry,
-    HdEmbreePrototypeContext const* context,
+    PrototypeContext const* context,
     unsigned int primID,
     float u,
     float v,
@@ -97,18 +98,18 @@ bool HdEmbreeComputeDisplacedSubdivPosition(
 /// the same world-normal/object-offset mapping as the Embree callback, so the
 /// reconstructed frame remains correct under non-uniform transforms. Outputs
 /// are written only when the complete frame is finite and non-degenerate.
-bool HdEmbreeComputeDisplacedSubdivFrame(
+bool ComputeDisplacedSubdivFrame(
     RTCGeometry geometry,
-    HdEmbreePrototypeContext const* context,
+    PrototypeContext const* context,
     unsigned int primID,
     float u,
     float v,
-    HdEmbreeDisplacedSubdivFrame* outFrame);
+    DisplacedSubdivFrame* outFrame);
 
 /// Compatibility overload returning only the immediately needed frame.
-bool HdEmbreeComputeDisplacedSubdivFrame(
+bool ComputeDisplacedSubdivFrame(
     RTCGeometry geometry,
-    HdEmbreePrototypeContext const* context,
+    PrototypeContext const* context,
     unsigned int primID,
     float u,
     float v,
@@ -123,13 +124,14 @@ bool HdEmbreeComputeDisplacedSubdivFrame(
 /// samples are evaluated. The derivatives are returned in Embree patch
 /// coordinates and aligned with `frame.normal`. Outputs are written only when
 /// both derivatives are finite and all displaced probe frames are valid.
-bool HdEmbreeComputeDisplacedSubdivNormalDerivatives(
+bool ComputeDisplacedSubdivNormalDerivatives(
     RTCGeometry geometry,
-    HdEmbreePrototypeContext const* context,
-    HdEmbreeDisplacedSubdivFrame const& frame,
+    PrototypeContext const* context,
+    DisplacedSubdivFrame const& frame,
     GfVec3f* outDndu,
     GfVec3f* outDndv);
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif // PXR_IMAGING_PLUGIN_HD_EMBREE_DISPLACEMENT_EVALUATION_H

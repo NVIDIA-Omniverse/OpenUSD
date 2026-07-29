@@ -67,7 +67,7 @@ _Phi(GfVec3f const& v)
 }
 
 bool
-_HasAuthoredDirectionalShaping(HdEmbree_Shaping const& shaping)
+_HasAuthoredDirectionalShaping(ty::Shaping const& shaping)
 {
     return shaping.focus > 0.0f ||
            shaping.coneAngle < 180.0f ||
@@ -214,7 +214,7 @@ _SanitizeWeight(float value)
 }
 
 void
-_ClearSamplingDistribution(HdEmbree_LightTexture* texture)
+_ClearSamplingDistribution(ty::LightTexture* texture)
 {
     if (!texture) {
         return;
@@ -225,16 +225,16 @@ _ClearSamplingDistribution(HdEmbree_LightTexture* texture)
     texture->weightSum = 0.0f;
 }
 
-HdEmbree_LightTexture
+ty::LightTexture
 _LoadLightTexture(std::string const& path)
 {
     if (path.empty()) {
-        return HdEmbree_LightTexture();
+        return ty::LightTexture();
     }
 
     HioImageSharedPtr img = HioImage::OpenForReading(path);
     if (!img) {
-        return HdEmbree_LightTexture();
+        return ty::LightTexture();
     }
 
     int width = img->GetWidth();
@@ -250,12 +250,12 @@ _LoadLightTexture(std::string const& path)
     storage.data = &pixels.front();
 
     if (img->Read(storage)) {
-        HdEmbree_LightTexture texture;
+        ty::LightTexture texture;
         texture.pixels = std::move(pixels);
         texture.width = width;
         texture.height = height;
         texture.colorSpaceName = _GetImageColorSpaceName(img);
-        HdEmbreeBuildDomeLightSamplingDistribution(&texture);
+        ty::BuildDomeLightSamplingDistribution(&texture);
         return texture;
     }
     TF_WARN("Could not read image %s", path.c_str());
@@ -276,7 +276,7 @@ _IsPositiveFinite(float v)
 
 void
 _AppendPoint(
-    HdEmbree_LightData const& light,
+    ty::LightData const& light,
     GfVec3f const& localPoint,
     std::vector<GfVec3f>* points)
 {
@@ -285,8 +285,8 @@ _AppendPoint(
 
 void
 _AppendRectVisibleGeometry(
-    HdEmbree_LightData const& light,
-    HdEmbree_Rect const& rect,
+    ty::LightData const& light,
+    ty::RectLight const& rect,
     std::vector<GfVec3f>* points,
     std::vector<GfVec3i>* triangles)
 {
@@ -310,8 +310,8 @@ _AppendRectVisibleGeometry(
 
 void
 _AppendDiskVisibleGeometry(
-    HdEmbree_LightData const& light,
-    HdEmbree_Disk const& disk,
+    ty::LightData const& light,
+    ty::DiskLight const& disk,
     std::vector<GfVec3f>* points,
     std::vector<GfVec3i>* triangles)
 {
@@ -342,8 +342,8 @@ _AppendDiskVisibleGeometry(
 
 void
 _AppendSphereVisibleGeometry(
-    HdEmbree_LightData const& light,
-    HdEmbree_Sphere const& sphere,
+    ty::LightData const& light,
+    ty::SphereLight const& sphere,
     std::vector<GfVec3f>* points,
     std::vector<GfVec3i>* triangles)
 {
@@ -397,8 +397,8 @@ _AppendSphereVisibleGeometry(
 
 void
 _AppendCylinderVisibleGeometry(
-    HdEmbree_LightData const& light,
-    HdEmbree_Cylinder const& cylinder,
+    ty::LightData const& light,
+    ty::CylinderLight const& cylinder,
     std::vector<GfVec3f>* points,
     std::vector<GfVec3i>* triangles)
 {
@@ -431,7 +431,7 @@ _AppendCylinderVisibleGeometry(
 
 bool
 _BuildVisibleLightGeometry(
-    HdEmbree_LightData const& light,
+    ty::LightData const& light,
     std::vector<GfVec3f>* points,
     std::vector<GfVec3i>* triangles)
 {
@@ -440,13 +440,13 @@ _BuildVisibleLightGeometry(
 
     std::visit([&](auto const& typedLight) {
         using T = std::decay_t<decltype(typedLight)>;
-        if constexpr (std::is_same_v<T, HdEmbree_Rect>) {
+        if constexpr (std::is_same_v<T, ty::RectLight>) {
             _AppendRectVisibleGeometry(light, typedLight, points, triangles);
-        } else if constexpr (std::is_same_v<T, HdEmbree_Disk>) {
+        } else if constexpr (std::is_same_v<T, ty::DiskLight>) {
             _AppendDiskVisibleGeometry(light, typedLight, points, triangles);
-        } else if constexpr (std::is_same_v<T, HdEmbree_Sphere>) {
+        } else if constexpr (std::is_same_v<T, ty::SphereLight>) {
             _AppendSphereVisibleGeometry(light, typedLight, points, triangles);
-        } else if constexpr (std::is_same_v<T, HdEmbree_Cylinder>) {
+        } else if constexpr (std::is_same_v<T, ty::CylinderLight>) {
             _AppendCylinderVisibleGeometry(light, typedLight, points, triangles);
         }
     }, light.lightVariant);
@@ -547,7 +547,7 @@ _GetTexturePathFromMaterialResource(const SdfPath& id,
 }
 
 void
-_SyncLightTexture(const SdfPath& id, HdEmbree_LightData& light,
+_SyncLightTexture(const SdfPath& id, ty::LightData& light,
                   HdSceneDelegate *sceneDelegate)
 {
     std::string path = _GetTexturePathFromValue(
@@ -563,8 +563,8 @@ _SyncLightTexture(const SdfPath& id, HdEmbree_LightData& light,
 PXR_NAMESPACE_OPEN_SCOPE
 
 GfVec3f
-HdEmbreeEvaluateDirectionalShaping(
-    HdEmbree_Shaping const& shaping,
+ty::EvaluateDirectionalShaping(
+    ty::Shaping const& shaping,
     GfVec3f const& localDirection)
 {
     if (localDirection.GetLengthSq() <= 0.0f ||
@@ -592,7 +592,7 @@ HdEmbreeEvaluateDirectionalShaping(
     const float thetaOffZ = std::acos(cosThetaOffZ);
     shapingWeight *= 1.0f - _Smoothstep(thetaOffZ, thetaSoft, thetaCone);
 
-    HdEmbree_IES const& ies = shaping.ies;
+    ty::IesShaping const& ies = shaping.ies;
     if (ies.iesFile.valid()) {
         const float norm = ies.normalize ? ies.iesFile.power() : 1.0f;
         const float iesWeight =
@@ -608,12 +608,12 @@ HdEmbreeEvaluateDirectionalShaping(
 }
 
 float
-HdEmbreeDirectionalShapingImportance(
-    HdEmbree_Shaping const& shaping,
+ty::DirectionalShapingImportance(
+    ty::Shaping const& shaping,
     GfVec3f const& localDirection)
 {
     const GfVec3f shapingWeight =
-        HdEmbreeEvaluateDirectionalShaping(shaping, localDirection);
+        ty::EvaluateDirectionalShaping(shaping, localDirection);
     // This is a proposal weight only.  Max-component importance avoids
     // embedding working-space-specific luminance coefficients in light sync.
     return std::max(
@@ -624,23 +624,23 @@ HdEmbreeDirectionalShapingImportance(
 }
 
 void
-HdEmbreeBuildDirectionalShapingDistribution(HdEmbree_Shaping* shaping)
+ty::BuildDirectionalShapingDistribution(ty::Shaping* shaping)
 {
     if (!shaping) {
         return;
     }
 
-    HdEmbree_DirectionalShapingDistribution& distribution =
+    ty::DirectionalShapingDistribution& distribution =
         shaping->directionalDistribution;
-    distribution = HdEmbree_DirectionalShapingDistribution();
+    distribution = ty::DirectionalShapingDistribution();
 
     if (!_HasAuthoredDirectionalShaping(*shaping)) {
         return;
     }
 
-    constexpr int numPhi = HdEmbree_DirectionalShapingDistribution::NumPhi;
+    constexpr int numPhi = ty::DirectionalShapingDistribution::NumPhi;
     constexpr int numBaseTheta =
-        HdEmbree_DirectionalShapingDistribution::NumBaseTheta;
+        ty::DirectionalShapingDistribution::NumBaseTheta;
 
     // Theta row boundaries: a uniform base partition augmented with the
     // exact angles where each shaping feature has structure, so features
@@ -735,7 +735,7 @@ HdEmbreeBuildDirectionalShapingDistribution(HdEmbree_Shaping* shaping)
                              static_cast<float>(numSubPhi)) /
                         static_cast<float>(numPhi);
                     const float importance =
-                        HdEmbreeDirectionalShapingImportance(
+                        ty::DirectionalShapingImportance(
                             *shaping,
                             GfVec3f(r * std::cos(phi),
                                     r * std::sin(phi),
@@ -762,7 +762,7 @@ HdEmbreeBuildDirectionalShapingDistribution(HdEmbree_Shaping* shaping)
         TF_DEBUG(HDEMBREE_LIGHT_CREATE).Msg(
             "Directional shaping importance integrated to zero; "
             "falling back to area sampling\n");
-        distribution = HdEmbree_DirectionalShapingDistribution();
+        distribution = ty::DirectionalShapingDistribution();
         return;
     }
 
@@ -796,20 +796,20 @@ HdEmbreeBuildDirectionalShapingDistribution(HdEmbree_Shaping* shaping)
     }
 }
 
-HdEmbree_DirectionalShapingSample
-HdEmbreeSampleDirectionalShaping(
-    HdEmbree_Shaping const& shaping,
+ty::DirectionalShapingSample
+ty::SampleDirectionalShaping(
+    ty::Shaping const& shaping,
     float u1,
     float u2)
 {
-    HdEmbree_DirectionalShapingSample result;
-    HdEmbree_DirectionalShapingDistribution const& distribution =
+    ty::DirectionalShapingSample result;
+    ty::DirectionalShapingDistribution const& distribution =
         shaping.directionalDistribution;
     if (!distribution.IsValid()) {
         return result;
     }
 
-    constexpr int numPhi = HdEmbree_DirectionalShapingDistribution::NumPhi;
+    constexpr int numPhi = ty::DirectionalShapingDistribution::NumPhi;
     const int numCells = distribution.NumRows() * numPhi;
 
     const float sample = GfClamp(
@@ -864,20 +864,20 @@ HdEmbreeSampleDirectionalShaping(
     // row. Sharing one source of truth keeps sample and evaluation consistent
     // (a sample that rounds into a zero-weight row is simply discarded).
     result.pdfSolidAngle =
-        HdEmbreeDirectionalShapingPdf(shaping, result.localDirection);
+        ty::DirectionalShapingPdf(shaping, result.localDirection);
     result.importance =
-        HdEmbreeDirectionalShapingImportance(shaping, result.localDirection);
+        ty::DirectionalShapingImportance(shaping, result.localDirection);
     result.valid =
         result.pdfSolidAngle > 0.0f && std::isfinite(result.pdfSolidAngle);
     return result;
 }
 
 float
-HdEmbreeDirectionalShapingPdf(
-    HdEmbree_Shaping const& shaping,
+ty::DirectionalShapingPdf(
+    ty::Shaping const& shaping,
     GfVec3f const& localDirection)
 {
-    HdEmbree_DirectionalShapingDistribution const& distribution =
+    ty::DirectionalShapingDistribution const& distribution =
         shaping.directionalDistribution;
     if (!distribution.IsValid() ||
         localDirection.GetLengthSq() <= 0.0f ||
@@ -887,7 +887,7 @@ HdEmbreeDirectionalShapingPdf(
         return 0.0f;
     }
 
-    constexpr int numPhi = HdEmbree_DirectionalShapingDistribution::NumPhi;
+    constexpr int numPhi = ty::DirectionalShapingDistribution::NumPhi;
     const int numRows = distribution.NumRows();
     const GfVec3f omegaInLocal = localDirection.GetNormalized();
     const float z = GfClamp(omegaInLocal[2], -1.0f, 1.0f);
@@ -911,7 +911,7 @@ HdEmbreeDirectionalShapingPdf(
 }
 
 void
-HdEmbreeBuildDomeLightSamplingDistribution(HdEmbree_LightTexture* texture)
+ty::BuildDomeLightSamplingDistribution(ty::LightTexture* texture)
 {
     if (!texture) {
         return;
@@ -1011,21 +1011,21 @@ HdEmbree_Light::HdEmbree_Light(SdfPath const& id, TfToken const& lightType)
 
     // Set the variant to the right type - Sync will fill rest of data
     if (lightType == HdSprimTypeTokens->cylinderLight) {
-        _lightData.lightVariant = HdEmbree_Cylinder();
+        _lightData.lightVariant = ty::CylinderLight();
     } else if (lightType == HdSprimTypeTokens->diskLight) {
-        _lightData.lightVariant = HdEmbree_Disk();
+        _lightData.lightVariant = ty::DiskLight();
     } else if (lightType == HdSprimTypeTokens->distantLight) {
-        _lightData.lightVariant = HdEmbree_Distant();
+        _lightData.lightVariant = ty::DistantLight();
     } else if (lightType == HdSprimTypeTokens->domeLight) {
-        _lightData.lightVariant = HdEmbree_Dome();
+        _lightData.lightVariant = ty::DomeLight();
     } else if (lightType == HdSprimTypeTokens->rectLight) {
         // Get shape parameters
-        _lightData.lightVariant = HdEmbree_Rect();
+        _lightData.lightVariant = ty::RectLight();
     } else if (lightType == HdSprimTypeTokens->sphereLight) {
-        _lightData.lightVariant = HdEmbree_Sphere();
+        _lightData.lightVariant = ty::SphereLight();
     } else {
         TF_WARN("HdEmbree - Unrecognized light type: %s", lightType.GetText());
-        _lightData.lightVariant = HdEmbree_UnknownLight();
+        _lightData.lightVariant = ty::UnknownLight();
     }
 }
 
@@ -1034,7 +1034,7 @@ HdEmbree_Light::~HdEmbree_Light() = default;
 
 void
 HdEmbree_Light::_ReleaseVisibleGeometry(
-    RTCScene scene, HdEmbreeRenderer* renderer)
+    RTCScene scene, ty::Renderer* renderer)
 {
     if (!_rtcVisibleGeometry) {
         _rtcVisibleGeometryId = RTC_INVALID_GEOMETRY_ID;
@@ -1058,7 +1058,7 @@ HdEmbree_Light::_ReleaseVisibleGeometry(
 
 void
 HdEmbree_Light::_UpdateVisibleGeometry(
-    RTCScene scene, RTCDevice device, HdEmbreeRenderer* renderer)
+    RTCScene scene, RTCDevice device, ty::Renderer* renderer)
 {
     if (!scene || !device || !renderer || !_lightData.visible ||
         !_lightData.visibleInPrimaryRay || !IsFiniteLight()) {
@@ -1078,7 +1078,7 @@ HdEmbree_Light::_UpdateVisibleGeometry(
         _rtcVisibleGeometry = rtcNewGeometry(device, RTC_GEOMETRY_TYPE_TRIANGLE);
         rtcSetGeometryBuildQuality(_rtcVisibleGeometry, RTC_BUILD_QUALITY_REFIT);
         rtcSetGeometryTimeStepCount(_rtcVisibleGeometry, 1);
-        rtcSetGeometryMask(_rtcVisibleGeometry, HdEmbree_RayMask::All);
+        rtcSetGeometryMask(_rtcVisibleGeometry, ty::RayMask::All);
         _rtcVisibleGeometryId = rtcAttachGeometry(scene, _rtcVisibleGeometry);
         renderer->AddLightGeometry(_rtcVisibleGeometryId, &_lightData);
     }
@@ -1140,7 +1140,7 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
     if (bits & (HdLight::DirtyParams | HdLight::DirtyResource)) {
         // Store luminance parameters
         const bool isDistant =
-            std::holds_alternative<HdEmbree_Distant>(
+            std::holds_alternative<ty::DistantLight>(
                 _lightData.lightVariant);
         _lightData.intensity = sceneDelegate->GetLightParamValue(
             id, HdLightTokens->intensity).GetWithDefault(
@@ -1166,40 +1166,40 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
         // the scene delegate.
         std::visit([this, &id, &sceneDelegate](auto& typedLight) {
             using T = std::decay_t<decltype(typedLight)>;
-            if constexpr (std::is_same_v<T, HdEmbree_Cylinder>) {
-                typedLight = HdEmbree_Cylinder{
+            if constexpr (std::is_same_v<T, ty::CylinderLight>) {
+                typedLight = ty::CylinderLight{
                     sceneDelegate->GetLightParamValue(id, HdLightTokens->radius)
                         .GetWithDefault(0.5f),
                     sceneDelegate->GetLightParamValue(id, HdLightTokens->length)
                         .GetWithDefault(1.0f),
                 };
-            } else if constexpr (std::is_same_v<T, HdEmbree_Disk>) {
-                typedLight = HdEmbree_Disk{
+            } else if constexpr (std::is_same_v<T, ty::DiskLight>) {
+                typedLight = ty::DiskLight{
                     sceneDelegate->GetLightParamValue(id, HdLightTokens->radius)
                         .GetWithDefault(0.5f),
                 };
-            } else if constexpr (std::is_same_v<T, HdEmbree_Distant>) {
-                typedLight = HdEmbree_Distant{
+            } else if constexpr (std::is_same_v<T, ty::DistantLight>) {
+                typedLight = ty::DistantLight{
                     sceneDelegate->GetLightParamValue(id, HdLightTokens->angle)
                         .GetWithDefault(0.53f),
                 };
-            } else if constexpr (std::is_same_v<T, HdEmbree_Dome>) {
-                typedLight = HdEmbree_Dome{};
+            } else if constexpr (std::is_same_v<T, ty::DomeLight>) {
+                typedLight = ty::DomeLight{};
                 _SyncLightTexture(id, _lightData, sceneDelegate);
-            } else if constexpr (std::is_same_v<T, HdEmbree_Rect>) {
-                typedLight = HdEmbree_Rect{
+            } else if constexpr (std::is_same_v<T, ty::RectLight>) {
+                typedLight = ty::RectLight{
                     sceneDelegate->GetLightParamValue(id, HdLightTokens->width)
                         .Get<float>(),
                     sceneDelegate->GetLightParamValue(id, HdLightTokens->height)
                         .Get<float>(),
                 };
                 _SyncLightTexture(id, _lightData, sceneDelegate);
-            } else if constexpr (std::is_same_v<T, HdEmbree_Sphere>) {
-                typedLight = HdEmbree_Sphere{
+            } else if constexpr (std::is_same_v<T, ty::SphereLight>) {
+                typedLight = ty::SphereLight{
                     sceneDelegate->GetLightParamValue(id, HdLightTokens->radius)
                         .GetWithDefault(0.5f),
                 };
-            } else if constexpr (std::is_same_v<T, HdEmbree_UnknownLight>) {
+            } else if constexpr (std::is_same_v<T, ty::UnknownLight>) {
                 // Do nothing...
             } else {
                 // We should never get to this branch, as all possible variants
@@ -1273,7 +1273,7 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
             _lightData.shaping.ies.angleScale = value.UncheckedGet<float>();
         }
 
-        HdEmbreeBuildDirectionalShapingDistribution(&_lightData.shaping);
+        ty::BuildDirectionalShapingDistribution(&_lightData.shaping);
     }
 
     if (bits & (HdLight::DirtyParams |
@@ -1285,7 +1285,7 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
             id, HdTokens->shadowLink).GetWithDefault(TfToken());
     }
 
-    HdEmbreeRenderer *renderer = embreeRenderParam->GetRenderer();
+    ty::Renderer *renderer = embreeRenderParam->GetRenderer();
     _UpdateVisibleGeometry(scene, device, renderer);
     renderer->AddLight(id, &_lightData);
 
@@ -1304,7 +1304,7 @@ HdEmbree_Light::Finalize(HdRenderParam *renderParam)
     auto* embreeParam = static_cast<HdEmbreeRenderParam*>(renderParam);
 
     RTCScene scene = embreeParam->AcquireSceneForEdit();
-    HdEmbreeRenderer *renderer = embreeParam->GetRenderer();
+    ty::Renderer *renderer = embreeParam->GetRenderer();
     _ReleaseVisibleGeometry(scene, renderer);
 
     // Remove from renderer's light map.

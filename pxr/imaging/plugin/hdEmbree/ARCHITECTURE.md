@@ -151,7 +151,7 @@ corresponding type without changing the semantic name.
 
 ### `renderer/`: path tracing
 
-- `renderer.h/.cpp`: `HdEmbreeRenderer` central façade, persistent frame state,
+- `renderer.h/.cpp`: `ty::Renderer` central façade, persistent frame state,
   settings, and the progressive preview/full-resolution render loop.
 - `rendererMath.h`, `rayUtil.h`, `heroWavelength.h`, and
   `geometry/normalTransforms.h`: focused inline numeric, ray, spectral, and
@@ -279,7 +279,7 @@ corresponding type without changing the semantic name.
 3. During `HdRenderIndex::SyncAll()`, Hydra calls each adapter's `Sync()`: meshes pull geometry/primvars/bindings/instances; materials compile networks; lights pull Lux/texture/IES/linking data; instancers update transforms and contexts.
 4. Mutating adapters use `HdEmbreeRenderParam::AcquireSceneForEdit()` or `NotifySceneChange()`. This stops background rendering before shared state changes and increments the scene version. Material Sync additionally increments the material version, including failed/empty recompiles. After `SyncAll()`, the render pass observes that version and refreshes every mesh's handle-indexed geomprop bindings before any camera-gated subdivision recommit or render.
 5. Mesh prototypes/instances are attached to the top-level `RTCScene`.
-   `HdEmbreePrototypeContext` and `HdEmbreeInstanceContext` make synchronized
+   `ty::PrototypeContext` and `ty::InstanceContext` make synchronized
    renderer data available at hits without retaining Hydra adapter objects.
 6. At low complexity, subdivision meshes render as triangulated control cages.
    For medium and higher, the pass projects authored control edges through the
@@ -397,9 +397,9 @@ traversal to reduce ray leaks at dense displaced patch boundaries.
 2. The pass compares scene/settings versions, frame/time, camera/framing, data window, and AOV bindings with the previous execution.
 3. The pass resolves delegate and scene-index `HdRenderSettingsSchema` values,
    then applies renderer-consumed settings through one
-   `HdEmbreeRenderer::SetRenderSettings()` call. Camera, framing, AOV, scene,
+   `ty::Renderer::SetRenderSettings()` call. Camera, framing, AOV, scene,
    and wireframe state retain their dedicated setters.
-4. If accumulation-relevant state changed, the pass stops the thread, resets as needed, and starts `HdEmbreeRenderer::Render()` on `HdRenderThread`.
+4. If accumulation-relevant state changed, the pass stops the thread, resets as needed, and starts `ty::Renderer::Render()` on `HdRenderThread`.
 5. Before scene commit or buffer mapping, the renderer validates that the
    scene exists, every AOV is an hdEmbree buffer with a supported format and
    matching non-zero dimensions, and the data window is non-empty and
@@ -422,7 +422,7 @@ traversal to reduce ray leaks at dense displaced patch boundaries.
    `_RenderTiles()` with `WorkParallelForN`. Coarse preview passes use a pixel
    stride greater than one; full-resolution passes use stride one. Pixels
    already converged under adaptive sampling are skipped.
-2. Each selected pixel gets one `HdEmbreeSampler`, keyed by the frame seed,
+2. Each selected pixel gets one `ty::Sampler`, keyed by the frame seed,
    pixel coordinates, sample number, and configured OpenQMC sequence. Every
    later stochastic decision derives a named domain from this root; it must not
    consume unrelated domains opportunistically.
@@ -578,7 +578,7 @@ For each segment, `_IntegratePath()` performs these stages in order:
     prepares the native or Adobe OpenPBR surface and draws the BSDF sample that
     would produce the next segment.
 12. **Handle subsurface scattering.** `_TraceSubsurface()` in `sss.cpp` applies
-    the selected entry direction and weight, then `HdEmbreeRandomWalkSSS()` walks inside
+    the selected entry direction and weight, then `ty::RandomWalkSSS()` walks inside
     the owning mesh. A successful exit becomes a synthetic Lambertian hit on
     the next loop iteration. The complete entry, random walk, and exit consume
     one surface bounce; failure terminates the path.
@@ -662,7 +662,7 @@ Hydra buffer writes remain renderer/AOV responsibilities.
 Start in `renderer/renderer.cpp` and follow the implementation files rather
 than reading one monolithic translation unit:
 
-1. `HdEmbreeRenderer::Render()` in `renderer.cpp`: frame-level progressive
+1. `ty::Renderer::Render()` in `renderer.cpp`: frame-level progressive
    loop. It prepares state, schedules preview/full-resolution passes, resolves
    AOVs, checks convergence, and handles cancellation.
 2. `_RenderTiles()` in `renderer.cpp`: parallel tile/pixel traversal,
@@ -725,7 +725,7 @@ reviewed the completed changes and explicitly approved committing them.
 ### Sampling
 
 - New user-selectable sequence: add enum/token/OpenQMC draw logic in `renderer/sampling/sampling.h`, then expose it through config, delegate settings, schema, README, and renderer setters.
-- New stochastic decision: add a stable `HdEmbreeSampleDomainKey`. Never reuse or renumber existing values; they are part of deterministic rendering.
+- New stochastic decision: add a stable `ty::SampleDomainKey`. Never reuse or renumber existing values; they are part of deterministic rendering.
 - Use `Fork` for fixed independent domains, `Split` for one of N samples, `Distrib` for distributed work, and `Chain` for indexed variable-length sequences.
 - Never draw opportunistically from an unrelated domain.
 - Update `testenv/testHdEmbreeSampling.cpp`.
@@ -742,14 +742,14 @@ reviewed the completed changes and explicitly approved committing them.
 - Accept/validate bindings in `delegate/renderPass.*`.
 - Store accumulation state in `renderer/renderer.h`.
 - Compute in `renderer/aov/aovOutput.cpp` or at the appropriate integrator stage.
-- Add a format-aware `_Write*` path through `HdEmbreeRenderBufferInterface`; implement any new output operation in `delegate/renderBuffer.*`.
+- Add a format-aware `_Write*` path through `ty::RenderBufferInterface`; implement any new output operation in `delegate/renderBuffer.*`.
 
 ### Render settings
 
 hdEmbree's supported external render-settings interface is the USD
 `TyphoonRenderSettingsAPI` schema. Direct Hydra delegate settings remain an
 internal application-control path used by clients such as usdview's renderLab.
-`HdEmbreeRenderer` and `HdEmbreeRenderSettings` are implementation details, not
+`ty::Renderer` and `ty::RenderSettings` are implementation details, not
 a supported C++ API.
 
 The MaterialXCpp GGX multiple-scattering and dielectric-layer throughput

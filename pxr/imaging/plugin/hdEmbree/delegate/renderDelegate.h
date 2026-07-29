@@ -307,7 +307,7 @@ private:
     HdRenderThread _renderThread;
 
     // An embree renderer object, to perform the actual raytracing.
-    HdEmbreeRenderer _renderer;
+    ty::Renderer _renderer;
 
     // A list of render setting exports.
     HdRenderSettingDescriptorList _settingDescriptors;

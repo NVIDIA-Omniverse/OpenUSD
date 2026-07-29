@@ -60,20 +60,22 @@ int[] primvars:ty:volumePriority = [10] (
 
 ### Interior state and boundary classification
 
-Replace the single `HdEmbreeMediumState` owner pointer with a small interior
+Replace the single `ty::MediumState` owner pointer with a small interior
 list. Use inline storage for the common case and permit overflow rather than
 silently truncating valid nesting.
 
 Each active entry records at least:
 
 ```cpp
-struct HdEmbreeVolumeEntry {
+namespace ty {
+struct VolumeEntry {
     int volumeId;
     int priority;
     int windingCount;
     float ior;
     mxcpp::MediumProperties medium;
 };
+}
 ```
 
 At every tagged boundary:
@@ -111,7 +113,7 @@ and excessive consecutive false intersections.
 
 ### Geometry metadata plumbing
 
-- Cache volume metadata in `HdEmbreePrototypeContext` beside the existing
+- Cache volume metadata in `ty::PrototypeContext` beside the existing
   primvar samplers.
 - Resolve constant metadata once during mesh sync. For later uniform support,
   resolve the coarse-face value at the Embree hit using `primitiveParams` so

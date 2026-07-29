@@ -16,8 +16,9 @@
 namespace mxcpp { class EvalGraph; }
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
-struct HdEmbreeMaterialData
+struct MaterialData
 {
     ::mxcpp::EvalGraph* surfaceGraph = nullptr;
     ::mxcpp::EvalGraph* displacementGraph = nullptr;
@@ -29,6 +30,7 @@ struct HdEmbreeMaterialData
     std::vector<TfToken> geomPropTokens;
 };
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif

@@ -19,16 +19,17 @@
 #include <bitset>
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
-/// \class HdEmbreeRTCBufferAllocator
+/// \class RtcBufferAllocator
 ///
 /// Utility class to track which embree user vertex buffers are currently
 /// in use.
-class HdEmbreeRTCBufferAllocator
+class RtcBufferAllocator
 {
 public:
     /// Constructor. By default, set everything to unallocated.
-    HdEmbreeRTCBufferAllocator()
+    RtcBufferAllocator()
         : _bitset(0) {}
 
     /// Allocate a buffer by finding the first clear bit, using that as
@@ -55,22 +56,22 @@ private:
 
 
 // ----------------------------------------------------------------------
-// The classes below implement the HdEmbreePrimvarSampler interface for
+// The classes below implement the PrimvarSampler interface for
 // the different interpolation modes that hydra supports. In some cases,
 // implementations are broken out by geometry type (e.g. triangles vs
 // subdiv).
 
-/// \class HdEmbreeConstantSampler
+/// \class ConstantSampler
 ///
-/// This class implements the HdEmbreePrimvarSampler interface for primvars
+/// This class implements the PrimvarSampler interface for primvars
 /// with "constant" interpolation mode. This means that the buffer only has
 /// one item, which should be returned for any (element, u, v) tuple.
-class HdEmbreeConstantSampler : public HdEmbreePrimvarSampler {
+class ConstantSampler : public PrimvarSampler {
 public:
     /// Constructor.
     /// \param name The name of the primvar.
     /// \param value The buffer data for the primvar.
-    HdEmbreeConstantSampler(TfToken const& name,
+    ConstantSampler(TfToken const& name,
                             VtValue const& value)
         : _buffer(name, value)
         , _sampler(_buffer) {}
@@ -89,26 +90,26 @@ public:
 
 private:
     HdVtBufferSource const _buffer;
-    HdEmbreeBufferSampler const _sampler;
+    BufferSampler const _sampler;
 };
 
-/// \class HdEmbreeUniformSampler
+/// \class UniformSampler
 ///
-/// This class implements the HdEmbreePrimvarSampler interface for primvars
+/// This class implements the PrimvarSampler interface for primvars
 /// with "uniform" interpolation mode. This means that the buffer has one
 /// item per authored face. For unrefined meshes, HdEmbree will convert
 /// mesh polygons to triangles, so this class optionally takes an array
 /// called "primitiveParams" which maps from the face index embree reports
 /// to the original authored face in the scene data. If primitiveParams is not
 /// provided, this translation step is skipped.
-class HdEmbreeUniformSampler : public HdEmbreePrimvarSampler {
+class UniformSampler : public PrimvarSampler {
 public:
     /// Constructor.
     /// \param name The name of the primvar.
     /// \param value The buffer data for the primvar.
     /// \param primitiveParams A mapping from geometry face index to authored
     ///                        face index.
-    HdEmbreeUniformSampler(TfToken const& name,
+    UniformSampler(TfToken const& name,
                            VtValue const& value,
                            VtIntArray const& primitiveParams)
         : _buffer(name, value)
@@ -118,7 +119,7 @@ public:
     /// Constructor.
     /// \param name The name of the primvar.
     /// \param value The buffer data for the primvar.
-    HdEmbreeUniformSampler(TfToken const& name,
+    UniformSampler(TfToken const& name,
                            VtValue const& value)
         : _buffer(name, value)
         , _sampler(_buffer) {}
@@ -139,26 +140,26 @@ public:
 
 private:
     HdVtBufferSource const _buffer;
-    HdEmbreeBufferSampler const _sampler;
+    BufferSampler const _sampler;
     VtIntArray const _primitiveParams;
 };
 
-/// \class HdEmbreeTriangleVertexSampler
+/// \class TriangleVertexSampler
 ///
-/// This class implements the HdEmbreePrimvarSampler interface for primvars on
+/// This class implements the PrimvarSampler interface for primvars on
 /// triangle meshes with "vertex" or "varying" interpolation modes. This means
 /// the buffer has one item per vertex, and the result of sampling is a
 /// barycentric interpolation of the hit face vertices. This class
 /// requires the triangulated mesh topology, to map from the triangle index
 /// (in "element") to the triangle vertices.
-class HdEmbreeTriangleVertexSampler : public HdEmbreePrimvarSampler {
+class TriangleVertexSampler : public PrimvarSampler {
 public:
     /// Constructor.
     /// \param name The name of the primvar.
     /// \param value The buffer data for the primvar.
     /// \param indices A map from triangle index to vertex indices in the
     ///                triangulated geometry.
-    HdEmbreeTriangleVertexSampler(TfToken const& name,
+    TriangleVertexSampler(TfToken const& name,
                                   VtValue const& value,
                                   VtVec3iArray const& indices)
         : _buffer(name, value)
@@ -191,18 +192,18 @@ public:
         return SampleVertices(element,
             static_cast<void*>(v0), static_cast<void*>(v1),
             static_cast<void*>(v2),
-            HdEmbreeTypeHelper::GetTupleType<T>());
+            TypeHelper::GetTupleType<T>());
     }
 
 private:
     HdVtBufferSource const _buffer;
-    HdEmbreeBufferSampler const _sampler;
+    BufferSampler const _sampler;
     VtVec3iArray const _indices;
 };
 
-/// \class HdEmbreeTriangleFaceVaryingSampler
+/// \class TriangleFaceVaryingSampler
 ///
-/// This class implements the HdEmbreePrimvarSampler interface for primvars on
+/// This class implements the PrimvarSampler interface for primvars on
 /// triangle meshes with "face-varying" interpolation modes. This means that
 /// each vertex of each face gets its own buffer item: vertex 0 as part of
 /// face 0 might have value 1.0f, but vertex 0 as part of face 1 might have
@@ -216,14 +217,14 @@ private:
 /// Face-varying primvars are provided to the sampler un-triangulated, but
 /// the size of the buffer is tied to the size of the topology, so
 /// this class triangulates the input buffer before sampling.
-class HdEmbreeTriangleFaceVaryingSampler : public HdEmbreePrimvarSampler {
+class TriangleFaceVaryingSampler : public PrimvarSampler {
 public:
     /// Constructor. Triangulates the provided buffer data.
     /// \param name The name of the primvar.
     /// \param value The buffer data for the primvar.
     /// \param meshUtil An HdMeshUtil instance that knows how to triangulate
     ///                 the input buffer data.
-    HdEmbreeTriangleFaceVaryingSampler(TfToken const& name,
+    TriangleFaceVaryingSampler(TfToken const& name,
                                        VtValue const& value,
                                        HdMeshUtil &meshUtil)
         : _buffer(name, _Triangulate(name, value, meshUtil))
@@ -256,12 +257,12 @@ public:
         return SampleVertices(element,
             static_cast<void*>(v0), static_cast<void*>(v1),
             static_cast<void*>(v2),
-            HdEmbreeTypeHelper::GetTupleType<T>());
+            TypeHelper::GetTupleType<T>());
     }
 
 private:
     HdVtBufferSource const _buffer;
-    HdEmbreeBufferSampler const _sampler;
+    BufferSampler const _sampler;
 
     // Pass the "value" parameter through HdMeshUtils'
     // ComputeTriangulatedFaceVaryingPrimvar(), which adjusts the primvar
@@ -275,11 +276,11 @@ private:
 /// Shared storage and sampling for Embree subdivision attributes. Keeping the
 /// retained geometry here matters because displacement callbacks may sample
 /// attributes while scene mutation makes scene/id lookups unsafe.
-class HdEmbreeSubdivSampler : public HdEmbreePrimvarSampler {
+class SubdivSampler : public PrimvarSampler {
 public:
-    using HdEmbreePrimvarSampler::Sample;
+    using PrimvarSampler::Sample;
 
-    virtual ~HdEmbreeSubdivSampler();
+    virtual ~SubdivSampler();
 
     bool Sample(unsigned int element, float u, float v, void* value,
                 HdTupleType dataType) const override;
@@ -296,14 +297,14 @@ public:
         return SampleWithDerivatives(element, u, v,
             static_cast<void*>(value), static_cast<void*>(dPdu),
             static_cast<void*>(dPdv),
-            HdEmbreeTypeHelper::GetTupleType<T>());
+            TypeHelper::GetTupleType<T>());
     }
 
 protected:
-    HdEmbreeSubdivSampler(TfToken const& name,
+    SubdivSampler(TfToken const& name,
                           VtValue const& value,
                           RTCGeometry geometry,
-                          HdEmbreeRTCBufferAllocator* allocator,
+                          RtcBufferAllocator* allocator,
                           char const* interpolation,
                           int topologyId = -1);
 
@@ -311,40 +312,41 @@ private:
     int _embreeBufferId;
     HdVtBufferSource const _buffer;
     RTCGeometry _geometry;
-    HdEmbreeRTCBufferAllocator* _allocator;
+    RtcBufferAllocator* _allocator;
 };
 
 /// Smooth subdivision-basis interpolation for one value per cage vertex.
-class HdEmbreeSubdivVertexSampler : public HdEmbreeSubdivSampler {
+class SubdivVertexSampler : public SubdivSampler {
 public:
-    HdEmbreeSubdivVertexSampler(TfToken const& name,
+    SubdivVertexSampler(TfToken const& name,
                                 VtValue const& value,
                                 RTCGeometry geometry,
-                                HdEmbreeRTCBufferAllocator* allocator);
+                                RtcBufferAllocator* allocator);
 };
 
 /// Piecewise-linear subdivision interpolation for one value per cage vertex.
 /// Topology 1 is a copy of the mesh topology configured with PIN_ALL because
 /// varying data must not inherit the smooth position basis.
-class HdEmbreeSubdivVaryingSampler : public HdEmbreeSubdivSampler {
+class SubdivVaryingSampler : public SubdivSampler {
 public:
-    HdEmbreeSubdivVaryingSampler(TfToken const& name,
+    SubdivVaryingSampler(TfToken const& name,
                                  VtValue const& value,
                                  RTCGeometry geometry,
-                                 HdEmbreeRTCBufferAllocator* allocator);
+                                 RtcBufferAllocator* allocator);
 };
 
 /// Face-varying interpolation on a primvar-specific topology. Independent
 /// topologies preserve seams because different primvars need not share indices.
-class HdEmbreeSubdivFaceVaryingSampler : public HdEmbreeSubdivSampler {
+class SubdivFaceVaryingSampler : public SubdivSampler {
 public:
-    HdEmbreeSubdivFaceVaryingSampler(TfToken const& name,
+    SubdivFaceVaryingSampler(TfToken const& name,
                                      VtValue const& value,
                                      RTCGeometry geometry,
                                      unsigned int topologyId,
-                                     HdEmbreeRTCBufferAllocator* allocator);
+                                     RtcBufferAllocator* allocator);
 };
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif // PXR_IMAGING_PLUGIN_HD_EMBREE_MESH_SAMPLERS_H

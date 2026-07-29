@@ -13,9 +13,10 @@
 #include <cstddef>
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
 /// Parametric hit location and its one-pixel screen-space derivatives.
-struct HdEmbreeWireframeSample
+struct WireframeSample
 {
     float u = 0.0f;
     float v = 0.0f;
@@ -26,7 +27,7 @@ struct HdEmbreeWireframeSample
 };
 
 /// Non-owning subdivision topology needed to reconstruct Embree's diced grid.
-struct HdEmbreeSubdivWireframeTopology
+struct SubdivWireframeTopology
 {
     int const* faceVertexCounts = nullptr;
     size_t faceCount = 0;
@@ -41,11 +42,11 @@ struct HdEmbreeSubdivWireframeTopology
 /// Camera ray differentials shrink by 1/sqrt(spp) for texture filtering, but
 /// display wire widths must remain independent of the convergence sample
 /// count. Multiply parametric derivatives by this value before edge tests.
-float HdEmbreeComputeWireframeDerivativeScale(int samplesPerPixel);
+float ComputeWireframeDerivativeScale(int samplesPerPixel);
 
 /// Return screen-space line opacity for the hit triangle's three edges.
-float HdEmbreeComputeTriangleWireframeOpacity(
-    HdEmbreeWireframeSample const& sample,
+float ComputeTriangleWireframeOpacity(
+    WireframeSample const& sample,
     float lineWidth);
 
 /// Return screen-space line opacity for Embree's final subdivision grid.
@@ -54,17 +55,18 @@ float HdEmbreeComputeTriangleWireframeOpacity(
 /// Non-quad faces decode Embree's sub-patch UV convention and use the two
 /// adjacent half edge levels. The returned grid includes every U/V edge and
 /// the diagonal used to split each diced quad, including subpixel cells.
-float HdEmbreeComputeSubdivisionWireframeOpacity(
-    HdEmbreeWireframeSample const& sample,
+float ComputeSubdivisionWireframeOpacity(
+    WireframeSample const& sample,
     unsigned int primitiveId,
-    HdEmbreeSubdivWireframeTopology const& topology,
+    SubdivWireframeTopology const& topology,
     float lineWidth);
 
 /// Composite unlit, opaque black wire coverage over the clear color.
-GfVec4f HdEmbreeCompositeEdgeOnlyWireframe(
+GfVec4f CompositeEdgeOnlyWireframe(
     GfVec4f const& clearColor,
     float opacity);
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif // PXR_IMAGING_PLUGIN_HD_EMBREE_WIREFRAME_H

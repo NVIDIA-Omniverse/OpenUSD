@@ -62,9 +62,11 @@ public:
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-TF_DEFINE_PUBLIC_TOKENS(HdEmbreeAovTokens, HDEMBREE_AOV_TOKENS);
+namespace ty {
+TF_DEFINE_PUBLIC_TOKENS(AovTokens, HDEMBREE_AOV_TOKENS);
+}
 
-HdEmbreeRenderer::HdEmbreeRenderer()
+ty::Renderer::Renderer()
     : _aovBindings()
     , _aovNames()
     , _width(0)
@@ -79,14 +81,14 @@ HdEmbreeRenderer::HdEmbreeRenderer()
     , _settings()
     , _wireframeColor(0.0f)
     , _wireframeLineWidth(1.0f)
-    , _textureSystem(std::make_unique<HdEmbreeOiioTextureSystem>())
-    , _renderColorSpace(HdEmbreeRenderColorSpace::LinearRec709)
+    , _textureSystem(std::make_unique<ty::OiioTextureSystem>())
+    , _renderColorSpace(ty::RenderColorSpace::LinearRec709)
     , _materialEvalServices{
         _textureSystem.get(),
         0.0f,
         0.0f,
         _renderColorSpace,
-        HdEmbreeGetLuminanceCoefficients(_renderColorSpace)}
+        ty::GetLuminanceCoefficients(_renderColorSpace)}
     , _completedSamples(0)
     , _sssCallCount(0)
     , _sssSuccessCount(0)
@@ -95,20 +97,20 @@ HdEmbreeRenderer::HdEmbreeRenderer()
 {
 }
 
-HdEmbreeRenderer::~HdEmbreeRenderer() = default;
+ty::Renderer::~Renderer() = default;
 
 void
-HdEmbreeRenderer::SetScene(RTCScene scene)
+ty::Renderer::SetScene(RTCScene scene)
 {
     _scene = scene;
 }
 
 void
-HdEmbreeRenderer::SetRenderSettings(
-    HdEmbreeRenderSettings const& settings)
+ty::Renderer::SetRenderSettings(
+    ty::RenderSettings const& settings)
 {
     // Normalize values required by renderer loops and work partitioning.
-    HdEmbreeRenderSettings normalized = settings;
+    ty::RenderSettings normalized = settings;
     normalized.maxBounces = std::max(0, normalized.maxBounces);
     normalized.lightSamplesPerHit =
         std::max(1, normalized.lightSamplesPerHit);
@@ -118,13 +120,14 @@ HdEmbreeRenderer::SetRenderSettings(
     // Reapply them because another renderer or caller may have changed them.
     mxcpp::Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(
         normalized.enableGgxMicrofacetMultipleScattering);
+    // Keep the renderer-settings enum independent from the shading API enum.
     mxcpp::Bsdf::SetDielectricLayerThroughputMode(
         normalized.dielectricLayerThroughputMode ==
-                HdEmbreeDielectricLayerThroughputMode::MaterialXGlsl
+                ty::DielectricLayerThroughputMode::MaterialXGlsl
             ? mxcpp::Bsdf::DielectricLayerThroughputMode::MaterialXGlsl
             : mxcpp::Bsdf::DielectricLayerThroughputMode::Bsdl);
-    if (HdEmbreeOiioTextureSystem* oiio =
-            dynamic_cast<HdEmbreeOiioTextureSystem*>(
+    if (ty::OiioTextureSystem* oiio =
+            dynamic_cast<ty::OiioTextureSystem*>(
                 _textureSystem.get())) {
         oiio->SetCacheSizeMB(normalized.textureCacheSizeMB);
     }
@@ -133,7 +136,7 @@ HdEmbreeRenderer::SetRenderSettings(
 }
 
 void
-HdEmbreeRenderer::SetWireframeStyle(
+ty::Renderer::SetWireframeStyle(
     GfVec4f const& color,
     float lineWidth)
 {
@@ -142,13 +145,13 @@ HdEmbreeRenderer::SetWireframeStyle(
 }
 
 void
-HdEmbreeRenderer::SetDataWindow(const GfRect2i& dataWindow)
+ty::Renderer::SetDataWindow(const GfRect2i& dataWindow)
 {
     _dataWindow = dataWindow;
 }
 
 void
-HdEmbreeRenderer::SetCamera(const GfMatrix4d& viewMatrix,
+ty::Renderer::SetCamera(const GfMatrix4d& viewMatrix,
                             const GfMatrix4d& projMatrix)
 {
     _viewMatrix = viewMatrix;
@@ -158,89 +161,89 @@ HdEmbreeRenderer::SetCamera(const GfMatrix4d& viewMatrix,
 }
 
 void
-HdEmbreeRenderer::SetCameraExposureScale(float cameraExposureScale)
+ty::Renderer::SetCameraExposureScale(float cameraExposureScale)
 {
     _cameraExposureScale = cameraExposureScale;
 }
 
 void
-HdEmbreeRenderer::SetCameraDepthOfField(
-    HdEmbreeCameraDepthOfField const& cameraDepthOfField)
+ty::Renderer::SetCameraDepthOfField(
+    ty::CameraDepthOfField const& cameraDepthOfField)
 {
     _cameraDepthOfField = cameraDepthOfField;
 }
 
 void
-HdEmbreeRenderer::SetSceneFrameAndTime(float frame, float time)
+ty::Renderer::SetSceneFrameAndTime(float frame, float time)
 {
     _materialEvalServices.frame = frame;
     _materialEvalServices.time = time;
 }
 
 void
-HdEmbreeRenderer::SetRenderColorSpace(HdEmbreeRenderColorSpace colorSpace)
+ty::Renderer::SetRenderColorSpace(ty::RenderColorSpace colorSpace)
 {
     _renderColorSpace = colorSpace;
     _materialEvalServices.renderColorSpace = colorSpace;
     _materialEvalServices.luminanceCoefficients =
-        HdEmbreeGetLuminanceCoefficients(colorSpace);
+        ty::GetLuminanceCoefficients(colorSpace);
     if (auto* oiio =
-            dynamic_cast<HdEmbreeOiioTextureSystem*>(_textureSystem.get())) {
+            dynamic_cast<ty::OiioTextureSystem*>(_textureSystem.get())) {
         oiio->SetRenderColorSpace(colorSpace);
     }
 }
 
 int
-HdEmbreeRenderer::GetCompletedSamples() const
+ty::Renderer::GetCompletedSamples() const
 {
     return _completedSamples.load();
 }
 
 void
-HdEmbreeRenderer::MarkFramePending()
+ty::Renderer::MarkFramePending()
 {
     _frameStatus.store(_FrameStatus::Pending, std::memory_order_release);
 }
 
 bool
-HdEmbreeRenderer::DidLastFrameProduceValidPixels() const
+ty::Renderer::DidLastFrameProduceValidPixels() const
 {
     return _frameStatus.load(std::memory_order_acquire) == _FrameStatus::Valid;
 }
 
 float
-HdEmbreeRenderer::GetRenderElapsedSeconds() const
+ty::Renderer::GetRenderElapsedSeconds() const
 {
     auto now = std::chrono::steady_clock::now();
     return std::chrono::duration<float>(now - _renderStartTime).count();
 }
 
 uint64_t
-HdEmbreeRenderer::GetSssCallCount() const
+ty::Renderer::GetSssCallCount() const
 {
     return _sssCallCount.load();
 }
 
 uint64_t
-HdEmbreeRenderer::GetSssSuccessCount() const
+ty::Renderer::GetSssSuccessCount() const
 {
     return _sssSuccessCount.load();
 }
 
 uint64_t
-HdEmbreeRenderer::GetSssWalkStepCount() const
+ty::Renderer::GetSssWalkStepCount() const
 {
     return _sssWalkStepCount.load();
 }
 
 uint64_t
-HdEmbreeRenderer::GetSssIntersectionCount() const
+ty::Renderer::GetSssIntersectionCount() const
 {
     return _sssIntersectionCount.load();
 }
 
 bool
-HdEmbreeRenderer::_PreRenderSetup()
+ty::Renderer::_PreRenderSetup()
 {
     HD_TRACE_FUNCTION();
 
@@ -275,8 +278,8 @@ HdEmbreeRenderer::_PreRenderSetup()
         // Mark usable buffers converged so Hydra parks instead of retrying a
         // terminal setup failure.
         for (size_t i = 0; i < _aovBindings.size(); ++i) {
-            HdEmbreeRenderBufferInterface *rb =
-                dynamic_cast<HdEmbreeRenderBufferInterface*>(
+            ty::RenderBufferInterface *rb =
+                dynamic_cast<ty::RenderBufferInterface*>(
                     _aovBindings[i].renderBuffer);
             if (rb != nullptr) {
                 rb->SetConverged(true);
@@ -286,7 +289,7 @@ HdEmbreeRenderer::_PreRenderSetup()
     }
 
     {
-        HD_TRACE_SCOPE("HdEmbreeRenderer::CommitScene");
+        HD_TRACE_SCOPE("ty::Renderer::CommitScene");
         // Commit pending changes only after setup is known to be valid.
         rtcCommitScene(_scene);
     }
@@ -305,8 +308,8 @@ HdEmbreeRenderer::_PreRenderSetup()
     // A validated interface Map is non-failing aside from allocation failure,
     // which is outside this non-exception setup contract.
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
-        HdEmbreeRenderBufferInterface *rb =
-            dynamic_cast<HdEmbreeRenderBufferInterface*>(
+        ty::RenderBufferInterface *rb =
+            dynamic_cast<ty::RenderBufferInterface*>(
                 _aovBindings[i].renderBuffer);
         rb->Map();
     }
@@ -314,7 +317,7 @@ HdEmbreeRenderer::_PreRenderSetup()
 }
 
 void
-HdEmbreeRenderer::Render(HdRenderThread *renderThread)
+ty::Renderer::Render(HdRenderThread *renderThread)
 {
     HD_TRACE_FUNCTION();
 
@@ -332,7 +335,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
     // Compute the OpenQMC frame seed once per Render() call. An explicit
     // render setting or environment seed overrides the scene frame.
     const uint32_t baseSeed =
-        HdEmbreeResolveFrameSeed(
+        ty::ResolveFrameSeed(
             _settings.randomNumberSeed, _materialEvalServices.frame);
 
     const unsigned int tileSize =
@@ -359,9 +362,9 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
             }
 
             {
-                HD_TRACE_SCOPE("HdEmbreeRenderer::TracePreviewPass");
+                HD_TRACE_SCOPE("ty::Renderer::TracePreviewPass");
                 WorkParallelForN(numTilesX * numTilesY,
-                    std::bind(&HdEmbreeRenderer::_RenderTiles, this,
+                    std::bind(&ty::Renderer::_RenderTiles, this,
                         renderThread, /*sampleNum=*/0, baseSeed, stride,
                         std::placeholders::_1, std::placeholders::_2));
             }
@@ -373,11 +376,11 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
             // Resolve sparse samples into the display buffer and
             // replicate each sampled pixel across its block.
             {
-                HD_TRACE_SCOPE("HdEmbreeRenderer::ResolvePreviewPass");
+                HD_TRACE_SCOPE("ty::Renderer::ResolvePreviewPass");
                 auto lock = renderThread->LockFramebuffer();
                 for (size_t a = 0; a < _aovBindings.size(); ++a) {
-                    HdEmbreeRenderBufferInterface *rb =
-                        dynamic_cast<HdEmbreeRenderBufferInterface*>(
+                    ty::RenderBufferInterface *rb =
+                        dynamic_cast<ty::RenderBufferInterface*>(
                             _aovBindings[a].renderBuffer);
                     rb->Resolve();
                     rb->BlockFill(stride);
@@ -390,8 +393,8 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         // the coarse preview for visual continuity.
         if (!renderThread->IsStopRequested()) {
             for (size_t a = 0; a < _aovBindings.size(); ++a) {
-                HdEmbreeRenderBufferInterface *rb =
-                    dynamic_cast<HdEmbreeRenderBufferInterface*>(
+                ty::RenderBufferInterface *rb =
+                    dynamic_cast<ty::RenderBufferInterface*>(
                         _aovBindings[a].renderBuffer);
                 rb->ClearSamples();
             }
@@ -425,9 +428,9 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         }
 
         {
-            HD_TRACE_SCOPE("HdEmbreeRenderer::TraceSamplePass");
+            HD_TRACE_SCOPE("ty::Renderer::TraceSamplePass");
             WorkParallelForN(numTilesX * numTilesY,
-                std::bind(&HdEmbreeRenderer::_RenderTiles, this,
+                std::bind(&ty::Renderer::_RenderTiles, this,
                     renderThread, i, baseSeed, /*stride=*/1u,
                     std::placeholders::_1, std::placeholders::_2));
         }
@@ -435,11 +438,11 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         // Resolve intermediate results so the viewport shows progressive
         // refinement instead of staying blank until convergence.
         {
-            HD_TRACE_SCOPE("HdEmbreeRenderer::ResolveSamplePass");
+            HD_TRACE_SCOPE("ty::Renderer::ResolveSamplePass");
             auto lock = renderThread->LockFramebuffer();
             for (size_t a = 0; a < _aovBindings.size(); ++a) {
-                HdEmbreeRenderBufferInterface *rb =
-                    dynamic_cast<HdEmbreeRenderBufferInterface*>(
+                ty::RenderBufferInterface *rb =
+                    dynamic_cast<ty::RenderBufferInterface*>(
                         _aovBindings[a].renderBuffer);
                 rb->Resolve();
             }
@@ -451,8 +454,8 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         if (i == 0) {
             bool moreWork = false;
             for (size_t a = 0; a < _aovBindings.size(); ++a) {
-                HdEmbreeRenderBufferInterface *rb =
-                    dynamic_cast<HdEmbreeRenderBufferInterface*>(
+                ty::RenderBufferInterface *rb =
+                    dynamic_cast<ty::RenderBufferInterface*>(
                         _aovBindings[a].renderBuffer);
                 if (rb->IsMultiSampled()) {
                     moreWork = true;
@@ -470,7 +473,7 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
 
         // If adaptive sampling is enabled, check if all pixels converged.
         if (_settings.enableAdaptiveSampling && !_pixelConverged.empty()) {
-            HD_TRACE_SCOPE("HdEmbreeRenderer::CheckConvergence");
+            HD_TRACE_SCOPE("ty::Renderer::CheckConvergence");
             bool allConverged = true;
             for (size_t p = 0; p < _pixelConverged.size(); ++p) {
                 if (!_pixelConverged[p]) {
@@ -497,10 +500,10 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
 
     // Mark the multisampled attachments as converged and unmap all buffers.
     {
-        HD_TRACE_SCOPE("HdEmbreeRenderer::FinalizeAovs");
+        HD_TRACE_SCOPE("ty::Renderer::FinalizeAovs");
         for (size_t i = 0; i < _aovBindings.size(); ++i) {
-            HdEmbreeRenderBufferInterface *rb =
-                dynamic_cast<HdEmbreeRenderBufferInterface*>(
+            ty::RenderBufferInterface *rb =
+                dynamic_cast<ty::RenderBufferInterface*>(
                     _aovBindings[i].renderBuffer);
             rb->Unmap();
             rb->SetConverged(true);
@@ -532,8 +535,8 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
         }
         std::printf("  Max bounces      : %d\n", _settings.maxBounces);
         std::printf("  Light samples    : %d\n", _settings.lightSamplesPerHit);
-        std::printf("  Sampler sequence : %s\n",
-                    HdEmbreeGetSamplerSequenceToken(
+        std::printf("  ty::Sampler sequence : %s\n",
+                    ty::GetSamplerSequenceToken(
                         _settings.samplerSequence).GetText());
         const uint64_t sssCalls = _sssCallCount.load();
         if (sssCalls > 0) {
@@ -595,11 +598,11 @@ HdEmbreeRenderer::Render(HdRenderThread *renderThread)
 }
 
 void
-HdEmbreeRenderer::_EvaluatePixelSample(
+ty::Renderer::_EvaluatePixelSample(
     unsigned int x, unsigned int y,
     GfVec3f const& origin, GfVec3f const& dir,
-    HdEmbreeSampler const& sampler,
-    HdEmbreeRayDifferential const& rayDiff)
+    ty::Sampler const& sampler,
+    ty::RayDifferential const& rayDiff)
 {
     _PixelSampleResult result;
     if (_needColor) {
@@ -613,7 +616,7 @@ HdEmbreeRenderer::_EvaluatePixelSample(
         ty::PopulateRayHit(
             &result.primaryHit, origin, dir, 0.0f,
             std::numeric_limits<float>::max(),
-            HdEmbree_RayMask::Camera);
+            ty::RayMask::Camera);
         rtcIntersect1(_scene, &result.primaryHit);
     }
 
@@ -631,7 +634,7 @@ HdEmbreeRenderer::_EvaluatePixelSample(
 }
 
 void
-HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
+ty::Renderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
                                uint32_t baseSeed, unsigned int stride,
                                size_t tileStart, size_t tileEnd)
 {
@@ -694,7 +697,7 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
                 }
 
                 // Create a per-pixel OpenQMC sampler.
-                HdEmbreeSampler sampler(
+                ty::Sampler sampler(
                     baseSeed,
                     x,
                     y,
@@ -703,7 +706,7 @@ HdEmbreeRenderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
 
                 GfVec3f origin;
                 GfVec3f dir;
-                HdEmbreeRayDifferential rayDiff;
+                ty::RayDifferential rayDiff;
                 _SampleCameraRay(
                     x, y, minX, minY, sampler,
                     origin, dir, rayDiff);

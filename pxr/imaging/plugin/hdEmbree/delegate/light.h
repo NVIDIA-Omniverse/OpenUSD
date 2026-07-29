@@ -18,7 +18,9 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-class HdEmbreeRenderer;
+namespace ty {
+class Renderer;
+} // namespace ty
 
 /// Reference implementation of USD Lux support, for the hdEmbree renderer.
 ///
@@ -118,32 +120,32 @@ public:
 
     void Finalize(HdRenderParam *renderParam) override;
 
-    HdEmbree_LightData const& LightData() const {
+    ty::LightData const& LightData() const {
         return _lightData;
     }
 
     bool IsDome() const {
-        return std::holds_alternative<HdEmbree_Dome>(_lightData.lightVariant);
+        return std::holds_alternative<ty::DomeLight>(_lightData.lightVariant);
     }
 
     bool IsFiniteLight() const {
-        return std::holds_alternative<HdEmbree_Cylinder>(
+        return std::holds_alternative<ty::CylinderLight>(
                    _lightData.lightVariant) ||
-               std::holds_alternative<HdEmbree_Disk>(
+               std::holds_alternative<ty::DiskLight>(
                    _lightData.lightVariant) ||
-               std::holds_alternative<HdEmbree_Rect>(
+               std::holds_alternative<ty::RectLight>(
                    _lightData.lightVariant) ||
-               std::holds_alternative<HdEmbree_Sphere>(
+               std::holds_alternative<ty::SphereLight>(
                    _lightData.lightVariant);
     }
 
 private:
     void _UpdateVisibleGeometry(
-        RTCScene scene, RTCDevice device, HdEmbreeRenderer* renderer);
+        RTCScene scene, RTCDevice device, ty::Renderer* renderer);
     void _ReleaseVisibleGeometry(
-        RTCScene scene, HdEmbreeRenderer* renderer);
+        RTCScene scene, ty::Renderer* renderer);
 
-    HdEmbree_LightData _lightData;
+    ty::LightData _lightData;
     RTCGeometry _rtcVisibleGeometry = nullptr;
     unsigned int _rtcVisibleGeometryId = RTC_INVALID_GEOMETRY_ID;
     std::vector<GfVec3f> _rtcVisiblePoints;

@@ -1103,7 +1103,7 @@ _GetPrototypeGeometry(RTCScene root, unsigned int instanceId = 0)
 {
     RTCGeometry instance = rtcGetGeometry(root, instanceId);
     auto* instanceContext = instance
-        ? static_cast<HdEmbreeInstanceContext*>(
+        ? static_cast<ty::InstanceContext*>(
             rtcGetGeometryUserData(instance))
         : nullptr;
     return instanceContext
@@ -1180,20 +1180,20 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
         geometry, RTC_BUFFER_TYPE_INDEX, 2, RTC_FORMAT_UINT,
         indices.cdata(), 0, sizeof(int), indices.size());
 
-    HdEmbreeRTCBufferAllocator allocator;
-    HdEmbreePrototypeContext context;
-    HdEmbreeMaterialData material;
+    ty::RtcBufferAllocator allocator;
+    ty::PrototypeContext context;
+    ty::MaterialData material;
     material.geomPropNames.push_back("height");
     material.geomPropTokens.emplace_back("height");
     context.material = &material;
     context.displaced = true;
     context.primvarMap[TfToken("height")] =
-        std::make_unique<HdEmbreeSubdivVaryingSampler>(
+        std::make_unique<ty::SubdivVaryingSampler>(
             TfToken("height"),
             VtValue(VtFloatArray{0.0f, 1.0f, 1.0f, 0.0f}),
             geometry, &allocator);
     context.primvarMap[TfToken("st")] =
-        std::make_unique<HdEmbreeSubdivFaceVaryingSampler>(
+        std::make_unique<ty::SubdivFaceVaryingSampler>(
             TfToken("st"),
             VtValue(VtVec3fArray{
                 GfVec3f(0.0f, 0.0f, 9.0f),
@@ -1245,16 +1245,16 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     GfVec3f displacedDPdv(0.0f);
     GfVec3f displacedPosition(0.0f);
     const bool displacedPositionComputed =
-        HdEmbreeComputeDisplacedSubdivPosition(
+        ty::ComputeDisplacedSubdivPosition(
             geometry, &context, 0, 0.5f, 0.5f,
             &displacedPosition);
     const bool displacedFrameComputed =
-        HdEmbreeComputeDisplacedSubdivFrame(
+        ty::ComputeDisplacedSubdivFrame(
             geometry, &context, 0, 0.5f, 0.5f,
             &displacedNormal, &displacedDPdu, &displacedDPdv);
 
     _ThreadSafeTexcoordTextureSystem textureSystem;
-    HdEmbreeMaterialEvalServices services;
+    ty::MaterialEvalServices services;
     services.textureSystem = &textureSystem;
     context.materialEvalServices = &services;
 
@@ -1290,15 +1290,15 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
 
     material.displacementGraph = quadraticTexture.get();
     textureSystem.Reset(0.0f);
-    HdEmbreeDisplacedSubdivFrame quadraticFrame;
+    ty::DisplacedSubdivFrame quadraticFrame;
     const bool quadraticFrameComputed =
-        HdEmbreeComputeDisplacedSubdivFrame(
+        ty::ComputeDisplacedSubdivFrame(
             geometry, &context, 0, 0.5f, 0.5f, &quadraticFrame);
     const int quadraticFrameCalls = textureSystem.GetCallCount();
     GfVec3f quadraticDndu(0.0f);
     GfVec3f quadraticDndv(0.0f);
     const bool quadraticDerivativesComputed =
-        HdEmbreeComputeDisplacedSubdivNormalDerivatives(
+        ty::ComputeDisplacedSubdivNormalDerivatives(
             geometry, &context, quadraticFrame,
             &quadraticDndu, &quadraticDndv);
     const int quadraticDerivativeCalls = textureSystem.GetCallCount();
@@ -1308,24 +1308,24 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
     // retain that direction; reselecting at U would erase the curvature.
     constexpr float boundaryU = 0.997f;
     textureSystem.Reset(0.0f);
-    HdEmbreeDisplacedSubdivFrame boundaryFrame;
+    ty::DisplacedSubdivFrame boundaryFrame;
     const bool boundaryFrameComputed =
-        HdEmbreeComputeDisplacedSubdivFrame(
+        ty::ComputeDisplacedSubdivFrame(
             geometry, &context, 0, boundaryU, 0.5f, &boundaryFrame);
     GfVec3f boundaryDndu(0.0f);
     GfVec3f boundaryDndv(0.0f);
     const bool boundaryDerivativesComputed =
-        HdEmbreeComputeDisplacedSubdivNormalDerivatives(
+        ty::ComputeDisplacedSubdivNormalDerivatives(
             geometry, &context, boundaryFrame,
             &boundaryDndu, &boundaryDndv);
     const int boundaryDerivativeCalls = textureSystem.GetCallCount();
 
     textureSystem.Reset(0.0f);
-    const HdEmbreeDisplacedSubdivFrame invalidFrame;
+    const ty::DisplacedSubdivFrame invalidFrame;
     GfVec3f invalidDndu(7.0f);
     GfVec3f invalidDndv(11.0f);
     const bool invalidDerivativesComputed =
-        HdEmbreeComputeDisplacedSubdivNormalDerivatives(
+        ty::ComputeDisplacedSubdivNormalDerivatives(
             geometry, &context, invalidFrame,
             &invalidDndu, &invalidDndv);
     const int invalidDerivativeCalls = textureSystem.GetCallCount();
@@ -1381,7 +1381,7 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
         smallSurfaceToWorld.GetInverse();
     float smallFrameDisplacement =
         std::numeric_limits<float>::quiet_NaN();
-    const bool smallFrameEvaluated = HdEmbreeEvaluateDisplacement(
+    const bool smallFrameEvaluated = ty::EvaluateDisplacement(
         &context, 0, 0.5f, 0.5f,
         GfVec3f(0.5f, 0.5f, 0.0f),
         GfVec3f(0.0f, 0.0f, 1.0f),
@@ -1504,12 +1504,12 @@ TestRealCallbackAddsRemovesAndReplacesDisplacement()
 bool
 TestGeomPropLookupRejectsInvalidHandles()
 {
-    std::vector<HdEmbreePrimvarSampler*> samplers(1, nullptr);
-    const HdEmbreePrimvarLookup lookup{
+    std::vector<ty::PrimvarSampler*> samplers(1, nullptr);
+    const ty::PrimvarLookup lookup{
         &samplers, 0, 0.25f, 0.25f};
-    return ValueIsEmpty(HdEmbreeSamplePrimvar(&lookup, -1)) &&
-        ValueIsEmpty(HdEmbreeSamplePrimvar(&lookup, 1)) &&
-        ValueIsEmpty(HdEmbreeSamplePrimvar(&lookup, 0));
+    return ValueIsEmpty(ty::SamplePrimvar(&lookup, -1)) &&
+        ValueIsEmpty(ty::SamplePrimvar(&lookup, 1)) &&
+        ValueIsEmpty(ty::SamplePrimvar(&lookup, 0));
 }
 
 HdMaterialNetwork2
@@ -1683,7 +1683,7 @@ TestMaterialSyncKeepsStableHandleAndReplacesDisplacementGraph()
         delegate.resource = VtValue(_MakeHydraMaterialNetwork(true, 0.25f));
         HdDirtyBits bits = material.GetInitialDirtyBitsMask();
         material.Sync(&delegate, &renderParam, &bits);
-        HdEmbreeMaterialData const* handle = material.GetRenderMaterial();
+        ty::MaterialData const* handle = material.GetRenderMaterial();
         bool firstValid = handle->surfaceGraph && handle->displacementGraph;
 
         delegate.resource = VtValue(_MakeHydraMaterialNetwork(false));
@@ -1768,15 +1768,15 @@ TestGeomPropBindingsRefreshForMeshAndMaterialChanges()
         renderDelegate->GetRenderParam())->AcquireSceneForEdit();
     rtcCommitScene(root);
     RTCGeometry instance = rtcGetGeometry(root, 0);
-    HdEmbreeInstanceContext* const instanceContext = instance
-        ? static_cast<HdEmbreeInstanceContext*>(
+    ty::InstanceContext* const instanceContext = instance
+        ? static_cast<ty::InstanceContext*>(
             rtcGetGeometryUserData(instance))
         : nullptr;
     RTCGeometry prototype = instanceContext
         ? rtcGetGeometry(instanceContext->rootScene, 0)
         : nullptr;
-    HdEmbreePrototypeContext* const prototypeContext = prototype
-        ? static_cast<HdEmbreePrototypeContext*>(
+    ty::PrototypeContext* const prototypeContext = prototype
+        ? static_cast<ty::PrototypeContext*>(
             rtcGetGeometryUserData(prototype))
         : nullptr;
     if (!prototypeContext ||
@@ -1823,10 +1823,10 @@ TestGeomPropBindingsRefreshForMeshAndMaterialChanges()
         prototypeContext->primvarMap.find(TfToken("first"));
     const auto secondSamplerIt =
         prototypeContext->primvarMap.find(TfToken("second"));
-    const HdEmbreePrimvarLookup lookup{
+    const ty::PrimvarLookup lookup{
         &prototypeContext->geomPropSamplers, 0, 0.25f, 0.25f};
     ShadingContext shadingContext;
-    shadingContext.geomPropLookup = &HdEmbreeSamplePrimvar;
+    shadingContext.geomPropLookup = &ty::SamplePrimvar;
     shadingContext.geomPropUserData = &lookup;
     shadingContext.uniformProps =
         &prototypeContext->geomPropUniformValues;
@@ -1949,15 +1949,15 @@ TestSurfaceAndDisplacementSharePrototypeGeomPropBindings()
     rtcCommitScene(root);
 
     RTCGeometry instance = rtcGetGeometry(root, 0);
-    HdEmbreeInstanceContext* const instanceContext = instance
-        ? static_cast<HdEmbreeInstanceContext*>(
+    ty::InstanceContext* const instanceContext = instance
+        ? static_cast<ty::InstanceContext*>(
             rtcGetGeometryUserData(instance))
         : nullptr;
     RTCGeometry prototype = instanceContext
         ? rtcGetGeometry(instanceContext->rootScene, 0)
         : nullptr;
-    HdEmbreePrototypeContext* const prototypeContext = prototype
-        ? static_cast<HdEmbreePrototypeContext*>(
+    ty::PrototypeContext* const prototypeContext = prototype
+        ? static_cast<ty::PrototypeContext*>(
             rtcGetGeometryUserData(prototype))
         : nullptr;
     if (!prototypeContext ||
@@ -1967,10 +1967,10 @@ TestSurfaceAndDisplacementSharePrototypeGeomPropBindings()
         return false;
     }
 
-    const HdEmbreePrimvarLookup lookup{
+    const ty::PrimvarLookup lookup{
         &prototypeContext->geomPropSamplers, 0, 0.5f, 0.5f};
     ShadingContext shadingContext;
-    shadingContext.geomPropLookup = &HdEmbreeSamplePrimvar;
+    shadingContext.geomPropLookup = &ty::SamplePrimvar;
     shadingContext.geomPropUserData = &lookup;
     shadingContext.uniformProps =
         &prototypeContext->geomPropUniformValues;
@@ -2002,7 +2002,7 @@ TestMaterialSyncReportsTerminalFailuresAndSkipsAbsentDisplacement()
     material.Sync(&delegate, nullptr, &bits);
 
     const std::vector<TfWarning>& warnings = trap.GetWarnings();
-    HdEmbreeMaterialData const* const malformedHandle =
+    ty::MaterialData const* const malformedHandle =
         material.GetRenderMaterial();
     const bool oneActionableWarning =
         warnings.size() == 1 &&
@@ -2034,7 +2034,7 @@ TestMaterialSyncReportsTerminalFailuresAndSkipsAbsentDisplacement()
     delegate.resource = VtValue(displacementOnly);
     bits = HdMaterial::AllDirty;
     material.Sync(&delegate, nullptr, &bits);
-    const HdEmbreeMaterialData* const displacementOnlyHandle =
+    const ty::MaterialData* const displacementOnlyHandle =
         material.GetRenderMaterial();
     const bool displacementOnlyStayedQuiet =
         !trap.HasWarnings() &&
@@ -2051,7 +2051,7 @@ TestMaterialSyncReportsTerminalFailuresAndSkipsAbsentDisplacement()
     material.Sync(&delegate, nullptr, &bits);
     const std::vector<TfWarning>& malformedDisplacementOnlyWarnings =
         trap.GetWarnings();
-    const HdEmbreeMaterialData* const malformedDisplacementOnlyHandle =
+    const ty::MaterialData* const malformedDisplacementOnlyHandle =
         material.GetRenderMaterial();
     const bool malformedDisplacementOnlyWarnedOnce =
         malformedDisplacementOnlyWarnings.size() == 1 &&
@@ -2070,7 +2070,7 @@ TestMaterialSyncReportsTerminalFailuresAndSkipsAbsentDisplacement()
     material.Sync(&delegate, nullptr, &bits);
     const std::vector<TfWarning>& recoverableGeomPropWarnings =
         trap.GetWarnings();
-    const HdEmbreeMaterialData* const recoverableGeomPropHandle =
+    const ty::MaterialData* const recoverableGeomPropHandle =
         material.GetRenderMaterial();
     const SurfaceClosure recoverableClosure =
         recoverableGeomPropHandle->surfaceGraph
@@ -2267,7 +2267,7 @@ TestMaterialTerminalTransitionsCommitWithInstanceOnlyDirtyBits()
 
     RTCGeometry const prototype = _GetPrototypeGeometry(root);
     auto const* prototypeContext = prototype
-        ? static_cast<HdEmbreePrototypeContext const*>(
+        ? static_cast<ty::PrototypeContext const*>(
             rtcGetGeometryUserData(prototype))
         : nullptr;
     const bool valid =
@@ -2339,7 +2339,7 @@ TestLeftHandedSubdivisionDisplacesAlongAuthoredNormal()
 
     RTCGeometry prototype = _GetPrototypeGeometry(root);
     auto const* prototypeContext = prototype
-        ? static_cast<HdEmbreePrototypeContext const*>(
+        ? static_cast<ty::PrototypeContext const*>(
             rtcGetGeometryUserData(prototype))
         : nullptr;
     const float hit = _TraceCenter(root);
@@ -2411,12 +2411,12 @@ TestRprimScalePreservesWorldUnitDisplacement()
 
     RTCGeometry const prototype = _GetPrototypeGeometry(root);
     auto const* prototypeContext = prototype
-        ? static_cast<HdEmbreePrototypeContext const*>(
+        ? static_cast<ty::PrototypeContext const*>(
             rtcGetGeometryUserData(prototype))
         : nullptr;
     GfVec3f objectOffset(0.0f);
     const bool offsetComputed =
-        HdEmbreeComputeObjectSpaceDisplacementOffset(
+        ty::ComputeObjectSpaceDisplacementOffset(
             prototypeContext,
             GfVec3f(0.0f, 0.0f, 1.0f),
             0.5f,
@@ -2684,7 +2684,7 @@ TestProductionVertexBufferHasFloat3PaddingAndUpdates()
         RTCBounds prototypeBounds{};
         RTCGeometry instance = rtcGetGeometry(root, 0);
         auto const* instanceContext = instance
-            ? static_cast<HdEmbreeInstanceContext const*>(
+            ? static_cast<ty::InstanceContext const*>(
                 rtcGetGeometryUserData(instance))
             : nullptr;
         if (instanceContext) {
@@ -3083,14 +3083,14 @@ TestSubdivisionPrimvarsUseHydraInterpolationModes()
         rtcCommitScene(root);
         RTCGeometry instance = rtcGetGeometry(root, 0);
         auto* instanceContext = instance
-            ? static_cast<HdEmbreeInstanceContext*>(
+            ? static_cast<ty::InstanceContext*>(
                 rtcGetGeometryUserData(instance))
             : nullptr;
         RTCGeometry prototype = instanceContext
             ? rtcGetGeometry(instanceContext->rootScene, 0)
             : nullptr;
         auto* prototypeContext = prototype
-            ? static_cast<HdEmbreePrototypeContext*>(
+            ? static_cast<ty::PrototypeContext*>(
                 rtcGetGeometryUserData(prototype))
             : nullptr;
         if (!prototypeContext) {
@@ -3101,13 +3101,13 @@ TestSubdivisionPrimvarsUseHydraInterpolationModes()
                                 float u, float v) {
             const auto samplerIt =
                 prototypeContext->primvarMap.find(TfToken(name));
-            std::vector<HdEmbreePrimvarSampler*> samplers{
+            std::vector<ty::PrimvarSampler*> samplers{
                 samplerIt == prototypeContext->primvarMap.end()
                     ? nullptr
                     : samplerIt->second.get()};
-            HdEmbreePrimvarLookup lookup{
+            ty::PrimvarLookup lookup{
                 &samplers, face, u, v};
-            const Value value = HdEmbreeSamplePrimvar(&lookup, 0);
+            const Value value = ty::SamplePrimvar(&lookup, 0);
             return ValueHolds<float>(value)
                 ? ValueGet<float>(value)
                 : std::numeric_limits<float>::quiet_NaN();
@@ -3130,7 +3130,7 @@ TestSubdivisionPrimvarsUseHydraInterpolationModes()
         auto vectorIt = prototypeContext->primvarMap.find(
             TfToken("vector3Value"));
         auto* vectorSampler = vectorIt != prototypeContext->primvarMap.end()
-            ? dynamic_cast<HdEmbreeSubdivVertexSampler*>(
+            ? dynamic_cast<ty::SubdivVertexSampler*>(
                 vectorIt->second.get())
             : nullptr;
         const bool vectorSampled = vectorSampler &&
@@ -3213,7 +3213,7 @@ TestRenderPassRequiresCameraAndGatesDynamicTessellation()
     const auto getFirstLevel = [&]() {
         RTCGeometry instance = rtcGetGeometry(root, 0);
         auto* instanceContext = instance
-            ? static_cast<HdEmbreeInstanceContext*>(
+            ? static_cast<ty::InstanceContext*>(
                 rtcGetGeometryUserData(instance))
             : nullptr;
         RTCGeometry prototype = instanceContext
@@ -3342,14 +3342,14 @@ TestProductionAdaptiveLevelsForRefinedComplexities()
 
         RTCGeometry instance = rtcGetGeometry(root, 0);
         auto* instanceContext = instance
-            ? static_cast<HdEmbreeInstanceContext*>(
+            ? static_cast<ty::InstanceContext*>(
                 rtcGetGeometryUserData(instance))
             : nullptr;
         RTCGeometry prototype = instanceContext
             ? rtcGetGeometry(instanceContext->rootScene, 0)
             : nullptr;
         auto* prototypeContext = prototype
-            ? static_cast<HdEmbreePrototypeContext*>(
+            ? static_cast<ty::PrototypeContext*>(
                 rtcGetGeometryUserData(prototype))
             : nullptr;
         float const* levels = prototype
@@ -3407,14 +3407,14 @@ TestLowComplexityUsesTriangulatedControlCage()
         rtcCommitScene(root);
         RTCGeometry instance = rtcGetGeometry(root, 0);
         auto* instanceContext = instance
-            ? static_cast<HdEmbreeInstanceContext*>(
+            ? static_cast<ty::InstanceContext*>(
                 rtcGetGeometryUserData(instance))
             : nullptr;
         RTCGeometry prototype = instanceContext
             ? rtcGetGeometry(instanceContext->rootScene, 0)
             : nullptr;
         auto* prototypeContext = prototype
-            ? static_cast<HdEmbreePrototypeContext*>(
+            ? static_cast<ty::PrototypeContext*>(
                 rtcGetGeometryUserData(prototype))
             : nullptr;
         const auto trace = [&](float x, float y) {

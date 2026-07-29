@@ -44,7 +44,7 @@ namespace {
 // buffer I/O or sample work.
 class _CountingRenderBuffer final
     : public HdRenderBuffer
-    , public HdEmbreeRenderBufferInterface
+    , public ty::RenderBufferInterface
 {
 public:
     _CountingRenderBuffer(
@@ -326,7 +326,7 @@ _Binding(TfToken const& name, HdRenderBuffer* buffer)
 
 void
 _Configure(
-    HdEmbreeRenderer* renderer,
+    ty::Renderer* renderer,
     RTCScene scene,
     HdRenderPassAovBindingVector const& bindings,
     GfRect2i const& dataWindow)
@@ -334,7 +334,7 @@ _Configure(
     renderer->SetScene(scene);
     renderer->SetAovBindings(bindings);
     renderer->SetDataWindow(dataWindow);
-    HdEmbreeRenderSettings settings;
+    ty::RenderSettings settings;
     settings.samplesToConvergence = 1;
     settings.enableAdaptiveSampling = false;
     // Every render-setup case exercises the newly exposed zero tile-size
@@ -345,7 +345,7 @@ _Configure(
 
 bool
 _FailedWithoutWork(
-    HdEmbreeRenderer* renderer,
+    ty::Renderer* renderer,
     HdRenderThread* renderThread,
     _CountingRenderBuffer const& buffer)
 {
@@ -363,7 +363,7 @@ bool
 _TestNullBinding()
 {
     _Scene scene;
-    HdEmbreeRenderer renderer;
+    ty::Renderer renderer;
     HdRenderThread renderThread;
     _Configure(
         &renderer,
@@ -382,7 +382,7 @@ bool
 _TestNoBindings()
 {
     _Scene scene;
-    HdEmbreeRenderer renderer;
+    ty::Renderer renderer;
     HdRenderThread renderThread;
     _Configure(
         &renderer,
@@ -398,7 +398,7 @@ _TestWrongBufferImplementation()
 {
     _Scene scene;
     _WrongRenderBuffer buffer(SdfPath("/wrong"));
-    HdEmbreeRenderer renderer;
+    ty::Renderer renderer;
     HdRenderThread renderThread;
     _Configure(
         &renderer,
@@ -419,7 +419,7 @@ _TestUnsupportedFormat()
     _Scene scene;
     _CountingRenderBuffer buffer(
         SdfPath("/unsupported"), 1, 1, HdFormatInt32);
-    HdEmbreeRenderer renderer;
+    ty::Renderer renderer;
     HdRenderThread renderThread;
     _Configure(
         &renderer,
@@ -435,7 +435,7 @@ _TestZeroSizedBuffer()
     _Scene scene;
     _CountingRenderBuffer buffer(
         SdfPath("/zeroBuffer"), 0, 1, HdFormatFloat32Vec4);
-    HdEmbreeRenderer renderer;
+    ty::Renderer renderer;
     HdRenderThread renderThread;
     _Configure(
         &renderer,
@@ -453,7 +453,7 @@ _TestMismatchedDimensions()
         SdfPath("/color"), 2, 2, HdFormatFloat32Vec4);
     _CountingRenderBuffer depth(
         SdfPath("/depth"), 1, 2, HdFormatFloat32);
-    HdEmbreeRenderer renderer;
+    ty::Renderer renderer;
     HdRenderThread renderThread;
     _Configure(
         &renderer,
@@ -483,7 +483,7 @@ _TestBufferPropertiesAreRevalidated()
     _Scene scene;
     _CountingRenderBuffer buffer(
         SdfPath("/revalidation"), 1, 1, HdFormatFloat32Vec4);
-    HdEmbreeRenderer renderer;
+    ty::Renderer renderer;
     HdRenderThread renderThread;
     _Configure(
         &renderer,
@@ -511,7 +511,7 @@ _TestOutOfBoundsDataWindow()
     _Scene scene;
     _CountingRenderBuffer buffer(
         SdfPath("/outOfBounds"), 1, 1, HdFormatFloat32Vec4);
-    HdEmbreeRenderer renderer;
+    ty::Renderer renderer;
     HdRenderThread renderThread;
     _Configure(
         &renderer,
@@ -527,7 +527,7 @@ _TestEmptyDataWindow()
     _Scene scene;
     _CountingRenderBuffer buffer(
         SdfPath("/emptyWindow"), 1, 1, HdFormatFloat32Vec4);
-    HdEmbreeRenderer renderer;
+    ty::Renderer renderer;
     HdRenderThread renderThread;
     _Configure(
         &renderer,
@@ -542,7 +542,7 @@ _TestNullScene()
 {
     _CountingRenderBuffer buffer(
         SdfPath("/nullScene"), 1, 1, HdFormatFloat32Vec4);
-    HdEmbreeRenderer renderer;
+    ty::Renderer renderer;
     HdRenderThread renderThread;
     _Configure(
         &renderer,
@@ -560,7 +560,7 @@ _TestSuccessfulMapBalance()
         SdfPath("/successColor"), 1, 1, HdFormatFloat32Vec4);
     _CountingRenderBuffer primId(
         SdfPath("/successPrimId"), 1, 1, HdFormatInt32);
-    HdEmbreeRenderer renderer;
+    ty::Renderer renderer;
     HdRenderThread renderThread;
     _Configure(
         &renderer,
@@ -600,7 +600,7 @@ _TestAovOutputDispatch()
         HdRenderPassAovBinding binding =
             _Binding(HdAovTokens->color, &color);
         binding.clearValue = VtValue(GfVec4f(0.25f, 0.5f, 0.75f, 0.8f));
-        HdEmbreeRenderer renderer;
+        ty::Renderer renderer;
         HdRenderThread renderThread;
         _Configure(&renderer, scene.scene, {binding}, dataWindow);
         renderer.SetCameraExposureScale(2.0f);
@@ -650,7 +650,7 @@ _TestAovOutputDispatch()
             SdfPath("/dispatchEyeNormal"), 1, 1, HdFormatFloat32Vec3);
         _CountingRenderBuffer primvar(
             SdfPath("/dispatchPrimvar"), 1, 1, HdFormatFloat32Vec3);
-        HdEmbreeRenderer renderer;
+        ty::Renderer renderer;
         HdRenderThread renderThread;
         _Configure(
             &renderer,
@@ -688,14 +688,14 @@ _TestAovOutputDispatch()
     {
         _CountingRenderBuffer color(
             SdfPath("/dispatchColorHeatmap"), 1, 1, HdFormatFloat32Vec4);
-        HdEmbreeRenderer renderer;
+        ty::Renderer renderer;
         HdRenderThread renderThread;
         _Configure(
             &renderer,
             scene.scene,
             {_Binding(HdAovTokens->color, &color)},
             dataWindow);
-        HdEmbreeRenderSettings settings;
+        ty::RenderSettings settings;
         settings.samplesToConvergence = 4;
         settings.enableAdaptiveSampling = true;
         settings.minSamplesBeforeAdaptive = 5;
@@ -728,18 +728,18 @@ _TestAovOutputDispatch()
         HdRenderPassAovBinding colorBinding =
             _Binding(HdAovTokens->color, &color);
         colorBinding.clearValue = VtValue(GfVec4f(0.25f));
-        HdEmbreeRenderer renderer;
+        ty::Renderer renderer;
         HdRenderThread renderThread;
         _Configure(
             &renderer,
             scene.scene,
             {
                 _Binding(
-                    HdEmbreeAovTokens->adaptiveHeatmap, &heatmap),
+                    ty::AovTokens->adaptiveHeatmap, &heatmap),
                 colorBinding
             },
             dataWindow);
-        HdEmbreeRenderSettings settings;
+        ty::RenderSettings settings;
         settings.samplesToConvergence = 1;
         settings.enableAdaptiveSampling = false;
         settings.showAdaptiveHeatmap = true;
@@ -758,14 +758,14 @@ _TestAovOutputDispatch()
         _CountingRenderBuffer heatmap(
             SdfPath("/dispatchAdaptiveHeatmap"),
             1, 1, HdFormatFloat32Vec4);
-        HdEmbreeRenderer renderer;
+        ty::Renderer renderer;
         HdRenderThread renderThread;
         _Configure(
             &renderer,
             scene.scene,
-            {_Binding(HdEmbreeAovTokens->adaptiveHeatmap, &heatmap)},
+            {_Binding(ty::AovTokens->adaptiveHeatmap, &heatmap)},
             dataWindow);
-        HdEmbreeRenderSettings settings;
+        ty::RenderSettings settings;
         settings.samplesToConvergence = 4;
         settings.enableAdaptiveSampling = true;
         settings.minSamplesBeforeAdaptive = 5;
@@ -804,7 +804,7 @@ _TestInvalidHitContextsBecomeMisses()
         SdfPath("/invalidContextNormal"), 1, 1, HdFormatFloat32Vec3);
     _CountingRenderBuffer primvar(
         SdfPath("/invalidContextPrimvar"), 1, 1, HdFormatFloat32Vec3);
-    HdEmbreeRenderer renderer;
+    ty::Renderer renderer;
     HdRenderThread renderThread;
     _Configure(
         &renderer,
@@ -835,7 +835,7 @@ _TestFrameStatusTransitions()
     _Scene scene;
     _CountingRenderBuffer buffer(
         SdfPath("/frameStatus"), 1, 1, HdFormatFloat32Vec4);
-    HdEmbreeRenderer renderer;
+    ty::Renderer renderer;
     HdRenderThread renderThread;
     _Configure(
         &renderer,
@@ -871,7 +871,7 @@ _TestRenderPassMarksRestartPending()
     _Scene scene;
     _CountingRenderBuffer buffer(
         SdfPath("/pendingRestart"), 1, 1, HdFormatFloat32Vec4);
-    HdEmbreeRenderer renderer;
+    ty::Renderer renderer;
     HdRenderThread statusThread;
     _Configure(
         &renderer,
@@ -940,11 +940,11 @@ _TestRenderPassMarksRestartPending()
 bool
 _TestProcessGlobalSettingsAreReapplied()
 {
-    HdEmbreeRenderer renderer;
-    HdEmbreeRenderSettings settings;
+    ty::Renderer renderer;
+    ty::RenderSettings settings;
     settings.enableGgxMicrofacetMultipleScattering = false;
     settings.dielectricLayerThroughputMode =
-        HdEmbreeDielectricLayerThroughputMode::MaterialXGlsl;
+        ty::DielectricLayerThroughputMode::MaterialXGlsl;
     renderer.SetRenderSettings(settings);
 
     mxcpp::Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
@@ -956,7 +956,7 @@ _TestProcessGlobalSettingsAreReapplied()
         !mxcpp::Bsdf::IsGgxMicrofacetMultipleScatteringEnabled() &&
         mxcpp::Bsdf::GetDielectricLayerThroughputMode() ==
             mxcpp::Bsdf::DielectricLayerThroughputMode::MaterialXGlsl;
-    renderer.SetRenderSettings(HdEmbreeRenderSettings{});
+    renderer.SetRenderSettings(ty::RenderSettings{});
     return reapplied;
 }
 
@@ -1010,7 +1010,7 @@ _TestTileSizeAndCameraJitterImages()
 
     HdEmbreeRenderParam* const renderParam =
         static_cast<HdEmbreeRenderParam*>(delegate.GetRenderParam());
-    HdEmbreeRenderer* const renderer = renderParam->GetRenderer();
+    ty::Renderer* const renderer = renderParam->GetRenderer();
     renderer->SetCamera(GfMatrix4d(1.0), GfMatrix4d(1.0));
     renderer->SetDataWindow(
         GfRect2i(GfVec2i(0), width, height));
@@ -1036,7 +1036,7 @@ _TestTileSizeAndCameraJitterImages()
                 _Binding(HdAovTokens->color, &color),
                 _Binding(HdAovTokens->primId, &primId)});
 
-            HdEmbreeRenderSettings settings;
+            ty::RenderSettings settings;
             settings.samplesToConvergence = 16;
             settings.randomNumberSeed = 1;
             settings.tileSize = tileSize;
@@ -1084,7 +1084,7 @@ _TestTileSizeAndCameraJitterImages()
         renderImage(
             8, false, &noJitterColor, &noJitterPrimId);
 
-    renderer->SetRenderSettings(HdEmbreeRenderSettings{});
+    renderer->SetRenderSettings(ty::RenderSettings{});
     return rendered &&
         tile8Color == tile32Color &&
         tile8PrimId == tile32PrimId &&
@@ -1102,7 +1102,7 @@ _TestRenderPassSettingsApplication()
         return false;
     }
 
-    HdEmbreeRenderer renderer;
+    ty::Renderer renderer;
     std::atomic<int> sceneVersion{0};
     std::atomic<int> materialVersion{0};
     HdRenderThread renderThread;
@@ -1110,7 +1110,7 @@ _TestRenderPassSettingsApplication()
     renderThread.StartThread();
     const auto finish = [&]() {
         renderThread.StopThread();
-        renderer.SetRenderSettings(HdEmbreeRenderSettings{});
+        renderer.SetRenderSettings(ty::RenderSettings{});
     };
 
     HdEmbreeRenderPass renderPass(
@@ -1130,7 +1130,7 @@ _TestRenderPassSettingsApplication()
     mxcpp::Bsdf::SetDielectricLayerThroughputMode(
         mxcpp::Bsdf::DielectricLayerThroughputMode::MaterialXGlsl);
     renderPass.Execute(renderPassState, TfTokenVector());
-    const HdEmbreeRenderSettings first = renderer.GetRenderSettings();
+    const ty::RenderSettings first = renderer.GetRenderSettings();
     if (!mxcpp::Bsdf::IsGgxMicrofacetMultipleScatteringEnabled() ||
         mxcpp::Bsdf::GetDielectricLayerThroughputMode() !=
             mxcpp::Bsdf::DielectricLayerThroughputMode::Bsdl ||
@@ -1165,15 +1165,15 @@ _TestRenderPassSettingsApplication()
         dielectricWarnings = warnings.dielectricWarnings;
         unexpectedDiagnostics = warnings.unexpectedDiagnostics;
     }
-    const HdEmbreeRenderSettings normalized = renderer.GetRenderSettings();
+    const ty::RenderSettings normalized = renderer.GetRenderSettings();
     if (normalized.tileSize != 1 ||
         normalized.maxBounces != 0 ||
         normalized.lightSamplesPerHit != 1 ||
         normalized.jitterCamera ||
         normalized.samplerSequence !=
-            HdEmbreeSamplerSequence::OpenQMCSobolBN ||
+            ty::SamplerSequence::OpenQMCSobolBN ||
         normalized.dielectricLayerThroughputMode !=
-            HdEmbreeDielectricLayerThroughputMode::Bsdl ||
+            ty::DielectricLayerThroughputMode::Bsdl ||
         samplerWarnings != 1 ||
         dielectricWarnings != 1 ||
         unexpectedDiagnostics != 0) {

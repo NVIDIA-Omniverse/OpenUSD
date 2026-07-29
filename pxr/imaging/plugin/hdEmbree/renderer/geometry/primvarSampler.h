@@ -25,11 +25,12 @@
 #include <cstddef>
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
-/// \class HdEmbreeTypeHelper
+/// \class TypeHelper
 ///
 /// A utility class that helps map between C++ types and Hd type tags.
-class HdEmbreeTypeHelper {
+class TypeHelper {
 public:
     /// Return the HdTupleType corresponding to the given C++ type.
     template<typename T>
@@ -39,11 +40,11 @@ public:
     typedef char PrimvarTypeContainer[sizeof(GfMatrix4d)];
 };
 
-// Define template specializations of HdEmbreeTypeHelper methods for
+// Define template specializations of TypeHelper methods for
 // all our supported types...
 #define TYPE_HELPER(T,type)\
 template<> inline HdTupleType \
-HdEmbreeTypeHelper::GetTupleType<T>() { return HdTupleType{type, 1}; }
+TypeHelper::GetTupleType<T>() { return HdTupleType{type, 1}; }
 
     TYPE_HELPER(bool, HdTypeBool)
     TYPE_HELPER(char, HdTypeInt8)
@@ -67,7 +68,7 @@ HdEmbreeTypeHelper::GetTupleType<T>() { return HdTupleType{type, 1}; }
     TYPE_HELPER(GfQuath, HdTypeHalfFloatVec4)
 #undef TYPE_HELPER
 
-/// \class HdEmbreeBufferSampler
+/// \class BufferSampler
 ///
 /// A utility class that knows how to sample an element from a type-tagged
 /// buffer (like HdVtBufferSource).
@@ -75,13 +76,13 @@ HdEmbreeTypeHelper::GetTupleType<T>() { return HdTupleType{type, 1}; }
 /// This class provides templated accessors to let the caller directly get the
 /// final sample type; it also does bounds checks and type checks.
 ///
-class HdEmbreeBufferSampler {
+class BufferSampler {
 public:
     /// The constructor takes a reference to a buffer source. The data is
     /// owned externally; the caller is responsible for ensuring the buffer
     /// is alive while Sample() is being called.
     /// \param buffer The buffer being sampled.
-    HdEmbreeBufferSampler(HdVtBufferSource const& buffer)
+    BufferSampler(HdVtBufferSource const& buffer)
         : _buffer(buffer) {}
 
     /// Sample the buffer at element index \p index, and write the sample to
@@ -102,25 +103,25 @@ public:
     // Convenient, templated frontend for Sample().
     template<typename T> bool Sample(int index, T* value) const {
         return Sample(index, static_cast<void*>(value),
-            HdEmbreeTypeHelper::GetTupleType<T>());
+            TypeHelper::GetTupleType<T>());
     }
 
 private:
     HdVtBufferSource const& _buffer;
 };
 
-/// \class HdEmbreePrimvarSampler
+/// \class PrimvarSampler
 ///
 /// An abstract base class that knows how to sample a primvar signal given
 /// a ray hit coordinate: an <element, u, v> tuple. It provides templated
 /// accessors, but derived classes are responsible for implementing appropriate
 /// sampling or interpolation modes.
-class HdEmbreePrimvarSampler {
+class PrimvarSampler {
 public:
     /// Default constructor.
-    HdEmbreePrimvarSampler() = default;
+    PrimvarSampler() = default;
     /// Default destructor.
-    virtual ~HdEmbreePrimvarSampler() = default;
+    virtual ~PrimvarSampler() = default;
 
     /// Sample the primvar at element index \p index and local basis coordinates
     /// \p u and \p v, writing the sample to \p value.  Interpret \p value as
@@ -145,7 +146,7 @@ public:
     template<typename T> bool Sample(unsigned int element, float u, float v,
                                      T* value) const {
         return Sample(element, u, v, static_cast<void*>(value),
-            HdEmbreeTypeHelper::GetTupleType<T>());
+            TypeHelper::GetTupleType<T>());
     }
 
 protected:
@@ -161,6 +162,7 @@ protected:
         size_t sampleCount, HdTupleType dataType);
 };
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif // PXR_IMAGING_PLUGIN_HD_EMBREE_PRIMVAR_SAMPLER_H

@@ -52,7 +52,7 @@ _SampleSphere(GfMatrix4f const& xf, GfMatrix3f const& normalXform, float radius,
 }
 
 static bool
-_CanSampleSphereBySolidAngle(HdEmbree_LightData const& light)
+_CanSampleSphereBySolidAngle(ty::LightData const& light)
 {
     const GfVec3f x =
         light.xformLightToWorld.TransformDir(GfVec3f::XAxis());
@@ -81,7 +81,7 @@ _CanSampleSphereBySolidAngle(HdEmbree_LightData const& light)
 
 static float
 _SphereSolidAngle(
-    HdEmbree_LightData const& light, HdEmbree_Sphere const& sphere,
+    ty::LightData const& light, ty::SphereLight const& sphere,
     GfVec3f const& position)
 {
     if (!_CanSampleSphereBySolidAngle(light) ||
@@ -108,7 +108,7 @@ _SphereSolidAngle(
 
 static bool
 _IntersectSphereLight(
-    HdEmbree_LightData const& light, HdEmbree_Sphere const& sphere,
+    ty::LightData const& light, ty::SphereLight const& sphere,
     GfVec3f const& position, GfVec3f const& direction,
     ty::ShapeSample* outSample)
 {
@@ -160,11 +160,11 @@ _IntersectSphereLight(
     return true;
 }
 
-static HdEmbreeLightSampler::LightSample
+static ty::LightSampler::LightSample
 _EvalSphereLightSolidAngle(
-    HdEmbree_LightData const& light, HdEmbree_Sphere const& sphere,
+    ty::LightData const& light, ty::SphereLight const& sphere,
     GfVec3f const& position, float u1, float u2,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
     const float solidAngle =
         _SphereSolidAngle(light, sphere, position);
@@ -200,20 +200,20 @@ _EvalSphereLightSolidAngle(
         return ty::InvalidLightSample();
     }
 
-    HdEmbreeLightSampler::LightSample sample =
+    ty::LightSampler::LightSample sample =
         ty::EvalAreaLight(light, shapeSample, position, renderColorSpace);
     sample.pdfSolidAngleInverse = solidAngle;
     sample.valid = sample.valid && sample.pdfSolidAngleInverse > 0.0f;
     return sample;
 }
 
-HdEmbreeLightSampler::LightSample
+ty::LightSampler::LightSample
 ty::SampleSphereLight(
-    HdEmbree_LightData const& light, HdEmbree_Sphere const& sphere,
+    ty::LightData const& light, ty::SphereLight const& sphere,
     GfVec3f const& position, float u1, float u2,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
-    const HdEmbreeLightSampler::LightSample solidAngleSample =
+    const ty::LightSampler::LightSample solidAngleSample =
         _EvalSphereLightSolidAngle(
             light, sphere, position, u1, u2, renderColorSpace);
     if (solidAngleSample.valid) {
@@ -226,11 +226,11 @@ ty::SampleSphereLight(
     return ty::EvalAreaLight(light, shapeSample, position, renderColorSpace);
 }
 
-HdEmbreeLightSampler::LightSample
+ty::LightSampler::LightSample
 ty::EvaluateSphereLightDirection(
-    HdEmbree_LightData const& light, HdEmbree_Sphere const& sphere,
+    ty::LightData const& light, ty::SphereLight const& sphere,
     GfVec3f const& position, GfVec3f const& direction,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
     ty::ShapeSample shapeSample;
     if (!_IntersectSphereLight(
@@ -238,7 +238,7 @@ ty::EvaluateSphereLightDirection(
         return ty::InvalidLightSample();
     }
 
-    HdEmbreeLightSampler::LightSample sample =
+    ty::LightSampler::LightSample sample =
         ty::EvalAreaLight(light, shapeSample, position, renderColorSpace);
     const float solidAngle =
         _SphereSolidAngle(light, sphere, position);

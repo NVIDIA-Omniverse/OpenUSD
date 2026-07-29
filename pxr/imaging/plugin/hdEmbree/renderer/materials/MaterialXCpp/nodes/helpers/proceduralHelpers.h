@@ -22,10 +22,8 @@
 
 namespace mxcpp {
 
-namespace {
-
 // Convert gradient length to a symmetric half-width for smoothstep AA.
-constexpr float kInvSqrt2 = 0.70710678118654752440f;
+inline constexpr float kInvSqrt2 = 0.70710678118654752440f;
 
 inline float
 AAStep(float threshold, float value, float dx, float dy)
@@ -71,8 +69,8 @@ GradientVec3(UVec3 hash, float x, float y, float z)
                  GradientFloat(hash.z, x, y, z));
 }
 
-constexpr float _kGradScale2d = 0.6616f;
-constexpr float _kGradScale3d = 0.9820f;
+inline constexpr float _kGradScale2d = 0.6616f;
+inline constexpr float _kGradScale3d = 0.9820f;
 
 inline float
 PerlinNoise2d(float px, float py)
@@ -768,8 +766,6 @@ RandomFloatValue(float inputValue, float minValue, float maxValue, int seed)
                       std::min(minValue, maxValue),
                       std::max(minValue, maxValue));
 }
-
-}  // namespace
 
 }  // namespace mxcpp
 

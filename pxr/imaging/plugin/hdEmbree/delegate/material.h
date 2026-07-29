@@ -40,7 +40,7 @@ public:
     void ResyncForRenderSettingsChange(HdRenderParam *renderParam);
 
     /// Return the compiled evaluation graph, or nullptr if unavailable.
-    HdEmbreeMaterialData const* GetRenderMaterial() const { return &_renderMaterial; }
+    ty::MaterialData const* GetRenderMaterial() const { return &_renderMaterial; }
 
 private:
     // Non-owning; cached from the last Hydra Sync for direct recompile when
@@ -48,7 +48,7 @@ private:
     HdSceneDelegate *_sceneDelegate = nullptr;
     std::unique_ptr<mxcpp::EvalGraph> _surfaceGraph;
     std::unique_ptr<mxcpp::EvalGraph> _displacementGraph;
-    HdEmbreeMaterialData _renderMaterial;
+    ty::MaterialData _renderMaterial;
 };
 
 PXR_NAMESPACE_CLOSE_SCOPE

@@ -27,7 +27,7 @@ constexpr float _kBias = 1.0e-4f;
 }  // namespace
 
 // =============================================================================
-// HdEmbreeRandomWalkSSS: self-contained SSS random walk.
+// ty::RandomWalkSSS: self-contained SSS random walk.
 // - Chiang 2016 polynomial remap (albedo + radius -> extinction, alpha).
 // - Channel-MIS (balance heuristic) per bounce.
 // - Henyey-Greenstein classic sampling + forward/backward Dwivedi guided
@@ -93,7 +93,7 @@ struct _SssTraceResult {
 
 // Phase 2: Chiang polynomial remap + min-alpha throughput correction.
 //
-// HdEmbreeChiangRemap produces (extinction, alpha) such that a random walk with
+// ty::ChiangRemap produces (extinction, alpha) such that a random walk with
 // these coefficients reproduces the target diffuse reflectance, and clamps
 // alpha to kMinAlpha (0.2) for numerical stability. When alpha was clamped
 // up from a smaller raw value, we compensate by starting the walk throughput
@@ -106,7 +106,7 @@ _InitChiangCoefficients(GfVec3f const& albedo, GfVec3f const& radius,
                         GfVec3f* throughputCorrection)
 {
     GfVec3f rawAlpha;
-    HdEmbreeChiangRemap(albedo, radius, anisotropy, extinction, alpha,
+    ty::ChiangRemap(albedo, radius, anisotropy, extinction, alpha,
                         &rawAlpha);
     for (int indexChannel = 0; indexChannel < 3; ++indexChannel) {
         (*scattering)[indexChannel] =
@@ -116,7 +116,7 @@ _InitChiangCoefficients(GfVec3f const& albedo, GfVec3f const& radius,
     // Min-alpha correction: if the Chiang polynomial yielded alpha < kMinAlpha
     // we clamped alpha up; offset throughput by raw/clamped so the expected
     // reflectance is unchanged.  Must mirror the clamp value in
-    // HdEmbreeChiangRemap.
+    // ty::ChiangRemap.
     constexpr float kMinAlpha = 0.2f;
     *throughputCorrection = GfVec3f(1.0f);
     for (int indexChannel = 0; indexChannel < 3; ++indexChannel) {
@@ -169,7 +169,7 @@ _InitDwivediAndSimilarity(_SssWalkState* state)
     // strongest-scattering channel to avoid too-long guided stretching).
     const float maxAlpha =
         std::max({state->alpha[0], state->alpha[1], state->alpha[2]});
-    state->diffusionLength = HdEmbreeDiffusionLengthDwivedi(maxAlpha);
+    state->diffusionLength = ty::DiffusionLengthDwivedi(maxAlpha);
 
     // Degenerate guard: diffusionLength == 1 causes phaseLog = inf and
     // throughput collapse.
@@ -254,7 +254,7 @@ _HitOwnerGeometry(RTCRayHit const& rayHit, _SssWalkState const& state)
 }
 
 static _SssTraceResult
-_TraceSssBoundary(_SssWalkState const& state, HdEmbreeSssInput const& input,
+_TraceSssBoundary(_SssWalkState const& state, ty::SssInput const& input,
                   RTCScene scene, float rayTfar)
 {
     _SssTraceResult result;
@@ -287,9 +287,9 @@ _TraceSssBoundary(_SssWalkState const& state, HdEmbreeSssInput const& input,
     rayHit.ray.dir_z = directionRayScene[2];
     rayHit.ray.time = 0.0f;
     rayHit.ray.tfar = rayTfar;
-    rayHit.ray.mask = static_cast<uint32_t>(HdEmbree_RayMask::Camera);
+    rayHit.ray.mask = static_cast<uint32_t>(ty::RayMask::Camera);
     rayHit.ray.id = useOwnerScene
-        ? HdEmbreeFaceCullBypassRayId
+        ? ty::FaceCullBypassRayId
         : 0;
     rayHit.hit.primID = RTC_INVALID_GEOMETRY_ID;
     rayHit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
@@ -319,7 +319,7 @@ _TraceSssBoundary(_SssWalkState const& state, HdEmbreeSssInput const& input,
         RTCGeometry const hitGeometry =
             rtcGetGeometry(traceScene, rayHit.hit.geomID);
         auto const* prototypeContext = hitGeometry
-            ? static_cast<HdEmbreePrototypeContext const*>(
+            ? static_cast<ty::PrototypeContext const*>(
                 rtcGetGeometryUserData(hitGeometry))
             : nullptr;
         if (prototypeContext) {
@@ -419,7 +419,7 @@ _ChiangRemapChannel(float albedo, float radius, float anisotropy,
 }  // namespace
 
 void
-HdEmbreeChiangRemap(const GfVec3f& albedo, const GfVec3f& radius,
+ty::ChiangRemap(const GfVec3f& albedo, const GfVec3f& radius,
                     float anisotropy, GfVec3f* extinctionOutput,
                     GfVec3f* alphaOutput, GfVec3f* rawAlphaOutput)
 {
@@ -445,7 +445,7 @@ HdEmbreeChiangRemap(const GfVec3f& albedo, const GfVec3f& radius,
 }
 
 float
-HdEmbreeDiffusionLengthDwivedi(float alpha)
+ty::DiffusionLengthDwivedi(float alpha)
 {
     // Eq. 67 from d'Eon-Krivanek 2020 (via Cycles
     // subsurface_random_walk.h::diffusion_length_dwivedi).
@@ -458,7 +458,7 @@ HdEmbreeDiffusionLengthDwivedi(float alpha)
 }
 
 float
-HdEmbreeEvalPhaseDwivedi(float diffusionLength, float phaseLog, float cosTheta)
+ty::EvalPhaseDwivedi(float diffusionLength, float phaseLog, float cosTheta)
 {
     // Eq. 9 from Meng-Hanika-Dachsbacher 2016, using precomputed phaseLog.
     // Source: Blender Cycles (Apache 2.0).
@@ -466,7 +466,7 @@ HdEmbreeEvalPhaseDwivedi(float diffusionLength, float phaseLog, float cosTheta)
 }
 
 float
-HdEmbreeSamplePhaseDwivedi(float diffusionLength, float phaseLog, float u1)
+ty::SamplePhaseDwivedi(float diffusionLength, float phaseLog, float u1)
 {
     // Eq. 10 from Meng-Hanika-Dachsbacher 2016.
     // Returns cosTheta. Using L for diffusion length, the inverse CDF is:
@@ -479,7 +479,7 @@ HdEmbreeSamplePhaseDwivedi(float diffusionLength, float phaseLog, float u1)
 }
 
 float
-HdEmbreeBackwardDwivediFraction(float distanceOppositeWld,
+ty::BackwardDwivediFraction(float distanceOppositeWld,
                                 float distanceFromEntryPlaneWld,
                                 float diffusionLength)
 {
@@ -495,9 +495,9 @@ HdEmbreeBackwardDwivediFraction(float distanceOppositeWld,
     return 1.0f / (1.0f + std::exp(exponent));
 }
 
-HdEmbreeSssOutput
-HdEmbreeRandomWalkSSS(HdEmbreeSssInput const& input,
-                      HdEmbreeSampleDomain const& domain, RTCScene scene)
+ty::SssOutput
+ty::RandomWalkSSS(ty::SssInput const& input,
+                      ty::SampleDomain const& domain, RTCScene scene)
 {
     // Phase 3: after kSimilarityLevel bounces we switch to isotropic scattering
     // with the similarity-reduced sigma values (Wrenninge-Villemin-Hery).
@@ -508,7 +508,7 @@ HdEmbreeRandomWalkSSS(HdEmbreeSssInput const& input,
     constexpr float kTwoPi = 2.0f * 3.14159265358979323846f;
     constexpr float kInvTwoPi = 1.0f / (2.0f * 3.14159265358979323846f);
 
-    HdEmbreeSssOutput output; // default-initialized (success=false)
+    ty::SssOutput output; // default-initialized (success=false)
 
     _SssWalkState state;
     GfVec3f throughputCorrection;
@@ -543,8 +543,8 @@ HdEmbreeRandomWalkSSS(HdEmbreeSssInput const& input,
 
     for (int bounce = 0; bounce < _kSssMaxBounces; ++bounce) {
         ++output.walkSteps;
-        const HdEmbreeSampleDomain bounceDomain =
-            domain.Chain(HdEmbreeSampleDomainKey::SssBounce, bounce);
+        const ty::SampleDomain bounceDomain =
+            domain.Chain(ty::SampleDomainKey::SssBounce, bounce);
 
         // Similarity switch: after kSimilarityLevel the medium is approximated
         // as isotropic with reduced scattering.
@@ -572,7 +572,7 @@ HdEmbreeRandomWalkSSS(HdEmbreeSssInput const& input,
                                         state.throughputRgb[2]),
             /*weights*/
             mxcpp::Vec3f(state.alpha[0], state.alpha[1], state.alpha[2]),
-            bounceDomain.Fork(HdEmbreeSampleDomainKey::SssChannel).Draw1D(),
+            bounceDomain.Fork(ty::SampleDomainKey::SssChannel).Draw1D(),
             &channelPdfMx);
         const GfVec3f channelPdf(
             channelPdfMx[0], channelPdfMx[1], channelPdfMx[2]);
@@ -597,27 +597,27 @@ HdEmbreeRandomWalkSSS(HdEmbreeSssInput const& input,
         bool guideBackward = false;
         if (bounce > 0) {
             guidedThisBounce =
-                (bounceDomain.Fork(HdEmbreeSampleDomainKey::SssGuideChoice)
+                (bounceDomain.Fork(ty::SampleDomainKey::SssGuideChoice)
                      .Draw1D() < guidedFractionEffective);
 
             if (state.haveOppositeInterface) {
                 const float distanceFromEntryPlaneWld =
                     GfDot(state.positionRayOriginWld - state.positionEntryWld,
                           -state.normalShdGuideWldOut);
-                backwardFraction = HdEmbreeBackwardDwivediFraction(
+                backwardFraction = ty::BackwardDwivediFraction(
                     state.distanceOppositeWld, distanceFromEntryPlaneWld,
                     state.diffusionLength);
                 if (guidedThisBounce) {
                     guideBackward =
                         (bounceDomain
-                             .Fork(HdEmbreeSampleDomainKey::SssBackwardChoice)
+                             .Fork(ty::SampleDomainKey::SssBackwardChoice)
                              .Draw1D() < backwardFraction);
                 }
             }
 
             const GfVec2f phaseSample =
                 bounceDomain
-                    .Fork(HdEmbreeSampleDomainKey::SssPhaseDirection)
+                    .Fork(ty::SampleDomainKey::SssPhaseDirection)
                     .Draw2D();
             const float u1 = phaseSample[0];
             const float u2 = phaseSample[1];
@@ -629,7 +629,7 @@ HdEmbreeRandomWalkSSS(HdEmbreeSssInput const& input,
             if (guidedThisBounce) {
                 // Forward Dwivedi: sample cosTheta around the inward-facing
                 // entry direction (guideAxis).
-                float cosTheta = HdEmbreeSamplePhaseDwivedi(
+                float cosTheta = ty::SamplePhaseDwivedi(
                     state.diffusionLength, state.phaseLog, u1);
                 // Backward Dwivedi mirrors the guide distribution along the
                 // entry normal, biasing directions toward the opposite side.
@@ -694,12 +694,12 @@ HdEmbreeRandomWalkSSS(HdEmbreeSssInput const& input,
                 std::max(pdfHenyeyGreenstein, 1.0e-8f);
             pdfFactorForward =
                 kInvTwoPi *
-                HdEmbreeEvalPhaseDwivedi(state.diffusionLength, state.phaseLog,
+                ty::EvalPhaseDwivedi(state.diffusionLength, state.phaseLog,
                                          cosThetaEntry) /
                 pdfHenyeyGreensteinSafe;
             pdfFactorBackward =
                 kInvTwoPi *
-                HdEmbreeEvalPhaseDwivedi(state.diffusionLength, state.phaseLog,
+                ty::EvalPhaseDwivedi(state.diffusionLength, state.phaseLog,
                                          -cosThetaEntry) /
                 pdfHenyeyGreensteinSafe;
 
@@ -714,7 +714,7 @@ HdEmbreeRandomWalkSSS(HdEmbreeSssInput const& input,
 
         // Free-flight distance sample for the (possibly stretched) extinction.
         const float u1 = std::clamp(
-            bounceDomain.Fork(HdEmbreeSampleDomainKey::SssFreeFlight).Draw1D(),
+            bounceDomain.Fork(ty::SampleDomainKey::SssFreeFlight).Draw1D(),
             1.0e-6f, 1.0f - 1.0e-6f);
         const float distanceFreeFlightSampledWld =
             -std::log(1.0f - u1) / std::max(sampleExtinction, _kExtinctionEps);
@@ -883,10 +883,10 @@ HdEmbreeRandomWalkSSS(HdEmbreeSssInput const& input,
     return output; // max bounces exceeded
 }
 
-HdEmbreeRenderer::_SubsurfaceResult
-HdEmbreeRenderer::_TraceSubsurface(
+ty::Renderer::_SubsurfaceResult
+ty::Renderer::_TraceSubsurface(
     _SubsurfaceInput const& input,
-    HdEmbreeSampleDomain const& domain,
+    ty::SampleDomain const& domain,
     _PathState* state) const
 {
     if (!state || !input.rayHit || !input.instanceContext ||
@@ -897,7 +897,7 @@ HdEmbreeRenderer::_TraceSubsurface(
     GfVec3f entryDirection = input.directionEntryWld;
     if (!input.hasSampledEntryDirection) {
         const GfVec2f sample =
-            domain.Fork(HdEmbreeSampleDomainKey::SssEntryDirection).Draw2D();
+            domain.Fork(ty::SampleDomainKey::SssEntryDirection).Draw2D();
         mxcpp::Vec3f sampledDirection;
         if (!mxcpp::Bsdf::SampleSubsurfaceEntry(
                 *input.closure, ty::ToMx(input.normalShdWldOut),
@@ -927,7 +927,7 @@ HdEmbreeRenderer::_TraceSubsurface(
         return _SubsurfaceResult::Terminate;
     }
 
-    HdEmbreeSssInput walkInput;
+    ty::SssInput walkInput;
     walkInput.positionEntryWld = input.positionHitWld;
     walkInput.normalShdEntryGuideWldOut = input.normalShdWldOut;
     walkInput.directionEntryWld = entryDirection;
@@ -957,9 +957,9 @@ HdEmbreeRenderer::_TraceSubsurface(
     walkInput.worldToObjectMatrix =
         input.instanceContext->worldToObjectMatrix;
 
-    HdEmbreeSssOutput output = HdEmbreeRandomWalkSSS(
+    ty::SssOutput output = ty::RandomWalkSSS(
         walkInput,
-        domain.Fork(HdEmbreeSampleDomainKey::SssEntry),
+        domain.Fork(ty::SampleDomainKey::SssEntry),
         _scene);
     _sssCallCount.fetch_add(1, std::memory_order_relaxed);
     _sssWalkStepCount.fetch_add(
@@ -994,7 +994,7 @@ HdEmbreeRenderer::_TraceSubsurface(
     state->isFirstBounce = false;
     state->syntheticLambertianExit = output;
     state->useSyntheticLambertian = true;
-    state->medium = HdEmbreeMediumState();
+    state->medium = ty::MediumState();
     return _SubsurfaceResult::ContinueAtExit;
 }
 

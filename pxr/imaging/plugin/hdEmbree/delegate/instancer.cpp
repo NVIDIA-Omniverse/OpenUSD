@@ -119,11 +119,11 @@ HdEmbreeInstancer::ComputeInstanceData(SdfPath const &prototypeId)
         HdEmbreeInstanceData& instance = instances[i];
         instance.transform = instancerTransform;
         instance.sourceInstanceIndex = instanceIndices[i];
-        HdEmbreeMergeCategories(_categories, &instance.categories);
+        ty::MergeCategories(_categories, &instance.categories);
         const int sourceIndex = instanceIndices[i];
         if (sourceIndex >= 0 &&
             static_cast<size_t>(sourceIndex) < _instanceCategories.size()) {
-            HdEmbreeMergeCategories(
+            ty::MergeCategories(
                 _instanceCategories[sourceIndex], &instance.categories);
         } else if (!_instanceCategories.empty()) {
             TF_CODING_ERROR(
@@ -134,7 +134,7 @@ HdEmbreeInstancer::ComputeInstanceData(SdfPath const &prototypeId)
 
     // "hydra:instanceTranslations" holds a translation vector for each index.
     if (_primvarMap.count(HdInstancerTokens->instanceTranslations) > 0) {
-        HdEmbreeBufferSampler
+        ty::BufferSampler
                 sampler(*_primvarMap[HdInstancerTokens->instanceTranslations]);
         for (size_t i = 0; i < instanceIndices.size(); ++i) {
             GfVec3f translate;
@@ -150,7 +150,7 @@ HdEmbreeInstancer::ComputeInstanceData(SdfPath const &prototypeId)
     // "hydra:instanceRotations" holds a quaternion in <real, i, j, k>
     // format for each index.
     if (_primvarMap.count(HdInstancerTokens->instanceRotations) > 0) {
-        HdEmbreeBufferSampler sampler(*_primvarMap[HdInstancerTokens->instanceRotations]);
+        ty::BufferSampler sampler(*_primvarMap[HdInstancerTokens->instanceRotations]);
         for (size_t i = 0; i < instanceIndices.size(); ++i) {
             GfVec4f quat;
             if (sampler.Sample(instanceIndices[i], &quat)) {
@@ -164,7 +164,7 @@ HdEmbreeInstancer::ComputeInstanceData(SdfPath const &prototypeId)
 
     // "hydra:instanceScales" holds an axis-aligned scale vector for each index.
     if (_primvarMap.count(HdInstancerTokens->instanceScales) > 0) {
-        HdEmbreeBufferSampler sampler(*_primvarMap[HdInstancerTokens->instanceScales]);
+        ty::BufferSampler sampler(*_primvarMap[HdInstancerTokens->instanceScales]);
         for (size_t i = 0; i < instanceIndices.size(); ++i) {
             GfVec3f scale;
             if (sampler.Sample(instanceIndices[i], &scale)) {
@@ -177,7 +177,7 @@ HdEmbreeInstancer::ComputeInstanceData(SdfPath const &prototypeId)
 
     // "hydra:instanceTransforms" holds a 4x4 transform matrix for each index.
     if (_primvarMap.count(HdInstancerTokens->instanceTransforms) > 0) {
-        HdEmbreeBufferSampler
+        ty::BufferSampler
                 sampler(*_primvarMap[HdInstancerTokens->instanceTransforms]);
         for (size_t i = 0; i < instanceIndices.size(); ++i) {
             GfMatrix4d instanceTransform;
@@ -215,9 +215,9 @@ HdEmbreeInstancer::ComputeInstanceData(SdfPath const &prototypeId)
             output.transform = instances[j].transform *
                 parentInstances[i].transform;
             output.sourceInstanceIndex = instances[j].sourceInstanceIndex;
-            HdEmbreeMergeCategories(
+            ty::MergeCategories(
                 parentInstances[i].categories, &output.categories);
-            HdEmbreeMergeCategories(instances[j].categories, &output.categories);
+            ty::MergeCategories(instances[j].categories, &output.categories);
         }
     }
     return final;

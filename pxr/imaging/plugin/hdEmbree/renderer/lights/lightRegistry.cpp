@@ -14,13 +14,13 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 void
-HdEmbreeLightRegistry::Add(
+ty::LightRegistry::Add(
     SdfPath const& path,
-    HdEmbree_LightData const* light)
+    ty::LightData const* light)
 {
     std::scoped_lock lock(_mutex);
 
-    auto eraseDomeEntries = [this](HdEmbree_LightData const* toRemove) {
+    auto eraseDomeEntries = [this](ty::LightData const* toRemove) {
         if (toRemove) {
             _domes.erase(
                 std::remove(_domes.begin(), _domes.end(), toRemove),
@@ -31,7 +31,7 @@ HdEmbreeLightRegistry::Add(
     auto it = _lights.find(path);
     if (it != _lights.end() && it->second == light) {
         if (!light ||
-            !std::holds_alternative<HdEmbree_Dome>(light->lightVariant)) {
+            !std::holds_alternative<ty::DomeLight>(light->lightVariant)) {
             return;
         }
         const auto firstDome = std::find(_domes.begin(), _domes.end(), light);
@@ -51,15 +51,15 @@ HdEmbreeLightRegistry::Add(
         eraseDomeEntries(light);
     }
 
-    if (light && std::holds_alternative<HdEmbree_Dome>(light->lightVariant)) {
+    if (light && std::holds_alternative<ty::DomeLight>(light->lightVariant)) {
         _domes.push_back(light);
     }
 }
 
 void
-HdEmbreeLightRegistry::Remove(
+ty::LightRegistry::Remove(
     SdfPath const& path,
-    HdEmbree_LightData const* light)
+    ty::LightData const* light)
 {
     std::scoped_lock lock(_mutex);
     _lights.erase(path);
@@ -69,9 +69,9 @@ HdEmbreeLightRegistry::Remove(
 }
 
 void
-HdEmbreeLightRegistry::AddGeometry(
+ty::LightRegistry::AddGeometry(
     unsigned int geometryId,
-    HdEmbree_LightData const* light)
+    ty::LightData const* light)
 {
     if (geometryId == RTC_INVALID_GEOMETRY_ID || !light) {
         return;
@@ -81,9 +81,9 @@ HdEmbreeLightRegistry::AddGeometry(
 }
 
 void
-HdEmbreeLightRegistry::RemoveGeometry(
+ty::LightRegistry::RemoveGeometry(
     unsigned int geometryId,
-    HdEmbree_LightData const* light)
+    ty::LightData const* light)
 {
     if (geometryId == RTC_INVALID_GEOMETRY_ID) {
         return;
@@ -95,8 +95,8 @@ HdEmbreeLightRegistry::RemoveGeometry(
     }
 }
 
-HdEmbree_LightData const*
-HdEmbreeLightRegistry::FindGeometry(unsigned int geometryId) const
+ty::LightData const*
+ty::LightRegistry::FindGeometry(unsigned int geometryId) const
 {
     if (geometryId == RTC_INVALID_GEOMETRY_ID) {
         return nullptr;
@@ -107,33 +107,33 @@ HdEmbreeLightRegistry::FindGeometry(unsigned int geometryId) const
 }
 
 void
-HdEmbreeRenderer::AddLight(
+ty::Renderer::AddLight(
     SdfPath const& lightPath,
-    HdEmbree_LightData const* light)
+    ty::LightData const* light)
 {
     _lights.Add(lightPath, light);
 }
 
 void
-HdEmbreeRenderer::RemoveLight(
+ty::Renderer::RemoveLight(
     SdfPath const& lightPath,
-    HdEmbree_LightData const* light)
+    ty::LightData const* light)
 {
     _lights.Remove(lightPath, light);
 }
 
 void
-HdEmbreeRenderer::AddLightGeometry(
+ty::Renderer::AddLightGeometry(
     unsigned int geometryId,
-    HdEmbree_LightData const* light)
+    ty::LightData const* light)
 {
     _lights.AddGeometry(geometryId, light);
 }
 
 void
-HdEmbreeRenderer::RemoveLightGeometry(
+ty::Renderer::RemoveLightGeometry(
     unsigned int geometryId,
-    HdEmbree_LightData const* light)
+    ty::LightData const* light)
 {
     _lights.RemoveGeometry(geometryId, light);
 }

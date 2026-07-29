@@ -107,14 +107,14 @@ _TryComputeSubdivLimitNormal(
 
 GfVec3f
 ty::ResolveObjectSpaceNormal(
-    HdEmbreePrototypeContext const* prototypeContext,
+    ty::PrototypeContext const* prototypeContext,
     RTCScene rootScene,
     unsigned int geomID,
     RTCRayHit const& rayHit,
-    HdEmbreeDisplacedSubdivFrame* outDisplacedFrame)
+    ty::DisplacedSubdivFrame* outDisplacedFrame)
 {
     if (outDisplacedFrame) {
-        *outDisplacedFrame = HdEmbreeDisplacedSubdivFrame{};
+        *outDisplacedFrame = ty::DisplacedSubdivFrame{};
     }
     GfVec3f normal = prototypeContext->orientationSign * GfVec3f(
         rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
@@ -123,8 +123,8 @@ ty::ResolveObjectSpaceNormal(
     // frame of P + D*N explicitly. Embree's hit Ng remains the true facet
     // orientation and is the fallback for invalid graph/patch evaluations.
     if (prototypeContext->displaced) {
-        HdEmbreeDisplacedSubdivFrame displacedFrame;
-        if (HdEmbreeComputeDisplacedSubdivFrame(
+        ty::DisplacedSubdivFrame displacedFrame;
+        if (ty::ComputeDisplacedSubdivFrame(
                 rtcGetGeometry(rootScene, geomID),
                 prototypeContext,
                 rayHit.hit.primID,
@@ -171,7 +171,7 @@ ty::ResolveObjectSpaceNormal(
 
 void
 ty::ComputeTriangleSurfaceDerivatives(
-    HdEmbreePrototypeContext const* prototypeContext,
+    ty::PrototypeContext const* prototypeContext,
     unsigned int primID,
     float u,
     float v,
@@ -203,7 +203,7 @@ ty::ComputeTriangleSurfaceDerivatives(
         auto it = prototypeContext->primvarMap.find(_tokensSt);
         if (it != prototypeContext->primvarMap.end()) {
             auto* vtxSampler =
-                dynamic_cast<HdEmbreeTriangleVertexSampler*>(
+                dynamic_cast<ty::TriangleVertexSampler*>(
                     it->second.get());
             if (vtxSampler) {
                 haveSt = vtxSampler->SampleVertices(
@@ -211,7 +211,7 @@ ty::ComputeTriangleSurfaceDerivatives(
             }
             if (!haveSt) {
                 auto* fvSampler =
-                    dynamic_cast<HdEmbreeTriangleFaceVaryingSampler*>(
+                    dynamic_cast<ty::TriangleFaceVaryingSampler*>(
                         it->second.get());
                 if (fvSampler) {
                     haveSt = fvSampler->SampleVertices(
@@ -229,7 +229,7 @@ ty::ComputeTriangleSurfaceDerivatives(
         auto it = prototypeContext->primvarMap.find(HdTokens->normals);
         if (it != prototypeContext->primvarMap.end()) {
             auto* vtxSampler =
-                dynamic_cast<HdEmbreeTriangleVertexSampler*>(
+                dynamic_cast<ty::TriangleVertexSampler*>(
                     it->second.get());
             if (vtxSampler) {
                 haveNormals = vtxSampler->SampleVertices(
@@ -237,7 +237,7 @@ ty::ComputeTriangleSurfaceDerivatives(
             }
             if (!haveNormals) {
                 auto* fvSampler =
-                    dynamic_cast<HdEmbreeTriangleFaceVaryingSampler*>(
+                    dynamic_cast<ty::TriangleFaceVaryingSampler*>(
                         it->second.get());
                 if (fvSampler) {
                     haveNormals = fvSampler->SampleVertices(
@@ -303,14 +303,14 @@ ty::ComputeTriangleSurfaceDerivatives(
 
 void
 ty::ComputeSubdivSurfaceDerivatives(
-    HdEmbreePrototypeContext const* prototypeContext,
+    ty::PrototypeContext const* prototypeContext,
     RTCScene rootScene,
     unsigned int geomID,
     unsigned int primID, float u, float v,
     GfVec3f const& normal,
     GfVec3f* outDPdu, GfVec3f* outDPdv,
     GfVec3f* outDndu, GfVec3f* outDndv,
-    HdEmbreeDisplacedSubdivFrame const* displacedFrame)
+    ty::DisplacedSubdivFrame const* displacedFrame)
 {
     RTCGeometry const geometry = rtcGetGeometry(rootScene, geomID);
 
@@ -325,7 +325,7 @@ ty::ComputeSubdivSurfaceDerivatives(
             havePositionDerivs = true;
         } else {
             GfVec3f displacedNormal;
-            havePositionDerivs = HdEmbreeComputeDisplacedSubdivFrame(
+            havePositionDerivs = ty::ComputeDisplacedSubdivFrame(
                 geometry,
                 prototypeContext,
                 primID,
@@ -352,10 +352,10 @@ ty::ComputeSubdivSurfaceDerivatives(
     }
 
     // If st available, transform from parametric to st space.
-    HdEmbreeSubdivTexcoordJacobian stJacobian;
+    ty::SubdivTexcoordJacobian stJacobian;
     auto const stIt = prototypeContext->primvarMap.find(_tokensSt);
     if (stIt != prototypeContext->primvarMap.end()) {
-        stJacobian = HdEmbreeComputeSubdivTexcoordJacobian(
+        stJacobian = ty::ComputeSubdivTexcoordJacobian(
             stIt->second.get(), primID, u, v);
     }
     if (stJacobian.valid) {
@@ -394,13 +394,13 @@ ty::ComputeSubdivSurfaceDerivatives(
             GfVec3f sampledNormal(0.0f);
             bool haveNormalDerivatives = false;
             auto* vertexSampler =
-                dynamic_cast<HdEmbreeSubdivVertexSampler*>(
+                dynamic_cast<ty::SubdivVertexSampler*>(
                     it->second.get());
             auto* varyingSampler =
-                dynamic_cast<HdEmbreeSubdivVaryingSampler*>(
+                dynamic_cast<ty::SubdivVaryingSampler*>(
                     it->second.get());
             auto* fvarSampler =
-                dynamic_cast<HdEmbreeSubdivFaceVaryingSampler*>(
+                dynamic_cast<ty::SubdivFaceVaryingSampler*>(
                     it->second.get());
             if (vertexSampler) {
                 haveNormalDerivatives =
@@ -465,11 +465,11 @@ ty::ComputeSubdivSurfaceDerivatives(
 
 bool
 ty::TryComputeDisplacedSubdivNormalDerivativesToWorld(
-    HdEmbreePrototypeContext const* prototypeContext,
-    HdEmbreeInstanceContext const* instanceContext,
+    ty::PrototypeContext const* prototypeContext,
+    ty::InstanceContext const* instanceContext,
     RTCScene rootScene,
     unsigned int geomID,
-    HdEmbreeDisplacedSubdivFrame const& frame,
+    ty::DisplacedSubdivFrame const& frame,
     GfVec3f const& faceForwardedWorldNormal,
     GfVec3f* outDndu,
     GfVec3f* outDndv)
@@ -481,7 +481,7 @@ ty::TryComputeDisplacedSubdivNormalDerivativesToWorld(
 
     GfVec3f objectDndu;
     GfVec3f objectDndv;
-    if (!HdEmbreeComputeDisplacedSubdivNormalDerivatives(
+    if (!ty::ComputeDisplacedSubdivNormalDerivatives(
             rtcGetGeometry(rootScene, geomID),
             prototypeContext,
             frame,
@@ -492,8 +492,8 @@ ty::TryComputeDisplacedSubdivNormalDerivativesToWorld(
 
     auto const stIt = prototypeContext->primvarMap.find(_tokensSt);
     if (stIt != prototypeContext->primvarMap.end()) {
-        const HdEmbreeSubdivTexcoordJacobian stJacobian =
-            HdEmbreeComputeSubdivTexcoordJacobian(
+        const ty::SubdivTexcoordJacobian stJacobian =
+            ty::ComputeSubdivTexcoordJacobian(
                 stIt->second.get(), frame.primID, frame.u, frame.v);
         if (stJacobian.valid) {
             const GfVec3f dNduParam = objectDndu;

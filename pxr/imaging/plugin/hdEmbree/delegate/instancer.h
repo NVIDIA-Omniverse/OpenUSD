@@ -31,7 +31,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 struct HdEmbreeInstanceData
 {
     GfMatrix4d transform{1.0};
-    HdEmbreeCategorySet categories;
+    ty::CategorySet categories;
     /// Source index at the leaf/current instancer level after flattening.
     int sourceInstanceIndex = -1;
 };
@@ -81,8 +81,8 @@ private:
               HdVtBufferSource*,
               TfToken::HashFunctor> _primvarMap;
 
-    HdEmbreeCategorySet _categories;
-    std::vector<HdEmbreeCategorySet> _instanceCategories;
+    ty::CategorySet _categories;
+    std::vector<ty::CategorySet> _instanceCategories;
 
     bool _visible;
 };

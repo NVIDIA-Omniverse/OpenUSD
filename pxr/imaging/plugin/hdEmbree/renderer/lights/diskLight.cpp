@@ -52,7 +52,7 @@ _SampleDisk(GfMatrix4f const& xf, GfMatrix3f const& normalXform, float radius,
 
 static bool
 _IntersectDiskLight(
-    HdEmbree_LightData const& light, HdEmbree_Disk const& disk,
+    ty::LightData const& light, ty::DiskLight const& disk,
     GfVec3f const& position, GfVec3f const& direction,
     ty::ShapeSample* outSample)
 {
@@ -92,14 +92,14 @@ _IntersectDiskLight(
     return true;
 }
 
-static HdEmbreeLightSampler::LightSample
+static ty::LightSampler::LightSample
 _SampleDiskDirectionalShaping(
-    HdEmbree_LightData const& light, HdEmbree_Disk const& disk,
+    ty::LightData const& light, ty::DiskLight const& disk,
     GfVec3f const& position, float u1, float u2,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
-    const HdEmbree_DirectionalShapingSample directionalSample =
-        HdEmbreeSampleDirectionalShaping(light.shaping, u1, u2);
+    const ty::DirectionalShapingSample directionalSample =
+        ty::SampleDirectionalShaping(light.shaping, u1, u2);
     if (!directionalSample.valid) {
         return ty::InvalidLightSample();
     }
@@ -118,17 +118,17 @@ _SampleDiskDirectionalShaping(
         return ty::InvalidLightSample();
     }
 
-    HdEmbreeLightSampler::LightSample sample =
+    ty::LightSampler::LightSample sample =
         ty::EvalAreaLight(light, shapeSample, position, renderColorSpace);
     ty::ApplyShapingAwareFinitePdf(light, &sample, true);
     return sample;
 }
 
-HdEmbreeLightSampler::LightSample
+ty::LightSampler::LightSample
 ty::SampleDiskLight(
-    HdEmbree_LightData const& light, HdEmbree_Disk const& disk,
+    ty::LightData const& light, ty::DiskLight const& disk,
     GfVec3f const& position, float u1, float u2,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
     const bool useShapingAwareSampling =
         light.shaping.directionalDistribution.IsValid();
@@ -147,7 +147,7 @@ ty::SampleDiskLight(
             ? (u1 / ty::ShapingAwareFiniteAreaProposalWeight)
             : u1,
         u2);
-    HdEmbreeLightSampler::LightSample sample =
+    ty::LightSampler::LightSample sample =
         ty::EvalAreaLight(light, shapeSample, position, renderColorSpace);
     if (useShapingAwareSampling) {
         ty::ApplyShapingAwareFinitePdf(light, &sample, true);
@@ -155,11 +155,11 @@ ty::SampleDiskLight(
     return sample;
 }
 
-HdEmbreeLightSampler::LightSample
+ty::LightSampler::LightSample
 ty::EvaluateDiskLightDirection(
-    HdEmbree_LightData const& light, HdEmbree_Disk const& disk,
+    ty::LightData const& light, ty::DiskLight const& disk,
     GfVec3f const& position, GfVec3f const& direction,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
     ty::ShapeSample shapeSample;
     if (!_IntersectDiskLight(
@@ -167,7 +167,7 @@ ty::EvaluateDiskLightDirection(
         return ty::InvalidLightSample();
     }
 
-    HdEmbreeLightSampler::LightSample sample =
+    ty::LightSampler::LightSample sample =
         ty::EvalAreaLight(light, shapeSample, position, renderColorSpace);
     ty::ApplyShapingAwareFinitePdf(light, &sample, true);
     return sample;

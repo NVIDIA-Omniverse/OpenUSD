@@ -234,25 +234,25 @@ _TestRenderDelegateSettings()
 bool
 _TestColorManagementUtilities()
 {
-    HdEmbreeRenderColorSpace parsed =
-        HdEmbreeRenderColorSpace::LinearRec709;
-    if (!HdEmbreeParseRenderColorSpace(
+    ty::RenderColorSpace parsed =
+        ty::RenderColorSpace::LinearRec709;
+    if (!ty::ParseRenderColorSpace(
             GfColorSpaceNames->LinearAP1, &parsed) ||
-        parsed != HdEmbreeRenderColorSpace::LinearAP1 ||
-        !HdEmbreeParseRenderColorSpace(
+        parsed != ty::RenderColorSpace::LinearAP1 ||
+        !ty::ParseRenderColorSpace(
             GfColorSpaceNames->Data, &parsed) ||
-        parsed != HdEmbreeRenderColorSpace::Data ||
-        HdEmbreeParseRenderColorSpace(GfColorSpaceNames->Raw, &parsed) ||
-        HdEmbreeParseRenderColorSpace(TfToken("acescg"), &parsed)) {
+        parsed != ty::RenderColorSpace::Data ||
+        ty::ParseRenderColorSpace(GfColorSpaceNames->Raw, &parsed) ||
+        ty::ParseRenderColorSpace(TfToken("acescg"), &parsed)) {
         std::printf("rendering color-space token parsing failed\n");
         return false;
     }
 
     const GfVec3f authored(0.25f, 0.5f, 0.75f);
     GfVec3f data = authored;
-    if (!HdEmbreeConvertToRenderColorSpace(
+    if (!ty::ConvertToRenderColorSpace(
             GfColorSpaceNames->SRGBRec709.GetString(),
-            HdEmbreeRenderColorSpace::Data,
+            ty::RenderColorSpace::Data,
             &data) ||
         !GfIsClose(data, authored, 1.0e-6f)) {
         std::printf("data did not bypass a texture color transform\n");
@@ -260,31 +260,31 @@ _TestColorManagementUtilities()
     }
 
     TfToken resolvedColorSpace;
-    if (HdEmbreeResolveColorSpace(
+    if (ty::ResolveColorSpace(
             "acescg", &resolvedColorSpace) !=
-            HdEmbreeColorSpaceResolution::Unsupported ||
-        HdEmbreeResolveColorSpace(
+            ty::ColorSpaceResolution::Unsupported ||
+        ty::ResolveColorSpace(
             "lin_ap1", &resolvedColorSpace) !=
-            HdEmbreeColorSpaceResolution::Unsupported ||
-        HdEmbreeResolveColorSpace(
+            ty::ColorSpaceResolution::Unsupported ||
+        ty::ResolveColorSpace(
             "srgb_texture", &resolvedColorSpace) !=
-            HdEmbreeColorSpaceResolution::Unsupported ||
-        HdEmbreeResolveColorSpace(
+            ty::ColorSpaceResolution::Unsupported ||
+        ty::ResolveColorSpace(
             "LIN_AP1_SCENE", &resolvedColorSpace) !=
-            HdEmbreeColorSpaceResolution::Unsupported ||
-        HdEmbreeResolveColorSpace(
+            ty::ColorSpaceResolution::Unsupported ||
+        ty::ResolveColorSpace(
             GfColorSpaceNames->LinearAP1.GetString(),
             &resolvedColorSpace) !=
-            HdEmbreeColorSpaceResolution::Transform ||
+            ty::ColorSpaceResolution::Transform ||
         resolvedColorSpace != GfColorSpaceNames->LinearAP1) {
         std::printf("canonical color-space name resolution failed\n");
         return false;
     }
 
     GfVec3f converted = authored;
-    if (!HdEmbreeConvertToRenderColorSpace(
+    if (!ty::ConvertToRenderColorSpace(
             GfColorSpaceNames->LinearRec709.GetString(),
-            HdEmbreeRenderColorSpace::LinearAP1,
+            ty::RenderColorSpace::LinearAP1,
             &converted)) {
         std::printf("Linear Rec.709 to AP1 conversion failed\n");
         return false;
@@ -297,8 +297,8 @@ _TestColorManagementUtilities()
         return false;
     }
 
-    const GfVec3f ap1Luminance = HdEmbreeGetLuminanceCoefficients(
-        HdEmbreeRenderColorSpace::LinearAP1);
+    const GfVec3f ap1Luminance = ty::GetLuminanceCoefficients(
+        ty::RenderColorSpace::LinearAP1);
     // Gf's lin_ap1_scene primaries are Bradford-preadapted to D65.
     if (!GfIsClose(
             ap1Luminance,
@@ -915,12 +915,12 @@ _TestRenderSettingDefaultParity()
         return false;
     }
 
-    const HdEmbreeRenderSettings defaults;
+    const ty::RenderSettings defaults;
     const std::vector<std::pair<TfToken, VtValue>> expected = {
         {HdEmbreeRenderSettingsTokens->enableSceneColors,
          VtValue(defaults.enableSceneColors)},
         {HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
-         VtValue(HdEmbreeDefaultEnableAmbientOcclusion)},
+         VtValue(ty::DefaultEnableAmbientOcclusion)},
         {HdEmbreeRenderSettingsTokens->enableLighting,
          VtValue(defaults.enableLighting)},
         {HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
@@ -934,11 +934,11 @@ _TestRenderSettingDefaultParity()
         {HdEmbreeRenderSettingsTokens->jitterCamera,
          VtValue(defaults.jitterCamera)},
         {HdEmbreeRenderSettingsTokens->samplerSequence,
-         VtValue(HdEmbreeGetSamplerSequenceToken(defaults.samplerSequence))},
+         VtValue(ty::GetSamplerSequenceToken(defaults.samplerSequence))},
         {HdEmbreeRenderSettingsTokens->enableExposureCompensation,
-         VtValue(HdEmbreeDefaultEnableExposureCompensation)},
+         VtValue(ty::DefaultEnableExposureCompensation)},
         {HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
-         VtValue(HdEmbreeDefaultDynamicSubdvTesselation)},
+         VtValue(ty::DefaultDynamicSubdvTesselation)},
         {HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
          VtValue(defaults.enableAdaptiveSampling)},
         {HdEmbreeRenderSettingsTokens->adaptiveThreshold,
@@ -968,11 +968,11 @@ _TestRenderSettingDefaultParity()
         {HdEmbreeRenderSettingsTokens->enableGgxMicrofacetMultipleScattering,
          VtValue(defaults.enableGgxMicrofacetMultipleScattering)},
         {HdEmbreeRenderSettingsTokens->materialRenderContext,
-         VtValue(TfToken(HdEmbreeDefaultMaterialRenderContext))},
+         VtValue(TfToken(ty::DefaultMaterialRenderContext))},
         {HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
          VtValue(defaults.useAdobeOpenPBR)},
         {HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
-         VtValue(HdEmbreeGetDielectricLayerThroughputModeToken(
+         VtValue(ty::GetDielectricLayerThroughputModeToken(
              defaults.dielectricLayerThroughputMode))},
         {HdEmbreeRenderSettingsTokens->textureCacheSize,
          VtValue(defaults.textureCacheSizeMB)}

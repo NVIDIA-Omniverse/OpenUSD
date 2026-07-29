@@ -4031,7 +4031,7 @@ TestChannelMISZeroFallback()
 }
 
 // ---------------------------------------------------------------------------
-// HdEmbreeChiangRemap tests (Phase 2 Task 2.3)
+// ty::ChiangRemap tests (Phase 2 Task 2.3)
 
 static bool
 TestChiangRemapHighAlbedo()
@@ -4040,7 +4040,7 @@ TestChiangRemapHighAlbedo()
     GfVec3f albedo(0.95f);
     GfVec3f radius(1.0f);
     GfVec3f extinction, alpha;
-    HdEmbreeChiangRemap(albedo, radius, 0.0f, &extinction, &alpha);
+    ty::ChiangRemap(albedo, radius, 0.0f, &extinction, &alpha);
     if (alpha[0] < 0.5f || alpha[0] > 0.999999f) {
         printf("    Expected 0.5 <= alpha <= 0.999999 for albedo=0.95, "
                "got %f\n", alpha[0]);
@@ -4063,7 +4063,7 @@ TestChiangRemapLowAlbedo()
     GfVec3f albedo(0.025f);
     GfVec3f radius(1.0f);
     GfVec3f extinction, alpha, rawAlpha;
-    HdEmbreeChiangRemap(albedo, radius, 0.0f, &extinction, &alpha, &rawAlpha);
+    ty::ChiangRemap(albedo, radius, 0.0f, &extinction, &alpha, &rawAlpha);
     if (alpha[0] < 0.19f) {
         printf("    Expected alpha >= 0.2 (min_alpha clamp), got %f\n",
                alpha[0]);
@@ -4087,9 +4087,9 @@ TestChiangRemapAnisotropy()
     GfVec3f radius(1.0f);
     GfVec3f extinctionIsotropic, alphaIsotropic;
     GfVec3f extinctionAnisotropic, alphaAnisotropic;
-    HdEmbreeChiangRemap(albedo, radius, 0.0f, &extinctionIsotropic,
+    ty::ChiangRemap(albedo, radius, 0.0f, &extinctionIsotropic,
                         &alphaIsotropic);
-    HdEmbreeChiangRemap(albedo, radius, 0.5f, &extinctionAnisotropic,
+    ty::ChiangRemap(albedo, radius, 0.5f, &extinctionAnisotropic,
                         &alphaAnisotropic);
     if (extinctionAnisotropic[0] < 1.5f * extinctionIsotropic[0]) {
         printf("    Expected sigma_t(g=0.5) > 1.5*sigma_t(g=0); "
@@ -4107,12 +4107,12 @@ static bool
 TestDiffusionLengthDwivedi()
 {
     // Diffusion length should be finite and increase with alpha.
-    float l1 = PXR_INTERNAL_NS::HdEmbreeDiffusionLengthDwivedi(0.99f);
+    float l1 = PXR_INTERNAL_NS::ty::DiffusionLengthDwivedi(0.99f);
     if (!std::isfinite(l1) || l1 < 5.0f || l1 > 15.0f) {
         printf("    Expected 5 < L(0.99) < 15, got %f\n", l1);
         return false;
     }
-    float l2 = PXR_INTERNAL_NS::HdEmbreeDiffusionLengthDwivedi(0.5f);
+    float l2 = PXR_INTERNAL_NS::ty::DiffusionLengthDwivedi(0.5f);
     if (!std::isfinite(l2) || l2 < 1.0f || l2 > 2.0f) {
         printf("    Expected 1.0 < L(0.5) < 2.0, got %f\n", l2);
         return false;
@@ -4133,7 +4133,7 @@ TestSamplePhaseDwivediRange()
     for (int i = 0; i < 100; ++i) {
         const float u = static_cast<float>(i) / 99.0f;
         const float cos_theta =
-            PXR_INTERNAL_NS::HdEmbreeSamplePhaseDwivedi(L, phase_log, u);
+            PXR_INTERNAL_NS::ty::SamplePhaseDwivedi(L, phase_log, u);
         if (!std::isfinite(cos_theta) ||
             cos_theta < -1.0f - 1e-4f ||
             cos_theta > 1.0f + 1e-4f) {
@@ -4150,11 +4150,11 @@ TestBackwardDwivediFraction()
     const float distanceOppositeWld = 2.0f;
     const float diffusionLength = 1.0f;
 
-    const float nearEntry = PXR_INTERNAL_NS::HdEmbreeBackwardDwivediFraction(
+    const float nearEntry = PXR_INTERNAL_NS::ty::BackwardDwivediFraction(
         distanceOppositeWld, 0.0f, diffusionLength);
-    const float midPlane = PXR_INTERNAL_NS::HdEmbreeBackwardDwivediFraction(
+    const float midPlane = PXR_INTERNAL_NS::ty::BackwardDwivediFraction(
         distanceOppositeWld, 1.0f, diffusionLength);
-    const float nearOpposite = PXR_INTERNAL_NS::HdEmbreeBackwardDwivediFraction(
+    const float nearOpposite = PXR_INTERNAL_NS::ty::BackwardDwivediFraction(
         distanceOppositeWld, 2.0f, diffusionLength);
 
     if (!(nearEntry < midPlane && midPlane < nearOpposite)) {
@@ -4167,13 +4167,13 @@ TestBackwardDwivediFraction()
                midPlane);
         return false;
     }
-    if (!Test_IsClose(PXR_INTERNAL_NS::HdEmbreeBackwardDwivediFraction(
+    if (!Test_IsClose(PXR_INTERNAL_NS::ty::BackwardDwivediFraction(
                           distanceOppositeWld, -1.0f, diffusionLength),
                       nearEntry, 1.0e-6f)) {
         printf("    Expected x below entry plane to clamp to near-entry value\n");
         return false;
     }
-    if (!Test_IsClose(PXR_INTERNAL_NS::HdEmbreeBackwardDwivediFraction(
+    if (!Test_IsClose(PXR_INTERNAL_NS::ty::BackwardDwivediFraction(
                           distanceOppositeWld, 3.0f, diffusionLength),
                       nearOpposite, 1.0e-6f)) {
         printf("    Expected x beyond opposite plane to clamp to far value\n");

@@ -14,132 +14,132 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-static HdEmbreeLightSampler::LightSample
+static ty::LightSampler::LightSample
 _EvaluateLightDirection(
-    HdEmbree_LightData const& light,
+    ty::LightData const& light,
     GfVec3f const& position,
     GfVec3f const& direction,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
-    if (HdEmbree_Rect const* const rect =
-            std::get_if<HdEmbree_Rect>(&light.lightVariant)) {
+    if (ty::RectLight const* const rect =
+            std::get_if<ty::RectLight>(&light.lightVariant)) {
         return ty::EvaluateRectLightDirection(
             light, *rect, position, direction, renderColorSpace);
     }
-    if (HdEmbree_Sphere const* const sphere =
-            std::get_if<HdEmbree_Sphere>(&light.lightVariant)) {
+    if (ty::SphereLight const* const sphere =
+            std::get_if<ty::SphereLight>(&light.lightVariant)) {
         return ty::EvaluateSphereLightDirection(
             light, *sphere, position, direction, renderColorSpace);
     }
-    if (HdEmbree_Disk const* const disk =
-            std::get_if<HdEmbree_Disk>(&light.lightVariant)) {
+    if (ty::DiskLight const* const disk =
+            std::get_if<ty::DiskLight>(&light.lightVariant)) {
         return ty::EvaluateDiskLightDirection(
             light, *disk, position, direction, renderColorSpace);
     }
-    if (HdEmbree_Cylinder const* const cylinder =
-            std::get_if<HdEmbree_Cylinder>(&light.lightVariant)) {
+    if (ty::CylinderLight const* const cylinder =
+            std::get_if<ty::CylinderLight>(&light.lightVariant)) {
         return ty::EvaluateCylinderLightDirection(
             light, *cylinder, position, direction, renderColorSpace);
     }
-    if (HdEmbree_Distant const* const distant =
-            std::get_if<HdEmbree_Distant>(&light.lightVariant)) {
+    if (ty::DistantLight const* const distant =
+            std::get_if<ty::DistantLight>(&light.lightVariant)) {
         return ty::EvaluateDistantLightDirection(
             light, *distant, direction, renderColorSpace);
     }
-    if (std::holds_alternative<HdEmbree_Dome>(light.lightVariant)) {
+    if (std::holds_alternative<ty::DomeLight>(light.lightVariant)) {
         return ty::EvaluateDomeLightDirection(
             light, direction, renderColorSpace);
     }
     return ty::InvalidLightSample();
 }
 
-HdEmbreeLightSampler::LightSample
-HdEmbreeLightSampler::GetLightSample(
-    HdEmbree_LightData const& lightData, GfVec3f const& positionHitWld,
+ty::LightSampler::LightSample
+ty::LightSampler::GetLightSample(
+    ty::LightData const& lightData, GfVec3f const& positionHitWld,
     GfVec3f const& normalShdWldOut, float u1, float u2,
     SamplingMode samplingMode,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
-    HdEmbreeLightSampler lightSampler(lightData, positionHitWld,
+    ty::LightSampler lightSampler(lightData, positionHitWld,
                                       normalShdWldOut, u1, u2, samplingMode,
                                       renderColorSpace);
     return std::visit(lightSampler, lightData.lightVariant);
 }
 
-HdEmbreeLightSampler::LightSample
-HdEmbreeLightSampler::EvaluateDomeLightDirection(
-    HdEmbree_LightData const& lightData, GfVec3f const& omegaInWld,
-    HdEmbreeRenderColorSpace renderColorSpace)
+ty::LightSampler::LightSample
+ty::LightSampler::EvaluateDomeLightDirection(
+    ty::LightData const& lightData, GfVec3f const& omegaInWld,
+    ty::RenderColorSpace renderColorSpace)
 {
     return ty::EvaluateDomeLightDirection(
         lightData, omegaInWld, renderColorSpace);
 }
 
-HdEmbreeLightSampler::LightSample
-HdEmbreeLightSampler::EvaluateDomeLightDirection(
-    HdEmbree_LightData const& lightData, GfVec3f const& omegaInWld,
+ty::LightSampler::LightSample
+ty::LightSampler::EvaluateDomeLightDirection(
+    ty::LightData const& lightData, GfVec3f const& omegaInWld,
     GfVec3f const& normalShdWldOut, SamplingMode samplingMode,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
     return ty::EvaluateDomeLightDirection(lightData, omegaInWld,
         normalShdWldOut, samplingMode, renderColorSpace);
 }
 
-HdEmbreeLightSampler::LightSample
-HdEmbreeLightSampler::EvaluateLightDirection(
-    HdEmbree_LightData const& lightData, GfVec3f const& positionHitWld,
+ty::LightSampler::LightSample
+ty::LightSampler::EvaluateLightDirection(
+    ty::LightData const& lightData, GfVec3f const& positionHitWld,
     GfVec3f const& omegaInWld,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
     return _EvaluateLightDirection(
         lightData, positionHitWld, omegaInWld, renderColorSpace);
 }
 
-HdEmbreeLightSampler::LightSample
-HdEmbreeLightSampler::operator()(HdEmbree_UnknownLight const&)
+ty::LightSampler::LightSample
+ty::LightSampler::operator()(ty::UnknownLight const&)
 {
     // The delegate already warns when constructing an unknown variant.
     // Warning per sample here would produce excessive diagnostic spam.
     return ty::InvalidLightSample();
 }
 
-HdEmbreeLightSampler::LightSample
-HdEmbreeLightSampler::operator()(HdEmbree_Rect const& rect)
+ty::LightSampler::LightSample
+ty::LightSampler::operator()(ty::RectLight const& rect)
 {
     return ty::SampleRectLight(_lightData, rect, _positionHitWld, _u1, _u2,
                                _renderColorSpace);
 }
 
-HdEmbreeLightSampler::LightSample
-HdEmbreeLightSampler::operator()(HdEmbree_Sphere const& sphere)
+ty::LightSampler::LightSample
+ty::LightSampler::operator()(ty::SphereLight const& sphere)
 {
     return ty::SampleSphereLight(_lightData, sphere, _positionHitWld, _u1,
                                  _u2, _renderColorSpace);
 }
 
-HdEmbreeLightSampler::LightSample
-HdEmbreeLightSampler::operator()(HdEmbree_Disk const& disk)
+ty::LightSampler::LightSample
+ty::LightSampler::operator()(ty::DiskLight const& disk)
 {
     return ty::SampleDiskLight(_lightData, disk, _positionHitWld, _u1, _u2,
                                _renderColorSpace);
 }
 
-HdEmbreeLightSampler::LightSample
-HdEmbreeLightSampler::operator()(HdEmbree_Distant const& distant)
+ty::LightSampler::LightSample
+ty::LightSampler::operator()(ty::DistantLight const& distant)
 {
     return ty::SampleDistantLight(
         _lightData, distant, _u1, _u2, _renderColorSpace);
 }
 
-HdEmbreeLightSampler::LightSample
-HdEmbreeLightSampler::operator()(HdEmbree_Cylinder const& cylinder)
+ty::LightSampler::LightSample
+ty::LightSampler::operator()(ty::CylinderLight const& cylinder)
 {
     return ty::SampleCylinderLight(_lightData, cylinder, _positionHitWld,
                                    _u1, _u2, _renderColorSpace);
 }
 
-HdEmbreeLightSampler::LightSample
-HdEmbreeLightSampler::operator()(HdEmbree_Dome const&)
+ty::LightSampler::LightSample
+ty::LightSampler::operator()(ty::DomeLight const&)
 {
     return ty::SampleDomeLight(_lightData, _normalShdWldOut, _u1, _u2,
                                _samplingMode, _renderColorSpace);

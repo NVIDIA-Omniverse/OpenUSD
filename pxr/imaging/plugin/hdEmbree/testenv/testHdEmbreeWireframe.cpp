@@ -39,7 +39,7 @@ _IsClose(float actual, float expected, float tolerance = 1.0e-5f)
     return false;
 }
 
-HdEmbreeSubdivWireframeTopology
+ty::SubdivWireframeTopology
 _MakeTopology(
     std::vector<int> const& faceVertexCounts,
     std::vector<size_t> const& faceVertexOffsets,
@@ -57,30 +57,30 @@ _MakeTopology(
 bool
 _TestTriangleEdgesAndWidth()
 {
-    const HdEmbreeWireframeSample edge{
+    const ty::WireframeSample edge{
         0.0f, 0.3f, 0.01f, 0.0f, 0.0f, 0.01f};
-    if (!_IsClose(HdEmbreeComputeTriangleWireframeOpacity(edge, 1.0f),
+    if (!_IsClose(ty::ComputeTriangleWireframeOpacity(edge, 1.0f),
                   1.0f)) {
         return false;
     }
 
-    const HdEmbreeWireframeSample interior{
+    const ty::WireframeSample interior{
         0.3f, 0.3f, 0.01f, 0.0f, 0.0f, 0.01f};
-    if (HdEmbreeComputeTriangleWireframeOpacity(interior, 1.0f) >
+    if (ty::ComputeTriangleWireframeOpacity(interior, 1.0f) >
             1.0e-6f) {
         std::printf("Triangle interior was classified as an edge\n");
         return false;
     }
 
-    const HdEmbreeWireframeSample onePixelFromEdge{
+    const ty::WireframeSample onePixelFromEdge{
         0.01f, 0.3f, 0.01f, 0.0f, 0.0f, 0.01f};
     return
         _IsClose(
-            HdEmbreeComputeTriangleWireframeOpacity(
+            ty::ComputeTriangleWireframeOpacity(
                 onePixelFromEdge, 1.0f),
             0.0625f) &&
         _IsClose(
-            HdEmbreeComputeTriangleWireframeOpacity(
+            ty::ComputeTriangleWireframeOpacity(
                 onePixelFromEdge, 2.0f),
             0.5f);
 }
@@ -89,22 +89,22 @@ bool
 _TestWireframeDerivativeScaleRestoresPixelFootprint()
 {
     return
-        _IsClose(HdEmbreeComputeWireframeDerivativeScale(0), 1.0f) &&
-        _IsClose(HdEmbreeComputeWireframeDerivativeScale(1), 1.0f) &&
-        _IsClose(HdEmbreeComputeWireframeDerivativeScale(16), 4.0f) &&
-        _IsClose(HdEmbreeComputeWireframeDerivativeScale(256), 16.0f);
+        _IsClose(ty::ComputeWireframeDerivativeScale(0), 1.0f) &&
+        _IsClose(ty::ComputeWireframeDerivativeScale(1), 1.0f) &&
+        _IsClose(ty::ComputeWireframeDerivativeScale(16), 4.0f) &&
+        _IsClose(ty::ComputeWireframeDerivativeScale(256), 16.0f);
 }
 
 bool
 _TestTrianglePixelWidthIsProjectionInvariant()
 {
-    const HdEmbreeWireframeSample largeProjectedTriangle{
+    const ty::WireframeSample largeProjectedTriangle{
         0.1f, 0.3f, 0.1f, 0.0f, 0.0f, 0.1f};
-    const HdEmbreeWireframeSample smallProjectedTriangle{
+    const ty::WireframeSample smallProjectedTriangle{
         0.01f, 0.3f, 0.01f, 0.0f, 0.0f, 0.01f};
-    const float largeOpacity = HdEmbreeComputeTriangleWireframeOpacity(
+    const float largeOpacity = ty::ComputeTriangleWireframeOpacity(
         largeProjectedTriangle, 1.0f);
-    const float smallOpacity = HdEmbreeComputeTriangleWireframeOpacity(
+    const float smallOpacity = ty::ComputeTriangleWireframeOpacity(
         smallProjectedTriangle, 1.0f);
     return
         _IsClose(largeOpacity, 0.0625f) &&
@@ -118,26 +118,26 @@ _TestQuadDicingGrid()
     const std::vector<int> counts{4};
     const std::vector<size_t> offsets{0, 4};
     const std::vector<float> levels{4.0f, 4.0f, 4.0f, 4.0f};
-    const HdEmbreeSubdivWireframeTopology topology =
+    const ty::SubdivWireframeTopology topology =
         _MakeTopology(counts, offsets, levels);
 
-    const HdEmbreeWireframeSample verticalGridLine{
+    const ty::WireframeSample verticalGridLine{
         0.25f, 0.1f, 0.0025f, 0.0f, 0.0f, 0.0025f};
-    if (!_IsClose(HdEmbreeComputeSubdivisionWireframeOpacity(
+    if (!_IsClose(ty::ComputeSubdivisionWireframeOpacity(
             verticalGridLine, 0, topology, 1.0f), 1.0f)) {
         return false;
     }
 
-    const HdEmbreeWireframeSample triangleDiagonal{
+    const ty::WireframeSample triangleDiagonal{
         0.125f, 0.125f, 0.0025f, 0.0f, 0.0f, 0.0025f};
-    if (!_IsClose(HdEmbreeComputeSubdivisionWireframeOpacity(
+    if (!_IsClose(ty::ComputeSubdivisionWireframeOpacity(
             triangleDiagonal, 0, topology, 1.0f), 1.0f)) {
         return false;
     }
 
-    const HdEmbreeWireframeSample interior{
+    const ty::WireframeSample interior{
         0.075f, 0.1f, 0.0025f, 0.0f, 0.0f, 0.0025f};
-    if (HdEmbreeComputeSubdivisionWireframeOpacity(
+    if (ty::ComputeSubdivisionWireframeOpacity(
             interior, 0, topology, 1.0f) > 1.0e-6f) {
         std::printf("Diced quad interior was classified as an edge\n");
         return false;
@@ -151,20 +151,20 @@ _TestDenseQuadGridRetainsEveryEdge()
     const std::vector<int> counts{4};
     const std::vector<size_t> offsets{0, 4};
     const std::vector<float> levels{16.0f, 16.0f, 16.0f, 16.0f};
-    const HdEmbreeSubdivWireframeTopology topology =
+    const ty::SubdivWireframeTopology topology =
         _MakeTopology(counts, offsets, levels);
 
-    const HdEmbreeWireframeSample firstEdge{
+    const ty::WireframeSample firstEdge{
         4.0f / 16.0f, 2.4f / 16.0f,
         0.03f / 16.0f, 0.0f, 0.0f, 0.03f / 16.0f};
-    const HdEmbreeWireframeSample adjacentEdge{
+    const ty::WireframeSample adjacentEdge{
         2.0f / 16.0f, 2.4f / 16.0f,
         0.03f / 16.0f, 0.0f, 0.0f, 0.03f / 16.0f};
 
     return
-        _IsClose(HdEmbreeComputeSubdivisionWireframeOpacity(
+        _IsClose(ty::ComputeSubdivisionWireframeOpacity(
             firstEdge, 0, topology, 1.0f), 1.0f) &&
-        _IsClose(HdEmbreeComputeSubdivisionWireframeOpacity(
+        _IsClose(ty::ComputeSubdivisionWireframeOpacity(
             adjacentEdge, 0, topology, 1.0f), 1.0f);
 }
 
@@ -174,15 +174,15 @@ _TestSubpixelGridDoesNotDisappear()
     const std::vector<int> counts{4};
     const std::vector<size_t> offsets{0, 4};
     const std::vector<float> levels{16.0f, 16.0f, 16.0f, 16.0f};
-    const HdEmbreeSubdivWireframeTopology topology =
+    const ty::SubdivWireframeTopology topology =
         _MakeTopology(counts, offsets, levels);
 
     // Two diced cells per pixel cannot be individually resolved, but their
     // exact edge coverage must remain visible rather than being removed.
-    const HdEmbreeWireframeSample betweenSubpixelEdges{
+    const ty::WireframeSample betweenSubpixelEdges{
         0.5f / 16.0f, 0.25f / 16.0f,
         2.0f / 16.0f, 0.0f, 0.0f, 2.0f / 16.0f};
-    return HdEmbreeComputeSubdivisionWireframeOpacity(
+    return ty::ComputeSubdivisionWireframeOpacity(
         betweenSubpixelEdges, 0, topology, 1.0f) > 0.5f;
 }
 
@@ -193,24 +193,24 @@ _TestNonQuadSubpatchDecoding()
     const std::vector<size_t> offsets{0, 5};
     const std::vector<float> levels{
         4.0f, 4.0f, 4.0f, 4.0f, 8.0f};
-    const HdEmbreeSubdivWireframeTopology topology =
+    const ty::SubdivWireframeTopology topology =
         _MakeTopology(counts, offsets, levels);
 
     // Face sub-patch 4 is encoded in UV tile (0,1). Its max adjacent edge
     // level is halved to four grid segments, making local u=0.25 a line.
-    const HdEmbreeWireframeSample encodedGridLine{
+    const ty::WireframeSample encodedGridLine{
         0.75f, 2.8f, 0.0025f, 0.0f, 0.0f, 0.0025f};
-    return _IsClose(HdEmbreeComputeSubdivisionWireframeOpacity(
+    return _IsClose(ty::ComputeSubdivisionWireframeOpacity(
         encodedGridLine, 0, topology, 1.0f), 1.0f);
 }
 
 bool
 _TestInvalidTopologyIsRejected()
 {
-    const HdEmbreeWireframeSample sample{
+    const ty::WireframeSample sample{
         0.0f, 0.0f, 0.01f, 0.0f, 0.0f, 0.01f};
-    return _IsClose(HdEmbreeComputeSubdivisionWireframeOpacity(
-        sample, 0, HdEmbreeSubdivWireframeTopology{}, 1.0f), 0.0f);
+    return _IsClose(ty::ComputeSubdivisionWireframeOpacity(
+        sample, 0, ty::SubdivWireframeTopology{}, 1.0f), 0.0f);
 }
 
 bool
@@ -218,21 +218,21 @@ _TestEdgeOnlyWireframeIsSolidBlack()
 {
     const GfVec4f clearColor(0.2f, 0.4f, 0.8f, 0.0f);
     const GfVec4f fullCoverage =
-        HdEmbreeCompositeEdgeOnlyWireframe(clearColor, 1.0f);
+        ty::CompositeEdgeOnlyWireframe(clearColor, 1.0f);
     if (fullCoverage != GfVec4f(0.0f, 0.0f, 0.0f, 1.0f)) {
         std::printf("Full edge-only coverage was not opaque black\n");
         return false;
     }
 
     const GfVec4f noCoverage =
-        HdEmbreeCompositeEdgeOnlyWireframe(clearColor, 0.0f);
+        ty::CompositeEdgeOnlyWireframe(clearColor, 0.0f);
     if (noCoverage != clearColor) {
         std::printf("Zero edge-only coverage changed the clear color\n");
         return false;
     }
 
     const GfVec4f halfCoverage =
-        HdEmbreeCompositeEdgeOnlyWireframe(clearColor, 0.5f);
+        ty::CompositeEdgeOnlyWireframe(clearColor, 0.5f);
     return
         _IsClose(halfCoverage[0], 0.1f) &&
         _IsClose(halfCoverage[1], 0.2f) &&
@@ -272,17 +272,17 @@ _TestCollectionReprTransitionsDirtyMesh()
         RTCScene const rootScene = renderParam->AcquireSceneForEdit();
 
         const auto getWireframeMode =
-            [rootScene](HdEmbreeWireframeMode* wireframeMode) {
+            [rootScene](ty::WireframeMode* wireframeMode) {
                 RTCGeometry const instance = rtcGetGeometry(rootScene, 0);
                 auto* const instanceContext = instance
-                    ? static_cast<HdEmbreeInstanceContext*>(
+                    ? static_cast<ty::InstanceContext*>(
                         rtcGetGeometryUserData(instance))
                     : nullptr;
                 RTCGeometry const prototype = instanceContext
                     ? rtcGetGeometry(instanceContext->rootScene, 0)
                     : nullptr;
                 auto* const prototypeContext = prototype
-                    ? static_cast<HdEmbreePrototypeContext*>(
+                    ? static_cast<ty::PrototypeContext*>(
                         rtcGetGeometryUserData(prototype))
                     : nullptr;
                 if (!prototypeContext) {
@@ -294,7 +294,7 @@ _TestCollectionReprTransitionsDirtyMesh()
 
         const auto syncAndVerify =
             [&](TfToken const& reprToken,
-                HdEmbreeWireframeMode expectedMode,
+                ty::WireframeMode expectedMode,
                 bool forcedRepr = false) {
                 renderPass->SetRprimCollection(
                     makeCollection(reprToken, forcedRepr));
@@ -304,8 +304,8 @@ _TestCollectionReprTransitionsDirtyMesh()
                 HdTaskContext taskContext;
                 renderIndex->SyncAll(&tasks, &taskContext);
 
-                HdEmbreeWireframeMode actualMode =
-                    HdEmbreeWireframeMode::disabled;
+                ty::WireframeMode actualMode =
+                    ty::WireframeMode::disabled;
                 if (!getWireframeMode(&actualMode)) {
                     std::printf(
                         "Collection transition to %s did not create an "
@@ -330,22 +330,22 @@ _TestCollectionReprTransitionsDirtyMesh()
         passed =
             syncAndVerify(
                 HdReprTokens->refined,
-                HdEmbreeWireframeMode::disabled) &&
+                ty::WireframeMode::disabled) &&
             syncAndVerify(
                 HdReprTokens->refinedWireOnSurf,
-                HdEmbreeWireframeMode::edgeOnSurface) &&
+                ty::WireframeMode::edgeOnSurface) &&
             syncAndVerify(
                 HdReprTokens->refined,
-                HdEmbreeWireframeMode::disabled) &&
+                ty::WireframeMode::disabled) &&
             syncAndVerify(
                 HdReprTokens->refinedWire,
-                HdEmbreeWireframeMode::edgeOnly) &&
+                ty::WireframeMode::edgeOnly) &&
             syncAndVerify(
                 HdReprTokens->refinedWireOnSurf,
-                HdEmbreeWireframeMode::edgeOnSurface) &&
+                ty::WireframeMode::edgeOnSurface) &&
             syncAndVerify(
                 HdReprTokens->refined,
-                HdEmbreeWireframeMode::disabled);
+                ty::WireframeMode::disabled);
 
         tracker.MarkRprimClean(meshId);
         renderPass->SetRprimCollection(

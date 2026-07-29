@@ -52,7 +52,7 @@ _DistanceToInteger(float value)
 
 float
 _GridWireframeOpacity(
-    HdEmbreeWireframeSample const& sample,
+    ty::WireframeSample const& sample,
     float uSegments,
     float vSegments,
     float lineWidth)
@@ -95,7 +95,7 @@ _GridWireframeOpacity(
 } // anonymous namespace
 
 float
-HdEmbreeComputeWireframeDerivativeScale(int samplesPerPixel)
+ty::ComputeWireframeDerivativeScale(int samplesPerPixel)
 {
     return samplesPerPixel > 1
         ? std::sqrt(static_cast<float>(samplesPerPixel))
@@ -103,8 +103,8 @@ HdEmbreeComputeWireframeDerivativeScale(int samplesPerPixel)
 }
 
 float
-HdEmbreeComputeTriangleWireframeOpacity(
-    HdEmbreeWireframeSample const& sample,
+ty::ComputeTriangleWireframeOpacity(
+    ty::WireframeSample const& sample,
     float lineWidth)
 {
     const float w = 1.0f - sample.u - sample.v;
@@ -118,10 +118,10 @@ HdEmbreeComputeTriangleWireframeOpacity(
 }
 
 float
-HdEmbreeComputeSubdivisionWireframeOpacity(
-    HdEmbreeWireframeSample const& encodedSample,
+ty::ComputeSubdivisionWireframeOpacity(
+    ty::WireframeSample const& encodedSample,
     unsigned int primitiveId,
-    HdEmbreeSubdivWireframeTopology const& topology,
+    ty::SubdivWireframeTopology const& topology,
     float lineWidth)
 {
     if (!topology.faceVertexCounts || !topology.faceVertexOffsets ||
@@ -142,7 +142,7 @@ HdEmbreeComputeSubdivisionWireframeOpacity(
         return 0.0f;
     }
 
-    HdEmbreeWireframeSample sample = encodedSample;
+    ty::WireframeSample sample = encodedSample;
     float uSegments = 1.0f;
     float vSegments = 1.0f;
     if (faceVertexCount == 4) {
@@ -184,7 +184,7 @@ HdEmbreeComputeSubdivisionWireframeOpacity(
 }
 
 GfVec4f
-HdEmbreeCompositeEdgeOnlyWireframe(
+ty::CompositeEdgeOnlyWireframe(
     GfVec4f const& clearColor,
     float opacity)
 {

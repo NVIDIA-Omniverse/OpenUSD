@@ -19,32 +19,33 @@
 #include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
 /// Owns renderer-side light lookup containers and their synchronization.
 /// Light records remain borrowed from the delegate and must be immutable while
 /// a render consumes the const views returned by this registry.
-class HdEmbreeLightRegistry final
+class LightRegistry final
 {
 public:
-    using LightMap = std::map<SdfPath, HdEmbree_LightData const*>;
-    using DomeVector = std::vector<HdEmbree_LightData const*>;
+    using LightMap = std::map<SdfPath, LightData const*>;
+    using DomeVector = std::vector<LightData const*>;
 
     /// Add or replace the light registered at \p path.
-    void Add(SdfPath const& path, HdEmbree_LightData const* light);
+    void Add(SdfPath const& path, LightData const* light);
 
     /// Remove \p path and matching dome entries for \p light.
-    void Remove(SdfPath const& path, HdEmbree_LightData const* light);
+    void Remove(SdfPath const& path, LightData const* light);
 
     /// Associate top-level Embree geometry with a finite light.
     void AddGeometry(unsigned int geometryId,
-                     HdEmbree_LightData const* light);
+                     LightData const* light);
 
     /// Remove a matching finite-light geometry association.
     void RemoveGeometry(unsigned int geometryId,
-                        HdEmbree_LightData const* light);
+                        LightData const* light);
 
     /// Return the finite light represented by \p geometryId, or null.
-    HdEmbree_LightData const* FindGeometry(unsigned int geometryId) const;
+    LightData const* FindGeometry(unsigned int geometryId) const;
 
     /// Return the path-keyed lights. Mutations must be stopped while retained.
     LightMap const& GetLights() const { return _lights; }
@@ -55,10 +56,11 @@ public:
 private:
     mutable std::mutex _mutex;
     LightMap _lights;
-    std::map<unsigned int, HdEmbree_LightData const*> _geometryLights;
+    std::map<unsigned int, LightData const*> _geometryLights;
     DomeVector _domes;
 };
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif  // PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_REGISTRY_H

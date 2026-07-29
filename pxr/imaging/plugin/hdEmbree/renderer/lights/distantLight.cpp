@@ -19,7 +19,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 static bool
 _GetDistantLightDirection(
-    HdEmbree_LightData const& light, GfVec3f* outDirection)
+    ty::LightData const& light, GfVec3f* outDirection)
 {
     if (!outDirection) {
         return false;
@@ -36,7 +36,7 @@ _GetDistantLightDirection(
 }
 
 static float
-_DistantHalfAngleRadians(HdEmbree_Distant const& distant)
+_DistantHalfAngleRadians(ty::DistantLight const& distant)
 {
     const float angle = std::isfinite(distant.angle)
         ? GfClamp(distant.angle, 0.0f, 360.0f)
@@ -74,8 +74,8 @@ _DistantNormalizeSizeFactor(float thetaMax)
 
 static GfVec3f
 _EvalDistantLightRadiance(
-    HdEmbree_LightData const& light, HdEmbree_Distant const& distant,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::LightData const& light, ty::DistantLight const& distant,
+    ty::RenderColorSpace renderColorSpace)
 {
     GfVec3f radianceIn = ty::EvalLightBasic(light, renderColorSpace);
     if (light.normalize) {
@@ -88,11 +88,11 @@ _EvalDistantLightRadiance(
     return radianceIn;
 }
 
-HdEmbreeLightSampler::LightSample
+ty::LightSampler::LightSample
 ty::EvaluateDistantLightDirection(
-    HdEmbree_LightData const& light, HdEmbree_Distant const& distant,
+    ty::LightData const& light, ty::DistantLight const& distant,
     GfVec3f const& direction,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
     if (!ty::IsFinite(direction) || direction.GetLengthSq() <= 0.0f) {
         return ty::InvalidLightSample();
@@ -114,7 +114,7 @@ ty::EvaluateDistantLightDirection(
         if (cosTheta < 1.0f - directionEps) {
             return ty::InvalidLightSample();
         }
-        return HdEmbreeLightSampler::LightSample{
+        return ty::LightSampler::LightSample{
             radianceIn, axis, std::numeric_limits<float>::max(),
             1.0f, true, true};
     }
@@ -126,16 +126,16 @@ ty::EvaluateDistantLightDirection(
         return ty::InvalidLightSample();
     }
 
-    return HdEmbreeLightSampler::LightSample{
+    return ty::LightSampler::LightSample{
         radianceIn, omegaInWld, std::numeric_limits<float>::max(),
         solidAngle, true, false};
 }
 
-HdEmbreeLightSampler::LightSample
+ty::LightSampler::LightSample
 ty::SampleDistantLight(
-    HdEmbree_LightData const& light, HdEmbree_Distant const& distant,
+    ty::LightData const& light, ty::DistantLight const& distant,
     float u1, float u2,
-    HdEmbreeRenderColorSpace renderColorSpace)
+    ty::RenderColorSpace renderColorSpace)
 {
     GfVec3f axis;
     if (!_GetDistantLightDirection(light, &axis)) {
@@ -168,7 +168,7 @@ ty::SampleDistantLight(
          bitangent * (sinTheta * std::sin(phi)) +
          axis * cosTheta).GetNormalized();
 
-    return HdEmbreeLightSampler::LightSample{
+    return ty::LightSampler::LightSample{
         _EvalDistantLightRadiance(light, distant, renderColorSpace),
         omegaInWld, std::numeric_limits<float>::max(),
         solidAngle, true, false};

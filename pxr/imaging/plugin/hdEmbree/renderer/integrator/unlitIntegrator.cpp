@@ -34,12 +34,12 @@ _CosineWeightedDirection(GfVec2f const& uniformSamples)
     return directionLocal;
 }
 
-HdEmbreeRenderer::_PixelSampleResult
-HdEmbreeRenderer::_IntegrateUnlit(
+ty::Renderer::_PixelSampleResult
+ty::Renderer::_IntegrateUnlit(
     GfVec3f const& origin,
     GfVec3f const& dir,
-    HdEmbreeRayDifferential const& rayDiff,
-    HdEmbreeSampleDomain const& domain)
+    ty::RayDifferential const& rayDiff,
+    ty::SampleDomain const& domain)
 {
     _PixelSampleResult result;
     RTCRayHit& rayHit = result.primaryHit;
@@ -47,7 +47,7 @@ HdEmbreeRenderer::_IntegrateUnlit(
     ty::PopulateRayHit(
         &rayHit, origin, dir, 0.0f,
         std::numeric_limits<float>::max(),
-        HdEmbree_RayMask::Camera);
+        ty::RayMask::Camera);
     rtcIntersect1(_scene, &rayHit);
 
     if (_IsEdgeOnlyWireframeHit(rayHit)) {
@@ -76,8 +76,8 @@ HdEmbreeRenderer::_IntegrateUnlit(
     const GfVec3f omegaOutWld =
         -GfVec3f(rayHit.ray.dir_x, rayHit.ray.dir_y, rayHit.ray.dir_z);
     _SurfaceInteraction interaction;
-    HdEmbreeInstanceContext const* instanceContext = nullptr;
-    HdEmbreePrototypeContext const* prototypeContext = nullptr;
+    ty::InstanceContext const* instanceContext = nullptr;
+    ty::PrototypeContext const* prototypeContext = nullptr;
     if (!_TryBuildSurfaceInteraction(rayHit, omegaOutWld, &interaction,
                                      &instanceContext, &prototypeContext)) {
         result.color = GfVec4f(0.0f, 0.0f, 0.0f, 1.0f);
@@ -89,10 +89,10 @@ HdEmbreeRenderer::_IntegrateUnlit(
     // tangent frame all constructed consistently).
     mxcpp::ShadingContext ctx = _BuildShadingContext(
         rayHit, rayDiff, instanceContext, prototypeContext, interaction);
-    HdEmbreePrimvarLookup cbData{
+    ty::PrimvarLookup cbData{
         &prototypeContext->geomPropSamplers,
         rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
-    ctx.geomPropLookup = &HdEmbreeSamplePrimvar;
+    ctx.geomPropLookup = &ty::SamplePrimvar;
     ctx.geomPropUserData = &cbData;
     ctx.uniformProps = &prototypeContext->geomPropUniformValues;
 
@@ -146,11 +146,11 @@ HdEmbreeRenderer::_IntegrateUnlit(
     const GfVec3f rawDir(
         rayHit.ray.dir_x, rayHit.ray.dir_y, rayHit.ray.dir_z);
     float diffuseLight = fabs(GfDot(-rawDir, normalShdWldOut)) *
-                         HdEmbreeCameraLightIntensity;
+                         ty::CameraLightIntensity;
 
     float aoLightIntensity = _ComputeAmbientOcclusion(
         positionHitWld, normalShdWldOut, interaction.normalGeomWldExt,
-        domain.Fork(HdEmbreeSampleDomainKey::AmbientOcclusion));
+        domain.Fork(ty::SampleDomainKey::AmbientOcclusion));
 
     const GfVec3f lightingColor =
         materialColor * diffuseLight * aoLightIntensity;
@@ -165,10 +165,10 @@ HdEmbreeRenderer::_IntegrateUnlit(
 }
 
 float
-HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
+ty::Renderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
                                            GfVec3f const& normalShdWldOut,
                                            GfVec3f const& normalGeomWldExt,
-                                           HdEmbreeSampleDomain const& domain)
+                                           ty::SampleDomain const& domain)
 {
     // 0 ambient occlusion samples means disable the ambient occlusion term.
     if (_settings.ambientOcclusionSamples < 1) {
@@ -205,7 +205,7 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
         const GfVec2f sample =
             domain
                 .Split(
-                    HdEmbreeSampleDomainKey::AmbientOcclusionSample,
+                    ty::SampleDomainKey::AmbientOcclusionSample,
                     _settings.ambientOcclusionSamples,
                     i)
                 .Draw2D();
@@ -218,7 +218,7 @@ HdEmbreeRenderer::_ComputeAmbientOcclusion(GfVec3f const& positionWld,
     for (int i = _settings.ambientOcclusionSamples - 1; i > 0; --i) {
         int j = static_cast<int>(
             domain
-                .Chain(HdEmbreeSampleDomainKey::AmbientOcclusionShuffle, i)
+                .Chain(ty::SampleDomainKey::AmbientOcclusionShuffle, i)
                 .Draw1D() * (i + 1));
         j = std::min(j, i);
         std::swap(samples[i], samples[j]);

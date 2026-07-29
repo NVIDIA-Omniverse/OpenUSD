@@ -14,19 +14,20 @@
 #include <algorithm>
 
 PXR_NAMESPACE_OPEN_SCOPE
+namespace ty {
 
-using HdEmbreeCategorySet = VtArray<TfToken>;
+using CategorySet = VtArray<TfToken>;
 
-inline bool HdEmbreeMatchesLink(
-    TfToken const& link, HdEmbreeCategorySet const& categories)
+inline bool MatchesLink(
+    TfToken const& link, CategorySet const& categories)
 {
     return link.IsEmpty() ||
         std::find(categories.begin(), categories.end(), link) !=
             categories.end();
 }
 
-inline void HdEmbreeMergeCategories(
-    HdEmbreeCategorySet const& source, HdEmbreeCategorySet* destination)
+inline void MergeCategories(
+    CategorySet const& source, CategorySet* destination)
 {
     if (!destination) {
         return;
@@ -39,6 +40,7 @@ inline void HdEmbreeMergeCategories(
     }
 }
 
+} // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif // PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_LINKING_H

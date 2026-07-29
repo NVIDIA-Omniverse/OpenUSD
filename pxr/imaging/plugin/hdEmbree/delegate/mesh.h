@@ -26,9 +26,11 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-struct HdEmbreePrototypeContext;
-struct HdEmbreeInstanceContext;
-struct HdEmbreeMaterialEvalServices;
+namespace ty {
+struct InstanceContext;
+struct MaterialEvalServices;
+struct PrototypeContext;
+} // namespace ty
 
 /// Translate USD/OpenSubdiv face-varying boundary rules to the four modes
 /// Embree can represent. Exposed so the intentional three-to-one corner-rule
@@ -183,14 +185,14 @@ private:
     struct _Instance {
         unsigned rtcId = RTC_INVALID_GEOMETRY_ID;
         RTCGeometry geometry = nullptr;
-        std::unique_ptr<HdEmbreeInstanceContext> context;
+        std::unique_ptr<ty::InstanceContext> context;
     };
 
     // Rebuild this rprim's top-level Embree instances from the current
     // instancer state. Sizes _instances to the instancer's instance count
     // (one identity instance when the rprim is un-instanced), creating and
     // releasing Embree instance geometries and their
-    // HdEmbreeInstanceContexts as the count changes, then writes each
+    // ty::InstanceContext objects as the count changes, then writes each
     // instance's object-to-world/world-to-object transform and its resolved
     // light-linking category set.
     //
@@ -223,7 +225,7 @@ private:
     void _ResolveGeomPropBindings();
 
     void _WarnIfInstancedDisplacementIsLimited(
-        HdEmbreePrototypeContext const* prototypeContext);
+        ty::PrototypeContext const* prototypeContext);
 
     std::vector<float> _ComputeAdaptiveSubdivisionLevels(
         GfMatrix4d const& viewMatrix,
@@ -245,7 +247,7 @@ private:
     void _PopulateRtMesh(HdSceneDelegate *sceneDelegate,
                          RTCScene scene,
                          RTCDevice device,
-                         HdEmbreeMaterialEvalServices const*
+                         ty::MaterialEvalServices const*
                              materialEvalServices,
                          HdDirtyBits *dirtyBits,
                          HdMeshReprDesc const &desc);
@@ -314,7 +316,7 @@ private:
     RTCScene _rtcMeshScene;
     // The mesh owns its prototype context while Embree borrows its address as
     // geometry user data.
-    std::unique_ptr<HdEmbreePrototypeContext> _prototypeContext;
+    std::unique_ptr<ty::PrototypeContext> _prototypeContext;
 
     // Each top-level instance owns its id, geometry handle, and stable context
     // in one record.
@@ -326,7 +328,7 @@ private:
     HdMeshTopology _topology;
     GfMatrix4f _transform;
     VtVec3fArray _points;
-    HdEmbreeCategorySet _categories;
+    ty::CategorySet _categories;
 
     // Derived scene data:
     // - _triangulatedIndices holds a triangulation of the source topology,
@@ -385,7 +387,7 @@ private:
 
     // An object used to manage allocation of embree user vertex buffers to
     // primvars.
-    HdEmbreeRTCBufferAllocator _embreeBufferAllocator;
+    ty::RtcBufferAllocator _embreeBufferAllocator;
 
     // Per-face-edge tessellation levels for Embree topology 0.
     std::vector<float> _subdivisionLevels;

@@ -15,7 +15,7 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 class HdEmbreeRenderBuffer : public HdRenderBuffer,
-                             public HdEmbreeRenderBufferInterface
+                             public ty::RenderBufferInterface
 {
 public:
     HdEmbreeRenderBuffer(SdfPath const& id);
