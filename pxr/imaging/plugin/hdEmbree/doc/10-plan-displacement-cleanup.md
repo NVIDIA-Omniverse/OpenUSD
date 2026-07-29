@@ -215,7 +215,7 @@ Validation:
   1. At the post-04 commit: `pixi run cmake --build build --target install`, then
      render the fixture with this checkout's installed `usdrender` at a fixed
      seed to `before.exr`. Locate the fixture per AGENTS.md "Focused Tests":
-     `cd /home/anders/code/aousd-materials-test-suite && pixi run pytest
+     `cd /path/to/aousd-materials-test-suite && pixi run pytest
      test-suite/surfaces/open_pbr_surface/displacement.usda --collect-only -q`
      — that command only resolves the stage, it does not render.
   2. Apply plan 10, **rebuild and reinstall** (the fixture loads the installed
@@ -224,17 +224,17 @@ Validation:
   3. `oiiotool --diff before.exr after.exr` must report zero differing pixels.
 
   The first comparison used the following commands from
-  `/home/anders/code/openusd-omniverse`; `--disableGpu` keeps the headless
+  `/path/to/openusd`; `--disableGpu` keeps the headless
   render independent of an X display:
 
   ```sh
   pixi run usdrender \
-      /home/anders/code/aousd-materials-test-suite/test-suite/surfaces/open_pbr_surface/displacement.usda \
+      /path/to/aousd-materials-test-suite/test-suite/surfaces/open_pbr_surface/displacement.usda \
       -s "{settings}.ty:randomNumberSeed = 1" \
       --disableGpu --outputRoot /tmp/hdembree-plan10-before
 
   pixi run usdrender \
-      /home/anders/code/aousd-materials-test-suite/test-suite/surfaces/open_pbr_surface/displacement.usda \
+      /path/to/aousd-materials-test-suite/test-suite/surfaces/open_pbr_surface/displacement.usda \
       -s "{settings}.ty:randomNumberSeed = 1" \
       --disableGpu --outputRoot /tmp/hdembree-plan10-after
 
@@ -254,12 +254,13 @@ After every plan-specific validation above, run the complete Typhoon suite as
 the final gate:
 
 ```sh
-cd ~/code/typhoon-test-suite
+cd /path/to/typhoon-test-suite
 powerprofilesctl launch --profile performance -- pixi run pytest --renderer typhoon-local
 ```
 
-Run the complete suite to completion; never interrupt it because of elapsed time.
-All tests must pass. Report the total elapsed time. Runtime is variable: warn
-when it exceeds 250 seconds, but timing alone does not fail the gate. Do not
-commit the plan implementation until Anders has reviewed the completed changes
-and explicitly approved committing them.
+Run the complete suite to completion; never interrupt it because of elapsed
+time. All tests must pass. Report elapsed time. For a performance-sensitive
+change, compare the same workload before and after on the same machine and
+investigate regressions. Do not commit the plan implementation until your
+human has reviewed the completed changes and explicitly approved
+committing them.

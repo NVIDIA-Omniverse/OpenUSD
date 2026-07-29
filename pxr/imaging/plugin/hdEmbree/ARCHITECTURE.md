@@ -1,6 +1,23 @@
 # hdEmbree Architecture
 
-This guide explains where hdEmbree code lives, how Hydra data reaches the path tracer, how a frame is rendered, and where new functionality belongs. See `README.md` for user-facing features and settings, and `AGENTS.md` for build and test workflow.
+This is the authoritative developer design for hdEmbree: dependency boundaries,
+ownership, frame and path flows, invariants, responsibility map, and extension
+points. It does not define user workflows or contributor commands.
+
+## Documentation map
+
+- [`README.md`](README.md): user-facing capabilities, workflows, settings,
+  AOVs, limitations, and examples.
+- `ARCHITECTURE.md`: this developer design and responsibility map.
+- [`AGENTS.md`](AGENTS.md): mandatory coding rules, build/test/profile commands,
+  and maintenance pitfalls.
+- [`overview.dox`](overview.dox): short generated Hydra/plugin overview and
+  external runtime contract.
+- [`OPTIMIZATION.md`](OPTIMIZATION.md): measured performance history.
+- [`TODO.md`](TODO.md): actionable future work.
+
+The documentation-maintenance policy and authority boundaries are defined in
+the [agent guide](AGENTS.md#documentation-map).
 
 ## Design boundary
 
@@ -22,7 +39,7 @@ supported external contract is:
 | `HdEmbreeRendererPlugin` type name, `HdRendererPlugin` base, priority | `plugInfo.json`, `delegate/rendererPlugin.cpp` |
 | `HdEmbree_ImplicitSurfaceSceneIndexPlugin` type name, base, `loadWithRenderer` | `plugInfo.json`, `delegate/implicitSurfaceSceneIndexPlugin.cpp` |
 | `TyphoonRenderSettingsAPI` schema identity, auto-apply to `RenderSettings` | `plugInfo.json`, `schema/generatedSchema.usda` |
-| The 27 `ty:` attribute names, types, defaults, and allowed tokens | `schema/schema.usda`, `HdEmbreeRenderDelegate::_Initialize()` |
+| The 29 `ty:` attribute names, types, defaults, and allowed tokens | `schema/schema.usda`, `HdEmbreeRenderDelegate::_Initialize()` |
 | Generic unnamespaced settings (`domeLightCameraVisibility`) and the namespace list | `HdEmbreeRenderDelegate::GetRenderSettingsNamespaces()` |
 | Material render-context tokens | `HdEmbreeRenderDelegate::GetMaterialRenderContexts()` |
 | Supported AOV names | `renderer/aov/aovOutput.cpp` |
@@ -33,7 +50,7 @@ The USD `TyphoonRenderSettingsAPI` schema is hdEmbree's supported external
 settings interface. Hydra's direct delegate-settings path is an internal
 application-control path, required by usdview and RenderLab, and is not a
 consumer-facing C++ API. RenderLab uses `StageView.SetRendererSetting()` rather
-than authoring USD. Its explicit metadata covers 25 of the 27 `ty:` attributes;
+than authoring USD. Its explicit metadata covers 27 of the 29 `ty:` attributes;
 `ty:disableShadows` and `ty:textureCacheSize` use the default category. Its key
 set must remain a subset of the delegate descriptors.
 
@@ -44,6 +61,31 @@ stage, parses each value in an isolated USDA scratch layer, and authors only
 the resulting typed value into an anonymous session layer. This makes the
 command-line opinion stronger than the root stage and a supplied
 `--sessionLayer` without modifying either file.
+
+`usdrender` owns output-root redirection, frame-placeholder expansion, parent
+directory creation, and the session-layer `productName` override. hdEmbree
+consumes the resulting `productName` verbatim and must not expand placeholders.
+Legacy `usdrecord` uses `UsdAppUtilsFrameRecorder`; `usdrender` does not.
+
+### Upstream contracts
+
+When Hydra data or output behavior is unclear, read the owning OpenUSD
+contracts rather than inferring them from hdEmbree:
+
+- `pxr/imaging/hd/renderDelegate.h`, `renderPass.h`, and `renderPassState.h`:
+  delegate lifecycle and pass inputs.
+- `pxr/imaging/hd/sceneDelegate.h` and
+  `sceneIndexAdapterSceneDelegate.cpp`: legacy data pulls and their scene-index
+  bridge.
+- `pxr/imaging/hd/renderSettingsSchema.*` and `renderProductSchema.*`:
+  scene-index data consumed by active settings/products.
+- `pxr/usd/usdRender/schema.usda`, `overview.dox`, and
+  `doxygen/renderSettings.usda`: authored render contracts and examples.
+- `pxr/usd/usdRender/settings.*`, `product.*`, `settingsBase.*`,
+  `renderVar.*`, and `spec.*`: `UsdRenderComputeSpec()` and its C++ owners.
+- `pxr/usdImaging/usdImaging/renderSettingsAdapter.*`,
+  `renderProductAdapter.*`, and `renderSettingsFlatteningSceneIndex.*`: USD
+  imaging conversion and product inheritance.
 
 ## Common-quantity naming
 
@@ -229,24 +271,9 @@ corresponding type without changing the semantic name.
 - `materials/materialEvalContext.h`: stable renderer-owned texture, frame, and
   time services borrowed by geometry-build and hit-time material evaluation.
 - `materials/MaterialXCpp/`: CPU material graph compiler/evaluator, nodes,
-  terminal models, closures, spectral support, and focused tests. Compilation
-  returns explicit valid, invalid, or absent-terminal results; only valid
-  results own an evaluation graph, and may carry one recoverable authoring
-  diagnostic. `CollectGeomPropNames()` walks
-  the whole material network once; both terminal graphs compile constant
-  geomprop names to integer handles in that material-owned table. Connected,
-  absent, or non-string geomprop inputs compile to invalid handle -1, emit one
-  recoverable diagnostic, and evaluate the node's authored default without
-  invalidating the terminal. A volume terminal without a surface is explicitly
-  wrapped in the internal transparent surface-volume model; this is not
-  arbitrary terminal substitution. Volume-only closures
-  retain explicit boundary identity even when their evaluated coefficients are
-  vacuum, while `hasInteriorMedium` remains reserved for active medium state.
-  Surface-shader mixes retain that identity only when every contributing input
-  is a volume boundary. Zero-weight endpoint branches contribute neither their
-  BSDF tree nor their medium state. Terminal support validation uses the same
-  dispatch function as evaluation so the accepted model set cannot drift
-  separately.
+  terminal models, closures, spectral support, and focused tests. Its durable
+  graph and texture rules are defined under
+  [material compilation and evaluation](#material-compilation-and-evaluation).
 - `materials/MaterialXCpp/materials/bsdf.cpp`: public `mxcpp::Bsdf` namespace
   API. Internal BSDF code is layered under `materials/bsdf/` in this dependency
   order: `mathPrimitives` -> `shadingFrame` -> `fresnel` ->
@@ -254,6 +281,8 @@ corresponding type without changing the semantic name.
   `reflectionOnlyInterfaces` -> `dielectric` -> `legacySurface` ->
   `closureTraversal`. Dependencies only point left-to-right; table data lives
   in `bsdf/*Lut.h` and is consumed by `energyCompensation.cpp`.
+  Regenerate the committed LUT headers whenever the analytic endpoint,
+  quadratic roughness mapping, or uniform/visible-normal MIS bake changes.
   `mathPrimitives`, `shadingFrame`, `fresnel`, and `sheen` are header-only.
   Hot distributions, visibility terms, sampling/PDF primitives, and predicates
   in `microfacet`, `diffuse`, `reflectionOnlyInterfaces`, and `dielectric`
@@ -407,6 +436,10 @@ modes for OpenSubdiv's three corner variants; they share `PIN_CORNERS`, while
 `none`, `boundaries`, and `all` remain distinct. Attribute buffers and
 interpolation outputs are 16-byte padded because Embree may use SIMD-width
 loads/stores for scalar and short-vector values.
+Low-complexity triangle samplers flatten indexed values before triangulation.
+Surface shading, displacement callbacks, and adaptive dicing probes all use
+`ty::SamplePrimvar`; never introduce a separate interpolation path for one of
+those consumers.
 
 Adaptive levels and displacement alter generated primitives, so mesh geometry
 uses low-quality rebuilds rather than vertex-only refits. Prototype mutation
@@ -414,6 +447,80 @@ follows Embree's required order: commit prototype geometry, commit the
 prototype scene, recommit every referencing instance geometry, then commit the
 root scene before rendering. Both prototype and root scenes enable robust
 traversal to reduce ray leaks at dense displaced patch boundaries.
+
+### Material compilation and evaluation
+
+Surface and optional displacement terminals compile separately into one stable
+material handle. Compilation returns valid, invalid, or absent-terminal state:
+only valid results own a graph; invalid results carry one fatal diagnostic;
+absent optional terminals carry none. Surface absence warns only when volume
+and displacement are also absent. Malformed displacement warns, but absent
+displacement stays silent. Authored failures never escape compilation,
+hit-time evaluation, or Embree displacement callbacks as exceptions.
+
+`CollectGeomPropNames()` walks the network once. Surface and displacement
+graphs compile constant geomprop names to handles in one material-owned table.
+Connected, absent, or non-string names use handle `-1`, emit one recoverable
+diagnostic, and evaluate the node default without invalidating the terminal.
+Uniform string/filename geomprops accept string, token, asset-path, and array
+forms; resolved asset paths take precedence over authored paths.
+
+A volume terminal without a surface is explicitly wrapped as a transparent
+surface-volume boundary. Boundary identity is independent of active medium
+state so vacuum/zero-density volumes remain transparent crossings. A
+surface-shader mix retains it only when every nonzero input is a volume
+boundary; zero-weight endpoint branches contribute no BSDF or medium state.
+
+MaterialX closure values stay typed through graph evaluation:
+
+- `ND_uniform_edf` reaches `ND_surface` as `UniformEdf`; the surface copies
+  emission, applies EDF opacity as presence, and clears legacy BSDF summaries
+  when no scattering closure exists.
+- Surface-shader-valued nodes carry complete `SurfaceClosure` values.
+  `ND_mix_surfaceshader` blends emission summaries and closure trees.
+- `ND_surface.bsdf` carries `BsdfClosure` into `bsdfTree`; an empty typed input
+  must not revive legacy diffuse/specular defaults. Subsurface nodes also copy
+  color, radius, and anisotropy summaries required by random-walk SSS.
+- `ND_dielectric_bsdf` preserves MaterialX `R`, `T`, and `RT` scatter modes.
+  When closure trees are merged, every child ID in nested
+  mix/layer/add/multiply nodes is remapped before the new root is appended.
+- Typed VDF nodes carry absorption, scattering, and anisotropy into
+  `interiorMedium`; `thin_walled` suppresses that medium.
+
+`ND_geomcolor_*` reads only Hydra `displayColor`; color4 takes alpha from
+`displayOpacity`. Named geometry data uses `ND_geompropvalue_*`, never
+`geomColor` or `geomColorN`.
+
+The tiled circle, cloverleaf, and hexagon nodes implement the MaterialX stdlib
+formulas directly and retain their stdlib coordinate folds/constants.
+MaterialX blur nodes instead propagate subtree-local preblur to OIIO
+`sblur`/`tblur`. Do not map blur to the stdlib pass-through graph or approximate
+it with repeated UV samples; constants stay stable and image inputs use the
+authored `size`.
+
+PNG image nodes require straight alpha. A dedicated PNG OIIO texture system
+enables `unassociatedalpha`; do not enable it globally for other formats.
+MaterialX `st` stays in lower-left convention through graph evaluation. The
+OIIO boundary flips local T and derivatives; UDIM selection uses unflipped
+coordinates. glTF nodes use the same convention and add no extra V flip.
+
+### Light and shadow linking
+
+Light adapters store resolved `lightLink` and `shadowLink` tokens. Mesh
+categories come from `GetCategories()` and native-instance categories from
+`GetInstanceCategories()`. Their snapshots travel with flattened instance
+records so hit-time tests never query Hydra.
+
+Light links filter surface/medium next-event estimation and finite, distant,
+or dome emitters reached by BSDF/phase sampling. Shadow links are tested at
+every boundary in transparent-shadow traversal before presence, transmission,
+or interior-medium changes. Empty links match all.
+
+Native-instance categories must be indexed with source values from
+`GetInstanceIndices()`, not flattened ordinals. Hydra exposes only
+whole-instancer categories for point instancers and has limited nested
+native-proxy category support; hdEmbree consumes the supplied memberships but
+cannot reconstruct missing per-point or per-proxy categories.
 
 ### Frame execution
 
@@ -434,9 +541,9 @@ traversal to reduce ray leaks at dense displaced patch boundaries.
    exactly once and marks it converged.
 7. The pass exposes convergence and, for offline clients with
    `enableInteractive = false`, writes active `RenderProduct` files after
-   convergence. Setup failure is not yet distinguishable from genuine
-   convergence at this boundary, so suppressing stale offline output requires
-   a separate renderer-to-pass failure signal.
+   convergence. The renderer's synchronized frame status distinguishes a valid
+   frame from pending or failed setup, so a failed frame parks usable AOVs
+   without writing stale RenderProducts.
 
 ## How a pixel sample becomes a path
 
@@ -726,14 +833,8 @@ closure traversal.
 - Transport changes must update value, PDF, sampling, lobe classification, MIS, and delta behavior consistently.
 - Add focused graph/node/material tests and a rendered fixture when integration is significant. Renderer-level material and transport regressions live under the root-level `materials/` suite in the external `typhoon-test-suite` repository; broad node-value coverage stays in `testMaterialXCpp`.
 
-Run rendered regression suites through
-`powerprofilesctl launch --profile performance --` to reduce laptop power-state
-variance. The complete gate is `pixi run pytest --renderer typhoon-local`
-under that launcher. Always let the complete suite finish. All tests must pass,
-and the total elapsed time must be reported. The expected baseline is
-approximately 235 seconds; warn when runtime exceeds 250 seconds, but timing
-alone does not fail the gate. Do not commit or land the change until Anders has
-reviewed the completed changes and explicitly approved committing them.
+Follow the focused and complete validation workflow in
+[AGENTS.md](AGENTS.md#focused-tests).
 
 ### Lights
 
@@ -776,6 +877,10 @@ internal application-control path used by clients such as usdview's renderLab.
 `ty::Renderer` and `ty::RenderSettings` are implementation details, not
 a supported C++ API.
 
+Changing `ty:materialRenderContext` changes Hydra network selection.
+`HdEmbreeRenderPass::_ResyncMaterialNetworksForRenderContextChange()` must
+request material recompilation whenever that priority changes.
+
 The MaterialXCpp GGX multiple-scattering and dielectric-layer throughput
 policies remain process-wide globals. OIIO's primary texture system and its
 cache-size attribute are also process-wide because it is created in shared
@@ -790,10 +895,15 @@ Update all relevant surfaces:
   renderer-consumed;
 - token, descriptor, and label in `delegate/renderDelegate.*`;
 - authored and generated files under `schema/`;
+- `plugInfo.json` only when schema identity or registration changes;
 - bridge logic in `delegate/renderPass.cpp`;
 - unified renderer application/state in `renderer/renderer.*` and behavior in
   the owning `aov/`, `camera/`, or `integrator/` file;
+- RenderLab metadata/editor source under
+  `extras/usd/examples/usdviewPlugins/renderLab/` when exposed in that UI;
 - user documentation in `README.md`;
 - coverage in `testenv/testHdEmbreeRenderSettings.cpp`.
 
-Keep `README.md`, this document, generated schema data, and tests synchronized with implementation.
+Update each affected authority according to the
+[documentation map](AGENTS.md#documentation-map), and keep generated schema
+data and tests synchronized with implementation.

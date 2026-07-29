@@ -177,8 +177,7 @@ Runtime validation:
 - Light-sampler tests passed: 24/24.
 - Plugin and schema discovery passed.
 - Namespace/prefix audits and `git diff --check` passed.
-- Full Typhoon suite passed: 436/436 in 291.31 seconds. This exceeded the
-  250-second advisory threshold but timing is non-failing.
+- Full Typhoon suite passed: 436/436 in 291.31 seconds.
 
-No commit is created until Anders reviews and explicitly approves the completed
+No commit is created until your human reviews and explicitly approves the completed
 changes.

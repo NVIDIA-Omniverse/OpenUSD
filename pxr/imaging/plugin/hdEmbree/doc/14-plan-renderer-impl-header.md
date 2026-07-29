@@ -488,15 +488,16 @@ After every plan-specific validation above, run the complete Typhoon suite as
 the final gate:
 
 ```sh
-cd ~/code/typhoon-test-suite
+cd /path/to/typhoon-test-suite
 powerprofilesctl launch --profile performance -- pixi run pytest --renderer typhoon-local
 ```
 
-Run the complete suite to completion; never interrupt it because of elapsed time.
-All tests must pass. Report the total elapsed time. Runtime is variable: warn
-when it exceeds 250 seconds, but timing alone does not fail the gate. Do not
-commit the plan implementation until Anders has reviewed the completed changes
-and explicitly approved committing them.
+Run the complete suite to completion; never interrupt it because of elapsed
+time. All tests must pass. Report elapsed time. For a performance-sensitive
+change, compare the same workload before and after on the same machine and
+investigate regressions. Do not commit the plan implementation until your
+human has reviewed the completed changes and explicitly approved
+committing them.
 
 ## Implementation measurements
 
@@ -547,8 +548,7 @@ Validated on 2026-07-28:
   The retained defensive-lookup test instead uses a valid multiply root with
   an out-of-range child, which reaches the null-node guard through
   `ty::IsReflectionOnlyClosure`.
-- The complete Typhoon suite passed 436/436 cases in 246.72 seconds, below the
-  250-second warning threshold.
+- The complete Typhoon suite passed 436/436 cases in 246.72 seconds.
 
 The retrospective exact-image and before/after `perf stat -r 5` comparisons
 remain outstanding. No pre-change render or performance artifact was captured,

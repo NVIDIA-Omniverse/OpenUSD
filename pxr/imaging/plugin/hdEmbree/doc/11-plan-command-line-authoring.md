@@ -36,7 +36,7 @@ one invocation without mutating the stage**. That is load-bearing for:
 - profiling comparisons, which must hold the seed fixed
   (`AGENTS.md`, "Profiling hdEmbree");
 - the project-wide image-validation convention (`doc/README.md:9`);
-- `/home/anders/code/typhoon-tests`, which sweeps settings across fixed scenes;
+- `/path/to/typhoon-tests`, which sweeps settings across fixed scenes;
 - agents, which cannot edit a checked-in test stage to bisect a setting.
 
 `--sessionLayer` technically covers all of this, but only by writing a temp
@@ -626,12 +626,13 @@ After every plan-specific validation above, run the complete Typhoon suite as
 the final gate:
 
 ```sh
-cd ~/code/typhoon-test-suite
+cd /path/to/typhoon-test-suite
 powerprofilesctl launch --profile performance -- pixi run pytest --renderer typhoon-local
 ```
 
-Run the complete suite to completion; never interrupt it because of elapsed time.
-All tests must pass. Report the total elapsed time. Runtime is variable: warn
-when it exceeds 250 seconds, but timing alone does not fail the gate. Do not
-commit the plan implementation until Anders has reviewed the completed changes
-and explicitly approved committing them.
+Run the complete suite to completion; never interrupt it because of elapsed
+time. All tests must pass. Report elapsed time. For a performance-sensitive
+change, compare the same workload before and after on the same machine and
+investigate regressions. Do not commit the plan implementation until your
+human has reviewed the completed changes and explicitly approved
+committing them.

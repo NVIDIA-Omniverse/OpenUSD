@@ -48,10 +48,10 @@ be stated, and refined elementId lookup may index incompatible storage.
 ## Mandatory final suite gate
 
 ```sh
-cd ~/code/typhoon-test-suite
+cd /path/to/typhoon-test-suite
 powerprofilesctl launch --profile performance -- pixi run pytest --renderer typhoon-local
 ```
 
-Run all tests to completion and report elapsed time. Warn above 250 seconds,
-but do not fail on timing alone. Do not commit until Anders has reviewed and
-explicitly approved the change.
+Run all tests to completion, report elapsed time, compare it with a relevant
+baseline, and investigate regressions. Do not commit until your human has reviewed
+and explicitly approved the change.

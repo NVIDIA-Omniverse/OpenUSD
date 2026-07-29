@@ -10,13 +10,13 @@ with `usdrender -s "{settings}.ty:randomNumberSeed = 1"` and
 `oiiotool --diff`.
 
 Every plan ends with the same mandatory final gate: from
-`~/code/typhoon-test-suite`, run
+`/path/to/typhoon-test-suite`, run
 `powerprofilesctl launch --profile performance -- pixi run pytest --renderer typhoon-local`.
-Always let the complete suite finish. All tests must pass, and the final elapsed
-time must be reported. Runtime is variable: warn when it exceeds 250 seconds,
-but timing alone does not fail the gate. Do not commit a plan implementation
-until Anders has reviewed the completed changes and explicitly approved
-committing them.
+Always let the complete suite finish. All tests must pass and elapsed time must
+be reported. For a performance-sensitive change, compare the same workload
+before and after on the same machine and investigate regressions. Do not commit
+a plan implementation until your human has reviewed the completed changes and
+explicitly approved committing them.
 
 "Behavior-preserving" does not always mean bit-identical. A move *within* a
 translation unit (e.g. 16) must produce bit-identical pixels, and any

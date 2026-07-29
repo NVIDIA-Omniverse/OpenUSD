@@ -483,8 +483,8 @@ under their new paths, which is a small improvement in its own right.
   render, with any non-zero difference explained as contraction rather than
   assumed to be.
 - Material-fidelity suite per commit, not once at the end:
-  `cd /home/anders/code/typhoon-tests && pixi run pytest material-fidelity
-  --typhoon-provider /home/anders/code/openusd-omniverse`. Commit-specific
+  `cd /path/to/typhoon-tests && pixi run pytest material-fidelity
+  --typhoon-provider /path/to/openusd`. Commit-specific
   cases that must be present: thin film (4), rough and anisotropic GGX
   reflection (5), sheen (6), Oren-Nayar/EON diffuse and translucency (7),
   conductors and generalized Schlick (8), coupled dielectric transmission and
@@ -566,7 +566,7 @@ what the abstraction adds" is a real bar and this plan does not clear it on
 line count — total lines are unchanged, and the header declarations are new
 text.
 
-**Decision:** Anders explicitly approved this plan as a scoped exception to
+**Decision:** your human explicitly approved this plan as a scoped exception to
 Goal 1's line-reduction gate. The exception applies to this measured source
 partition only; it does not weaken the general rule or pre-approve additional
 interfaces. The correctness, performance, build-time, dependency-DAG, and
@@ -646,12 +646,13 @@ After every plan-specific validation above, run the complete Typhoon suite as
 the final gate:
 
 ```sh
-cd ~/code/typhoon-test-suite
+cd /path/to/typhoon-test-suite
 powerprofilesctl launch --profile performance -- pixi run pytest --renderer typhoon-local
 ```
 
-Run the complete suite to completion; never interrupt it because of elapsed time.
-All tests must pass. Report the total elapsed time. Runtime is variable: warn
-when it exceeds 250 seconds, but timing alone does not fail the gate. Do not
-commit the plan implementation until Anders has reviewed the completed changes
-and explicitly approved committing them.
+Run the complete suite to completion; never interrupt it because of elapsed
+time. All tests must pass. Report elapsed time. For a performance-sensitive
+change, compare the same workload before and after on the same machine and
+investigate regressions. Do not commit the plan implementation until your
+human has reviewed the completed changes and explicitly approved
+committing them.

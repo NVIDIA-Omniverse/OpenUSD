@@ -38,9 +38,9 @@ Use a pytest dry run to obtain the exact `usdrender` invocation without
 rendering:
 
 ```sh
-cd /home/anders/code/typhoon-tests
+cd /path/to/typhoon-tests
 pixi run pytest material-fidelity \
-    --typhoon-provider /home/anders/code/openusd-omniverse \
+    --typhoon-provider /path/to/openusd \
     -k input_coat_darkening \
     --typhoon-dry-run -s
 ```
@@ -59,12 +59,12 @@ the system paths explicitly:
 
 ```sh
 pixi run --clean-env -x /usr/bin/env \
-    PATH=/home/anders/code/openusd-omniverse/.pixi/envs/default/bin:/usr/bin:/bin \
+    PATH=/path/to/openusd/.pixi/envs/default/bin:/usr/bin:/bin \
     /usr/bin/perf stat -r 5 -d \
     -o /tmp/typhoon-input-coat-darkening-stat.txt -- \
     usdrender --complexity high --renderer Embree \
     -s "{settings}.ty:randomNumberSeed = 1" \
-    /home/anders/code/typhoon-tests/material-fidelity/surfaces/open_pbr_surface/input_coat_darkening.usda \
+    /path/to/typhoon-tests/material-fidelity/surfaces/open_pbr_surface/input_coat_darkening.usda \
     --outputRoot /tmp/typhoon-profile-stat
 ```
 
@@ -90,13 +90,13 @@ Collect frame-pointer call stacks for all renderer worker threads:
 
 ```sh
 pixi run --clean-env -x /usr/bin/env \
-    PATH=/home/anders/code/openusd-omniverse/.pixi/envs/default/bin:/usr/bin:/bin \
+    PATH=/path/to/openusd/.pixi/envs/default/bin:/usr/bin:/bin \
     /usr/bin/perf record \
     -o /tmp/typhoon-input-coat-darkening.data \
     -F 499 -e cycles:u -g --call-graph fp -- \
     usdrender --complexity high --renderer Embree \
     -s "{settings}.ty:randomNumberSeed = 1" \
-    /home/anders/code/typhoon-tests/material-fidelity/surfaces/open_pbr_surface/input_coat_darkening.usda \
+    /path/to/typhoon-tests/material-fidelity/surfaces/open_pbr_surface/input_coat_darkening.usda \
     --outputRoot /tmp/typhoon-profile-record
 ```
 
@@ -134,7 +134,7 @@ Enable OpenUSD's global trace collector for a direct render:
 PXR_ENABLE_GLOBAL_TRACE=1 \
 pixi run usdrender \
     -s "{settings}.ty:randomNumberSeed = 1" \
-    /home/anders/code/typhoon-tests/material-fidelity/surfaces/open_pbr_surface/input_coat_darkening.usda \
+    /path/to/typhoon-tests/material-fidelity/surfaces/open_pbr_surface/input_coat_darkening.usda \
     --outputRoot /tmp/typhoon-profile-trace \
     > /tmp/typhoon-input-coat-darkening-trace.txt 2>&1
 ```

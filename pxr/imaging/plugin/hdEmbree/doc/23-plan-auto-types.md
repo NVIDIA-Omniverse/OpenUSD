@@ -331,11 +331,11 @@ The Goal 5 amendment already landed, so this plan is two commits:
   a fixed-seed render must be bit-identical, not merely close. Three stages,
   chosen to cover the three densest clusters of edits — the integrators, the
   primvar-sampler `dynamic_cast` block, and the light samplers / `_pi`
-  consumers. Run from `/home/anders/code/openusd-omniverse`, once before the
+  consumers. Run from `/path/to/openusd`, once before the
   sweep and once after:
 
   ```sh
-  SUITE=/home/anders/code/typhoon-test-suite
+  SUITE=/path/to/typhoon-test-suite
   for WHEN in before after; do
     for STAGE in \
         materials/open_pbr/feature_specular.usda \
@@ -367,7 +367,7 @@ The Goal 5 amendment already landed, so this plan is two commits:
 - **Suite sweep on the `_pi` commit.** `_pi<float>` → `inline constexpr float _pi` is
   the same value and the same type, so it too must diff to zero, but it reaches
   every light type. Run
-  `cd /home/anders/code/typhoon-test-suite && pixi run pytest usdlux` after it.
+  `cd /path/to/typhoon-test-suite && pixi run pytest usdlux` after it.
 - After the sweep, re-run the grep from Method step 1 and confirm every survivor
   falls under the five permitted cases listed in "Scope and deferrals".
 
@@ -388,12 +388,13 @@ After every plan-specific validation above, run the complete Typhoon suite as
 the final gate:
 
 ```sh
-cd ~/code/typhoon-test-suite
+cd /path/to/typhoon-test-suite
 powerprofilesctl launch --profile performance -- pixi run pytest --renderer typhoon-local
 ```
 
-Run the complete suite to completion; never interrupt it because of elapsed time.
-All tests must pass. Report the total elapsed time. Runtime is variable: warn
-when it exceeds 250 seconds, but timing alone does not fail the gate. Do not
-commit the plan implementation until Anders has reviewed the completed changes
-and explicitly approved committing them.
+Run the complete suite to completion; never interrupt it because of elapsed
+time. All tests must pass. Report elapsed time. For a performance-sensitive
+change, compare the same workload before and after on the same machine and
+investigate regressions. Do not commit the plan implementation until your
+human has reviewed the completed changes and explicitly approved
+committing them.
