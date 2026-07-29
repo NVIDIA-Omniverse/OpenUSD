@@ -324,10 +324,13 @@ powerprofilesctl launch --profile performance -- \
     pixi run pytest --renderer typhoon-local
 ```
 
-The expected baseline is approximately 235 seconds. If any test fails or
-runtime is 250 seconds or above, stop and check with Anders. Apply the same
+Always let the complete suite finish. All tests must pass, and the total
+elapsed time must be reported. The expected baseline is approximately 235
+seconds; warn when runtime exceeds 250 seconds, but timing alone does not fail
+the gate. Do not commit or land the change until Anders has reviewed the
+completed changes and explicitly approved committing them. Apply the same
 `powerprofilesctl launch --profile performance --` prefix when running only
-`materials` or `usdlux`. Initialize the pinned shaderball dependency first with
-`git submodule update --init --depth 1`.
+`materials` or `usdlux`. Initialize the pinned shaderball dependency first
+with `git submodule update --init --depth 1`.
 MaterialX value/node coverage remains in `testMaterialXCpp`; the rendered suite
 deliberately selects only cases that exercise renderer behavior.

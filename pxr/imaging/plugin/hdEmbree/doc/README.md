@@ -11,9 +11,12 @@ with `usdrender -s "{settings}.ty:randomNumberSeed = 1"` and
 
 Every plan ends with the same mandatory final gate: from
 `~/code/typhoon-test-suite`, run
-`powerprofilesctl launch --profile performance -- pixi run pytest --renderer typhoon-local`. All tests must pass. The expected baseline is approximately 235
-seconds. Any failure or runtime of 250 seconds or above stops the plan; check
-with Anders before proceeding.
+`powerprofilesctl launch --profile performance -- pixi run pytest --renderer typhoon-local`.
+Always let the complete suite finish. All tests must pass, and the final elapsed
+time must be reported. Runtime is variable: warn when it exceeds 250 seconds,
+but timing alone does not fail the gate. Do not commit a plan implementation
+until Anders has reviewed the completed changes and explicitly approved
+committing them.
 
 "Behavior-preserving" does not always mean bit-identical. A move *within* a
 translation unit (e.g. 16) must produce bit-identical pixels, and any

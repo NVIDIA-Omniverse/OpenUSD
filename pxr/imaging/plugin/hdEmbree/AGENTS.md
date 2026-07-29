@@ -743,10 +743,12 @@ powerprofilesctl launch --profile performance -- \
     pixi run pytest --renderer typhoon-local
 ```
 
-Its expected laptop baseline is approximately 235 seconds. If any test fails
-or runtime is 250 seconds or above, stop and check with Anders before
-continuing or landing the change.
-The complete suite currently contains 436 cases.
+Always let the complete suite finish. All tests must pass, and the total
+elapsed time must be reported. Its expected laptop baseline is approximately
+235 seconds; warn when runtime exceeds 250 seconds, but timing alone does not
+fail the gate. Do not commit or land the change until Anders has reviewed the
+completed changes and explicitly approved committing them. The complete suite
+currently contains 436 cases.
 
 Initialize its shaderball assets with
 `git submodule update --init --depth 1`. Use the material subtree for transport

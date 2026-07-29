@@ -794,6 +794,8 @@ cd ~/code/typhoon-test-suite
 powerprofilesctl launch --profile performance -- pixi run pytest --renderer typhoon-local
 ```
 
-All tests must pass. The expected baseline is approximately 235 seconds. If any
-test fails or runtime is 250 seconds or above, stop: do not continue or land
-the plan. Check with Anders before proceeding.
+Run the complete suite to completion; never interrupt it because of elapsed time.
+All tests must pass. Report the total elapsed time. Runtime is variable: warn
+when it exceeds 250 seconds, but timing alone does not fail the gate. Do not
+commit the plan implementation until Anders has reviewed the completed changes
+and explicitly approved committing them.

@@ -684,9 +684,11 @@ Read `renderer.h` for persistent state and function contracts,
 Run rendered regression suites through
 `powerprofilesctl launch --profile performance --` to reduce laptop power-state
 variance. The complete gate is `pixi run pytest --renderer typhoon-local`
-under that launcher, with an expected baseline of approximately 235 seconds;
-failures or runtimes of 250 seconds or above require stopping and checking with
-Anders.
+under that launcher. Always let the complete suite finish. All tests must pass,
+and the total elapsed time must be reported. The expected baseline is
+approximately 235 seconds; warn when runtime exceeds 250 seconds, but timing
+alone does not fail the gate. Do not commit or land the change until Anders has
+reviewed the completed changes and explicitly approved committing them.
 
 ### Lights
 

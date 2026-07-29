@@ -492,9 +492,11 @@ cd ~/code/typhoon-test-suite
 powerprofilesctl launch --profile performance -- pixi run pytest --renderer typhoon-local
 ```
 
-All tests must pass. The expected baseline is approximately 235 seconds. If any
-test fails or runtime is 250 seconds or above, stop: do not continue or land
-the plan. Check with Anders before proceeding.
+Run the complete suite to completion; never interrupt it because of elapsed time.
+All tests must pass. Report the total elapsed time. Runtime is variable: warn
+when it exceeds 250 seconds, but timing alone does not fail the gate. Do not
+commit the plan implementation until Anders has reviewed the completed changes
+and explicitly approved committing them.
 
 ## Implementation measurements
 
@@ -546,7 +548,7 @@ Validated on 2026-07-28:
   an out-of-range child, which reaches the null-node guard through
   `ty::IsReflectionOnlyClosure`.
 - The complete Typhoon suite passed 436/436 cases in 246.72 seconds, below the
-  250-second stop threshold.
+  250-second warning threshold.
 
 The retrospective exact-image and before/after `perf stat -r 5` comparisons
 remain outstanding. No pre-change render or performance artifact was captured,
