@@ -35,7 +35,7 @@ other**, not developed in parallel. The plans may all be implemented on one
 branch; keep logical commit boundaries where they aid review and bisection.
 "Depends on" means the listed work must be completed earlier in that branch.
 There are no suffix-number exceptions: filenames form one contiguous execution
-sequence from `01` through `23`.
+sequence from `01` through `25`.
 
 ## Execution order
 
@@ -344,6 +344,19 @@ earlier wastes effort on code that 06/09/10/14 delete or relocate. The `_pi`
 item must follow 14, which relocates the `rendererImpl.h` definition to
 `rendererMath.h`, and 18, which owns the extracted light-sampler uses._
 
+### Phase G — Correctness follow-ups discovered by contract review
+
+**24 · [Anonymous AOV convergence](24-plan-empty-aov-convergence.md)** — fix
+empty caller AOV bindings that never converge because the legacy `_converged`
+flag is reset but never promoted. Add a focused render-pass test and use the
+anonymous buffers as the authoritative completion state.
+_Discovered by 21. Implement after the settled cleanup sequence._
+
+**25 · [elementId primitive map](25-plan-element-id-primitive-map.md)** —
+correct the inverted triangle primitive-parameter assignment and define safe
+triangle/subdivision elementId mapping.
+_Discovered by 21. Implement after the settled cleanup sequence._
+
 ## Overlap ownership (who is authoritative)
 
 Several plans touch the same edit; each such edit has one authoritative owner:
@@ -366,6 +379,8 @@ Several plans touch the same edit; each such edit has one authoritative owner:
 | Remaining naming inventory and exceptions | 20-naming-audit | 05-naming-core defines the convention |
 | Documentation authority boundaries | 22-documentation-roles | all earlier plans update affected prose |
 | `_pi<T>` → scalar | 23-auto-types | 14 relocates the shared renderer definition; 18 reuses it; 19 owns `ty::pbrt` |
+| Empty-binding convergence behavior | 24-empty-aov-convergence | 21 documents the temporary failure |
+| Triangle/subdivision elementId mapping | 25-element-id-primitive-map | 21 documents only the optional field meaning |
 
 ## Hot-file serialization (must be sequential, never parallel)
 

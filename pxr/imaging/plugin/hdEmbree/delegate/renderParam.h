@@ -44,17 +44,22 @@ public:
         , _materialVersion(materialVersion)
     {}
 
-    /// Accessor for the top-level embree scene.
+    /// Stop rendering, publish a scene-version change, and return the borrowed
+    /// top-level scene for mutation. Callers must complete edits before
+    /// rendering is restarted.
     RTCScene AcquireSceneForEdit() {
         NotifySceneChange();
         return _scene;
     }
-    /// Notify the render pass that scene-dependent state has changed.
+    /// Stop rendering and publish a scene-version change for renderer-readable
+    /// state that does not require direct access to the Embree scene.
     void NotifySceneChange() {
         _renderThread->StopRender();
         (*_sceneVersion)++;
     }
-    /// Notify ordinary scene consumers and material-binding dependants.
+    /// Stop rendering and publish both scene and material version changes.
+    /// The material version makes the render pass refresh stable prototype
+    /// bindings before rendering can resume.
     void NotifyMaterialChange() {
         _renderThread->StopRender();
         (*_sceneVersion)++;

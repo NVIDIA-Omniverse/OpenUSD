@@ -29,21 +29,40 @@ public:
         ReflectionHemisphere
     };
 
+    /// Complete result of sampling or directionally evaluating one light.
+    ///
+    /// valid reports geometric and PDF usability; it does not independently
+    /// validate radianceIn. When valid, omegaInWld and distanceWld describe the
+    /// selected light point or direction, and pdfSolidAngleInverse is usable
+    /// for the selected technique. Callers may read only valid when it is
+    /// false.
     struct LightSample {
-        /// Incident radiance arriving from the sampled light.
+        /// Incident linear RGB radiance in the requested render color space.
         GfVec3f radianceIn;
         /// Normalized world-space direction from the shading point to light.
         GfVec3f omegaInWld;
-        /// Non-negative world-space distance; infinity for infinite lights.
+        /// Positive world-space intersection distance for finite lights;
+        /// max-float for distant and dome lights.
         float distanceWld;
-        /// Reciprocal solid-angle PDF for the selected sampling technique.
+        /// 1 / p(omega) in steradians for the selected solid-angle technique.
+        /// Delta lights use 1 as a finite placeholder and are excluded from
+        /// continuous-density MIS by delta.
         float pdfSolidAngleInverse;
-        /// True only when every field above describes a usable sample.
+        /// Geometric and PDF validity; radiance finiteness follows LightData's
+        /// authored-input invariants rather than a result-side check.
         bool valid;
-        /// True when the light has a delta directional distribution.
+        /// True when the light is a directional delta distribution.
         bool delta = false;
     };
 
+    /// Sample the selected light from a world-space shading point.
+    ///
+    /// posHitWld must be finite and u1/u2 are expected in [0,1). The concrete
+    /// shape parameters and transforms must satisfy LightData's invariants.
+    /// normalShdWldOut and samplingMode are used only for dome lights; dome
+    /// reflection-hemisphere sampling requires a finite non-zero outward
+    /// shading normal. Unsupported lights or unusable geometry return an
+    /// invalid sample.
     static LightSample
     GetLightSample(LightData const& lightData,
                    GfVec3f const& posHitWld,
@@ -52,25 +71,34 @@ public:
                    RenderColorSpace renderColorSpace =
                        RenderColorSpace::LinearRec709);
 
-    /// Evaluates a dome light along a fixed direction and returns the
-    /// corresponding radiance and directional PDF.
+    /// Evaluate a dome along a non-zero finite world-space direction.
+    ///
+    /// The direction need not be normalized. lightData is expected to describe
+    /// a dome; unusable direction, transform, or PDF state returns an invalid
+    /// sample.
     static LightSample
     EvaluateDomeLightDirection(LightData const& lightData,
                                GfVec3f const& omegaInWld,
                                RenderColorSpace renderColorSpace =
                                    RenderColorSpace::LinearRec709);
 
-    /// Evaluates a dome light along a fixed direction with the PDF used by
-    /// the selected dome-light sampling mode.
+    /// Evaluate a dome direction with the selected sampling-mode PDF.
+    ///
+    /// The world-space direction and outward shading normal must be finite and
+    /// non-zero; either may be unnormalized. lightData is expected to describe
+    /// a dome; unusable state returns an invalid sample.
     static LightSample EvaluateDomeLightDirection(
         LightData const& lightData, GfVec3f const& omegaInWld,
         GfVec3f const& normalShdWldOut, SamplingMode samplingMode,
         RenderColorSpace renderColorSpace =
             RenderColorSpace::LinearRec709);
 
-    /// Evaluates a light along a fixed direction from a point and returns the
-    /// corresponding radiance, distance, and directional PDF when the ray
-    /// intersects the light shape.
+    /// Evaluate a light along a fixed world-space ray from posHitWld.
+    ///
+    /// The origin must be finite and omegaInWld must be finite and non-zero;
+    /// the direction need not be normalized. Returns an invalid sample when
+    /// the ray misses, the light type is unsupported, or light state is
+    /// unusable.
     static LightSample
     EvaluateLightDirection(LightData const& lightData,
                            GfVec3f const& posHitWld,

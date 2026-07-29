@@ -28,18 +28,39 @@ public:
     HdEmbreeMaterial(SdfPath const& id);
     ~HdEmbreeMaterial() override;
 
+    /// Compile dirty surface and optional displacement terminals independently.
+    ///
+    /// sceneDelegate and dirtyBits must be non-null. renderParam may be null.
+    /// Clean input clears dirtyBits and leaves the stable MaterialData handle
+    /// unchanged. Dirty input with a renderParam stops rendering and publishes
+    /// scene/material versions before replacing graph contents. Authored
+    /// malformed graph compilation produces CompileResult diagnostics without
+    /// throwing; only the external GetMaterialResource call is caught as an
+    /// exception boundary. An absent displacement terminal is valid and leaves
+    /// displacementGraph null, while an absent or invalid surface leaves
+    /// surfaceGraph null.
+    ///
+    /// The MaterialData address remains stable. Mesh prototype contexts observe
+    /// it and refresh handle-indexed geomprop bindings after the published
+    /// material version is seen. dirtyBits is clean on every return.
     void Sync(HdSceneDelegate *sceneDelegate,
               HdRenderParam   *renderParam,
               HdDirtyBits     *dirtyBits) override;
 
+    /// With a non-null renderParam, stop rendering and publish material
+    /// invalidation before Hydra destroys the stable handle observed by mesh
+    /// prototype contexts.
     void Finalize(HdRenderParam *renderParam) override;
 
     HdDirtyBits GetInitialDirtyBitsMask() const override;
 
-    /// Recompile the material after graph-affecting render settings changed.
+    /// Recompile the cached delegate resource after graph-affecting render
+    /// settings changed. Does nothing before the first Sync; otherwise has the
+    /// same publication and failure behavior as Sync.
     void ResyncForRenderSettingsChange(HdRenderParam *renderParam);
 
-    /// Return the compiled evaluation graph, or nullptr if unavailable.
+    /// Return the stable renderer material handle. Individual terminal graph
+    /// pointers may be null when absent or invalid.
     ty::MaterialData const* GetRenderMaterial() const { return &_renderMaterial; }
 
 private:

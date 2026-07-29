@@ -412,14 +412,13 @@ HdEmbreeRenderPass::~HdEmbreeRenderPass()
 bool
 HdEmbreeRenderPass::_HasConverged() const
 {
-    // If the aov binding array is empty, the render thread is rendering into
-    // _colorBuffer and _depthBuffer.  _converged is set to their convergence
-    // state just before blit, so use that as our answer.
+    // Empty caller bindings currently have no convergence publication from
+    // the anonymous renderer bindings, so the legacy flag remains false.
     if (_aovBindings.size() == 0) {
         return _converged;
     }
 
-    // Otherwise, check the convergence of all attachments.
+    // Explicit output is complete only after every usable attachment parks.
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
         if (_aovBindings[i].renderBuffer &&
             !_aovBindings[i].renderBuffer->IsConverged()) {
@@ -678,6 +677,8 @@ HdEmbreeRenderPass::_UpdateRenderSettingsFromActiveRenderSettingsPrim()
     const unsigned int oldVersion = delegate->GetRenderSettingsVersion();
     _RenderSettingsMap newBridgedRenderSettings;
 
+    // Remove stale bridge-owned opinions first so disappearing USD values
+    // reveal delegate defaults without clobbering later direct overrides.
     for (const auto &previous : _lastBridgedRenderSettings) {
         const TfToken &key = previous.first;
         const auto currentIt = currentRenderSettings.find(key);
@@ -704,6 +705,8 @@ HdEmbreeRenderPass::_UpdateRenderSettingsFromActiveRenderSettingsPrim()
         }
     }
 
+    // Adopt newly authored opinions only where no direct delegate/UI value
+    // already has precedence.
     for (const auto &current : currentRenderSettings) {
         const TfToken &key = current.first;
         if (_lastBridgedRenderSettings.find(key) !=

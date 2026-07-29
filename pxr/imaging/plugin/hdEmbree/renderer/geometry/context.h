@@ -46,8 +46,15 @@ enum class WireframeMode
 
 /// \class PrototypeContext
 ///
-/// A small bit of state attached to each bit of prototype geometry in embree,
-/// for renderer integrators and geometric AOV evaluation.
+/// Renderer state attached to Embree prototype geometry as user data.
+///
+/// HdEmbreeMesh owns this object and every owning container within it. Its
+/// address remains stable while the attached geometry can be traversed.
+/// Observing pointers name state owned by that mesh, its bound material Sprim,
+/// or the Renderer. Sync may mutate this context only after
+/// HdEmbreeRenderParam::AcquireSceneForEdit() has stopped rendering; geometry
+/// commit callbacks and render workers otherwise treat it as read-only. The
+/// displacement callback may atomically set displacementExceptionReported.
 ///
 struct PrototypeContext
 {
@@ -61,7 +68,9 @@ struct PrototypeContext
     float wireframeLineWidth = 0.0f;
     /// Coarse-face layout and live Embree edge levels used to reconstruct the
     /// final diced subdivision grid at a hit. Offsets has face-count + 1
-    /// entries; subdivisionLevels remains owned by HdEmbreeMesh.
+    /// entries; its last entry is the sum of positive faceVertexCounts.
+    /// subdivisionLevels observes HdEmbreeMesh storage and has one entry per
+    /// coarse face edge while refined geometry is live.
     VtIntArray faceVertexCounts;
     std::vector<size_t> faceVertexOffsets;
     std::vector<float> const* subdivisionLevels = nullptr;
@@ -84,6 +93,8 @@ struct PrototypeContext
     /// is committed, so these default to object-space identity.
     GfMatrix4f displacementObjectToWorldMatrix = GfMatrix4f(1.0f);
     GfMatrix4f displacementWorldToObjectMatrix = GfMatrix4f(1.0f);
+    /// Observing pointers to mesh-owned object-space triangle derivatives.
+    /// The arrays have one entry per triangulated primitive when populated.
     VtVec3fArray const* triangleDPdu = nullptr;
     VtVec3fArray const* triangleDPdv = nullptr;
     /// Name-indexed owning storage for primvar samplers.
@@ -91,13 +102,19 @@ struct PrototypeContext
         TfToken,
         std::unique_ptr<PrimvarSampler>,
         TfToken::HashFunctor> primvarMap;
-    /// A copy of the primitive params for this rprim.
+    /// Optional primitive-to-coarse-face data consumed by the elementId AOV.
+    /// Empty storage falls back to the raw Embree primitive ID.
     VtIntArray primitiveParams;
-    /// The bound material, or nullptr if none.
+    /// Material-Sprim-owned stable handle, or nullptr if none. The handle
+    /// remains registered until rendering is stopped and bindings refresh.
     MaterialData const* material = nullptr;
-    /// Handle-indexed against material->geomPropNames. Both vectors are
-    /// rebuilt after every material-table or primvarMap mutation; sampler
-    /// pointers observe the unique_ptr-owned entries in primvarMap.
+    /// Handle-indexed against material->geomPropNames. With a bound material,
+    /// both vectors have exactly material->geomPropNames.size() entries; both
+    /// are empty without one. They are rebuilt after every material-table or
+    /// primvarMap mutation. Sampler pointers observe the unique_ptr-owned
+    /// entries in primvarMap; empty values represent absent constant string
+    /// primvars. The tables remain valid until the next stopped
+    /// material-binding or primvar refresh.
     std::vector<PrimvarSampler*> geomPropSamplers;
     std::vector<mxcpp::Value> geomPropUniformValues;
 };
@@ -105,19 +122,23 @@ struct PrototypeContext
 ///
 /// \class InstanceContext
 ///
-/// A small bit of state attached to each bit of instanced geometry in embree,
-/// for renderer integrators and geometric AOV evaluation.
+/// Renderer state attached to one top-level Embree instance as user data.
+///
+/// HdEmbreeMesh owns the stable-address object, and rootScene is a borrowed
+/// prototype-scene handle owned by the same mesh. Instance Sync mutates this
+/// state only after AcquireSceneForEdit() stops rendering; render workers
+/// treat every field as immutable.
 ///
 struct InstanceContext
 {
-    /// The object-to-world transform, for transforming normals to worldspace.
+    /// Mutually inverse affine transforms between prototype object space and
+    /// world space. Normals use the inverse transpose of the relevant matrix.
     GfMatrix4f objectToWorldMatrix;
-    /// The inverse world-to-object transform.
     GfMatrix4f worldToObjectMatrix;
-    /// The scene the prototype geometry lives in, for passing to
+    /// Borrowed committed prototype scene used to resolve geomID and call
     /// rtcInterpolate.
     RTCScene rootScene;
-    /// The instance id of this instance.
+    /// Hydra instance index represented by this top-level geometry.
     int32_t instanceId;
     /// Resolved Hydra light- and shadow-link category memberships.
     CategorySet categories;

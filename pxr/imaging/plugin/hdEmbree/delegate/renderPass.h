@@ -56,8 +56,10 @@ public:
     // -----------------------------------------------------------------------
     // HdRenderPass API
 
-    /// Determine whether the sample buffer has enough samples.
-    ///   \return True if the image has enough samples to be considered final.
+    /// Report whether every active output has reached its parking/completion
+    /// state. This may be true after failed renderer setup and therefore does
+    /// not imply a valid frame. Offline products are written only when this is
+    /// true and the renderer atomically reports valid pixels.
     bool IsConverged() const override;
 
 protected:
@@ -76,8 +78,32 @@ protected:
     void _MarkCollectionDirty() override;
 
 private:
+    /// Report whether all active AOVs have reached their parking/completion
+    /// state. This says nothing about whether renderer setup produced a valid
+    /// frame. Empty caller bindings currently remain unconverged through the
+    /// legacy fallback flag.
     bool _HasConverged() const;
+
+    /// Reconcile active RenderSettings opinions owned by this bridge with the
+    /// delegate settings map.
+    ///
+    /// A delegate value equal to its last bridged value remains bridge-owned:
+    /// it may be updated or reset when the authored opinion disappears, using
+    /// its descriptor default when present and an empty value otherwise.
+    /// Differing direct delegate/UI values are preserved. Returns true only
+    /// when the delegate settings version changed.
     bool _UpdateRenderSettingsFromActiveRenderSettingsPrim();
+
+    /// Write supported color/raw raster products to their authored productName
+    /// paths when enableInteractive is false and an active RenderSettings prim
+    /// supplies products.
+    ///
+    /// IsConverged calls this only after both AOV convergence and atomic valid
+    /// frame publication. Missing scene-index, product, or color-AOV
+    /// prerequisites return without output; no fallback product is written.
+    /// The pass attempts this at most once after each render start, even when
+    /// the attempt writes nothing. usdrender independently treats every
+    /// missing expected product as an error.
     void _WriteActiveRenderProducts();
 
     // The collection repr state whose resolved mesh modes were last synced.
@@ -105,10 +131,11 @@ private:
     // Whether renderer settings have been applied at least once.
     bool _hasAppliedRendererSettings;
 
-    // Tracks the RenderSettings prim values that were bridged into the
-    // render delegate settings map.
+    // Identity and presence of the last active RenderSettings prim.
     SdfPath _lastRenderSettingsPrimPath;
     bool _hasAppliedRenderSettingsPrim;
+    // Values still owned by the RenderSettings-to-delegate bridge. A matching
+    // current delegate value remains eligible for stale-opinion reset.
     TfHashMap<TfToken, VtValue, TfToken::HashFunctor>
         _lastBridgedRenderSettings;
 
@@ -155,10 +182,11 @@ private:
     HdEmbreeRenderBuffer _colorBuffer;
     HdEmbreeRenderBuffer _depthBuffer;
 
-    // Were the color/depth buffer converged the last time we blitted them?
+    // Legacy empty-binding convergence flag. It is currently reset on render
+    // start but never promoted when the anonymous buffers finish.
     bool _converged;
 
-    // Whether render products have been written for the current render.
+    // Whether product output has already been attempted for this render.
     bool _renderProductsWritten;
 };
 
