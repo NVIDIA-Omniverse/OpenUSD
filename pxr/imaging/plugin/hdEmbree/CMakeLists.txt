@@ -80,12 +80,19 @@ pxr_plugin(hdEmbree
         renderer/integrator/unlitIntegrator.cpp
         renderer/integrator/visibility.cpp
         renderer/integrator/volumeTransport.cpp
+        renderer/lights/cylinderLight.cpp
+        renderer/lights/diskLight.cpp
+        renderer/lights/distantLight.cpp
+        renderer/lights/domeLight.cpp
+        renderer/lights/rectLight.cpp
+        renderer/lights/sphereLight.cpp
 
     PRIVATE_CLASSES
         delegate/adaptiveSubdivision
         delegate/instancer
         delegate/light
-        renderer/lights/lightSamplers
+        renderer/lights/lightSampler
+        renderer/lights/lightSamplerCommon
         renderer/lights/lightRegistry
         delegate/material
         delegate/mesh
@@ -157,6 +164,7 @@ pxr_plugin(hdEmbree
         delegate/displacement.h
         renderer/lights/light.h
         renderer/lights/lightLinking.h
+        renderer/lights/lightSamplerDispatch.h
         renderer/materials/materialEvalContext.h
         renderer/materials/material.h
         renderer/renderBuffer.h

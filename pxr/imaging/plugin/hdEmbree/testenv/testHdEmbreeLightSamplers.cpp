@@ -5,7 +5,7 @@
 // https://openusd.org/license.
 //
 #include <delegate/light.h>
-#include <renderer/lights/lightSamplers.h>
+#include <renderer/lights/lightSampler.h>
 
 #include "pxr/base/gf/color.h"
 #include "pxr/base/gf/colorSpace.h"
@@ -171,6 +171,22 @@ _MakeDistantLight(float angle)
     light.intensity = 1.0f;
     light.diffuse = 1.0f;
     light.lightVariant = HdEmbree_Distant{angle};
+    return light;
+}
+
+HdEmbree_LightData
+_MakeCylinderLight(
+    const GfVec3f& center,
+    float radius,
+    float length)
+{
+    HdEmbree_LightData light;
+    light.xformLightToWorld = GfMatrix4f(1.0f);
+    light.xformLightToWorld.SetTranslate(center);
+    light.xformWorldToLight = light.xformLightToWorld.GetInverse();
+    light.normalXformLightToWorld = GfMatrix3f(1.0f);
+    light.color = GfVec3f(1.0f);
+    light.lightVariant = HdEmbree_Cylinder{radius, length};
     return light;
 }
 
@@ -476,6 +492,82 @@ TestSphereSampleMatchesDirectionalEvaluation()
                         sampled.pdfSolidAngleInverse,
                         evaluated.pdfSolidAngleInverse,
                         pdfSolidAngleInverseExpected);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool
+TestCylinderSampleMatchesDirectionalEvaluation()
+{
+    HdEmbree_LightData light =
+        _MakeCylinderLight(GfVec3f(0.0f, 0.0f, 4.0f), 1.0f, 2.0f);
+    light.texture.pixels = {
+        GfVec3f(1.0f, 0.0f, 0.0f), GfVec3f(0.0f, 1.0f, 0.0f),
+        GfVec3f(0.0f, 0.0f, 1.0f), GfVec3f(1.0f, 1.0f, 1.0f),
+        GfVec3f(1.0f, 1.0f, 0.0f), GfVec3f(0.0f, 1.0f, 1.0f),
+        GfVec3f(1.0f, 0.0f, 1.0f), GfVec3f(0.25f, 0.5f, 0.75f)};
+    light.texture.width = 4;
+    light.texture.height = 2;
+    light.texture.colorSpaceName = GfColorSpaceNames->LinearRec709;
+    const GfVec3f position(0.0f);
+    const GfVec3f normal = GfVec3f::ZAxis();
+    const HdEmbreeLightSampler::LightSample centerSideSample =
+        HdEmbreeLightSampler::GetLightSample(
+            light, position, normal, 0.5f, 0.75f);
+    const float expectedPdfSolidAngleInverse =
+        4.0f * static_cast<float>(M_PI) / 9.0f;
+    if (!centerSideSample.valid ||
+        !_IsClose(centerSideSample.omegaInWld, GfVec3f::ZAxis()) ||
+        !_IsClose(centerSideSample.distanceWld, 3.0f) ||
+        !_IsClose(
+            centerSideSample.radianceIn, GfVec3f(0.25f, 0.5f, 0.75f)) ||
+        !_IsClose(centerSideSample.pdfSolidAngleInverse,
+                  expectedPdfSolidAngleInverse)) {
+        std::printf("    center-side cylinder sample was not analytic result\n");
+        return false;
+    }
+
+    const HdEmbreeLightSampler::LightSample openEnd =
+        HdEmbreeLightSampler::EvaluateLightDirection(
+            light,
+            GfVec3f(3.0f, 0.0f, 4.0f),
+            GfVec3f(-1.0f, 0.0f, 0.1f));
+    if (openEnd.valid) {
+        std::printf("    axial ray unexpectedly hit the open cylinder end\n");
+        return false;
+    }
+
+    const std::vector<GfVec2f> samples = {
+        GfVec2f(0.1f, 0.70f),
+        GfVec2f(0.4f, 0.75f),
+        GfVec2f(0.9f, 0.80f),
+    };
+
+    for (const GfVec2f& u : samples) {
+        const HdEmbreeLightSampler::LightSample sampled =
+            HdEmbreeLightSampler::GetLightSample(
+                light, position, normal, u[0], u[1]);
+        const HdEmbreeLightSampler::LightSample evaluated =
+            HdEmbreeLightSampler::EvaluateLightDirection(
+                light, position, sampled.omegaInWld);
+
+        if (!sampled.valid || !evaluated.valid) {
+            std::printf("    expected valid cylinder light samples\n");
+            return false;
+        }
+        if (!_IsClose(sampled.radianceIn, evaluated.radianceIn, 1e-5f)) {
+            std::printf("    sampled/evaluated cylinder radianceIn mismatch\n");
+            return false;
+        }
+        if (!_IsClose(sampled.pdfSolidAngleInverse,
+                      evaluated.pdfSolidAngleInverse, 1e-4f)) {
+            std::printf(
+                "    sampled/evaluated cylinder invPdf mismatch: %f vs %f\n",
+                sampled.pdfSolidAngleInverse,
+                evaluated.pdfSolidAngleInverse);
             return false;
         }
     }
@@ -1247,6 +1339,8 @@ main(int /*argc*/, char** /*argv*/)
               &TestDiskShapingAwareSampleMatchesDirectionalEvaluation);
     _Register("SphereSampleMatchesDirectionalEvaluation",
               &TestSphereSampleMatchesDirectionalEvaluation);
+    _Register("CylinderSampleMatchesDirectionalEvaluation",
+              &TestCylinderSampleMatchesDirectionalEvaluation);
     _Register("DistantDeltaSamplesLocalPositiveZ",
               &TestDistantDeltaSamplesLocalPositiveZ);
     _Register("DistantConeSampleMatchesDirectionalEvaluation",

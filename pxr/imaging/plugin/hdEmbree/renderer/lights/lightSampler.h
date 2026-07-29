@@ -3,8 +3,12 @@
 //
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
-#ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_SAMPLERS_H
-#define PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_SAMPLERS_H
+//
+// Defines the renderer-facing light sampling and directional-evaluation
+// dispatch surface.
+//
+#ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_SAMPLER_H
+#define PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_SAMPLER_H
 
 #include "light.h"
 
@@ -15,9 +19,8 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-/// \class HdEmbreeLightSampler
-///
-/// Utility class to help sample Embree lights for direct lighting.
+/// Utility class that dispatches sampling and fixed-direction evaluation to
+/// the active light type.
 class HdEmbreeLightSampler {
 public:
     enum class SamplingMode {
@@ -74,8 +77,7 @@ public:
                            HdEmbreeRenderColorSpace renderColorSpace =
                                HdEmbreeRenderColorSpace::LinearRec709);
 
-    // callables to be used with std::visit
-    LightSample operator()(HdEmbree_UnknownLight const& rect);
+    LightSample operator()(HdEmbree_UnknownLight const& unknown);
     LightSample operator()(HdEmbree_Rect const& rect);
     LightSample operator()(HdEmbree_Sphere const& sphere);
     LightSample operator()(HdEmbree_Disk const& disk);
@@ -106,4 +108,4 @@ private:
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
-#endif // PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_SAMPLERS_H
+#endif // PXR_IMAGING_PLUGIN_HD_EMBREE_LIGHT_SAMPLER_H

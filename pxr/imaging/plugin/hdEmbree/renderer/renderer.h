@@ -17,7 +17,7 @@
 #include <renderer/lights/light.h>
 #include <renderer/lights/lightLinking.h>
 #include <renderer/lights/lightRegistry.h>
-#include <renderer/lights/lightSamplers.h>
+#include <renderer/lights/lightSampler.h>
 #include <renderer/materials/materialEvalContext.h>
 #include <renderer/sampling/sampling.h>
 

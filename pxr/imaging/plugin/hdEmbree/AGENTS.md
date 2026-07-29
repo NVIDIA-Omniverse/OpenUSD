@@ -307,7 +307,11 @@ plugin in the active Pixi environment.
 - `delegate/light.*`: Hydra/USD Lux light Sprim adapter. Populates renderer-owned light data for cylinder, disk,
   distant, dome, rect, and sphere lights; textures; IES shaping; and finite
   visible light geometry.
-- `renderer/lights/light.h`, `lightRegistry.*`, and `lightSamplers.*`: runtime light data, synchronized lookup ownership, and direct/dome sampling.
+- `renderer/lights/light.h` and `lightRegistry.*`: runtime light data and
+  synchronized lookup ownership. `lightSampler.*` dispatches direct and dome
+  sampling to `rectLight.cpp`, `sphereLight.cpp`, `diskLight.cpp`,
+  `cylinderLight.cpp`, `distantLight.cpp`, and `domeLight.cpp`;
+  `lightSamplerCommon.*` owns shared radiometry and PDF helpers.
 - `renderer/materials/material.h`: stable compiled-material handle populated by the delegate.
 - `renderer/renderBuffer.h`: renderer AOV-output interface implemented by the delegate buffer.
 - `renderer/geometry/meshSamplers.*`, `renderer/geometry/primvarSampler.*`, `renderer/sampling/sampling.h`: primvar sampling and OpenQMC
@@ -643,11 +647,11 @@ convention; do not add an additional glTF-only V flip around texture transforms.
 sphere lights. It reads common LightAPI inputs, color temperature, normalize,
 texture files for dome/rect lights, shaping API inputs, and IES files.
 
-Dome lights are sampled with distributions built from lat-long texture
-luminance and solid angle. Finite light geometry can be visible to primary
-rays through `visibleInPrimaryRay`; those shapes are inserted as Embree
-geometry and tracked by `HdEmbreeRenderer::AddLightGeometry()`/
-`RemoveLightGeometry()`.
+Dome lights are sampled in `renderer/lights/domeLight.cpp` with distributions
+built from lat-long texture luminance and solid angle. Finite light geometry
+can be visible to primary rays through `visibleInPrimaryRay`; those shapes are
+inserted as Embree geometry and tracked by
+`HdEmbreeRenderer::AddLightGeometry()`/`RemoveLightGeometry()`.
 
 Camera visibility for dome-light backgrounds is controlled by the generic
 `domeLightCameraVisibility` render setting, not a light prim attribute.

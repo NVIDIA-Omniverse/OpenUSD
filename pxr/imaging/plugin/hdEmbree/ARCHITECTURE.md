@@ -189,8 +189,10 @@ corresponding type without changing the semantic name.
 - `lights/lightRegistry.h/.cpp`: synchronized ownership of path, dome, and
   finite-geometry lookup containers. The light records themselves are borrowed
   from the delegate.
-- `lights/lightSamplers.h/.cpp`: analytic/environment sampling, directional
-  PDFs, and MIS-facing light samples.
+- `lights/lightSampler.h/.cpp`: renderer-facing sampling and directional-PDF
+  dispatch. `lights/{rect,sphere,disk,cylinder,distant,dome}Light.cpp` owns
+  each light type's geometry and sampling, while
+  `lights/lightSamplerCommon.h/.cpp` owns shared radiometry and PDF helpers.
 - `lights/lightLinking.h`: category sets and light/shadow-link matching.
 - `lights/pxrIES/`: IES parser and photometric-profile wrapper.
 - `materials/material.h`: stable renderer material handle referencing the
@@ -684,7 +686,8 @@ than reading one monolithic translation unit:
 
 Read `renderer.h` for persistent state and function contracts,
 `geometry/context.h` for hit data, `sampling/sampling.h` for random domains,
-`lights/lightSamplers.*` for light PDFs, and
+`lights/lightSampler.*`, its per-type implementations, and
+`lights/lightSamplerCommon.*` for light PDFs, and
 `materials/MaterialXCpp/materials/bsdf.cpp` for the public BSDF API and
 `materials/MaterialXCpp/materials/bsdf/` for foundations, lobe evaluation, and
 closure traversal.
@@ -712,7 +715,9 @@ reviewed the completed changes and explicitly approved committing them.
 
 - Add Hydra support/creation tokens in `delegate/renderDelegate.cpp`.
 - Pull authored data in `HdEmbree_Light::Sync()`; populate the runtime representation declared in `renderer/lights/light.h`.
-- Add sampling and directional PDF logic in `renderer/lights/lightSamplers.*`.
+- Add sampling and directional PDF logic in the matching
+  `renderer/lights/*Light.cpp`; put only multi-type radiometry and PDF helpers
+  in `lightSamplerCommon.*`.
 - Add visible Embree geometry for finite camera-visible lights.
 - Keep radiance evaluation, sampling PDF, normalization, shaping, IES, texture orientation, and linking consistent.
 - Extend light-sampler tests and add a render fixture for visibility/synchronization. Use the external `typhoon-test-suite/usdlux` frame sweeps for LightAPI and sampler regressions.

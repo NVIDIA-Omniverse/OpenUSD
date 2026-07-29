@@ -252,7 +252,7 @@ _Depends on: 14 (the header-vs-TU membership rule only — `mxcpp` already plays
 `mxcpp::Bsdf::detail`). Rebase after 04 and 15, which own
 `renderer/materials/MaterialXCpp/`. Must precede 19._
 
-**18 · [`lightSamplers.cpp` split](18-plan-light-samplers-split.md)** —
+**18 · [Light sampler split](18-plan-light-samplers-split.md)** —
 split the 1,646-line file **one `.cpp` per light type** (`rectLight`,
 `sphereLight`, `diskLight`, `cylinderLight`, `distantLight`, `domeLight`,
 118-305 lines each), header-less in `CPPFILES` like the existing
@@ -260,11 +260,12 @@ split the 1,646-line file **one `.cpp` per light type** (`rectLight`,
 their 13 entry points — `ty::SampleXLight()` /
 `ty::EvaluateXLightDirection()`, each with its own contract — plus a
 `lightSamplerCommon` holding the radiometry every type applies once its
-geometry is resolved, over a verified 14-symbol export list. `lightSamplers` → `lightSampler` (one class). Removes
+geometry is resolved, over 12 owned exports plus `Pi<T>` and `IsFinite` reused
+from `rendererMath.h`. `lightSamplers` → `lightSampler` (one class). Removes
 **all four** forward-declaration groups, and empties the type dispatcher: the
 sphere solid-angle override and the two 28-line rect/disk shaping splits move
 out of `_EvaluateLightDirection` and `operator()` into the shapes that own
-them, leaving seven one-line visitor overloads. ~+210 lines, 11 files where
+them, leaving seven one-line visitor overloads. +222 lines (12.5%), 11 files where
 there are 2, and **17 new cross-TU boundaries** — 13 of them one per light
 sample/evaluation, which no amount of `inline` can recover without LTO; that
 is the plan's one irreducible cost and its measurement gate. Nine commits;
@@ -275,7 +276,7 @@ adversarial test review. Validates against the named per-type stages in
 common extraction and the final rename run all of them. Two earlier drafts are **rejected** in the plan:
 infinite-vs-finite, and one header per type.
 _Depends on: 05 (its `LightSample` family rename must land first), 14. Must
-precede 19, 20, and 23 (whose `_pi` item for this file this plan completes).
+precede 19, 20, and 23 (which later collapses shared `ty::Pi<T>`).
 Independent of 16 and 17._
 
 **19 · [`ty` namespace pass](19-plan-ty-namespace.md)** — complete the namespace
@@ -345,7 +346,7 @@ owned by 05 and 20.
 _Depends on: everything. A mechanical sweep over the settled tree — running it
 earlier wastes effort on code that 06/09/10/14 delete or relocate. The `_pi`
 item must follow 14, which relocates the `rendererImpl.h` definition to
-`rendererMath.h`, and 18, which owns the `lightSamplers.cpp` definition._
+`rendererMath.h`, and 18, which owns the extracted light-sampler uses._
 
 ## Overlap ownership (who is authoritative)
 
@@ -357,7 +358,7 @@ Several plans touch the same edit; each such edit has one authoritative owner:
 | `_PopulateRtMesh` lifetime and failure contract | 13-mesh-ownership | 16-source-organization, 21-api-contracts |
 | `_PopulateRtMesh` function extraction | 16-source-organization | 13-mesh-ownership explicitly declines it |
 | `bsdf.cpp` file layout | 17-bsdf-split | 19-ty-namespace |
-| `lightSamplers.cpp` file layout and per-type contracts | 18-light-samplers-split | 19-ty-namespace, 21-api-contracts |
+| Light-sampler file layout and per-type contracts | 18-light-samplers-split | 19-ty-namespace, 21-api-contracts |
 | Primvar sampler ownership and material binding invalidation | 15-primvar-binding-cache | 13-mesh-ownership, 21-api-contracts |
 | Systematic declaration contracts | 21-api-contracts | owning plans write contracts for declarations they introduce |
 | Displacement exception contract | 04-materialx-error-handling | 10-displacement-cleanup |
@@ -368,14 +369,15 @@ Several plans touch the same edit; each such edit has one authoritative owner:
 | `LightSample` known field renames | 05-naming-core | 21-api-contracts |
 | Remaining naming inventory and exceptions | 20-naming-audit | 05-naming-core defines the convention |
 | Documentation authority boundaries | 22-documentation-roles | all earlier plans update affected prose |
-| `_pi<T>` → scalar | 23-auto-types; 18 owns its extracted light-sampler constant | 14 relocates the renderer definition; 19 owns `ty::pbrt` |
+| `_pi<T>` → scalar | 23-auto-types | 14 relocates the shared renderer definition; 18 reuses it; 19 owns `ty::pbrt` |
 
 ## Hot-file serialization (must be sequential, never parallel)
 
 - `renderer.h` / `renderer.cpp`: **02 → 06 → 12**, plus 09 and 23.
 - `rendererImpl.h`: **05, 07, 09, 10, 12 → 14 → 15 → 19 → 23**.
 - `mesh.cpp`: **09 → 13 → 15 → 16 → 23**.
-- `renderer/lights/lightSamplers.cpp`: **05 → 18 → 19 → 20 → 21 → 23**.
+- `renderer/lights/lightSampler.cpp` and per-type sampler files:
+  **18 → 19 → 20 → 21 → 23**.
 - `CMakeLists.txt`: **01 → 12, 14, 17, 18**.
 - `geometry/context.h` / `geometry/primvarSampling.h`: **13 → 15 → 20 → 21**.
 - `renderer/materials/MaterialXCpp/`: **04 → 15 → 17 → 20 → 21**.

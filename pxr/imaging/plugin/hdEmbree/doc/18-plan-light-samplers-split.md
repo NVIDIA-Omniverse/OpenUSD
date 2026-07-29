@@ -78,7 +78,7 @@ Every anonymous-namespace symbol, assigned:
 | Cylinder | `_AreaCylinder` `:73`, `_SampleCylinder` `:551`, `_IntersectCylinderLight` `:1179`, + `operator()` `:1631-1638` | 118 |
 | Distant | `:612-783` entire, 7 symbols | 172 |
 | Dome | `:154-254` (5 symbols), `:263-360` (6 symbols), `:1377-1482` (3 symbols) | 305 |
-| Common | `_pi` `:28`, small math, colour/blackbody `:85-124`, `_ShapeSample`, `_SampleLightTexture` `:362`, `_SampleRectLightTexture` `:381`, `_MakeAreaShapeSample`, `_InvalidLightSample`, `_EvalLightBasic`, shaping-aware PDF `:819-939`, `_EvalAreaLight` `:941-991` | 331 |
+| Common | small math, colour/blackbody `:85-124`, `_ShapeSample`, `_SampleLightTexture` `:362`, `_SampleRectLightTexture` `:381`, `_MakeAreaShapeSample`, `_InvalidLightSample`, `_EvalLightBasic`, shaping-aware PDF `:819-939`, `_EvalAreaLight` `:941-991` | 331 |
 | Dispatch | `_EvaluateLightDirection` (shape branches removed), the class surface | 140 |
 
 No symbol appears twice. The largest per-type file is dome at 305 lines; the
@@ -92,12 +92,10 @@ Two assignments are not obvious and are forced by the boundary, not chosen:
   shared. A TU-local rect function cannot be called from common. The
   type-specific branch therefore stays in common, visible and commented as the
   wart it is. See "Risks" for the follow-up that removes it.
-- **`_pi<T>` (`:28`) goes to common.** Nine of the extracted functions use it
-  across five of the six types. It is declared in `lightSamplerCommon.h` as a
-  plain `constexpr float`, which is what `23-plan-auto-types.md` wants it to
-  become anyway — that plan's item for *this* file is then already done, and it
-  sweeps only the remaining definitions elsewhere in the tree. A later plan
-  cannot retroactively make this one build.
+- **`_pi<T>` (`:28`) is deleted in favor of `ty::Pi<T>` from
+  `rendererMath.h`.** Nine extracted functions use it across five of the six
+  types. Plan 23 remains responsible for collapsing that one shared template
+  to a scalar and updating all of its consumers.
 
 ## Proposed design
 
@@ -230,17 +228,19 @@ be declared in `lightSamplerCommon.h` and therefore becomes `ty::Foo` per
 `14-plan-renderer-impl-header.md`. A symbol whose only callers are inside
 `lightSamplerCommon.cpp` stays `_Foo` and stays out of the header.
 
-The exported set is exactly 14. The "called from" column lists only per-type
-callers — uses from inside `lightSamplerCommon.cpp` itself do not justify a
-header declaration and are excluded:
+The common header owns exactly 12 exports and includes `rendererMath.h` for the
+existing `ty::Pi<T>` and `ty::IsFinite()` definitions. The "called from"
+column lists only per-type callers — uses from inside
+`lightSamplerCommon.cpp` itself do not justify a header declaration and are
+excluded:
 
 | `ty::` export | Called from |
 | --- | --- |
-| `Pi` (`inline constexpr float`) | sphere, disk, cylinder, distant, dome — **not rect**, whose area, sampling, and intersection are all linear |
+| `Pi<float>` (from `rendererMath.h`) | sphere, disk, cylinder, distant, dome — **not rect**, whose area, sampling, and intersection are all linear |
 | `Sqr` | sphere (`:1017`), cylinder (`:559`), distant (`:768`), dome (`:1456`) |
-| `ClampUnit` | sphere (`:1015`, `:1018`), distant (`:766`, `:769`), dome (`:177`, `:183`, `:221`, `:277`, `:1455`) |
+| `ClampUnitHalfOpen` | sphere (`:1015`, `:1018`), distant (`:766`, `:769`), dome (`:177`, `:183`, `:221`, `:277`, `:1455`) |
 | `WrapUnit` | dome (`:175`, `:272`) |
-| `IsFinite` | distant (`:623`, `:692`), dome (`:291`, `:306`, `:331`, `:352`, `:1382`, `:1422`) |
+| `IsFinite` (from `rendererMath.h`) | distant (`:623`, `:692`), dome (`:291`, `:306`, `:331`, `:352`, `:1382`, `:1422`) |
 | `ShapeSample` (struct) | all four finite — it is the parameter type of `EvalAreaLight` |
 | `MakeAreaShapeSample` | the four finite intersection functions |
 | `InvalidLightSample` | all six |
@@ -272,11 +272,12 @@ objects (only `EvalLightBasic`), and the inner shaping-PDF chain
 
 *Axis 2 — inline in the header or out-of-line in the `.cpp`.* This applies only
 to the exported set and is a performance decision, not an interface one.
-Definitions go in the header for `Pi`, `Sqr`, `ClampUnit`, `WrapUnit`,
-`IsFinite`, `InvalidLightSample`, `MakeAreaShapeSample`, and the two weights —
-they are per-light-sample-per-path-vertex and trivially small. `EvalLightBasic`,
-`SampleLightTexture`, `EvalAreaLight`, and `ApplyShapingAwareFinitePdf` are
-declared in the header and defined in the `.cpp`.
+Definitions go in the header for `Sqr`, `ClampUnitHalfOpen`, `WrapUnit`,
+`InvalidLightSample`, `MakeAreaShapeSample`, and the two weights — they are
+per-light-sample-per-path-vertex and trivially small. `Pi<T>` and `IsFinite`
+come from `rendererMath.h`. `EvalLightBasic`, `SampleLightTexture`,
+`EvalAreaLight`, and `ApplyShapingAwareFinitePdf` are declared in the header
+and defined in the `.cpp`.
 
 These four are **not** the plan's main cross-TU cost; see "The unavoidable
 cost" under Validation before treating them as the perf question.
@@ -364,8 +365,9 @@ Nine commits, bottom-up so each one builds:
    against the *current* code, so it is a real regression check for everything
    after it. Per `AGENTS.md`, run the adversarial test-review agent on this
    commit before continuing.
-2. `lightSamplerCommon.{h,cpp}` — move the shared radiometry, `_pi`, and both
-   texture lookups; no other change. `lightSamplers.cpp` includes it.
+2. `lightSamplerCommon.{h,cpp}` — move the shared radiometry and both texture
+   lookups, and reuse `rendererMath.h` for `Pi<T>` and `IsFinite`; no other
+   change. `lightSamplers.cpp` includes it.
 3. `cylinderLight.cpp` + `lightSamplerDispatch.h` — smallest type, no shaping,
    no solid-angle path. Establishes the interface shape and creates the
    dispatch header with its first two declarations.
@@ -402,7 +404,7 @@ nobody reads twice.
   already private when this plan adds its own.
 - Must precede `19-plan-ty-namespace.md`, which needs the final filenames and
   renames `HdEmbreeLightSampler` and the `HdEmbree_` light shapes, and
-  `23-plan-auto-types.md`, whose `_pi` item for this file this plan completes.
+  `23-plan-auto-types.md`, which later collapses shared `ty::Pi<T>`.
 - `21-plan-api-contracts.md` follows, and does **not** cover the 13 dispatch
   declarations — this plan writes those contracts in its own commits. 21 keeps
   `LightSample` and the light-shape structs.
@@ -542,9 +544,8 @@ Three include sites follow the header rename: `renderer/renderer.h:15`,
 
 ## Risks and decisions
 
-- **Cost: ~+210 lines (12%), 11 files where there are 2.** Roughly 80 lines of
-  ceremony plus ~180 lines of declarations and their contract comments, against
-  1,746 lines today. This is a partition, not an abstraction, so Goal 1's "net
+- **Cost: +222 lines (12.5%), 11 files where there are 2.** This is a
+  partition, not an abstraction, so Goal 1's "net
   reduction of twice what the abstraction adds" does not literally apply — but
   the increase is real. What is bought is the four forward-declaration groups,
   the empty dispatcher, and per-type addressability. *An earlier revision of
@@ -557,10 +558,10 @@ Three include sites follow the header rename: `renderer/renderer.h:15`,
   "how is a rect light sampled" stays a two-file answer. Accept it; the
   alternative is duplicating the radiometry six times.
 - **`lightSamplerCommon` is the file most likely to rot into a junk drawer.**
-  Cap its *header* at the 14 exports tabled above — that list is the file's
-  contract, and anything added to it that fewer than two light types call
-  belongs in the type that calls it. Its `.cpp` may grow only helpers private to
-  those 14.
+  Cap its *header* at the 12 owned exports tabled above; `Pi<T>` and `IsFinite`
+  remain imported from `rendererMath.h`. Anything added that fewer than two
+  light types call belongs in the type that calls it. Its `.cpp` may grow only
+  helpers private to those exports.
 - **One wart the split relocates and does not fix.** `_EvalAreaLight` branches
   on `std::holds_alternative<HdEmbree_Rect>` (`:965`) to pick
   `_SampleRectLightTexture` over `_SampleLightTexture` — a per-type decision
@@ -600,8 +601,9 @@ light type.
 - `lightSamplerDispatch.h` declares exactly 13 functions inside
   `namespace ty { }`, each with its own tailored contract covering the failure
   modes tabled above — not "identical to rect".
-- `lightSamplerCommon.h` declares exactly the 14 exports tabled above, and no
-  symbol called from a per-type `.cpp` is missing from it.
+- `lightSamplerCommon.h` declares exactly the 12 owned exports tabled above,
+  reuses `Pi<T>` and `IsFinite` from `rendererMath.h`, and no symbol called from
+  a per-type `.cpp` is missing from those two headers.
 - Every moved block's comments say WHAT and WHY, not HOW; no algorithm changed
   while moving.
 - **No ordering-only forward declarations remain in any `.cpp`.** (Headers
