@@ -35,7 +35,7 @@ other**, not developed in parallel. The plans may all be implemented on one
 branch; keep logical commit boundaries where they aid review and bisection.
 "Depends on" means the listed work must be completed earlier in that branch.
 There are no suffix-number exceptions: filenames form one contiguous execution
-sequence from `01` through `25`.
+sequence from `01` through `26`.
 
 ## Execution order
 
@@ -360,6 +360,20 @@ path so their emptiness is the single rule, then drop the mode logic at both
 consumers. **Not behavior-preserving**: unrefined meshes currently report
 triangle indices where clients expect face indices, so `elementId` values change.
 _Discovered by 21. Implement after the settled cleanup sequence._
+
+**26 · [Bump and shadow-terminator normals](26-plan-fix-bump.md)** — land the
+four shading fixes carried on the unrebased `typhoon-fix-bump` branch: validate
+material normals against the smooth base normal rather than the coarse facet,
+make diffuse response view-independent, use the interpolated frame for the
+`tangent`/`bitangent` nodes, and lift shadow-ray origins toward the smooth
+triangle surface near a terminator. Goes further than the branch by collapsing
+per-lobe normal resolution to a single `ResolveShadingNormal` — the branch fixed
+the view dependence for diffuse only and left a second resolver and a lobe-type
+branch behind. **Not behavior-preserving**: bump-mapped, tangent-driven,
+coat-normal, and coarsely tessellated surfaces all change. Also resolves the
+eleven loose ends that branch carries.
+_Source branch predates 19–21, so only one of its three commits cherry-picks
+cleanly; the other two are re-implemented against the settled tree._
 
 ## Overlap ownership (who is authoritative)
 
