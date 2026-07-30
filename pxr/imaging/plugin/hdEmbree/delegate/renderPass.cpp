@@ -78,8 +78,9 @@ _AddNamespacedRenderSettings(
             continue;
         }
 
-        if (auto ds = container->Get(name)) {
-            if (auto sampled = HdSampledDataSource::Cast(ds)) {
+        if (HdDataSourceBaseHandle ds = container->Get(name)) {
+            if (HdSampledDataSourceHandle sampled =
+                    HdSampledDataSource::Cast(ds)) {
                 VtValue value = sampled->GetValue(0);
                 if (!value.IsEmpty()) {
                     (*renderSettings)[name] = value;
@@ -100,8 +101,9 @@ _AddRenderSetting(
         return;
     }
 
-    if (auto ds = container->Get(key)) {
-        if (auto sampled = HdSampledDataSource::Cast(ds)) {
+    if (HdDataSourceBaseHandle ds = container->Get(key)) {
+        if (HdSampledDataSourceHandle sampled =
+                HdSampledDataSource::Cast(ds)) {
             VtValue value = sampled->GetValue(0);
             if (!value.IsEmpty()) {
                 (*renderSettings)[key] = value;
@@ -126,7 +128,8 @@ _GetNamespacedRenderSettings(HdRenderSettingsSchema const &rsSchema)
         namespacedSettings,
         HdRenderSettingsTokens->domeLightCameraVisibility,
         &renderSettings);
-    if (auto colorSpace = rsSchema.GetRenderingColorSpace()) {
+    if (HdTokenDataSourceHandle colorSpace =
+            rsSchema.GetRenderingColorSpace()) {
         const TfToken value = colorSpace->GetTypedValue(0);
         if (!value.IsEmpty()) {
             renderSettings[HdRenderSettingsPrimTokens->renderingColorSpace] =
@@ -174,7 +177,7 @@ static bool
 _RenderVarRequestsColor(HdRenderVarSchema varSchema)
 {
     TfToken sourceName;
-    if (auto handle = varSchema.GetSourceName()) {
+    if (HdTokenDataSourceHandle handle = varSchema.GetSourceName()) {
         sourceName = handle->GetTypedValue(0);
     }
 
@@ -182,7 +185,7 @@ _RenderVarRequestsColor(HdRenderVarSchema varSchema)
         return false;
     }
 
-    if (auto handle = varSchema.GetSourceType()) {
+    if (HdTokenDataSourceHandle handle = varSchema.GetSourceType()) {
         const TfToken sourceType = handle->GetTypedValue(0);
         if (!sourceType.IsEmpty() && sourceType != TfToken("raw")) {
             return false;
@@ -513,7 +516,7 @@ _GetSceneFrameAndTime(const HdSceneIndexBaseRefPtr &si,
     }
 
     double currentFrame = 0.0;
-    if (auto frameHandle = sgSchema.GetCurrentFrame()) {
+    if (HdDoubleDataSourceHandle frameHandle = sgSchema.GetCurrentFrame()) {
         const double value = frameHandle->GetTypedValue(0);
         if (std::isfinite(value)) {
             currentFrame = value;
@@ -521,7 +524,8 @@ _GetSceneFrameAndTime(const HdSceneIndexBaseRefPtr &si,
     }
 
     double timeCodesPerSecond = 1.0;
-    if (auto tcpsHandle = sgSchema.GetTimeCodesPerSecond()) {
+    if (HdDoubleDataSourceHandle tcpsHandle =
+            sgSchema.GetTimeCodesPerSecond()) {
         const double value = tcpsHandle->GetTypedValue(0);
         if (std::isfinite(value) && value > 0.0) {
             timeCodesPerSecond = value;
@@ -606,11 +610,11 @@ HdEmbreeRenderPass::_WriteActiveRenderProducts()
         }
 
         SdfPath productPath;
-        if (auto handle = productSchema.GetPath()) {
+        if (HdPathDataSourceHandle handle = productSchema.GetPath()) {
             productPath = handle->GetTypedValue(0);
         }
 
-        if (auto handle = productSchema.GetType()) {
+        if (HdTokenDataSourceHandle handle = productSchema.GetType()) {
             const TfToken productType = handle->GetTypedValue(0);
             if (!productType.IsEmpty() && productType != TfToken("raster")) {
                 TF_WARN("Skipping unsupported RenderProduct <%s> of type '%s'",
@@ -627,7 +631,7 @@ HdEmbreeRenderPass::_WriteActiveRenderProducts()
         }
 
         TfToken productName;
-        if (auto handle = productSchema.GetName()) {
+        if (HdTokenDataSourceHandle handle = productSchema.GetName()) {
             productName = handle->GetTypedValue(0);
         }
         if (productName.IsEmpty()) {

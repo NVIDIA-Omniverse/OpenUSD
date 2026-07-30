@@ -57,7 +57,7 @@ ty::Renderer::_AccumulateEnvironment(_PathState* state) const
             continue;
         }
 
-        auto const& light = *it.second;
+        ty::LightData const& light = *it.second;
         if (!light.visible ||
             !std::holds_alternative<ty::DistantLight>(light.lightVariant) ||
             (!light.lightLink.IsEmpty() &&
@@ -165,7 +165,7 @@ ty::Renderer::_ComputeDirectLightingMIS(
             ++lightIndex;
             continue;
         }
-        auto const& light = *it.second;
+        ty::LightData const& light = *it.second;
         if (!light.visible ||
             !ty::MatchesLink(light.lightLink, receiverCategories)) {
             ++lightIndex;
@@ -384,7 +384,7 @@ ty::Renderer::_ComputeMediumDirectLighting(
             ++lightIndex;
             continue;
         }
-        auto const& light = *it.second;
+        ty::LightData const& light = *it.second;
         if (!light.visible ||
             !ty::MatchesLink(light.lightLink, receiverCategories)) {
             ++lightIndex;

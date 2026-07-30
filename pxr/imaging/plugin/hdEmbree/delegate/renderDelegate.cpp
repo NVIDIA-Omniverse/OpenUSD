@@ -483,7 +483,7 @@ HdEmbreeRenderDelegate::CreateRprim(TfToken const& typeId,
                                     SdfPath const& rprimId)
 {
     if (typeId == HdPrimTypeTokens->mesh) {
-        auto* mesh = new HdEmbreeMesh(rprimId);
+        HdEmbreeMesh* mesh = new HdEmbreeMesh(rprimId);
         {
             std::lock_guard<std::mutex> lock(_meshRegistryMutex);
             _meshes.push_back(mesh);
@@ -499,7 +499,7 @@ HdEmbreeRenderDelegate::CreateRprim(TfToken const& typeId,
 void
 HdEmbreeRenderDelegate::DestroyRprim(HdRprim *rPrim)
 {
-    if (auto* mesh = dynamic_cast<HdEmbreeMesh*>(rPrim)) {
+    if (HdEmbreeMesh* mesh = dynamic_cast<HdEmbreeMesh*>(rPrim)) {
         std::lock_guard<std::mutex> lock(_meshRegistryMutex);
         auto it = std::find(_meshes.begin(), _meshes.end(), mesh);
         if (it != _meshes.end()) {

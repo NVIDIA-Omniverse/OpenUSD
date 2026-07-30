@@ -17,6 +17,8 @@
 #include "pxr/base/vt/value.h"
 #include "pxr/usd/sdf/assetPath.h"
 
+#include <vector>
+
 PXR_NAMESPACE_OPEN_SCOPE
 
 namespace {
@@ -168,27 +170,27 @@ _ConvertValue(const VtValue& value)
 
     // Vectors
     if (value.IsHolding<GfVec2f>()) {
-        auto gf = value.UncheckedGet<GfVec2f>();
+        GfVec2f gf = value.UncheckedGet<GfVec2f>();
         return mxcpp::Value(mxcpp::Vec2f(gf[0], gf[1]));
     }
     if (value.IsHolding<GfVec3f>()) {
-        auto gf = value.UncheckedGet<GfVec3f>();
+        GfVec3f gf = value.UncheckedGet<GfVec3f>();
         return mxcpp::Value(mxcpp::Vec3f(gf[0], gf[1], gf[2]));
     }
     if (value.IsHolding<GfVec3d>()) {
-        auto gf = value.UncheckedGet<GfVec3d>();
+        GfVec3d gf = value.UncheckedGet<GfVec3d>();
         return mxcpp::Value(mxcpp::Vec3f(
             static_cast<float>(gf[0]),
             static_cast<float>(gf[1]),
             static_cast<float>(gf[2])));
     }
     if (value.IsHolding<GfVec4f>()) {
-        auto gf = value.UncheckedGet<GfVec4f>();
+        GfVec4f gf = value.UncheckedGet<GfVec4f>();
         return mxcpp::Value(
             mxcpp::Vec4f(gf[0], gf[1], gf[2], gf[3]));
     }
     if (value.IsHolding<GfMatrix3f>()) {
-        const auto gf = value.UncheckedGet<GfMatrix3f>();
+        GfMatrix3f const gf = value.UncheckedGet<GfMatrix3f>();
         mxcpp::Mat3f result;
         for (int row = 0; row < 3; ++row) {
             for (int col = 0; col < 3; ++col) {
@@ -198,7 +200,7 @@ _ConvertValue(const VtValue& value)
         return mxcpp::Value(result);
     }
     if (value.IsHolding<GfMatrix3d>()) {
-        const auto gf = value.UncheckedGet<GfMatrix3d>();
+        GfMatrix3d const gf = value.UncheckedGet<GfMatrix3d>();
         mxcpp::Mat3f result;
         for (int row = 0; row < 3; ++row) {
             for (int col = 0; col < 3; ++col) {
@@ -208,7 +210,7 @@ _ConvertValue(const VtValue& value)
         return mxcpp::Value(result);
     }
     if (value.IsHolding<GfMatrix4f>()) {
-        auto gf = value.UncheckedGet<GfMatrix4f>();
+        GfMatrix4f gf = value.UncheckedGet<GfMatrix4f>();
         mxcpp::Mat4f result;
         for (int row = 0; row < 4; ++row) {
             for (int col = 0; col < 4; ++col) {
@@ -218,7 +220,7 @@ _ConvertValue(const VtValue& value)
         return mxcpp::Value(result);
     }
     if (value.IsHolding<GfMatrix4d>()) {
-        auto gf = value.UncheckedGet<GfMatrix4d>();
+        GfMatrix4d gf = value.UncheckedGet<GfMatrix4d>();
         mxcpp::Mat4f result;
         for (int row = 0; row < 4; ++row) {
             for (int col = 0; col < 4; ++col) {
@@ -343,7 +345,7 @@ ty::ConvertHdNetworkToMxcppGraph(
             const std::string canonicalInputName =
                 _CanonicalInputName(
                     originalNodeTypeId, inputName.GetString());
-            auto& conns =
+            std::vector<mxcpp::GraphConnection>& conns =
                 node.inputConnections[canonicalInputName];
             for (const auto& conn : connections) {
                 mxcpp::GraphConnection gc;

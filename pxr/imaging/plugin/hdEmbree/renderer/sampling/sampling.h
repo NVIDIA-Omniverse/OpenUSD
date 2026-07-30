@@ -172,6 +172,7 @@ struct SampleDomain
     {
         const int domainKey =
             static_cast<int>(SampleDomainKeyValue(key));
+        // C++17 requires auto for the std::visit visitor parameter.
         return std::visit(
             [this, domainKey](auto const& sampler)
                 -> SampleDomain {
@@ -194,6 +195,7 @@ struct SampleDomain
         const int safeIndex = std::max(index, 0);
         const int domainKey =
             static_cast<int>(SampleDomainKeyValue(key));
+        // C++17 requires auto for the std::visit visitor parameter.
         return std::visit(
             [this, domainKey, safeSize, safeIndex](auto const& sampler)
                 -> SampleDomain {
@@ -216,6 +218,7 @@ struct SampleDomain
         const int safeIndex = std::max(index, 0);
         const int domainKey =
             static_cast<int>(SampleDomainKeyValue(key));
+        // C++17 requires auto for the std::visit visitor parameter.
         return std::visit(
             [this, domainKey, safeIndex](auto const& sampler)
                 -> SampleDomain {
@@ -237,6 +240,7 @@ struct SampleDomain
         const int safeIndex = std::max(index, 0);
         const int domainKey =
             static_cast<int>(SampleDomainKeyValue(key));
+        // C++17 requires auto for the std::visit visitor parameter.
         return std::visit(
             [this, domainKey, safeIndex](auto const& sampler)
                 -> SampleDomain {
@@ -283,6 +287,7 @@ private:
         static_assert(Size <= 4, "Draw size must be at most four.");
 
         std::array<float, Size> sample{};
+        // C++17 requires auto for the std::visit visitor parameter.
         std::visit(
             [&sample](auto const& sampler) {
                 using SamplerT = std::decay_t<decltype(sampler)>;

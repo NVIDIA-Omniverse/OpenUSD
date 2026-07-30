@@ -21,6 +21,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <mutex>
 #include <thread>
 
 // -------------------------------------------------------------------------
@@ -46,7 +47,7 @@ PXR_NAMESPACE_USING_DIRECTIVE
 class _ScopedThreadScheduler {
 public:
     _ScopedThreadScheduler() {
-        auto limit = WorkGetConcurrencyLimitSetting();
+        unsigned int limit = WorkGetConcurrencyLimitSetting();
         if (limit != 0) {
             _tbbTaskSchedInit.emplace(limit);
         }
@@ -187,7 +188,7 @@ ty::Renderer::SetRenderColorSpace(ty::RenderColorSpace colorSpace)
     _materialEvalServices.renderColorSpace = colorSpace;
     _materialEvalServices.luminanceCoefficients =
         ty::GetLuminanceCoefficients(colorSpace);
-    if (auto* oiio =
+    if (ty::OiioTextureSystem* oiio =
             dynamic_cast<ty::OiioTextureSystem*>(_textureSystem.get())) {
         oiio->SetRenderColorSpace(colorSpace);
     }
@@ -214,7 +215,8 @@ ty::Renderer::DidLastFrameProduceValidPixels() const
 float
 ty::Renderer::GetRenderElapsedSeconds() const
 {
-    auto now = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point now =
+        std::chrono::steady_clock::now();
     return std::chrono::duration<float>(now - _renderStartTime).count();
 }
 
@@ -377,7 +379,8 @@ ty::Renderer::Render(HdRenderThread *renderThread)
             // replicate each sampled pixel across its block.
             {
                 HD_TRACE_SCOPE("ty::Renderer::ResolvePreviewPass");
-                auto lock = renderThread->LockFramebuffer();
+                std::unique_lock<std::mutex> lock =
+                    renderThread->LockFramebuffer();
                 for (size_t i = 0; i < _aovBindings.size(); ++i) {
                     ty::RenderBufferInterface *renderBuffer =
                         dynamic_cast<ty::RenderBufferInterface*>(
@@ -439,7 +442,8 @@ ty::Renderer::Render(HdRenderThread *renderThread)
         // refinement instead of staying blank until convergence.
         {
             HD_TRACE_SCOPE("ty::Renderer::ResolveSamplePass");
-            auto lock = renderThread->LockFramebuffer();
+            std::unique_lock<std::mutex> lock =
+                renderThread->LockFramebuffer();
             for (size_t i = 0; i < _aovBindings.size(); ++i) {
                 ty::RenderBufferInterface *renderBuffer =
                     dynamic_cast<ty::RenderBufferInterface*>(

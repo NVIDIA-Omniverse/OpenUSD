@@ -614,7 +614,7 @@ ty::ComputeDisplacedSubdivFrame(
         return false;
     }
 
-    auto const* faceVertexCounts = static_cast<uint32_t const*>(
+    uint32_t const* faceVertexCounts = static_cast<uint32_t const*>(
         rtcGetGeometryBufferData(geometry, RTC_BUFFER_TYPE_FACE, 0));
     if (!faceVertexCounts) {
         return false;

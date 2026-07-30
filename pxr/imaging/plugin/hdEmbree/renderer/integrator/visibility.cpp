@@ -292,7 +292,7 @@ ty::Renderer::_FindNearestFiniteLightHit(
             continue;
         }
 
-        auto const& light = *it.second;
+        ty::LightData const& light = *it.second;
         if (!light.visible) {
             continue;
         }

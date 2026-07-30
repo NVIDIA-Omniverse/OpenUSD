@@ -202,7 +202,7 @@ ty::ComputeTriangleSurfaceDerivatives(
     {
         auto it = prototypeContext->primvarMap.find(_tokensSt);
         if (it != prototypeContext->primvarMap.end()) {
-            auto* vtxSampler =
+            ty::TriangleVertexSampler* vtxSampler =
                 dynamic_cast<ty::TriangleVertexSampler*>(
                     it->second.get());
             if (vtxSampler) {
@@ -210,7 +210,7 @@ ty::ComputeTriangleSurfaceDerivatives(
                     primID, &st[0], &st[1], &st[2]);
             }
             if (!haveSt) {
-                auto* fvSampler =
+                ty::TriangleFaceVaryingSampler* fvSampler =
                     dynamic_cast<ty::TriangleFaceVaryingSampler*>(
                         it->second.get());
                 if (fvSampler) {
@@ -228,7 +228,7 @@ ty::ComputeTriangleSurfaceDerivatives(
     {
         auto it = prototypeContext->primvarMap.find(HdTokens->normals);
         if (it != prototypeContext->primvarMap.end()) {
-            auto* vtxSampler =
+            ty::TriangleVertexSampler* vtxSampler =
                 dynamic_cast<ty::TriangleVertexSampler*>(
                     it->second.get());
             if (vtxSampler) {
@@ -237,7 +237,7 @@ ty::ComputeTriangleSurfaceDerivatives(
                     &normalsSrfObjExt[2]);
             }
             if (!haveNormals) {
-                auto* fvSampler =
+                ty::TriangleFaceVaryingSampler* fvSampler =
                     dynamic_cast<ty::TriangleFaceVaryingSampler*>(
                         it->second.get());
                 if (fvSampler) {
@@ -404,13 +404,13 @@ ty::ComputeSubdivSurfaceDerivatives(
         if (it != prototypeContext->primvarMap.end()) {
             GfVec3f sampledNormal(0.0f);
             bool haveNormalDerivatives = false;
-            auto* vertexSampler =
+            ty::SubdivVertexSampler* vertexSampler =
                 dynamic_cast<ty::SubdivVertexSampler*>(
                     it->second.get());
-            auto* varyingSampler =
+            ty::SubdivVaryingSampler* varyingSampler =
                 dynamic_cast<ty::SubdivVaryingSampler*>(
                     it->second.get());
-            auto* fvarSampler =
+            ty::SubdivFaceVaryingSampler* fvarSampler =
                 dynamic_cast<ty::SubdivFaceVaryingSampler*>(
                     it->second.get());
             if (vertexSampler) {

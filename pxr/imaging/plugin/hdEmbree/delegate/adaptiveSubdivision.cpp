@@ -231,6 +231,7 @@ _ClipEdgeToViewVolume(GfVec4d* pos0, GfVec4d* pos1)
     // OpenUSD camera matrices, with X/Y headroom for displaced patches that
     // can move into view. Doing this before division prevents remote edges or
     // eye-plane crossings from producing huge subdivision levels.
+    // Keep callable types visible so optimized builds inline every plane.
     const auto clipToPlane = [&](auto const& distance) {
         double d0 = distance(*pos0);
         double d1 = distance(*pos1);

@@ -80,14 +80,17 @@ meaningful. `auto` is allowed only for:
   lookup;
 - a `std::visit` visitor lambda parameter, with one visitor lambda per dispatch
   site and a comment identifying the C++17 exception;
+- a generic lambda parameter for a local callable helper when every call site
+  is in the same function, a concrete callable parameter would add runtime
+  dispatch, and a comment identifies the performance exception;
 - binding a lambda closure object;
 - a structured binding.
 
 This does not permit `auto` for a lookup result with a short meaningful type,
-locals inside a visitor, or a generic lambda unrelated to `std::visit`. When
-replacing `auto`, preserve the deduced type exactly, including reference
-category, top-level constness, and pointee constness. Do not substitute a
-convertible or base type.
+locals inside a visitor, or a generic lambda unrelated to `std::visit` or the
+documented local callable-helper exception. When replacing `auto`, preserve
+the deduced type exactly, including reference category, top-level constness,
+and pointee constness. Do not substitute a convertible or base type.
 
 ## Source and linkage rules
 

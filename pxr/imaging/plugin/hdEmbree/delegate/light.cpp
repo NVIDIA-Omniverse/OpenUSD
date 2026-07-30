@@ -448,6 +448,7 @@ _BuildVisibleLightGeometry(
     points->clear();
     triangles->clear();
 
+    // C++17 requires auto for the std::visit visitor parameter.
     std::visit([&](auto const& typedLight) {
         using T = std::decay_t<decltype(typedLight)>;
         if constexpr (std::is_same_v<T, ty::RectLight>) {
@@ -830,7 +831,8 @@ ty::SampleDirectionalShaping(
 
     const float sample = GfClamp(
         u1, 0.0f, std::nextafter(1.0f, 0.0f));
-    const auto cdfBegin = distribution.cdf.begin();
+    std::vector<float>::const_iterator cdfBegin =
+        distribution.cdf.begin();
     const auto cdfIt = std::upper_bound(
         cdfBegin + 1, distribution.cdf.end(), sample);
     const int idx = std::clamp(
@@ -912,7 +914,7 @@ ty::DirectionalShapingPdf(
     const float phi = _Phi(omegaInLocal);
     // Row boundaries are descending in cos(theta); row v covers
     // (bounds[v + 1], bounds[v]].
-    const auto& bounds = distribution.rowCosThetaBounds;
+    std::vector<float> const& bounds = distribution.rowCosThetaBounds;
     const auto rowIt = std::upper_bound(
         bounds.begin(), bounds.end(), cosTheta, std::greater<float>());
     const int indexRow = std::clamp(
@@ -1189,6 +1191,7 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
             id, _visibleInPrimaryRayToken).GetWithDefault(false);
         // Switch on the _lightData type and pull the relevant attributes from
         // the scene delegate.
+        // C++17 requires auto for the std::visit visitor parameter.
         std::visit([this, &id, &sceneDelegate](auto& typedLight) {
             using T = std::decay_t<decltype(typedLight)>;
             if constexpr (std::is_same_v<T, ty::CylinderLight>) {
@@ -1238,31 +1241,31 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
             }
         }, _lightData.lightVariant);
 
-        if (const auto value = sceneDelegate->GetLightParamValue(
+        if (VtValue const value = sceneDelegate->GetLightParamValue(
                 id, HdLightTokens->shapingFocus);
             value.IsHolding<float>()) {
             _lightData.shaping.focus = value.UncheckedGet<float>();
         }
 
-        if (const auto value = sceneDelegate->GetLightParamValue(
+        if (VtValue const value = sceneDelegate->GetLightParamValue(
                 id, HdLightTokens->shapingFocusTint);
             value.IsHolding<GfVec3f>()) {
             _lightData.shaping.focusTint = value.UncheckedGet<GfVec3f>();
         }
 
-        if (const auto value = sceneDelegate->GetLightParamValue(
+        if (VtValue const value = sceneDelegate->GetLightParamValue(
                 id, HdLightTokens->shapingConeAngle);
             value.IsHolding<float>()) {
             _lightData.shaping.coneAngle = value.UncheckedGet<float>();
         }
 
-        if (const auto value = sceneDelegate->GetLightParamValue(
+        if (VtValue const value = sceneDelegate->GetLightParamValue(
                 id, HdLightTokens->shapingConeSoftness);
             value.IsHolding<float>()) {
             _lightData.shaping.coneSoftness = value.UncheckedGet<float>();
         }
 
-        if (const auto value = sceneDelegate->GetLightParamValue(
+        if (VtValue const value = sceneDelegate->GetLightParamValue(
                 id, HdLightTokens->shapingIesFile);
             value.IsHolding<SdfAssetPath>()) {
             SdfAssetPath iesAssetPath = value.UncheckedGet<SdfAssetPath>();
@@ -1286,13 +1289,13 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
             }
         }
 
-        if (const auto value = sceneDelegate->GetLightParamValue(
+        if (VtValue const value = sceneDelegate->GetLightParamValue(
                 id, HdLightTokens->shapingIesNormalize);
             value.IsHolding<bool>()) {
             _lightData.shaping.ies.normalize = value.UncheckedGet<bool>();
         }
 
-        if (const auto value = sceneDelegate->GetLightParamValue(
+        if (VtValue const value = sceneDelegate->GetLightParamValue(
                 id, HdLightTokens->shapingIesAngleScale);
             value.IsHolding<float>()) {
             _lightData.shaping.ies.angleScale = value.UncheckedGet<float>();
@@ -1326,7 +1329,8 @@ HdEmbree_Light::GetInitialDirtyBitsMask() const
 void
 HdEmbree_Light::Finalize(HdRenderParam *renderParam)
 {
-    auto* embreeParam = static_cast<HdEmbreeRenderParam*>(renderParam);
+    HdEmbreeRenderParam* embreeParam =
+        static_cast<HdEmbreeRenderParam*>(renderParam);
 
     RTCScene scene = embreeParam->AcquireSceneForEdit();
     ty::Renderer *renderer = embreeParam->GetRenderer();

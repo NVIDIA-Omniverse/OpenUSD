@@ -59,7 +59,7 @@ ComputeSubdivTexcoordJacobian(
     float v)
 {
     SubdivTexcoordJacobian result;
-    auto const* subdivSampler =
+    SubdivSampler const* subdivSampler =
         dynamic_cast<SubdivSampler const*>(sampler);
     if (!subdivSampler) {
         return result;
@@ -168,7 +168,8 @@ SampleTexcoord(
 inline mxcpp::Value
 SamplePrimvar(void const* userData, int geomPropHandle)
 {
-    auto const* lookup = static_cast<PrimvarLookup const*>(userData);
+    PrimvarLookup const* lookup =
+        static_cast<PrimvarLookup const*>(userData);
     if (!lookup || !lookup->primvars || geomPropHandle < 0 ||
         static_cast<size_t>(geomPropHandle) >= lookup->primvars->size()) {
         return mxcpp::Value();

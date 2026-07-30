@@ -79,7 +79,7 @@ HdEmbreeMaterial::Sync(HdSceneDelegate *sceneDelegate,
         network = networkMapValue.UncheckedGet<HdMaterialNetwork2>();
         haveNetwork = true;
     } else if (networkMapValue.IsHolding<HdMaterialNetworkMap>()) {
-        const auto& networkMap =
+        HdMaterialNetworkMap const& networkMap =
             networkMapValue.UncheckedGet<HdMaterialNetworkMap>();
         network = HdConvertToHdMaterialNetwork2(networkMap);
         haveNetwork = true;

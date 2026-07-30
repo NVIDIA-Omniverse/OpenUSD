@@ -318,7 +318,7 @@ _TraceSssBoundary(_SssWalkState const& state, ty::SssInput const& input,
     if (useOwnerScene) {
         RTCGeometry const hitGeometry =
             rtcGetGeometry(traceScene, rayHit.hit.geomID);
-        auto const* prototypeContext = hitGeometry
+        ty::PrototypeContext const* prototypeContext = hitGeometry
             ? static_cast<ty::PrototypeContext const*>(
                 rtcGetGeometryUserData(hitGeometry))
             : nullptr;

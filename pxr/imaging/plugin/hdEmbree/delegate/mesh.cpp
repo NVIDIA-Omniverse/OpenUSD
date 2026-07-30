@@ -188,21 +188,22 @@ _GetUniformStringPrimvarValue(const VtValue& value, std::string* result)
     }
 
     if (value.IsHolding<VtStringArray>()) {
-        const auto& array = value.UncheckedGet<VtStringArray>();
+        VtStringArray const& array = value.UncheckedGet<VtStringArray>();
         if (!array.empty()) {
             *result = array[0];
             return true;
         }
     }
     if (value.IsHolding<VtTokenArray>()) {
-        const auto& array = value.UncheckedGet<VtTokenArray>();
+        VtTokenArray const& array = value.UncheckedGet<VtTokenArray>();
         if (!array.empty()) {
             *result = array[0].GetString();
             return true;
         }
     }
     if (value.IsHolding<VtArray<SdfAssetPath>>()) {
-        const auto& array = value.UncheckedGet<VtArray<SdfAssetPath>>();
+        VtArray<SdfAssetPath> const& array =
+            value.UncheckedGet<VtArray<SdfAssetPath>>();
         if (!array.empty()) {
             *result = _AssetPathToString(array[0]);
             return true;
@@ -228,12 +229,12 @@ _SampleTriangleCorners(ty::PrimvarSampler const* sampler,
         return false;
     }
 
-    if (auto* vertexSampler =
+    if (ty::TriangleVertexSampler const* vertexSampler =
             dynamic_cast<ty::TriangleVertexSampler const*>(sampler)) {
         return vertexSampler->SampleVertices(primID, v0, v1, v2);
     }
 
-    if (auto* faceVaryingSampler =
+    if (ty::TriangleFaceVaryingSampler const* faceVaryingSampler =
             dynamic_cast<ty::TriangleFaceVaryingSampler const*>(sampler)) {
         return faceVaryingSampler->SampleVertices(primID, v0, v1, v2);
     }
@@ -459,8 +460,8 @@ void
 HdEmbreeDisplacementFunction(
     const RTCDisplacementFunctionNArguments* args)
 {
-    auto* prototypeContext = static_cast<ty::PrototypeContext*>(
-        args->geometryUserPtr);
+    ty::PrototypeContext* prototypeContext =
+        static_cast<ty::PrototypeContext*>(args->geometryUserPtr);
     // A missing terminal means the Embree limit surface is already the
     // desired result. Treat it as a no-op so the same geometry path supports
     // both displaced and ordinary subdivision materials.
@@ -1263,7 +1264,7 @@ HdEmbreeMesh::_CreateEmbreeTriangleMesh(
     // later non-const access to _triangulatedIndices can detach its storage
     // even though this member remains alive, which would leave a shared
     // Embree buffer pointing at freed memory.
-    auto* const embreeIndices = static_cast<GfVec3i*>(
+    GfVec3i* const embreeIndices = static_cast<GfVec3i*>(
         rtcSetNewGeometryBuffer(
             geom,
             RTC_BUFFER_TYPE_INDEX,

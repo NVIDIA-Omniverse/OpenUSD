@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <optional>
 #include <thread>
+#include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -208,14 +209,14 @@ ty::Renderer::_IsEdgeOnlyWireframeHit(
 
     RTCGeometry const instanceGeometry =
         rtcGetGeometry(_scene, primaryHit.hit.instID[0]);
-    auto const* const instanceContext = instanceGeometry
+    ty::InstanceContext const* const instanceContext = instanceGeometry
         ? static_cast<ty::InstanceContext const*>(
             rtcGetGeometryUserData(instanceGeometry))
         : nullptr;
     RTCGeometry const prototypeGeometry = instanceContext
         ? rtcGetGeometry(instanceContext->rootScene, primaryHit.hit.geomID)
         : nullptr;
-    auto const* const prototypeContext = prototypeGeometry
+    ty::PrototypeContext const* const prototypeContext = prototypeGeometry
         ? static_cast<ty::PrototypeContext const*>(
             rtcGetGeometryUserData(prototypeGeometry))
         : nullptr;
@@ -242,7 +243,7 @@ ty::Renderer::_ApplyWireframe(
     if (!instanceGeometry) {
         return;
     }
-    auto const* const instanceContext =
+    ty::InstanceContext const* const instanceContext =
         static_cast<ty::InstanceContext const*>(
             rtcGetGeometryUserData(instanceGeometry));
     if (!instanceContext) {
@@ -254,7 +255,7 @@ ty::Renderer::_ApplyWireframe(
     if (!prototypeGeometry) {
         return;
     }
-    auto const* const prototypeContext =
+    ty::PrototypeContext const* const prototypeContext =
         static_cast<ty::PrototypeContext const*>(
             rtcGetGeometryUserData(prototypeGeometry));
     if (!prototypeContext ||
@@ -303,7 +304,8 @@ ty::Renderer::_ApplyWireframe(
 
     float opacity = 0.0f;
     if (prototypeContext->refined) {
-        auto const* const levels = prototypeContext->subdivisionLevels;
+        std::vector<float> const* const levels =
+            prototypeContext->subdivisionLevels;
         ty::SubdivWireframeTopology const topology{
             prototypeContext->faceVertexCounts.empty()
                 ? nullptr

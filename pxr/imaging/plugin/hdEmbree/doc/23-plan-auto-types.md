@@ -28,8 +28,8 @@ lookup-iterator types, and a `std::visit` visitor parameter. That list was
 **incomplete**, and this sweep could not be executed against it: it would have
 mandated removing `auto` from constructs that have no other legal or readable
 spelling in C++17. Two cases were added, plus the type-preservation rule from
-Method step 3 and an explicit statement that a non-`std::visit` generic lambda
-parameter is still a violation.
+Method step 3 and an explicit statement that other generic lambda parameters
+remain violations.
 
 This is no longer a commit of this plan — it is already in `AGENTS.md`. The
 sections below record *why* each exception exists and which sites it covers, so
@@ -98,6 +98,9 @@ Permitted:
   algorithm with long container implementation types.
 - An `auto` parameter on a `std::visit` visitor lambda, one per dispatch site,
   commented as the exception.
+- An `auto` parameter on a local callable helper when all calls remain in the
+  same function, concrete callable typing adds runtime dispatch, and the site
+  comments why the generic parameter is required.
 - `auto` binding a lambda closure object.
 - `auto` in a structured binding declaration.
 
@@ -109,8 +112,7 @@ Not permitted (fix these):
   iterator exception is for genuinely ridiculous standard-library types.
 - `auto` for values with short, known types (`std::chrono::time_point`, plain
   structs, pointers).
-- A generic `auto` parameter on a lambda that is **not** a `std::visit` visitor
-  (see below — there is exactly one, and it has a concrete fix).
+- A generic `auto` parameter outside the two documented exceptions.
 
 ## Scope and deferrals
 
@@ -138,9 +140,9 @@ Two corrections to earlier drafts of this plan:
 Consequently the completion criterion is: **within `renderer/` and `delegate/`,
 excluding `MaterialXCpp/`, `BSDL/`, and `pxrIES/`, every remaining `auto` is a
 range-for variable, a ridiculous lookup iterator, a `std::visit` visitor
-parameter, a lambda closure binding, or a structured binding.** Any other
-remaining use is a miss. If `pxrPbrt/` survives 09, it is included under its
-decided `ty::pbrt` ownership.
+parameter, a documented local callable-helper parameter, a lambda closure
+binding, or a structured binding.** Any other remaining use is a miss. If
+`pxrPbrt/` survives 09, it is included under its decided `ty::pbrt` ownership.
 
 ## Confirmed violations (representative, not exhaustive)
 
@@ -198,7 +200,7 @@ opportunistic iterator renaming ("use names that identify the looked-up
 value"); that contradicts "purely a type-spelling change" and belongs to
 `05-plan-naming-core.md`. Preserve every name.
 
-## The one non-`std::visit` generic lambda
+## The local callable-helper exception
 
 `delegate/adaptiveSubdivision.cpp:234`:
 
@@ -206,17 +208,18 @@ value"); that contradicts "purely a type-spelling change" and belongs to
 const auto clipToPlane = [&](auto const& distance) { ... };
 ```
 
-This is a generic parameter outside the `std::visit` exception, so the policy
-does not cover it. It has a concrete fix rather than a new exception: all seven
-call sites (`:264-278`) pass **captureless** lambdas of the shape
-`double(GfVec4d const&)`, so the parameter can be spelled
-`double (*distance)(GfVec4d const&)` and the lambdas convert implicitly. The
-closure binding on the left-hand side stays `auto` under the Goal-5
-closure exception.
+All seven call sites (`:264-278`) pass distinct captureless lambdas of the shape
+`double(GfVec4d const&)`. Execution initially replaced the parameter with
+`double (*distance)(GfVec4d const&)`, but the Release object contained two
+indirect calls per plane. Replacing the callable with two precomputed `double`
+arguments still produced seven outlined helper calls. Both changed a per-edge,
+per-face hot path.
 
-Verify the captureless property still holds at execution time before applying
-this; if a capture has been added by then, escalate rather than reaching for
-`std::function`.
+Goal 5 therefore permits this narrow generic parameter: every call site is
+visible in the same function and the generic form preserves the original seven
+fully inlined instantiations. Keep the closure binding and parameter as `auto`,
+with a comment recording the performance reason. Do not generalize this into a
+blanket generic-lambda exception or use `std::function`.
 
 ## `_pi`: five copies of π, not three
 
@@ -369,7 +372,7 @@ The Goal 5 amendment already landed, so this plan is two commits:
   every light type. Run
   `cd /path/to/typhoon-test-suite && pixi run pytest usdlux` after it.
 - After the sweep, re-run the grep from Method step 1 and confirm every survivor
-  falls under the five permitted cases listed in "Scope and deferrals".
+  falls under the six permitted cases listed in "Scope and deferrals".
 
 ## Note
 

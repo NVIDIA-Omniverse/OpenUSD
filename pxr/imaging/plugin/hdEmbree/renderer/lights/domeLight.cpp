@@ -99,7 +99,8 @@ _SampleDomeUv(ty::LightTexture const& texture, float u1, float u2)
     const float sampleX = ty::ClampUnitHalfOpen(u1);
     const float sampleY = ty::ClampUnitHalfOpen(u2);
 
-    const auto marginalBegin = texture.marginalCdf.begin();
+    std::vector<float>::const_iterator marginalBegin =
+        texture.marginalCdf.begin();
     const auto marginalIt = std::upper_bound(
         marginalBegin + 1, texture.marginalCdf.end(), sampleY);
     const int indexTexelY = std::clamp(
