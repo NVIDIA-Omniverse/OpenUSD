@@ -38,7 +38,7 @@ _AreaSphere(GfMatrix4f const& lightToWorld, float radius)
     return powf(
                (areaPowerXY + areaPowerXZ + areaPowerYZ) / 3.0f,
                1.0f / 1.6f) *
-           4.0f * ty::Pi<float>;
+           4.0f * ty::Pi;
 }
 
 static ty::ShapeSample
@@ -52,7 +52,7 @@ _SampleSphere(
         std::max(
             0.0f,
             1.0f - coordinateSphereZ * coordinateSphereZ));
-    const float phi = 2.0f * ty::Pi<float> * u2;
+    const float phi = 2.0f * ty::Pi * u2;
     GfVec3f posLight{
         radiusSphereXy * std::cos(phi),
         radiusSphereXy * std::sin(phi),
@@ -118,7 +118,7 @@ _SphereSolidAngle(
     const float oneMinusCosThetaMax =
         sinThetaMax2 / (1.0f + cosThetaMax);
     const float solidAngle =
-        2.0f * ty::Pi<float> * oneMinusCosThetaMax;
+        2.0f * ty::Pi * oneMinusCosThetaMax;
     return std::isfinite(solidAngle) ? solidAngle : 0.0f;
 }
 
@@ -171,14 +171,14 @@ _IntersectSphereLight(
 
     float phi = std::atan2(posHitLight[1], posHitLight[0]);
     if (phi < 0.0f) {
-        phi += 2.0f * ty::Pi<float>;
+        phi += 2.0f * ty::Pi;
     }
 
     *outSample = ty::MakeAreaShapeSample(
         light.xformLightToWorld, light.normalXformLightToWorld,
         posHitLight, normalGeomLightExt,
         GfVec2f(
-            phi / (2.0f * ty::Pi<float>),
+            phi / (2.0f * ty::Pi),
             (sphere.radius != 0.0f)
                 ? (posHitLight[2] / sphere.radius)
                 : 0.0f),
@@ -205,13 +205,13 @@ _EvalSphereLightSolidAngle(
     GfBuildOrthonormalFrame(axis, &tangent, &bitangent);
 
     const float cosThetaMax =
-        1.0f - solidAngle / (2.0f * ty::Pi<float>);
+        1.0f - solidAngle / (2.0f * ty::Pi);
     const float cosTheta =
         1.0f - ty::ClampUnitHalfOpen(u1) * (1.0f - cosThetaMax);
     const float sinTheta =
         sqrtf(std::max(0.0f, 1.0f - ty::Sqr(cosTheta)));
     const float phi =
-        2.0f * ty::Pi<float> * ty::ClampUnitHalfOpen(u2);
+        2.0f * ty::Pi * ty::ClampUnitHalfOpen(u2);
     const GfVec3f dirLight =
         (tangent * (sinTheta * cosf(phi)) +
          bitangent * (sinTheta * sinf(phi)) +

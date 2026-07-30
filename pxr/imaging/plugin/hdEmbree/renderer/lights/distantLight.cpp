@@ -43,7 +43,7 @@ _DistantHalfAngleRadians(ty::DistantLight const& distant)
         : 0.0f;
     const float halfAngle =
         0.5f * static_cast<float>(GfDegreesToRadians(angle));
-    return GfClamp(halfAngle, 0.0f, ty::Pi<float>);
+    return GfClamp(halfAngle, 0.0f, ty::Pi);
 }
 
 static float
@@ -52,8 +52,8 @@ _DistantConeSolidAngle(float thetaMax)
     if (thetaMax <= 0.0f) {
         return 0.0f;
     }
-    return 2.0f * ty::Pi<float> *
-        (1.0f - std::cos(GfClamp(thetaMax, 0.0f, ty::Pi<float>)));
+    return 2.0f * ty::Pi *
+        (1.0f - std::cos(GfClamp(thetaMax, 0.0f, ty::Pi)));
 }
 
 static float
@@ -64,12 +64,12 @@ _DistantNormalizeSizeFactor(float thetaMax)
     }
 
     const float sinTheta =
-        std::sin(GfClamp(thetaMax, 0.0f, ty::Pi<float>));
+        std::sin(GfClamp(thetaMax, 0.0f, ty::Pi));
     const float sinTheta2 = sinTheta * sinTheta;
-    if (thetaMax <= 0.5f * ty::Pi<float>) {
-        return sinTheta2 * ty::Pi<float>;
+    if (thetaMax <= 0.5f * ty::Pi) {
+        return sinTheta2 * ty::Pi;
     }
-    return (2.0f - sinTheta2) * ty::Pi<float>;
+    return (2.0f - sinTheta2) * ty::Pi;
 }
 
 static GfVec3f
@@ -162,7 +162,7 @@ ty::SampleDistantLight(
         1.0f - ty::ClampUnitHalfOpen(u1) * (1.0f - cosThetaMax);
     const float sinTheta =
         std::sqrt(std::max(0.0f, 1.0f - ty::Sqr(cosTheta)));
-    const float phi = 2.0f * ty::Pi<float> * ty::ClampUnitHalfOpen(u2);
+    const float phi = 2.0f * ty::Pi * ty::ClampUnitHalfOpen(u2);
     const GfVec3f omegaInWld =
         (tangent * (sinTheta * std::cos(phi)) +
          bitangent * (sinTheta * std::sin(phi)) +

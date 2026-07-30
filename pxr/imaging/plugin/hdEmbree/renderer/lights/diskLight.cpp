@@ -25,14 +25,14 @@ _AreaDisk(GfMatrix4f const& lightToWorld, float radius)
         lightToWorld.TransformDir(GfVec3f{radius, 0.0f, 0.0f}).GetLength();
     const float radiusAxisYWld =
         lightToWorld.TransformDir(GfVec3f{0.0f, radius, 0.0f}).GetLength();
-    return ty::Pi<float> * radiusAxisXWld * radiusAxisYWld;
+    return ty::Pi * radiusAxisXWld * radiusAxisYWld;
 }
 
 static GfVec3f
 _SampleDiskPolar(float u1, float u2)
 {
     const float radius = sqrtf(u1);
-    const float theta = 2.0f * ty::Pi<float> * u2;
+    const float theta = 2.0f * ty::Pi * u2;
     return GfVec3f(
         radius * cosf(theta), radius * sinf(theta), 0.0f);
 }

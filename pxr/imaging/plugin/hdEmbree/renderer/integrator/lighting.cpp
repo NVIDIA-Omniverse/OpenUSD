@@ -309,7 +309,7 @@ ty::Renderer::_ComputeDirectLightingMIS(
                         weightMis;
                 }
             } else {
-                float brdf = 1.0f / ty::Pi<float>;
+                float brdf = 1.0f / ty::Pi;
                 if (hero.active) {
                     const float radianceInSpectral =
                         ty::RgbToSpectralValue(

@@ -25,7 +25,7 @@ static GfVec3f
 _CosineWeightedDirection(GfVec2f const& uniformSamples)
 {
     GfVec3f dirTangent;
-    float angleAzimuth = 2.0f * ty::Pi<float> * uniformSamples[0];
+    float angleAzimuth = 2.0f * ty::Pi * uniformSamples[0];
     float u2 = uniformSamples[1];
     float radiusDisk = sqrtf(u2);
     dirTangent[0] = cosf(angleAzimuth) * radiusDisk;

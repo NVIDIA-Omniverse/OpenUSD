@@ -32,7 +32,7 @@ _AreaCylinder(GfMatrix4f const& lightToWorld, float radius, float length)
     // Ramanujan's ellipse-perimeter approximation preserves the established
     // transformed-cylinder area estimate.
     const float perimeterWld =
-        ty::Pi<float> *
+        ty::Pi *
         (3.0f * (radiusAxisYWld + radiusAxisZWld) -
          sqrtf((3.0f * radiusAxisYWld + radiusAxisZWld) *
                (radiusAxisYWld + 3.0f * radiusAxisZWld)));
@@ -47,7 +47,7 @@ _SampleCylinder(
 {
     const float posAxisLight =
         GfLerp(u1, -length / 2.0f, length / 2.0f);
-    const float phi = u2 * 2.0f * ty::Pi<float>;
+    const float phi = u2 * 2.0f * ty::Pi;
     GfVec3f posLight(
         posAxisLight, radius * cosf(phi), radius * sinf(phi));
 
@@ -131,14 +131,14 @@ _IntersectCylinderLight(
     normalGeomLightExt.Normalize();
     float phi = std::atan2(posHitLight[2], posHitLight[1]);
     if (phi < 0.0f) {
-        phi += 2.0f * ty::Pi<float>;
+        phi += 2.0f * ty::Pi;
     }
 
     *outSample = ty::MakeAreaShapeSample(
         light.xformLightToWorld, light.normalXformLightToWorld,
         posHitLight, normalGeomLightExt,
         GfVec2f(
-            phi / (2.0f * ty::Pi<float>),
+            phi / (2.0f * ty::Pi),
             (cylinder.length != 0.0f)
                 ? ((posHitLight[0] + halfLength) / cylinder.length)
                 : 0.0f),

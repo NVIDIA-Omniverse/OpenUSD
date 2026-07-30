@@ -41,10 +41,10 @@ _DirectionToLatLongUv(GfVec3f const& dirLight)
     const GfVec3f normalized = dirLight.GetNormalized();
     const float coordinateTextureT =
         acosf(GfClamp(normalized[1], -1.0f, 1.0f)) /
-        ty::Pi<float>;
+        ty::Pi;
     const float coordinateTextureS = ty::WrapUnit(
         0.5f - atan2f(normalized[0], normalized[2]) /
-            (2.0f * ty::Pi<float>));
+            (2.0f * ty::Pi));
     return GfVec2f(
         coordinateTextureS,
         ty::ClampUnitHalfOpen(coordinateTextureT));
@@ -54,10 +54,10 @@ static GfVec3f
 _LatLongUvToDirection(GfVec2f const& coordinateTexture)
 {
     const float theta =
-        ty::Pi<float> * ty::ClampUnitHalfOpen(coordinateTexture[1]);
+        ty::Pi * ty::ClampUnitHalfOpen(coordinateTexture[1]);
     const float sinTheta = sinf(theta);
     const float cosTheta = cosf(theta);
-    const float phi = 2.0f * ty::Pi<float> * (0.5f - coordinateTexture[0]);
+    const float phi = 2.0f * ty::Pi * (0.5f - coordinateTexture[0]);
     return GfVec3f(
         sinTheta * sinf(phi), cosTheta, sinTheta * cosf(phi));
 }
@@ -90,7 +90,7 @@ _TexelDirectionalPdf(
     const float pdfUv =
         texelMass * static_cast<float>(texture.width * texture.height);
     return pdfUv /
-        (2.0f * ty::Pi<float> * ty::Pi<float> * sinTheta);
+        (2.0f * ty::Pi * ty::Pi * sinTheta);
 }
 
 static GfVec2f
@@ -139,7 +139,7 @@ static float
 _DomeDirectionalPdf(
     ty::LightData const& light, GfVec2f const& coordinateTexture)
 {
-    float pdfSolidAngle = 1.0f / (4.0f * ty::Pi<float>);
+    float pdfSolidAngle = 1.0f / (4.0f * ty::Pi);
     if (_HasDomeDistribution(light.texture)) {
         const int indexTexelX = std::clamp(
             static_cast<int>(
@@ -154,7 +154,7 @@ _DomeDirectionalPdf(
             0,
             light.texture.height - 1);
         const float theta =
-            ty::Pi<float> * ty::ClampUnitHalfOpen(coordinateTexture[1]);
+            ty::Pi * ty::ClampUnitHalfOpen(coordinateTexture[1]);
         pdfSolidAngle = _TexelDirectionalPdf(
             light.texture, indexTexelX, indexTexelY, theta);
     }
@@ -323,7 +323,7 @@ ty::SampleDomeLight(
         const float localY = 1.0f - 2.0f * ty::ClampUnitHalfOpen(u1);
         const float localR =
             sqrtf(std::max(0.0f, 1.0f - ty::Sqr(localY)));
-        const float phi = 2.0f * ty::Pi<float> * ty::ClampUnitHalfOpen(u2);
+        const float phi = 2.0f * ty::Pi * ty::ClampUnitHalfOpen(u2);
         const GfVec3f dirLight(
             localR * sinf(phi), localY, localR * cosf(phi));
         dirWld =

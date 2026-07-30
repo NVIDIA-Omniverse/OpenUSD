@@ -22,8 +22,7 @@
 PXR_NAMESPACE_OPEN_SCOPE
 namespace ty {
 
-template <typename T>
-inline constexpr T Pi = static_cast<T>(M_PI);
+inline constexpr float Pi = static_cast<float>(M_PI);
 
 inline bool
 IsFinite(GfVec3f const& value)

@@ -44,11 +44,10 @@ _SampleUniformDiskConcentric(GfVec2f const& sample)
     float angleAzimuth;
     if (std::abs(x) > std::abs(y)) {
         r = x;
-        angleAzimuth = (ty::Pi<float> / 4.0f) * (y / x);
+        angleAzimuth = (ty::Pi / 4.0f) * (y / x);
     } else {
         r = y;
-        angleAzimuth =
-            (ty::Pi<float> / 2.0f) - (ty::Pi<float> / 4.0f) * (x / y);
+        angleAzimuth = (ty::Pi / 2.0f) - (ty::Pi / 4.0f) * (x / y);
     }
 
     return GfVec2f(r * std::cos(angleAzimuth), r * std::sin(angleAzimuth));

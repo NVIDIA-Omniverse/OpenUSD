@@ -260,7 +260,7 @@ split the 1,646-line file **one `.cpp` per light type** (`rectLight`,
 their 13 entry points — `ty::SampleXLight()` /
 `ty::EvaluateXLightDirection()`, each with its own contract — plus a
 `lightSamplerCommon` holding the radiometry every type applies once its
-geometry is resolved, over 12 owned exports plus `Pi<T>` and `IsFinite` reused
+geometry is resolved, over 12 owned exports plus `Pi` and `IsFinite` reused
 from `rendererMath.h`. `lightSamplers` → `lightSampler` (one class). Removes
 **all four** forward-declaration groups, and empties the type dispatcher: the
 sphere solid-angle override and the two 28-line rect/disk shaping splits move
@@ -276,7 +276,8 @@ adversarial test review. Validates against the named per-type stages in
 common extraction and the final rename run all of them. Two earlier drafts are **rejected** in the plan:
 infinite-vs-finite, and one header per type.
 _Depends on: 05 (its `LightSample` family rename must land first), 14. Must
-precede 19, 20, and 23 (which later collapses shared `ty::Pi<T>`).
+precede 19, 20, and 23 (which collapses shared `ty::Pi<T>` to scalar
+`ty::Pi`).
 Independent of 16 and 17._
 
 **19 · [`ty` namespace pass](19-plan-ty-namespace.md)** — complete the namespace
