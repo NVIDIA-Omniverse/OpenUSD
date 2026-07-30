@@ -354,8 +354,11 @@ anonymous buffers as the authoritative completion state.
 _Discovered by 21. Implement after the settled cleanup sequence._
 
 **25 · [elementId primitive map](25-plan-element-id-primitive-map.md)** —
-correct the inverted triangle primitive-parameter assignment and define safe
-triangle/subdivision elementId mapping.
+correct the inverted triangle primitive-parameter assignment by deleting the
+condition rather than synchronizing it: clear the triangle caches on the refined
+path so their emptiness is the single rule, then drop the mode logic at both
+consumers. **Not behavior-preserving**: unrefined meshes currently report
+triangle indices where clients expect face indices, so `elementId` values change.
 _Discovered by 21. Implement after the settled cleanup sequence._
 
 ## Overlap ownership (who is authoritative)
@@ -365,7 +368,7 @@ Several plans touch the same edit; each such edit has one authoritative owner:
 | Edit | Authoritative owner | Others reference it |
 | --- | --- | --- |
 | `_Execute` render-settings wall | 12-render-settings-state | — |
-| `_PopulateRtMesh` lifetime and failure contract | 13-mesh-ownership | 16-source-organization, 21-api-contracts |
+| `_PopulateRtMesh` lifetime and failure contract | 13-mesh-ownership | 16-source-organization, 21-api-contracts, 25-element-id-primitive-map (triangle caches only) |
 | `_PopulateRtMesh` function extraction | 16-source-organization | 13-mesh-ownership explicitly declines it |
 | `bsdf.cpp` file layout | 17-bsdf-split | 19-ty-namespace |
 | Light-sampler file layout and per-type contracts | 18-light-samplers-split | 19-ty-namespace, 21-api-contracts |
