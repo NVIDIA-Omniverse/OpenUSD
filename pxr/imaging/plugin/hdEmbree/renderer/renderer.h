@@ -240,6 +240,15 @@ public:
         return _aovBindings;
     }
 
+    /// \brief Return the identity of the current copied binding set.
+    ///
+    /// Every SetAovBindings call advances this value, including replacement
+    /// with an equal vector. The app thread uses it to detect when another
+    /// render pass replaced the shared renderer's borrowed buffers.
+    uint64_t GetAovBindingsVersion() const {
+        return _aovBindingsVersion;
+    }
+
     /// \brief Apply resolved render settings while rendering is stopped.
     ///
     /// Clamps renderer invariants, reapplies process-wide MaterialXCpp and
@@ -292,6 +301,7 @@ public:
     ///
     /// Clears sample storage and adaptive statistics, preserving resolved
     /// pixels so the previous image remains visible until new samples arrive.
+    /// An empty binding set has no accumulation to reset and returns silently.
     void ResetAccumulation();
 
     /// \brief Mark every currently bound AOV buffer unconverged.
@@ -983,6 +993,8 @@ private:
     HdRenderPassAovBindingVector _aovBindings;
     // Parsed AOV name tokens.
     HdParsedAovTokenVector _aovNames;
+    // App-thread binding identity; advances even for equal replacement sets.
+    uint64_t _aovBindingsVersion;
 
     // Data window - as in CameraUtilFraming.
     GfRect2i _dataWindow;

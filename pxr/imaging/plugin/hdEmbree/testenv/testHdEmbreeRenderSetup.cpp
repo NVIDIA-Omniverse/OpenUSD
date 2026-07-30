@@ -16,6 +16,7 @@
 #include "pxr/base/gf/vec2i.h"
 #include "pxr/base/tf/diagnostic.h"
 #include "pxr/base/tf/diagnosticMgr.h"
+#include "pxr/imaging/cameraUtil/framing.h"
 #include "pxr/imaging/hd/renderBuffer.h"
 #include "pxr/imaging/hd/renderIndex.h"
 #include "pxr/imaging/hd/renderPassState.h"
@@ -938,6 +939,267 @@ _TestRenderPassMarksRestartPending()
 }
 
 bool
+_WaitForConvergence(HdEmbreeRenderPass* renderPass)
+{
+    for (int i = 0; i != 500; ++i) {
+        if (renderPass->IsConverged()) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return false;
+}
+
+bool
+_TestEmptyRenderPassBindingsConverge(bool useFraming)
+{
+    _Scene scene;
+    if (scene.scene == nullptr) {
+        return false;
+    }
+
+    HdEmbreeRenderDelegate delegate;
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
+        VtValue(1));
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
+        VtValue(false));
+    std::unique_ptr<HdRenderIndex> renderIndex(
+        HdRenderIndex::New(&delegate, HdDriverVector()));
+    if (!renderIndex) {
+        return false;
+    }
+
+    ty::Renderer renderer;
+    renderer.SetScene(scene.scene);
+    std::atomic<int> sceneVersion{0};
+    std::atomic<int> materialVersion{0};
+    HdRenderThread renderThread;
+    renderThread.SetRenderCallback([&]() {
+        renderer.Render(&renderThread);
+    });
+    renderThread.StartThread();
+
+    HdEmbreeRenderPass renderPass(
+        renderIndex.get(),
+        HdRprimCollection(),
+        &renderThread,
+        &renderer,
+        &sceneVersion,
+        &materialVersion);
+    if (renderPass.IsConverged()) {
+        renderThread.StopThread();
+        return false;
+    }
+
+    HdRenderPassStateSharedPtr renderPassState =
+        delegate.CreateRenderPassState();
+    if (useFraming) {
+        renderPassState->SetFraming(
+            CameraUtilFraming(GfRect2i(GfVec2i(0), 1, 1)));
+    } else {
+        renderPassState->SetViewport(
+            GfVec4d(0.0, 0.0, 1.0, 1.0));
+    }
+    renderPassState->SetAovBindings(HdRenderPassAovBindingVector());
+    renderPass.Execute(renderPassState, TfTokenVector());
+
+    const bool converged = _WaitForConvergence(&renderPass);
+    renderThread.StopThread();
+
+    HdRenderPassAovBindingVector const& rendererBindings =
+        renderer.GetAovBindings();
+    if (!converged ||
+        rendererBindings.size() != 2 ||
+        rendererBindings[0].renderBuffer == nullptr ||
+        rendererBindings[1].renderBuffer == nullptr) {
+        return false;
+    }
+
+    if (useFraming) {
+        // Camera framing deliberately leaves anonymous fallbacks unallocated,
+        // so renderer setup must park the zero-sized buffers without a frame.
+        return rendererBindings[0].renderBuffer->GetWidth() == 0 &&
+            rendererBindings[0].renderBuffer->GetHeight() == 0 &&
+            rendererBindings[1].renderBuffer->GetWidth() == 0 &&
+            rendererBindings[1].renderBuffer->GetHeight() == 0 &&
+            !renderer.DidLastFrameProduceValidPixels();
+    }
+
+    // Legacy viewport execution allocates both fallbacks and renders them.
+    return rendererBindings[0].renderBuffer->GetWidth() == 1 &&
+        rendererBindings[0].renderBuffer->GetHeight() == 1 &&
+        rendererBindings[1].renderBuffer->GetWidth() == 1 &&
+        rendererBindings[1].renderBuffer->GetHeight() == 1 &&
+        renderer.DidLastFrameProduceValidPixels();
+}
+
+bool
+_TestLiveRenderPassesOwnAnonymousBindings()
+{
+    _Scene scene;
+    if (scene.scene == nullptr) {
+        return false;
+    }
+
+    HdEmbreeRenderDelegate delegate;
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
+        VtValue(1));
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
+        VtValue(false));
+    std::unique_ptr<HdRenderIndex> renderIndex(
+        HdRenderIndex::New(&delegate, HdDriverVector()));
+    if (!renderIndex) {
+        return false;
+    }
+
+    ty::Renderer renderer;
+    renderer.SetScene(scene.scene);
+    std::atomic<int> sceneVersion{0};
+    std::atomic<int> materialVersion{0};
+    std::atomic<bool> holdCallback{false};
+    std::atomic<bool> callbackEntered{false};
+    std::atomic<bool> releaseCallback{false};
+    HdRenderThread renderThread;
+    renderThread.SetRenderCallback([&]() {
+        if (holdCallback.load(std::memory_order_acquire)) {
+            callbackEntered.store(true, std::memory_order_release);
+            while (!releaseCallback.load(std::memory_order_acquire)) {
+                if (renderThread.IsStopRequested()) {
+                    return;
+                }
+                std::this_thread::yield();
+            }
+        }
+        renderer.Render(&renderThread);
+    });
+    renderThread.StartThread();
+
+    HdRenderPassStateSharedPtr firstRenderPassState =
+        delegate.CreateRenderPassState();
+    firstRenderPassState->SetViewport(
+        GfVec4d(0.0, 0.0, 1.0, 1.0));
+    firstRenderPassState->SetAovBindings(
+        HdRenderPassAovBindingVector());
+    HdRenderPassStateSharedPtr secondRenderPassState =
+        delegate.CreateRenderPassState();
+    secondRenderPassState->SetViewport(
+        GfVec4d(0.0, 0.0, 2.0, 2.0));
+    secondRenderPassState->SetAovBindings(
+        HdRenderPassAovBindingVector());
+
+    std::unique_ptr<HdEmbreeRenderPass> firstRenderPass =
+        std::make_unique<HdEmbreeRenderPass>(
+            renderIndex.get(),
+            HdRprimCollection(),
+            &renderThread,
+            &renderer,
+            &sceneVersion,
+            &materialVersion);
+    std::unique_ptr<HdEmbreeRenderPass> secondRenderPass =
+        std::make_unique<HdEmbreeRenderPass>(
+            renderIndex.get(),
+            HdRprimCollection(),
+            &renderThread,
+            &renderer,
+            &sceneVersion,
+            &materialVersion);
+
+    firstRenderPass->Execute(firstRenderPassState, TfTokenVector());
+    const bool firstConverged =
+        _WaitForConvergence(firstRenderPass.get());
+    if (!firstConverged || renderer.GetAovBindings().size() != 2) {
+        renderThread.StopThread();
+        return false;
+    }
+    HdRenderBuffer* const firstColor =
+        renderer.GetAovBindings()[0].renderBuffer;
+    HdRenderBuffer* const firstDepth =
+        renderer.GetAovBindings()[1].renderBuffer;
+
+    // A second live pass must replace the shared bindings and invalidate the
+    // first pass's convergence without destroying either pass.
+    if (secondRenderPass->IsConverged()) {
+        renderThread.StopThread();
+        return false;
+    }
+    secondRenderPass->Execute(secondRenderPassState, TfTokenVector());
+    const bool secondConverged =
+        _WaitForConvergence(secondRenderPass.get());
+    HdRenderPassAovBindingVector const& secondBindings =
+        renderer.GetAovBindings();
+    if (!secondConverged ||
+        firstRenderPass->IsConverged() ||
+        secondBindings.size() != 2 ||
+        secondBindings[0].renderBuffer == firstColor ||
+        secondBindings[1].renderBuffer == firstDepth ||
+        secondBindings[0].renderBuffer->GetWidth() != 2 ||
+        secondBindings[0].renderBuffer->GetHeight() != 2 ||
+        secondBindings[1].renderBuffer->GetWidth() != 2 ||
+        secondBindings[1].renderBuffer->GetHeight() != 2) {
+        renderThread.StopThread();
+        return false;
+    }
+
+    // Returning to the first live pass must reclaim the renderer and make the
+    // second pass non-current until it executes again.
+    firstRenderPass->Execute(firstRenderPassState, TfTokenVector());
+    const bool firstConvergedAgain =
+        _WaitForConvergence(firstRenderPass.get());
+    HdRenderPassAovBindingVector const& firstBindingsAgain =
+        renderer.GetAovBindings();
+    if (!firstConvergedAgain ||
+        secondRenderPass->IsConverged() ||
+        firstBindingsAgain.size() != 2 ||
+        firstBindingsAgain[0].renderBuffer != firstColor ||
+        firstBindingsAgain[1].renderBuffer != firstDepth ||
+        firstBindingsAgain[0].renderBuffer->GetWidth() != 1 ||
+        firstBindingsAgain[0].renderBuffer->GetHeight() != 1 ||
+        firstBindingsAgain[1].renderBuffer->GetWidth() != 1 ||
+        firstBindingsAgain[1].renderBuffer->GetHeight() != 1) {
+        renderThread.StopThread();
+        return false;
+    }
+
+    // Destroying the non-current pass must not stop the current owner's
+    // in-flight render.
+    holdCallback.store(true, std::memory_order_release);
+    sceneVersion.fetch_add(1);
+    firstRenderPass->Execute(firstRenderPassState, TfTokenVector());
+    for (int i = 0;
+         i != 500 &&
+             !callbackEntered.load(std::memory_order_acquire);
+         ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    if (!callbackEntered.load(std::memory_order_acquire)) {
+        releaseCallback.store(true, std::memory_order_release);
+        renderThread.StopThread();
+        return false;
+    }
+
+    secondRenderPass.reset();
+    const bool ownerStillRendering = renderThread.IsRendering();
+    releaseCallback.store(true, std::memory_order_release);
+    const bool firstConvergedAfterDestruction =
+        _WaitForConvergence(firstRenderPass.get());
+
+    // Destroying the current owner must release its borrowed anonymous
+    // buffers immediately rather than leaving dangling renderer pointers.
+    firstRenderPass.reset();
+    const bool ownerBindingsReleased =
+        renderer.GetAovBindings().empty();
+    renderThread.StopThread();
+    return ownerStillRendering &&
+        firstConvergedAfterDestruction &&
+        ownerBindingsReleased &&
+        renderer.DidLastFrameProduceValidPixels();
+}
+
+bool
 _TestProcessGlobalSettingsAreReapplied()
 {
     ty::Renderer renderer;
@@ -1235,6 +1497,9 @@ main()
     TF_AXIOM(_TestInvalidHitContextsBecomeMisses());
     TF_AXIOM(_TestFrameStatusTransitions());
     TF_AXIOM(_TestRenderPassMarksRestartPending());
+    TF_AXIOM(_TestEmptyRenderPassBindingsConverge(false));
+    TF_AXIOM(_TestEmptyRenderPassBindingsConverge(true));
+    TF_AXIOM(_TestLiveRenderPassesOwnAnonymousBindings());
     TF_AXIOM(_TestProcessGlobalSettingsAreReapplied());
     TF_AXIOM(_TestTileSizeAndCameraJitterImages());
     TF_AXIOM(_TestRenderPassSettingsApplication());

@@ -374,9 +374,10 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _wireframeColor(0.0f)
     , _wireframeLineWidth(1.0f)
     , _aovBindings()
+    , _hasInstalledAovBindings(false)
+    , _aovBindingsVersion(0)
     , _colorBuffer(SdfPath::EmptyPath())
     , _depthBuffer(SdfPath::EmptyPath())
-    , _converged(false)
     , _renderProductsWritten(false)
 {
 }
@@ -407,24 +408,35 @@ HdEmbreeRenderPass::_MarkCollectionDirty()
 
 HdEmbreeRenderPass::~HdEmbreeRenderPass()
 {
-    // Make sure the render thread's not running, in case it's writing
-    // to _colorBuffer/_depthBuffer.
-    _renderThread->StopRender();
+    // Stop only a render that owns this pass's borrowed buffers. Destroying a
+    // non-current pass must not cancel another live pass's render.
+    if (_hasInstalledAovBindings &&
+        _aovBindingsVersion == _renderer->GetAovBindingsVersion()) {
+        _renderThread->StopRender();
+        _renderer->SetAovBindings(HdRenderPassAovBindingVector());
+    }
 }
 
 bool
 HdEmbreeRenderPass::_HasConverged() const
 {
-    // Empty caller bindings currently have no convergence publication from
-    // the anonymous renderer bindings, so the legacy flag remains false.
-    if (_aovBindings.size() == 0) {
-        return _converged;
+    // Convergence and frame validity belong only to the pass whose bindings
+    // remain active in the shared renderer.
+    if (!_hasInstalledAovBindings ||
+        _aovBindingsVersion != _renderer->GetAovBindingsVersion()) {
+        return false;
+    }
+
+    // Empty caller bindings use this pass's anonymous fallback buffers.
+    if (_aovBindings.empty()) {
+        return _colorBuffer.IsConverged() &&
+            _depthBuffer.IsConverged();
     }
 
     // Explicit output is complete only after every usable attachment parks.
-    for (size_t i = 0; i < _aovBindings.size(); ++i) {
-        if (_aovBindings[i].renderBuffer &&
-            !_aovBindings[i].renderBuffer->IsConverged()) {
+    for (HdRenderPassAovBinding const& binding : _aovBindings) {
+        if (binding.renderBuffer &&
+            !binding.renderBuffer->IsConverged()) {
             return false;
         }
     }
@@ -750,8 +762,21 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     // XXX: Add collection and renderTags support.
     // XXX: Add clip planes support.
 
-    // Determine whether the scene has changed since the last time we rendered.
-    bool needStartRender = false;
+    // A live pass can replace all state in the shared renderer. Drop any
+    // binding set not installed by this pass, then republish this pass's
+    // cached inputs even when its local values have not changed.
+    const bool passActivated =
+        !_hasInstalledAovBindings ||
+        _aovBindingsVersion != _renderer->GetAovBindingsVersion();
+    bool needStartRender = passActivated;
+    if (passActivated) {
+        _renderThread->StopRender();
+        if (!_renderer->GetAovBindings().empty()) {
+            _renderer->SetAovBindings(HdRenderPassAovBindingVector());
+        }
+        _hasInstalledAovBindings = false;
+    }
+
     if (_UpdateRenderSettingsFromActiveRenderSettingsPrim()) {
         needStartRender = true;
     }
@@ -776,21 +801,23 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         double currentFrame = 0.0;
         double currentTime = 0.0;
         _GetSceneFrameAndTime(si, &currentFrame, &currentTime);
-        if (_lastFrame != currentFrame || _lastTime != currentTime) {
+        frameTimeChanged =
+            _lastFrame != currentFrame || _lastTime != currentTime;
+        if (passActivated || frameTimeChanged) {
             _renderThread->StopRender();
             _renderer->SetSceneFrameAndTime(
                 static_cast<float>(currentFrame),
                 static_cast<float>(currentTime));
             _lastFrame = currentFrame;
             _lastTime = currentTime;
-            frameTimeChanged = true;
             needStartRender = true;
         }
     }
 
     const GfVec4f wireframeColor = renderPassState->GetWireframeColor();
     const float wireframeLineWidth = renderPassState->GetLineWidth();
-    if (_wireframeColor != wireframeColor ||
+    if (passActivated ||
+        _wireframeColor != wireframeColor ||
         _wireframeLineWidth != wireframeLineWidth) {
         _wireframeColor = wireframeColor;
         _wireframeLineWidth = wireframeLineWidth;
@@ -804,7 +831,8 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     // Likewise the render settings.
     HdRenderDelegate *renderDelegate = GetRenderIndex()->GetRenderDelegate();
     int currentSettingsVersion = renderDelegate->GetRenderSettingsVersion();
-    if (!_hasAppliedRendererSettings ||
+    if (passActivated ||
+        !_hasAppliedRendererSettings ||
         _lastSettingsVersion != currentSettingsVersion) {
         _renderThread->StopRender();
         _lastSettingsVersion = currentSettingsVersion;
@@ -1022,6 +1050,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     const ty::CameraDepthOfField cameraDepthOfField =
         _GetCameraDepthOfField(renderPassState);
     const bool projectionChanged =
+        passActivated ||
         _viewMatrix != view || _projMatrix != proj;
     if (projectionChanged ||
         _cameraExposureScale != cameraExposureScale ||
@@ -1041,7 +1070,8 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
     const GfRect2i dataWindow = _GetDataWindow(renderPassState);
 
-    const bool dataWindowChanged = _dataWindow != dataWindow;
+    const bool dataWindowChanged =
+        passActivated || _dataWindow != dataWindow;
     if (dataWindowChanged) {
         _dataWindow = dataWindow;
 
@@ -1120,7 +1150,9 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     _subdivisionDisplacementUpdatePending |=
         materialChanged || frameTimeChanged;
     if (hasAttachedCamera && _hasSubdivisionCamera &&
-        (_subdivisionSceneUpdatePending || updateSubdivisionCamera)) {
+        (passActivated ||
+         _subdivisionSceneUpdatePending ||
+         updateSubdivisionCamera)) {
         _renderThread->StopRender();
         if (static_cast<HdEmbreeRenderDelegate*>(renderDelegate)
                 ->UpdateAdaptiveSubdivision(
@@ -1144,7 +1176,9 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     // we always get a chance to add color/depth on the first time through.
     HdRenderPassAovBindingVector aovBindings =
         renderPassState->GetAovBindings();
-    if (_aovBindings != aovBindings || _renderer->GetAovBindings().empty()) {
+    if (!_hasInstalledAovBindings ||
+        _aovBindings != aovBindings ||
+        _renderer->GetAovBindings().empty()) {
         _aovBindings = aovBindings;
 
         _renderThread->StopRender();
@@ -1162,6 +1196,8 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             aovBindings.push_back(depthAov);
         }
         _renderer->SetAovBindings(aovBindings);
+        _hasInstalledAovBindings = true;
+        _aovBindingsVersion = _renderer->GetAovBindingsVersion();
         // Preserve the last resolved image across restarts and only reset
         // progressive accumulation state on the new attachments.
         _renderer->ResetAccumulation();
@@ -1174,7 +1210,6 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
     // Only start a new render if something in the scene has changed.
     if (needStartRender) {
-        _converged = false;
         _renderProductsWritten = false;
         _renderer->MarkAovBuffersUnconverged();
         _renderer->MarkFramePending();

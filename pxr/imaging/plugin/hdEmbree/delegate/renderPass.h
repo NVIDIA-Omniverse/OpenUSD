@@ -23,6 +23,7 @@
 #include "pxr/usd/sdf/path.h"
 
 #include <atomic>
+#include <cstdint>
 #include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -78,10 +79,14 @@ protected:
     void _MarkCollectionDirty() override;
 
 private:
-    /// Report whether all active AOVs have reached their parking/completion
-    /// state. This says nothing about whether renderer setup produced a valid
-    /// frame. Empty caller bindings currently remain unconverged through the
-    /// legacy fallback flag.
+    /// Report whether all AOV bindings installed by this pass have reached
+    /// their parking/completion state. Returns false before the first
+    /// Execute(). This says nothing about whether renderer setup produced a
+    /// valid frame.
+    ///
+    /// The app thread reads buffer convergence while the render thread writes
+    /// it atomically. A renderer binding-generation match proves this pass is
+    /// current; binding generation/vector replacement is app-thread-only.
     bool _HasConverged() const;
 
     /// Reconcile active RenderSettings opinions owned by this bridge with the
@@ -177,14 +182,16 @@ private:
     // The list of aov buffers this renderpass should write to.
     HdRenderPassAovBindingVector _aovBindings;
 
+    // Whether this pass has installed its bindings in the shared renderer.
+    // A replacement pass must not observe or reuse its predecessor's buffers.
+    bool _hasInstalledAovBindings;
+    // Renderer binding identity recorded by this pass's last installation.
+    uint64_t _aovBindingsVersion;
+
     // If no attachments are provided, provide an anonymous renderbuffer for
     // color and depth output.
     HdEmbreeRenderBuffer _colorBuffer;
     HdEmbreeRenderBuffer _depthBuffer;
-
-    // Legacy empty-binding convergence flag. It is currently reset on render
-    // start but never promoted when the anonymous buffers finish.
-    bool _converged;
 
     // Whether product output has already been attempted for this render.
     bool _renderProductsWritten;

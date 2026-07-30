@@ -52,6 +52,10 @@ USD render-settings schema, not its internal C++ module boundaries.
 - The delegate supports standard color, depth, normal, and ID AOVs, the
   `adaptiveHeatmap` diagnostic, and float-vector primvar outputs. `README.md`
   defines the authoritative names and formats.
+- Legacy viewport clients that bind no AOVs receive anonymous color and depth
+  buffers whose completion drives render-pass convergence. Valid camera
+  framing without AOV bindings remains unsupported and settles as a failed
+  frame.
 
 Offline clients set `enableInteractive = false`. After a valid frame converges,
 the render pass writes active stage-authored RenderProducts through Hio.

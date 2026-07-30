@@ -3277,19 +3277,37 @@ TestRenderPassRequiresCameraAndGatesDynamicTessellation()
     renderPass->Execute(state, TfTokenVector());
     const float refrozen = getFirstLevel();
 
+    // A second live pass owns a separate frozen camera snapshot. Returning to
+    // the first pass must restore its snapshot in shared subdivision geometry.
+    HdRenderPassSharedPtr secondRenderPass =
+        renderDelegate->CreateRenderPass(
+            renderIndex, HdRprimCollection());
+    HdRenderPassStateSharedPtr secondState =
+        renderDelegate->CreateRenderPassState();
+    secondState->SetCamera(static_cast<HdCamera const*>(camera));
+    secondState->SetViewport(GfVec4d(0.0, 0.0, 50.0, 50.0));
+    secondRenderPass->Execute(secondState, TfTokenVector());
+    const float secondPassLevel = getFirstLevel();
+
+    renderPass->Execute(state, TfTokenVector());
+    const float restoredFirstPass = getFirstLevel();
+
     const bool valid =
         _Close(withoutCamera, 1.0f) &&
         initialCamera > withoutCamera &&
         _Close(frozen, initialCamera) &&
         dynamicEnabled > frozen &&
         dynamicUpdated > dynamicEnabled &&
-        _Close(refrozen, dynamicUpdated);
+        _Close(refrozen, dynamicUpdated) &&
+        secondPassLevel < refrozen &&
+        _Close(restoredFirstPass, refrozen);
     if (!valid) {
         std::printf(
             "    levels noCamera=%g initial=%g frozen=%g "
-            "enabled=%g updated=%g refrozen=%g\n",
+            "enabled=%g updated=%g refrozen=%g second=%g restored=%g\n",
             withoutCamera, initialCamera, frozen,
-            dynamicEnabled, dynamicUpdated, refrozen);
+            dynamicEnabled, dynamicUpdated, refrozen,
+            secondPassLevel, restoredFirstPass);
     }
     return valid;
 }

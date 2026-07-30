@@ -70,6 +70,7 @@ TF_DEFINE_PUBLIC_TOKENS(AovTokens, HDEMBREE_AOV_TOKENS);
 ty::Renderer::Renderer()
     : _aovBindings()
     , _aovNames()
+    , _aovBindingsVersion(0)
     , _width(0)
     , _height(0)
     , _viewMatrix(1.0f) // == identity

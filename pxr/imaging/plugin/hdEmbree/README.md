@@ -273,6 +273,10 @@ Before rendering, hdEmbree requires at least one hdEmbree-owned AOV buffer,
 supported AOV formats, matching non-zero buffer dimensions, and a non-empty
 data window contained by every buffer. Invalid setup emits a specific warning,
 performs no sampling or buffer mapping, and terminates that render invocation.
+Legacy viewport clients that provide no AOV bindings receive anonymous color
+and depth buffers; render-pass convergence follows those internal buffers.
+Valid camera framing without AOV bindings remains unsupported and settles as a
+failed frame, so it cannot write a stale `RenderProduct`.
 
 ## Material Interpretation Notes
 

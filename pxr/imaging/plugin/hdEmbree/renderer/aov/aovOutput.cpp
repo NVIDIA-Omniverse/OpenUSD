@@ -110,6 +110,7 @@ ty::Renderer::SetAovBindings(
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
         _aovNames[i] = HdParsedAovToken(_aovBindings[i].aovName);
     }
+    ++_aovBindingsVersion;
 }
 
 bool
@@ -393,6 +394,12 @@ ty::Renderer::Clear()
 void
 ty::Renderer::ResetAccumulation()
 {
+    // No output owns accumulation while render-pass activation is replacing
+    // the shared renderer's borrowed bindings.
+    if (_aovBindings.empty()) {
+        return;
+    }
+
     if (!_ValidateAovBindings()) {
         return;
     }

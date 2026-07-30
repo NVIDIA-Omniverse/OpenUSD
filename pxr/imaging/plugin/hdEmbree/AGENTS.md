@@ -310,6 +310,13 @@ design and owners.
   installed `.pixi` copy.
 - Product output requires a valid, converged frame. Failed setup parks usable
   buffers but must not write a stale product.
+- The renderer binding generation identifies the current live render pass.
+  Only a pass whose installed generation remains current may report convergence
+  or valid products; it reads its local explicit/anonymous buffers. Pass
+  activation republishes pass-owned renderer state and restores its frozen
+  adaptive-subdivision snapshot. Destroying the current owner clears its
+  borrowed bindings, while destroying a non-current pass must not stop the
+  active render.
 - `usdrender` owns output-root and frame-placeholder expansion. hdEmbree
   receives the resolved `productName` and must not expand it again.
 - Never add hit-time string or `TfToken` geomprop lookup. Materials compile

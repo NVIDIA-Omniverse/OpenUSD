@@ -545,6 +545,17 @@ cannot reconstruct missing per-point or per-proxy categories.
    frame from pending or failed setup, so a failed frame parks usable AOVs
    without writing stale RenderProducts.
 
+The renderer binding generation identifies which live render pass currently
+owns the shared renderer. Only that pass may report convergence or current
+frame validity; it reads convergence from its local explicit AOVs or anonymous
+legacy viewport fallbacks. Buffer convergence is atomic between render and app
+threads, while binding generations/vectors are app-thread state. Switching
+passes clears the previous binding set, republishes pass-owned renderer state,
+restores that pass's frozen adaptive-subdivision snapshot, then installs the
+returning pass's bindings after fallback allocation.
+Destroying the current owner stops rendering and clears its borrowed bindings;
+destroying a non-current pass leaves the active render untouched.
+
 ## How a pixel sample becomes a path
 
 ### Pixel and camera sampling
