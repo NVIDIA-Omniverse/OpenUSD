@@ -53,12 +53,37 @@ Bsdf::BsdfSample SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                              float uChoice, float heroWavelengthNm,
                              bool frontFacing);
 
+template <class T>
+Vec3f
+ResolveTreeShadingNormal(
+    const Bsdf::ClosureTree& tree,
+    const T& data,
+    const Vec3f& normalShdWldOut)
+{
+    const Vec3f* defaultNormal = &normalShdWldOut;
+    if (tree.shadingNormalsPrepared) {
+        if constexpr (
+            std::is_same_v<T, Bsdf::DielectricData> ||
+            std::is_same_v<T, Bsdf::DielectricInterfaceData> ||
+            std::is_same_v<T, Bsdf::ConductorData> ||
+            std::is_same_v<T, Bsdf::GeneralizedSchlickData> ||
+            std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
+            defaultNormal = &tree.defaultSpecularNormal;
+        } else {
+            defaultNormal = &tree.defaultDiffuseNormal;
+        }
+    }
+    return ResolveShadingNormal(data, *defaultNormal);
+}
+
 class CausticClassPruner
 {
 public:
     explicit CausticClassPruner(const Bsdf::ClosureTree& source)
         : _source(source)
     {
+        _result.defaultDiffuseNormal = source.defaultDiffuseNormal;
+        _result.defaultSpecularNormal = source.defaultSpecularNormal;
         _result.luminanceCoefficients = source.luminanceCoefficients;
     }
 
@@ -67,6 +92,12 @@ public:
         _result.root = PruneNode(_source.root);
         if (!_result.IsValid(_result.root)) {
             _result.Clear();
+        } else {
+            // Add invalidates prepared state while rebuilding metadata. The
+            // retained leaves already contain the source's prepared authored
+            // normals and share its tree-level defaults.
+            _result.shadingNormalsPrepared =
+                _source.shadingNormalsPrepared;
         }
         return std::move(_result);
     }
@@ -245,7 +276,7 @@ EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
         using T = std::decay_t<decltype(data)>;
         if constexpr (std::is_same_v<T, Bsdf::OrenNayarDiffuseData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             if (Dot(normalShdLobeWldOut, omegaInWld) <= 0.0f ||
                 data.weight <= 0.0f) {
                 return Vec3f(0.0f);
@@ -265,7 +296,7 @@ EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return SafeVec(data.color * (data.weight * factor * kInvPi));
         } else if constexpr (std::is_same_v<T, Bsdf::BurleyDiffuseData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             if (Dot(normalShdLobeWldOut, omegaInWld) <= 0.0f ||
                 data.weight <= 0.0f) {
                 return Vec3f(0.0f);
@@ -279,7 +310,7 @@ EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return SafeVec(data.color * (data.weight * factor * kInvPi));
         } else if constexpr (std::is_same_v<T, Bsdf::TranslucentData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             return SafeVec(EvalTranslucent(data.color, data.weight,
                                              normalShdLobeWldOut, omegaInWld));
         } else if constexpr (std::is_same_v<T, Bsdf::SubsurfaceData>) {
@@ -289,7 +320,7 @@ EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             bool sameSide =
                 IsSameSide(normalShdWldOut, omegaInWld, omegaOutWld);
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             const float effectiveIor =
                 ResolveDielectricIor(data, heroWavelengthNm);
             if (IsEffectivelyDeltaAlpha(data.roughness)) {
@@ -337,7 +368,7 @@ EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             const bool sameSide =
                 IsSameSide(normalShdWldOut, omegaInWld, omegaOutWld);
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             const float effectiveIor =
                 ResolveDielectricIor(data, heroWavelengthNm);
             if (IsEffectivelyDeltaAlpha(data.roughness)) {
@@ -434,7 +465,7 @@ EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return SafeVec(result);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             if (Dot(normalShdLobeWldOut, omegaInWld) <= 0.0f ||
                 data.weight <= 0.0f) {
                 return Vec3f(0.0f);
@@ -458,7 +489,7 @@ EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             bool sameSide =
                 IsSameSide(normalShdWldOut, omegaInWld, omegaOutWld);
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             if (IsEffectivelyDeltaAlpha(data.roughness)) {
                 return Vec3f(0.0f);
             }
@@ -501,7 +532,7 @@ EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return SafeVec(result);
         } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             if (Dot(normalShdLobeWldOut, omegaInWld) <= 0.0f ||
                 data.weight <= 0.0f) {
                 return Vec3f(0.0f);
@@ -512,7 +543,7 @@ EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                             data.weight);
         } else if constexpr (std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             return SafeVec(EvalAdobeOpenPbr(
                 data, normalShdLobeWldOut, omegaInWld, omegaOutWld));
         } else if constexpr (std::is_same_v<T, Bsdf::UnsupportedData>) {
@@ -572,7 +603,7 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return Vec3f(0.0f);
         } else if constexpr (std::is_same_v<T, Bsdf::DielectricData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             const float NdotV = std::max(
                 std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), kEpsilon);
             const float effectiveIor =
@@ -616,7 +647,7 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
         } else if constexpr (
             std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             const float NdotV = std::max(
                 std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), kEpsilon);
             const float effectiveIor =
@@ -662,7 +693,7 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return Clamp01(throughputRgb);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             const float NdotV = std::max(
                 std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), kEpsilon);
             const Vec3f reflectance = LayerThroughputReflectance(
@@ -674,7 +705,7 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 reflectance * data.weight);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             const float NdotV = std::max(
                 std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), kEpsilon);
             const Vec3f reflectance = LayerThroughputReflectance(
@@ -686,7 +717,7 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 reflectance * data.weight);
         } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             float NdotV = std::max(
                 std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), kEpsilon);
             float dirAlbedo = ApproxSheenDirAlbedo(NdotV, data.roughness);
@@ -753,7 +784,7 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return data.weight * std::max(luminance(data.color), 0.0f);
         } else if constexpr (std::is_same_v<T, Bsdf::DielectricData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             const float NdotV = std::max(
                 std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), kEpsilon);
             const float effectiveIor =
@@ -783,7 +814,7 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
         } else if constexpr (
             std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             const float NdotV = std::max(
                 std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), kEpsilon);
             const float effectiveIor =
@@ -800,7 +831,7 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return weight > 0.0f ? std::max(weight, 0.05f) : 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             return data.weight *
                    std::max(luminance(ConductorReflectionFresnel(
                                 data, std::max(std::abs(Dot(normalShdLobeWldOut,
@@ -809,7 +840,7 @@ _ApproxWeight(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                             0.05f);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             const float NdotV = std::max(
                 std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), kEpsilon);
             const Vec3f reflectance = GeneralizedSchlickReflectionFresnel(
@@ -899,13 +930,13 @@ PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
         if constexpr (std::is_same_v<T, Bsdf::OrenNayarDiffuseData> ||
                       std::is_same_v<T, Bsdf::BurleyDiffuseData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             return (Dot(normalShdLobeWldOut, omegaInWld) > 0.0f)
                        ? Bsdf::PdfLambertian(normalShdLobeWldOut, omegaInWld)
                        : 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::TranslucentData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             return PdfTranslucent(normalShdLobeWldOut, omegaInWld);
         } else if constexpr (std::is_same_v<T, Bsdf::SubsurfaceData>) {
             return 0.0f;
@@ -913,7 +944,7 @@ PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             bool sameSide =
                 IsSameSide(normalShdWldOut, omegaInWld, omegaOutWld);
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             const float effectiveIor =
                 ResolveDielectricIor(data, heroWavelengthNm);
             if (IsEffectivelyDeltaAlpha(data.roughness)) {
@@ -943,7 +974,7 @@ PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             const bool sameSide =
                 IsSameSide(normalShdWldOut, omegaInWld, omegaOutWld);
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             const float effectiveIor =
                 ResolveDielectricIor(data, heroWavelengthNm);
             if (IsEffectivelyDeltaAlpha(data.roughness)) {
@@ -1002,7 +1033,7 @@ PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 return 0.0f;
             }
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             return (Dot(normalShdLobeWldOut, omegaInWld) > 0.0f)
                        ? (IsEffectivelyIsotropic(data.roughness)
                               ? Bsdf::PdfGGXSpecular(
@@ -1018,7 +1049,7 @@ PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             bool sameSide =
                 IsSameSide(normalShdWldOut, omegaInWld, omegaOutWld);
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             if (IsEffectivelyDeltaAlpha(data.roughness)) {
                 return 0.0f;
             }
@@ -1046,13 +1077,13 @@ PdfNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             return (Dot(normalShdLobeWldOut, omegaInWld) > 0.0f)
                        ? Bsdf::PdfLambertian(normalShdLobeWldOut, omegaInWld)
                        : 0.0f;
         } else if constexpr (std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             return PdfAdobeOpenPbr(
                 data, normalShdLobeWldOut, omegaInWld, omegaOutWld);
         } else if constexpr (std::is_same_v<T, Bsdf::UnsupportedData>) {
@@ -1154,7 +1185,7 @@ SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
         using T = std::decay_t<decltype(data)>;
         if constexpr (std::is_same_v<T, Bsdf::OrenNayarDiffuseData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             auto sample = Bsdf::SampleLambertian(data.color * data.weight,
                                                  normalShdLobeWldOut,
                                                  omegaOutWld, u1, u2);
@@ -1163,7 +1194,7 @@ SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 heroWavelengthNm, frontFacing);
         } else if constexpr (std::is_same_v<T, Bsdf::BurleyDiffuseData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             auto sample = Bsdf::SampleLambertian(data.color * data.weight,
                                                  normalShdLobeWldOut,
                                                  omegaOutWld, u1, u2);
@@ -1172,7 +1203,7 @@ SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 heroWavelengthNm, frontFacing);
         } else if constexpr (std::is_same_v<T, Bsdf::TranslucentData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             Frame frame = Frame::FromNormal(-normalShdLobeWldOut);
             Vec3f omegaInLocal = SampleCosineHemisphere(u1, u2);
             Vec3f omegaInWld = frame.ToWorld(omegaInLocal);
@@ -1197,7 +1228,7 @@ SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return sample;
         } else if constexpr (std::is_same_v<T, Bsdf::DielectricData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             const float NdotV = std::max(
                 std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), kEpsilon);
             const float effectiveIor =
@@ -1317,7 +1348,7 @@ SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
         } else if constexpr (
             std::is_same_v<T, Bsdf::DielectricInterfaceData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             const float NdotV = std::max(
                 std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), kEpsilon);
             const float effectiveIor =
@@ -1448,7 +1479,7 @@ SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                                           heroWavelengthNm, frontFacing);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             if (IsEffectivelyDeltaAlpha(data.roughness)) {
                 return SampleDeltaConductorReflection(
                     data, normalShdLobeWldOut, omegaOutWld);
@@ -1470,7 +1501,7 @@ SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                                           heroWavelengthNm, frontFacing);
         } else if constexpr (std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             const float NdotV = std::max(
                 std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), kEpsilon);
             const bool hasDeltaRoughness =
@@ -1609,7 +1640,7 @@ SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                                           heroWavelengthNm, frontFacing);
         } else if constexpr (std::is_same_v<T, Bsdf::SheenData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             auto sample = Bsdf::SampleLambertian(data.color * data.weight,
                                                  normalShdLobeWldOut,
                                                  omegaOutWld, u1, u2);
@@ -1618,7 +1649,7 @@ SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                                           heroWavelengthNm, frontFacing);
         } else if constexpr (std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
             const Vec3f normalShdLobeWldOut =
-                ResolveShadingNormal(data, normalShdWldOut);
+                ResolveTreeShadingNormal(tree, data, normalShdWldOut);
             return SampleAdobeOpenPbr(
                 data, normalShdLobeWldOut, omegaOutWld, u1, u2, uChoice);
         } else if constexpr (std::is_same_v<T, Bsdf::UnsupportedData>) {
@@ -1744,8 +1775,18 @@ PrepareShadingNormals(
         return 0;
     }
 
+    tree->defaultDiffuseNormal = normalShdWldOut;
+    tree->defaultSpecularNormal = tree->hasDefaultSpecularNormalNodes
+        ? EnsureValidSpecularReflection(
+              normalGeomWldOut, omegaOutWld, normalShdWldOut)
+        : normalShdWldOut;
+    tree->shadingNormalsPrepared = true;
+
     std::size_t invalidCount = 0;
-    for (Bsdf::Node& node : tree->nodes) {
+    for (Bsdf::NodeId nodeId = tree->firstAuthoredNormalNodeId;
+         tree->IsValid(nodeId);
+         nodeId = tree->nodes[nodeId].nextAuthoredNormalNodeId) {
+        Bsdf::Node& node = tree->nodes[nodeId];
         std::visit([&](auto& data) {
             // C++17 visitor dispatch over the finite closure-node variant.
             using T = std::decay_t<decltype(data)>;

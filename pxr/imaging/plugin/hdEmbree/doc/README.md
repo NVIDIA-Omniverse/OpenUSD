@@ -34,8 +34,9 @@ edited by several plans, so those plans must be **serialized and rebased on each
 other**, not developed in parallel. The plans may all be implemented on one
 branch; keep logical commit boundaries where they aid review and bisection.
 "Depends on" means the listed work must be completed earlier in that branch.
-There are no suffix-number exceptions: filenames form one contiguous execution
-sequence from `01` through `26`.
+Files `01` through `26` form the implementation sequence. File `27` is a
+post-implementation performance investigation rather than another cleanup
+step.
 
 ## Execution order
 
@@ -374,6 +375,18 @@ coat-normal, and coarsely tessellated surfaces all change. Also resolves the
 eleven loose ends that branch carries.
 _Source branch predates 19–21, so only one of its three commits cherry-picks
 cleanly; the other two are re-implemented against the settled tree._
+
+### Phase H — Performance investigation
+
+**27 · [Performance regression since `f66ecfb1f`](27-plan-perf-regression.md)**
+— fixed-camera-sample retired-instruction bisection and cycle-stack comparison
+for the AOUSD OpenPBR carpaint and glass cases. Locates the dominant commit
+boundaries, records hybrid-PMU measurement pitfalls, identifies a
+texture-parameterized triangle-input bug in smooth shadow offsets, and requires
+renderer-work counters and Release confirmation before causal attribution.
+The corrective HEAD follow-up supplies genuine triangle inputs, lazy
+smooth-shadow construction, object-position requirement gating, and adjacent
+hit-time work reductions; historical attribution remains separate.
 
 ## Overlap ownership (who is authoritative)
 

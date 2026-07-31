@@ -752,7 +752,12 @@ private:
         GfVec3f posHitWld = GfVec3f(0.0f);
         GfVec3f normalGeomWldExt = GfVec3f(0.0f);
         GfVec3f normalSrfWldExt = GfVec3f(0.0f);
-        GfVec3f smoothShadowOffsetExt = GfVec3f(0.0f);
+        InstanceContext const* instanceContext = nullptr;
+        PrototypeContext const* prototypeContext = nullptr;
+        unsigned int primitiveId =
+            std::numeric_limits<unsigned int>::max();
+        float baryU = 0.0f;
+        float baryV = 0.0f;
         DisplacedSubdivFrame displacedFrame;
         bool frontFacing = true;
         bool doubleSided = false;
@@ -768,15 +773,13 @@ private:
         {
             return frontFacing ? normalSrfWldExt : -normalSrfWldExt;
         }
-
-        GfVec3f
-        GetSmoothShadowOffsetOut() const
-        {
-            return frontFacing
-                ? smoothShadowOffsetExt
-                : -smoothShadowOffsetExt;
-        }
     };
+
+    /// Compute the smooth-triangle visibility-origin lift on first demand.
+    /// Genuine mesh corners and Embree barycentrics are used; authored-st
+    /// derivatives are deliberately unrelated to this calculation.
+    GfVec3f _ComputeSmoothShadowOffsetOut(
+        _SurfaceInteraction const& interaction) const;
 
     /// \brief Propagate or discard ray differentials after a BSDF sample.
     ///
@@ -876,12 +879,15 @@ private:
         /// \param computeScreenSpaceDerivatives True to derive texture
         /// differentials from \ref RayDifferential.
         explicit _ShadingContextOptions(
-            bool computeScreenSpaceDerivatives = true)
-            : computeScreenSpaceDerivatives(computeScreenSpaceDerivatives)
+            bool computeScreenSpaceDerivatives = true,
+            bool computeObjectSpacePosition = true)
+            : computeScreenSpaceDerivatives(computeScreenSpaceDerivatives),
+              computeObjectSpacePosition(computeObjectSpacePosition)
         {
         }
 
         bool computeScreenSpaceDerivatives;
+        bool computeObjectSpacePosition;
     };
 
     /// \brief Build MaterialX inputs for a renderer geometry hit.

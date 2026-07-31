@@ -105,6 +105,11 @@ struct PrototypeContext
     /// The arrays have one entry per triangulated primitive when populated.
     VtVec3fArray const* triangleDPdu = nullptr;
     VtVec3fArray const* triangleDPdv = nullptr;
+    /// Mesh-owned coarse triangle topology and object-space points. These
+    /// provide genuine barycentric corners; authored-st derivatives above
+    /// must never be reinterpreted as triangle edges.
+    VtVec3iArray const* triangleIndices = nullptr;
+    VtVec3fArray const* points = nullptr;
     /// Name-indexed owning storage for primvar samplers.
     std::unordered_map<
         TfToken,
@@ -116,6 +121,11 @@ struct PrototypeContext
     PrimvarSampler const* triangleNormalSampler = nullptr;
     TriangleCornerSamplerKind triangleNormalSamplerKind =
         TriangleCornerSamplerKind::none;
+    /// Fixed-name tangent samplers cached to avoid hit-time token hashing.
+    PrimvarSampler const* tangentSampler = nullptr;
+    PrimvarSampler const* bitangentSampler = nullptr;
+    PrimvarSampler const* computedTangentSampler = nullptr;
+    PrimvarSampler const* computedBitangentSampler = nullptr;
     /// Optional primitive-to-coarse-face data consumed by the elementId AOV.
     /// Empty storage falls back to the raw Embree primitive ID.
     VtIntArray primitiveParams;

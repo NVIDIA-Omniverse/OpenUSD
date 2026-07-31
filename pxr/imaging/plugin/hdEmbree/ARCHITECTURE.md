@@ -486,6 +486,10 @@ MaterialX closure values stay typed through graph evaluation:
 - `ND_dielectric_bsdf` preserves MaterialX `R`, `T`, and `RT` scatter modes.
   When closure trees are merged, every child ID in nested
   mix/layer/add/multiply nodes is remapped before the new root is appended.
+  Node addition also carries the allocation-free sparse authored-normal index
+  and default
+  specular-normal requirement; direct mutation of the node vector would break
+  per-interaction normal preparation.
 - Typed VDF nodes carry absorption, scattering, and anisotropy into
   `interiorMedium`; `thin_walled` suppresses that medium.
 
@@ -493,10 +497,24 @@ MaterialX closure values stay typed through graph evaluation:
 `displayOpacity`. Named geometry data uses `ND_geompropvalue_*`, never
 `geomColor` or `geomColorN`.
 
-MaterialX object-space position comes from Embree primitive interpolation, not
-ray-origin/tfar reconstruction. Displaced subdivision reuses the evaluated
-displaced frame position. The ray-derived world hit remains authoritative for
+Compiled graphs record whether a reachable node consumes object-space
+position. Only those graphs request exact primitive interpolation; other
+surface graphs use the transformed world hit already required by transport.
+Coarse triangles interpolate mesh-owned genuine position corners, refined
+geometry uses Embree primitive interpolation, and displaced subdivision reuses
+the evaluated displaced-frame position. None uses authored-st `dPdu`/`dPdv` as
+barycentric edges. The ray-derived world hit remains authoritative for
 transport, ray offsets, and geometric AOVs.
+
+Closure trees own per-interaction diffuse and reflection-safe specular default
+normals. Tree construction records only leaves with authored normal state;
+`PrepareShadingNormals()` validates those sparse leaves and does not sweep
+default-normal or composition nodes. Traversal resolves un-authored diffuse
+leaves from the tree's diffuse default and un-authored reflective leaves from
+its one shared specular default. Tree copying, merging, pruning, and clearing
+must preserve or rebuild this metadata together with node IDs.
+Adding a node invalidates prepared state; prepared-tree pruning rebuilds the
+index and republishes the unchanged prepared defaults only after construction.
 
 The tiled circle, cloverleaf, and hexagon nodes implement the MaterialX stdlib
 formulas directly and retain their stdlib coordinate folds/constants.
@@ -682,11 +700,14 @@ For each segment, `_IntegratePath()` performs these stages in order:
    - `frontFacing` is computed once from
      `dot(normalGeomWldExt, omegaOutWld)`.
 
-   Coarse, non-displaced triangles also compute a smooth-surface origin lift
-   derived from their corner normals. Direct-light shadow rays blend toward
-   that lifted origin near a smooth/facet terminator while retaining
-   `normalGeomWldExt` for the self-intersection bias. Refined and displaced
-   prototypes deliberately skip the lift: their committed tessellation already
+   Coarse, non-displaced triangles can compute a smooth-surface origin lift
+   from genuine mesh-owned position corners, corresponding corner normals,
+   and Embree barycentrics. It is constructed lazily once, only after a valid
+   direct-light sample needs a nonzero terminator correction. Direct-light
+   shadow rays blend toward that lifted origin while retaining
+   `normalGeomWldExt` for the self-intersection bias. Authored-st derivatives
+   remain solely surface derivatives. Refined and displaced prototypes
+   deliberately skip the lift: their committed tessellation already
    approximates the shaded surface, while applying the coarse-cage correction
    would over-offset it.
 
@@ -696,7 +717,8 @@ For each segment, `_IntegratePath()` performs these stages in order:
    outward-frame handedness. All normal vectors use inverse-transpose
    transforms under non-uniform instance transforms. `_BuildShadingContext()`
    supplies texture coordinates,
-   display color, the reconstructed displaced tangent frame when available,
+   display color, the reconstructed displaced tangent frame when available
+   (using cached fixed-name sampler pointers rather than hit-time map lookup),
    geomprop lookup, uniform primvars, and surface/ray derivatives.
 9. **Evaluate the material.** The bound `mxcpp::EvalGraph` produces a
    `SurfaceClosure`. Malformed graphs are rejected during compilation, so
@@ -713,8 +735,9 @@ For each segment, `_IntegratePath()` performs these stages in order:
    normal and tangent frame are on the incident transport side. Material and
    per-lobe normals are accepted only when finite, non-degenerate, and in the
    smooth base hemisphere; rejected values fall back to the base without
-   negation. Each reflective lobe is then corrected once, before traversal, if
-   its mirror direction would fall below the incident-side geometric surface.
+   negation. The default reflective normal is corrected once per interaction;
+   authored per-lobe normals are corrected individually before traversal if
+   their mirror direction would fall below the incident-side geometric surface.
    Evaluation, sampling, PDF evaluation, and delta reflection all consume that
    same prepared lobe normal. Object-space normal maps therefore fall back unless graph
    conversion places their result in that incident frame. Coupled

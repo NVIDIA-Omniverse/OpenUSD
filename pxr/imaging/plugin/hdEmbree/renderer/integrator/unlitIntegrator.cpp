@@ -87,10 +87,16 @@ ty::Renderer::_IntegrateUnlit(
     }
     const GfVec3f posHitWld = interaction.posHitWld;
     GfVec3f normalShdWldOut = interaction.GetNormalSrfWldOut();
+    mxcpp::EvalGraph* surfaceGraph = prototypeContext->material
+        ? prototypeContext->material->surfaceGraph
+        : nullptr;
     // Build shading context via shared helper (texcoord, displayColor,
     // tangent frame all constructed consistently).
+    const _ShadingContextOptions contextOptions(
+        true, surfaceGraph && surfaceGraph->RequiresObjectSpacePosition());
     mxcpp::ShadingContext ctx = _BuildShadingContext(
-        rayHit, diffRay, instanceContext, prototypeContext, interaction);
+        rayHit, diffRay, instanceContext, prototypeContext, interaction,
+        nullptr, nullptr, contextOptions);
     ty::PrimvarLookup cbData{
         &prototypeContext->geomPropSamplers,
         rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
@@ -103,10 +109,6 @@ ty::Renderer::_IntegrateUnlit(
     GfVec3f bitangent = ty::ToGf(ctx.bitangent);
 
     // Try to evaluate MaterialXCpp material if one is bound.
-    mxcpp::EvalGraph* surfaceGraph = prototypeContext->material
-        ? prototypeContext->material->surfaceGraph
-        : nullptr;
-
     mxcpp::SurfaceClosure closure;
     bool hasMaterialClosure = false;
 

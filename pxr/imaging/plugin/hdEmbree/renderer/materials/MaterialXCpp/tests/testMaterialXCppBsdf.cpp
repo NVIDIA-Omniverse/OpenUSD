@@ -26,6 +26,7 @@
 #include <renderer/materials/MaterialXCpp/materials/usdPreviewSurface.h>
 #include <renderer/materials/MaterialXCpp/nodes/helpers/mathHelpers.h>
 #include <renderer/materials/MaterialXCpp/spectral.h>
+#include <renderer/materials/MaterialXCpp/surfaceShaderUtils.h>
 
 #include <algorithm>
 #include <cmath>
@@ -3028,6 +3029,72 @@ TestDeltaThinWalledDielectricInterfaceTransmitsStraightThrough()
 }
 
 static bool
+TestPrunePreservesPreparedSparseNormalState()
+{
+    SurfaceClosure closure;
+    Bsdf::ConductorData conductor;
+    conductor.roughness = Vec2f(0.2f);
+    Bsdf::BurleyDiffuseData diffuse;
+    diffuse.hasShadingNormal = true;
+    diffuse.normal = Vec3f(0.0f, 0.0f, 2.0f);
+    Bsdf::AddData add;
+    add.in1 = closure.bsdfTree.Add(conductor);
+    add.in2 = closure.bsdfTree.Add(diffuse);
+    closure.bsdfTree.root = closure.bsdfTree.Add(add);
+
+    const Vec3f normalShdWldOut =
+        Vec3f(-0.4f, 0.0f, 0.9165f).normalized();
+    const Vec3f normalGeomWldOut(0.0f, 0.0f, 1.0f);
+    const Vec3f omegaOutWld(0.0f, 0.0f, 1.0f);
+    const Vec3f omegaInWld =
+        Vec3f(0.2f, 0.1f, 0.97f).normalized();
+    if (Bsdf::detail::PrepareShadingNormals(
+            &closure.bsdfTree, normalShdWldOut,
+            normalGeomWldOut, omegaOutWld) != 0) {
+        return false;
+    }
+
+    const SurfaceClosure pruned = Bsdf::PruneCausticClassLobes(closure);
+    if (!pruned.bsdfTree.shadingNormalsPrepared ||
+        !pruned.bsdfTree.hasDefaultSpecularNormalNodes ||
+        !pruned.bsdfTree.IsValid(
+            pruned.bsdfTree.firstAuthoredNormalNodeId) ||
+        pruned.bsdfTree.nodes[
+            pruned.bsdfTree.firstAuthoredNormalNodeId]
+                .nextAuthoredNormalNodeId != Bsdf::InvalidNodeId ||
+        !Test_IsClose(
+            pruned.bsdfTree.defaultDiffuseNormal,
+            closure.bsdfTree.defaultDiffuseNormal, 1.0e-6f) ||
+        !Test_IsClose(
+            pruned.bsdfTree.defaultSpecularNormal,
+            closure.bsdfTree.defaultSpecularNormal, 1.0e-6f)) {
+        return false;
+    }
+
+    const Vec3f sourceEval = Bsdf::EvalSurface(
+        closure, normalShdWldOut, omegaInWld, omegaOutWld);
+    const Vec3f prunedEval = Bsdf::EvalSurface(
+        pruned, normalShdWldOut, omegaInWld, omegaOutWld);
+    const float sourcePdf = Bsdf::PdfSurface(
+        closure, normalShdWldOut, omegaInWld, omegaOutWld);
+    const float prunedPdf = Bsdf::PdfSurface(
+        pruned, normalShdWldOut, omegaInWld, omegaOutWld);
+    const Bsdf::BsdfSample sourceSample = Bsdf::SampleSurface(
+        closure, normalShdWldOut, omegaOutWld, 0.3f, 0.7f, 0.2f);
+    const Bsdf::BsdfSample prunedSample = Bsdf::SampleSurface(
+        pruned, normalShdWldOut, omegaOutWld, 0.3f, 0.7f, 0.2f);
+    return Test_IsClose(sourceEval, prunedEval, 1.0e-6f) &&
+        Test_IsClose(sourcePdf, prunedPdf, 1.0e-6f) &&
+        Test_IsClose(
+            sourceSample.omegaInWld, prunedSample.omegaInWld, 1.0e-6f) &&
+        Test_IsClose(
+            sourceSample.bsdfValue, prunedSample.bsdfValue, 1.0e-6f) &&
+        Test_IsClose(
+            sourceSample.pdfSolidAngle,
+            prunedSample.pdfSolidAngle, 1.0e-6f);
+}
+
+static bool
 TestPruneCausticClassLobesRemovesDeltaReflectionFromAdd()
 {
     Bsdf::ClosureTree tree;
@@ -4722,6 +4789,135 @@ TestPerLobeInvalidNormalsAreObservable()
 }
 
 static bool
+TestSparseShadingNormalPreparation()
+{
+    Bsdf::ClosureTree tree;
+    const Bsdf::NodeId diffuseId =
+        tree.Add(Bsdf::OrenNayarDiffuseData{});
+    const Bsdf::NodeId conductorId =
+        tree.Add(Bsdf::ConductorData{});
+    Bsdf::BurleyDiffuseData authoredDiffuse;
+    authoredDiffuse.hasShadingNormal = true;
+    authoredDiffuse.normal = Vec3f(0.0f, 0.0f, 2.0f);
+    const Bsdf::NodeId authoredId = tree.Add(authoredDiffuse);
+
+    if (tree.firstAuthoredNormalNodeId != authoredId ||
+        tree.nodes[authoredId].nextAuthoredNormalNodeId !=
+            Bsdf::InvalidNodeId ||
+        !tree.hasDefaultSpecularNormalNodes) {
+        return false;
+    }
+
+    const Vec3f normalShdWldOut =
+        Vec3f(-0.95f, 0.0f, 0.31f).normalized();
+    const Vec3f normalGeomWldOut(0.0f, 0.0f, 1.0f);
+    const Vec3f omegaOutWld =
+        Vec3f(0.2f, 0.0f, 0.98f).normalized();
+    if (Bsdf::detail::PrepareShadingNormals(
+            &tree, normalShdWldOut, normalGeomWldOut, omegaOutWld) != 0) {
+        return false;
+    }
+
+    const Bsdf::OrenNayarDiffuseData* diffuse =
+        std::get_if<Bsdf::OrenNayarDiffuseData>(
+            &tree.nodes[diffuseId].data);
+    const Bsdf::ConductorData* conductor =
+        std::get_if<Bsdf::ConductorData>(
+            &tree.nodes[conductorId].data);
+    const Bsdf::BurleyDiffuseData* authored =
+        std::get_if<Bsdf::BurleyDiffuseData>(
+            &tree.nodes[authoredId].data);
+    const Vec3f expectedSpecular =
+        Bsdf::detail::EnsureValidSpecularReflection(
+            normalGeomWldOut, omegaOutWld, normalShdWldOut);
+    if (!tree.shadingNormalsPrepared || !diffuse || !conductor || !authored ||
+        diffuse->hasShadingNormal || conductor->hasShadingNormal ||
+        !authored->hasShadingNormal ||
+        !Test_IsClose(
+            authored->normal, Vec3f(0.0f, 0.0f, 1.0f), 1.0e-6f) ||
+        !Test_IsClose(
+            tree.defaultDiffuseNormal, normalShdWldOut, 1.0e-6f) ||
+        !Test_IsClose(
+            tree.defaultSpecularNormal, expectedSpecular, 1.0e-6f)) {
+        return false;
+    }
+
+    Bsdf::BurleyDiffuseData addedAfterPreparation;
+    addedAfterPreparation.hasShadingNormal = true;
+    addedAfterPreparation.normal = -normalShdWldOut;
+    const Bsdf::NodeId addedId = tree.Add(addedAfterPreparation);
+    if (tree.shadingNormalsPrepared ||
+        Bsdf::detail::PrepareShadingNormals(
+            &tree, normalShdWldOut, normalGeomWldOut, omegaOutWld) != 1) {
+        return false;
+    }
+    const Bsdf::BurleyDiffuseData* added =
+        std::get_if<Bsdf::BurleyDiffuseData>(&tree.nodes[addedId].data);
+    return added && added->hasShadingNormal &&
+        Test_IsClose(added->normal, normalShdWldOut, 1.0e-6f);
+}
+
+static bool
+TestAppendClosureTreePreservesSparseNormalMetadata()
+{
+    Bsdf::ClosureTree source;
+    Bsdf::BurleyDiffuseData authoredDiffuse;
+    authoredDiffuse.hasShadingNormal = true;
+    authoredDiffuse.normal = Vec3f(0.0f, 0.0f, 2.0f);
+    Bsdf::AddData add;
+    add.in1 = source.Add(authoredDiffuse);
+    add.in2 = source.Add(Bsdf::ConductorData{});
+    source.root = source.Add(add);
+
+    Bsdf::ClosureTree target;
+    target.Add(Bsdf::OrenNayarDiffuseData{});
+    target.root = AppendClosureTree(&target, source);
+    if (target.root != 3 || target.firstAuthoredNormalNodeId != 1 ||
+        target.nodes[1].nextAuthoredNormalNodeId != Bsdf::InvalidNodeId ||
+        !target.hasDefaultSpecularNormalNodes) {
+        return false;
+    }
+
+    const Vec3f normalShdWldOut(0.0f, 0.0f, 1.0f);
+    const Vec3f omegaOutWld =
+        Vec3f(0.2f, 0.0f, 0.98f).normalized();
+    const Vec3f omegaInWld =
+        Vec3f(-0.3f, 0.1f, 0.95f).normalized();
+    Bsdf::detail::PrepareShadingNormals(
+        &source, normalShdWldOut, normalShdWldOut, omegaOutWld);
+    Bsdf::detail::PrepareShadingNormals(
+        &target, normalShdWldOut, normalShdWldOut, omegaOutWld);
+
+    const Vec3f sourceEval = Bsdf::detail::EvalNode(
+        source, source.root, normalShdWldOut, omegaInWld, omegaOutWld,
+        0.0f, true);
+    const Vec3f targetEval = Bsdf::detail::EvalNode(
+        target, target.root, normalShdWldOut, omegaInWld, omegaOutWld,
+        0.0f, true);
+    const float sourcePdf = Bsdf::detail::PdfNode(
+        source, source.root, normalShdWldOut, omegaInWld, omegaOutWld,
+        0.0f, true);
+    const float targetPdf = Bsdf::detail::PdfNode(
+        target, target.root, normalShdWldOut, omegaInWld, omegaOutWld,
+        0.0f, true);
+    const Bsdf::BsdfSample sourceSample = Bsdf::detail::SampleNode(
+        source, source.root, normalShdWldOut, omegaOutWld,
+        0.3f, 0.7f, 0.2f, 0.0f, true);
+    const Bsdf::BsdfSample targetSample = Bsdf::detail::SampleNode(
+        target, target.root, normalShdWldOut, omegaOutWld,
+        0.3f, 0.7f, 0.2f, 0.0f, true);
+    return Test_IsClose(sourceEval, targetEval, 1.0e-6f) &&
+        Test_IsClose(sourcePdf, targetPdf, 1.0e-6f) &&
+        Test_IsClose(
+            sourceSample.omegaInWld, targetSample.omegaInWld, 1.0e-6f) &&
+        Test_IsClose(
+            sourceSample.bsdfValue, targetSample.bsdfValue, 1.0e-6f) &&
+        Test_IsClose(
+            sourceSample.pdfSolidAngle,
+            targetSample.pdfSolidAngle, 1.0e-6f);
+}
+
+static bool
 TestTreeDiffuseNormalIsIndependentOfViewHemisphere()
 {
     const Vec3f materialNormal =
@@ -5113,8 +5309,10 @@ TestEnsureValidSpecularReflection()
     const Bsdf::AdobeOpenPbrData* preparedAdobe =
         std::get_if<Bsdf::AdobeOpenPbrData>(
             &adobeClosure.bsdfTree.nodes[0].data);
-    if (!preparedAdobe || !preparedAdobe->hasShadingNormal ||
-        !Test_IsClose(preparedAdobe->normal, corrected, 1.0e-5f)) {
+    if (!preparedAdobe || preparedAdobe->hasShadingNormal ||
+        !Test_IsClose(
+            adobeClosure.bsdfTree.defaultSpecularNormal,
+            corrected, 1.0e-5f)) {
         return false;
     }
     const AdobeOpenPbrPreparedSurface preparedAdobeSurface =
@@ -5141,7 +5339,7 @@ TestEnsureValidSpecularReflection()
             adobeClosure, normalShdWldOut, sample.omegaInWld,
             omegaOutWld, 0.0f, true);
         const Vec3f correctedBasisValue = EvalAdobeOpenPbr(
-            *preparedAdobe, preparedAdobe->normal,
+            *preparedAdobe, adobeClosure.bsdfTree.defaultSpecularNormal,
             sample.omegaInWld, omegaOutWld);
         const Vec3f uncorrectedBasisValue = EvalAdobeOpenPbr(
             *preparedAdobe, normalShdWldOut,
@@ -5264,6 +5462,7 @@ Test_RegisterBsdfTests()
     _REG(TestDeltaDielectricInterfaceTirDoesNotAmplifyThroughput);
     _REG(TestThinWalledDielectricInterfaceSamplePdfConsistency);
     _REG(TestDeltaThinWalledDielectricInterfaceTransmitsStraightThrough);
+    _REG(TestPrunePreservesPreparedSparseNormalState);
     _REG(TestPruneCausticClassLobesRemovesDeltaReflectionFromAdd);
     _REG(TestPruneCausticClassLobesRemovesInterfaceTransmission);
     _REG(TestPruneCausticClassLobesEmptyTreeDoesNotUseLegacyFallback);
@@ -5279,6 +5478,8 @@ Test_RegisterBsdfTests()
     _REG(TestTreeDielectricCustomNormalMatchesStandaloneShadingNormal);
     _REG(TestPerLobeNormalResolutionIsViewIndependent);
     _REG(TestPerLobeInvalidNormalsAreObservable);
+    _REG(TestSparseShadingNormalPreparation);
+    _REG(TestAppendClosureTreePreservesSparseNormalMetadata);
     _REG(TestTreeDiffuseNormalIsIndependentOfViewHemisphere);
     _REG(TestReflectiveLeafIsContinuousAcrossNormalTangentPlane);
     _REG(TestExplicitBaseNormalMatchesInheritedNormal);

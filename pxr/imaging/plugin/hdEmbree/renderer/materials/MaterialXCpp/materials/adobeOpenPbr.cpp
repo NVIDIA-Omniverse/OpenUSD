@@ -690,8 +690,11 @@ PrepareAdobeOpenPbrSurface(const SurfaceClosure& closure,
         return AdobeOpenPbrPreparedSurface{};
     }
 
-    const Vec3f normalShdLobeWldOut =
-        data->hasShadingNormal ? data->normal : normalShdWldOut;
+    const Vec3f normalShdLobeWldOut = data->hasShadingNormal
+        ? data->normal
+        : (closure.bsdfTree.shadingNormalsPrepared
+               ? closure.bsdfTree.defaultSpecularNormal
+               : normalShdWldOut);
     auto state = std::make_shared<AdobeOpenPbrPreparedSurfaceState>();
     state->data = *data;
     state->normalShdWldOut = normalShdLobeWldOut;

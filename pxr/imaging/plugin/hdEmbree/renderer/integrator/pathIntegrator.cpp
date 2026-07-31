@@ -272,13 +272,19 @@ ty::Renderer::_IntegratePath(
         GfVec3f normalShdWldOut = normalSrfWldOut;
         ty::DisplacedSubdivFrame& displacedFrame =
             interaction.displacedFrame;
+        mxcpp::EvalGraph* surfaceGraph = prototypeContext->material
+            ? prototypeContext->material->surfaceGraph
+            : nullptr;
 
         // Build material inputs: interpolated primvars, texture derivatives,
         // tangent frame, and normal derivatives needed after sampling.
+        const _ShadingContextOptions contextOptions(
+            true,
+            surfaceGraph && surfaceGraph->RequiresObjectSpacePosition());
         mxcpp::ShadingContext ctx = _BuildShadingContext(
             rayHit, path.diffRay, instanceContext, prototypeContext,
             interaction, &surfaceDifferentials.dndu,
-            &surfaceDifferentials.dndv);
+            &surfaceDifferentials.dndv, contextOptions);
         ty::PrimvarLookup cbData{
             &prototypeContext->geomPropSamplers,
             rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v};
@@ -309,10 +315,6 @@ ty::Renderer::_IntegratePath(
         // Evaluate the graph into one closure. Failure falls through to the
         // display-color fallback used by direct lighting.
         // -----------------------------------------------------------------
-        mxcpp::EvalGraph* surfaceGraph = prototypeContext->material
-            ? prototypeContext->material->surfaceGraph
-            : nullptr;
-
         mxcpp::SurfaceClosure closure;
         bool hasClosure = false;
 

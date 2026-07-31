@@ -141,8 +141,8 @@ ty::Renderer::_ComputeDirectLightingMIS(
         spectralActive, heroWavelengthNm, heroWavelengthPdf};
     const GfVec3f& posWld = interaction.posHitWld;
     const GfVec3f normalSrfWldOut = interaction.GetNormalSrfWldOut();
-    const GfVec3f smoothShadowOffsetOut =
-        interaction.GetSmoothShadowOffsetOut();
+    GfVec3f smoothShadowOffsetOut(0.0f);
+    bool smoothShadowOffsetComputed = false;
     const GfVec3f& normalGeomWldExt = interaction.normalGeomWldExt;
     const bool frontFacing = interaction.frontFacing;
     GfVec3f radianceDirect(0.0f);
@@ -236,6 +236,12 @@ ty::Renderer::_ComputeDirectLightingMIS(
             const float shadowOffsetWeight =
                 ty::ComputeShadowTerminatorOffsetWeight(
                     normalSrfWldOut, normalGeomWldOut, ls.omegaInWld);
+            if (shadowOffsetWeight > 0.0f &&
+                !smoothShadowOffsetComputed) {
+                smoothShadowOffsetOut =
+                    _ComputeSmoothShadowOffsetOut(interaction);
+                smoothShadowOffsetComputed = true;
+            }
             const GfVec3f posVisibilityWld =
                 posWld +
                 (transmission

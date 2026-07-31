@@ -1675,6 +1675,14 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
         ctx->triangleNormalSampler = nullptr;
         ctx->triangleNormalSamplerKind =
             ty::TriangleCornerSamplerKind::none;
+    } else if (name == _tokensTangent) {
+        ctx->tangentSampler = nullptr;
+    } else if (name == _tokensBitangent) {
+        ctx->bitangentSampler = nullptr;
+    } else if (name == _tokensComputedTangent) {
+        ctx->computedTangentSampler = nullptr;
+    } else if (name == _tokensComputedBitangent) {
+        ctx->computedBitangentSampler = nullptr;
     }
 
     HdVtBufferSource buffer(name, data);
@@ -1748,6 +1756,14 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
                 ctx->triangleNormalSamplerKind =
                     ty::TriangleCornerSamplerKind::faceVarying;
             }
+        } else if (name == _tokensTangent) {
+            ctx->tangentSampler = sampler.get();
+        } else if (name == _tokensBitangent) {
+            ctx->bitangentSampler = sampler.get();
+        } else if (name == _tokensComputedTangent) {
+            ctx->computedTangentSampler = sampler.get();
+        } else if (name == _tokensComputedBitangent) {
+            ctx->computedBitangentSampler = sampler.get();
         }
         ctx->primvarMap[name] = std::move(sampler);
     }
@@ -2030,6 +2046,8 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
                 : 1.0f;
         _prototypeContext->triangleDPdu = &_triangleDPdu;
         _prototypeContext->triangleDPdv = &_triangleDPdv;
+        _prototypeContext->triangleIndices = &_triangulatedIndices;
+        _prototypeContext->points = &_points;
         _prototypeContext->primitiveParams = (_refined ?
             _trianglePrimitiveParams : VtIntArray());
         _prototypeContext->faceVertexCounts =
@@ -2207,6 +2225,8 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
     } else {
         ty::PrototypeContext* ctx = _prototypeContext.get();
         if (ctx) {
+            ctx->computedTangentSampler = nullptr;
+            ctx->computedBitangentSampler = nullptr;
             for (TfToken const& name :
                      {_tokensComputedTangent, _tokensComputedBitangent}) {
                 auto it = ctx->primvarMap.find(name);

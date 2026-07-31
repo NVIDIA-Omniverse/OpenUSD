@@ -9,6 +9,7 @@
 #include <renderer/materials/MaterialXCpp/nodeRegistry.h>
 #include <renderer/materials/MaterialXCpp/nodes/helpers/spaceHelpers.h>
 #include <renderer/materials/MaterialXCpp/paramMap.h>
+#include <renderer/materials/MaterialXCpp/surfaceShaderUtils.h>
 
 #include <algorithm>
 #include <cmath>
@@ -144,57 +145,6 @@ _RoughnessAnisotropy(float roughness, float anisotropy)
         roughnessSqr * aspect);
 }
 
-Bsdf::NodeId
-_RemapNodeId(
-    const Bsdf::ClosureTree& source,
-    Bsdf::NodeId id,
-    Bsdf::NodeId offset)
-{
-    return source.IsValid(id) ? id + offset : Bsdf::InvalidNodeId;
-}
-
-void
-_RemapNodeIds(
-    const Bsdf::ClosureTree& source,
-    Bsdf::NodeId offset,
-    Bsdf::NodeData* data)
-{
-    if (auto* mix = std::get_if<Bsdf::MixData>(data)) {
-        mix->fg = _RemapNodeId(source, mix->fg, offset);
-        mix->bg = _RemapNodeId(source, mix->bg, offset);
-    } else if (auto* layer = std::get_if<Bsdf::LayerData>(data)) {
-        layer->top = _RemapNodeId(source, layer->top, offset);
-        layer->base = _RemapNodeId(source, layer->base, offset);
-    } else if (auto* add = std::get_if<Bsdf::AddData>(data)) {
-        add->in1 = _RemapNodeId(source, add->in1, offset);
-        add->in2 = _RemapNodeId(source, add->in2, offset);
-    } else if (auto* multiply = std::get_if<Bsdf::MultiplyData>(data)) {
-        multiply->input = _RemapNodeId(source, multiply->input, offset);
-    }
-}
-
-Bsdf::NodeId
-_AppendClosureTree(
-    Bsdf::ClosureTree* target,
-    const Bsdf::ClosureTree& source)
-{
-    if (!target || source.Empty()) {
-        return Bsdf::InvalidNodeId;
-    }
-
-    const Bsdf::NodeId offset =
-        static_cast<Bsdf::NodeId>(target->nodes.size());
-    target->nodes.reserve(target->nodes.size() + source.nodes.size());
-
-    for (const Bsdf::Node& node : source.nodes) {
-        Bsdf::NodeData data = node.data;
-        _RemapNodeIds(source, offset, &data);
-        target->nodes.push_back(Bsdf::Node{std::move(data)});
-    }
-
-    return _RemapNodeId(source, source.root, offset);
-}
-
 BsdfClosure
 _MakeLayerClosure(
     const BsdfClosure& topClosure,
@@ -212,9 +162,9 @@ _MakeLayerClosure(
     };
 
     const Bsdf::NodeId top =
-        _AppendClosureTree(&closure.tree, topClosure.tree);
+        AppendClosureTree(&closure.tree, topClosure.tree);
     const Bsdf::NodeId base =
-        _AppendClosureTree(&closure.tree, baseClosure.tree);
+        AppendClosureTree(&closure.tree, baseClosure.tree);
 
     if (!closure.tree.IsValid(top)) {
         closure.tree.root = base;

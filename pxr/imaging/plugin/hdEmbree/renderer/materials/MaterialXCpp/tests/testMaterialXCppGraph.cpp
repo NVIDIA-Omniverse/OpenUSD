@@ -113,6 +113,59 @@ TestCompileSingleTerminal()
 }
 
 static bool
+TestObjectPositionRequirement()
+{
+    MaterialGraph network;
+    GraphNode surface;
+    surface.nodeTypeId = "UsdPreviewSurface";
+    network.nodes["/Material/Surface"] = surface;
+    network.terminals["surface"] = {"/Material/Surface", "out"};
+
+    CompileResult constantResult = EvalGraph::Compile(network);
+    if (!constantResult.graph ||
+        constantResult.graph->RequiresObjectSpacePosition()) {
+        return false;
+    }
+
+    GraphNode position;
+    position.nodeTypeId = "ND_position_vector3";
+    network.nodes["/Material/Position"] = position;
+    CompileResult disconnectedResult = EvalGraph::Compile(network);
+    if (!disconnectedResult.graph ||
+        disconnectedResult.graph->RequiresObjectSpacePosition()) {
+        return false;
+    }
+
+    network.nodes["/Material/Surface"].inputConnections["diffuseColor"] = {
+        {"/Material/Position", "out"}};
+    CompileResult positionResult = EvalGraph::Compile(network);
+    if (!positionResult.graph ||
+        !positionResult.graph->RequiresObjectSpacePosition()) {
+        return false;
+    }
+
+    for (const char* worldSpace : {"world", "World", "pworld"}) {
+        network.nodes["/Material/Position"].parameters["space"] =
+            Value(std::string(worldSpace));
+        CompileResult worldPositionResult = EvalGraph::Compile(network);
+        if (!worldPositionResult.graph ||
+            worldPositionResult.graph->RequiresObjectSpacePosition()) {
+            return false;
+        }
+    }
+
+    network.nodes.erase("/Material/Position");
+    GraphNode noise;
+    noise.nodeTypeId = "ND_noise3d_color3";
+    network.nodes["/Material/Noise"] = noise;
+    network.nodes["/Material/Surface"].inputConnections["diffuseColor"] = {
+        {"/Material/Noise", "out"}};
+    CompileResult implicitPositionResult = EvalGraph::Compile(network);
+    return implicitPositionResult.graph &&
+        implicitPositionResult.graph->RequiresObjectSpacePosition();
+}
+
+static bool
 TestCompileMaterialXUsdPreviewSurfaceTerminal()
 {
     MaterialGraph network;
@@ -1144,6 +1197,7 @@ Test_RegisterGraphTests()
 {
     _REG(TestCompileEmptyNetwork);
     _REG(TestCompileSingleTerminal);
+    _REG(TestObjectPositionRequirement);
     _REG(TestCompileMaterialXUsdPreviewSurfaceTerminal);
     _REG(TestCompileDisneyPrincipledTerminal);
     _REG(TestCompileGltfPbrTerminal);

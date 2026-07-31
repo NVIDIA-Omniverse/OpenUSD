@@ -442,6 +442,51 @@ exercises only one material-heavy workload and compares the whole bump-normal
 and terminator patch. It does not isolate the sampler cache or establish that
 the cache itself is an optimization.
 
+## Plan 27 Corrected-HEAD Counter Baseline (2026-07-31)
+
+The follow-up to `doc/27-plan-perf-regression.md` corrected smooth-shadow
+triangle inputs, made their construction lazy, gated exact object-position
+interpolation on compiled graph requirements, cached fixed-name tangent
+samplers, and hoisted default reflective-normal correction.
+
+Carpaint and glass were rendered at 256x256, fixed 32 spp, 16 bounces, one
+light sample, fixed seed one, and adaptive sampling disabled. Unscaled raw
+hybrid-PMU instructions are the atom/core sum:
+
+| Build | Case | Raw instructions | Delta from old profiling HEAD |
+| --- | --- | ---: | ---: |
+| RelWithDebInfo/profile | carpaint | 501.893B | -5.18% |
+| RelWithDebInfo/profile | glass | 920.558B | -7.63% |
+| Release | carpaint | 499.401B | — |
+| Release | glass | 914.705B | — |
+
+The subsequent reviewed implementation stores diffuse/specular defaults once
+and follows an allocation-free linked index containing only authored-normal
+leaves. Five-repeat Release counters against the corrected-HEAD rows above
+were:
+
+| Case | Before | Sparse preparation | Delta |
+| --- | ---: | ---: | ---: |
+| carpaint | 499.401B | 498.265B | -0.23% |
+| glass | 914.705B | 913.652B | -0.12% |
+
+These are aggregate post-review deltas: restored finite/degenerate guards and
+the pinned Embree interpolation association were added with the O(1) path, so
+they do not isolate sparse preparation. The sub-percent changes are directional
+because they are smaller than hybrid-PMU run-to-run uncertainty. An initial
+sparse-ID `std::vector` version
+measured +0.07% and +0.21% respectively and was rejected because its extra
+allocation erased the intended saving. Raw accepted measurements are
+`/tmp/hdembree-27-sparse-linked-release-{carpaint,glass}.txt`.
+
+The corrected profiling build remains +3.43% and +3.72% above the historical
+`f66ecfb1f` carpaint and glass baselines respectively. Most of the recorded
+regression is recovered, but the residual remains unattributed. The comparison
+also includes a correctness change to smooth-shadow geometry and therefore
+does not isolate individual optimizations. The final reviewed implementation's
+complete Typhoon rendered gate passed 438 cases in 278.77 seconds. Release was
+restored after profiling.
+
 ## Validation Rules
 
 For each optimization:

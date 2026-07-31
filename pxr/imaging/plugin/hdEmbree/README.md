@@ -288,9 +288,12 @@ ray offsets use only the facet normal. Materials evaluate in an
 incident-side frame on either mesh side. Normal-map results are validated
 against the smooth/displaced base normal; invalid or inverted results fall
 back to that base. Reflective material lobes are raised toward the geometric
-surface when their ideal reflection would otherwise point below it. Thick dielectric
-side selection happens before material evaluation; thin-walled transmission
-never changes persistent medium state.
+surface when their ideal reflection would otherwise point below it. On coarse
+smooth triangles, direct-light shadow origins are lifted toward the interpolated
+surface near a facet terminator using the triangle's actual positions; authored
+texture-coordinate scale does not affect that lift. Thick dielectric side
+selection happens before material evaluation; thin-walled transmission never
+changes persistent medium state.
 
 ### Rough and thin-walled transmission
 

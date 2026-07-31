@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -265,12 +266,20 @@ using NodeData = std::variant<
 struct Node
 {
     NodeData data;
+    NodeId nextAuthoredNormalNodeId = InvalidNodeId;
 };
 
 struct ClosureTree
 {
     std::vector<Node> nodes;
+    // Allocation-free linked index populated while nodes are added so
+    // per-interaction preparation visits only authored normal leaves.
+    NodeId firstAuthoredNormalNodeId = InvalidNodeId;
     NodeId root = InvalidNodeId;
+    Vec3f defaultDiffuseNormal = Vec3f(0.0f, 0.0f, 1.0f);
+    Vec3f defaultSpecularNormal = Vec3f(0.0f, 0.0f, 1.0f);
+    bool hasDefaultSpecularNormalNodes = false;
+    bool shadingNormalsPrepared = false;
     Vec3f luminanceCoefficients =
         Vec3f(0.212639005871510f,
               0.715168678767756f,
@@ -279,7 +288,10 @@ struct ClosureTree
     void Clear()
     {
         nodes.clear();
+        firstAuthoredNormalNodeId = InvalidNodeId;
         root = InvalidNodeId;
+        hasDefaultSpecularNormalNodes = false;
+        shadingNormalsPrepared = false;
     }
 
     bool Empty() const
@@ -295,13 +307,67 @@ struct ClosureTree
     template <class T>
     NodeId Add(T data)
     {
-        nodes.push_back(Node{NodeData{std::move(data)}});
-        return static_cast<NodeId>(nodes.size() - 1);
+        shadingNormalsPrepared = false;
+        const NodeId nodeId = static_cast<NodeId>(nodes.size());
+        NodeId nextAuthoredNormalNodeId = InvalidNodeId;
+        _RecordNormalState(data, nodeId, &nextAuthoredNormalNodeId);
+        nodes.push_back(Node{
+            NodeData{std::move(data)}, nextAuthoredNormalNodeId});
+        return nodeId;
+    }
+
+    NodeId Add(NodeData data)
+    {
+        shadingNormalsPrepared = false;
+        const NodeId nodeId = static_cast<NodeId>(nodes.size());
+        NodeId nextAuthoredNormalNodeId = InvalidNodeId;
+        std::visit([&](const auto& typedData) {
+            // C++17 visitor dispatch over the finite closure-node variant.
+            _RecordNormalState(
+                typedData, nodeId, &nextAuthoredNormalNodeId);
+        }, data);
+        nodes.push_back(Node{
+            std::move(data), nextAuthoredNormalNodeId});
+        return nodeId;
     }
 
     const Node* Get(NodeId id) const
     {
         return IsValid(id) ? &nodes[id] : nullptr;
+    }
+
+private:
+    template <class T>
+    void _RecordNormalState(
+        const T& data,
+        NodeId nodeId,
+        NodeId* outNextAuthoredNormalNodeId)
+    {
+        if constexpr (
+            std::is_same_v<T, OrenNayarDiffuseData> ||
+            std::is_same_v<T, BurleyDiffuseData> ||
+            std::is_same_v<T, TranslucentData> ||
+            std::is_same_v<T, SubsurfaceData> ||
+            std::is_same_v<T, DielectricData> ||
+            std::is_same_v<T, DielectricInterfaceData> ||
+            std::is_same_v<T, ConductorData> ||
+            std::is_same_v<T, GeneralizedSchlickData> ||
+            std::is_same_v<T, SheenData> ||
+            std::is_same_v<T, AdobeOpenPbrData>) {
+            if (data.hasShadingNormal) {
+                *outNextAuthoredNormalNodeId =
+                    firstAuthoredNormalNodeId;
+                firstAuthoredNormalNodeId = nodeId;
+            }
+            if constexpr (
+                std::is_same_v<T, DielectricData> ||
+                std::is_same_v<T, DielectricInterfaceData> ||
+                std::is_same_v<T, ConductorData> ||
+                std::is_same_v<T, GeneralizedSchlickData> ||
+                std::is_same_v<T, AdobeOpenPbrData>) {
+                hasDefaultSpecularNormalNodes |= !data.hasShadingNormal;
+            }
+        }
     }
 };
 

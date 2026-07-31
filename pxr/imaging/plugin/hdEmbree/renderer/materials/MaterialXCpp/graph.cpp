@@ -5,6 +5,7 @@
 #include "paramMap.h"
 #include "surfaceShaderUtils.h"
 
+#include <renderer/materials/MaterialXCpp/nodes/helpers/spaceHelpers.h>
 #include <renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h>
 #include <renderer/materials/MaterialXCpp/materials/disneyPrincipled.h>
 #include <renderer/materials/MaterialXCpp/materials/gltfPbr.h>
@@ -550,6 +551,21 @@ EvalGraph::Compile(
     std::map<std::string, int> nodeIndex;
     for (size_t i = 0; i < sorted.size(); ++i) {
         nodeIndex[sorted[i]] = static_cast<int>(i);
+        const GraphNode& node = normalized.nodes.at(sorted[i]);
+        // Only object-space position nodes require exact primitive
+        // interpolation; world-space consumers use the transport hit.
+        if (node.nodeTypeId == "ND_position_vector3") {
+            const auto spaceIt = node.parameters.find("space");
+            const bool worldSpace =
+                spaceIt != node.parameters.end() &&
+                ValueHolds<std::string>(spaceIt->second) &&
+                NormalizeSpaceName(
+                    ValueGet<std::string>(spaceIt->second),
+                    std::string("object")) == "world";
+            if (!worldSpace) {
+                graph->_requiresObjectSpacePosition = true;
+            }
+        }
     }
 
     // ---- Build compiled nodes ----

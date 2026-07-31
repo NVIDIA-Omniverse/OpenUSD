@@ -10,6 +10,7 @@
 #include <renderer/geometry/normalTransforms.h>
 #include <renderer/geometry/primvarSampling.h>
 #include <renderer/geometry/surfaceDerivatives.h>
+#include <renderer/geometry/triangleMesh.h>
 #include <renderer/geometry/wireframe.h>
 #include <renderer/integrator/shadingNormal.h>
 #include <renderer/materials/MaterialXCpp/graph.h>
@@ -34,10 +35,6 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-static const TfToken _tokensTangent("tangent");
-static const TfToken _tokensBitangent("bitangent");
-static const TfToken _tokensComputedTangent("hdEmbreeComputedTangent");
-static const TfToken _tokensComputedBitangent("hdEmbreeComputedBitangent");
 static const TfToken _tokensSt("st");
 
 static bool
@@ -169,13 +166,13 @@ _ComputeScreenSpaceDerivatives(ty::RayDifferential const& diffRay,
 
 namespace {
 
-struct _ParametricFrame
+struct _WireframeParametricFrame
 {
     GfVec3f dPdu;
     GfVec3f dPdv;
 };
 
-std::optional<_ParametricFrame>
+std::optional<_WireframeParametricFrame>
 _GetWireframeParametricFrame(
     RTCGeometry prototypeGeometry,
     RTCRayHit const& primaryHit,
@@ -223,37 +220,7 @@ _GetWireframeParametricFrame(
         GfCross(worldDPdu, worldDPdv).GetLengthSq() <= 1.0e-18f) {
         return std::nullopt;
     }
-    return _ParametricFrame{worldDPdu, worldDPdv};
-}
-
-std::optional<_ParametricFrame>
-_GetCachedTriangleParametricFrame(
-    ty::PrototypeContext const* prototypeContext,
-    unsigned int primitiveId,
-    ty::InstanceContext const* instanceContext)
-{
-    if (!prototypeContext || !prototypeContext->triangleDPdu ||
-        !prototypeContext->triangleDPdv || !instanceContext) {
-        return std::nullopt;
-    }
-    const VtVec3fArray& cachedDPdu = *prototypeContext->triangleDPdu;
-    const VtVec3fArray& cachedDPdv = *prototypeContext->triangleDPdv;
-    if (primitiveId >= cachedDPdu.size() ||
-        primitiveId >= cachedDPdv.size()) {
-        return std::nullopt;
-    }
-
-    const GfVec3f worldDPdu =
-        instanceContext->objectToWorldMatrix.TransformDir(
-            cachedDPdu[primitiveId]);
-    const GfVec3f worldDPdv =
-        instanceContext->objectToWorldMatrix.TransformDir(
-            cachedDPdv[primitiveId]);
-    if (!ty::IsFinite(worldDPdu) || !ty::IsFinite(worldDPdv) ||
-        GfCross(worldDPdu, worldDPdv).GetLengthSq() <= 1.0e-18f) {
-        return std::nullopt;
-    }
-    return _ParametricFrame{worldDPdu, worldDPdv};
+    return _WireframeParametricFrame{worldDPdu, worldDPdv};
 }
 
 } // anonymous namespace
@@ -333,7 +300,7 @@ ty::Renderer::_ApplyWireframe(
     normalSrfWldExt =
         ty::TransformNormalToWorld(instanceContext, normalSrfWldExt);
 
-    const std::optional<_ParametricFrame> parametricFrame =
+    const std::optional<_WireframeParametricFrame> parametricFrame =
         _GetWireframeParametricFrame(
             prototypeGeometry,
             primaryHit,
@@ -559,46 +526,11 @@ ty::Renderer::_TryBuildSurfaceInteraction(
     interaction.posHitWld = ty::CalculateHitPosition(rayHit);
     interaction.normalGeomWldExt = normalGeomWldExt;
     interaction.normalSrfWldExt = normalSrfWldExt;
-    // Refined/displaced prototypes already shade a finely tessellated surface;
-    // lifting them from their control cage would over-correct the origin.
-    if (!prototypeContext->refined && !prototypeContext->displaced &&
-        prototypeContext->triangleNormalSampler) {
-        const std::optional<_ParametricFrame> frame =
-            _GetCachedTriangleParametricFrame(
-                prototypeContext, rayHit.hit.primID, instanceContext);
-        GfVec3f n0;
-        GfVec3f n1;
-        GfVec3f n2;
-        if (frame &&
-            _SampleTriangleNormalCorners(
-                prototypeContext, rayHit.hit.primID, &n0, &n1, &n2)) {
-            n0 = ty::TransformNormalToWorld(instanceContext, n0);
-            n1 = ty::TransformNormalToWorld(instanceContext, n1);
-            n2 = ty::TransformNormalToWorld(instanceContext, n2);
-            if (ty::TryNormalizeDirection(n0, &n0) &&
-                ty::TryNormalizeDirection(n1, &n1) &&
-                ty::TryNormalizeDirection(n2, &n2)) {
-                if (GfDot(n0, normalGeomWldExt) < 0.0f) {
-                    n0 = -n0;
-                }
-                if (GfDot(n1, normalGeomWldExt) < 0.0f) {
-                    n1 = -n1;
-                }
-                if (GfDot(n2, normalGeomWldExt) < 0.0f) {
-                    n2 = -n2;
-                }
-                const GfVec3f p0 =
-                    interaction.posHitWld -
-                    rayHit.hit.u * frame->dPdu -
-                    rayHit.hit.v * frame->dPdv;
-                interaction.smoothShadowOffsetExt =
-                    ty::ComputeSmoothTriangleShadowOffset(
-                        p0, p0 + frame->dPdu, p0 + frame->dPdv,
-                        n0, n1, n2, rayHit.hit.u, rayHit.hit.v,
-                        normalGeomWldExt);
-            }
-        }
-    }
+    interaction.instanceContext = instanceContext;
+    interaction.prototypeContext = prototypeContext;
+    interaction.primitiveId = rayHit.hit.primID;
+    interaction.baryU = rayHit.hit.u;
+    interaction.baryV = rayHit.hit.v;
     interaction.displacedFrame = displacedFrame;
     interaction.frontFacing = GfDot(normalGeomWldExt, omegaOutWld) > 0.0f;
     interaction.doubleSided = prototypeContext->doubleSided;
@@ -611,6 +543,38 @@ ty::Renderer::_TryBuildSurfaceInteraction(
         *outPrototype = prototypeContext;
     }
     return true;
+}
+
+GfVec3f
+ty::Renderer::_ComputeSmoothShadowOffsetOut(
+    _SurfaceInteraction const& interaction) const
+{
+    ty::PrototypeContext const* const prototypeContext =
+        interaction.prototypeContext;
+    ty::InstanceContext const* const instanceContext =
+        interaction.instanceContext;
+    // Refined/displaced prototypes already shade a finely tessellated surface;
+    // lifting them from their control cage would over-correct the origin.
+    if (!prototypeContext || !instanceContext ||
+        prototypeContext->refined || prototypeContext->displaced ||
+        !prototypeContext->triangleNormalSampler) {
+        return GfVec3f(0.0f);
+    }
+
+    GfVec3f n0;
+    GfVec3f n1;
+    GfVec3f n2;
+    if (!_SampleTriangleNormalCorners(
+            prototypeContext, interaction.primitiveId, &n0, &n1, &n2)) {
+        return GfVec3f(0.0f);
+    }
+
+    const GfVec3f offsetExt =
+        ty::ComputeSmoothTriangleShadowOffsetFromContext(
+            prototypeContext, instanceContext, interaction.primitiveId,
+            n0, n1, n2, interaction.baryU, interaction.baryV,
+            interaction.normalGeomWldExt);
+    return interaction.frontFacing ? offsetExt : -offsetExt;
 }
 
 mxcpp::ShadingContext
@@ -686,35 +650,48 @@ ty::Renderer::_BuildShadingContext(
             &dPdu, &dPdv, &dndu, &dndv);
     }
 
-    // MaterialX object-space position comes from the primitive
-    // parameterization. Reconstructing it from ray origin + tfar * direction
-    // can cross a discontinuous procedural cell boundary through cancellation
-    // error, even when an authored coordinate is exactly on that boundary.
     GfVec3f posHitObj =
         instanceContext->worldToObjectMatrix.Transform(posHitWld);
     if (displacedFrame) {
         posHitObj = displacedFrame->posObj;
-    } else {
-        RTCGeometry const prototypeGeometry = rtcGetGeometry(
-            instanceContext->rootScene, rayHit.hit.geomID);
-        if (prototypeGeometry) {
-            // rtcInterpolate1 writes through SIMD-width arrays.
-            alignas(16) float sampled[4] = {};
-            rtcInterpolate1(
-                prototypeGeometry,
-                rayHit.hit.primID,
-                rayHit.hit.u,
-                rayHit.hit.v,
-                RTC_BUFFER_TYPE_VERTEX,
-                0,
-                sampled,
-                nullptr,
-                nullptr,
-                3);
-            const GfVec3f interpolatedPos(
-                sampled[0], sampled[1], sampled[2]);
+    } else if (options.computeObjectSpacePosition) {
+        // Exact primitive interpolation avoids crossing a discontinuous
+        // procedural cell boundary through transform cancellation. Coarse
+        // triangles reuse the genuine corner cache needed by smooth shadows.
+        GfVec3f p0;
+        GfVec3f p1;
+        GfVec3f p2;
+        if (!prototypeContext->refined &&
+            ty::SampleTrianglePositions(
+                prototypeContext, rayHit.hit.primID, &p0, &p1, &p2)) {
+            const GfVec3f interpolatedPos =
+                ty::InterpolateTrianglePosition(
+                    p0, p1, p2, rayHit.hit.u, rayHit.hit.v);
             if (ty::IsFinite(interpolatedPos)) {
                 posHitObj = interpolatedPos;
+            }
+        } else {
+            RTCGeometry const prototypeGeometry = rtcGetGeometry(
+                instanceContext->rootScene, rayHit.hit.geomID);
+            if (prototypeGeometry) {
+                // rtcInterpolate1 writes through SIMD-width arrays.
+                alignas(16) float sampled[4] = {};
+                rtcInterpolate1(
+                    prototypeGeometry,
+                    rayHit.hit.primID,
+                    rayHit.hit.u,
+                    rayHit.hit.v,
+                    RTC_BUFFER_TYPE_VERTEX,
+                    0,
+                    sampled,
+                    nullptr,
+                    nullptr,
+                    3);
+                const GfVec3f interpolatedPos(
+                    sampled[0], sampled[1], sampled[2]);
+                if (ty::IsFinite(interpolatedPos)) {
+                    posHitObj = interpolatedPos;
+                }
             }
         }
     }
@@ -738,18 +715,15 @@ ty::Renderer::_BuildShadingContext(
     GfVec3f bitangent(0.0f, 1.0f, 0.0f);
     bool haveTangentFrame = false;
     {
-        const auto sampleFrame = [&](TfToken const& tangentToken,
-                                     TfToken const& bitangentToken) {
-            auto tangentIt = prototypeContext->primvarMap.find(tangentToken);
-            auto bitangentIt =
-                prototypeContext->primvarMap.find(bitangentToken);
-            if (tangentIt == prototypeContext->primvarMap.end() ||
-                bitangentIt == prototypeContext->primvarMap.end()) {
+        const auto sampleFrame = [&](
+            ty::PrimvarSampler const* tangentSampler,
+            ty::PrimvarSampler const* bitangentSampler) {
+            if (!tangentSampler || !bitangentSampler) {
                 return false;
             }
-            if (!tangentIt->second->Sample(
+            if (!tangentSampler->Sample(
                     rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v, &tangent) ||
-                !bitangentIt->second->Sample(
+                !bitangentSampler->Sample(
                     rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
                     &bitangent)) {
                 return false;
@@ -762,8 +736,12 @@ ty::Renderer::_BuildShadingContext(
         };
 
         haveTangentFrame =
-            sampleFrame(_tokensTangent, _tokensBitangent) ||
-            sampleFrame(_tokensComputedTangent, _tokensComputedBitangent);
+            sampleFrame(
+                prototypeContext->tangentSampler,
+                prototypeContext->bitangentSampler) ||
+            sampleFrame(
+                prototypeContext->computedTangentSampler,
+                prototypeContext->computedBitangentSampler);
     }
 
     // Record handedness in the outward, view-independent frame. The side
@@ -897,7 +875,8 @@ ty::Renderer::_TryEvalSurfaceClosureAtHit(
     const GfVec3f normalSrfWldOut = interaction.GetNormalSrfWldOut();
     GfVec3f normalShdWldOut = normalSrfWldOut;
     ty::RayDifferential defaultRayDiff;
-    const _ShadingContextOptions options(false);
+    const _ShadingContextOptions options(
+        false, surfaceGraph->RequiresObjectSpacePosition());
     mxcpp::ShadingContext ctx = _BuildShadingContext(
         rayHit,
         defaultRayDiff,

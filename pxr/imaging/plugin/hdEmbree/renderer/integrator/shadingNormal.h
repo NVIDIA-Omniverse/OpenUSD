@@ -7,6 +7,11 @@
 #ifndef PXR_IMAGING_PLUGIN_HDEMBREE_RENDERER_INTEGRATOR_SHADING_NORMAL_H
 #define PXR_IMAGING_PLUGIN_HDEMBREE_RENDERER_INTEGRATOR_SHADING_NORMAL_H
 
+#include <renderer/geometry/context.h>
+#include <renderer/geometry/normalTransforms.h>
+#include <renderer/geometry/triangleMesh.h>
+#include <renderer/rendererMath.h>
+
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/pxr.h"
 
@@ -106,6 +111,13 @@ ComputeSmoothTriangleShadowOffset(
     float v,
     GfVec3f const& normalGeomWldExt)
 {
+    const GfVec3f edge01 = p1 - p0;
+    const GfVec3f edge02 = p2 - p0;
+    if (!IsFinite(edge01) || !IsFinite(edge02) ||
+        GfCross(edge01, edge02).GetLengthSq() <= 1.0e-18f) {
+        return GfVec3f(0.0f);
+    }
+
     const float bary0 = 1.0f - u - v;
     const GfVec3f posWld = p0 * bary0 + p1 * u + p2 * v;
     const GfVec3f normalWld = n0 * bary0 + n1 * u + n2 * v;
@@ -151,6 +163,61 @@ ComputeSmoothTriangleShadowOffset(
         return GfVec3f(0.0f);
     }
     return normalWld * lift;
+}
+
+/// Fetch and transform genuine triangle corners, then compute their smooth
+/// shadow offset. Corner normals correspond to the same primitive and remain
+/// in object space on entry. Authored-st derivatives are not consumed.
+/// Returns zero for refined/displaced meshes or invalid cached/transformed
+/// inputs.
+inline GfVec3f
+ComputeSmoothTriangleShadowOffsetFromContext(
+    PrototypeContext const* prototypeContext,
+    InstanceContext const* instanceContext,
+    unsigned int primitiveId,
+    GfVec3f n0,
+    GfVec3f n1,
+    GfVec3f n2,
+    float baryU,
+    float baryV,
+    GfVec3f const& normalGeomWldExt)
+{
+    if (!prototypeContext || !instanceContext ||
+        prototypeContext->refined || prototypeContext->displaced) {
+        return GfVec3f(0.0f);
+    }
+
+    GfVec3f p0;
+    GfVec3f p1;
+    GfVec3f p2;
+    if (!SampleTrianglePositions(
+            prototypeContext, primitiveId, &p0, &p1, &p2)) {
+        return GfVec3f(0.0f);
+    }
+
+    p0 = instanceContext->objectToWorldMatrix.Transform(p0);
+    p1 = instanceContext->objectToWorldMatrix.Transform(p1);
+    p2 = instanceContext->objectToWorldMatrix.Transform(p2);
+    n0 = TransformNormalToWorld(instanceContext, n0);
+    n1 = TransformNormalToWorld(instanceContext, n1);
+    n2 = TransformNormalToWorld(instanceContext, n2);
+    if (!IsFinite(p0) || !IsFinite(p1) || !IsFinite(p2) ||
+        !TryNormalizeDirection(n0, &n0) ||
+        !TryNormalizeDirection(n1, &n1) ||
+        !TryNormalizeDirection(n2, &n2)) {
+        return GfVec3f(0.0f);
+    }
+    if (GfDot(n0, normalGeomWldExt) < 0.0f) {
+        n0 = -n0;
+    }
+    if (GfDot(n1, normalGeomWldExt) < 0.0f) {
+        n1 = -n1;
+    }
+    if (GfDot(n2, normalGeomWldExt) < 0.0f) {
+        n2 = -n2;
+    }
+    return ComputeSmoothTriangleShadowOffset(
+        p0, p1, p2, n0, n1, n2, baryU, baryV, normalGeomWldExt);
 }
 
 /// Returns the smooth-terminator lift weight for `omegaInWld`.

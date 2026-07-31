@@ -83,6 +83,12 @@ public:
         float* displacement) const;
 
     bool IsValid() const { return _isValid; }
+    /// Whether a reachable node requires exact primitive-interpolated
+    /// object-space position rather than a world-position round trip.
+    bool RequiresObjectSpacePosition() const
+    {
+        return _requiresObjectSpacePosition;
+    }
 
 private:
     struct InputBinding {
@@ -108,6 +114,7 @@ private:
     std::vector<InputBinding> _terminalInputs;
     std::string _materialModelType;
     bool _isValid = false;
+    bool _requiresObjectSpacePosition = false;
 
     /// Evaluate one supported terminal model into \p closure. A null closure
     /// performs the same dispatch lookup without evaluating the model.

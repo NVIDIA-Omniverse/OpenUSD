@@ -159,6 +159,7 @@ pxr_plugin(hdEmbree
         renderer/geometry/displacementEvaluation.h
         renderer/geometry/normalTransforms.h
         renderer/geometry/primvarSampling.h
+        renderer/geometry/triangleMesh.h
         renderer/geometry/wireframe.h
         renderer/integrator/shadingNormal.h
         renderer/integrator/transportPolicy.h
@@ -239,6 +240,8 @@ pxr_build_test(testHdEmbreeSampling
 pxr_build_test(testHdEmbreeMaterialNormals
     LIBRARIES
         gf
+        vt
+        ${EMBREE_LIBRARY}
     CPPFILES
         testenv/testHdEmbreeMaterialNormals.cpp
 )

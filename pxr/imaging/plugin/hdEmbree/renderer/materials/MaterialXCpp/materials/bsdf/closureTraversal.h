@@ -21,7 +21,8 @@ namespace detail {
 /// failure may propagate as `std::bad_alloc`.
 Bsdf::ClosureTree PruneCausticClassLobes(const Bsdf::ClosureTree& tree);
 
-/// Prepares every per-lobe normal once for all later Eval/Sample/PDF traversals.
+/// Stores the diffuse/specular defaults once for later Eval/Sample/PDF
+/// traversals and prepares only leaves recorded with authored normals.
 /// Authored normals are normalized and accepted only in the hemisphere of the
 /// final finite unit incident-side material `normalShdWldOut`; invalid values
 /// fall back without negation. This deliberately validates the hierarchy in
@@ -30,7 +31,9 @@ Bsdf::ClosureTree PruneCausticClassLobes(const Bsdf::ClosureTree& tree);
 /// raised toward finite unit incident-side `normalGeomWldOut` when needed to
 /// keep mirror reflection of finite unit `omegaOutWld` above the geometric
 /// surface. `tree` must be non-null. Returns the number of invalid authored
-/// values replaced; allocation-free and does not throw.
+/// values replaced. Tree construction must keep the authored-normal linked
+/// index and `hasDefaultSpecularNormalNodes` synchronized with `nodes`.
+/// Allocation-free and does not throw.
 std::size_t PrepareShadingNormals(
     Bsdf::ClosureTree* tree,
     const Vec3f& normalShdWldOut,

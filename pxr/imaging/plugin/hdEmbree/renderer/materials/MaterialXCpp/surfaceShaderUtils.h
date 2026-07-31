@@ -305,7 +305,7 @@ AppendClosureTree(
     for (const Bsdf::Node& node : source.nodes) {
         Bsdf::NodeData data = node.data;
         RemapClosureNodeIds(source, offset, &data);
-        target->nodes.push_back(Bsdf::Node{std::move(data)});
+        target->Add(std::move(data));
     }
 
     return RemapClosureNodeId(source, source.root, offset);
