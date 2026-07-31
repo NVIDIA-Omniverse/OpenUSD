@@ -493,6 +493,11 @@ MaterialX closure values stay typed through graph evaluation:
 `displayOpacity`. Named geometry data uses `ND_geompropvalue_*`, never
 `geomColor` or `geomColorN`.
 
+MaterialX object-space position comes from Embree primitive interpolation, not
+ray-origin/tfar reconstruction. Displaced subdivision reuses the evaluated
+displaced frame position. The ray-derived world hit remains authoritative for
+transport, ray offsets, and geometric AOVs.
+
 The tiled circle, cloverleaf, and hexagon nodes implement the MaterialX stdlib
 formulas directly and retain their stdlib coordinate folds/constants.
 MaterialX blur nodes instead propagate subtree-local preblur to OIIO

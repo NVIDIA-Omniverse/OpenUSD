@@ -26,6 +26,7 @@ struct PrototypeContext;
 /// short-lived value; it does not retain or own the geometry or context.
 struct DisplacedSubdivFrame
 {
+    GfVec3f posObj = GfVec3f(0.0f);
     GfVec3f normal = GfVec3f(0.0f);
     GfVec3f dPdu = GfVec3f(0.0f);
     GfVec3f dPdv = GfVec3f(0.0f);

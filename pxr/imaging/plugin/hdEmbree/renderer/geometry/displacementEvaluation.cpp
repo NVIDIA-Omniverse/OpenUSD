@@ -313,6 +313,7 @@ _EvaluateDisplacedSubdivProbe(
     float u,
     float v,
     float orientationSign,
+    GfVec3f* outBasePos,
     GfVec3f* outObjectOffset,
     GfVec3f* outBaseDPdu,
     GfVec3f* outBaseDPdv)
@@ -343,6 +344,9 @@ _EvaluateDisplacedSubdivProbe(
         return false;
     }
 
+    if (outBasePos) {
+        *outBasePos = position;
+    }
     if (outBaseDPdu) {
         *outBaseDPdu = dPdu;
     }
@@ -605,11 +609,13 @@ ty::ComputeDisplacedSubdivFrame(
 
     const float orientationSign = context->orientationSign;
 
+    GfVec3f centerBasePos;
     GfVec3f centerObjectOffset;
     GfVec3f centerBaseDPdu;
     GfVec3f centerBaseDPdv;
     if (!_EvaluateDisplacedSubdivProbe(
             geometry, context, primID, u, v, orientationSign,
+            &centerBasePos,
             &centerObjectOffset, &centerBaseDPdu, &centerBaseDPdv)) {
         return false;
     }
@@ -628,6 +634,7 @@ ty::ComputeDisplacedSubdivFrame(
     GfVec3f uBaseDPdv;
     if (!_EvaluateDisplacedSubdivProbe(
             geometry, context, primID, u + du, v, orientationSign,
+            nullptr,
             &uObjectOffset, &uBaseDPdu, &uBaseDPdv)) {
         return false;
     }
@@ -637,6 +644,7 @@ ty::ComputeDisplacedSubdivFrame(
     GfVec3f vBaseDPdv;
     if (!_EvaluateDisplacedSubdivProbe(
             geometry, context, primID, u, v + dv, orientationSign,
+            nullptr,
             &vObjectOffset, &vBaseDPdu, &vBaseDPdv)) {
         return false;
     }
@@ -652,7 +660,14 @@ ty::ComputeDisplacedSubdivFrame(
         return false;
     }
 
+    GfVec3f displacedPos;
+    if (!_TryAddOffset(
+            centerBasePos, centerObjectOffset, &displacedPos)) {
+        return false;
+    }
+
     ty::DisplacedSubdivFrame result;
+    result.posObj = displacedPos;
     result.normal = displacedNormal;
     result.dPdu = displacedDPdu;
     result.dPdv = displacedDPdv;
@@ -723,6 +738,7 @@ ty::ComputeDisplacedSubdivNormalDerivatives(
     if (!_EvaluateDisplacedSubdivProbe(
             geometry, context, frame.primID,
             frame.u + 2.0f * frame.du, frame.v, orientationSign,
+            nullptr,
             &uuObjectOffset, nullptr, nullptr)) {
         return false;
     }
@@ -731,6 +747,7 @@ ty::ComputeDisplacedSubdivNormalDerivatives(
     if (!_EvaluateDisplacedSubdivProbe(
             geometry, context, frame.primID,
             frame.u + frame.du, frame.v + frame.dv, orientationSign,
+            nullptr,
             &uvObjectOffset, nullptr, nullptr)) {
         return false;
     }
@@ -739,6 +756,7 @@ ty::ComputeDisplacedSubdivNormalDerivatives(
     if (!_EvaluateDisplacedSubdivProbe(
             geometry, context, frame.primID,
             frame.u, frame.v + 2.0f * frame.dv, orientationSign,
+            nullptr,
             &vvObjectOffset, nullptr, nullptr)) {
         return false;
     }

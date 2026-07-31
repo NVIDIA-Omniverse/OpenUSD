@@ -686,8 +686,38 @@ ty::Renderer::_BuildShadingContext(
             &dPdu, &dPdv, &dndu, &dndv);
     }
 
-    const GfVec3f posHitObj =
+    // MaterialX object-space position comes from the primitive
+    // parameterization. Reconstructing it from ray origin + tfar * direction
+    // can cross a discontinuous procedural cell boundary through cancellation
+    // error, even when an authored coordinate is exactly on that boundary.
+    GfVec3f posHitObj =
         instanceContext->worldToObjectMatrix.Transform(posHitWld);
+    if (displacedFrame) {
+        posHitObj = displacedFrame->posObj;
+    } else {
+        RTCGeometry const prototypeGeometry = rtcGetGeometry(
+            instanceContext->rootScene, rayHit.hit.geomID);
+        if (prototypeGeometry) {
+            // rtcInterpolate1 writes through SIMD-width arrays.
+            alignas(16) float sampled[4] = {};
+            rtcInterpolate1(
+                prototypeGeometry,
+                rayHit.hit.primID,
+                rayHit.hit.u,
+                rayHit.hit.v,
+                RTC_BUFFER_TYPE_VERTEX,
+                0,
+                sampled,
+                nullptr,
+                nullptr,
+                3);
+            const GfVec3f interpolatedPos(
+                sampled[0], sampled[1], sampled[2]);
+            if (ty::IsFinite(interpolatedPos)) {
+                posHitObj = interpolatedPos;
+            }
+        }
+    }
     const GfVec3f objectDPdu = dPdu;
     const GfVec3f objectDPdv = dPdv;
 
