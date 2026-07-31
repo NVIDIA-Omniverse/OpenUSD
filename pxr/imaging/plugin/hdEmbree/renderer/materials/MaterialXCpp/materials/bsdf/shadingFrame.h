@@ -151,24 +151,24 @@ NormalizeOrFallback(const Vec3f& v, const Vec3f& fallback)
     return v / length;
 }
 
-/// Resolves the incident-side shading normal stored in `data`.
+/// Resolves the exterior shading normal stored in `data`.
 ///
 /// `DataT` must expose `hasShadingNormal` and `normal`.
-/// `normalShdWldOut` must be a finite unit vector on the incident transport
-/// side. An authored normal is accepted only when finite, non-degenerate, and
-/// in the same open hemisphere; every invalid value falls back to
-/// `normalShdWldOut` and is never negated. Returns a finite unit vector and
-/// does not throw. This intentionally mirrors renderer-side
-/// `ty::TryResolveNormalShdWldOut`; the Gf/mxcpp type boundary prevents sharing
+/// `normalShdWldExt` must be a finite unit vector with authored exterior
+/// orientation. An authored normal is accepted only when finite,
+/// non-degenerate, and in the same open hemisphere; every invalid value falls
+/// back to `normalShdWldExt` and is never negated. Returns a finite unit vector
+/// and does not throw. This intentionally mirrors renderer-side
+/// `ty::TryResolveNormalShdWldExt`; the Gf/mxcpp type boundary prevents sharing
 /// the implementation directly.
 template<typename DataT>
 inline bool
 TryResolveShadingNormal(
     const DataT& data,
-    const Vec3f& normalShdWldOut,
-    Vec3f* outNormalShdLobeWldOut)
+    const Vec3f& normalShdWldExt,
+    Vec3f* outNormalShdLobeWldExt)
 {
-    if (!outNormalShdLobeWldOut || !data.hasShadingNormal) {
+    if (!outNormalShdLobeWldExt || !data.hasShadingNormal) {
         return false;
     }
 
@@ -194,10 +194,10 @@ TryResolveShadingNormal(
         static_cast<float>(scaledX / length),
         static_cast<float>(scaledY / length),
         static_cast<float>(scaledZ / length));
-    if (Dot(candidate, normalShdWldOut) <= 0.0f) {
+    if (Dot(candidate, normalShdWldExt) <= 0.0f) {
         return false;
     }
-    *outNormalShdLobeWldOut = candidate;
+    *outNormalShdLobeWldExt = candidate;
     return true;
 }
 

@@ -268,8 +268,9 @@ ty::Renderer::_IntegratePath(
         const GfVec3f posHitWld = interaction.posHitWld;
         const GfVec3f normalGeomWldExt = interaction.normalGeomWldExt;
         const GfVec3f normalGeomWldOut = interaction.GetNormalGeomWldOut();
+        const GfVec3f normalSrfWldExt = interaction.normalSrfWldExt;
         const GfVec3f normalSrfWldOut = interaction.GetNormalSrfWldOut();
-        GfVec3f normalShdWldOut = normalSrfWldOut;
+        GfVec3f normalShdWldExt = normalSrfWldExt;
         ty::DisplacedSubdivFrame& displacedFrame =
             interaction.displacedFrame;
         mxcpp::EvalGraph* surfaceGraph = prototypeContext->material
@@ -352,19 +353,19 @@ ty::Renderer::_IntegratePath(
             path.syntheticLambertianExit = ty::SssOutput{};
         }
 
-        // Resolve material normals against the smooth base frame so coarse
-        // facets cannot leak through otherwise continuous bump shading.
+        // Resolve material normals in the authored exterior frame so front-
+        // and back-face hits evaluate one view-independent relief field.
         bool resolvedNormalUsesBase = true;
         mxcpp::Vec3f resolvedNormal;
         if (hasClosure &&
             closure.ResolveNormal(ty::ToMx(tangent), ty::ToMx(bitangent),
-                                  ty::ToMx(normalShdWldOut), &resolvedNormal)) {
+                                  ty::ToMx(normalShdWldExt), &resolvedNormal)) {
             GfVec3f candidate;
-            if (ty::TryResolveNormalShdWldOut(
-                    ty::ToGf(resolvedNormal), normalShdWldOut, &candidate)) {
+            if (ty::TryResolveNormalShdWldExt(
+                    ty::ToGf(resolvedNormal), normalShdWldExt, &candidate)) {
                 resolvedNormalUsesBase =
-                    GfIsClose(candidate, normalShdWldOut, 1e-6f);
-                normalShdWldOut = candidate;
+                    GfIsClose(candidate, normalShdWldExt, 1e-6f);
+                normalShdWldExt = candidate;
                 if (!resolvedNormalUsesBase) {
                     surfaceDifferentials.resolvedNormalProvenance =
                         _ResolvedNormalDerivativeProvenance::None;
@@ -373,13 +374,16 @@ ty::Renderer::_IntegratePath(
                 ++_invalidMaterialNormalCount;
             }
         }
+        const GfVec3f normalShdWldOut = ty::FaceNormalShdWldOut(
+            normalShdWldExt, interaction.frontFacing);
         if (hasClosure) {
             _invalidMaterialNormalCount.fetch_add(
                 mxcpp::Bsdf::detail::PrepareShadingNormals(
                     &closure.bsdfTree,
-                    ty::ToMx(normalShdWldOut),
+                    ty::ToMx(normalShdWldExt),
                     ty::ToMx(normalGeomWldOut),
-                    ty::ToMx(omegaOutWld)),
+                    ty::ToMx(omegaOutWld),
+                    interaction.frontFacing),
                 std::memory_order_relaxed);
         }
 
@@ -619,7 +623,12 @@ ty::Renderer::_IntegratePath(
         const bool crossesBoundary =
             (omegaOutDotNormalGeom > 0.0f && omegaInDotNormalGeom < 0.0f) ||
             (omegaOutDotNormalGeom < 0.0f && omegaInDotNormalGeom > 0.0f);
-        if (!ty::BumpDirectionIsValid(
+        // Diffuse-like bump shading must stay in the smooth-base hemisphere.
+        // Glossy and interface lobes own their reflection/transmission normal
+        // policy; rejecting those samples here discards valid dielectric
+        // throughput and produces black normal-map artifacts.
+        if (bs.isDiffuseLike &&
+            !ty::BumpDirectionIsValid(
                 normalShdWldOut, normalSrfWldOut, omegaInWld)) {
             break;
         }

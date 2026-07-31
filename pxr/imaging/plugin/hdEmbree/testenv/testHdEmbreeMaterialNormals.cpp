@@ -36,13 +36,13 @@ _IsClose(
 static bool
 _TestNormalResolution()
 {
-    const GfVec3f normalSrfWldOut(0.0f, 0.0f, 1.0f);
-    const GfVec3f normalCandidateWldOut(-8.0f, 0.0f, 6.0f);
+    const GfVec3f normalSrfWldExt(0.0f, 0.0f, 1.0f);
+    const GfVec3f normalCandidateWldExt(-8.0f, 0.0f, 6.0f);
     const GfVec3f normalGeomWldExt(0.8f, 0.0f, 0.6f);
     GfVec3f resolved;
-    if (GfDot(normalCandidateWldOut, normalGeomWldExt) >= 0.0f ||
-        !ty::TryResolveNormalShdWldOut(
-            normalCandidateWldOut, normalSrfWldOut, &resolved) ||
+    if (GfDot(normalCandidateWldExt, normalGeomWldExt) >= 0.0f ||
+        !ty::TryResolveNormalShdWldExt(
+            normalCandidateWldExt, normalSrfWldExt, &resolved) ||
         !_IsClose(resolved, GfVec3f(-0.8f, 0.0f, 0.6f))) {
         return false;
     }
@@ -55,9 +55,24 @@ _TestNormalResolution()
     return
         GfDot(viewBackfacingNormal, normalViewBaseWldOut) > 0.0f &&
         GfDot(viewBackfacingNormal, omegaOutWld) < 0.0f &&
-        ty::TryResolveNormalShdWldOut(
+        ty::TryResolveNormalShdWldExt(
             viewBackfacingNormal, normalViewBaseWldOut, &resolved) &&
         _IsClose(resolved, viewBackfacingNormal);
+}
+
+static bool
+_TestExteriorNormalFacing()
+{
+    const GfVec3f normalShdWldExt =
+        GfVec3f(0.3f, -0.4f, 0.8660254f).GetNormalized();
+    const GfVec3f normalShdFrontWldOut =
+        ty::FaceNormalShdWldOut(normalShdWldExt, true);
+    const GfVec3f normalShdBackWldOut =
+        ty::FaceNormalShdWldOut(normalShdWldExt, false);
+    return
+        _IsClose(normalShdFrontWldOut, normalShdWldExt) &&
+        _IsClose(normalShdBackWldOut, -normalShdWldExt) &&
+        _IsClose(normalShdFrontWldOut, -normalShdBackWldOut);
 }
 
 static bool
@@ -67,12 +82,12 @@ _TestInvalidNormals()
     const float infinity = std::numeric_limits<float>::infinity();
     GfVec3f resolved;
     return
-        !ty::TryResolveNormalShdWldOut(
+        !ty::TryResolveNormalShdWldExt(
             GfVec3f(0.0f), normalSrfWldOut, &resolved) &&
-        !ty::TryResolveNormalShdWldOut(
+        !ty::TryResolveNormalShdWldExt(
             GfVec3f(0.0f, 0.0f, -1.0f),
             normalSrfWldOut, &resolved) &&
-        !ty::TryResolveNormalShdWldOut(
+        !ty::TryResolveNormalShdWldExt(
             GfVec3f(infinity, 0.0f, 1.0f),
             normalSrfWldOut, &resolved);
 }
@@ -282,6 +297,10 @@ main()
     }
     if (!_TestInvalidNormals()) {
         std::printf("  invalid-normal rejection failed\n");
+        passed = false;
+    }
+    if (!_TestExteriorNormalFacing()) {
+        std::printf("  exterior normal facing failed\n");
         passed = false;
     }
     if (!_TestBumpDirectionValidity()) {

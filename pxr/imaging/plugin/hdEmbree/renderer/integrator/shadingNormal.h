@@ -21,42 +21,43 @@
 PXR_NAMESPACE_OPEN_SCOPE
 namespace ty {
 
-/// Normalizes `normalCandidateWldOut` into `outNormalShdWldOut`.
+/// Normalizes `normalCandidateWldExt` into `outNormalShdWldExt`.
 ///
-/// `normalSrfWldOut` must be a finite unit normal on the incident transport
-/// side. The candidate is accepted only when finite, non-degenerate, and in
-/// the same open hemisphere as that base normal. `outNormalShdWldOut` must be
-/// non-null and is written only on success. Returns false for every invalid
+/// `normalSrfWldExt` must be a finite unit normal with authored exterior
+/// orientation. The candidate is accepted only when finite, non-degenerate,
+/// and in the same open hemisphere as that base normal.
+/// `outNormalShdWldExt` must be non-null and is written only on success.
+/// Returns false for every invalid
 /// input and does not throw. This intentionally mirrors mxcpp closure-normal
 /// validation in `Bsdf::detail::TryResolveShadingNormal`; the Gf/mxcpp type
 /// boundary prevents sharing the implementation directly.
 inline bool
-TryResolveNormalShdWldOut(
-    GfVec3f const& normalCandidateWldOut,
-    GfVec3f const& normalSrfWldOut,
-    GfVec3f* outNormalShdWldOut)
+TryResolveNormalShdWldExt(
+    GfVec3f const& normalCandidateWldExt,
+    GfVec3f const& normalSrfWldExt,
+    GfVec3f* outNormalShdWldExt)
 {
-    if (!outNormalShdWldOut ||
-        !std::isfinite(normalCandidateWldOut[0]) ||
-        !std::isfinite(normalCandidateWldOut[1]) ||
-        !std::isfinite(normalCandidateWldOut[2])) {
+    if (!outNormalShdWldExt ||
+        !std::isfinite(normalCandidateWldExt[0]) ||
+        !std::isfinite(normalCandidateWldExt[1]) ||
+        !std::isfinite(normalCandidateWldExt[2])) {
         return false;
     }
 
     const double maximumComponent = std::max({
-        std::abs(static_cast<double>(normalCandidateWldOut[0])),
-        std::abs(static_cast<double>(normalCandidateWldOut[1])),
-        std::abs(static_cast<double>(normalCandidateWldOut[2]))});
+        std::abs(static_cast<double>(normalCandidateWldExt[0])),
+        std::abs(static_cast<double>(normalCandidateWldExt[1])),
+        std::abs(static_cast<double>(normalCandidateWldExt[2]))});
     if (!std::isfinite(maximumComponent) || maximumComponent == 0.0) {
         return false;
     }
 
     const double scaledX =
-        static_cast<double>(normalCandidateWldOut[0]) / maximumComponent;
+        static_cast<double>(normalCandidateWldExt[0]) / maximumComponent;
     const double scaledY =
-        static_cast<double>(normalCandidateWldOut[1]) / maximumComponent;
+        static_cast<double>(normalCandidateWldExt[1]) / maximumComponent;
     const double scaledZ =
-        static_cast<double>(normalCandidateWldOut[2]) / maximumComponent;
+        static_cast<double>(normalCandidateWldExt[2]) / maximumComponent;
     const double scaledLength = std::sqrt(
         scaledX * scaledX + scaledY * scaledY + scaledZ * scaledZ);
     if (!std::isfinite(scaledLength) || scaledLength == 0.0) {
@@ -67,12 +68,24 @@ TryResolveNormalShdWldOut(
         static_cast<float>(scaledX / scaledLength),
         static_cast<float>(scaledY / scaledLength),
         static_cast<float>(scaledZ / scaledLength));
-    if (GfDot(candidate, normalSrfWldOut) <= 0.0f) {
+    if (GfDot(candidate, normalSrfWldExt) <= 0.0f) {
         return false;
     }
 
-    *outNormalShdWldOut = candidate;
+    *outNormalShdWldExt = candidate;
     return true;
+}
+
+/// Faces finite unit exterior `normalShdWldExt` to the incident transport
+/// side selected by the immutable geometric `frontFacing` classification.
+/// The complete resolved normal is negated for a back-face hit so normal and
+/// bump maps describe one view-independent exterior relief field.
+inline GfVec3f
+FaceNormalShdWldOut(
+    GfVec3f const& normalShdWldExt,
+    bool frontFacing)
+{
+    return frontFacing ? normalShdWldExt : -normalShdWldExt;
 }
 
 /// Returns whether `omegaInWld` represents the same event in the finite unit

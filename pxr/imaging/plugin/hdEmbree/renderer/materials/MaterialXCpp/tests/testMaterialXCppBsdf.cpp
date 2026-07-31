@@ -4737,6 +4737,31 @@ TestPerLobeNormalResolutionIsViewIndependent()
 }
 
 static bool
+TestBackFacePreparationNegatesCompleteExteriorNormal()
+{
+    Bsdf::ClosureTree tree;
+    Bsdf::DielectricInterfaceData interface;
+    interface.hasShadingNormal = true;
+    interface.normal = Vec3f(0.3f, -0.2f, 0.9327379f).normalized();
+    const Bsdf::NodeId interfaceId = tree.Add(interface);
+
+    const Vec3f normalShdWldExt(0.0f, 0.0f, 1.0f);
+    const Vec3f normalGeomWldOut(0.0f, 0.0f, -1.0f);
+    const Vec3f omegaOutWld(0.0f, 0.0f, -1.0f);
+    const std::size_t invalidCount =
+        Bsdf::detail::PrepareShadingNormals(
+            &tree, normalShdWldExt, normalGeomWldOut, omegaOutWld,
+            /* frontFacing = */ false);
+    const Bsdf::DielectricInterfaceData* const prepared =
+        std::get_if<Bsdf::DielectricInterfaceData>(
+            &tree.nodes[interfaceId].data);
+    return invalidCount == 0 && prepared &&
+        Test_IsClose(
+            tree.defaultDiffuseNormal, -normalShdWldExt, 1.0e-6f) &&
+        Test_IsClose(prepared->normal, -interface.normal, 1.0e-6f);
+}
+
+static bool
 TestPerLobeInvalidNormalsAreObservable()
 {
     Bsdf::ClosureTree tree;
@@ -5477,6 +5502,7 @@ Test_RegisterBsdfTests()
     _REG(TestThinFilmSampleSurfacePdfConsistency);
     _REG(TestTreeDielectricCustomNormalMatchesStandaloneShadingNormal);
     _REG(TestPerLobeNormalResolutionIsViewIndependent);
+    _REG(TestBackFacePreparationNegatesCompleteExteriorNormal);
     _REG(TestPerLobeInvalidNormalsAreObservable);
     _REG(TestSparseShadingNormalPreparation);
     _REG(TestAppendClosureTreePreservesSparseNormalMetadata);

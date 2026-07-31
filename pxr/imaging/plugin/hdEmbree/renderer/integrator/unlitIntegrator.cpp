@@ -86,7 +86,7 @@ ty::Renderer::_IntegrateUnlit(
         return result;
     }
     const GfVec3f posHitWld = interaction.posHitWld;
-    GfVec3f normalShdWldOut = interaction.GetNormalSrfWldOut();
+    GfVec3f normalShdWldExt = interaction.normalSrfWldExt;
     mxcpp::EvalGraph* surfaceGraph = prototypeContext->material
         ? prototypeContext->material->surfaceGraph
         : nullptr;
@@ -122,11 +122,11 @@ ty::Renderer::_IntegrateUnlit(
     if (hasMaterialClosure) {
         mxcpp::Vec3f resolvedNormal;
         if (closure.ResolveNormal(ty::ToMx(tangent), ty::ToMx(bitangent),
-                                  ty::ToMx(normalShdWldOut), &resolvedNormal)) {
+                                  ty::ToMx(normalShdWldExt), &resolvedNormal)) {
             GfVec3f candidate;
-            if (ty::TryResolveNormalShdWldOut(
-                    ty::ToGf(resolvedNormal), normalShdWldOut, &candidate)) {
-                normalShdWldOut = candidate;
+            if (ty::TryResolveNormalShdWldExt(
+                    ty::ToGf(resolvedNormal), normalShdWldExt, &candidate)) {
+                normalShdWldExt = candidate;
             } else {
                 ++_invalidMaterialNormalCount;
             }
@@ -134,11 +134,14 @@ ty::Renderer::_IntegrateUnlit(
         _invalidMaterialNormalCount.fetch_add(
             mxcpp::Bsdf::detail::PrepareShadingNormals(
                 &closure.bsdfTree,
-                ty::ToMx(normalShdWldOut),
+                ty::ToMx(normalShdWldExt),
                 ty::ToMx(interaction.GetNormalGeomWldOut()),
-                ty::ToMx(omegaOutWld)),
+                ty::ToMx(omegaOutWld),
+                interaction.frontFacing),
             std::memory_order_relaxed);
     }
+    const GfVec3f normalShdWldOut = ty::FaceNormalShdWldOut(
+        normalShdWldExt, interaction.frontFacing);
 
     GfVec3f materialColor;
     if (hasMaterialClosure) {

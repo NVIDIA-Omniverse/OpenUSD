@@ -284,14 +284,19 @@ failed frame, so it cannot write a stale `RenderProduct`.
 
 hdEmbree keeps the authored-outside facet normal separate from smooth,
 displaced, and material-mapped shading normals. Boundary crossings, media, and
-ray offsets use only the facet normal. Materials evaluate in an
-incident-side frame on either mesh side. Normal-map results are validated
-against the smooth/displaced base normal; invalid or inverted results fall
-back to that base. Reflective material lobes are raised toward the geometric
-surface when their ideal reflection would otherwise point below it. On coarse
-smooth triangles, direct-light shadow origins are lifted toward the interpolated
-surface near a facet terminator using the triangle's actual positions; authored
-texture-coordinate scale does not affect that lift. Thick dielectric side
+ray offsets use only the facet normal. Materials evaluate normal and bump maps
+in a view-independent exterior frame. Results are validated against the
+exterior smooth/displaced base normal; invalid or inverted results fall back to
+that base. The complete result is then faced to the incident side, preserving
+one physical relief field across the entry and exit sides of a dielectric.
+Reflective material lobes are raised toward the geometric surface when their
+ideal reflection would otherwise point below it. The
+smooth-base hemisphere check applies to diffuse-like continuation, while
+glossy reflection and dielectric transmission use their lobe-specific normal
+handling. On coarse smooth triangles, direct-light shadow origins are lifted
+toward the interpolated surface near a facet terminator using the triangle's
+actual positions; authored texture-coordinate scale does not affect that lift.
+Thick dielectric side
 selection happens before material evaluation; thin-walled transmission never
 changes persistent medium state.
 

@@ -1767,14 +1767,17 @@ PruneCausticClassLobes(const Bsdf::ClosureTree& tree)
 std::size_t
 PrepareShadingNormals(
     Bsdf::ClosureTree* tree,
-    const Vec3f& normalShdWldOut,
+    const Vec3f& normalShdWldExt,
     const Vec3f& normalGeomWldOut,
-    const Vec3f& omegaOutWld)
+    const Vec3f& omegaOutWld,
+    bool frontFacing)
 {
     if (!tree) {
         return 0;
     }
 
+    const Vec3f normalShdWldOut =
+        frontFacing ? normalShdWldExt : -normalShdWldExt;
     tree->defaultDiffuseNormal = normalShdWldOut;
     tree->defaultSpecularNormal = tree->hasDefaultSpecularNormalNodes
         ? EnsureValidSpecularReflection(
@@ -1801,11 +1804,14 @@ PrepareShadingNormals(
                 std::is_same_v<T, Bsdf::GeneralizedSchlickData> ||
                 std::is_same_v<T, Bsdf::SheenData> ||
                 std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
-                Vec3f resolved = normalShdWldOut;
+                Vec3f resolved = normalShdWldExt;
                 if (data.hasShadingNormal &&
                     !TryResolveShadingNormal(
-                        data, normalShdWldOut, &resolved)) {
+                        data, normalShdWldExt, &resolved)) {
                     ++invalidCount;
+                }
+                if (!frontFacing) {
+                    resolved = -resolved;
                 }
                 if constexpr (
                     std::is_same_v<T, Bsdf::DielectricData> ||

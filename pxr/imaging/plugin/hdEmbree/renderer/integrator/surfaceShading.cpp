@@ -589,7 +589,6 @@ ty::Renderer::_BuildShadingContext(
     _ShadingContextOptions options) const
 {
     const GfVec3f posHitWld = interaction.posHitWld;
-    const GfVec3f normalSrfWldOut = interaction.GetNormalSrfWldOut();
     const GfVec3f normalSrfWldExt = interaction.normalSrfWldExt;
     ty::DisplacedSubdivFrame const* displacedFrame =
         interaction.displacedFrame.valid
@@ -744,8 +743,9 @@ ty::Renderer::_BuildShadingContext(
                 prototypeContext->computedBitangentSampler);
     }
 
-    // Record handedness in the outward, view-independent frame. The side
-    // transform preserves T, flips N/dN on back faces, and reconstructs B.
+    // Keep the graph-facing frame outward and view independent. The complete
+    // resolved material normal is faced to the incident side only after graph
+    // evaluation, so a back-face hit sees the same physical relief field.
     float handedness = 1.0f;
     if (haveTangentFrame) {
         GfVec3f tangentOut =
@@ -779,19 +779,19 @@ ty::Renderer::_BuildShadingContext(
         }
     }
 
-    tangent -= normalSrfWldOut * GfDot(normalSrfWldOut, tangent);
+    tangent -= normalSrfWldExt * GfDot(normalSrfWldExt, tangent);
     if (!ty::TryNormalizeDirection(tangent, &tangent)) {
-        GfBuildOrthonormalFrame(normalSrfWldOut, &tangent, &bitangent);
+        GfBuildOrthonormalFrame(normalSrfWldExt, &tangent, &bitangent);
     } else {
-        bitangent = handedness * GfCross(normalSrfWldOut, tangent);
+        bitangent = handedness * GfCross(normalSrfWldExt, tangent);
         if (!ty::TryNormalizeDirection(bitangent, &bitangent)) {
-            GfBuildOrthonormalFrame(normalSrfWldOut, &tangent, &bitangent);
+            GfBuildOrthonormalFrame(normalSrfWldExt, &tangent, &bitangent);
         }
     }
 
     mxcpp::ShadingContext ctx;
     ctx.position = ty::ToMx(posHitObj);
-    ctx.normal = ty::ToMx(normalSrfWldOut);
+    ctx.normal = ty::ToMx(normalSrfWldExt);
     ctx.tangent = ty::ToMx(tangent);
     ctx.bitangent = ty::ToMx(bitangent);
     ctx.viewPosition =
@@ -828,7 +828,7 @@ ty::Renderer::_BuildShadingContext(
 
     if (options.computeScreenSpaceDerivatives) {
         _ComputeScreenSpaceDerivatives(
-            diffRay, posHitWld, normalSrfWldOut, dPdu, dPdv, _viewMatrix,
+            diffRay, posHitWld, normalSrfWldExt, dPdu, dPdv, _viewMatrix,
             _inverseProjMatrix, static_cast<float>(_dataWindow.GetWidth()),
             static_cast<float>(_dataWindow.GetHeight()),
             _settings.samplesToConvergence,
@@ -872,8 +872,8 @@ ty::Renderer::_TryEvalSurfaceClosureAtHit(
         return false;
     }
 
-    const GfVec3f normalSrfWldOut = interaction.GetNormalSrfWldOut();
-    GfVec3f normalShdWldOut = normalSrfWldOut;
+    const GfVec3f normalSrfWldExt = interaction.normalSrfWldExt;
+    GfVec3f normalShdWldExt = normalSrfWldExt;
     ty::RayDifferential defaultRayDiff;
     const _ShadingContextOptions options(
         false, surfaceGraph->RequiresObjectSpacePosition());
@@ -907,20 +907,23 @@ ty::Renderer::_TryEvalSurfaceClosureAtHit(
             &resolvedNormal)) {
         const GfVec3f candidate = ty::ToGf(resolvedNormal);
         GfVec3f normalizedCandidate;
-        if (ty::TryResolveNormalShdWldOut(
-                candidate, interaction.GetNormalSrfWldOut(),
+        if (ty::TryResolveNormalShdWldExt(
+                candidate, normalSrfWldExt,
                 &normalizedCandidate)) {
-            normalShdWldOut = normalizedCandidate;
+            normalShdWldExt = normalizedCandidate;
         } else {
             ++_invalidMaterialNormalCount;
         }
     }
+    const GfVec3f normalShdWldOut = ty::FaceNormalShdWldOut(
+        normalShdWldExt, interaction.frontFacing);
     _invalidMaterialNormalCount.fetch_add(
         mxcpp::Bsdf::detail::PrepareShadingNormals(
             &outClosure->bsdfTree,
-            ty::ToMx(normalShdWldOut),
+            ty::ToMx(normalShdWldExt),
             ty::ToMx(interaction.GetNormalGeomWldOut()),
-            ty::ToMx(omegaOutWld)),
+            ty::ToMx(omegaOutWld),
+            interaction.frontFacing),
         std::memory_order_relaxed);
     if (normalShdWldOutOutput) {
         *normalShdWldOutOutput = normalShdWldOut;

@@ -158,6 +158,7 @@ corresponding type without changing the semantic name.
 | `normalGeomObjExt` | `GfVec3f` | Object-space counterpart used only where object and world geometric normals coexist. |
 | `normalSrfWldExt` | `GfVec3f` | Normalized smooth/displaced shading normal, view independent, aligned with `normalGeomWldExt`, and containing no material normal-map result. |
 | `normalSrfWldOut` | `GfVec3f` | Surface normal faced toward `omegaOutWld`; material-normal fallback and differential source. |
+| `normalShdWldExt` | `GfVec3f` | Material-resolved shading normal in the authored exterior frame. Normal and bump maps produce this view-independent value before transport-side facing. |
 | `normalShdWldOut` | `GfVec3f` | Material-resolved shading normal faced toward `omegaOutWld`; falls back to `normalSrfWldOut` and never owns topology or medium transitions. |
 | `tangentWld`, `bitangentWld` | `GfVec3f` | World-space material frame paired with `normalShdWldOut`; use `Obj` or `Tangent` suffixes for other spaces. |
 | `omegaInWld` | `GfVec3f` | Normalized incident direction from the interaction toward the sampled next vertex or light. Replaces `wi`, `wI`, and ambiguous `direction` when this meaning applies. |
@@ -508,11 +509,13 @@ transport, ray offsets, and geometric AOVs.
 
 Closure trees own per-interaction diffuse and reflection-safe specular default
 normals. Tree construction records only leaves with authored normal state;
-`PrepareShadingNormals()` validates those sparse leaves and does not sweep
-default-normal or composition nodes. Traversal resolves un-authored diffuse
-leaves from the tree's diffuse default and un-authored reflective leaves from
-its one shared specular default. Tree copying, merging, pruning, and clearing
-must preserve or rebuild this metadata together with node IDs.
+`PrepareShadingNormals()` validates those sparse leaves in the authored
+exterior frame, faces each complete resolved normal to the geometrically
+selected incident side, and does not sweep default-normal or composition
+nodes. Traversal resolves un-authored diffuse leaves from the tree's diffuse
+default and un-authored reflective leaves from its one shared specular default.
+Tree copying, merging, pruning, and clearing must preserve or rebuild this
+metadata together with node IDs.
 Adding a node invalidates prepared state; prepared-tree pruning rebuilds the
 index and republishes the unchanged prepared defaults only after construction.
 
@@ -694,9 +697,11 @@ For each segment, `_IntegratePath()` performs these stages in order:
    - `normalGeomWldOut` is its copy faced toward `omegaOutWld`;
    - `normalSrfWldExt` is the view-independent smooth/displaced pre-material
      normal aligned with `normalGeomWldExt`;
-   - `normalSrfWldOut` is its exitant-facing copy and material-normal fallback;
-   - `normalShdWldOut` is the resolved material normal, or
-     `normalSrfWldOut` when resolution fails;
+   - `normalSrfWldOut` is its incident-side copy;
+   - `normalShdWldExt` is the view-independent material-normal result, or
+     `normalSrfWldExt` when resolution fails;
+   - `normalShdWldOut` is the complete resolved result faced to the incident
+     side, so a back-face hit negates rather than re-evaluates the relief;
    - `frontFacing` is computed once from
      `dot(normalGeomWldExt, omegaOutWld)`.
 
@@ -711,15 +716,14 @@ For each segment, `_IntegratePath()` performs these stages in order:
    approximates the shaded surface, while applying the coarse-cage correction
    would over-offset it.
 
-   The side transform flips the surface normal and its derivatives on back
-   faces, preserves `dP` and the
-   authored tangent orientation, and reconstructs the bitangent from recorded
-   outward-frame handedness. All normal vectors use inverse-transpose
-   transforms under non-uniform instance transforms. `_BuildShadingContext()`
-   supplies texture coordinates,
-   display color, the reconstructed displaced tangent frame when available
-   (using cached fixed-name sampler pointers rather than hit-time map lookup),
-   geomprop lookup, uniform primvars, and surface/ray derivatives.
+   `_BuildShadingContext()` supplies the graph with the view-independent
+   exterior normal, tangent, bitangent, texture coordinates, display color,
+   geomprop lookup, uniform primvars, and surface/ray derivatives. It uses the
+   reconstructed displaced tangent frame when available, with cached fixed-name
+   sampler pointers rather than hit-time map lookup. Normal derivatives retained
+   for ray-differential propagation are separately faced to the incident side.
+   All normal vectors use inverse-transpose transforms under non-uniform
+   instance transforms.
 9. **Evaluate the material.** The bound `mxcpp::EvalGraph` produces a
    `SurfaceClosure`. Malformed graphs are rejected during compilation, so
    hit-time evaluation does not use exceptions for authored-value, missing
@@ -732,15 +736,16 @@ For each segment, `_IntegratePath()` performs these stages in order:
    default. A synthetic SSS exit replaces the material with a
    unit Lambertian closure so subsurface albedo is not counted twice. Material
    normal inputs are resolved before BSDF work. The renderer-supplied graph
-   normal and tangent frame are on the incident transport side. Material and
-   per-lobe normals are accepted only when finite, non-degenerate, and in the
-   smooth base hemisphere; rejected values fall back to the base without
-   negation. The default reflective normal is corrected once per interaction;
+   normal and tangent frame use the authored exterior orientation. Material and
+   per-lobe normals are accepted only when finite, non-degenerate, and in that
+   smooth exterior hemisphere; rejected values fall back to the base without
+   negation. Each complete resolved normal is then faced to the incident side.
+   The default reflective normal is corrected once per interaction;
    authored per-lobe normals are corrected individually before traversal if
    their mirror direction would fall below the incident-side geometric surface.
    Evaluation, sampling, PDF evaluation, and delta reflection all consume that
    same prepared lobe normal. Object-space normal maps therefore fall back unless graph
-   conversion places their result in that incident frame. Coupled
+   conversion places their result in the exterior frame. Coupled
    dielectric closures carry an explicit combined reflection/refraction
    compensation policy enabled by OpenPBR and metalness-workflow
    UsdPreviewSurface. Missing energy is restored with an additive cosine
@@ -783,6 +788,10 @@ For each segment, `_IntegratePath()` performs these stages in order:
     sample may be followed by one emitter-only segment. Otherwise integration
     stops after the local emission and direct-light contributions.
 16. **Advance path throughput.** For a valid non-SSS BSDF sample, the integrator
+    rejects diffuse-like directions that change hemisphere between the
+    material and smooth-base frames. Glossy and interface lobes retain their
+    own reflection/transmission normal policy so valid dielectric throughput is
+    not discarded by the diffuse bump-shadowing rule. The integrator then
     applies `f * abs(cos(theta)) / pdf`; delta events use their direct throughput
     coefficient. It records the BSDF PDF, receiver categories, dome-sampling
     hemisphere, diffuse/specular ancestry, and any medium-boundary crossing for

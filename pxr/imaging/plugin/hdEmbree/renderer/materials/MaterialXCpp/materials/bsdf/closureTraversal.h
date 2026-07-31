@@ -24,10 +24,11 @@ Bsdf::ClosureTree PruneCausticClassLobes(const Bsdf::ClosureTree& tree);
 /// Stores the diffuse/specular defaults once for later Eval/Sample/PDF
 /// traversals and prepares only leaves recorded with authored normals.
 /// Authored normals are normalized and accepted only in the hemisphere of the
-/// final finite unit incident-side material `normalShdWldOut`; invalid values
-/// fall back without negation. This deliberately validates the hierarchy in
-/// order: the graph normal against the smooth frame, then each lobe normal
-/// against the resolved graph normal. Reflective closure normals are then
+/// final finite unit exterior material `normalShdWldExt`; invalid values fall
+/// back without negation. This deliberately validates the hierarchy in order:
+/// the graph normal against the exterior smooth frame, then each lobe normal
+/// against the resolved exterior graph normal. The complete normals are faced
+/// to the incident side selected by `frontFacing`. Reflective normals are then
 /// raised toward finite unit incident-side `normalGeomWldOut` when needed to
 /// keep mirror reflection of finite unit `omegaOutWld` above the geometric
 /// surface. `tree` must be non-null. Returns the number of invalid authored
@@ -36,9 +37,10 @@ Bsdf::ClosureTree PruneCausticClassLobes(const Bsdf::ClosureTree& tree);
 /// Allocation-free and does not throw.
 std::size_t PrepareShadingNormals(
     Bsdf::ClosureTree* tree,
-    const Vec3f& normalShdWldOut,
+    const Vec3f& normalShdWldExt,
     const Vec3f& normalGeomWldOut,
-    const Vec3f& omegaOutWld);
+    const Vec3f& omegaOutWld,
+    bool frontFacing = true);
 
 /// Evaluates the closure subtree rooted at `nodeId`.
 /// `nodeId` may be invalid, in which case zero is returned. `normalShdWldOut`,
