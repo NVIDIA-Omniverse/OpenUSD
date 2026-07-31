@@ -138,15 +138,6 @@ Tan2Theta(const Vec3f& w)
     return std::max(0.0f, 1.0f - cosTheta2) / cosTheta2;
 }
 
-/// Orients finite unit `normalShdWldOut` toward finite unit `omegaOutWld`.
-/// Returns either the original normal or its negation; cannot fail.
-inline Vec3f
-FaceForwardNormal(const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld)
-{
-    return (Dot(normalShdWldOut, omegaOutWld) < 0.0f) ? -normalShdWldOut
-                                                      : normalShdWldOut;
-}
-
 /// Normalizes finite `v`, or returns finite `fallback` when its length is below
 /// `kEpsilon`. Callers requiring a unit result must provide a unit fallback.
 /// Cannot fail.
@@ -160,23 +151,68 @@ NormalizeOrFallback(const Vec3f& v, const Vec3f& fallback)
     return v / length;
 }
 
-/// Resolves and face-forwards the reflection normal stored in `data`.
-/// `DataT` must expose `hasShadingNormal` and finite `normal`; the supplied
-/// normal and outgoing direction must be finite unit vectors. Missing or
-/// degenerate authored normals fall back to `normalShdWldOut`. Cannot fail.
+/// Resolves the incident-side shading normal stored in `data`.
+///
+/// `DataT` must expose `hasShadingNormal` and `normal`.
+/// `normalShdWldOut` must be a finite unit vector on the incident transport
+/// side. An authored normal is accepted only when finite, non-degenerate, and
+/// in the same open hemisphere; every invalid value falls back to
+/// `normalShdWldOut` and is never negated. Returns a finite unit vector and
+/// does not throw. This intentionally mirrors renderer-side
+/// `ty::TryResolveNormalShdWldOut`; the Gf/mxcpp type boundary prevents sharing
+/// the implementation directly.
 template<typename DataT>
-inline Vec3f
-ResolveReflectionNormal(const DataT& data, const Vec3f& normalShdWldOut,
-                         const Vec3f& omegaOutWld)
+inline bool
+TryResolveShadingNormal(
+    const DataT& data,
+    const Vec3f& normalShdWldOut,
+    Vec3f* outNormalShdLobeWldOut)
 {
-    if (!data.hasShadingNormal) {
-        return FaceForwardNormal(normalShdWldOut, omegaOutWld);
+    if (!outNormalShdLobeWldOut || !data.hasShadingNormal) {
+        return false;
     }
 
-    return FaceForwardNormal(
-        NormalizeOrFallback(data.normal,
-                             FaceForwardNormal(normalShdWldOut, omegaOutWld)),
-        omegaOutWld);
+    const double maximumComponent = std::max({
+        std::abs(static_cast<double>(data.normal[0])),
+        std::abs(static_cast<double>(data.normal[1])),
+        std::abs(static_cast<double>(data.normal[2]))});
+    if (!std::isfinite(maximumComponent) || maximumComponent == 0.0) {
+        return false;
+    }
+    const double scaledX =
+        static_cast<double>(data.normal[0]) / maximumComponent;
+    const double scaledY =
+        static_cast<double>(data.normal[1]) / maximumComponent;
+    const double scaledZ =
+        static_cast<double>(data.normal[2]) / maximumComponent;
+    const double length = std::sqrt(
+        scaledX * scaledX + scaledY * scaledY + scaledZ * scaledZ);
+    if (!std::isfinite(length) || length == 0.0) {
+        return false;
+    }
+    const Vec3f candidate(
+        static_cast<float>(scaledX / length),
+        static_cast<float>(scaledY / length),
+        static_cast<float>(scaledZ / length));
+    if (Dot(candidate, normalShdWldOut) <= 0.0f) {
+        return false;
+    }
+    *outNormalShdLobeWldOut = candidate;
+    return true;
+}
+
+/// Returns the prepared incident-side normal for a closure leaf. `data.normal`
+/// must have been validated by `PrepareShadingNormals` when
+/// `data.hasShadingNormal`; an unprepared leaf without a normal inherits
+/// finite unit `normalShdWldOut`. Returns a finite unit vector and cannot fail.
+template<typename DataT>
+inline Vec3f
+ResolveShadingNormal(const DataT& data, const Vec3f& normalShdWldOut)
+{
+    // PrepareShadingNormals validates authored values and installs any
+    // reflection-safe correction before traversal. A missing normal is
+    // retained only for deliberately unprepared standalone leaf helpers.
+    return data.hasShadingNormal ? data.normal : normalShdWldOut;
 }
 
 /// Returns whether finite unit directions `omegaInWld` and `omegaOutWld` lie

@@ -207,6 +207,12 @@ struct AdobeOpenPbrData
     Vec3f geometryTangent = Vec3f(1.0f, 0.0f, 0.0f);
     Vec3f geometryCoatNormal = Vec3f(0.0f, 0.0f, 1.0f);
     Vec3f geometryCoatTangent = Vec3f(1.0f, 0.0f, 0.0f);
+
+    // World-space normal prepared once after graph-normal resolution. Adobe's
+    // whole-model backend has one geometry basis, so all eval/sample/PDF calls
+    // must consume the same reflection-safe basis.
+    Vec3f normal = Vec3f(0.0f, 0.0f, 1.0f);
+    bool hasShadingNormal = false;
 };
 
 struct UnsupportedData

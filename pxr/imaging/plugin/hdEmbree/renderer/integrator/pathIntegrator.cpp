@@ -12,9 +12,11 @@
 #include <renderer/geometry/primvarSampling.h>
 #include <renderer/geometry/surfaceDerivatives.h>
 #include <renderer/heroWavelength.h>
+#include <renderer/integrator/shadingNormal.h>
 #include <renderer/materials/MaterialXCpp/graph.h>
 #include <renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf/closureTraversal.h>
 #include <renderer/materials/MaterialXCpp/shadingContext.h>
 #include <renderer/rayUtil.h>
 #include <renderer/renderBuffer.h>
@@ -262,7 +264,7 @@ ty::Renderer::_IntegratePath(
         }
 
         // Keep the authored exterior geometric normal immutable. Material
-        // evaluation uses the separate exitant-facing surface normal.
+        // evaluation uses the separate incident-side surface normal.
         const GfVec3f posHitWld = interaction.posHitWld;
         const GfVec3f normalGeomWldExt = interaction.normalGeomWldExt;
         const GfVec3f normalGeomWldOut = interaction.GetNormalGeomWldOut();
@@ -348,22 +350,16 @@ ty::Renderer::_IntegratePath(
             path.syntheticLambertianExit = ty::SssOutput{};
         }
 
-        // Resolve every material normal in the exitant frame. Invalid,
-        // degenerate, or wrong-geometric-hemisphere values deterministically
-        // fall back to the exitant-facing surface normal; they are never
-        // negated.
+        // Resolve material normals against the smooth base frame so coarse
+        // facets cannot leak through otherwise continuous bump shading.
         bool resolvedNormalUsesBase = true;
         mxcpp::Vec3f resolvedNormal;
         if (hasClosure &&
             closure.ResolveNormal(ty::ToMx(tangent), ty::ToMx(bitangent),
                                   ty::ToMx(normalShdWldOut), &resolvedNormal)) {
             GfVec3f candidate;
-            const bool valid =
-                ty::TryNormalizeDirection(
-                    ty::ToGf(resolvedNormal), &candidate) &&
-                GfDot(candidate, normalGeomWldOut) > 0.0f &&
-                GfDot(candidate, omegaOutWld) > 0.0f;
-            if (valid) {
+            if (ty::TryResolveNormalShdWldOut(
+                    ty::ToGf(resolvedNormal), normalShdWldOut, &candidate)) {
                 resolvedNormalUsesBase =
                     GfIsClose(candidate, normalShdWldOut, 1e-6f);
                 normalShdWldOut = candidate;
@@ -374,6 +370,15 @@ ty::Renderer::_IntegratePath(
             } else {
                 ++_invalidMaterialNormalCount;
             }
+        }
+        if (hasClosure) {
+            _invalidMaterialNormalCount.fetch_add(
+                mxcpp::Bsdf::detail::PrepareShadingNormals(
+                    &closure.bsdfTree,
+                    ty::ToMx(normalShdWldOut),
+                    ty::ToMx(normalGeomWldOut),
+                    ty::ToMx(omegaOutWld)),
+                std::memory_order_relaxed);
         }
 
         // Resolve presence stochastically. A rejected interaction advances
@@ -453,14 +458,13 @@ ty::Renderer::_IntegratePath(
                     path.throughputRgb, path.hero, _renderColorSpace);
         }
 
-        // Every lobe consumes the same exitant-facing shading normal.
+        // Every lobe consumes the same incident-side shading normal.
         // Interface side and transport classification remain separate state.
         mxcpp::AdobeOpenPbrPreparedSurface adobeOpenPbrSurface;
         if (hasBsdfClosure) {
             adobeOpenPbrSurface = mxcpp::PrepareAdobeOpenPbrSurface(
                 *bsdfClosure,
-                ty::ToMx(interaction.frontFacing ? normalShdWldOut
-                                                  : -normalShdWldOut),
+                ty::ToMx(normalShdWldOut),
                 ty::ToMx(omegaOutWld));
         }
 
@@ -537,9 +541,9 @@ ty::Renderer::_IntegratePath(
         GfVec3f direct(0.0f);
         if (hasBsdfClosure) {
             direct = _ComputeDirectLightingMIS(
-                posHitWld, normalShdWldOut, normalGeomWldExt, omegaOutWld,
+                interaction, normalShdWldOut, omegaOutWld,
                 bounceDomain.Fork(ty::SampleDomainKey::DirectLighting),
-                interaction.frontFacing, true, bsdfClosure,
+                true, bsdfClosure,
                 instanceContext->categories, path.medium, path.hero.active,
                 path.hero.wavelengthNm, path.hero.pdf,
                 adobeOpenPbrSurface.valid ? &adobeOpenPbrSurface : nullptr);
@@ -557,9 +561,9 @@ ty::Renderer::_IntegratePath(
             fallback.specularIor = 1.5f;
             fallback.opacity = 1.0f;
             direct = _ComputeDirectLightingMIS(
-                posHitWld, normalShdWldOut, normalGeomWldExt, omegaOutWld,
+                interaction, normalShdWldOut, omegaOutWld,
                 bounceDomain.Fork(ty::SampleDomainKey::DirectLighting),
-                interaction.frontFacing, false, &fallback,
+                false, &fallback,
                 instanceContext->categories, path.medium, path.hero.active,
                 path.hero.wavelengthNm, path.hero.pdf);
         }
@@ -613,12 +617,8 @@ ty::Renderer::_IntegratePath(
         const bool crossesBoundary =
             (omegaOutDotNormalGeom > 0.0f && omegaInDotNormalGeom < 0.0f) ||
             (omegaOutDotNormalGeom < 0.0f && omegaInDotNormalGeom > 0.0f);
-        const bool shadingReflection = GfDot(omegaOutWld, normalShdWldOut) *
-                                           GfDot(omegaInWld, normalShdWldOut) >
-                                       0.0f;
-        const bool geometricReflection =
-            omegaOutDotNormalGeom * omegaInDotNormalGeom > 0.0f;
-        if (shadingReflection != geometricReflection) {
+        if (!ty::BumpDirectionIsValid(
+                normalShdWldOut, normalSrfWldOut, omegaInWld)) {
             break;
         }
 

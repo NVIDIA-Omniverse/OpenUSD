@@ -102,6 +102,17 @@ IsEffectivelyDeltaAlpha(const Vec2f& alpha)
         kEffectivelySmoothMicrofacetAlpha;
 }
 
+/// Raises finite unit `normalShdLobeWldOut` toward finite unit
+/// `normalGeomWldOut` when reflecting finite unit `omegaOutWld` would send the
+/// result below the geometric surface. The geometric normal and outgoing
+/// direction must lie on the incident transport side. Returns a finite unit
+/// closure normal
+/// whose mirror reflection is above the geometric surface. Does not throw.
+Vec3f EnsureValidSpecularReflection(
+    const Vec3f& normalGeomWldOut,
+    const Vec3f& omegaOutWld,
+    const Vec3f& normalShdLobeWldOut);
+
 /// Evaluates the isotropic GGX normal distribution.
 /// `alpha` must be finite and positive and is clamped to
 /// [`kMinMicrofacetAlpha`,1]; `NdotH` must be finite and is clamped to [0,1].

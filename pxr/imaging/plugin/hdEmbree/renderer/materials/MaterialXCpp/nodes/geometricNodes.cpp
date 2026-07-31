@@ -123,13 +123,12 @@ _EvalTangent(const ParamMap& inputs, const ShadingContext& ctx,
              NodeOutputMap* outputs)
 {
     const std::string space = _GetSpace(inputs);
-    // Match the MaterialX OSL definition: normalize(transform(space, dPdu)).
-    // ctx.tangent is the renderer's material tangent frame and may be a
-    // smoothed or authored primvar, which is intentionally distinct from the
-    // geometric derivative exposed by this node.
-    Vec3f worldTangent = ctx.dPdu;
+    // MaterialX hardware backends interpolate the vertex tangent into the
+    // shading point. Use the renderer's matching interpolated frame instead
+    // of the triangle-constant position derivative.
+    Vec3f worldTangent = ctx.tangent;
     if (Dot(worldTangent, worldTangent) < _kFloatEps * _kFloatEps) {
-        worldTangent = ctx.tangent;
+        worldTangent = ctx.dPdu;
     }
     Vec3f result = worldTangent;
     TransformNamedVec3(
@@ -147,19 +146,11 @@ _EvalBitangent(const ParamMap& inputs, const ShadingContext& ctx,
                NodeOutputMap* outputs)
 {
     const std::string space = _GetSpace(inputs);
-    // Match the MaterialX OSL definition:
-    // normalize(transform(space, cross(N, normalize(dPdu)))).
-    Vec3f worldTangent = ctx.dPdu;
-    if (Dot(worldTangent, worldTangent) < _kFloatEps * _kFloatEps) {
-        worldTangent = ctx.tangent;
-    }
-    if (Dot(worldTangent, worldTangent) > _kFloatEps * _kFloatEps) {
-        worldTangent.normalize();
-    }
-
-    Vec3f worldBitangent = Cross(ctx.normal, worldTangent);
+    // Keep bitangent evaluation on the same interpolated shading frame as
+    // tangent evaluation. The derivative is only a degenerate-frame fallback.
+    Vec3f worldBitangent = ctx.bitangent;
     if (Dot(worldBitangent, worldBitangent) < _kFloatEps * _kFloatEps) {
-        worldBitangent = ctx.bitangent;
+        worldBitangent = ctx.dPdv;
     }
     Vec3f result = worldBitangent;
     TransformNamedVec3(

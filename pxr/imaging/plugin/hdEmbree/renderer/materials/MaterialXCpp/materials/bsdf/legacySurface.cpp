@@ -35,8 +35,7 @@ EvalLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
     const auto luminance = [&](const Vec3f& value) {
         return Bsdf::detail::Luminance(value, c.luminanceCoefficients);
     };
-    const Vec3f normalShdLobeWldOut =
-        FaceForwardNormal(normalShdWldOut, omegaOutWld);
+    const Vec3f normalShdLobeWldOut = normalShdWldOut;
     float NdotL = Dot(normalShdLobeWldOut, omegaInWld);
 
     Vec3f reflected(0.0f);
@@ -111,8 +110,7 @@ PdfLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
     const auto luminance = [&](const Vec3f& value) {
         return Bsdf::detail::Luminance(value, c.luminanceCoefficients);
     };
-    const Vec3f normalShdLobeWldOut =
-        FaceForwardNormal(normalShdWldOut, omegaOutWld);
+    const Vec3f normalShdLobeWldOut = normalShdWldOut;
     Vec3f F0 = _ComputeLegacyF0(
         c.baseColor, c.metallic, c.specular, c.specularIor);
     bool hasSpecularLobe = (luminance(F0) > kEpsilon);
@@ -155,8 +153,7 @@ SampleLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
     const auto luminance = [&](const Vec3f& value) {
         return Bsdf::detail::Luminance(value, c.luminanceCoefficients);
     };
-    const Vec3f normalShdLobeWldOut =
-        FaceForwardNormal(normalShdWldOut, omegaOutWld);
+    const Vec3f normalShdLobeWldOut = normalShdWldOut;
     Vec3f F0 = _ComputeLegacyF0(
         c.baseColor, c.metallic, c.specular, c.specularIor);
     bool hasSpecularLobe = (luminance(F0) > kEpsilon);
@@ -223,7 +220,8 @@ SampleLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
     }
     return SampleDeltaTransmission(
         c.specularIor, c.transmissionColor * (c.transmission * c.presence),
-        1.0f, normalShdWldOut, omegaOutWld);
+        1.0f, normalShdWldOut, omegaOutWld,
+        Dot(normalShdWldOut, omegaOutWld) < 0.0f);
 }
 
 void

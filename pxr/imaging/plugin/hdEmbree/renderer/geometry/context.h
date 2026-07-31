@@ -43,6 +43,14 @@ enum class WireframeMode
     edgeOnSurface
 };
 
+/// Triangle sampler layout cached for hit-time corner-normal fetches.
+enum class TriangleCornerSamplerKind
+{
+    none,
+    vertex,
+    faceVarying
+};
+
 
 /// \class PrototypeContext
 ///
@@ -102,6 +110,12 @@ struct PrototypeContext
         TfToken,
         std::unique_ptr<PrimvarSampler>,
         TfToken::HashFunctor> primvarMap;
+    /// Cached view of the triangle normals sampler. This avoids hit-time map
+    /// lookup and RTTI. Only vertex/varying and face-varying layouts can
+    /// provide distinct corner normals; every other layout stays `none`.
+    PrimvarSampler const* triangleNormalSampler = nullptr;
+    TriangleCornerSamplerKind triangleNormalSamplerKind =
+        TriangleCornerSamplerKind::none;
     /// Optional primitive-to-coarse-face data consumed by the elementId AOV.
     /// Empty storage falls back to the raw Embree primitive ID.
     VtIntArray primitiveParams;

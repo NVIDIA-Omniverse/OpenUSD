@@ -415,6 +415,33 @@ was within the observed run-to-run spread, and the images were bit-identical.
 Hardware-counter measurements were unavailable because
 `kernel.perf_event_paranoid=4` and passwordless sudo was not configured.
 
+## Smooth-Normal Terminator Patch Benchmark (2026-07-30)
+
+The smooth shadow-terminator offset needs the triangle-corner normal sampler on
+each non-refined surface hit. Resolving it at hit time would add a normals-map
+lookup and two runtime casts before direct-light sampling is known to happen.
+`PrototypeContext` now caches the sampler pointer and its supported
+vertex/varying or face-varying kind when prototype primvars are built. The hit
+path reads that cache directly; unsupported and constant samplers produce no
+lift.
+
+Five fixed-seed repetitions compared detached `HEAD` (`4b5b13aa7`) with this
+change on the same machine under the performance power profile. Both Release
+builds rendered `input_coat_darkening` at its authored 256x256, 64 spp, and 16
+bounces with `--complexity high` and `ty:randomNumberSeed = 1`:
+
+| Build | Wall | Renderer | Samples/s |
+| --- | ---: | ---: | ---: |
+| Before | 2.3794 s | 2.0240 s | 2.078 M |
+| After | 2.2650 s | 1.9214 s | 2.183 M |
+
+The complete patch improved wall and renderer time by 4.8% and 5.1%, while
+throughput improved by 5.1%. Core frequency was comparable (3.663 GHz before,
+3.731 GHz after). This small fixture shows no aggregate regression, but it
+exercises only one material-heavy workload and compares the whole bump-normal
+and terminator patch. It does not isolate the sampler cache or establish that
+the cache itself is an optimization.
+
 ## Validation Rules
 
 For each optimization:

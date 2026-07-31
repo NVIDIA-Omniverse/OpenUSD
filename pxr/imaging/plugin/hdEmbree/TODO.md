@@ -1,5 +1,13 @@
 # hdEmbree TODO
 
+## Geometry
+
+- Evaluate a smooth-shadow-terminator lift for refined and displaced
+  prototypes. The current correction is intentionally limited to coarse,
+  undisplaced triangles because their corner-normal cage has a clear geometric
+  interpretation; refined/displaced geometry needs a limit-surface-aware
+  offset to avoid over-correction.
+
 ## Material fidelity
 
 - Replace the Schlick approximation used for dielectric reflection with exact

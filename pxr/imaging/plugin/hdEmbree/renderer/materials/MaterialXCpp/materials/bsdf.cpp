@@ -97,7 +97,7 @@ Vec3f
 Bsdf::EvalGGXTransmission(float roughness, float ior,
                           const Vec3f& transmissionColor,
                           const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
-                          const Vec3f& omegaOutWld)
+                          const Vec3f& omegaOutWld, bool backside)
 {
     float alpha = detail::RoughnessToAlpha(roughness);
 
@@ -113,7 +113,7 @@ Bsdf::EvalGGXTransmission(float roughness, float ior,
 
     // The Walter/pbrt convention is eta_t / eta_i, the reciprocal of this
     // renderer's eta convention.
-    float etaPbrt = (omegaOutLocal[2] > 0.0f) ? ior : (1.0f / ior);
+    float etaPbrt = backside ? (1.0f / ior) : ior;
 
     // Generalized half-vector for refraction (Walter et al. 2007)
     Vec3f wm = (omegaInLocal * etaPbrt + omegaOutLocal);
@@ -203,12 +203,14 @@ Bsdf::EvalSurface(const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
                   const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
                   float heroWavelengthNm, bool frontFacing)
 {
-    const Vec3f interfaceN = frontFacing ? normalShdWldOut : -normalShdWldOut;
     Vec3f bsdfValue =
         closure.HasBsdfTree()
-            ? detail::EvalNode(closure.bsdfTree, closure.bsdfTree.root, interfaceN,
-                        omegaInWld, omegaOutWld, heroWavelengthNm)
-            : detail::EvalLegacySurface(closure, interfaceN, omegaInWld, omegaOutWld);
+            ? detail::EvalNode(closure.bsdfTree, closure.bsdfTree.root,
+                        normalShdWldOut,
+                        omegaInWld, omegaOutWld, heroWavelengthNm,
+                        frontFacing)
+            : detail::EvalLegacySurface(
+                  closure, normalShdWldOut, omegaInWld, omegaOutWld);
     return detail::SafeVec(bsdfValue * closure.presence);
 }
 
@@ -246,30 +248,32 @@ Bsdf::SampleGGXSpecular(float roughness, float /*ior*/,
     }
 
     Vec3f wmLocal = detail::SampleGGX_VNDF(omegaOutLocal, alpha, u1, u2);
-    Vec3f omegaInLocal =
+    const Vec3f omegaInLocal =
         2.0f * Dot(omegaOutLocal, wmLocal) * wmLocal - omegaOutLocal;
     if (omegaInLocal[2] <= 0.0f) {
         return BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
 
-    Vec3f omegaInWld = frame.ToWorld(omegaInLocal);
-    float NdotL = omegaInLocal[2];
-    float NdotV = omegaOutLocal[2];
-    float NdotH = wmLocal[2];
-    float VdotH = std::max(Dot(omegaOutLocal, wmLocal), 0.0f);
-
-    float D = detail::GGX_D(alpha, NdotH);
-    float G = detail::GGX_G(alpha, NdotV, NdotL);
-    Vec3f F = detail::SchlickFresnel(specularColor, VdotH);
-    Vec3f compensatedF = CompMul(
-        F,
-        detail::TurquinMicrofacetMsScale(alpha, NdotV, F));
-    Vec3f bsdfValue = CompMul(
-        compensatedF, Vec3f(D * G / std::max(4.0f * NdotL * NdotV, detail::kEpsilon)));
-    float pdfSolidAngle = detail::PdfGGX_VNDF(omegaOutLocal, wmLocal, alpha);
-
-    return BsdfSample{omegaInWld, detail::SafeVec(bsdfValue),
-                      std::max(pdfSolidAngle, 0.0f), false};
+    const Vec3f omegaInWld = frame.ToWorld(omegaInLocal);
+    const float NdotL = omegaInLocal[2];
+    const float NdotV = omegaOutLocal[2];
+    const float NdotH = wmLocal[2];
+    const float VdotH = std::max(Dot(omegaOutLocal, wmLocal), 0.0f);
+    const float D = detail::GGX_D(alpha, NdotH);
+    const float G = detail::GGX_G(alpha, NdotV, NdotL);
+    const Vec3f F = detail::SchlickFresnel(specularColor, VdotH);
+    const Vec3f compensatedF = CompMul(
+        F, detail::TurquinMicrofacetMsScale(alpha, NdotV, F));
+    const Vec3f bsdfValue = CompMul(
+        compensatedF,
+        Vec3f(
+            D * G /
+            std::max(4.0f * NdotL * NdotV, detail::kEpsilon)));
+    const float pdfSolidAngle =
+        detail::PdfGGX_VNDF(omegaOutLocal, wmLocal, alpha);
+    return BsdfSample{
+        omegaInWld, detail::SafeVec(bsdfValue),
+        std::max(pdfSolidAngle, 0.0f), false};
 }
 
 float
@@ -376,7 +380,8 @@ Bsdf::BsdfSample
 Bsdf::SampleGGXTransmission(float roughness, float ior,
                             const Vec3f& transmissionColor,
                             const Vec3f& normalShdWldOut,
-                            const Vec3f& omegaOutWld, float u1, float u2)
+                            const Vec3f& omegaOutWld, float u1, float u2,
+                            bool backside)
 {
     float alpha = detail::RoughnessToAlpha(roughness);
 
@@ -395,8 +400,9 @@ Bsdf::SampleGGXTransmission(float roughness, float ior,
         wmLocal = -wmLocal;
     }
 
-    // Determine eta (incident / transmitted)
-    float eta = (omegaOutLocal[2] > 0.0f) ? (1.0f / ior) : ior;
+    // Determine eta (incident / transmitted) from the geometric interface
+    // side rather than the potentially perturbed shading normal.
+    float eta = backside ? ior : (1.0f / ior);
 
     // Refract through the microfacet
     float cosI = Dot(omegaOutLocal, wmLocal);
@@ -424,9 +430,10 @@ Bsdf::SampleGGXTransmission(float roughness, float ior,
     // Evaluate BTDF and PDF
     Vec3f bsdfValue =
         EvalGGXTransmission(roughness, ior, transmissionColor, normalShdWldOut,
-                            omegaInWld, omegaOutWld);
+                            omegaInWld, omegaOutWld, backside);
     float pdfSolidAngle = PdfGGXTransmission(roughness, ior, normalShdWldOut,
-                                             omegaInWld, omegaOutWld);
+                                             omegaInWld, omegaOutWld,
+                                             backside);
 
     if (pdfSolidAngle < detail::kEpsilon) {
         return BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
@@ -440,7 +447,7 @@ Bsdf::SampleGGXTransmission(float roughness, float ior,
 float
 Bsdf::PdfGGXTransmission(float roughness, float ior,
                          const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
-                         const Vec3f& omegaOutWld)
+                         const Vec3f& omegaOutWld, bool backside)
 {
     float alpha = detail::RoughnessToAlpha(roughness);
 
@@ -460,7 +467,7 @@ Bsdf::PdfGGXTransmission(float roughness, float ior,
 
     // The Walter/pbrt convention is eta_t / eta_i, the reciprocal of this
     // renderer's eta convention.
-    float etaPbrt = (omegaOutLocal[2] > 0.0f) ? ior : (1.0f / ior);
+    float etaPbrt = backside ? (1.0f / ior) : ior;
 
     // Generalized half-vector
     Vec3f wm = (omegaInLocal * etaPbrt + omegaOutLocal);
@@ -498,18 +505,19 @@ Bsdf::SampleSurface(const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
                     const Vec3f& omegaOutWld, float u1, float u2, float uLobe,
                     float heroWavelengthNm, bool frontFacing)
 {
-    const Vec3f interfaceN = frontFacing ? normalShdWldOut : -normalShdWldOut;
     if (closure.HasBsdfTree()) {
         auto sample =
-            detail::SampleNode(closure.bsdfTree, closure.bsdfTree.root, interfaceN,
-                        omegaOutWld, u1, u2, uLobe, heroWavelengthNm);
+            detail::SampleNode(closure.bsdfTree, closure.bsdfTree.root,
+                        normalShdWldOut,
+                        omegaOutWld, u1, u2, uLobe, heroWavelengthNm,
+                        frontFacing);
         if (!sample.isSpecular) {
             sample.bsdfValue *= closure.presence;
         }
         return sample;
     }
-    return detail::SampleLegacySurface(closure, interfaceN, omegaOutWld, u1, u2,
-                                uLobe);
+    return detail::SampleLegacySurface(
+        closure, normalShdWldOut, omegaOutWld, u1, u2, uLobe);
 }
 
 float
@@ -517,12 +525,14 @@ Bsdf::PdfSurface(const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
                  const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
                  float heroWavelengthNm, bool frontFacing)
 {
-    const Vec3f interfaceN = frontFacing ? normalShdWldOut : -normalShdWldOut;
     if (closure.HasBsdfTree()) {
-        return detail::PdfNode(closure.bsdfTree, closure.bsdfTree.root, interfaceN,
-                        omegaInWld, omegaOutWld, heroWavelengthNm);
+        return detail::PdfNode(closure.bsdfTree, closure.bsdfTree.root,
+                        normalShdWldOut,
+                        omegaInWld, omegaOutWld, heroWavelengthNm,
+                        frontFacing);
     }
-    return detail::PdfLegacySurface(closure, interfaceN, omegaInWld, omegaOutWld);
+    return detail::PdfLegacySurface(
+        closure, normalShdWldOut, omegaInWld, omegaOutWld);
 }
 
 SurfaceClosure

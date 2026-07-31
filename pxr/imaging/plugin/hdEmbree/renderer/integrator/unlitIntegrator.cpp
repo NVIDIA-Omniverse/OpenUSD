@@ -7,7 +7,9 @@
 // Single-hit unlit, camera-light, and ambient-occlusion integration.
 
 #include <renderer/geometry/primvarSampling.h>
+#include <renderer/integrator/shadingNormal.h>
 #include <renderer/materials/MaterialXCpp/graph.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf/closureTraversal.h>
 #include <renderer/materials/MaterialXCpp/shadingContext.h>
 #include <renderer/rayUtil.h>
 #include <renderer/renderer.h>
@@ -120,17 +122,20 @@ ty::Renderer::_IntegrateUnlit(
         if (closure.ResolveNormal(ty::ToMx(tangent), ty::ToMx(bitangent),
                                   ty::ToMx(normalShdWldOut), &resolvedNormal)) {
             GfVec3f candidate;
-            const bool valid =
-                ty::TryNormalizeDirection(
-                    ty::ToGf(resolvedNormal), &candidate) &&
-                GfDot(candidate, interaction.GetNormalGeomWldOut()) > 0.0f &&
-                GfDot(candidate, omegaOutWld) > 0.0f;
-            if (valid) {
+            if (ty::TryResolveNormalShdWldOut(
+                    ty::ToGf(resolvedNormal), normalShdWldOut, &candidate)) {
                 normalShdWldOut = candidate;
             } else {
                 ++_invalidMaterialNormalCount;
             }
         }
+        _invalidMaterialNormalCount.fetch_add(
+            mxcpp::Bsdf::detail::PrepareShadingNormals(
+                &closure.bsdfTree,
+                ty::ToMx(normalShdWldOut),
+                ty::ToMx(interaction.GetNormalGeomWldOut()),
+                ty::ToMx(omegaOutWld)),
+            std::memory_order_relaxed);
     }
 
     GfVec3f materialColor;

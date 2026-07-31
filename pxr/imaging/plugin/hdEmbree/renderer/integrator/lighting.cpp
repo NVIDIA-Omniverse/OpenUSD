@@ -10,6 +10,7 @@
 #include "transportPolicy.h"
 
 #include <renderer/heroWavelength.h>
+#include <renderer/integrator/shadingNormal.h>
 #include <renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf.h>
 #include <renderer/renderBuffer.h>
@@ -127,9 +128,9 @@ ty::Renderer::_AccumulateEnvironment(_PathState* state) const
 
 GfVec3f
 ty::Renderer::_ComputeDirectLightingMIS(
-    GfVec3f const& posWld, GfVec3f const& normalShdWldOut,
-    GfVec3f const& normalGeomWldExt, GfVec3f const& omegaOutWld,
-    ty::SampleDomain const& domain, bool frontFacing,
+    _SurfaceInteraction const& interaction,
+    GfVec3f const& normalShdWldOut, GfVec3f const& omegaOutWld,
+    ty::SampleDomain const& domain,
     bool includeBsdfSamplingMis, mxcpp::SurfaceClosure const* closure,
     ty::CategorySet const& receiverCategories,
     ty::MediumState const& mediumState, bool spectralActive,
@@ -138,6 +139,12 @@ ty::Renderer::_ComputeDirectLightingMIS(
 {
     const ty::HeroWavelengthState hero{
         spectralActive, heroWavelengthNm, heroWavelengthPdf};
+    const GfVec3f& posWld = interaction.posHitWld;
+    const GfVec3f normalSrfWldOut = interaction.GetNormalSrfWldOut();
+    const GfVec3f smoothShadowOffsetOut =
+        interaction.GetSmoothShadowOffsetOut();
+    const GfVec3f& normalGeomWldExt = interaction.normalGeomWldExt;
+    const bool frontFacing = interaction.frontFacing;
     GfVec3f radianceDirect(0.0f);
     const int lightSampleCount = _settings.lightSamplesPerHit;
     const float lightSampleCountInverse =
@@ -217,20 +224,26 @@ ty::Renderer::_ComputeDirectLightingMIS(
             if (cosThetaLightAbsolute <= 0.0f) {
                 continue;
             }
-            const bool shadingReflection =
-                GfDot(omegaOutWld, normalShdWldOut) *
-                    GfDot(ls.omegaInWld, normalShdWldOut) >
-                0.0f;
-            const bool geometricReflection =
-                GfDot(omegaOutWld, normalGeomWldExt) *
-                    GfDot(ls.omegaInWld, normalGeomWldExt) >
-                0.0f;
-            if (shadingReflection != geometricReflection) {
+            if (!ty::BumpDirectionIsValid(
+                    normalShdWldOut, normalSrfWldOut, ls.omegaInWld)) {
                 continue;
             }
 
+            const GfVec3f normalGeomWldOut =
+                frontFacing ? normalGeomWldExt : -normalGeomWldExt;
+            const bool transmission =
+                GfDot(normalSrfWldOut, ls.omegaInWld) < 0.0f;
+            const float shadowOffsetWeight =
+                ty::ComputeShadowTerminatorOffsetWeight(
+                    normalSrfWldOut, normalGeomWldOut, ls.omegaInWld);
+            const GfVec3f posVisibilityWld =
+                posWld +
+                (transmission
+                    ? -smoothShadowOffsetOut
+                    : smoothShadowOffsetOut) *
+                    shadowOffsetWeight;
             GfVec3f visibility = _Visibility(
-                posWld, normalGeomWldExt, ls.omegaInWld,
+                posVisibilityWld, normalGeomWldExt, ls.omegaInWld,
                 ls.distanceWld * 0.99f, light.shadowLink, mediumState);
             if (ty::IsNearlyBlack(visibility)) {
                 continue;
@@ -239,8 +252,6 @@ ty::Renderer::_ComputeDirectLightingMIS(
             GfVec3f radianceSample(0.0f);
             if (closure) {
                 const mxcpp::Vec3f normalMx = ty::ToMx(normalShdWldOut);
-                const mxcpp::Vec3f interfaceNormalMx =
-                    frontFacing ? normalMx : -normalMx;
                 const mxcpp::Vec3f omegaInWldMx = ty::ToMx(ls.omegaInWld);
                 const mxcpp::Vec3f omegaOutWldMx = ty::ToMx(omegaOutWld);
                 const mxcpp::AdobeOpenPbrEvalPdfResult adobeEvalPdf =
@@ -248,7 +259,7 @@ ty::Renderer::_ComputeDirectLightingMIS(
                         ? mxcpp::EvalPdfPreparedAdobeOpenPbrSurface(
                               *adobeOpenPbrSurface, omegaInWldMx)
                         : mxcpp::TryEvalPdfAdobeOpenPbrSurface(
-                              *closure, interfaceNormalMx, omegaInWldMx,
+                              *closure, normalMx, omegaInWldMx,
                               omegaOutWldMx);
 
                 GfVec3f bsdfValue(0.0f);

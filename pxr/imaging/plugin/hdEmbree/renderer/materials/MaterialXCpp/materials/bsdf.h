@@ -48,12 +48,13 @@ namespace Bsdf
                           const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
                           const Vec3f& omegaOutWld);
 
-    /// GGX microfacet transmission BTDF.
+    /// GGX microfacet transmission BTDF. The normal is incident-facing;
+    /// `backside` selects glass-to-air rather than air-to-glass IOR order.
     Vec3f EvalGGXTransmission(float roughness, float ior,
                               const Vec3f& transmissionColor,
                               const Vec3f& normalShdWldOut,
                               const Vec3f& omegaInWld,
-                              const Vec3f& omegaOutWld);
+                              const Vec3f& omegaOutWld, bool backside);
 
     /// Charlie sheen BRDF (Imageworks model).
     Vec3f EvalSheen(const Vec3f& sheenColor, float roughness,
@@ -67,6 +68,7 @@ namespace Bsdf
 
     /// Evaluate the full layered surface model from a closure.
     /// Combines all BSDF lobes with proper energy conservation.
+    /// `normalShdWldOut` must be on the incident transport side.
     /// Returns the outgoing radiance contribution for one light sample.
     Vec3f EvalSurface(const SurfaceClosure& closure,
                       const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
@@ -137,16 +139,18 @@ namespace Bsdf
         const SurfaceClosure& closure,
         float signedCosTheta);
 
-    /// GGX VNDF-based transmission sampling.
+    /// GGX VNDF-based transmission sampling. The normal is incident-facing;
+    /// `backside` selects glass-to-air rather than air-to-glass IOR order.
     BsdfSample SampleGGXTransmission(float roughness, float ior,
                                      const Vec3f& transmissionColor,
                                      const Vec3f& normalShdWldOut,
                                      const Vec3f& omegaOutWld, float u1,
-                                     float u2);
+                                     float u2, bool backside);
 
     float PdfGGXTransmission(float roughness, float ior,
                              const Vec3f& normalShdWldOut,
-                             const Vec3f& omegaInWld, const Vec3f& omegaOutWld);
+                             const Vec3f& omegaInWld,
+                             const Vec3f& omegaOutWld, bool backside);
 
     /// Unified surface sampler: selects a lobe proportional to its
     /// approximate energy contribution, then importance-samples that lobe.
@@ -157,6 +161,7 @@ namespace Bsdf
                              float uLobe, float heroWavelengthNm = 0.0f,
                              bool frontFacing = true);
 
+    /// Evaluates the surface mixture PDF.
     float PdfSurface(const SurfaceClosure& closure,
                      const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
                      const Vec3f& omegaOutWld, float heroWavelengthNm = 0.0f,

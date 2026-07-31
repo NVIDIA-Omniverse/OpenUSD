@@ -1671,6 +1671,11 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
     // Replace the old sampler, if it exists.
     ty::PrototypeContext *ctx = _prototypeContext.get();
     ctx->primvarMap.erase(name);
+    if (name == HdTokens->normals) {
+        ctx->triangleNormalSampler = nullptr;
+        ctx->triangleNormalSamplerKind =
+            ty::TriangleCornerSamplerKind::none;
+    }
 
     HdVtBufferSource buffer(name, data);
     const HdTupleType tupleType = buffer.GetTupleType();
@@ -1733,6 +1738,17 @@ HdEmbreeMesh::_CreatePrimvarSampler(TfToken const& name, VtValue const& data,
 
     // Put the new sampler back in the primvar map.
     if (sampler) {
+        if (name == HdTokens->normals && !refined) {
+            ctx->triangleNormalSampler = sampler.get();
+            if (interpolation == HdInterpolationVertex ||
+                interpolation == HdInterpolationVarying) {
+                ctx->triangleNormalSamplerKind =
+                    ty::TriangleCornerSamplerKind::vertex;
+            } else if (interpolation == HdInterpolationFaceVarying) {
+                ctx->triangleNormalSamplerKind =
+                    ty::TriangleCornerSamplerKind::faceVarying;
+            }
+        }
         ctx->primvarMap[name] = std::move(sampler);
     }
 }
@@ -2125,6 +2141,9 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
     if (!_smoothNormals && !authoredNormals) {
         ty::PrototypeContext *ctx = _prototypeContext.get();
         ctx->primvarMap.erase(HdTokens->normals);
+        ctx->triangleNormalSampler = nullptr;
+        ctx->triangleNormalSamplerKind =
+            ty::TriangleCornerSamplerKind::none;
 
         // Force the smooth normals code to rebuild the "normals" primvar the
         // next time smooth normals is enabled.
@@ -2150,6 +2169,9 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
                 if (samplerIt != context->primvarMap.end()) {
                     context->primvarMap.erase(samplerIt);
                 }
+                context->triangleNormalSampler = nullptr;
+                context->triangleNormalSamplerKind =
+                    ty::TriangleCornerSamplerKind::none;
                 continue;
             }
             // Only refined face-varying samplers consume authored indices

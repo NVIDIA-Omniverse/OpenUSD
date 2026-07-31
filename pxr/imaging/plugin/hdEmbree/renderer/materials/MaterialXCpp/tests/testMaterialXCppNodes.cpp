@@ -1661,23 +1661,32 @@ static bool TestGeometricNormal() {
     return Test_IsClose(_GetVec3(out), Vec3f(0.0f, 1.0f, 0.0f));
 }
 
-static bool TestGeometricTangentUsesPositionDerivative() {
+static bool TestGeometricTangentUsesInterpolatedFrame() {
     NodeRegistry::RegisterBuiltinNodes();
     auto fn = NodeRegistry::GetInstance().Find(
         std::string("ND_tangent_vector3"));
     if (!fn) return false;
 
     ShadingContext ctx;
-    ctx.dPdu = Vec3f(0.0f, 3.0f, 4.0f);
-    ctx.tangent = Vec3f(1.0f, 0.0f, 0.0f);
+    ctx.dPdu = Vec3f(1.0f, 0.0f, 0.0f);
+    ctx.tangent = Vec3f(0.0f, 3.0f, 4.0f);
     _SetObjectWorldTransform(&ctx, _MakeIdentityMatrix());
 
     NodeOutputMap out;
     fn(ParamMap(), ctx, &out);
-    return Test_IsClose(_GetVec3(out), Vec3f(0.0f, 0.6f, 0.8f));
+    if (!Test_IsClose(_GetVec3(out), Vec3f(0.0f, 0.6f, 0.8f))) {
+        return false;
+    }
+
+    ctx.tangent = Vec3f(0.0f);
+    ctx.dPdu = Vec3f(3.0f, 0.0f, 4.0f);
+    NodeOutputMap fallbackOut;
+    fn(ParamMap(), ctx, &fallbackOut);
+    return Test_IsClose(
+        _GetVec3(fallbackOut), Vec3f(0.6f, 0.0f, 0.8f));
 }
 
-static bool TestGeometricBitangentUsesNormalAndPositionDerivative() {
+static bool TestGeometricBitangentUsesInterpolatedFrame() {
     NodeRegistry::RegisterBuiltinNodes();
     auto fn = NodeRegistry::GetInstance().Find(
         std::string("ND_bitangent_vector3"));
@@ -1686,12 +1695,21 @@ static bool TestGeometricBitangentUsesNormalAndPositionDerivative() {
     ShadingContext ctx;
     ctx.normal = Vec3f(0.0f, 0.0f, 1.0f);
     ctx.dPdu = Vec3f(0.0f, 2.0f, 0.0f);
-    ctx.bitangent = Vec3f(1.0f, 0.0f, 0.0f);
+    ctx.dPdv = Vec3f(-1.0f, 0.0f, 0.0f);
+    ctx.bitangent = Vec3f(3.0f, 4.0f, 0.0f);
     _SetObjectWorldTransform(&ctx, _MakeIdentityMatrix());
 
     NodeOutputMap out;
     fn(ParamMap(), ctx, &out);
-    return Test_IsClose(_GetVec3(out), Vec3f(-1.0f, 0.0f, 0.0f));
+    if (!Test_IsClose(_GetVec3(out), Vec3f(0.6f, 0.8f, 0.0f))) {
+        return false;
+    }
+
+    ctx.bitangent = Vec3f(0.0f);
+    ctx.dPdv = Vec3f(0.0f, 0.0f, -2.0f);
+    NodeOutputMap fallbackOut;
+    fn(ParamMap(), ctx, &fallbackOut);
+    return Test_IsClose(_GetVec3(fallbackOut), Vec3f(0.0f, 0.0f, -1.0f));
 }
 
 static bool TestGeometricTexcoordVector3() {
@@ -3100,8 +3118,8 @@ Test_RegisterNodeTests()
     _REG(TestGeometricPosition);
     _REG(TestGeometricPositionWorldSpace);
     _REG(TestGeometricNormal);
-    _REG(TestGeometricTangentUsesPositionDerivative);
-    _REG(TestGeometricBitangentUsesNormalAndPositionDerivative);
+    _REG(TestGeometricTangentUsesInterpolatedFrame);
+    _REG(TestGeometricBitangentUsesInterpolatedFrame);
     _REG(TestGeometricTexcoordVector3);
     _REG(TestGeometricViewDirectionWorldSpace);
     _REG(TestGeometricViewDirectionRemainsNormalizedAcrossSpaces);

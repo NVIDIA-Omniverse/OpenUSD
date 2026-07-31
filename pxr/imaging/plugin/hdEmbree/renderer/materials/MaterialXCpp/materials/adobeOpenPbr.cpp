@@ -690,12 +690,14 @@ PrepareAdobeOpenPbrSurface(const SurfaceClosure& closure,
         return AdobeOpenPbrPreparedSurface{};
     }
 
+    const Vec3f normalShdLobeWldOut =
+        data->hasShadingNormal ? data->normal : normalShdWldOut;
     auto state = std::make_shared<AdobeOpenPbrPreparedSurfaceState>();
     state->data = *data;
-    state->normalShdWldOut = normalShdWldOut;
+    state->normalShdWldOut = normalShdLobeWldOut;
     state->omegaOutWld = omegaOutWld;
     state->presence = closure.presence;
-    state->prepared = _Prepare(*data, normalShdWldOut, omegaOutWld);
+    state->prepared = _Prepare(*data, normalShdLobeWldOut, omegaOutWld);
 
     AdobeOpenPbrPreparedSurface preparedSurface;
     preparedSurface.state = std::move(state);

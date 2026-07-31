@@ -342,6 +342,8 @@ public:
     uint64_t GetSssIntersectionCount() const;
 
 private:
+    struct _SurfaceInteraction;
+
     /// Setup state shared by the render thread and convergence client.
     enum class _FrameStatus {
         Pending,
@@ -524,15 +526,12 @@ private:
     ///
     /// Uses MIS and MaterialXCpp BSDF evaluation when a closure is supplied;
     /// otherwise it evaluates a synthetic Lambertian response.
-    /// \param posWld World-space shading position.
+    /// \param interaction Immutable hit position, geometric/smooth normals,
+    /// smooth-shadow offset, and geometric side for this surface event.
     /// \param normalShdWldOut Normalized material-resolved shading normal.
-    /// \param normalGeomWldExt Immutable authored-exterior geometric normal
-    /// used for topology and ray offsets.
     /// \param omegaOutWld Normalized world-space direction toward the previous
     /// vertex.
     /// \param domain Sample domain reserved for this lighting event.
-    /// \param frontFacing Side determined once from \p normalGeomWldExt and
-    /// \p omegaOutWld.
     /// \param includeBsdfSamplingMis Whether to weight light samples against
     /// the competing BSDF-sampling technique.
     /// \param closure Optional borrowed closure valid for the call.
@@ -545,9 +544,9 @@ private:
     /// valid for the call and corresponding to \p closure.
     /// \return Linear RGB direct-light contribution before path throughput.
     GfVec3f _ComputeDirectLightingMIS(
-        GfVec3f const& posWld, GfVec3f const& normalShdWldOut,
-        GfVec3f const& normalGeomWldExt, GfVec3f const& omegaOutWld,
-        SampleDomain const& domain, bool frontFacing,
+        _SurfaceInteraction const& interaction,
+        GfVec3f const& normalShdWldOut, GfVec3f const& omegaOutWld,
+        SampleDomain const& domain,
         bool includeBsdfSamplingMis, mxcpp::SurfaceClosure const* closure,
         CategorySet const& receiverCategories,
         MediumState const& mediumState = MediumState(),
@@ -753,6 +752,7 @@ private:
         GfVec3f posHitWld = GfVec3f(0.0f);
         GfVec3f normalGeomWldExt = GfVec3f(0.0f);
         GfVec3f normalSrfWldExt = GfVec3f(0.0f);
+        GfVec3f smoothShadowOffsetExt = GfVec3f(0.0f);
         DisplacedSubdivFrame displacedFrame;
         bool frontFacing = true;
         bool doubleSided = false;
@@ -768,13 +768,22 @@ private:
         {
             return frontFacing ? normalSrfWldExt : -normalSrfWldExt;
         }
+
+        GfVec3f
+        GetSmoothShadowOffsetOut() const
+        {
+            return frontFacing
+                ? smoothShadowOffsetExt
+                : -smoothShadowOffsetExt;
+        }
     };
 
     /// \brief Propagate or discard ray differentials after a BSDF sample.
     ///
     /// \param surface Differential geometry at the sampled surface.
     /// \param posHitWld World-space surface position.
-    /// \param normalShdWldOut Face-forwarded world-space shading normal.
+    /// \param normalShdWldOut Finite unit world-space shading normal on the
+    /// incident transport side; it need not face `omegaOutWld` at grazing.
     /// \param omegaOutWld Normalized direction toward the previous path vertex.
     /// \param omegaInWld Normalized sampled continuation direction.
     /// \param eta Explicit iorIn/iorOut ratio. One denotes reflection; zero
@@ -1056,7 +1065,7 @@ private:
     mutable std::atomic<uint64_t> _sssWalkStepCount;
     mutable std::atomic<uint64_t> _sssIntersectionCount;
 
-    // Material normals rejected by finite/length/geometric-hemisphere checks.
+    // Material normals rejected by finite/length/base-hemisphere checks.
     mutable std::atomic<uint64_t> _invalidMaterialNormalCount = 0;
 
     // Render start time for elapsed time tracking.

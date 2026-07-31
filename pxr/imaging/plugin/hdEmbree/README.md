@@ -285,8 +285,10 @@ failed frame, so it cannot write a stale `RenderProduct`.
 hdEmbree keeps the authored-outside facet normal separate from smooth,
 displaced, and material-mapped shading normals. Boundary crossings, media, and
 ray offsets use only the facet normal. Materials evaluate in an
-exitant-facing frame on either mesh side. Invalid or boundary-crossing
-normal-map results fall back to the smooth/displaced normal. Thick dielectric
+incident-side frame on either mesh side. Normal-map results are validated
+against the smooth/displaced base normal; invalid or inverted results fall
+back to that base. Reflective material lobes are raised toward the geometric
+surface when their ideal reflection would otherwise point below it. Thick dielectric
 side selection happens before material evaluation; thin-walled transmission
 never changes persistent medium state.
 

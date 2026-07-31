@@ -130,9 +130,11 @@ For directional quantities, `In` and `Out` identify transport sides:
 `omegaIn` points toward the next
 vertex or light and `omegaOut` points toward the previous vertex or camera.
 They do not mean an object's interior/exterior or an outward normal. Normal
-orientation uses `Ext` for the authored exterior and `Out`/`In` only when
-faced toward the corresponding transport direction. IOR names are the explicit
-optics exception: `iorIn` is the incident medium before a crossing and
+orientation uses `Ext` for the authored exterior. `Out`/`In` select the
+transport side established by the geometric `frontFacing` test; an individual
+smooth or material normal need not face the corresponding direction at grazing
+incidence. IOR names are the explicit optics exception: `iorIn` is the
+incident medium before a crossing and
 `iorOut` is the transmitted medium after it, independent of `omegaIn` and
 `omegaOut`. `eta` is reserved for the ratio `iorIn / iorOut`.
 Probability-density names state their measure and append `Inverse` for a
@@ -675,6 +677,14 @@ For each segment, `_IntegratePath()` performs these stages in order:
    - `frontFacing` is computed once from
      `dot(normalGeomWldExt, omegaOutWld)`.
 
+   Coarse, non-displaced triangles also compute a smooth-surface origin lift
+   derived from their corner normals. Direct-light shadow rays blend toward
+   that lifted origin near a smooth/facet terminator while retaining
+   `normalGeomWldExt` for the self-intersection bias. Refined and displaced
+   prototypes deliberately skip the lift: their committed tessellation already
+   approximates the shaded surface, while applying the coarse-cage correction
+   would over-offset it.
+
    The side transform flips the surface normal and its derivatives on back
    faces, preserves `dP` and the
    authored tangent orientation, and reconstructs the bitangent from recorded
@@ -694,7 +704,15 @@ For each segment, `_IntegratePath()` performs these stages in order:
    calls, reported once with the filename, and return the authored texture
    default. A synthetic SSS exit replaces the material with a
    unit Lambertian closure so subsurface albedo is not counted twice. Material
-   normal inputs are resolved before BSDF work. Coupled
+   normal inputs are resolved before BSDF work. The renderer-supplied graph
+   normal and tangent frame are on the incident transport side. Material and
+   per-lobe normals are accepted only when finite, non-degenerate, and in the
+   smooth base hemisphere; rejected values fall back to the base without
+   negation. Each reflective lobe is then corrected once, before traversal, if
+   its mirror direction would fall below the incident-side geometric surface.
+   Evaluation, sampling, PDF evaluation, and delta reflection all consume that
+   same prepared lobe normal. Object-space normal maps therefore fall back unless graph
+   conversion places their result in that incident frame. Coupled
    dielectric closures carry an explicit combined reflection/refraction
    compensation policy enabled by OpenPBR and metalness-workflow
    UsdPreviewSurface. Missing energy is restored with an additive cosine

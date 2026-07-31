@@ -160,6 +160,7 @@ pxr_plugin(hdEmbree
         renderer/geometry/normalTransforms.h
         renderer/geometry/primvarSampling.h
         renderer/geometry/wireframe.h
+        renderer/integrator/shadingNormal.h
         renderer/integrator/transportPolicy.h
         delegate/displacement.h
         renderer/lights/light.h
@@ -233,6 +234,18 @@ pxr_build_test(testHdEmbreeSampling
         tf
     CPPFILES
         testenv/testHdEmbreeSampling.cpp
+)
+
+pxr_build_test(testHdEmbreeMaterialNormals
+    LIBRARIES
+        gf
+    CPPFILES
+        testenv/testHdEmbreeMaterialNormals.cpp
+)
+
+pxr_register_test(testHdEmbreeMaterialNormals
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdEmbreeMaterialNormals"
+    EXPECTED_RETURN_CODE 0
 )
 
 pxr_build_test(testHdEmbreeWireframe

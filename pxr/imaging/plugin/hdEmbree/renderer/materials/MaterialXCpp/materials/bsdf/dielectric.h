@@ -165,42 +165,43 @@ FindCoupledTransmissionInterfaceForStraightShadow(
 
 /// Computes multiple-scattering compensation for a coupled interface.
 /// `effectiveIor` is finite and at least 1; normals and outgoing direction are
-/// finite unit vectors; `data` optical fields are finite. Returns zero when
-/// coupled sampling is disabled, otherwise bounded compensation. Cannot fail.
+/// finite unit vectors; `backside` selects the inside-to-outside interface
+/// order; `data` optical fields are finite. Returns zero when coupled sampling
+/// is disabled, otherwise bounded compensation. Cannot fail.
 CoupledDielectricCompensation GetCoupledDielectricCompensation(
     const Bsdf::DielectricInterfaceData& data, float effectiveIor,
-    const Vec3f& normalShdInterfaceWldOut,
-    const Vec3f& normalShdLobeWldOut, const Vec3f& omegaOutWld);
+    bool backside, const Vec3f& normalShdLobeWldOut,
+    const Vec3f& omegaOutWld);
 
 /// Evaluates coupled rough dielectric transmission.
 /// `effectiveIor` is finite and at least 1; all normals and directions are
-/// finite unit vectors; `data` optical fields and positive roughness are
-/// finite. Returns finite non-negative RGB, or zero for invalid geometry.
+/// finite unit vectors; `backside` selects the inside-to-outside interface
+/// order; `data` optical fields and positive roughness are finite. Returns
+/// finite non-negative RGB, or zero for invalid geometry.
 Vec3f EvalCoupledRoughDielectricTransmission(
     const Bsdf::DielectricInterfaceData& data, float effectiveIor,
-    const Vec3f& normalShdInterfaceWldOut,
-    const Vec3f& normalShdLobeWldOut, const Vec3f& omegaInWld,
-    const Vec3f& omegaOutWld);
+    bool backside, const Vec3f& normalShdLobeWldOut,
+    const Vec3f& omegaInWld, const Vec3f& omegaOutWld);
 
 /// Evaluates the coupled rough dielectric mixture PDF.
-/// Inputs satisfy `EvalCoupledRoughDielectricTransmission`. Returns a finite
-/// non-negative solid-angle density; invalid geometry returns zero.
+/// Inputs and `backside` satisfy `EvalCoupledRoughDielectricTransmission`.
+/// Returns a finite non-negative solid-angle density; invalid geometry returns
+/// zero.
 float PdfCoupledRoughDielectric(
     const Bsdf::DielectricInterfaceData& data, float effectiveIor,
-    const Vec3f& normalShdInterfaceWldOut,
-    const Vec3f& normalShdLobeWldOut, const Vec3f& omegaInWld,
-    const Vec3f& omegaOutWld);
+    bool backside, const Vec3f& normalShdLobeWldOut,
+    const Vec3f& omegaInWld, const Vec3f& omegaOutWld);
 
 /// Samples coupled rough dielectric reflection, transmission, or compensation.
 /// Optical/geometric inputs satisfy the coupled evaluator; `u1`, `u2`, and
-/// `uChoice` are finite in [0,1). Returns a unit incident direction when valid.
-/// Failure or invalid geometry returns `pdfSolidAngle == 0`; callers must test
-/// the PDF before division. Does not throw.
+/// `uChoice` are finite in [0,1); `backside` selects the inside-to-outside
+/// interface order. Returns a unit incident direction when valid. Failure or
+/// invalid geometry returns `pdfSolidAngle == 0`; callers must test the PDF
+/// before division. Does not throw.
 Bsdf::BsdfSample SampleCoupledRoughDielectric(
     const Bsdf::DielectricInterfaceData& data, float effectiveIor,
-    const Vec3f& normalShdInterfaceWldOut,
-    const Vec3f& normalShdLobeWldOut, const Vec3f& omegaOutWld, float u1,
-    float u2, float uChoice);
+    bool backside, const Vec3f& normalShdLobeWldOut,
+    const Vec3f& omegaOutWld, float u1, float u2, float uChoice);
 
 /// Samples perfect reflection when refraction is forbidden by TIR.
 /// `weight` must be finite and non-negative; `normalShdWldOut` and
@@ -222,28 +223,29 @@ SampleDeltaTotalInternalReflection(
 
 /// Returns whether transmission through an interface would undergo TIR.
 /// `ior` must be finite and positive; the normal and outgoing direction must
-/// be finite unit vectors. Cannot fail for valid inputs.
+/// be finite unit vectors; `backside` selects inside-to-outside refraction.
+/// Cannot fail for valid inputs.
 inline bool
 WouldTotalInternalReflect(
-    float ior, const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld)
+    float ior, const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld,
+    bool backside)
 {
-    float cosI = Dot(normalShdWldOut, omegaOutWld);
-    float eta = 1.0f / std::max(ior, kEpsilon);
-    if (cosI < 0.0f) {
-        eta = std::max(ior, kEpsilon);
-        cosI = -cosI;
-    }
+    const float cosI = std::abs(Dot(normalShdWldOut, omegaOutWld));
+    const float eta = backside
+        ? std::max(ior, kEpsilon)
+        : 1.0f / std::max(ior, kEpsilon);
     return eta * eta * (1.0f - cosI * cosI) >= 1.0f;
 }
 
 /// Samples ideal dielectric transmission, reflecting under TIR.
 /// `ior` must be finite and positive, `tint` and `weight` finite and
-/// non-negative, and the normal/outgoing direction finite unit vectors.
-/// Returns a unit direction, `pdfSolidAngle == 1`, and a finite non-negative
-/// BSDF value. TIR returns a reflection sample. Cannot fail for valid inputs.
+/// non-negative, and the incident-facing normal/outgoing direction finite unit
+/// vectors. `backside` selects inside-to-outside refraction. Returns a unit
+/// direction, `pdfSolidAngle == 1`, and a finite non-negative BSDF value. TIR
+/// returns a reflection sample. Cannot fail for valid inputs.
 Bsdf::BsdfSample SampleDeltaTransmission(
     float ior, const Vec3f& tint, float weight,
-    const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld);
+    const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld, bool backside);
 
 /// Samples ideal reflection for a separate dielectric lobe.
 /// `data` satisfies the reflection Fresnel invariants; `effectiveIor` is finite
@@ -264,11 +266,14 @@ SampleDeltaDielectricReflection(
 /// Samples ideal transmission for a separate dielectric lobe.
 /// `effectiveIor` is finite and at least 1, `fresnelCos` finite in [0,1],
 /// normal/outgoing direction finite unit vectors, and luminance coefficients
-/// finite, non-negative, and normalized. Returns a finite unit specular sample;
-/// TIR carries only energy not already assigned to the paired reflection lobe.
+/// finite, non-negative, and normalized. `backside` selects inside-to-outside
+/// refraction. Returns a finite unit specular sample; TIR carries only energy
+/// not already assigned to the paired reflection lobe.
 Bsdf::BsdfSample SampleDeltaDielectricTransmission(
     const Bsdf::DielectricData& data, float effectiveIor, float fresnelCos,
-    const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld,
+    const Vec3f& normalShdWldOut,
+    const Vec3f& normalShdReflectionWldOut,
+    const Vec3f& omegaOutWld, bool backside,
     const Vec3f& luminanceCoefficients = DefaultLuminanceCoefficients());
 
 /// Samples ideal reflection from a coupled dielectric interface.
@@ -290,13 +295,15 @@ SampleDeltaDielectricInterfaceReflection(
 
 /// Samples ideal transmission from a coupled dielectric interface.
 /// `effectiveIor` is finite and at least 1, `fresnelCos` finite in [0,1], and
-/// normal/outgoing direction finite unit vectors. Thin-walled interfaces pass
-/// straight through with `eta == 1`; thick interfaces refract or reflect under
-/// TIR. Returns a finite unit specular sample. Does not throw.
+/// normal/outgoing direction finite unit vectors. `backside` selects
+/// inside-to-outside refraction. Thin-walled interfaces pass straight through
+/// with `eta == 1`; thick interfaces refract or reflect under TIR. Returns a
+/// finite unit specular sample. Does not throw.
 Bsdf::BsdfSample SampleDeltaDielectricInterfaceTransmission(
     const Bsdf::DielectricInterfaceData& data, float effectiveIor,
     float fresnelCos, const Vec3f& normalShdWldOut,
-    const Vec3f& omegaOutWld);
+    const Vec3f& normalShdReflectionWldOut,
+    const Vec3f& omegaOutWld, bool backside);
 
 }  // namespace detail
 }  // namespace Bsdf

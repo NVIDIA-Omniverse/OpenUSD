@@ -12,6 +12,74 @@ namespace Bsdf {
 namespace detail {
 
 Vec3f
+EnsureValidSpecularReflection(
+    const Vec3f& normalGeomWldOut,
+    const Vec3f& omegaOutWld,
+    const Vec3f& normalShdLobeWldOut)
+{
+    const Vec3f reflected =
+        2.0f * Dot(normalShdLobeWldOut, omegaOutWld) *
+            normalShdLobeWldOut -
+        omegaOutWld;
+    const float omegaOutDotGeom =
+        std::max(Dot(omegaOutWld, normalGeomWldOut), 0.0f);
+    const float threshold = std::min(0.9f * omegaOutDotGeom, 0.01f);
+    if (Dot(normalGeomWldOut, reflected) >= threshold) {
+        return normalShdLobeWldOut;
+    }
+
+    Vec3f tangent =
+        normalShdLobeWldOut -
+        Dot(normalShdLobeWldOut, normalGeomWldOut) * normalGeomWldOut;
+    const float tangentLength = tangent.length();
+    if (!std::isfinite(tangentLength) || tangentLength <= kEpsilon) {
+        return normalGeomWldOut;
+    }
+    tangent /= tangentLength;
+    const float omegaOutDotTangent = Dot(omegaOutWld, tangent);
+    const float quadraticA =
+        omegaOutDotTangent * omegaOutDotTangent +
+        omegaOutDotGeom * omegaOutDotGeom;
+    if (quadraticA <= kEpsilon) {
+        return normalGeomWldOut;
+    }
+    const float quadraticB =
+        2.0f * (quadraticA + omegaOutDotGeom * threshold);
+    const float quadraticC =
+        (threshold + omegaOutDotGeom) *
+        (threshold + omegaOutDotGeom);
+    const float discriminant =
+        std::max(
+            quadraticB * quadraticB -
+                4.0f * quadraticA * quadraticC,
+            0.0f);
+    const float root = std::sqrt(discriminant);
+    const float normalGeomComponentSquared =
+        0.25f *
+        (omegaOutDotTangent < 0.0f
+             ? quadraticB + root
+             : quadraticB - root) /
+        quadraticA;
+    if (!std::isfinite(normalGeomComponentSquared) ||
+        normalGeomComponentSquared <= 1.0e-5f ||
+        normalGeomComponentSquared > 1.0f + 1.0e-5f) {
+        return normalGeomWldOut;
+    }
+    const float normalGeomComponent =
+        std::sqrt(std::min(normalGeomComponentSquared, 1.0f));
+    const float tangentComponent =
+        std::sqrt(std::max(1.0f - normalGeomComponentSquared, 0.0f));
+    const Vec3f corrected =
+        tangentComponent * tangent +
+        normalGeomComponent * normalGeomWldOut;
+    const Vec3f correctedReflection =
+        2.0f * Dot(corrected, omegaOutWld) * corrected - omegaOutWld;
+    return Dot(normalGeomWldOut, correctedReflection) >= threshold
+        ? corrected
+        : normalGeomWldOut;
+}
+
+Vec3f
 EvalMicrofacetReflectionAnisotropic(const Vec2f& roughness,
                                      const Vec3f& tangent, const Vec3f& fresnel,
                                      float weight, const Vec3f& normalShdWldOut,
@@ -119,7 +187,8 @@ SampleGGXSpecularAnisotropic(const Vec2f& roughness, const Vec3f& tangent,
                               const Vec3f& normalShdWldOut,
                               const Vec3f& omegaOutWld, float u1, float u2)
 {
-    const Frame frame = Frame::FromNormalAndTangent(normalShdWldOut, tangent);
+    const Frame frame =
+        Frame::FromNormalAndTangent(normalShdWldOut, tangent);
     const Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
     if (omegaOutLocal[2] <= 0.0f) {
         return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
@@ -131,17 +200,17 @@ SampleGGXSpecularAnisotropic(const Vec2f& roughness, const Vec3f& tangent,
     const Vec3f omegaInLocal =
         2.0f * Dot(omegaOutLocal, wmLocal) * wmLocal - omegaOutLocal;
     if (omegaInLocal[2] <= 0.0f) {
-        return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
+        return Bsdf::BsdfSample{
+            Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
-
     const Vec3f omegaInWld = frame.ToWorld(omegaInLocal);
     const float pdfMicrofacetNormalSolidAngle =
         PdfGGX_VNDF_Anisotropic(omegaOutLocal, wmLocal, alpha);
     const float VdotH =
         std::max(std::abs(Dot(omegaOutLocal, wmLocal)), kEpsilon);
-    return Bsdf::BsdfSample{omegaInWld, Vec3f(0.0f),
-                            pdfMicrofacetNormalSolidAngle / (4.0f * VdotH),
-                            false};
+    return Bsdf::BsdfSample{
+        omegaInWld, Vec3f(0.0f),
+        pdfMicrofacetNormalSolidAngle / (4.0f * VdotH), false};
 }
 
 }  // namespace detail

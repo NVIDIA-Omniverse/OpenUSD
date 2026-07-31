@@ -25,7 +25,7 @@ struct SampleDomain;
 
 struct SssInput {
     GfVec3f posEntryWld;
-    // Material-resolved, exitant-facing guide used by Dwivedi sampling. It is
+    // Material-resolved incident-side guide used by Dwivedi sampling. It is
     // not geometric boundary state.
     GfVec3f normalShdEntryGuideWldOut;
     GfVec3f dirEntryWld; // Into the medium from the entry point.

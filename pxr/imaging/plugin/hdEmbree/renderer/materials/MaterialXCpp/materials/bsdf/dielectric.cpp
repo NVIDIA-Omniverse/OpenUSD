@@ -206,7 +206,7 @@ FindCoupledTransmissionInterfaceForStraightShadow(
 CoupledDielectricCompensation
 GetCoupledDielectricCompensation(const Bsdf::DielectricInterfaceData& data,
                                   float effectiveIor,
-                                  const Vec3f& normalShdInterfaceWldOut,
+                                  bool backside,
                                   const Vec3f& normalShdLobeWldOut,
                                   const Vec3f& omegaOutWld)
 {
@@ -216,13 +216,13 @@ GetCoupledDielectricCompensation(const Bsdf::DielectricInterfaceData& data,
     return BsdlCoupledDielectricCompensation(
         std::max(std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), kEpsilon),
         BsdlLayerRoughnessFromAlpha(data.roughness), effectiveIor,
-        Dot(normalShdInterfaceWldOut, omegaOutWld) < 0.0f);
+        backside);
 }
 
 Vec3f
 EvalCoupledRoughDielectricTransmission(
     const Bsdf::DielectricInterfaceData& data, float effectiveIor,
-    const Vec3f& normalShdInterfaceWldOut, const Vec3f& normalShdLobeWldOut,
+    bool backside, const Vec3f& normalShdLobeWldOut,
     const Vec3f& omegaInWld, const Vec3f& omegaOutWld)
 {
     const Frame frame =
@@ -235,7 +235,6 @@ EvalCoupledRoughDielectricTransmission(
         return Vec3f(0.0f);
     }
 
-    const bool backside = Dot(normalShdInterfaceWldOut, omegaOutWld) < 0.0f;
     // The Walter half-vector convention uses transmitted/incident IOR.
     const float etaPbrt = backside ? 1.0f / std::max(effectiveIor, kEpsilon)
                                    : std::max(effectiveIor, kEpsilon);
@@ -276,7 +275,7 @@ EvalCoupledRoughDielectricTransmission(
 float
 PdfCoupledRoughDielectric(const Bsdf::DielectricInterfaceData& data,
                            float effectiveIor,
-                           const Vec3f& normalShdInterfaceWldOut,
+                           bool backside,
                            const Vec3f& normalShdLobeWldOut,
                            const Vec3f& omegaInWld, const Vec3f& omegaOutWld)
 {
@@ -288,9 +287,8 @@ PdfCoupledRoughDielectric(const Bsdf::DielectricInterfaceData& data,
         return 0.0f;
     }
 
-    const bool backside = Dot(normalShdInterfaceWldOut, omegaOutWld) < 0.0f;
     const bool reflection =
-        IsSameSide(normalShdInterfaceWldOut, omegaInWld, omegaOutWld);
+        IsSameSide(normalShdLobeWldOut, omegaInWld, omegaOutWld);
     // The Walter half-vector convention uses transmitted/incident IOR.
     const float etaPbrt = backside ? 1.0f / std::max(effectiveIor, kEpsilon)
                                    : std::max(effectiveIor, kEpsilon);
@@ -332,8 +330,7 @@ PdfCoupledRoughDielectric(const Bsdf::DielectricInterfaceData& data,
     }
 
     const CoupledDielectricCompensation compensation =
-        GetCoupledDielectricCompensation(data, effectiveIor,
-                                          normalShdInterfaceWldOut,
+        GetCoupledDielectricCompensation(data, effectiveIor, backside,
                                           normalShdLobeWldOut, omegaOutWld);
     const float specularProbability = 1.0f - compensation.missingEnergy;
     const float compensationSideRatio = reflection
@@ -348,7 +345,7 @@ PdfCoupledRoughDielectric(const Bsdf::DielectricInterfaceData& data,
 Bsdf::BsdfSample
 SampleCoupledRoughDielectric(const Bsdf::DielectricInterfaceData& data,
                               float effectiveIor,
-                              const Vec3f& normalShdInterfaceWldOut,
+                              bool backside,
                               const Vec3f& normalShdLobeWldOut,
                               const Vec3f& omegaOutWld, float u1, float u2,
                               float uChoice)
@@ -361,10 +358,8 @@ SampleCoupledRoughDielectric(const Bsdf::DielectricInterfaceData& data,
             Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
 
-    const bool backside = Dot(normalShdInterfaceWldOut, omegaOutWld) < 0.0f;
     const CoupledDielectricCompensation compensation =
-        GetCoupledDielectricCompensation(data, effectiveIor,
-                                          normalShdInterfaceWldOut,
+        GetCoupledDielectricCompensation(data, effectiveIor, backside,
                                           normalShdLobeWldOut, omegaOutWld);
     const float specularProbability = 1.0f - compensation.missingEnergy;
     if (compensation.missingEnergy > 0.0f && u1 >= specularProbability) {
@@ -442,18 +437,15 @@ SampleCoupledRoughDielectric(const Bsdf::DielectricInterfaceData& data,
 
 Bsdf::BsdfSample
 SampleDeltaTransmission(float ior, const Vec3f& tint, float weight,
-                         const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld)
+                         const Vec3f& normalShdWldOut,
+                         const Vec3f& omegaOutWld, bool backside)
 {
-    float cosI = Dot(normalShdWldOut, omegaOutWld);
-    float eta = 1.0f;
-    Vec3f n = normalShdWldOut;
-    if (cosI > 0.0f) {
-        eta = 1.0f / ior;
-    } else {
-        eta = ior;
-        n = -normalShdWldOut;
-        cosI = -cosI;
-    }
+    const float cosI = std::abs(Dot(normalShdWldOut, omegaOutWld));
+    const float eta = backside ? ior : 1.0f / ior;
+    const Vec3f normalIncidentWldOut =
+        Dot(normalShdWldOut, omegaOutWld) >= 0.0f
+        ? normalShdWldOut
+        : -normalShdWldOut;
 
     float sin2T = eta * eta * (1.0f - cosI * cosI);
     if (sin2T >= 1.0f) {
@@ -462,7 +454,9 @@ SampleDeltaTransmission(float ior, const Vec3f& tint, float weight,
     }
 
     float cosT = std::sqrt(1.0f - sin2T);
-    Vec3f omegaInWld = -eta * omegaOutWld + (eta * cosI - cosT) * n;
+    Vec3f omegaInWld =
+        -eta * omegaOutWld +
+        (eta * cosI - cosT) * normalIncidentWldOut;
     omegaInWld.normalize();
     float fresnel = SchlickFresnelScalar(ior, cosI);
     Bsdf::BsdfSample sample{omegaInWld, tint * ((1.0f - fresnel) * weight),
@@ -477,11 +471,13 @@ SampleDeltaDielectricTransmission(
     float effectiveIor,
     float fresnelCos,
     const Vec3f& normalShdWldOut,
+    const Vec3f& normalShdReflectionWldOut,
     const Vec3f& omegaOutWld,
+    bool backside,
     const Vec3f& luminanceCoefficients)
 {
     if (WouldTotalInternalReflect(effectiveIor, normalShdWldOut,
-                                   omegaOutWld)) {
+                                   omegaOutWld, backside)) {
         // A transmission-only lobe is paired with a separate reflection lobe
         // that keeps contributing its Schlick reflectance from inside the
         // medium, so a full-weight TIR sample here would double-count
@@ -492,12 +488,14 @@ SampleDeltaDielectricTransmission(
                 data, fresnelCos, effectiveIor),
             luminanceCoefficients));
         return SampleDeltaTotalInternalReflection(
-            data.weight * (1.0f - pairedReflectance), normalShdWldOut,
+            data.weight * (1.0f - pairedReflectance),
+            normalShdReflectionWldOut,
             omegaOutWld);
     }
 
     auto sample = SampleDeltaTransmission(effectiveIor, data.tint, data.weight,
-                                           normalShdWldOut, omegaOutWld);
+                                           normalShdWldOut, omegaOutWld,
+                                           backside);
     const float baseReflectance =
         SchlickFresnelScalar(effectiveIor, fresnelCos);
     sample.bsdfValue =
@@ -511,9 +509,10 @@ SampleDeltaDielectricTransmission(
 Bsdf::BsdfSample
 SampleDeltaDielectricInterfaceTransmission(
     const Bsdf::DielectricInterfaceData& data, float effectiveIor,
-    float fresnelCos, const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld)
+    float fresnelCos, const Vec3f& normalShdWldOut,
+    const Vec3f& normalShdReflectionWldOut,
+    const Vec3f& omegaOutWld, bool backside)
 {
-    const bool backside = Dot(normalShdWldOut, omegaOutWld) < 0.0f;
     if (data.thinWalled) {
         Vec3f omegaInWld = -omegaOutWld;
         omegaInWld.normalize();
@@ -525,9 +524,16 @@ SampleDeltaDielectricInterfaceTransmission(
         return sample;
     }
 
-    auto sample = SampleDeltaTransmission(effectiveIor, data.transmissionTint,
-                                           Clamp01(data.transmissionWeight),
-                                           normalShdWldOut, omegaOutWld);
+    Bsdf::BsdfSample sample =
+        WouldTotalInternalReflect(
+            effectiveIor, normalShdWldOut, omegaOutWld, backside)
+        ? SampleDeltaTotalInternalReflection(
+              Clamp01(data.transmissionWeight),
+              normalShdReflectionWldOut, omegaOutWld)
+        : SampleDeltaTransmission(
+              effectiveIor, data.transmissionTint,
+              Clamp01(data.transmissionWeight), normalShdWldOut,
+              omegaOutWld, backside);
     const float baseReflectance =
         SchlickFresnelScalar(effectiveIor, fresnelCos);
     sample.bsdfValue = CompMul(

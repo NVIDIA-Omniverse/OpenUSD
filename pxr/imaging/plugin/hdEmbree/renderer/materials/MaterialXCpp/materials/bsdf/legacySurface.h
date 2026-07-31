@@ -14,8 +14,9 @@ namespace Bsdf {
 namespace detail {
 
 /// Evaluates the legacy summary lobes stored directly on `closure`.
-/// The normal and directions must be finite unit vectors pointing away from
-/// the surface. Closure colors and weights must be finite and non-negative;
+/// The normal selects the incident transport side; directions must be finite
+/// unit vectors pointing away from the surface. Closure colors and weights
+/// must be finite and non-negative;
 /// roughness and weights are expected in [0,1], and IORs must be positive.
 /// Returns finite non-negative RGB BSDF value. Invalid geometric
 /// configurations contribute zero; this operation does not throw.
@@ -24,8 +25,9 @@ Vec3f EvalLegacySurface(
     const Vec3f& omegaInWld, const Vec3f& omegaOutWld);
 
 /// Evaluates the legacy summary's mixture PDF.
-/// The normal and directions must be finite unit vectors pointing away from
-/// the surface, and `closure` must satisfy `EvalLegacySurface`'s parameter
+/// The normal selects the incident transport side; directions must be finite
+/// unit vectors pointing away from the surface, and `closure` must satisfy
+/// `EvalLegacySurface`'s parameter
 /// invariants. Returns a finite non-negative solid-angle density; an empty or
 /// degenerate lobe mixture returns zero. This operation does not throw.
 float PdfLegacySurface(
