@@ -2650,6 +2650,28 @@ static bool TestHeightToNormalDefaultTexcoord() {
     return Test_IsClose(_GetVec3(out), expected, 1e-5f);
 }
 
+static bool TestHeightToNormalPreservesSmallDerivatives() {
+    ParamMap in;
+    in.Add(
+        AsSlotId("in"),
+        nullptr,
+        &_EvalHeightFromTexcoordX,
+        nullptr,
+        -1,
+        InvalidSlotId);
+
+    ShadingContext ctx;
+    ctx.texcoord = Vec2f(0.25f, 0.5f);
+    ctx.dudx = 1e-5f;
+    ctx.dvdy = 1e-5f;
+
+    const NodeOutputMap out =
+        _EvalWithCtx("ND_heighttonormal_vector3", in, ctx);
+    Vec3f expected = Vec3f(-1.0f / 16.0f, 0.0f, 1.0f).normalized();
+    expected = expected * 0.5f + Vec3f(0.5f);
+    return Test_IsClose(_GetVec3(out), expected, 1e-5f);
+}
+
 static bool TestBlurPropagatesTextureBlur() {
     ParamMap floatInputs;
     floatInputs["in"] = Value(0.375f);
@@ -3151,6 +3173,7 @@ Test_RegisterNodeTests()
     _REG(TestTriplanarProjectionDefaultsNormalToObjectSpace);
     _REG(TestBlurPropagatesTextureBlur);
     _REG(TestHeightToNormalDefaultTexcoord);
+    _REG(TestHeightToNormalPreservesSmallDerivatives);
     _REG(TestBumpDefaultBasis);
     _REG(TestNormalMapVariants);
     _REG(TestLuminance);

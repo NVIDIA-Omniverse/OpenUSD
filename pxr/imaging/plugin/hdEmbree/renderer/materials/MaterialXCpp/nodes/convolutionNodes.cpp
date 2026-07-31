@@ -11,6 +11,8 @@
 #include <renderer/materials/MaterialXCpp/nodes/helpers/mathHelpers.h>
 #include <renderer/materials/MaterialXCpp/nodes/helpers/shadingContextHelpers.h>
 
+#include <cmath>
+
 namespace mxcpp {
 
 namespace {
@@ -21,7 +23,8 @@ static const SlotName _kScale("scale");
 static const SlotName _kSize("size");
 static const SlotName _kTexcoord("texcoord");
 
-static constexpr float _kFloatEps = 1e-6f;
+static constexpr float _kBlurSizeEps = 1e-6f;
+static constexpr float _kHeightToNormalFrameEps = 1e-8f;
 static constexpr float _kSobelScaleFactor = 1.0f / 16.0f;
 
 template<typename T>
@@ -45,7 +48,7 @@ _EvalBlur(const ParamMap& inputs,
 {
     const T defaultValue = Get<T>(inputs, _kIn, Zero<T>());
     const float size = EvaluateInput<float>(inputs, _kSize, ctx, 0.0f);
-    if (size <= _kFloatEps) {
+    if (size <= _kBlurSizeEps) {
         (*outputs)[_kOut] = Value(_EvaluateBlurInput(inputs, ctx, defaultValue));
         return;
     }
@@ -91,10 +94,21 @@ _ComputeHeightToNormalEncoded(const ParamMap& inputs,
     const Vec3f bitangent(dUdS[1], dVdS[1], dHdS[1]);
     Vec3f normal = Cross(tangent, bitangent);
 
-    if (Dot(normal, normal) < _kFloatEps * _kFloatEps) {
+    // Ray differentials may be scaled for the sampling rate, so detect a
+    // degenerate frame relative to its tangent lengths rather than its area.
+    const float frameMagnitude =
+        std::sqrt(Dot(tangent, tangent)) *
+        std::sqrt(Dot(bitangent, bitangent));
+    if (!(frameMagnitude > 0.0f) || !std::isfinite(frameMagnitude)) {
         normal = Vec3f(0.0f, 0.0f, 1.0f);
     } else {
-        if (normal[2] < 0.0f) {
+        normal *= 1.0f / frameMagnitude;
+        const float relativeNormalLengthSquared = Dot(normal, normal);
+        if (!std::isfinite(relativeNormalLengthSquared) ||
+            relativeNormalLengthSquared <
+                _kHeightToNormalFrameEps * _kHeightToNormalFrameEps) {
+            normal = Vec3f(0.0f, 0.0f, 1.0f);
+        } else if (normal[2] < 0.0f) {
             normal = -normal;
         }
         normal.normalize();
