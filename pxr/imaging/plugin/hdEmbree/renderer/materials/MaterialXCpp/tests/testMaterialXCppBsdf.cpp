@@ -5485,6 +5485,12 @@ TestEnsureValidSpecularReflection()
                 2.0e-5f * std::max(1.0f, evaluatedPdf)) ||
             !preparedEvalPdf.evaluated ||
             !Test_IsClose(evaluated, preparedEvalPdf.value, 2.0e-5f) ||
+            !Test_IsClose(
+                preparedEvalPdf.valueCosine,
+                preparedEvalPdf.value * std::abs(Dot(
+                    adobeClosure.bsdfTree.defaultSpecularNormal,
+                    sample.omegaInWld)),
+                2.0e-5f) ||
             !Test_IsClose(evaluated, correctedBasisValue, 2.0e-5f) ||
             !Test_IsClose(
                 evaluatedPdf, preparedEvalPdf.pdfSolidAngle,
@@ -5494,7 +5500,16 @@ TestEnsureValidSpecularReflection()
                 sample.omegaInWld, preparedSample.omegaInWld, 2.0e-5f) ||
             !Test_IsClose(
                 sample.pdfSolidAngle, preparedSample.pdfSolidAngle,
-                2.0e-5f * std::max(1.0f, sample.pdfSolidAngle))) {
+                2.0e-5f * std::max(1.0f, sample.pdfSolidAngle)) ||
+            !Test_IsClose(
+                preparedSample.bsdfValueCosine,
+                preparedSample.bsdfValue * std::abs(Dot(
+                    adobeClosure.bsdfTree.defaultSpecularNormal,
+                    preparedSample.omegaInWld)),
+                2.0e-5f) ||
+            !Test_IsClose(
+                sample.bsdfValueCosine, preparedSample.bsdfValueCosine,
+                2.0e-5f)) {
             return false;
         }
         if (Test_IsClose(
@@ -5758,6 +5773,125 @@ TestRoughReflectionSampleSurvivesBumpHemisphereDisagreement()
 }
 
 static bool
+TestStandardSurfaceProjectsEachLayerWithItsExactNormal()
+{
+    ParamMap params;
+    params["base"] = Value(1.0f);
+    params["base_color"] = Value(Vec3f(0.8f));
+    params["specular"] = Value(1.0f);
+    params["specular_roughness"] = Value(0.2f);
+    SurfaceClosure closure = EvalStandardSurface(params);
+
+    const Vec3f normalGeomWldOut(0.0f, 0.0f, 1.0f);
+    const Vec3f normalSrfWldOut = normalGeomWldOut;
+    const Vec3f normalShdWldOut =
+        Vec3f(0.8f, 0.0f, 0.6f).normalized();
+    const Vec3f omegaOutWld =
+        Vec3f(-0.5f, 0.0f, 0.8660254f).normalized();
+    Bsdf::detail::PrepareShadingNormals(
+        &closure.bsdfTree, normalShdWldOut, normalGeomWldOut,
+        omegaOutWld);
+
+    const Bsdf::Node* root = closure.bsdfTree.Get(closure.bsdfTree.root);
+    if (!root || !std::holds_alternative<Bsdf::LayerData>(root->data) ||
+        Test_IsClose(closure.bsdfTree.defaultDiffuseNormal,
+                     closure.bsdfTree.defaultSpecularNormal, 1.0e-4f)) {
+        printf("    Standard Surface fixture did not produce corrected layer normals\n");
+        return false;
+    }
+    const Bsdf::LayerData& layer = std::get<Bsdf::LayerData>(root->data);
+
+    for (int i = 0; i < 4096; ++i) {
+        const float u1 = (static_cast<float>(i) + 0.5f) / 4096.0f;
+        const float u2 =
+            _RadicalInverseBase2(static_cast<std::uint32_t>(i));
+        const float uLobe = std::fmod(
+            (static_cast<float>(i) + 0.5f) * 0.61803398875f, 1.0f);
+        const Bsdf::BsdfSample sample = TestSurfaceApi::SampleSurface(
+            closure, normalShdWldOut, normalSrfWldOut, normalGeomWldOut,
+            omegaOutWld, u1, u2, uLobe);
+        if (sample.pdfSolidAngle <= 0.0f || sample.isSpecular) {
+            continue;
+        }
+
+        const Vec3f topSampleValue = Bsdf::detail::EvalNode(
+            closure.bsdfTree, layer.top, normalShdWldOut,
+            normalSrfWldOut, sample.omegaInWld, omegaOutWld, 0.0f, true,
+            Bsdf::detail::BumpShadowingContext::Sampling);
+        const Vec3f baseSampleValue = sample.bsdfValue - topSampleValue;
+        if (topSampleValue.length() <= 1.0e-4f ||
+            baseSampleValue.length() <= 1.0e-4f) {
+            continue;
+        }
+        const Vec3f expectedSampleValueCosine =
+            topSampleValue * std::abs(Dot(
+                closure.bsdfTree.defaultSpecularNormal,
+                sample.omegaInWld)) +
+            baseSampleValue * std::abs(Dot(
+                closure.bsdfTree.defaultDiffuseNormal,
+                sample.omegaInWld));
+        if (!Test_IsClose(
+                sample.bsdfValueCosine, expectedSampleValueCosine,
+                2.0e-5f)) {
+            printf("    Sample did not project Standard Surface layers independently\n");
+            return false;
+        }
+
+        const Vec3f evaluated = TestSurfaceApi::EvalSurface(
+            closure, normalShdWldOut, normalSrfWldOut,
+            sample.omegaInWld, omegaOutWld);
+        const Vec3f topEvaluated = Bsdf::detail::EvalNode(
+            closure.bsdfTree, layer.top, normalShdWldOut,
+            normalSrfWldOut, sample.omegaInWld, omegaOutWld, 0.0f, true,
+            Bsdf::detail::BumpShadowingContext::Evaluation);
+        const Vec3f expectedEvaluatedCosine =
+            topEvaluated * std::abs(Dot(
+                closure.bsdfTree.defaultSpecularNormal,
+                sample.omegaInWld)) +
+            (evaluated - topEvaluated) * std::abs(Dot(
+                closure.bsdfTree.defaultDiffuseNormal,
+                sample.omegaInWld));
+        const Vec3f evaluatedCosine = Bsdf::EvalSurfaceCosine(
+            closure, normalShdWldOut, normalSrfWldOut,
+            sample.omegaInWld, omegaOutWld);
+        const Vec3f oldSingleNormalProjection = evaluated *
+            std::abs(Dot(normalShdWldOut, sample.omegaInWld));
+        if (!Test_IsClose(
+                evaluatedCosine, expectedEvaluatedCosine, 2.0e-5f)) {
+            printf("    Direct evaluation did not project layers independently\n");
+            return false;
+        }
+        if ((evaluatedCosine - oldSingleNormalProjection).length() <=
+            1.0e-3f) {
+            continue;
+        }
+        return true;
+    }
+
+    printf("    Failed to find a mixed Standard Surface grazing sample\n");
+    return false;
+}
+
+static bool
+TestSampleSurfaceProjectedValueIncludesPresence()
+{
+    SurfaceClosure closure;
+    closure.presence = 0.25f;
+    Bsdf::OrenNayarDiffuseData diffuse;
+    diffuse.color = Vec3f(0.8f);
+    closure.bsdfTree.root = closure.bsdfTree.Add(diffuse);
+
+    const Vec3f normalWldOut(0.0f, 0.0f, 1.0f);
+    const Vec3f omegaOutWld(0.0f, 0.0f, 1.0f);
+    const Bsdf::BsdfSample sample = TestSurfaceApi::SampleSurface(
+        closure, normalWldOut, omegaOutWld, 0.37f, 0.61f, 0.5f);
+    const Vec3f expected = sample.bsdfValue *
+        std::abs(Dot(normalWldOut, sample.omegaInWld));
+    return sample.pdfSolidAngle > 0.0f &&
+        Test_IsClose(sample.bsdfValueCosine, expected, 1.0e-6f);
+}
+
+static bool
 TestCompositeNodesPreserveTransmissionEvent()
 {
     const Vec3f normalWldOut(0.0f, 0.0f, 1.0f);
@@ -5988,6 +6122,8 @@ Test_RegisterBsdfTests()
     _REG(TestLeafSampleRejectsWrongGeometricSide);
     _REG(TestBumpShadowingChangesEvalButNotPdf);
     _REG(TestRoughReflectionSampleSurvivesBumpHemisphereDisagreement);
+    _REG(TestStandardSurfaceProjectsEachLayerWithItsExactNormal);
+    _REG(TestSampleSurfaceProjectedValueIncludesPresence);
     _REG(TestCompositeNodesPreserveTransmissionEvent);
     _REG(TestTreeAnisotropicReflectionRespondsToTangent);
     _REG(TestTreeAnisotropicReflectionUsesTurquinCompensation);

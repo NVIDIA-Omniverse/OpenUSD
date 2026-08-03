@@ -656,8 +656,11 @@ ty::Renderer::_IntegratePath(
         path.currentPathIsCaustic =
             path.currentPathIsCaustic || sampledCausticEvent;
 
-        // Apply the continuation estimator: delta samples contain their
-        // coefficient; finite-PDF samples require cosine divided by PDF.
+        // Apply the continuation estimator. Finite-PDF closures project each
+        // leaf by its exact lobe normal before combining the tree.
+        const GfVec3f bsdfValueCosine = bs.isSpecular
+            ? GfVec3f(0.0f)
+            : ty::ToGf(bs.bsdfValueCosine);
         if (path.hero.active) {
             float bsdfContrib = 0.0f;
             if (bs.isSpecular) {
@@ -669,16 +672,14 @@ ty::Renderer::_IntegratePath(
                         ? mxcpp::Spectral::RgbColorSpace::LinearAP1
                         : mxcpp::Spectral::RgbColorSpace::LinearRec709);
             } else {
-                const float cosTheta =
-                    std::abs(GfDot(normalShdWldOut, ty::ToGf(bs.omegaInWld)));
                 bsdfContrib = mxcpp::Spectral::RgbToSpectralValue(
-                    bs.bsdfValue,
+                    ty::ToMx(bsdfValueCosine),
                     path.hero.wavelengthNm,
                     _renderColorSpace ==
                             ty::RenderColorSpace::LinearAP1
                         ? mxcpp::Spectral::RgbColorSpace::LinearAP1
-                        : mxcpp::Spectral::RgbColorSpace::LinearRec709) *
-                    cosTheta / bs.pdfSolidAngle;
+                        : mxcpp::Spectral::RgbColorSpace::LinearRec709) /
+                    bs.pdfSolidAngle;
             }
 
             if (!std::isfinite(bsdfContrib) || bsdfContrib < 0.0f) {
@@ -693,10 +694,7 @@ ty::Renderer::_IntegratePath(
                 // coefficient; no cosine or PDF division is needed.
                 bsdfContrib = ty::ToGf(bs.bsdfValue);
             } else {
-                float cosTheta =
-                    std::abs(GfDot(normalShdWldOut, ty::ToGf(bs.omegaInWld)));
-                bsdfContrib =
-                    ty::ToGf(bs.bsdfValue) * cosTheta / bs.pdfSolidAngle;
+                bsdfContrib = bsdfValueCosine / bs.pdfSolidAngle;
             }
 
             for (int i = 0; i < 3; ++i) {

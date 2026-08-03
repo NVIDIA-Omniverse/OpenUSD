@@ -79,6 +79,18 @@ namespace Bsdf
                       const Vec3f& omegaOutWld, float heroWavelengthNm = 0.0f,
                       bool frontFacing = true);
 
+    /// Evaluate the full surface model with each leaf multiplied by the
+    /// absolute incident cosine of that leaf's resolved shading normal.
+    /// Composite closures may contain leaves with different corrected normals,
+    /// so this projection cannot be applied once after EvalSurface().
+    Vec3f EvalSurfaceCosine(const SurfaceClosure& closure,
+                            const Vec3f& normalShdWldOut,
+                            const Vec3f& normalSrfWldOut,
+                            const Vec3f& omegaInWld,
+                            const Vec3f& omegaOutWld,
+                            float heroWavelengthNm = 0.0f,
+                            bool frontFacing = true);
+
     // ------------------------------------------------------------------
     // Sampling & PDF (Phase 9)
     // ------------------------------------------------------------------
@@ -88,6 +100,9 @@ namespace Bsdf
         Vec3f bsdfValue;
         float pdfSolidAngle;
         bool    isSpecular;
+        // Finite-PDF closure value projected per leaf by that leaf's exact
+        // shading normal. Delta and subsurface samples leave this zero.
+        Vec3f   bsdfValueCosine = Vec3f(0.0f);
         bool    isSubsurface = false;
         bool    hasSubsurfaceEntryDirection = false;
         // True for diffuse / translucent / subsurface-like scattering that

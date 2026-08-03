@@ -807,8 +807,9 @@ EvalPdfPreparedAdobeOpenPbrSurface(
             true, Bsdf::detail::BumpShadowingContext::Evaluation);
         const Vec3f value = _FromOpenPbr(
             valueWithCos.diffuse * bumpShadowing + valueWithCos.specular);
-        result.value = _CleanNonnegative(
-            value * (state.presence / cosThetaI));
+        result.valueCosine =
+            _CleanNonnegative(value * state.presence);
+        result.value = result.valueCosine * (1.0f / cosThetaI);
     }
 
     const float pdfSolidAngle = openpbr_pdf(state.prepared, lightDirection);
@@ -981,7 +982,12 @@ SamplePreparedAdobeOpenPbrSurface(
     }
     if (!directionValid) {
         result.sample.bsdfValue = Vec3f(0.0f);
+        result.sample.bsdfValueCosine = Vec3f(0.0f);
         result.sample.pdfSolidAngle = 0.0f;
+    } else if (!result.sample.isSpecular) {
+        result.sample.bsdfValueCosine = result.sample.bsdfValue *
+            std::abs(Dot(state.normalShdWldOut,
+                         result.sample.omegaInWld));
     }
 
     return result.sample;

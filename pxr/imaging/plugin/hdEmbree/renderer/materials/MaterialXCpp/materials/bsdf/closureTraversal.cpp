@@ -27,12 +27,12 @@ namespace mxcpp {
 namespace Bsdf {
 namespace detail {
 
-Vec3f EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-                const Vec3f& normalShdWldOut,
-                const Vec3f& normalSrfWldOut,
-                const Vec3f& omegaInWld,
-                const Vec3f& omegaOutWld, float heroWavelengthNm,
-                bool frontFacing, BumpShadowingContext bumpContext);
+static Vec3f _EvalNode(
+    const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
+    const Vec3f& normalShdWldOut, const Vec3f& normalSrfWldOut,
+    const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
+    float heroWavelengthNm, bool frontFacing,
+    BumpShadowingContext bumpContext, Vec3f* outBsdfValueCosine);
 
 static Vec3f _EvalThroughput(
     const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
@@ -289,20 +289,26 @@ _EvalLayerBaseThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId topNodeId,
                            heroWavelengthNm, frontFacing);
 }
 
-Vec3f
-EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
+static Vec3f
+_EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
           const Vec3f& normalShdWldOut, const Vec3f& normalSrfWldOut,
-          const Vec3f& omegaInWld,
-          const Vec3f& omegaOutWld, float heroWavelengthNm,
-          bool frontFacing, BumpShadowingContext bumpContext)
+          const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
+          float heroWavelengthNm, bool frontFacing,
+          BumpShadowingContext bumpContext, Vec3f* outBsdfValueCosine)
 {
     const auto luminance = [&](const Vec3f& value) {
         return Bsdf::detail::Luminance(value, tree.luminanceCoefficients);
     };
     const Bsdf::Node* node = tree.Get(nodeId);
     if (!node) {
+        if (outBsdfValueCosine) {
+            *outBsdfValueCosine = Vec3f(0.0f);
+        }
         return Vec3f(0.0f);
     }
+
+    Vec3f compositeValueCosine(0.0f);
+    bool hasCompositeValueCosine = false;
 
     Vec3f result = std::visit([&](const auto& data) -> Vec3f {
         using T = std::decay_t<decltype(data)>;
@@ -598,45 +604,79 @@ EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
         } else if constexpr (std::is_same_v<T, Bsdf::UnsupportedData>) {
             return Vec3f(0.0f);
         } else if constexpr (std::is_same_v<T, Bsdf::MixData>) {
-            return LerpVec(
-                EvalNode(tree, data.bg, normalShdWldOut, normalSrfWldOut,
-                         omegaInWld, omegaOutWld, heroWavelengthNm,
-                         frontFacing, bumpContext),
-                EvalNode(tree, data.fg, normalShdWldOut, normalSrfWldOut,
-                         omegaInWld, omegaOutWld, heroWavelengthNm,
-                         frontFacing, bumpContext),
-                Clamp01(data.mix));
+            Vec3f bgValueCosine;
+            Vec3f fgValueCosine;
+            const Vec3f bg = _EvalNode(
+                tree, data.bg, normalShdWldOut, normalSrfWldOut, omegaInWld,
+                omegaOutWld, heroWavelengthNm, frontFacing, bumpContext,
+                outBsdfValueCosine ? &bgValueCosine : nullptr);
+            const Vec3f fg = _EvalNode(
+                tree, data.fg, normalShdWldOut, normalSrfWldOut, omegaInWld,
+                omegaOutWld, heroWavelengthNm, frontFacing, bumpContext,
+                outBsdfValueCosine ? &fgValueCosine : nullptr);
+            if (outBsdfValueCosine) {
+                compositeValueCosine =
+                    LerpVec(bgValueCosine, fgValueCosine, Clamp01(data.mix));
+                hasCompositeValueCosine = true;
+            }
+            return LerpVec(bg, fg, Clamp01(data.mix));
         } else if constexpr (std::is_same_v<T, Bsdf::LayerData>) {
-            Vec3f topEval =
-                EvalNode(tree, data.top, normalShdWldOut, normalSrfWldOut,
-                         omegaInWld, omegaOutWld, heroWavelengthNm,
-                         frontFacing, bumpContext);
-            Vec3f baseEval =
-                EvalNode(tree, data.base, normalShdWldOut, normalSrfWldOut,
-                         omegaInWld, omegaOutWld, heroWavelengthNm,
-                         frontFacing, bumpContext);
-            return topEval +
-                   CompMul(baseEval, _EvalLayerBaseThroughput(
-                                         tree, data.top, normalShdWldOut,
-                                         omegaOutWld, heroWavelengthNm,
-                                         frontFacing));
+            Vec3f topValueCosine;
+            Vec3f baseValueCosine;
+            const Vec3f topEval = _EvalNode(
+                tree, data.top, normalShdWldOut, normalSrfWldOut, omegaInWld,
+                omegaOutWld, heroWavelengthNm, frontFacing, bumpContext,
+                outBsdfValueCosine ? &topValueCosine : nullptr);
+            const Vec3f baseEval = _EvalNode(
+                tree, data.base, normalShdWldOut, normalSrfWldOut,
+                omegaInWld, omegaOutWld, heroWavelengthNm, frontFacing,
+                bumpContext,
+                outBsdfValueCosine ? &baseValueCosine : nullptr);
+            const Vec3f baseThroughput = _EvalLayerBaseThroughput(
+                tree, data.top, normalShdWldOut, omegaOutWld,
+                heroWavelengthNm, frontFacing);
+            if (outBsdfValueCosine) {
+                compositeValueCosine = topValueCosine +
+                    CompMul(baseValueCosine, baseThroughput);
+                hasCompositeValueCosine = true;
+            }
+            return topEval + CompMul(baseEval, baseThroughput);
         } else if constexpr (std::is_same_v<T, Bsdf::AddData>) {
-            return EvalNode(tree, data.in1, normalShdWldOut,
-                            normalSrfWldOut, omegaInWld, omegaOutWld,
-                            heroWavelengthNm, frontFacing, bumpContext) +
-                   EvalNode(tree, data.in2, normalShdWldOut,
-                            normalSrfWldOut, omegaInWld, omegaOutWld,
-                            heroWavelengthNm, frontFacing, bumpContext);
+            Vec3f in1ValueCosine;
+            Vec3f in2ValueCosine;
+            const Vec3f in1 = _EvalNode(
+                tree, data.in1, normalShdWldOut, normalSrfWldOut,
+                omegaInWld, omegaOutWld, heroWavelengthNm, frontFacing,
+                bumpContext,
+                outBsdfValueCosine ? &in1ValueCosine : nullptr);
+            const Vec3f in2 = _EvalNode(
+                tree, data.in2, normalShdWldOut, normalSrfWldOut,
+                omegaInWld, omegaOutWld, heroWavelengthNm, frontFacing,
+                bumpContext,
+                outBsdfValueCosine ? &in2ValueCosine : nullptr);
+            if (outBsdfValueCosine) {
+                compositeValueCosine = in1ValueCosine + in2ValueCosine;
+                hasCompositeValueCosine = true;
+            }
+            return in1 + in2;
         } else if constexpr (std::is_same_v<T, Bsdf::MultiplyData>) {
-            return CompMul(data.weight,
-                           EvalNode(tree, data.input, normalShdWldOut,
-                                     normalSrfWldOut, omegaInWld, omegaOutWld,
-                                     heroWavelengthNm, frontFacing,
-                                     bumpContext));
+            Vec3f inputValueCosine;
+            const Vec3f input = _EvalNode(
+                tree, data.input, normalShdWldOut, normalSrfWldOut,
+                omegaInWld, omegaOutWld, heroWavelengthNm, frontFacing,
+                bumpContext,
+                outBsdfValueCosine ? &inputValueCosine : nullptr);
+            if (outBsdfValueCosine) {
+                compositeValueCosine =
+                    CompMul(data.weight, inputValueCosine);
+                hasCompositeValueCosine = true;
+            }
+            return CompMul(data.weight, input);
         } else {
             return Vec3f(0.0f);
         }
     }, node->data);
+    float cosine = 1.0f;
     const float bumpShadowing = std::visit(
         [&](const auto& data) {
             // C++17 visitor dispatch over the finite closure-node variant.
@@ -644,6 +684,7 @@ EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             if constexpr (_HasSurfaceLobeNormal<T>()) {
                 const Vec3f normalShdLobeWldOut =
                     ResolveTreeShadingNormal(tree, data, normalShdWldOut);
+                cosine = std::abs(Dot(normalShdLobeWldOut, omegaInWld));
                 return BumpShadowingTerm(
                     normalSrfWldOut, normalShdLobeWldOut, omegaInWld,
                     _IsDiffuseClosureFamily<T>(), bumpContext);
@@ -651,7 +692,41 @@ EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             return 1.0f;
         },
         node->data);
-    return SafeVec(result * bumpShadowing);
+    const Vec3f bsdfValue = SafeVec(result * bumpShadowing);
+    if (outBsdfValueCosine) {
+        *outBsdfValueCosine = hasCompositeValueCosine
+            ? SafeVec(compositeValueCosine * bumpShadowing)
+            : SafeVec(bsdfValue * cosine);
+    }
+    return bsdfValue;
+}
+
+Vec3f
+EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
+         const Vec3f& normalShdWldOut, const Vec3f& normalSrfWldOut,
+         const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
+         float heroWavelengthNm, bool frontFacing,
+         BumpShadowingContext bumpContext)
+{
+    return _EvalNode(
+        tree, nodeId, normalShdWldOut, normalSrfWldOut, omegaInWld,
+        omegaOutWld, heroWavelengthNm, frontFacing, bumpContext, nullptr);
+}
+
+Vec3f
+EvalNodeCosine(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
+               const Vec3f& normalShdWldOut,
+               const Vec3f& normalSrfWldOut,
+               const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
+               float heroWavelengthNm, bool frontFacing,
+               BumpShadowingContext bumpContext)
+{
+    Vec3f bsdfValueCosine;
+    _EvalNode(
+        tree, nodeId, normalShdWldOut, normalSrfWldOut, omegaInWld,
+        omegaOutWld, heroWavelengthNm, frontFacing, bumpContext,
+        &bsdfValueCosine);
+    return bsdfValueCosine;
 }
 
 static Vec3f
@@ -1231,10 +1306,10 @@ _FinalizeSubtreeSample(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
         sample.pdfSolidAngle = std::max(sample.pdfSolidAngle, 1.0f);
         return sample;
     }
-    sample.bsdfValue =
-        EvalNode(tree, nodeId, normalShdWldOut, normalSrfWldOut,
-                 sample.omegaInWld, omegaOutWld, heroWavelengthNm,
-                 frontFacing, BumpShadowingContext::Sampling);
+    sample.bsdfValue = _EvalNode(
+        tree, nodeId, normalShdWldOut, normalSrfWldOut,
+        sample.omegaInWld, omegaOutWld, heroWavelengthNm, frontFacing,
+        BumpShadowingContext::Sampling, &sample.bsdfValueCosine);
     sample.pdfSolidAngle =
         PdfNode(tree, nodeId, normalShdWldOut, sample.omegaInWld, omegaOutWld,
                  heroWavelengthNm, frontFacing);
@@ -1891,6 +1966,7 @@ SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 }
                 if (!directionValid) {
                     sample.bsdfValue = Vec3f(0.0f);
+                    sample.bsdfValueCosine = Vec3f(0.0f);
                     sample.pdfSolidAngle = 0.0f;
                 }
             }

@@ -297,8 +297,10 @@ transmission directions above either surface are discarded without resampling.
 Direct evaluation and PDF do not apply that geometric rejection, matching
 Cycles; strongly mapped grazing facets can therefore become darker than true
 displacement. Smooth-base/material-normal agreement is evaluated per lobe, and
-diffuse-family values receive continuous bump-terminator softening. On coarse
-smooth triangles, direct-light shadow origins are lifted
+diffuse-family values receive continuous bump-terminator softening. Layered
+materials project each lobe by its own corrected-normal cosine before combining
+the response, avoiding grazing energy spikes from one graph-normal cosine. On
+coarse smooth triangles, direct-light shadow origins are lifted
 toward the interpolated surface near a facet terminator using the triangle's
 actual positions; authored texture-coordinate scale does not affect that lift.
 Thick dielectric side

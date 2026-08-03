@@ -36,7 +36,9 @@ branch; keep logical commit boundaries where they aid review and bisection.
 "Depends on" means the listed work must be completed earlier in that branch.
 Files `01` through `26` form the original implementation sequence. File `27`
 is a post-implementation performance investigation. File `28` supersedes the
-geometric-normal fallback and late sample-rejection parts of file `26`.
+geometric-normal fallback and late sample-rejection parts of file `26`. File
+`29` is behavior-preserving cleanup of the plumbing `28` grew and must land
+after it.
 
 ## Execution order
 
@@ -404,6 +406,19 @@ orientation stays geometric-only with no view-direction face-forwarding. **Not
 behavior-preserving**: mapped-normal reflection, transmission, TIR, subsurface,
 and grazing-angle sampling change.
 _Depends on: 26 and the corrective work investigated by 27._
+
+**29 · [Normal plumbing simplification](29-plan-normal-plumbing.md)** — resolve
+every surface leaf's shading normal once during preparation so the graph normal
+stops being a traversal parameter, then bundle the remaining per-hit invariants
+(smooth normal, geometric normal, outgoing direction, hero wavelength, geometric
+side) into one `SurfaceInteraction` passed by const reference. Deletes the
+tree-level default normals, the authored-normal linked chain, and the
+reflective-type bookkeeping; consolidates the three per-family sampled-direction
+validity ladders into one predicate that takes the event label as an explicit
+input. **Behavior-preserving** apart from restoring Cycles' lobe-normal
+sampling test, which 28 left tautological.
+_Depends on: 28, fully landed and image-accepted. Serial with it on every
+`renderer/materials/MaterialXCpp/materials/bsdf/` file._
 
 ## Overlap ownership (who is authoritative)
 

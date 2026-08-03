@@ -59,6 +59,15 @@ Vec3f EvalNode(
     const Vec3f& omegaOutWld, float heroWavelengthNm,
     bool frontFacing, BumpShadowingContext bumpContext);
 
+/// EvalNode with each surface leaf multiplied by its own absolute incident
+/// cosine before composite nodes combine the values.
+Vec3f EvalNodeCosine(
+    const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
+    const Vec3f& normalShdWldOut, const Vec3f& normalSrfWldOut,
+    const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
+    float heroWavelengthNm, bool frontFacing,
+    BumpShadowingContext bumpContext);
+
 /// Evaluates the solid-angle PDF of the closure subtree rooted at `nodeId`.
 /// `nodeId` may be invalid, in which case zero is returned. The normal and
 /// directions must be finite unit vectors pointing away from the surface;

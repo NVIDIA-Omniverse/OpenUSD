@@ -196,6 +196,8 @@ SampleLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
 
     const auto finalizeReflection = [&](Bsdf::BsdfSample sample,
                                         bool diffuseFamily) {
+        sample.bsdfValueCosine = sample.bsdfValue *
+            std::abs(Dot(normalShdLobeWldOut, sample.omegaInWld));
         const bool directionValid = diffuseFamily
             ? Dot(normalGeomWldOut, sample.omegaInWld) > 0.0f
             : Dot(normalShdLobeWldOut, omegaOutWld) > 0.0f &&
@@ -205,6 +207,7 @@ SampleLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
             normalSrfWldOut, normalShdLobeWldOut, sample.omegaInWld);
         if (!directionValid || (diffuseFamily && !bumpValid)) {
             sample.bsdfValue = Vec3f(0.0f);
+            sample.bsdfValueCosine = Vec3f(0.0f);
             sample.pdfSolidAngle = 0.0f;
         }
         return sample;

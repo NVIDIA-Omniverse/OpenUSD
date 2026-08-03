@@ -173,6 +173,7 @@ corresponding type without changing the semantic name.
 | `throughputRgb` | `GfVec3f` | RGB path-throughput multiplier accumulated from the camera to the current segment. |
 | `throughputSpectral` | `float` | Hero-wavelength counterpart to `throughputRgb`. Use `throughputWeight` only for an unapplied local returned multiplier. |
 | `bsdfValue` | `GfVec3f` or `mxcpp::Vec3f` | Evaluated or sampled BSDF value. Replaces bare `f`; qualify spectral/scalar forms when required. |
+| `bsdfValueCosine` | `GfVec3f` or `mxcpp::Vec3f` | Finite-PDF BSDF value after each leaf is multiplied by the absolute incident cosine of that leaf's exact shading normal, before composite closure values are combined. |
 | `pdf` | `float` | Non-negative probability density whose measure is explicit in its suffix or declaration contract. |
 | `pdfSolidAngle`, `pdfSolidAngleInverse` | `float` | Density and reciprocal density with respect to solid angle. Replace `pdfW` / `invPdfW`. |
 | `pdfArea`, `pdfAreaInverse` | `float` | Density and reciprocal density with respect to surface area. Replace `pdfA` / `invPdfA`. |
@@ -793,9 +794,9 @@ For each segment, `_IntegratePath()` performs these stages in order:
 13. **Accumulate local radiance.** Material emission is added through current
     throughput. `_ComputeDirectLightingMIS()` performs next-event estimation
     for BSDF surfaces, including light selection, linking, colored visibility,
-    active-medium attenuation, and MIS against BSDF sampling. A surface without
-    a usable material closure receives the renderer's synthetic diffuse direct
-    lighting fallback.
+    active-medium attenuation, per-leaf exact-normal cosine projection, and MIS
+    against BSDF sampling. A surface without a usable material closure receives
+    the renderer's synthetic diffuse direct lighting fallback.
 14. **Cross volume-only boundaries.** A closure that only defines an interior
     medium updates the active medium on entry or exit, offsets the unchanged ray
     across the boundary, and continues without consuming a surface bounce.
@@ -806,11 +807,14 @@ For each segment, `_IntegratePath()` performs these stages in order:
     has already applied smooth-base/material-normal agreement with the exact
     lobe normal. Evaluation applies that agreement to every closure; diffuse,
     translucent, and sheen additionally receive Cycles' continuous GGX bump
-    softening. PDF is unchanged. The integrator then
-    applies `f * abs(cos(theta)) / pdf`; delta events use their direct throughput
-    coefficient. It records the BSDF PDF, receiver categories, dome-sampling
-    hemisphere, diffuse/specular ancestry, and any medium-boundary crossing for
-    the next segment.
+    softening. PDF is unchanged. Before composite nodes combine values, every
+    finite leaf is projected as `f_lobe * abs(dot(normalShdLobeWldOut,
+    omegaInWld))`; the integrator divides their sum by the mixed PDF. This
+    preserves the exact normal of layered closures instead of applying one
+    graph-normal cosine to the combined value. Delta events use their direct
+    throughput coefficient. It records the BSDF PDF, receiver categories,
+    dome-sampling hemisphere, diffuse/specular ancestry, and any
+    medium-boundary crossing for the next segment.
 17. **Apply roulette and differentials.** After the configured minimum bounce,
     Russian roulette terminates low-throughput paths and compensates survivors.
     A surviving displaced delta event with an active ray footprint lazily

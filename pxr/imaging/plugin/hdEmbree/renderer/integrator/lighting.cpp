@@ -221,9 +221,6 @@ ty::Renderer::_ComputeDirectLightingMIS(
             // need those samples to survive direct-light evaluation.
             const float cosThetaLightAbsolute =
                 std::abs(GfDot(ls.omegaInWld, normalShdWldOut));
-            if (cosThetaLightAbsolute <= 0.0f) {
-                continue;
-            }
             const GfVec3f normalGeomWldOut =
                 frontFacing ? normalGeomWldExt : -normalGeomWldExt;
             const bool transmission =
@@ -265,13 +262,13 @@ ty::Renderer::_ComputeDirectLightingMIS(
                               ty::ToMx(normalGeomWldOut), frontFacing,
                               omegaInWldMx, omegaOutWldMx);
 
-                GfVec3f bsdfValue(0.0f);
+                GfVec3f bsdfValueCosine(0.0f);
                 float pdfBsdfSolidAngle = 0.0f;
                 if (adobeEvalPdf.evaluated) {
-                    bsdfValue = ty::ToGf(adobeEvalPdf.value);
+                    bsdfValueCosine = ty::ToGf(adobeEvalPdf.valueCosine);
                     pdfBsdfSolidAngle = adobeEvalPdf.pdfSolidAngle;
                 } else {
-                    bsdfValue = ty::ToGf(mxcpp::Bsdf::EvalSurface(
+                    bsdfValueCosine = ty::ToGf(mxcpp::Bsdf::EvalSurfaceCosine(
                         *closure, normalMx, ty::ToMx(normalSrfWldOut),
                         omegaInWldMx, omegaOutWldMx,
                         heroWavelengthNm, frontFacing));
@@ -281,7 +278,9 @@ ty::Renderer::_ComputeDirectLightingMIS(
                 }
 
                 for (int i = 0; i < 3; ++i) {
-                    if (!std::isfinite(bsdfValue[i])) bsdfValue[i] = 0.0f;
+                    if (!std::isfinite(bsdfValueCosine[i])) {
+                        bsdfValueCosine[i] = 0.0f;
+                    }
                 }
 
                 // MIS weight for the multi-sample estimator. The contribution
@@ -310,18 +309,16 @@ ty::Renderer::_ComputeDirectLightingMIS(
                             visibility, hero, _renderColorSpace);
                     const float spectralBsdf =
                         ty::RgbToSpectralValue(
-                            bsdfValue, hero, _renderColorSpace);
+                            bsdfValueCosine, hero, _renderColorSpace);
                     radianceSample = ty::SpectralValueToRgb(
                         radianceInSpectral * spectralBsdf *
-                            cosThetaLightAbsolute * spectralVis *
-                            ls.pdfSolidAngleInverse * weightMis,
+                            spectralVis * ls.pdfSolidAngleInverse * weightMis,
                         hero, _renderColorSpace);
                 } else {
                     radianceSample =
-                        GfCompMult(GfCompMult(ls.radianceIn, bsdfValue),
+                        GfCompMult(GfCompMult(ls.radianceIn, bsdfValueCosine),
                                    visibility) *
-                        cosThetaLightAbsolute * ls.pdfSolidAngleInverse *
-                        weightMis;
+                        ls.pdfSolidAngleInverse * weightMis;
                 }
             } else {
                 float brdf = 1.0f / ty::Pi;

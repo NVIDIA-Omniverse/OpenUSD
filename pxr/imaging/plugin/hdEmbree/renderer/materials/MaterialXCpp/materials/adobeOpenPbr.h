@@ -28,6 +28,7 @@ Vec3f EvalAdobeOpenPbr(const Bsdf::AdobeOpenPbrData& data,
 struct AdobeOpenPbrEvalPdfResult
 {
     Vec3f value = Vec3f(0.0f);
+    Vec3f valueCosine = Vec3f(0.0f);
     float pdfSolidAngle = 0.0f;
     bool evaluated = false;
 };

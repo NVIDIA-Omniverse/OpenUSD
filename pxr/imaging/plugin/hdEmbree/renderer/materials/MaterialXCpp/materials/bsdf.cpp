@@ -217,6 +217,27 @@ Bsdf::EvalSurface(const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
     return detail::SafeVec(bsdfValue * closure.presence);
 }
 
+Vec3f
+Bsdf::EvalSurfaceCosine(
+    const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
+    const Vec3f& normalSrfWldOut, const Vec3f& omegaInWld,
+    const Vec3f& omegaOutWld, float heroWavelengthNm, bool frontFacing)
+{
+    Vec3f bsdfValueCosine =
+        closure.HasBsdfTree()
+            ? detail::EvalNodeCosine(
+                  closure.bsdfTree, closure.bsdfTree.root,
+                  normalShdWldOut, normalSrfWldOut, omegaInWld,
+                  omegaOutWld, heroWavelengthNm, frontFacing,
+                  detail::BumpShadowingContext::Evaluation)
+            : detail::EvalLegacySurface(
+                  closure, normalShdWldOut, normalSrfWldOut, omegaInWld,
+                  omegaOutWld,
+                  detail::BumpShadowingContext::Evaluation) *
+                  std::abs(Dot(normalShdWldOut, omegaInWld));
+    return detail::SafeVec(bsdfValueCosine * closure.presence);
+}
+
 Bsdf::BsdfSample
 Bsdf::SampleLambertian(const Vec3f& baseColor, const Vec3f& normalShdWldOut,
                        const Vec3f& /*omegaOutWld*/, float u1, float u2)
@@ -519,6 +540,7 @@ Bsdf::SampleSurface(const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
                         frontFacing);
         if (!sample.isSpecular) {
             sample.bsdfValue *= closure.presence;
+            sample.bsdfValueCosine *= closure.presence;
         }
         return sample;
     }
