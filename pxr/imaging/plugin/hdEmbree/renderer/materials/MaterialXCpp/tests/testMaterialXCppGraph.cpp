@@ -826,6 +826,38 @@ TestCompileVolumeOnlyMaterial()
 }
 
 static bool
+TestDotSurfaceShaderTerminalPassThrough()
+{
+    MaterialGraph network;
+
+    GraphNode edf;
+    edf.nodeTypeId = "ND_uniform_edf";
+    edf.parameters["color"] = Value(Vec3f(0.2f, 0.4f, 0.6f));
+    network.nodes["/Material/Edf"] = edf;
+
+    GraphNode surface;
+    surface.nodeTypeId = "ND_surface";
+    surface.inputConnections["edf"] = {{"/Material/Edf", "out"}};
+    network.nodes["/Material/Surface"] = surface;
+
+    GraphNode dot;
+    dot.nodeTypeId = "ND_dot_surfaceshader";
+    dot.inputConnections["in"] = {{"/Material/Surface", "out"}};
+    network.nodes["/Material/Dot"] = dot;
+    network.terminals["surface"] = {"/Material/Dot", "out"};
+
+    CompileResult result = EvalGraph::Compile(network);
+    if (result.status != CompileStatus::Valid || !result.graph ||
+        !result.diagnostic.empty()) {
+        return false;
+    }
+
+    const SurfaceClosure closure =
+        result.graph->Evaluate(ShadingContext{});
+    return Test_IsClose(closure.emissiveColor, Vec3f(0.2f, 0.4f, 0.6f));
+}
+
+static bool
 TestMixSurfaceClosuresPreservesVolumeBoundaryIdentity()
 {
     MaterialGraph network;
@@ -1214,6 +1246,7 @@ Test_RegisterGraphTests()
     _REG(TestCompileRejectsMissingTerminalNode);
     _REG(TestCompileMissingDisplacementTerminal);
     _REG(TestCompileVolumeOnlyMaterial);
+    _REG(TestDotSurfaceShaderTerminalPassThrough);
     _REG(TestMixSurfaceClosuresPreservesVolumeBoundaryIdentity);
     _REG(TestEvaluateConstantDisplacement);
     _REG(TestEvaluatePositionSineDisplacement);

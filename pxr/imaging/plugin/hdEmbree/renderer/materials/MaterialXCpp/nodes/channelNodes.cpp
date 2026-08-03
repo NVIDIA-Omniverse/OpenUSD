@@ -202,6 +202,14 @@ _EvalDot(const ParamMap& inputs, const ShadingContext&,
     (*outputs)[_kOut] = Value(Get<T>(inputs, _kIn, T{}));
 }
 
+static void
+_EvalDotSurfaceShader(const ParamMap& inputs, const ShadingContext&,
+                      NodeOutputMap* outputs)
+{
+    (*outputs)[_kOut] = Value(Get<SurfaceClosure>(
+        inputs, _kIn, MakeEmptySurfaceClosure()));
+}
+
 // ---- Convert (type promotion/demotion) -----------------------------------
 
 template<typename Source, typename Destination>
@@ -384,6 +392,7 @@ RegisterChannelNodes(NodeRegistry& reg)
     _REG("ND_dot_matrix44", &_EvalDot<Mat4f>);
     _REG("ND_dot_string", &_EvalDot<std::string>);
     _REG("ND_dot_filename", &_EvalDot<std::string>);
+    _REG("ND_dot_surfaceshader", &_EvalDotSurfaceShader);
 
     _REG("ND_convert_float_color3",     (&_EvalConvertScalarToVector<float, Vec3f>));
     _REG("ND_convert_float_color4",     (&_EvalConvertScalarToVector<float, Vec4f>));

@@ -710,6 +710,30 @@ static bool TestChannelConversionRegistrations() {
     return true;
 }
 
+static bool TestDotSurfaceShaderPassThrough() {
+    SurfaceClosure input;
+    input.emissiveColor = Vec3f(0.2f, 0.4f, 0.6f);
+    input.opacity = 0.75f;
+    input.presence = 0.5f;
+    input.thinWalled = true;
+    input.isVolumeBoundary = true;
+
+    ParamMap in;
+    in["in"] = Value(input);
+    const NodeOutputMap out = _Eval("ND_dot_surfaceshader", in);
+    const Value* value = out.Find("out");
+    if (!value || !ValueHolds<SurfaceClosure>(*value)) {
+        return false;
+    }
+
+    const SurfaceClosure& result = ValueGet<SurfaceClosure>(*value);
+    return Test_IsClose(result.emissiveColor, input.emissiveColor) &&
+           Test_IsClose(result.opacity, input.opacity) &&
+           Test_IsClose(result.presence, input.presence) &&
+           result.thinWalled == input.thinWalled &&
+           result.isVolumeBoundary == input.isVolumeBoundary;
+}
+
 static bool TestMagnitudeVectorVariants() {
     ParamMap in;
     in["in"] = Value(Vec2f(3.0f, 4.0f));
@@ -3079,6 +3103,7 @@ Test_RegisterNodeTests()
     _REG(TestSubtractFloat);
     _REG(TestDivideFloat);
     _REG(TestRun0052MathSemantics);
+    _REG(TestDotSurfaceShaderPassThrough);
     _REG(TestTransformMatrixDropsHomogeneousOutput);
     _REG(TestAtan2UsesCanonicalInputs);
     _REG(TestClamp);

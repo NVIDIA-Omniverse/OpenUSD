@@ -49,6 +49,7 @@ static const std::string _kSurfaceUnlit = "ND_surface_unlit";
 static const std::string _kVolumeConstructor = "ND_volume";
 static const std::string _kMixSurfaceShader = "ND_mix_surfaceshader";
 static const std::string _kMixVolumeShader = "ND_mix_volumeshader";
+static const std::string _kDotSurfaceShader = "ND_dot_surfaceshader";
 static const std::string _kConvertFloatSurfaceShader =
     "ND_convert_float_surfaceshader";
 static const std::string _kConvertIntegerSurfaceShader =
@@ -1012,6 +1013,13 @@ EvalGraph::_EvalMaterialModel(
                 Get<SurfaceClosure>(params, bg, empty),
                 Get<SurfaceClosure>(params, fg, empty),
                 Get<float>(params, mix, 0.0f));
+        }
+        return true;
+    }
+    if (modelType == _kDotSurfaceShader) {
+        if (closure) {
+            *closure = Get<SurfaceClosure>(
+                params, _kIn, MakeEmptySurfaceClosure());
         }
         return true;
     }
