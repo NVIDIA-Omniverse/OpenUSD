@@ -7,6 +7,7 @@
 #include <renderer/integrator/medium.h>
 #include <renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf/microfacet.h>
 #include <renderer/materials/MaterialXCpp/materials/disneyPrincipled.h>
 #include <renderer/materials/MaterialXCpp/materials/gltfPbr.h>
 #include <renderer/materials/MaterialXCpp/materials/openPbr.h>
@@ -26,6 +27,53 @@ bool Test_IsClose(float a, float b, float eps = 1e-5f);
 bool Test_IsClose(const Vec3f& a, const Vec3f& b, float eps = 1e-5f);
 
 #define _REG(name) Test_Register("Materials." #name, &name)
+
+// Tests unrelated to normal separation opt into a flat-normal fixture here.
+// Normal-policy tests pass all three normals through the canonical overload.
+struct TestSurfaceApi
+{
+    static Vec3f EvalSurface(
+        const SurfaceClosure& closure, const Vec3f& normalWldOut,
+        const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
+        float heroWavelengthNm = 0.0f, bool frontFacing = true)
+    {
+        return Bsdf::EvalSurface(
+            closure, normalWldOut, normalWldOut, omegaInWld, omegaOutWld,
+            heroWavelengthNm, frontFacing);
+    }
+
+    static Vec3f EvalSurface(
+        const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
+        const Vec3f& normalSrfWldOut, const Vec3f& omegaInWld,
+        const Vec3f& omegaOutWld, float heroWavelengthNm = 0.0f,
+        bool frontFacing = true)
+    {
+        return Bsdf::EvalSurface(
+            closure, normalShdWldOut, normalSrfWldOut, omegaInWld,
+            omegaOutWld, heroWavelengthNm, frontFacing);
+    }
+
+    static Bsdf::BsdfSample SampleSurface(
+        const SurfaceClosure& closure, const Vec3f& normalWldOut,
+        const Vec3f& omegaOutWld, float u1, float u2, float uLobe,
+        float heroWavelengthNm = 0.0f, bool frontFacing = true)
+    {
+        return Bsdf::SampleSurface(
+            closure, normalWldOut, normalWldOut, normalWldOut, omegaOutWld,
+            u1, u2, uLobe, heroWavelengthNm, frontFacing);
+    }
+
+    static Bsdf::BsdfSample SampleSurface(
+        const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
+        const Vec3f& normalSrfWldOut, const Vec3f& normalGeomWldOut,
+        const Vec3f& omegaOutWld, float u1, float u2, float uLobe,
+        float heroWavelengthNm = 0.0f, bool frontFacing = true)
+    {
+        return Bsdf::SampleSurface(
+            closure, normalShdWldOut, normalSrfWldOut, normalGeomWldOut,
+            omegaOutWld, u1, u2, uLobe, heroWavelengthNm, frontFacing);
+    }
+};
 
 template <typename T, typename Predicate>
 static const T*
@@ -226,7 +274,7 @@ TestStandardSurfaceGoldMetallicSharpRoughnessStaysStable()
             return false;
         }
 
-        const Vec3f directEval = Bsdf::EvalSurface(
+        const Vec3f directEval = TestSurfaceApi::EvalSurface(
             c, normalShdWldOut, omegaInMirroredWld, omegaOutWld);
         const float directPdf = Bsdf::PdfSurface(
             c, normalShdWldOut, omegaInMirroredWld, omegaOutWld);
@@ -243,7 +291,7 @@ TestStandardSurfaceGoldMetallicSharpRoughnessStaysStable()
                 return false;
             }
 
-            const auto sample = Bsdf::SampleSurface(
+            const auto sample = TestSurfaceApi::SampleSurface(
                 c, normalShdWldOut, omegaOutWld, 0.3f, 0.7f, 0.4f);
             if (!sample.isSpecular || sample.pdfSolidAngle <= 0.0f ||
                 !Test_IsClose(sample.omegaInWld, omegaInMirroredWld, 1.0e-6f) ||
@@ -274,7 +322,7 @@ TestStandardSurfaceGoldMetallicSharpRoughnessStaysStable()
             return false;
         }
 
-        const auto sample = Bsdf::SampleSurface(c, normalShdWldOut, omegaOutWld,
+        const auto sample = TestSurfaceApi::SampleSurface(c, normalShdWldOut, omegaOutWld,
                                                 0.3f, 0.7f, 0.4f);
         const float pdf = Bsdf::PdfSurface(c, normalShdWldOut,
                                            sample.omegaInWld, omegaOutWld);
@@ -509,7 +557,7 @@ TestStandardSurfaceThinWalledUsesUnitIorTransmission()
     const Vec3f normalShdWldOut(0.0f, 1.0f, 0.0f);
     const Vec3f omegaOutWld = Vec3f(0.3f, 0.953939f, 0.0f).normalized();
     for (const Vec2f& u : {Vec2f(0.2f, 0.3f), Vec2f(0.7f, 0.8f)}) {
-        const auto sample = Bsdf::SampleSurface(
+        const auto sample = TestSurfaceApi::SampleSurface(
             transmissionOnly, normalShdWldOut, omegaOutWld, u[0], u[1], 0.5f);
         if (sample.pdfSolidAngle <= 0.0f ||
             !Test_IsClose(sample.omegaInWld, -omegaOutWld, 1.0e-5f)) {
@@ -628,9 +676,9 @@ TestStandardSurfaceMetalThinFilmChangesReflectionColor()
     const Vec3f omegaOutWld = Vec3f(0.25f, 0.96f, 0.1f).normalized();
     const Vec3f omegaInWld = Vec3f(-0.1f, 0.99f, 0.05f).normalized();
 
-    const Vec3f standardEval = Bsdf::EvalSurface(
+    const Vec3f standardEval = TestSurfaceApi::EvalSurface(
         standardClosure, normalShdWldOut, omegaInWld, omegaOutWld);
-    const Vec3f openPbrEval = Bsdf::EvalSurface(openPbrClosure, normalShdWldOut,
+    const Vec3f openPbrEval = TestSurfaceApi::EvalSurface(openPbrClosure, normalShdWldOut,
                                                 omegaInWld, omegaOutWld);
 
     const bool chromatic =
@@ -680,9 +728,9 @@ TestStandardSurfaceThinFilmUsesNanometerUnits()
     const Vec3f omegaOutWld = Vec3f(0.25f, 0.96f, 0.1f).normalized();
     const Vec3f omegaInWld = Vec3f(-0.1f, 0.99f, 0.05f).normalized();
 
-    const Vec3f nanometerEval = Bsdf::EvalSurface(
+    const Vec3f nanometerEval = TestSurfaceApi::EvalSurface(
         nanometerClosure, normalShdWldOut, omegaInWld, omegaOutWld);
-    const Vec3f subNanometerEval = Bsdf::EvalSurface(
+    const Vec3f subNanometerEval = TestSurfaceApi::EvalSurface(
         subNanometerClosure, normalShdWldOut, omegaInWld, omegaOutWld);
 
     const bool nanometerChromatic =
@@ -1203,7 +1251,8 @@ TestAdobeOpenPbrEvalPdfSurfaceMatchesSeparateCalls()
     const Vec3f omegaOutWld(0.0f, 0.0f, 1.0f);
 
     const AdobeOpenPbrEvalPdfResult combined = TryEvalPdfAdobeOpenPbrSurface(
-        closure, normalShdWldOut, omegaInWld, omegaOutWld);
+        closure, normalShdWldOut, normalShdWldOut, normalShdWldOut, true,
+        omegaInWld, omegaOutWld);
 #ifdef PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR
     if (!combined.evaluated) {
         printf("    Expected combined Adobe OpenPBR eval/pdf path\n");
@@ -1220,15 +1269,20 @@ TestAdobeOpenPbrEvalPdfSurfaceMatchesSeparateCalls()
     }
 
     const Vec3f separateValue =
-        EvalAdobeOpenPbr(*data, normalShdWldOut, omegaInWld, omegaOutWld);
+        EvalAdobeOpenPbr(
+            *data, normalShdWldOut, normalShdWldOut, omegaInWld,
+            omegaOutWld);
     const float separatePdf =
         PdfAdobeOpenPbr(*data, normalShdWldOut, omegaInWld, omegaOutWld);
     const AdobeOpenPbrPreparedSurface prepared =
-        PrepareAdobeOpenPbrSurface(closure, normalShdWldOut, omegaOutWld);
+        PrepareAdobeOpenPbrSurface(
+            closure, normalShdWldOut, normalShdWldOut,
+            normalShdWldOut, true, omegaOutWld);
     const AdobeOpenPbrEvalPdfResult preparedEvalPdf =
         EvalPdfPreparedAdobeOpenPbrSurface(prepared, omegaInWld);
     const Bsdf::BsdfSample separateSample = SampleAdobeOpenPbr(
-        *data, normalShdWldOut, omegaOutWld, 0.23f, 0.47f, 0.61f);
+        *data, normalShdWldOut, normalShdWldOut, normalShdWldOut,
+        omegaOutWld, 0.23f, 0.47f, 0.61f, true);
     const Bsdf::BsdfSample preparedSample =
         SamplePreparedAdobeOpenPbrSurface(prepared, 0.23f, 0.47f, 0.61f);
 
@@ -1251,6 +1305,64 @@ TestAdobeOpenPbrEvalPdfSurfaceMatchesSeparateCalls()
 }
 
 static bool
+TestAdobeOpenPbrSampleSoftensOnlyDiffuseComponent()
+{
+#ifndef PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR
+    return true;
+#else
+    ParamMap params;
+    params["base_color"] = Value(Vec3f(0.7f, 0.5f, 0.3f));
+    params["base_weight"] = Value(1.0f);
+    params["specular_weight"] = Value(0.6f);
+    params["specular_roughness"] = Value(0.45f);
+    const SurfaceClosure closure = EvalAdobeOpenPbr(params);
+    const Vec3f normalShdWldOut(0.0f, 0.0f, 1.0f);
+    const Vec3f normalSrfWldOut =
+        Vec3f(0.6f, 0.0f, 0.8f).normalized();
+    const Vec3f omegaOutWld(0.0f, 0.0f, 1.0f);
+    const AdobeOpenPbrPreparedSurface prepared =
+        PrepareAdobeOpenPbrSurface(
+            closure, normalShdWldOut, normalSrfWldOut,
+            normalShdWldOut, true, omegaOutWld);
+    ParamMap specularParams = params;
+    specularParams["base_weight"] = Value(0.0f);
+    const SurfaceClosure specularClosure =
+        EvalAdobeOpenPbr(specularParams);
+    const AdobeOpenPbrPreparedSurface specularPrepared =
+        PrepareAdobeOpenPbrSurface(
+            specularClosure, normalShdWldOut, normalSrfWldOut,
+            normalShdWldOut, true, omegaOutWld);
+    for (int i = 0; i < 4096; ++i) {
+        const float u1 = (static_cast<float>(i) + 0.5f) / 4096.0f;
+        const float u2 = std::fmod(0.61803398875f * i, 1.0f);
+        const float uLobe = std::fmod(0.41421356237f * i, 1.0f);
+        const Bsdf::BsdfSample sample =
+            SamplePreparedAdobeOpenPbrSurface(prepared, u1, u2, uLobe);
+        const float bumpShadowing = Bsdf::detail::BumpShadowingTerm(
+            normalSrfWldOut, normalShdWldOut, sample.omegaInWld, true,
+            Bsdf::detail::BumpShadowingContext::Sampling);
+        if (!sample.isDiffuseLike || sample.pdfSolidAngle <= 0.0f ||
+            !Bsdf::detail::BumpHemisphereAgreement(
+                normalSrfWldOut, normalShdWldOut, sample.omegaInWld) ||
+            bumpShadowing <= 0.0f || bumpShadowing >= 0.99f) {
+            continue;
+        }
+        const AdobeOpenPbrEvalPdfResult evaluated =
+            EvalPdfPreparedAdobeOpenPbrSurface(
+                prepared, sample.omegaInWld);
+        const AdobeOpenPbrEvalPdfResult specularEvaluated =
+            EvalPdfPreparedAdobeOpenPbrSurface(
+                specularPrepared, sample.omegaInWld);
+        return evaluated.value.length() > 0.0f &&
+            specularEvaluated.value.length() > 1e-5f &&
+            Test_IsClose(sample.bsdfValue, evaluated.value, 1e-4f);
+    }
+    printf("    Failed to find mixed Adobe diffuse sample\n");
+    return false;
+#endif
+}
+
+static bool
 TestAdobeOpenPbrPureSubsurfaceUsesRandomWalkPayload()
 {
     ParamMap params;
@@ -1265,7 +1377,7 @@ TestAdobeOpenPbrPureSubsurfaceUsesRandomWalkPayload()
     params["subsurface_scatter_anisotropy"] = Value(0.2f);
     params["geometry_thin_walled"] = Value(false);
 
-    const SurfaceClosure closure = EvalAdobeOpenPbr(params);
+    SurfaceClosure closure = EvalAdobeOpenPbr(params);
 #ifdef PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR
     const SurfaceClosure visibilityClosure = EvalAdobeOpenPbrVisibility(params);
     if (!closure.HasSubsurfaceScattering()) {
@@ -1325,16 +1437,73 @@ TestAdobeOpenPbrPureSubsurfaceUsesRandomWalkPayload()
     }
 
     const Vec3f normalShdWldOut(0.0f, 0.0f, 1.0f);
+    const Vec3f normalShdLobeWldOut =
+        Vec3f(0.3f, 0.0f, 0.9539392f).normalized();
     const Vec3f omegaOutWld(0.0f, 0.0f, 1.0f);
+    Bsdf::AdobeOpenPbrData* data = std::get_if<Bsdf::AdobeOpenPbrData>(
+        &closure.bsdfTree.nodes[closure.bsdfTree.root].data);
+    if (!data) {
+        return false;
+    }
+    data->hasShadingNormal = true;
+    data->normal = normalShdLobeWldOut;
     const AdobeOpenPbrPreparedSurface prepared =
-        PrepareAdobeOpenPbrSurface(closure, normalShdWldOut, omegaOutWld);
+        PrepareAdobeOpenPbrSurface(
+            closure, normalShdWldOut, normalShdWldOut,
+            normalShdWldOut, true, omegaOutWld);
     const Bsdf::BsdfSample sample =
         SamplePreparedAdobeOpenPbrSurface(prepared, 0.23f, 0.47f, 0.61f);
-    if (!prepared.valid || !sample.isSubsurface) {
+    Vec3f dirEntryWld;
+    const bool entryValid = Bsdf::SampleSubsurfaceEntry(
+        closure, sample.normalShdLobeWldOut, normalShdWldOut,
+        omegaOutWld, 0.23f, 0.47f, dirEntryWld);
+    if (!prepared.valid || !sample.isSubsurface ||
+        !Test_IsClose(
+            sample.normalShdLobeWldOut, normalShdLobeWldOut, 1e-5f) ||
+        !entryValid) {
         printf("    Expected pure Adobe SSS to synthesize subsurface marker\n");
         return false;
     }
-    return Test_IsClose(sample.bsdfValue, Vec3f(1.0f), 1e-5f);
+    if (!Test_IsClose(sample.bsdfValue, Vec3f(1.0f), 1e-5f)) {
+        return false;
+    }
+
+    // A backend-generated SSS entry must be inward relative to both its lobe
+    // and the true geometric surface.
+    ParamMap generatedParams = params;
+    generatedParams["specular_weight"] = Value(1.0f);
+    const SurfaceClosure generatedClosure =
+        EvalAdobeOpenPbr(generatedParams);
+    const Vec3f hostileNormalGeomWldOut =
+        Vec3f(0.9987492f, 0.0f, 0.05f).normalized();
+    const AdobeOpenPbrPreparedSurface acceptedPrepared =
+        PrepareAdobeOpenPbrSurface(
+            generatedClosure, normalShdWldOut, normalShdWldOut,
+            normalShdWldOut, true, omegaOutWld);
+    const AdobeOpenPbrPreparedSurface rejectedPrepared =
+        PrepareAdobeOpenPbrSurface(
+            generatedClosure, normalShdWldOut, normalShdWldOut,
+            hostileNormalGeomWldOut, true, omegaOutWld);
+    for (int i = 0; i < 4096; ++i) {
+        const float u1 = (static_cast<float>(i) + 0.5f) / 4096.0f;
+        const float u2 = std::fmod(0.61803398875f * i, 1.0f);
+        const float uLobe = std::fmod(0.41421356237f * i, 1.0f);
+        const Bsdf::BsdfSample accepted =
+            SamplePreparedAdobeOpenPbrSurface(
+                acceptedPrepared, u1, u2, uLobe);
+        if (!accepted.isSubsurface ||
+            !accepted.hasSubsurfaceEntryDirection ||
+            Dot(hostileNormalGeomWldOut, accepted.omegaInWld) < 0.0f) {
+            continue;
+        }
+        const Bsdf::BsdfSample rejected =
+            SamplePreparedAdobeOpenPbrSurface(
+                rejectedPrepared, u1, u2, uLobe);
+        return rejected.pdfSolidAngle == 0.0f &&
+            rejected.bsdfValue.length() == 0.0f;
+    }
+    printf("    Failed to exercise Adobe generated-entry rejection\n");
+    return false;
 #else
     return !closure.hasPrecomputedSubsurfaceMedium;
 #endif
@@ -2309,7 +2478,7 @@ TestUsdPreviewSurfaceIorOneKeepsGrazingSpecular()
     omegaOutWld.normalize();
     omegaInWld.normalize();
     const Vec3f f =
-        Bsdf::EvalSurface(c, normalShdWldOut, omegaInWld, omegaOutWld);
+        TestSurfaceApi::EvalSurface(c, normalShdWldOut, omegaInWld, omegaOutWld);
     return IsFiniteNonNegative(f) &&
            (f[0] + f[1] + f[2]) > 1.0e-5f;
 }
@@ -2700,6 +2869,7 @@ Test_RegisterMaterialTests()
     _REG(TestOpenPbrTransmission);
     _REG(TestAdobeOpenPbrBuildsWholeBackendNode);
     _REG(TestAdobeOpenPbrEvalPdfSurfaceMatchesSeparateCalls);
+    _REG(TestAdobeOpenPbrSampleSoftensOnlyDiffuseComponent);
     _REG(TestAdobeOpenPbrPureSubsurfaceUsesRandomWalkPayload);
     _REG(TestOpenPbrRegularVolumeDoesNotDoubleTintTransmission);
     _REG(TestOpenPbrUsesCombinedInterfaceForThickTransmission);

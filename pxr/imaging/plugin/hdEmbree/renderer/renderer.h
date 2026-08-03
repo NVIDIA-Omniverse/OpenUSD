@@ -697,7 +697,8 @@ private:
         InstanceContext const* instanceContext = nullptr;
         mxcpp::SurfaceClosure const* closure = nullptr;
         GfVec3f posHitWld = GfVec3f(0.0f);
-        GfVec3f normalShdWldOut = GfVec3f(0.0f);
+        GfVec3f normalShdLobeWldOut = GfVec3f(0.0f);
+        GfVec3f normalSrfWldOut = GfVec3f(0.0f);
         GfVec3f normalGeomWldOut = GfVec3f(0.0f);
         GfVec3f omegaOutWld = GfVec3f(0.0f);
         GfVec3f dirEntryWld = GfVec3f(0.0f);

@@ -373,6 +373,7 @@ SampleCoupledRoughDielectric(const Bsdf::DielectricInterfaceData& data,
         }
         Bsdf::BsdfSample sample{frame.ToWorld(omegaInLocal), Vec3f(0.0f), 1.0f,
                                 false};
+        sample.isTransmission = !sampleReflection;
         sample.eta = sampleReflection
             ? 1.0f
             : (backside
@@ -431,6 +432,7 @@ SampleCoupledRoughDielectric(const Bsdf::DielectricInterfaceData& data,
 
     Bsdf::BsdfSample sample{frame.ToWorld(omegaInLocal), Vec3f(0.0f), 1.0f,
                             false};
+    sample.isTransmission = !chooseReflection;
     sample.eta = chooseReflection ? 1.0f : eta;
     return sample;
 }
@@ -461,6 +463,7 @@ SampleDeltaTransmission(float ior, const Vec3f& tint, float weight,
     float fresnel = SchlickFresnelScalar(ior, cosI);
     Bsdf::BsdfSample sample{omegaInWld, tint * ((1.0f - fresnel) * weight),
                             1.0f, true};
+    sample.isTransmission = true;
     sample.eta = eta;
     return sample;
 }
@@ -470,13 +473,12 @@ SampleDeltaDielectricTransmission(
     const Bsdf::DielectricData& data,
     float effectiveIor,
     float fresnelCos,
-    const Vec3f& normalShdWldOut,
-    const Vec3f& normalShdReflectionWldOut,
+    const Vec3f& normalShdLobeWldOut,
     const Vec3f& omegaOutWld,
     bool backside,
     const Vec3f& luminanceCoefficients)
 {
-    if (WouldTotalInternalReflect(effectiveIor, normalShdWldOut,
+    if (WouldTotalInternalReflect(effectiveIor, normalShdLobeWldOut,
                                    omegaOutWld, backside)) {
         // A transmission-only lobe is paired with a separate reflection lobe
         // that keeps contributing its Schlick reflectance from inside the
@@ -489,12 +491,12 @@ SampleDeltaDielectricTransmission(
             luminanceCoefficients));
         return SampleDeltaTotalInternalReflection(
             data.weight * (1.0f - pairedReflectance),
-            normalShdReflectionWldOut,
+            normalShdLobeWldOut,
             omegaOutWld);
     }
 
     auto sample = SampleDeltaTransmission(effectiveIor, data.tint, data.weight,
-                                           normalShdWldOut, omegaOutWld,
+                                           normalShdLobeWldOut, omegaOutWld,
                                            backside);
     const float baseReflectance =
         SchlickFresnelScalar(effectiveIor, fresnelCos);
@@ -509,8 +511,7 @@ SampleDeltaDielectricTransmission(
 Bsdf::BsdfSample
 SampleDeltaDielectricInterfaceTransmission(
     const Bsdf::DielectricInterfaceData& data, float effectiveIor,
-    float fresnelCos, const Vec3f& normalShdWldOut,
-    const Vec3f& normalShdReflectionWldOut,
+    float fresnelCos, const Vec3f& normalShdLobeWldOut,
     const Vec3f& omegaOutWld, bool backside)
 {
     if (data.thinWalled) {
@@ -520,19 +521,20 @@ SampleDeltaDielectricInterfaceTransmission(
                                 DielectricInterfaceTransmissionCoefficient(
                                     data, fresnelCos, effectiveIor, backside),
                                 1.0f, true};
+        sample.isTransmission = true;
         sample.eta = 1.0f;
         return sample;
     }
 
     Bsdf::BsdfSample sample =
         WouldTotalInternalReflect(
-            effectiveIor, normalShdWldOut, omegaOutWld, backside)
+            effectiveIor, normalShdLobeWldOut, omegaOutWld, backside)
         ? SampleDeltaTotalInternalReflection(
               Clamp01(data.transmissionWeight),
-              normalShdReflectionWldOut, omegaOutWld)
+              normalShdLobeWldOut, omegaOutWld)
         : SampleDeltaTransmission(
               effectiveIor, data.transmissionTint,
-              Clamp01(data.transmissionWeight), normalShdWldOut,
+              Clamp01(data.transmissionWeight), normalShdLobeWldOut,
               omegaOutWld, backside);
     const float baseReflectance =
         SchlickFresnelScalar(effectiveIor, fresnelCos);

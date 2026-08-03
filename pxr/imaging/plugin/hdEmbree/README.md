@@ -290,10 +290,15 @@ exterior smooth/displaced base normal; invalid or inverted results fall back to
 that base. The complete result is then faced to the incident side, preserving
 one physical relief field across the entry and exit sides of a dielectric.
 Reflective material lobes are raised toward the geometric surface when their
-ideal reflection would otherwise point below it. The
-smooth-base hemisphere check applies to diffuse-like continuation, while
-glossy reflection and dielectric transmission use their lobe-specific normal
-handling. On coarse smooth triangles, direct-light shadow origins are lifted
+ideal reflection would otherwise point below it. The corrected lobe normal is
+also used for Fresnel, reflection, refraction, TIR, evaluation, and PDF.
+Generated reflection directions below the geometric or lobe surface and
+transmission directions above either surface are discarded without resampling.
+Direct evaluation and PDF do not apply that geometric rejection, matching
+Cycles; strongly mapped grazing facets can therefore become darker than true
+displacement. Smooth-base/material-normal agreement is evaluated per lobe, and
+diffuse-family values receive continuous bump-terminator softening. On coarse
+smooth triangles, direct-light shadow origins are lifted
 toward the interpolated surface near a facet terminator using the triangle's
 actual positions; authored texture-coordinate scale does not affect that lift.
 Thick dielectric side

@@ -200,17 +200,20 @@ Bsdf::EvalCoat(float coatWeight, float coatRoughness, float coatIor,
 
 Vec3f
 Bsdf::EvalSurface(const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
-                  const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
+                  const Vec3f& normalSrfWldOut, const Vec3f& omegaInWld,
+                  const Vec3f& omegaOutWld,
                   float heroWavelengthNm, bool frontFacing)
 {
     Vec3f bsdfValue =
         closure.HasBsdfTree()
             ? detail::EvalNode(closure.bsdfTree, closure.bsdfTree.root,
-                        normalShdWldOut,
+                        normalShdWldOut, normalSrfWldOut,
                         omegaInWld, omegaOutWld, heroWavelengthNm,
-                        frontFacing)
+                        frontFacing,
+                        detail::BumpShadowingContext::Evaluation)
             : detail::EvalLegacySurface(
-                  closure, normalShdWldOut, omegaInWld, omegaOutWld);
+                  closure, normalShdWldOut, normalSrfWldOut, omegaInWld,
+                  omegaOutWld, detail::BumpShadowingContext::Evaluation);
     return detail::SafeVec(bsdfValue * closure.presence);
 }
 
@@ -440,6 +443,7 @@ Bsdf::SampleGGXTransmission(float roughness, float ior,
     }
 
     BsdfSample sample{omegaInWld, detail::SafeVec(bsdfValue), pdfSolidAngle, false};
+    sample.isTransmission = true;
     sample.eta = eta;
     return sample;
 }
@@ -502,13 +506,15 @@ Bsdf::PdfGGXTransmission(float roughness, float ior,
 
 Bsdf::BsdfSample
 Bsdf::SampleSurface(const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
+                    const Vec3f& normalSrfWldOut,
+                    const Vec3f& normalGeomWldOut,
                     const Vec3f& omegaOutWld, float u1, float u2, float uLobe,
                     float heroWavelengthNm, bool frontFacing)
 {
     if (closure.HasBsdfTree()) {
         auto sample =
             detail::SampleNode(closure.bsdfTree, closure.bsdfTree.root,
-                        normalShdWldOut,
+                        normalShdWldOut, normalSrfWldOut, normalGeomWldOut,
                         omegaOutWld, u1, u2, uLobe, heroWavelengthNm,
                         frontFacing);
         if (!sample.isSpecular) {
@@ -517,7 +523,8 @@ Bsdf::SampleSurface(const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
         return sample;
     }
     return detail::SampleLegacySurface(
-        closure, normalShdWldOut, omegaOutWld, u1, u2, uLobe);
+        closure, normalShdWldOut, normalSrfWldOut, normalGeomWldOut,
+        omegaOutWld, u1, u2, uLobe, frontFacing);
 }
 
 float
@@ -562,15 +569,16 @@ Bsdf::PruneCausticClassLobes(const SurfaceClosure& closure)
 
 bool
 Bsdf::SampleSubsurfaceEntry(const SurfaceClosure& closure,
-                            const Vec3f& normalShdWldOut,
+                            const Vec3f& normalShdLobeWldOut,
+                            const Vec3f& normalGeomWldOut,
                             const Vec3f& omegaOutWld, float u1, float u2,
-                            Vec3f& directionEntryWldOutput)
+                            Vec3f& outDirEntryWld)
 {
     // Clamp IOR >= 1 to avoid TIR at entry (matches Cycles).
     const float ior = std::max(closure.specularIor, 1.0f);
     const float eta = 1.0f / ior;  // outside -> inside
 
-    const float cosNI = Dot(normalShdWldOut, omegaOutWld);
+    const float cosNI = Dot(normalShdLobeWldOut, omegaOutWld);
     if (cosNI <= 0.0f) {
         return false;
     }
@@ -580,17 +588,20 @@ Bsdf::SampleSubsurfaceEntry(const SurfaceClosure& closure,
         const float sin2T = eta * eta * (1.0f - cosNI * cosNI);
         if (sin2T >= 1.0f) {
             // Shouldn't happen with IOR >= 1 but guard anyway.
-            directionEntryWldOutput = -omegaOutWld;
-            return true;
+            outDirEntryWld = -omegaOutWld;
+            return Dot(normalShdLobeWldOut, outDirEntryWld) < 0.0f &&
+                Dot(normalGeomWldOut, outDirEntryWld) < 0.0f;
         }
         const float cosT = std::sqrt(std::max(0.0f, 1.0f - sin2T));
-        directionEntryWldOutput =
-            -eta * omegaOutWld + (eta * cosNI - cosT) * normalShdWldOut;
-        return true;
+        outDirEntryWld = -eta * omegaOutWld +
+            (eta * cosNI - cosT) * normalShdLobeWldOut;
+        return Dot(normalShdLobeWldOut, outDirEntryWld) < 0.0f &&
+            Dot(normalGeomWldOut, outDirEntryWld) < 0.0f;
     }
 
     // Rough surface: GGX VNDF samples microfacet normal H, then Snell about H.
-    const detail::Frame frame = detail::Frame::FromNormal(normalShdWldOut);
+    const detail::Frame frame =
+        detail::Frame::FromNormal(normalShdLobeWldOut);
     const Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
     const float alpha = detail::RoughnessToAlpha(closure.roughness);
     const Vec3f hLocal = detail::SampleGGX_VNDF(omegaOutLocal, alpha, u1, u2);
@@ -599,24 +610,18 @@ Bsdf::SampleSubsurfaceEntry(const SurfaceClosure& closure,
     const float cosHI = Dot(H, omegaOutWld);
     const float sin2T = eta * eta * (1.0f - cosHI * cosHI);
     if (sin2T >= 1.0f) {
-        directionEntryWldOutput = -omegaOutWld;
-        return true;
+        outDirEntryWld = -omegaOutWld;
+        return Dot(normalShdLobeWldOut, outDirEntryWld) < 0.0f &&
+            Dot(normalGeomWldOut, outDirEntryWld) < 0.0f;
     }
     const float cosT = std::sqrt(std::max(0.0f, 1.0f - sin2T));
-    directionEntryWldOutput = -eta * omegaOutWld + (eta * cosHI - cosT) * H;
+    outDirEntryWld =
+        -eta * omegaOutWld + (eta * cosHI - cosT) * H;
 
-    // Fallback if the refracted direction ends up outward (numerical edge):
-    // sample a cosine-weighted hemisphere around -normalShdWldOut so we still
-    // enter the medium.
-    if (Dot(directionEntryWldOutput, normalShdWldOut) >= 0.0f) {
-        const Vec3f hemi = detail::SampleCosineHemisphere(u1, u2);
-        // hemi is expressed in a frame with +Z = up; reflect to
-        // -normalShdWldOut by negating the Z component when transforming back
-        // through `frame`.
-        directionEntryWldOutput =
-            frame.ToWorld(Vec3f(hemi[0], hemi[1], -hemi[2]));
-    }
-    return true;
+    // Reject an invalid selected direction rather than changing its sampling
+    // distribution with a fallback event.
+    return Dot(normalShdLobeWldOut, outDirEntryWld) < 0.0f &&
+        Dot(normalGeomWldOut, outDirEntryWld) < 0.0f;
 }
 
 }  // namespace mxcpp

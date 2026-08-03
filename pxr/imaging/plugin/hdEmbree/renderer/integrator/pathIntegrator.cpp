@@ -471,6 +471,9 @@ ty::Renderer::_IntegratePath(
             adobeOpenPbrSurface = mxcpp::PrepareAdobeOpenPbrSurface(
                 *bsdfClosure,
                 ty::ToMx(normalShdWldOut),
+                ty::ToMx(normalSrfWldOut),
+                ty::ToMx(normalGeomWldOut),
+                interaction.frontFacing,
                 ty::ToMx(omegaOutWld));
         }
 
@@ -493,6 +496,8 @@ ty::Renderer::_IntegratePath(
                 bs = mxcpp::Bsdf::SampleSurface(
                     *bsdfClosure,
                     ty::ToMx(normalShdWldOut),
+                    ty::ToMx(normalSrfWldOut),
+                    ty::ToMx(normalGeomWldOut),
                     ty::ToMx(omegaOutWld),
                     bsdfSample[0],
                     bsdfSample[1],
@@ -515,7 +520,9 @@ ty::Renderer::_IntegratePath(
             subsurfaceInput.instanceContext = instanceContext;
             subsurfaceInput.closure = bsdfClosure;
             subsurfaceInput.posHitWld = posHitWld;
-            subsurfaceInput.normalShdWldOut = normalShdWldOut;
+            subsurfaceInput.normalShdLobeWldOut =
+                ty::ToGf(bs.normalShdLobeWldOut);
+            subsurfaceInput.normalSrfWldOut = normalSrfWldOut;
             subsurfaceInput.normalGeomWldOut = normalGeomWldOut;
             subsurfaceInput.omegaOutWld = omegaOutWld;
             subsurfaceInput.dirEntryWld = ty::ToGf(bs.omegaInWld);
@@ -623,16 +630,6 @@ ty::Renderer::_IntegratePath(
         const bool crossesBoundary =
             (omegaOutDotNormalGeom > 0.0f && omegaInDotNormalGeom < 0.0f) ||
             (omegaOutDotNormalGeom < 0.0f && omegaInDotNormalGeom > 0.0f);
-        // Diffuse-like bump shading must stay in the smooth-base hemisphere.
-        // Glossy and interface lobes own their reflection/transmission normal
-        // policy; rejecting those samples here discards valid dielectric
-        // throughput and produces black normal-map artifacts.
-        if (bs.isDiffuseLike &&
-            !ty::BumpDirectionIsValid(
-                normalShdWldOut, normalSrfWldOut, omegaInWld)) {
-            break;
-        }
-
         // Preserve the sampled interface as an explicit absolute IOR pair.
         // The current single-owner model has air outside; future medium
         // tracking can replace this resolver without changing propagation.

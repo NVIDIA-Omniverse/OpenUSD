@@ -68,10 +68,14 @@ namespace Bsdf
 
     /// Evaluate the full layered surface model from a closure.
     /// Combines all BSDF lobes with proper energy conservation.
-    /// `normalShdWldOut` must be on the incident transport side.
+    /// `normalShdWldOut` is the graph normal on the incident transport side;
+    /// `normalSrfWldOut` is the smooth unbumped normal used for per-lobe bump
+    /// agreement and diffuse softening.
     /// Returns the outgoing radiance contribution for one light sample.
     Vec3f EvalSurface(const SurfaceClosure& closure,
-                      const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+                      const Vec3f& normalShdWldOut,
+                      const Vec3f& normalSrfWldOut,
+                      const Vec3f& omegaInWld,
                       const Vec3f& omegaOutWld, float heroWavelengthNm = 0.0f,
                       bool frontFacing = true);
 
@@ -91,6 +95,10 @@ namespace Bsdf
         // caustic-class path heuristic. Glossy dielectric traversal is not
         // diffuse-like even when it has a finite PDF.
         bool    isDiffuseLike = false;
+        bool    isTransmission = false;
+        // Selected lobe normal for a subsurface marker. Other samples must not
+        // consume this payload.
+        Vec3f   normalShdLobeWldOut = Vec3f(0.0f);
         float   eta = 1.0f;     // IOR ratio (incident/transmitted), for refraction differential propagation
     };
 
@@ -154,9 +162,14 @@ namespace Bsdf
 
     /// Unified surface sampler: selects a lobe proportional to its
     /// approximate energy contribution, then importance-samples that lobe.
-    /// The PDF accounts for all lobes (mixed PDF).
+    /// The PDF accounts for all lobes (mixed PDF). The smooth and geometric
+    /// normals must be incident-facing. A selected direction on the wrong
+    /// geometric side is returned invalid with zero BSDF and PDF; it is not
+    /// replaced by another lobe.
     BsdfSample SampleSurface(const SurfaceClosure& closure,
                              const Vec3f& normalShdWldOut,
+                             const Vec3f& normalSrfWldOut,
+                             const Vec3f& normalGeomWldOut,
                              const Vec3f& omegaOutWld, float u1, float u2,
                              float uLobe, float heroWavelengthNm = 0.0f,
                              bool frontFacing = true);
@@ -185,15 +198,16 @@ namespace Bsdf
     /// - Rough surface: GGX VNDF samples microfacet normal H, then Snell about
     /// H.
     /// - IOR is clamped to >= 1.0 so there is no TIR at entry (matches Cycles).
-    /// - Returns false only on degenerate input (e.g. Dot(normalShdWldOut,
-    /// omegaOutWld) <= 0).
+    /// - Returns false on degenerate input or when the generated direction is
+    /// not below both the selected lobe and geometric normals.
     ///
     /// Source: influenced by Cycles `subsurface_entry_bounce` in
     /// intern/cycles/kernel/integrator/subsurface.h (Apache 2.0).
     bool SampleSubsurfaceEntry(const SurfaceClosure& closure,
-                               const Vec3f& normalShdWldOut,
+                               const Vec3f& normalShdLobeWldOut,
+                               const Vec3f& normalGeomWldOut,
                                const Vec3f& omegaOutWld, float u1, float u2,
-                               Vec3f& directionEntryWldOutput);
+                               Vec3f& outDirEntryWld);
 
     // ------------------------------------------------------------------
     // MIS utilities

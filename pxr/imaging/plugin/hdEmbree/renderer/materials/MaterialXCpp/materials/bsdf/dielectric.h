@@ -271,8 +271,7 @@ SampleDeltaDielectricReflection(
 /// not already assigned to the paired reflection lobe.
 Bsdf::BsdfSample SampleDeltaDielectricTransmission(
     const Bsdf::DielectricData& data, float effectiveIor, float fresnelCos,
-    const Vec3f& normalShdWldOut,
-    const Vec3f& normalShdReflectionWldOut,
+    const Vec3f& normalShdLobeWldOut,
     const Vec3f& omegaOutWld, bool backside,
     const Vec3f& luminanceCoefficients = DefaultLuminanceCoefficients());
 
@@ -301,8 +300,7 @@ SampleDeltaDielectricInterfaceReflection(
 /// finite unit specular sample. Does not throw.
 Bsdf::BsdfSample SampleDeltaDielectricInterfaceTransmission(
     const Bsdf::DielectricInterfaceData& data, float effectiveIor,
-    float fresnelCos, const Vec3f& normalShdWldOut,
-    const Vec3f& normalShdReflectionWldOut,
+    float fresnelCos, const Vec3f& normalShdLobeWldOut,
     const Vec3f& omegaOutWld, bool backside);
 
 }  // namespace detail

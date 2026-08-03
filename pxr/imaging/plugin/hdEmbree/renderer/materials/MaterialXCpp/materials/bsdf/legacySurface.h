@@ -7,6 +7,8 @@
 #ifndef PXR_IMAGING_PLUGIN_HDEMBREE_MATERIALXCPP_BSDF_LEGACYSURFACE_H
 #define PXR_IMAGING_PLUGIN_HDEMBREE_MATERIALXCPP_BSDF_LEGACYSURFACE_H
 
+#include "microfacet.h"
+
 #include <renderer/materials/MaterialXCpp/materials/bsdf.h>
 
 namespace mxcpp {
@@ -22,7 +24,9 @@ namespace detail {
 /// configurations contribute zero; this operation does not throw.
 Vec3f EvalLegacySurface(
     const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
-    const Vec3f& omegaInWld, const Vec3f& omegaOutWld);
+    const Vec3f& normalSrfWldOut,
+    const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
+    BumpShadowingContext bumpContext);
 
 /// Evaluates the legacy summary's mixture PDF.
 /// The normal selects the incident transport side; directions must be finite
@@ -43,7 +47,9 @@ float PdfLegacySurface(
 /// This operation does not throw.
 Bsdf::BsdfSample SampleLegacySurface(
     const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
-    const Vec3f& omegaOutWld, float u1, float u2, float uLobe);
+    const Vec3f& normalSrfWldOut, const Vec3f& normalGeomWldOut,
+    const Vec3f& omegaOutWld, float u1, float u2, float uLobe,
+    bool frontFacing);
 
 /// Clears every legacy BSDF summary field while retaining unrelated closure
 /// state. `closure` must be non-null. This operation cannot fail.

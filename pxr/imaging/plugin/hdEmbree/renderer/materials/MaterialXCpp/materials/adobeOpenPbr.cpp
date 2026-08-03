@@ -5,6 +5,7 @@
 #include "openPbr.h"
 
 #include <renderer/integrator/medium.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf/microfacet.h>
 #include <renderer/materials/MaterialXCpp/nodes/helpers/mathHelpers.h>
 #include <renderer/materials/MaterialXCpp/paramMap.h>
 
@@ -29,8 +30,11 @@ struct AdobeOpenPbrPreparedSurfaceState
     OpenPBR_PreparedBsdf prepared;
     Bsdf::AdobeOpenPbrData data;
     Vec3f normalShdWldOut = Vec3f(0.0f, 0.0f, 1.0f);
+    Vec3f normalSrfWldOut = Vec3f(0.0f, 0.0f, 1.0f);
+    Vec3f normalGeomWldOut = Vec3f(0.0f, 0.0f, 1.0f);
     Vec3f omegaOutWld = Vec3f(0.0f, 0.0f, 1.0f);
     float presence = 1.0f;
+    bool frontFacing = true;
 };
 
 static const SlotName _kBaseWeight("base_weight");
@@ -433,6 +437,8 @@ struct _AdobeSurfaceSampleResult
         0.0f,
         false
     };
+    Vec3f diffuseBsdfValue = Vec3f(0.0f);
+    Vec3f specularBsdfValue = Vec3f(0.0f);
     Vec3f throughputWeight = Vec3f(0.0f);
     OpenPBR_BsdfLobeType sampledType = OpenPBR_BsdfLobeTypeNone;
     bool valid = false;
@@ -460,8 +466,11 @@ _SamplePreparedAdobeOpenPbrSurfaceRaw(
 
     const Vec3f omegaInWld = _NormalizeOrFallback(_FromOpenPbr(lightDirection),
                                                   state.normalShdWldOut);
-    const Vec3f weightSum =
-        _CleanNonnegative(_FromOpenPbr(openpbr_get_sum_of_diffuse_specular(weight)));
+    const Vec3f diffuseWeight =
+        _CleanNonnegative(_FromOpenPbr(weight.diffuse));
+    const Vec3f specularWeight =
+        _CleanNonnegative(_FromOpenPbr(weight.specular));
+    const Vec3f weightSum = diffuseWeight + specularWeight;
     const bool isSpecular =
         (sampledType & OpenPBR_BsdfLobeTypeSpecular) != 0;
 
@@ -474,13 +483,20 @@ _SamplePreparedAdobeOpenPbrSurfaceRaw(
         if (cosThetaI <= _kEpsilon) {
             return result;
         }
-        bsdfValue = weightSum * (state.presence * pdfSolidAngle / cosThetaI);
+        const float weightToBsdf =
+            state.presence * pdfSolidAngle / cosThetaI;
+        result.diffuseBsdfValue = diffuseWeight * weightToBsdf;
+        result.specularBsdfValue = specularWeight * weightToBsdf;
+        bsdfValue =
+            result.diffuseBsdfValue + result.specularBsdfValue;
     }
 
     result.sample = Bsdf::BsdfSample{omegaInWld, _CleanNonnegative(bsdfValue),
                                      pdfSolidAngle, isSpecular};
     result.sample.isDiffuseLike =
         (sampledType & OpenPBR_BsdfLobeTypeDiffuse) != 0;
+    result.sample.isTransmission =
+        (sampledType & OpenPBR_BsdfLobeTypeTransmission) != 0;
     result.throughputWeight = weightSum;
     result.sampledType = sampledType;
     result.valid = true;
@@ -490,16 +506,14 @@ _SamplePreparedAdobeOpenPbrSurfaceRaw(
         ((sampledType & OpenPBR_BsdfLobeTypeTransmission) != 0);
     if (isSpecularTransmission) {
         const float ior = std::max(state.data.specularIor, 1.0f);
-        result.sample.eta = Dot(state.normalShdWldOut, state.omegaOutWld) > 0.0f
-                                ? (1.0f / ior)
-                                : ior;
+        result.sample.eta = state.frontFacing ? (1.0f / ior) : ior;
     }
 
     return result;
 }
 
 Bsdf::BsdfSample
-_MakeSubsurfaceMarker(float weight)
+_MakeSubsurfaceMarker(float weight, const Vec3f& normalShdLobeWldOut)
 {
     Bsdf::BsdfSample sample{
         Vec3f(0.0f),
@@ -511,6 +525,7 @@ _MakeSubsurfaceMarker(float weight)
                           sample.bsdfValue[1] > 0.0f ||
                           sample.bsdfValue[2] > 0.0f;
     sample.isDiffuseLike = sample.isSubsurface;
+    sample.normalShdLobeWldOut = normalShdLobeWldOut;
     return sample;
 }
 
@@ -528,7 +543,9 @@ _SamplePureSubsurfaceFallback(
 
     if (sssProbability >= 1.0f - _kEpsilon || uLobe < sssProbability) {
         return _MakeSubsurfaceMarker(
-            state.data.subsurfaceWeight / std::max(sssProbability, _kEpsilon));
+            state.data.subsurfaceWeight /
+                std::max(sssProbability, _kEpsilon),
+            state.normalShdWldOut);
     }
 
     Bsdf::AdobeOpenPbrData surfaceOnlyData = state.data;
@@ -537,8 +554,11 @@ _SamplePureSubsurfaceFallback(
     AdobeOpenPbrPreparedSurfaceState surfaceOnlyState;
     surfaceOnlyState.data = surfaceOnlyData;
     surfaceOnlyState.normalShdWldOut = state.normalShdWldOut;
+    surfaceOnlyState.normalSrfWldOut = state.normalSrfWldOut;
+    surfaceOnlyState.normalGeomWldOut = state.normalGeomWldOut;
     surfaceOnlyState.omegaOutWld = state.omegaOutWld;
     surfaceOnlyState.presence = state.presence;
+    surfaceOnlyState.frontFacing = state.frontFacing;
     surfaceOnlyState.prepared =
         _Prepare(surfaceOnlyData, state.normalShdWldOut, state.omegaOutWld);
 
@@ -643,16 +663,23 @@ EvalAdobeOpenPbrVisibility(const ParamMap& params)
 
 Vec3f
 EvalAdobeOpenPbr(const Bsdf::AdobeOpenPbrData& data,
-                 const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+                 const Vec3f& normalShdWldOut,
+                 const Vec3f& normalSrfWldOut,
+                 const Vec3f& omegaInWld,
                  const Vec3f& omegaOutWld)
 {
 #ifndef PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR
     (void)data;
     (void)normalShdWldOut;
+    (void)normalSrfWldOut;
     (void)omegaInWld;
     (void)omegaOutWld;
     return Vec3f(0.0f);
 #else
+    if (!Bsdf::detail::BumpHemisphereAgreement(
+            normalSrfWldOut, normalShdWldOut, omegaInWld)) {
+        return Vec3f(0.0f);
+    }
     const float cosThetaI = std::abs(Dot(normalShdWldOut, omegaInWld));
     if (cosThetaI <= _kEpsilon) {
         return Vec3f(0.0f);
@@ -663,8 +690,11 @@ EvalAdobeOpenPbr(const Bsdf::AdobeOpenPbrData& data,
     const OpenPBR_DiffuseSpecular valueWithCos = openpbr_eval(
         prepared,
         _ToOpenPbr(_NormalizeOrFallback(omegaInWld, normalShdWldOut)));
-    const Vec3f value =
-        _FromOpenPbr(openpbr_get_sum_of_diffuse_specular(valueWithCos));
+    const float bumpShadowing = Bsdf::detail::BumpShadowingTerm(
+        normalSrfWldOut, normalShdWldOut, omegaInWld, true,
+        Bsdf::detail::BumpShadowingContext::Evaluation);
+    const Vec3f value = _FromOpenPbr(
+        valueWithCos.diffuse * bumpShadowing + valueWithCos.specular);
     return _CleanNonnegative(value * (1.0f / cosThetaI));
 #endif
 }
@@ -672,11 +702,17 @@ EvalAdobeOpenPbr(const Bsdf::AdobeOpenPbrData& data,
 AdobeOpenPbrPreparedSurface
 PrepareAdobeOpenPbrSurface(const SurfaceClosure& closure,
                            const Vec3f& normalShdWldOut,
+                           const Vec3f& normalSrfWldOut,
+                           const Vec3f& normalGeomWldOut,
+                           bool frontFacing,
                            const Vec3f& omegaOutWld)
 {
 #ifndef PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR
     (void)closure;
     (void)normalShdWldOut;
+    (void)normalSrfWldOut;
+    (void)normalGeomWldOut;
+    (void)frontFacing;
     (void)omegaOutWld;
     return AdobeOpenPbrPreparedSurface{};
 #else
@@ -698,6 +734,9 @@ PrepareAdobeOpenPbrSurface(const SurfaceClosure& closure,
     auto state = std::make_shared<AdobeOpenPbrPreparedSurfaceState>();
     state->data = *data;
     state->normalShdWldOut = normalShdLobeWldOut;
+    state->normalSrfWldOut = normalSrfWldOut;
+    state->normalGeomWldOut = normalGeomWldOut;
+    state->frontFacing = frontFacing;
     state->omegaOutWld = omegaOutWld;
     state->presence = closure.presence;
     state->prepared = _Prepare(*data, normalShdLobeWldOut, omegaOutWld);
@@ -724,6 +763,8 @@ EvalPdfAdobeOpenPbr(const Bsdf::AdobeOpenPbrData& data,
     auto state = std::make_shared<AdobeOpenPbrPreparedSurfaceState>();
     state->data = data;
     state->normalShdWldOut = normalShdWldOut;
+    state->normalSrfWldOut = normalShdWldOut;
+    state->normalGeomWldOut = normalShdWldOut;
     state->omegaOutWld = omegaOutWld;
     state->prepared = _Prepare(data, normalShdWldOut, omegaOutWld);
 
@@ -759,10 +800,16 @@ EvalPdfPreparedAdobeOpenPbrSurface(
         _ToOpenPbr(_NormalizeOrFallback(omegaInWld, state.normalShdWldOut));
     const OpenPBR_DiffuseSpecular valueWithCos =
         openpbr_eval(state.prepared, lightDirection);
-    const Vec3f value =
-        _FromOpenPbr(openpbr_get_sum_of_diffuse_specular(valueWithCos));
-    result.value = _CleanNonnegative(
-        value * (state.presence / cosThetaI));
+    if (Bsdf::detail::BumpHemisphereAgreement(
+            state.normalSrfWldOut, state.normalShdWldOut, omegaInWld)) {
+        const float bumpShadowing = Bsdf::detail::BumpShadowingTerm(
+            state.normalSrfWldOut, state.normalShdWldOut, omegaInWld,
+            true, Bsdf::detail::BumpShadowingContext::Evaluation);
+        const Vec3f value = _FromOpenPbr(
+            valueWithCos.diffuse * bumpShadowing + valueWithCos.specular);
+        result.value = _CleanNonnegative(
+            value * (state.presence / cosThetaI));
+    }
 
     const float pdfSolidAngle = openpbr_pdf(state.prepared, lightDirection);
     result.pdfSolidAngle =
@@ -774,6 +821,9 @@ EvalPdfPreparedAdobeOpenPbrSurface(
 AdobeOpenPbrEvalPdfResult
 TryEvalPdfAdobeOpenPbrSurface(const SurfaceClosure& closure,
                               const Vec3f& normalShdWldOut,
+                              const Vec3f& normalSrfWldOut,
+                              const Vec3f& normalGeomWldOut,
+                              bool frontFacing,
                               const Vec3f& omegaInWld, const Vec3f& omegaOutWld)
 {
     const Bsdf::Node* root = closure.bsdfTree.Get(closure.bsdfTree.root);
@@ -787,7 +837,9 @@ TryEvalPdfAdobeOpenPbrSurface(const SurfaceClosure& closure,
     }
 
     const AdobeOpenPbrPreparedSurface preparedSurface =
-        PrepareAdobeOpenPbrSurface(closure, normalShdWldOut, omegaOutWld);
+        PrepareAdobeOpenPbrSurface(
+            closure, normalShdWldOut, normalSrfWldOut, normalGeomWldOut,
+            frontFacing, omegaOutWld);
     return EvalPdfPreparedAdobeOpenPbrSurface(preparedSurface, omegaInWld);
 }
 
@@ -814,21 +866,30 @@ PdfAdobeOpenPbr(const Bsdf::AdobeOpenPbrData& data,
 
 Bsdf::BsdfSample
 SampleAdobeOpenPbr(const Bsdf::AdobeOpenPbrData& data,
-                   const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld,
-                   float u1, float u2, float uLobe)
+                   const Vec3f& normalShdWldOut,
+                   const Vec3f& normalSrfWldOut,
+                   const Vec3f& normalGeomWldOut,
+                   const Vec3f& omegaOutWld, float u1, float u2, float uLobe,
+                   bool frontFacing)
 {
 #ifndef PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR
     (void)data;
     (void)normalShdWldOut;
+    (void)normalSrfWldOut;
+    (void)normalGeomWldOut;
     (void)omegaOutWld;
     (void)u1;
     (void)u2;
     (void)uLobe;
+    (void)frontFacing;
     return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
 #else
     auto state = std::make_shared<AdobeOpenPbrPreparedSurfaceState>();
     state->data = data;
     state->normalShdWldOut = normalShdWldOut;
+    state->normalSrfWldOut = normalSrfWldOut;
+    state->normalGeomWldOut = normalGeomWldOut;
+    state->frontFacing = frontFacing;
     state->omegaOutWld = omegaOutWld;
     state->prepared = _Prepare(data, normalShdWldOut, omegaOutWld);
 
@@ -879,6 +940,12 @@ SamplePreparedAdobeOpenPbrSurface(
     const bool sampledTransmission =
         (result.sampledType & OpenPBR_BsdfLobeTypeTransmission) != 0;
     if (pureThickSubsurface && sampledTransmission) {
+        if (Dot(state.normalShdWldOut, state.omegaOutWld) <= 0.0f ||
+            Dot(state.normalShdWldOut, result.sample.omegaInWld) >= 0.0f ||
+            Dot(state.normalGeomWldOut, result.sample.omegaInWld) >= 0.0f) {
+            return Bsdf::BsdfSample{
+                Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
+        }
         Bsdf::BsdfSample sample{
             result.sample.omegaInWld,
             _CleanNonnegative(result.throughputWeight * state.presence), 1.0f,
@@ -886,7 +953,35 @@ SamplePreparedAdobeOpenPbrSurface(
         sample.isSubsurface = true;
         sample.hasSubsurfaceEntryDirection = true;
         sample.isDiffuseLike = true;
+        sample.isTransmission = true;
+        sample.normalShdLobeWldOut = state.normalShdWldOut;
         return sample;
+    }
+
+    const bool diffuseFamily =
+        (result.sampledType & OpenPBR_BsdfLobeTypeDiffuse) != 0;
+    const float cosGeomIn =
+        Dot(state.normalGeomWldOut, result.sample.omegaInWld);
+    const float cosLobeIn =
+        Dot(state.normalShdWldOut, result.sample.omegaInWld);
+    bool directionValid = diffuseFamily
+        ? (sampledTransmission ? cosGeomIn < 0.0f : cosGeomIn > 0.0f)
+        : Dot(state.normalShdWldOut, state.omegaOutWld) > 0.0f &&
+            (cosGeomIn < 0.0f) == sampledTransmission &&
+            (cosLobeIn < 0.0f) == sampledTransmission;
+    if (diffuseFamily) {
+        const float bumpShadowing = Bsdf::detail::BumpShadowingTerm(
+            state.normalSrfWldOut, state.normalShdWldOut,
+            result.sample.omegaInWld, true,
+            Bsdf::detail::BumpShadowingContext::Sampling);
+        directionValid = directionValid && bumpShadowing > 0.0f;
+        result.sample.bsdfValue =
+            result.diffuseBsdfValue * bumpShadowing +
+            result.specularBsdfValue;
+    }
+    if (!directionValid) {
+        result.sample.bsdfValue = Vec3f(0.0f);
+        result.sample.pdfSolidAngle = 0.0f;
     }
 
     return result.sample;

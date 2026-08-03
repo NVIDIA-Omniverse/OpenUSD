@@ -228,6 +228,21 @@ pxr_build_test(testHdEmbreeLightSamplers
     CPPFILES
         testenv/testHdEmbreeLightSamplers.cpp
 )
+
+if (TARGET testHdEmbreeLightSamplers)
+    _pxr_init_rpath(_hdEmbreeLightSamplersTestRpath "tests")
+    _pxr_add_rpath(
+        _hdEmbreeLightSamplersTestRpath "${CMAKE_INSTALL_PREFIX}/lib")
+    _pxr_add_rpath(
+        _hdEmbreeLightSamplersTestRpath "${CMAKE_INSTALL_PREFIX}/plugin/usd")
+    _pxr_install_rpath(
+        _hdEmbreeLightSamplersTestRpath testHdEmbreeLightSamplers)
+endif()
+
+pxr_register_test(testHdEmbreeLightSamplers
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdEmbreeLightSamplers"
+    EXPECTED_RETURN_CODE 0
+)
 endif()
 
 pxr_build_test(testHdEmbreeSampling
@@ -235,6 +250,11 @@ pxr_build_test(testHdEmbreeSampling
         tf
     CPPFILES
         testenv/testHdEmbreeSampling.cpp
+)
+
+pxr_register_test(testHdEmbreeSampling
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdEmbreeSampling"
+    EXPECTED_RETURN_CODE 0
 )
 
 pxr_build_test(testHdEmbreeMaterialNormals

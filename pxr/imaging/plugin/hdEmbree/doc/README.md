@@ -34,9 +34,9 @@ edited by several plans, so those plans must be **serialized and rebased on each
 other**, not developed in parallel. The plans may all be implemented on one
 branch; keep logical commit boundaries where they aid review and bisection.
 "Depends on" means the listed work must be completed earlier in that branch.
-Files `01` through `26` form the implementation sequence. File `27` is a
-post-implementation performance investigation rather than another cleanup
-step.
+Files `01` through `26` form the original implementation sequence. File `27`
+is a post-implementation performance investigation. File `28` supersedes the
+geometric-normal fallback and late sample-rejection parts of file `26`.
 
 ## Execution order
 
@@ -388,6 +388,23 @@ The corrective HEAD follow-up supplies genuine triangle inputs, lazy
 smooth-shadow construction, object-position requirement gating, and adjacent
 hit-time work reductions; historical attribution remains separate.
 
+### Phase I — Normal-handling correction
+
+**28 · [Cycles-aligned specular normal correction and sample
+rejection](28-plan-bump-map-correction.md)** — fix
+`EnsureValidSpecularReflection()` to fall back to the shading normal rather than
+the geometric normal, which is the confirmed cause of flattened, wrongly
+reflecting normal-mapped facets; then collapse each interface onto one lobe
+normal shared by Fresnel, TIR, reflection, refraction, evaluation, and PDF, and
+reject samples landing in the wrong shading or geometric hemisphere, matching
+Cycles' per-closure sampling-side policy. Applies to native, legacy, SSS, and
+optional Adobe OpenPBR paths; removes the integrator/NEE bump-direction filters.
+Correction stays unconditional and no render setting is added; normal
+orientation stays geometric-only with no view-direction face-forwarding. **Not
+behavior-preserving**: mapped-normal reflection, transmission, TIR, subsurface,
+and grazing-angle sampling change.
+_Depends on: 26 and the corrective work investigated by 27._
+
 ## Overlap ownership (who is authoritative)
 
 Several plans touch the same edit; each such edit has one authoritative owner:
@@ -412,6 +429,7 @@ Several plans touch the same edit; each such edit has one authoritative owner:
 | `_pi<T>` → scalar | 23-auto-types | 14 relocates the shared renderer definition; 18 reuses it; 19 owns `ty::pbrt` |
 | Empty-binding convergence behavior | 24-empty-aov-convergence | 21 documents the temporary failure |
 | Triangle/subdivision elementId mapping | 25-element-id-primitive-map | 21 documents only the optional field meaning |
+| Mapped-normal correction and sampled-event hemisphere validity | 28-bump-map-correction | 26's geometric-normal fallbacks and late rejection are superseded |
 
 ## Hot-file serialization (must be sequential, never parallel)
 

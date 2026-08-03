@@ -7,6 +7,8 @@
 #ifndef PXR_IMAGING_PLUGIN_HDEMBREE_MATERIALXCPP_BSDF_CLOSURETRAVERSAL_H
 #define PXR_IMAGING_PLUGIN_HDEMBREE_MATERIALXCPP_BSDF_CLOSURETRAVERSAL_H
 
+#include "microfacet.h"
+
 #include <renderer/materials/MaterialXCpp/materials/bsdf.h>
 
 #include <cstddef>
@@ -52,9 +54,10 @@ std::size_t PrepareShadingNormals(
 /// contribute zero. Does not throw.
 Vec3f EvalNode(
     const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-    const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+    const Vec3f& normalShdWldOut, const Vec3f& normalSrfWldOut,
+    const Vec3f& omegaInWld,
     const Vec3f& omegaOutWld, float heroWavelengthNm,
-    bool frontFacing = true);
+    bool frontFacing, BumpShadowingContext bumpContext);
 
 /// Evaluates the solid-angle PDF of the closure subtree rooted at `nodeId`.
 /// `nodeId` may be invalid, in which case zero is returned. The normal and
@@ -71,20 +74,23 @@ float PdfNode(
     bool frontFacing = true);
 
 /// Samples the closure subtree rooted at `nodeId`.
-/// `nodeId` may be invalid. `normalShdWldOut` and `omegaOutWld` must be finite
-/// unit directions pointing away from the surface; the normal selects the
-/// incident transport side. `u1`, `u2`, and `uChoice` must
+/// `nodeId` may be invalid. All normals and `omegaOutWld` must be finite unit
+/// directions pointing away from the surface; the normals select the incident
+/// transport side. `normalSrfWldOut` is the smooth unbumped normal and
+/// `normalGeomWldOut` owns reflection/transmission side validity. `u1`, `u2`,
+/// and `uChoice` must
 /// be finite values in [0,1). `heroWavelengthNm` must be finite and is zero
 /// when dispersion is disabled. `frontFacing` has `EvalNode`'s geometric-side
 /// meaning. Returns a sample whose direction is unit length when valid.
-/// Failure or a degenerate subtree returns
-/// `pdfSolidAngle == 0`; callers must test the PDF before division. Does not
-/// throw.
+/// Failure, a degenerate subtree, or a selected wrong-side direction returns
+/// zero BSDF and PDF without resampling. Callers must test the PDF before
+/// division. Does not throw.
 Bsdf::BsdfSample SampleNode(
     const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-    const Vec3f& normalShdWldOut, const Vec3f& omegaOutWld, float u1,
+    const Vec3f& normalShdWldOut, const Vec3f& normalSrfWldOut,
+    const Vec3f& normalGeomWldOut, const Vec3f& omegaOutWld, float u1,
     float u2, float uChoice, float heroWavelengthNm,
-    bool frontFacing = true);
+    bool frontFacing);
 
 }  // namespace detail
 }  // namespace Bsdf

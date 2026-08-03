@@ -33,7 +33,7 @@ EnsureValidSpecularReflection(
         Dot(normalShdLobeWldOut, normalGeomWldOut) * normalGeomWldOut;
     const float tangentLength = tangent.length();
     if (!std::isfinite(tangentLength) || tangentLength <= kEpsilon) {
-        return normalGeomWldOut;
+        return normalShdLobeWldOut;
     }
     tangent /= tangentLength;
     const float omegaOutDotTangent = Dot(omegaOutWld, tangent);
@@ -41,7 +41,7 @@ EnsureValidSpecularReflection(
         omegaOutDotTangent * omegaOutDotTangent +
         omegaOutDotGeom * omegaOutDotGeom;
     if (quadraticA <= kEpsilon) {
-        return normalGeomWldOut;
+        return normalShdLobeWldOut;
     }
     const float quadraticB =
         2.0f * (quadraticA + omegaOutDotGeom * threshold);
@@ -60,23 +60,13 @@ EnsureValidSpecularReflection(
              ? quadraticB + root
              : quadraticB - root) /
         quadraticA;
-    if (!std::isfinite(normalGeomComponentSquared) ||
-        normalGeomComponentSquared <= 1.0e-5f ||
-        normalGeomComponentSquared > 1.0f + 1.0e-5f) {
-        return normalGeomWldOut;
-    }
     const float normalGeomComponent =
-        std::sqrt(std::min(normalGeomComponentSquared, 1.0f));
+        std::sqrt(std::max(normalGeomComponentSquared, 0.0f));
     const float tangentComponent =
         std::sqrt(std::max(1.0f - normalGeomComponentSquared, 0.0f));
-    const Vec3f corrected =
+    return
         tangentComponent * tangent +
         normalGeomComponent * normalGeomWldOut;
-    const Vec3f correctedReflection =
-        2.0f * Dot(corrected, omegaOutWld) * corrected - omegaOutWld;
-    return Dot(normalGeomWldOut, correctedReflection) >= threshold
-        ? corrected
-        : normalGeomWldOut;
 }
 
 Vec3f

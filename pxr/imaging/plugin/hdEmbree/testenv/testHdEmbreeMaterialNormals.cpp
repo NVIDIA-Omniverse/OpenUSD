@@ -93,30 +93,6 @@ _TestInvalidNormals()
 }
 
 static bool
-_TestBumpDirectionValidity()
-{
-    const GfVec3f normalSrfWldOut(0.0f, 0.0f, 1.0f);
-    const GfVec3f normalShdWldOut(-0.8f, 0.0f, 0.6f);
-    const GfVec3f omegaTransmissionWld =
-        GfVec3f(0.1f, 0.0f, -1.0f).GetNormalized();
-    const GfVec3f omegaDisagreementWld =
-        GfVec3f(-1.0f, 0.0f, -0.1f).GetNormalized();
-    const GfVec3f normalGeomWldOut =
-        GfVec3f(0.8f, 0.0f, 0.6f).GetNormalized();
-    const GfVec3f omegaReflectionBelowFacetWld =
-        GfVec3f(-1.0f, 0.0f, 0.1f).GetNormalized();
-    return
-        ty::BumpDirectionIsValid(
-            normalShdWldOut, normalSrfWldOut, omegaTransmissionWld) &&
-        !ty::BumpDirectionIsValid(
-            normalShdWldOut, normalSrfWldOut, omegaDisagreementWld) &&
-        GfDot(normalGeomWldOut, omegaReflectionBelowFacetWld) < 0.0f &&
-        ty::BumpDirectionIsValid(
-            normalShdWldOut, normalSrfWldOut,
-            omegaReflectionBelowFacetWld);
-}
-
-static bool
 _TestSmoothShadowOffset()
 {
     const GfVec3f p0(1.0f, 0.0f, 0.0f);
@@ -301,10 +277,6 @@ main()
     }
     if (!_TestExteriorNormalFacing()) {
         std::printf("  exterior normal facing failed\n");
-        passed = false;
-    }
-    if (!_TestBumpDirectionValidity()) {
-        std::printf("  bump-direction validity failed\n");
         passed = false;
     }
     if (!_TestSmoothShadowOffset()) {

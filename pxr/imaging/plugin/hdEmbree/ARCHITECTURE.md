@@ -159,7 +159,7 @@ corresponding type without changing the semantic name.
 | `normalSrfWldExt` | `GfVec3f` | Normalized smooth/displaced shading normal, view independent, aligned with `normalGeomWldExt`, and containing no material normal-map result. |
 | `normalSrfWldOut` | `GfVec3f` | Surface normal faced toward `omegaOutWld`; material-normal fallback and differential source. |
 | `normalShdWldExt` | `GfVec3f` | Material-resolved shading normal in the authored exterior frame. Normal and bump maps produce this view-independent value before transport-side facing. |
-| `normalShdWldOut` | `GfVec3f` | Material-resolved shading normal faced toward `omegaOutWld`; falls back to `normalSrfWldOut` and never owns topology or medium transitions. |
+| `normalShdWldOut` | `GfVec3f` | Material-resolved shading normal oriented to the incident transport side selected by immutable geometric `frontFacing`; falls back to `normalSrfWldOut` and never owns topology or medium transitions. |
 | `tangentWld`, `bitangentWld` | `GfVec3f` | World-space material frame paired with `normalShdWldOut`; use `Obj` or `Tangent` suffixes for other spaces. |
 | `omegaInWld` | `GfVec3f` | Normalized incident direction from the interaction toward the sampled next vertex or light. Replaces `wi`, `wI`, and ambiguous `direction` when this meaning applies. |
 | `omegaOutWld` | `GfVec3f` | Normalized exitant direction from the interaction toward the previous path vertex or camera. Replaces `wo` and `wO`. |
@@ -508,7 +508,14 @@ barycentric edges. The ray-derived world hit remains authoritative for
 transport, ray offsets, and geometric AOVs.
 
 Closure trees own per-interaction diffuse and reflection-safe specular default
-normals. Tree construction records only leaves with authored normal state;
+normals. Specular correction is unconditional. It covers glossy reflection,
+dielectric reflection and transmission, conductor, coat, generalized Schlick,
+Adobe OpenPBR, and subsurface normals; diffuse, sheen, and translucent normals
+remain uncorrected. Unlike Cycles, translucent correction is intentionally not
+adopted because Cycles marks that behavior as a glossy-only bug. Degenerate
+projected tangents and quartic denominators return the input shading normal;
+these are Typhoon's only numerical deviations from the Cycles solve.
+Tree construction records only leaves with authored normal state;
 `PrepareShadingNormals()` validates those sparse leaves in the authored
 exterior frame, faces each complete resolved normal to the geometrically
 selected incident side, and does not sweep default-normal or composition
@@ -743,8 +750,8 @@ For each segment, `_IntegratePath()` performs these stages in order:
    The default reflective normal is corrected once per interaction;
    authored per-lobe normals are corrected individually before traversal if
    their mirror direction would fall below the incident-side geometric surface.
-   Evaluation, sampling, PDF evaluation, and delta reflection all consume that
-   same prepared lobe normal. Object-space normal maps therefore fall back unless graph
+   Fresnel, TIR, reflection, refraction, evaluation, PDF, and delta paths all
+   consume that same prepared lobe normal. Object-space normal maps therefore fall back unless graph
    conversion places their result in the exterior frame. Coupled
    dielectric closures carry an explicit combined reflection/refraction
    compensation policy enabled by OpenPBR and metalness-workflow
@@ -769,12 +776,20 @@ For each segment, `_IntegratePath()` performs these stages in order:
     be pruned after a diffuse-like ancestor when caustics are disabled. A
     dispersive closure initializes hero-wavelength transport. The integrator
     prepares the native or Adobe OpenPBR surface and draws the BSDF sample that
-    would produce the next segment.
+    would produce the next segment. Leaf sampling rejects reflection below the
+    geometric or exact lobe normal and transmission above either normal. The
+    diffuse family uses Cycles' strict geometric-side rule. Rejected samples
+    are lost without resampling; evaluation and PDF intentionally do not apply
+    this geometric test, so grazing normal maps can lose energy and the two MIS
+    strategies can have asymmetric support.
 12. **Handle subsurface scattering.** `_TraceSubsurface()` in `sss.cpp` applies
-    the selected entry direction and weight, then `ty::RandomWalkSSS()` walks inside
-    the owning mesh. A successful exit becomes a synthetic Lambertian hit on
-    the next loop iteration. The complete entry, random walk, and exit consume
-    one surface bounce; failure terminates the path.
+    the selected entry direction and weight, then `ty::RandomWalkSSS()` walks
+    inside the owning mesh. Matching Cycles, entry refraction uses the selected
+    corrected lobe normal, entry validity uses that lobe normal plus the
+    geometric normal, and the smooth unbumped surface normal guides the random
+    walk. A successful exit becomes a synthetic Lambertian hit on the next loop
+    iteration. The complete entry, random walk, and exit consume one surface
+    bounce; failure terminates the path.
 13. **Accumulate local radiance.** Material emission is added through current
     throughput. `_ComputeDirectLightingMIS()` performs next-event estimation
     for BSDF surfaces, including light selection, linking, colored visibility,
@@ -787,11 +802,11 @@ For each segment, `_IntegratePath()` performs these stages in order:
 15. **Enforce the bounce budget.** At the last allowed surface, a valid BSDF
     sample may be followed by one emitter-only segment. Otherwise integration
     stops after the local emission and direct-light contributions.
-16. **Advance path throughput.** For a valid non-SSS BSDF sample, the integrator
-    rejects diffuse-like directions that change hemisphere between the
-    material and smooth-base frames. Glossy and interface lobes retain their
-    own reflection/transmission normal policy so valid dielectric throughput is
-    not discarded by the diffuse bump-shadowing rule. The integrator then
+16. **Advance path throughput.** For a valid non-SSS BSDF sample, leaf traversal
+    has already applied smooth-base/material-normal agreement with the exact
+    lobe normal. Evaluation applies that agreement to every closure; diffuse,
+    translucent, and sheen additionally receive Cycles' continuous GGX bump
+    softening. PDF is unchanged. The integrator then
     applies `f * abs(cos(theta)) / pdf`; delta events use their direct throughput
     coefficient. It records the BSDF PDF, receiver categories, dome-sampling
     hemisphere, diffuse/specular ancestry, and any medium-boundary crossing for

@@ -106,8 +106,9 @@ IsEffectivelyDeltaAlpha(const Vec2f& alpha)
 /// `normalGeomWldOut` when reflecting finite unit `omegaOutWld` would send the
 /// result below the geometric surface. The geometric normal and outgoing
 /// direction must lie on the incident transport side. Returns a finite unit
-/// closure normal
-/// whose mirror reflection is above the geometric surface. Does not throw.
+/// closure normal whose mirror reflection reaches the Cycles visibility
+/// threshold. Degenerate correction geometry returns the input normal. Does
+/// not throw.
 Vec3f EnsureValidSpecularReflection(
     const Vec3f& normalGeomWldOut,
     const Vec3f& omegaOutWld,
@@ -157,6 +158,63 @@ SmithG1(float alpha, float cosTheta)
     float cos2 = cosTheta * cosTheta;
     return 2.0f * cosTheta /
         (cosTheta + std::sqrt(a2 + (1.0f - a2) * cos2) + kEpsilon);
+}
+
+enum class BumpShadowingContext
+{
+    Evaluation,
+    Sampling
+};
+
+/// Returns whether `omegaInWld` has consistent sides in the smooth and exact
+/// lobe frames. All inputs must be finite unit vectors.
+inline bool
+BumpHemisphereAgreement(const Vec3f& normalSrfWldOut,
+                        const Vec3f& normalShdLobeWldOut,
+                        const Vec3f& omegaInWld)
+{
+    return Dot(normalSrfWldOut, omegaInWld) *
+            Dot(normalSrfWldOut, normalShdLobeWldOut) *
+            Dot(normalShdLobeWldOut, omegaInWld) >=
+        0.0f;
+}
+
+/// Cycles-aligned bump shadowing. Evaluation rejects disagreement for every
+/// lobe; sampling rejects and softens only diffuse-family lobes. PDF is
+/// unaffected.
+inline float
+BumpShadowingTerm(const Vec3f& normalSrfWldOut,
+                  const Vec3f& normalShdLobeWldOut,
+                  const Vec3f& omegaInWld,
+                  bool isDiffuseFamily,
+                  BumpShadowingContext context)
+{
+    if (normalSrfWldOut == normalShdLobeWldOut) {
+        return 1.0f;
+    }
+    if (!BumpHemisphereAgreement(
+            normalSrfWldOut, normalShdLobeWldOut, omegaInWld) &&
+        (context == BumpShadowingContext::Evaluation || isDiffuseFamily)) {
+        return 0.0f;
+    }
+    if (!isDiffuseFamily) {
+        return 1.0f;
+    }
+
+    const float cosIn = std::abs(Dot(normalSrfWldOut, omegaInWld));
+    const float cosDeviation =
+        std::abs(Dot(normalSrfWldOut, normalShdLobeWldOut));
+    if (cosDeviation >= 1.0f || cosIn >= 1.0f) {
+        return 1.0f;
+    }
+    if (cosIn < 1.0e-6f) {
+        return 0.0f;
+    }
+    const float tanDeviationSquared =
+        1.0f / (cosDeviation * cosDeviation) - 1.0f;
+    const float alphaSquared =
+        std::clamp(0.125f * tanDeviationSquared, 0.0f, 1.0f);
+    return SmithG1(std::sqrt(alphaSquared), cosIn);
 }
 
 /// Converts `GGX_V` to the isotropic Smith G2 factor.

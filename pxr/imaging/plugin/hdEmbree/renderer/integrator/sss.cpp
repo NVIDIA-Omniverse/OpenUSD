@@ -900,7 +900,8 @@ ty::Renderer::_TraceSubsurface(
             domain.Fork(ty::SampleDomainKey::SssEntryDirection).Draw2D();
         mxcpp::Vec3f dirSampledWld;
         if (!mxcpp::Bsdf::SampleSubsurfaceEntry(
-                *input.closure, ty::ToMx(input.normalShdWldOut),
+                *input.closure, ty::ToMx(input.normalShdLobeWldOut),
+                ty::ToMx(input.normalGeomWldOut),
                 ty::ToMx(input.omegaOutWld), sample[0], sample[1],
                 dirSampledWld)) {
             return _SubsurfaceResult::Terminate;
@@ -910,7 +911,8 @@ ty::Renderer::_TraceSubsurface(
 
     // A direction that is inward in the shading frame can still point out of
     // the true face when a normal map strongly tilts the frame.
-    if (GfDot(input.normalGeomWldOut, dirEntryWld) >= 0.0f) {
+    if (GfDot(input.normalShdLobeWldOut, dirEntryWld) >= 0.0f ||
+        GfDot(input.normalGeomWldOut, dirEntryWld) >= 0.0f) {
         return _SubsurfaceResult::Terminate;
     }
 
@@ -929,7 +931,7 @@ ty::Renderer::_TraceSubsurface(
 
     ty::SssInput walkInput;
     walkInput.posEntryWld = input.posHitWld;
-    walkInput.normalShdEntryGuideWldOut = input.normalShdWldOut;
+    walkInput.normalShdEntryGuideWldOut = input.normalSrfWldOut;
     walkInput.dirEntryWld = dirEntryWld;
     walkInput.albedo = ty::ToGf(input.closure->subsurfaceColor);
     walkInput.radius = GfCompMult(

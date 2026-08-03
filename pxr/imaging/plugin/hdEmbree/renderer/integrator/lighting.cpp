@@ -224,11 +224,6 @@ ty::Renderer::_ComputeDirectLightingMIS(
             if (cosThetaLightAbsolute <= 0.0f) {
                 continue;
             }
-            if (!ty::BumpDirectionIsValid(
-                    normalShdWldOut, normalSrfWldOut, ls.omegaInWld)) {
-                continue;
-            }
-
             const GfVec3f normalGeomWldOut =
                 frontFacing ? normalGeomWldExt : -normalGeomWldExt;
             const bool transmission =
@@ -265,8 +260,10 @@ ty::Renderer::_ComputeDirectLightingMIS(
                         ? mxcpp::EvalPdfPreparedAdobeOpenPbrSurface(
                               *adobeOpenPbrSurface, omegaInWldMx)
                         : mxcpp::TryEvalPdfAdobeOpenPbrSurface(
-                              *closure, normalMx, omegaInWldMx,
-                              omegaOutWldMx);
+                              *closure, normalMx,
+                              ty::ToMx(normalSrfWldOut),
+                              ty::ToMx(normalGeomWldOut), frontFacing,
+                              omegaInWldMx, omegaOutWldMx);
 
                 GfVec3f bsdfValue(0.0f);
                 float pdfBsdfSolidAngle = 0.0f;
@@ -275,7 +272,8 @@ ty::Renderer::_ComputeDirectLightingMIS(
                     pdfBsdfSolidAngle = adobeEvalPdf.pdfSolidAngle;
                 } else {
                     bsdfValue = ty::ToGf(mxcpp::Bsdf::EvalSurface(
-                        *closure, normalMx, omegaInWldMx, omegaOutWldMx,
+                        *closure, normalMx, ty::ToMx(normalSrfWldOut),
+                        omegaInWldMx, omegaOutWldMx,
                         heroWavelengthNm, frontFacing));
                     pdfBsdfSolidAngle = mxcpp::Bsdf::PdfSurface(
                         *closure, normalMx, omegaInWldMx, omegaOutWldMx,

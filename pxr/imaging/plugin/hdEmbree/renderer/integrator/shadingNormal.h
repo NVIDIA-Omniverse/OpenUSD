@@ -88,23 +88,6 @@ FaceNormalShdWldOut(
     return frontFacing ? normalShdWldExt : -normalShdWldExt;
 }
 
-/// Returns whether `omegaInWld` represents the same event in the finite unit
-/// material and smooth-base frames. All inputs must use the incident transport
-/// side and world space. Tangent directions are accepted at the closed
-/// boundary. Does not throw.
-inline bool
-BumpDirectionIsValid(
-    GfVec3f const& normalShdWldOut,
-    GfVec3f const& normalSrfWldOut,
-    GfVec3f const& omegaInWld)
-{
-    return
-        GfDot(normalSrfWldOut, omegaInWld) *
-        GfDot(normalSrfWldOut, normalShdWldOut) *
-        GfDot(normalShdWldOut, omegaInWld) >=
-        0.0f;
-}
-
 /// Approximates the lift from a triangle facet to its smooth surface.
 ///
 /// `p0` through `p2` and finite unit `n0` through `n2` are corresponding

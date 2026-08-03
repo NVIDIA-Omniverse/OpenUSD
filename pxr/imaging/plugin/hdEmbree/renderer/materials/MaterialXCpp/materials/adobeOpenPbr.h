@@ -20,7 +20,9 @@ SurfaceClosure EvalAdobeOpenPbr(const ParamMap& params);
 SurfaceClosure EvalAdobeOpenPbrVisibility(const ParamMap& params);
 
 Vec3f EvalAdobeOpenPbr(const Bsdf::AdobeOpenPbrData& data,
-                       const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
+                       const Vec3f& normalShdWldOut,
+                       const Vec3f& normalSrfWldOut,
+                       const Vec3f& omegaInWld,
                        const Vec3f& omegaOutWld);
 
 struct AdobeOpenPbrEvalPdfResult
@@ -41,6 +43,9 @@ struct AdobeOpenPbrPreparedSurface
 AdobeOpenPbrPreparedSurface
 PrepareAdobeOpenPbrSurface(const SurfaceClosure& closure,
                            const Vec3f& normalShdWldOut,
+                           const Vec3f& normalSrfWldOut,
+                           const Vec3f& normalGeomWldOut,
+                           bool frontFacing,
                            const Vec3f& omegaOutWld);
 
 AdobeOpenPbrEvalPdfResult
@@ -50,6 +55,8 @@ EvalPdfAdobeOpenPbr(const Bsdf::AdobeOpenPbrData& data,
 
 AdobeOpenPbrEvalPdfResult TryEvalPdfAdobeOpenPbrSurface(
     const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
+    const Vec3f& normalSrfWldOut,
+    const Vec3f& normalGeomWldOut, bool frontFacing,
     const Vec3f& omegaInWld, const Vec3f& omegaOutWld);
 
 AdobeOpenPbrEvalPdfResult EvalPdfPreparedAdobeOpenPbrSurface(
@@ -62,8 +69,11 @@ float PdfAdobeOpenPbr(const Bsdf::AdobeOpenPbrData& data,
 
 Bsdf::BsdfSample SampleAdobeOpenPbr(const Bsdf::AdobeOpenPbrData& data,
                                     const Vec3f& normalShdWldOut,
+                                    const Vec3f& normalSrfWldOut,
+                                    const Vec3f& normalGeomWldOut,
                                     const Vec3f& omegaOutWld, float u1,
-                                    float u2, float uLobe);
+                                    float u2, float uLobe,
+                                    bool frontFacing);
 
 Bsdf::BsdfSample SamplePreparedAdobeOpenPbrSurface(
     const AdobeOpenPbrPreparedSurface& preparedSurface,
