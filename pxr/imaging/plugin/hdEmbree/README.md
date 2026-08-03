@@ -289,16 +289,21 @@ in a view-independent exterior frame. Results are validated against the
 exterior smooth/displaced base normal; invalid or inverted results fall back to
 that base. The complete result is then faced to the incident side, preserving
 one physical relief field across the entry and exit sides of a dielectric.
-Reflective material lobes are raised toward the geometric surface when their
-ideal reflection would otherwise point below it. The corrected lobe normal is
-also used for Fresnel, reflection, refraction, TIR, evaluation, and PDF.
+Delta reflective lobes and subsurface entry normals are raised toward the
+geometric surface when their ideal reflection would otherwise point below it.
+Finite-roughness lobes retain the mapped normal: forcing their mirror direction
+onto the grazing threshold concentrates glossy energy into bright contour
+ridges. Adobe OpenPBR's shared frame remains uncorrected when any active glossy
+component has finite roughness. A corrected lobe uses the same normal for
+Fresnel, reflection,
+refraction, TIR, evaluation, and PDF.
 Generated reflection directions below the geometric or lobe surface and
 transmission directions above either surface are discarded without resampling.
 Direct evaluation and PDF do not apply that geometric rejection, matching
 Cycles; strongly mapped grazing facets can therefore become darker than true
 displacement. Smooth-base/material-normal agreement is evaluated per lobe, and
 diffuse-family values receive continuous bump-terminator softening. Layered
-materials project each lobe by its own corrected-normal cosine before combining
+materials project each lobe by its own exact-normal cosine before combining
 the response, avoiding grazing energy spikes from one graph-normal cosine. On
 coarse smooth triangles, direct-light shadow origins are lifted
 toward the interpolated surface near a facet terminator using the triangle's

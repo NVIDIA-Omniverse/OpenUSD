@@ -5093,7 +5093,7 @@ TestTreeDiffuseNormalIsIndependentOfViewHemisphere()
 }
 
 static bool
-TestReflectiveLeafIsContinuousAcrossNormalTangentPlane()
+TestRoughReflectiveNormalIgnoresFacetedGeometry()
 {
     Bsdf::ConductorData conductor;
     conductor.weight = 1.0f;
@@ -5101,43 +5101,36 @@ TestReflectiveLeafIsContinuousAcrossNormalTangentPlane()
     conductor.extinction = Vec3f(3.9f, 2.5f, 2.1f);
     conductor.roughness = Vec2f(0.25f, 0.25f);
     conductor.hasShadingNormal = true;
-    conductor.normal = Vec3f(-0.8f, 0.0f, 0.6f);
+    conductor.normal = Vec3f(-0.95f, 0.0f, 0.31f).normalized();
 
-    const Vec3f normalGeomWldOut(0.0f, 0.0f, 1.0f);
-    const Vec3f omegaInWld = normalGeomWldOut;
-    const Vec3f tangentToLobeWld(0.6f, 0.0f, 0.8f);
-    Vec3f previous(0.0f);
-    bool hasPrevious = false;
-    for (const float signedLobeCos : {-1.0e-5f, 1.0e-5f}) {
-        const Vec3f omegaOutWld =
-            (tangentToLobeWld + signedLobeCos * conductor.normal).normalized();
+    const Vec3f normalShdWldOut(0.0f, 0.0f, 1.0f);
+    const Vec3f omegaOutWld = Vec3f(0.2f, 0.0f, 0.98f).normalized();
+    const Vec3f omegaInWld = Vec3f(-0.2f, 0.0f, 0.98f).normalized();
+    const Vec3f normalGeomWldOut[] = {
+        Vec3f(0.0f, 0.0f, 1.0f),
+        Vec3f(0.2f, 0.0f, 0.98f).normalized()
+    };
+    Vec3f previousEval;
+    for (int i = 0; i < 2; ++i) {
         SurfaceClosure closure;
         closure.bsdfTree.root = closure.bsdfTree.Add(conductor);
         Bsdf::detail::PrepareShadingNormals(
-            &closure.bsdfTree, normalGeomWldOut,
-            normalGeomWldOut, omegaOutWld);
+            &closure.bsdfTree, normalShdWldOut,
+            normalGeomWldOut[i], omegaOutWld);
+        const Bsdf::ConductorData* prepared =
+            std::get_if<Bsdf::ConductorData>(
+                &closure.bsdfTree.nodes[0].data);
         const Vec3f evaluated = TestSurfaceApi::EvalSurface(
-            closure, normalGeomWldOut, omegaInWld, omegaOutWld,
+            closure, normalShdWldOut, omegaInWld, omegaOutWld,
             0.0f, true);
-        const float relativeStep =
-            hasPrevious
-            ? (evaluated - previous).length() /
-                std::max(evaluated.length(), previous.length())
-            : 0.0f;
-        if (!std::isfinite(evaluated[0]) ||
-            !std::isfinite(evaluated[1]) ||
-            !std::isfinite(evaluated[2]) ||
+        if (!prepared ||
+            !Test_IsClose(prepared->normal, conductor.normal, 1.0e-6f) ||
             evaluated.length() <= 0.0f ||
-            (hasPrevious && relativeStep > 0.05f)) {
-            printf(
-                "    Prepared reflection discontinuity: lobeCos=%f "
-                "value=(%f,%f,%f) relativeStep=%f\n",
-                signedLobeCos, evaluated[0], evaluated[1], evaluated[2],
-                relativeStep);
+            (i > 0 && !Test_IsClose(evaluated, previousEval, 1.0e-6f))) {
+            printf("    Rough reflection inherited the polygon normal\n");
             return false;
         }
-        previous = evaluated;
-        hasPrevious = true;
+        previousEval = evaluated;
     }
     return true;
 }
@@ -5341,7 +5334,7 @@ TestEnsureValidSpecularReflection()
         std::get_if<Bsdf::ConductorData>(
             &roughClosure.bsdfTree.nodes[0].data);
     if (!prepared || !prepared->hasShadingNormal ||
-        !Test_IsClose(prepared->normal, corrected, 1.0e-5f)) {
+        !Test_IsClose(prepared->normal, normalShdWldOut, 1.0e-5f)) {
         return false;
     }
 
@@ -5400,7 +5393,7 @@ TestEnsureValidSpecularReflection()
     if (integratedMass <= sampledMass + 0.01 ||
         std::abs(sampledPositiveXMass - integratedPositiveXMass) > 0.015) {
         printf(
-            "    Corrected GGX rejection/PDF asymmetry mismatch: "
+            "    Rough GGX rejection/PDF asymmetry mismatch: "
             "sampledMass=%f integratedMass=%f "
             "sampledPositiveX=%f integratedPositiveX=%f\n",
             sampledMass, integratedMass,
@@ -5431,6 +5424,8 @@ TestEnsureValidSpecularReflection()
     adobe.baseMetalness = 1.0f;
     adobe.specularWeight = 1.0f;
     adobe.specularRoughness = 0.2f;
+    adobe.coatWeight = 1.0f;
+    adobe.coatRoughness = 0.0f;
     adobeClosure.bsdfTree.root = adobeClosure.bsdfTree.Add(adobe);
     Bsdf::detail::PrepareShadingNormals(
         &adobeClosure.bsdfTree, normalShdWldOut,
@@ -5488,10 +5483,10 @@ TestEnsureValidSpecularReflection()
             !Test_IsClose(
                 preparedEvalPdf.valueCosine,
                 preparedEvalPdf.value * std::abs(Dot(
-                    adobeClosure.bsdfTree.defaultSpecularNormal,
+                    adobeClosure.bsdfTree.defaultDiffuseNormal,
                     sample.omegaInWld)),
                 2.0e-5f) ||
-            !Test_IsClose(evaluated, correctedBasisValue, 2.0e-5f) ||
+            !Test_IsClose(evaluated, uncorrectedBasisValue, 2.0e-5f) ||
             !Test_IsClose(
                 evaluatedPdf, preparedEvalPdf.pdfSolidAngle,
                 2.0e-5f * std::max(1.0f, evaluatedPdf)) ||
@@ -5504,7 +5499,7 @@ TestEnsureValidSpecularReflection()
             !Test_IsClose(
                 preparedSample.bsdfValueCosine,
                 preparedSample.bsdfValue * std::abs(Dot(
-                    adobeClosure.bsdfTree.defaultSpecularNormal,
+                    adobeClosure.bsdfTree.defaultDiffuseNormal,
                     preparedSample.omegaInWld)),
                 2.0e-5f) ||
             !Test_IsClose(
@@ -5513,13 +5508,63 @@ TestEnsureValidSpecularReflection()
             return false;
         }
         if (Test_IsClose(
-                correctedBasisValue, uncorrectedBasisValue, 1.0e-4f)) {
+                correctedBasisValue, uncorrectedBasisValue, 1.0e-4f) ||
+            Test_IsClose(evaluated, correctedBasisValue, 1.0e-4f)) {
             continue;
         }
         foundAdobeSample = true;
         break;
     }
     if (!foundAdobeSample) {
+        return false;
+    }
+
+    // The whole-model prepared path must retain correction when every active
+    // glossy component is delta.
+    adobe.specularRoughness = 0.0f;
+    adobe.coatWeight = 0.0f;
+    SurfaceClosure deltaAdobeClosure;
+    deltaAdobeClosure.bsdfTree.root =
+        deltaAdobeClosure.bsdfTree.Add(adobe);
+    Bsdf::detail::PrepareShadingNormals(
+        &deltaAdobeClosure.bsdfTree, normalShdWldOut,
+        normalGeomWldOut, omegaOutWld);
+    const AdobeOpenPbrPreparedSurface deltaAdobePrepared =
+        PrepareAdobeOpenPbrSurface(
+            deltaAdobeClosure, normalShdWldOut, normalShdWldOut,
+            normalGeomWldOut, true, omegaOutWld);
+    if (!deltaAdobePrepared.valid) {
+        return false;
+    }
+    bool foundDeltaAdobeSample = false;
+    for (int i = 0; i < 256; ++i) {
+        const float u1 = (static_cast<float>(i) + 0.5f) / 256.0f;
+        const float u2 =
+            _RadicalInverseBase2(static_cast<std::uint32_t>(i));
+        const Bsdf::BsdfSample preparedSample =
+            SamplePreparedAdobeOpenPbrSurface(
+                deltaAdobePrepared, u1, u2, 0.75f);
+        const Bsdf::BsdfSample correctedSample = SampleAdobeOpenPbr(
+            adobe, corrected, normalShdWldOut, normalGeomWldOut,
+            omegaOutWld, u1, u2, 0.75f, true);
+        const Bsdf::BsdfSample uncorrectedSample = SampleAdobeOpenPbr(
+            adobe, normalShdWldOut, normalShdWldOut, normalGeomWldOut,
+            omegaOutWld, u1, u2, 0.75f, true);
+        if (preparedSample.pdfSolidAngle <= 0.0f ||
+            correctedSample.pdfSolidAngle <= 0.0f ||
+            !Test_IsClose(
+                preparedSample.omegaInWld,
+                correctedSample.omegaInWld, 2.0e-5f) ||
+            (uncorrectedSample.pdfSolidAngle > 0.0f &&
+             Test_IsClose(
+                 preparedSample.omegaInWld,
+                 uncorrectedSample.omegaInWld, 1.0e-4f))) {
+            continue;
+        }
+        foundDeltaAdobeSample = true;
+        break;
+    }
+    if (!foundDeltaAdobeSample) {
         return false;
     }
 #endif
@@ -5573,6 +5618,23 @@ TestPreparedSpecularNormalsIncludeSubsurfaceOnly()
         Test_IsClose(
             marker.normalShdLobeWldOut, preparedSubsurface->normal,
             1.0e-6f))) {
+        return false;
+    }
+
+    SurfaceClosure inheritedClosure;
+    inheritedClosure.bsdfTree.root =
+        inheritedClosure.bsdfTree.Add(Bsdf::SubsurfaceData{});
+    Bsdf::detail::PrepareShadingNormals(
+        &inheritedClosure.bsdfTree, authoredNormal, normalGeomWldOut,
+        omegaOutWld);
+    const Bsdf::BsdfSample inheritedMarker = TestSurfaceApi::SampleSurface(
+        inheritedClosure, authoredNormal, normalGeomWldOut,
+        normalGeomWldOut, omegaOutWld, 0.3f, 0.7f, 0.5f);
+    const Vec3f corrected = Bsdf::detail::EnsureValidSpecularReflection(
+        normalGeomWldOut, omegaOutWld, authoredNormal);
+    if (!inheritedMarker.isSubsurface ||
+        !Test_IsClose(
+            inheritedMarker.normalShdLobeWldOut, corrected, 1.0e-6f)) {
         return false;
     }
 
@@ -5780,6 +5842,9 @@ TestStandardSurfaceProjectsEachLayerWithItsExactNormal()
     params["base_color"] = Value(Vec3f(0.8f));
     params["specular"] = Value(1.0f);
     params["specular_roughness"] = Value(0.2f);
+    params["coat"] = Value(1.0f);
+    params["coat_roughness"] = Value(0.2f);
+    params["coat_normal"] = Value(Vec3f(0.0f, 0.0f, 1.0f));
     SurfaceClosure closure = EvalStandardSurface(params);
 
     const Vec3f normalGeomWldOut(0.0f, 0.0f, 1.0f);
@@ -5793,13 +5858,21 @@ TestStandardSurfaceProjectsEachLayerWithItsExactNormal()
         omegaOutWld);
 
     const Bsdf::Node* root = closure.bsdfTree.Get(closure.bsdfTree.root);
-    if (!root || !std::holds_alternative<Bsdf::LayerData>(root->data) ||
-        Test_IsClose(closure.bsdfTree.defaultDiffuseNormal,
-                     closure.bsdfTree.defaultSpecularNormal, 1.0e-4f)) {
-        printf("    Standard Surface fixture did not produce corrected layer normals\n");
+    if (!root || !std::holds_alternative<Bsdf::LayerData>(root->data)) {
+        printf("    Standard Surface fixture did not produce a layer\n");
         return false;
     }
     const Bsdf::LayerData& layer = std::get<Bsdf::LayerData>(root->data);
+    const Bsdf::Node* topNode = closure.bsdfTree.Get(layer.top);
+    const Bsdf::DielectricData* topData = topNode
+        ? std::get_if<Bsdf::DielectricData>(&topNode->data)
+        : nullptr;
+    if (!topData ||
+        Test_IsClose(topData->normal,
+                     closure.bsdfTree.defaultDiffuseNormal, 1.0e-4f)) {
+        printf("    Standard Surface fixture did not preserve its coat normal\n");
+        return false;
+    }
 
     for (int i = 0; i < 4096; ++i) {
         const float u1 = (static_cast<float>(i) + 0.5f) / 4096.0f;
@@ -5825,8 +5898,7 @@ TestStandardSurfaceProjectsEachLayerWithItsExactNormal()
         }
         const Vec3f expectedSampleValueCosine =
             topSampleValue * std::abs(Dot(
-                closure.bsdfTree.defaultSpecularNormal,
-                sample.omegaInWld)) +
+                topData->normal, sample.omegaInWld)) +
             baseSampleValue * std::abs(Dot(
                 closure.bsdfTree.defaultDiffuseNormal,
                 sample.omegaInWld));
@@ -5846,8 +5918,7 @@ TestStandardSurfaceProjectsEachLayerWithItsExactNormal()
             Bsdf::detail::BumpShadowingContext::Evaluation);
         const Vec3f expectedEvaluatedCosine =
             topEvaluated * std::abs(Dot(
-                closure.bsdfTree.defaultSpecularNormal,
-                sample.omegaInWld)) +
+                topData->normal, sample.omegaInWld)) +
             (evaluated - topEvaluated) * std::abs(Dot(
                 closure.bsdfTree.defaultDiffuseNormal,
                 sample.omegaInWld));
@@ -6114,7 +6185,7 @@ Test_RegisterBsdfTests()
     _REG(TestSparseShadingNormalPreparation);
     _REG(TestAppendClosureTreePreservesSparseNormalMetadata);
     _REG(TestTreeDiffuseNormalIsIndependentOfViewHemisphere);
-    _REG(TestReflectiveLeafIsContinuousAcrossNormalTangentPlane);
+    _REG(TestRoughReflectiveNormalIgnoresFacetedGeometry);
     _REG(TestExplicitBaseNormalMatchesInheritedNormal);
     _REG(TestNormalMappedTransmissionSurvivesDirectionAgreement);
     _REG(TestEnsureValidSpecularReflection);

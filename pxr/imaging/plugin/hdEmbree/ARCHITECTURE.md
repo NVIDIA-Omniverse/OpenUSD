@@ -509,19 +509,22 @@ barycentric edges. The ray-derived world hit remains authoritative for
 transport, ray offsets, and geometric AOVs.
 
 Closure trees own per-interaction diffuse and reflection-safe specular default
-normals. Specular correction is unconditional. It covers glossy reflection,
-dielectric reflection and transmission, conductor, coat, generalized Schlick,
-Adobe OpenPBR, and subsurface normals; diffuse, sheen, and translucent normals
-remain uncorrected. Unlike Cycles, translucent correction is intentionally not
-adopted because Cycles marks that behavior as a glossy-only bug. Degenerate
-projected tangents and quartic denominators return the input shading normal;
-these are Typhoon's only numerical deviations from the Cycles solve.
+normals. Geometric correction covers effectively delta dielectric reflection
+and transmission, conductor, coat, generalized Schlick, Adobe OpenPBR, and
+subsurface normals. Finite-roughness, diffuse, sheen, and translucent normals
+remain uncorrected. Adobe OpenPBR has one shared frame, so any active finite
+glossy component disables correction for the whole model. Unlike Cycles,
+translucent correction is intentionally not adopted because Cycles marks that
+behavior as a glossy-only bug. Degenerate projected tangents and quartic
+denominators return the input shading normal; these and finite-roughness
+correction are Typhoon's deviations from the Cycles solve.
 Tree construction records only leaves with authored normal state;
 `PrepareShadingNormals()` validates those sparse leaves in the authored
 exterior frame, faces each complete resolved normal to the geometrically
 selected incident side, and does not sweep default-normal or composition
-nodes. Traversal resolves un-authored diffuse leaves from the tree's diffuse
-default and un-authored reflective leaves from its one shared specular default.
+nodes. Traversal resolves un-authored finite-roughness/diffuse leaves from the
+tree's diffuse default and un-authored delta/subsurface leaves from its one
+shared specular default.
 Tree copying, merging, pruning, and clearing must preserve or rebuild this
 metadata together with node IDs.
 Adding a node invalidates prepared state; prepared-tree pruning rebuilds the
@@ -748,9 +751,12 @@ For each segment, `_IntegratePath()` performs these stages in order:
    per-lobe normals are accepted only when finite, non-degenerate, and in that
    smooth exterior hemisphere; rejected values fall back to the base without
    negation. Each complete resolved normal is then faced to the incident side.
-   The default reflective normal is corrected once per interaction;
-   authored per-lobe normals are corrected individually before traversal if
-   their mirror direction would fall below the incident-side geometric surface.
+   The default delta/subsurface normal is corrected once per interaction;
+   authored delta and subsurface normals are corrected individually before
+   traversal if their mirror direction would fall below the incident-side
+   geometric surface. Finite-roughness normals remain uncorrected because the
+   solve collapses a range of mapped normals onto its grazing threshold,
+   producing bright contour ridges on smooth polygon meshes.
    Fresnel, TIR, reflection, refraction, evaluation, PDF, and delta paths all
    consume that same prepared lobe normal. Object-space normal maps therefore fall back unless graph
    conversion places their result in the exterior frame. Coupled

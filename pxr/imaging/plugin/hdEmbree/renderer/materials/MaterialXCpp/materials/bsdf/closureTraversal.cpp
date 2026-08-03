@@ -57,6 +57,47 @@ Bsdf::BsdfSample SampleNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                              float uChoice, float heroWavelengthNm,
                              bool frontFacing);
 
+bool
+UsesGeometricNormalCorrection(const Bsdf::AdobeOpenPbrData& data)
+{
+    // Adobe OpenPBR shares one frame across all lobes. Preserve that frame
+    // whenever any active glossy component has finite roughness.
+    const bool hasSpecular = data.specularWeight > kEpsilon ||
+        data.baseMetalness > kEpsilon ||
+        data.transmissionWeight > kEpsilon;
+    const bool hasCoat = data.coatWeight > kEpsilon;
+    const bool specularIsDelta =
+        IsEffectivelySmoothPerceptualRoughness(data.specularRoughness);
+    const bool coatIsDelta =
+        IsEffectivelySmoothPerceptualRoughness(data.coatRoughness);
+    const bool hasDelta = (hasSpecular && specularIsDelta) ||
+        (hasCoat && coatIsDelta);
+    const bool hasFiniteRoughness =
+        (hasSpecular && !specularIsDelta) ||
+        (hasCoat && !coatIsDelta);
+    return hasDelta && !hasFiniteRoughness;
+}
+
+template <class T>
+static bool
+_UsesGeometricNormalCorrection(const T& data)
+{
+    // A rough microfacet distribution has valid directions even when its
+    // macro mirror direction is invalid; pinning its normal creates a ridge.
+    if constexpr (
+        std::is_same_v<T, Bsdf::DielectricData> ||
+        std::is_same_v<T, Bsdf::DielectricInterfaceData> ||
+        std::is_same_v<T, Bsdf::ConductorData> ||
+        std::is_same_v<T, Bsdf::GeneralizedSchlickData>) {
+        return IsEffectivelyDeltaAlpha(data.roughness);
+    } else if constexpr (std::is_same_v<T, Bsdf::SubsurfaceData>) {
+        return true;
+    } else if constexpr (std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
+        return UsesGeometricNormalCorrection(data);
+    }
+    return false;
+}
+
 template <class T>
 Vec3f
 ResolveTreeShadingNormal(
@@ -66,17 +107,9 @@ ResolveTreeShadingNormal(
 {
     const Vec3f* defaultNormal = &normalShdWldOut;
     if (tree.shadingNormalsPrepared) {
-        if constexpr (
-            std::is_same_v<T, Bsdf::DielectricData> ||
-            std::is_same_v<T, Bsdf::DielectricInterfaceData> ||
-            std::is_same_v<T, Bsdf::ConductorData> ||
-            std::is_same_v<T, Bsdf::GeneralizedSchlickData> ||
-            std::is_same_v<T, Bsdf::SubsurfaceData> ||
-            std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
-            defaultNormal = &tree.defaultSpecularNormal;
-        } else {
-            defaultNormal = &tree.defaultDiffuseNormal;
-        }
+        defaultNormal = _UsesGeometricNormalCorrection(data)
+            ? &tree.defaultSpecularNormal
+            : &tree.defaultDiffuseNormal;
     }
     return ResolveShadingNormal(data, *defaultNormal);
 }
@@ -2033,17 +2066,10 @@ PrepareShadingNormals(
                 if (!frontFacing) {
                     resolved = -resolved;
                 }
-                if constexpr (
-                    std::is_same_v<T, Bsdf::DielectricData> ||
-                    std::is_same_v<T, Bsdf::DielectricInterfaceData> ||
-                    std::is_same_v<T, Bsdf::ConductorData> ||
-                    std::is_same_v<T, Bsdf::GeneralizedSchlickData> ||
-                    std::is_same_v<T, Bsdf::SubsurfaceData> ||
-                    std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
-                    if (resolved != normalGeomWldOut) {
-                        resolved = EnsureValidSpecularReflection(
-                            normalGeomWldOut, omegaOutWld, resolved);
-                    }
+                if (_UsesGeometricNormalCorrection(data) &&
+                    resolved != normalGeomWldOut) {
+                    resolved = EnsureValidSpecularReflection(
+                        normalGeomWldOut, omegaOutWld, resolved);
                 }
                 data.normal = resolved;
                 data.hasShadingNormal = true;

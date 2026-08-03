@@ -364,6 +364,7 @@ private:
                 std::is_same_v<T, DielectricInterfaceData> ||
                 std::is_same_v<T, ConductorData> ||
                 std::is_same_v<T, GeneralizedSchlickData> ||
+                std::is_same_v<T, SubsurfaceData> ||
                 std::is_same_v<T, AdobeOpenPbrData>) {
                 hasDefaultSpecularNormalNodes |= !data.hasShadingNormal;
             }

@@ -3,9 +3,10 @@
 Status: proposed correctness follow-up to
 [`26-plan-fix-bump.md`](26-plan-fix-bump.md). It supersedes plan 26's
 integrator-level bump-direction rejection. The goal is to match Cycles'
-normal-handling behavior as closely as practical, with no new render setting:
-specular normal correction is always on, as if Cycles'
-`SD_USE_BUMP_MAP_CORRECTION` were fixed true.
+normal-handling behavior as closely as practical, with no new render setting.
+Correction is retained for delta reflection and subsurface entry, where an
+invalid deterministic direction would otherwise erase the event. Finite rough
+lobes deliberately keep their mapped normal; see the faceting amendment below.
 
 ## Problem
 
@@ -128,9 +129,11 @@ Verified against `blender/cycles` `main`.
    well-conditioned inputs: fall back to the input shading normal, never to the
    geometric normal, and never validate the corrected result. Retain the two
    explicit robustness guards documented below.
-2. Keep correction unconditional. No render setting; behave as Cycles does with
-   `SD_USE_BUMP_MAP_CORRECTION` set. Keep Cycles' `N == Ng` early-out as a cheap
-   guard.
+2. Apply correction only to effectively delta reflective lobes and subsurface
+   entry. Finite rough lobes remain uncorrected because the solve concentrates
+   their response on its grazing threshold. Keep Cycles' `N == Ng` early-out as
+   a cheap guard and retain geometric sampled-direction rejection for all
+   families.
 3. One normal per lobe, used for every quantity describing that interface:
    Fresnel, TIR, delta and rough reflection, delta and rough refraction,
    evaluation, and PDF.
@@ -150,7 +153,7 @@ Verified against `blender/cycles` `main`.
 Evaluation order stays: normal-map evaluation in the view-independent exterior
 frame, then validation of the graph normal against `normalSrfWldExt`, then each
 authored lobe normal against the resolved exterior graph normal, then geometric
-orientation by `frontFacing`, then correction.
+orientation by `frontFacing`, then conditional delta/subsurface correction.
 
 The tangent frame that feeds `SurfaceClosure::ResolveNormal()` must stay in the
 authored exterior orientation, matching Cycles' un-flip. It already is:
@@ -177,6 +180,15 @@ Record these in `ARCHITECTURE.md`; everything else should match.
 - **Subsurface correction: adopted.** Cycles corrects `bssrdf->N`
   (`svm/closure.h:495,1122`) with no such caveat, so add `SubsurfaceData` to the
   corrected set. This is a change from today's behavior.
+- **Finite-roughness correction: not adopted.** On the coarse smooth sphere in
+  `openPbr_bump_fractal.usda`, the solve collapses a range of mapped normals
+  onto its grazing-reflection threshold. This produces a bright faceted ridge
+  that remains at 64 light samples. Keeping the mapped normal removes the ridge;
+  sampling-only geometric rejection still discards invalid generated
+  directions. Delta correction remains necessary for deterministic events.
+  Adobe OpenPBR exposes one frame for its whole model, so any active
+  finite-roughness specular or coat component disables correction for that
+  shared frame even when another component is delta.
 - **Thin-walled transmission** is validated against the real
   `normalGeomWldOut`. Cycles' mirrored `-Ng` convention exists only because it
   reuses a reflection closure to model the event; we do not.
@@ -275,7 +287,9 @@ should go in first.
 
 - Keep `PrepareShadingNormals()`'s signature and the exterior-frame validation
   order. No setting to thread.
-- Add `SubsurfaceData` to the corrected leaf set; leave `TranslucentData`
+- Correct effectively delta dielectric, coupled-interface, conductor,
+  generalized-Schlick, and Adobe OpenPBR leaves plus `SubsurfaceData`. Leave
+  finite-roughness reflective leaves, translucent, diffuse, and sheen
   uncorrected. See [Deliberate deviations](#deliberate-deviations-from-cycles).
 - Add Cycles' `N == Ng` early-out before calling the correction.
 - Update the contract to state the validation order and that interface-side
@@ -422,7 +436,8 @@ on prepared `SubsurfaceData::normal`.
   singular, and coat events use the microfacet `N` plus `Ng` rule. Apply it to
   both prepared and unprepared samples.
 - Store `normalSrfWldOut` in prepared state. Apply the smooth-base agreement
-  term to Adobe evaluation using its single corrected backend normal, multiply
+  term to Adobe evaluation using its single conditionally corrected backend
+  normal, multiply
   diffuse results by the continuous softening factor, and leave Adobe PDF and
   geometric eval rejection unchanged. Thread the smooth normal through
   `TryEvalPdfAdobeOpenPbrSurface()` and the prepared eval path used by
@@ -496,8 +511,8 @@ Extend `TestEnsureValidSpecularReflection` in
 
 New coverage:
 
-- prepared normals correct the reflective set plus subsurface, and leave
-  translucent and diffuse uncorrected;
+- prepared normals correct the delta reflective set plus subsurface, and leave
+  finite-roughness reflective, translucent, and diffuse normals uncorrected;
 - the `N == Ng` early-out returns the input untouched;
 - interface side and eta order stay fixed by `frontFacing`;
 - diffuse and sheen accept only `Dot(Ng, omegaIn) > 0`; translucent only `< 0`;

@@ -5,6 +5,7 @@
 #include "openPbr.h"
 
 #include <renderer/integrator/medium.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf/closureTraversal.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf/microfacet.h>
 #include <renderer/materials/MaterialXCpp/nodes/helpers/mathHelpers.h>
 #include <renderer/materials/MaterialXCpp/paramMap.h>
@@ -729,7 +730,9 @@ PrepareAdobeOpenPbrSurface(const SurfaceClosure& closure,
     const Vec3f normalShdLobeWldOut = data->hasShadingNormal
         ? data->normal
         : (closure.bsdfTree.shadingNormalsPrepared
-               ? closure.bsdfTree.defaultSpecularNormal
+               ? (Bsdf::detail::UsesGeometricNormalCorrection(*data)
+                      ? closure.bsdfTree.defaultSpecularNormal
+                      : closure.bsdfTree.defaultDiffuseNormal)
                : normalShdWldOut);
     auto state = std::make_shared<AdobeOpenPbrPreparedSurfaceState>();
     state->data = *data;

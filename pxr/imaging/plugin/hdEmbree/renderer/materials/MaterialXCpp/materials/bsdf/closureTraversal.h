@@ -23,6 +23,11 @@ namespace detail {
 /// failure may propagate as `std::bad_alloc`.
 Bsdf::ClosureTree PruneCausticClassLobes(const Bsdf::ClosureTree& tree);
 
+/// Returns whether Adobe OpenPBR's shared normal may be geometrically
+/// corrected without changing an active finite-roughness lobe. The data must
+/// contain sanitized material parameters. Does not throw.
+bool UsesGeometricNormalCorrection(const Bsdf::AdobeOpenPbrData& data);
+
 /// Stores the diffuse/specular defaults once for later Eval/Sample/PDF
 /// traversals and prepares only leaves recorded with authored normals.
 /// Authored normals are normalized and accepted only in the hemisphere of the
@@ -30,13 +35,16 @@ Bsdf::ClosureTree PruneCausticClassLobes(const Bsdf::ClosureTree& tree);
 /// back without negation. This deliberately validates the hierarchy in order:
 /// the graph normal against the exterior smooth frame, then each lobe normal
 /// against the resolved exterior graph normal. The complete normals are faced
-/// to the incident side selected by `frontFacing`. Reflective normals are then
-/// raised toward finite unit incident-side `normalGeomWldOut` when needed to
-/// keep mirror reflection of finite unit `omegaOutWld` above the geometric
-/// surface. `tree` must be non-null. Returns the number of invalid authored
-/// values replaced. Tree construction must keep the authored-normal linked
-/// index and `hasDefaultSpecularNormalNodes` synchronized with `nodes`.
-/// Allocation-free and does not throw.
+/// to the incident side selected by `frontFacing`. Delta reflective and
+/// subsurface-entry normals are then raised toward finite unit incident-side
+/// `normalGeomWldOut` when needed to keep their deterministic mirror direction
+/// above the geometric surface. Finite-roughness normals remain uncorrected;
+/// collapsing them onto the grazing threshold creates bright contour ridges.
+/// Their generated directions are instead validated at sampling. `tree` must
+/// be non-null. Returns the number of invalid authored values replaced. Tree
+/// construction must keep the authored-normal linked index and
+/// `hasDefaultSpecularNormalNodes` synchronized with `nodes`. Allocation-free
+/// and does not throw.
 std::size_t PrepareShadingNormals(
     Bsdf::ClosureTree* tree,
     const Vec3f& normalShdWldExt,
