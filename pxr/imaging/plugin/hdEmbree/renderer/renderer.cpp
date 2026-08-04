@@ -250,17 +250,14 @@ ty::Renderer::_PreRenderSetup()
 {
     HD_TRACE_FUNCTION();
 
-    // Reset state derived from this invocation so setup failure cannot expose
-    // the previous frame's dimensions, adaptive data, or AOV dispatch.
+    // Reset state derived only from this setup invocation so failure cannot
+    // expose the previous frame's dimensions or AOV dispatch. Adaptive state
+    // persists until ResetAccumulation() or a setup failure owns its reset.
     _width = 0;
     _height = 0;
     _needColor = false;
     _colorClearValue = GfVec4f(0.0f);
     _aovOutputs.clear();
-    _pixelMean.clear();
-    _pixelM2.clear();
-    _pixelSampleCount.clear();
-    _pixelConverged.clear();
     _completedSamples.store(0);
     _sssCallCount.store(0);
     _sssSuccessCount.store(0);
@@ -278,6 +275,14 @@ ty::Renderer::_PreRenderSetup()
         setupValid = false;
     }
     if (!setupValid) {
+        // A terminal setup failure must not retain adaptive state from the
+        // previous valid frame. Keep this off the successful restart path,
+        // where ResetAccumulation() has already cleared the same arrays.
+        _pixelMean.clear();
+        _pixelM2.clear();
+        _pixelSampleCount.clear();
+        _pixelConverged.clear();
+
         // Mark usable buffers converged so Hydra parks instead of retrying a
         // terminal setup failure.
         for (size_t i = 0; i < _aovBindings.size(); ++i) {

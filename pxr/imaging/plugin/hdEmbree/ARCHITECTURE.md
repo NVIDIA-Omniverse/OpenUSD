@@ -826,6 +826,10 @@ participating-medium transport, or Russian roulette.
 `_PreRenderSetup()` rebuilds AOV validation and output classification every render;
 it does not cache validation because a bound buffer can change format or
 dimensions without changing its pointer.
+`ResetAccumulation()` owns successful-frame adaptive-state resets. Setup leaves
+that reset state allocated and only resizes it when the image dimensions
+change; a terminal setup failure discards it so no later caller can observe the
+previous valid frame's adaptive statistics.
 The renderer publishes synchronized `Pending`, `Valid`, or `Failed` frame
 status across the render and client threads. Offline RenderProducts are written
 only after the current frame is both valid and converged; setup failure still
