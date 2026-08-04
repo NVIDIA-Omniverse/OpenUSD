@@ -444,7 +444,7 @@ the cache itself is an optimization.
 
 ## Plan 27 Corrected-HEAD Counter Baseline (2026-07-31)
 
-The follow-up to `doc/27-plan-perf-regression.md` corrected smooth-shadow
+The follow-up to the performance-regression investigation corrected smooth-shadow
 triangle inputs, made their construction lazy, gated exact object-position
 interpolation on compiled graph requirements, cached fixed-name tangent
 samplers, and hoisted default reflective-normal correction.
