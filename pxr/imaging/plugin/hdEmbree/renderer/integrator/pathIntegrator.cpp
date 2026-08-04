@@ -309,9 +309,6 @@ ty::Renderer::_IntegratePath(
                 ? _ResolvedNormalDerivativeProvenance::None
                 : _ResolvedNormalDerivativeProvenance::BaseApproximation;
 
-        GfVec3f tangent = ty::ToGf(ctx.tangent);
-        GfVec3f bitangent = ty::ToGf(ctx.bitangent);
-
         // -----------------------------------------------------------------
         // Evaluate the graph into one closure. Failure falls through to the
         // display-color fallback used by direct lighting.
@@ -356,35 +353,26 @@ ty::Renderer::_IntegratePath(
         // Resolve material normals in the authored exterior frame so front-
         // and back-face hits evaluate one view-independent relief field.
         bool resolvedNormalUsesBase = true;
-        mxcpp::Vec3f resolvedNormal;
-        if (hasClosure &&
-            closure.ResolveNormal(ty::ToMx(tangent), ty::ToMx(bitangent),
-                                  ty::ToMx(normalShdWldExt), &resolvedNormal)) {
-            GfVec3f candidate;
-            if (ty::TryResolveNormalShdWldExt(
-                    ty::ToGf(resolvedNormal), normalShdWldExt, &candidate)) {
-                resolvedNormalUsesBase =
-                    GfIsClose(candidate, normalShdWldExt, 1e-6f);
-                normalShdWldExt = candidate;
-                if (!resolvedNormalUsesBase) {
-                    surfaceDifferentials.resolvedNormalProvenance =
-                        _ResolvedNormalDerivativeProvenance::None;
-                }
-            } else {
-                ++_invalidMaterialNormalCount;
+        if (hasClosure) {
+            normalShdWldExt = ty::ToGf(
+                mxcpp::ResolveGraphNormal(closure, ctx));
+            resolvedNormalUsesBase =
+                GfIsClose(normalShdWldExt, normalSrfWldExt, 1e-6f);
+            if (!resolvedNormalUsesBase) {
+                surfaceDifferentials.resolvedNormalProvenance =
+                    _ResolvedNormalDerivativeProvenance::None;
             }
+            mxcpp::ValidateLeafNormals(
+                &closure.bsdfTree, ty::ToMx(normalShdWldExt));
         }
         const GfVec3f normalShdWldOut = ty::FaceNormalShdWldOut(
             normalShdWldExt, interaction.frontFacing);
         if (hasClosure) {
-            _invalidMaterialNormalCount.fetch_add(
-                mxcpp::Bsdf::detail::PrepareShadingNormals(
-                    &closure.bsdfTree,
-                    ty::ToMx(normalShdWldExt),
-                    ty::ToMx(normalGeomWldOut),
-                    ty::ToMx(omegaOutWld),
-                    interaction.frontFacing),
-                std::memory_order_relaxed);
+            mxcpp::Bsdf::detail::PrepareShadingNormals(
+                &closure.bsdfTree,
+                ty::ToMx(normalShdWldOut),
+                ty::ToMx(normalGeomWldOut),
+                ty::ToMx(omegaOutWld));
         }
 
         // Resolve presence stochastically. A rejected interaction advances

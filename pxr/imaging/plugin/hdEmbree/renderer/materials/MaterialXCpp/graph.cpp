@@ -7,6 +7,7 @@
 
 #include <renderer/materials/MaterialXCpp/nodes/helpers/spaceHelpers.h>
 #include <renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf/shadingFrame.h>
 #include <renderer/materials/MaterialXCpp/materials/disneyPrincipled.h>
 #include <renderer/materials/MaterialXCpp/materials/gltfPbr.h>
 #include <renderer/materials/MaterialXCpp/materials/openPbr.h>
@@ -19,10 +20,84 @@
 #include <iterator>
 #include <map>
 #include <string>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mxcpp {
+
+Vec3f
+ResolveGraphNormal(
+    const SurfaceClosure& closure,
+    const ShadingContext& ctx)
+{
+    // Resolve after the graph is fully assembled so surface-shader mixing has
+    // selected the final authored normal. A graph without one inherits the
+    // smooth exterior normal supplied by the shading context.
+    Vec3f candidate;
+    if (!closure.ResolveNormal(
+            ctx.tangent, ctx.bitangent, ctx.normal, &candidate)) {
+        return ctx.normal;
+    }
+
+    // Keep graph normals in the smooth normal's exterior hemisphere. This
+    // gives every leaf one stable validation reference before incident-side
+    // facing and geometric correction happen later.
+    Vec3f normalShdWldExt;
+    return Bsdf::detail::TryResolveShadingNormal(
+        candidate, ctx.normal, &normalShdWldExt)
+        ? normalShdWldExt
+        : ctx.normal;
+}
+
+void
+ValidateLeafNormals(
+    Bsdf::ClosureTree* tree,
+    const Vec3f& normalShdWldExt)
+{
+    // Legacy summary closures have no tree and therefore no leaf normals to
+    // validate.
+    if (!tree) {
+        return;
+    }
+
+    for (Bsdf::Node& node : tree->nodes) {
+        // Only surface leaves own shading normals. The generic parameter is
+        // the C++17 std::visit exception; composite and volume nodes pass
+        // through unchanged.
+        std::visit([&](auto& data) {
+            using T = std::decay_t<decltype(data)>;
+            if constexpr (
+                std::is_same_v<T, Bsdf::OrenNayarDiffuseData> ||
+                std::is_same_v<T, Bsdf::BurleyDiffuseData> ||
+                std::is_same_v<T, Bsdf::TranslucentData> ||
+                std::is_same_v<T, Bsdf::SubsurfaceData> ||
+                std::is_same_v<T, Bsdf::DielectricData> ||
+                std::is_same_v<T, Bsdf::DielectricInterfaceData> ||
+                std::is_same_v<T, Bsdf::ConductorData> ||
+                std::is_same_v<T, Bsdf::GeneralizedSchlickData> ||
+                std::is_same_v<T, Bsdf::SheenData> ||
+                std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
+                if (!data.hasShadingNormal) {
+                    return;
+                }
+
+                // Store a finite unit exterior normal in every authored leaf
+                // so preparation only needs to face and geometrically correct
+                // it. Invalid values inherit the final graph normal rather
+                // than being flipped into its hemisphere.
+                Vec3f resolved;
+                if (Bsdf::detail::TryResolveShadingNormal(
+                        data, normalShdWldExt, &resolved)) {
+                    data.normal = resolved;
+                } else {
+                    data.normal = normalShdWldExt;
+                }
+            }
+        }, node.data);
+    }
+}
 
 static const std::string _kSurface = "surface";
 static const std::string _kVolume = "volume";

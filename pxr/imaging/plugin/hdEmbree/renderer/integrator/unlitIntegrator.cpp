@@ -9,7 +9,6 @@
 #include <renderer/geometry/primvarSampling.h>
 #include <renderer/integrator/shadingNormal.h>
 #include <renderer/materials/MaterialXCpp/graph.h>
-#include <renderer/materials/MaterialXCpp/materials/bsdf/closureTraversal.h>
 #include <renderer/materials/MaterialXCpp/shadingContext.h>
 #include <renderer/rayUtil.h>
 #include <renderer/renderer.h>
@@ -104,10 +103,6 @@ ty::Renderer::_IntegrateUnlit(
     ctx.geomPropUserData = &cbData;
     ctx.uniformProps = &prototypeContext->geomPropUniformValues;
 
-    // Recover the tangent frame used to apply a material normal map.
-    GfVec3f tangent = ty::ToGf(ctx.tangent);
-    GfVec3f bitangent = ty::ToGf(ctx.bitangent);
-
     // Try to evaluate MaterialXCpp material if one is bound.
     mxcpp::SurfaceClosure closure;
     bool hasMaterialClosure = false;
@@ -120,25 +115,8 @@ ty::Renderer::_IntegrateUnlit(
     }
 
     if (hasMaterialClosure) {
-        mxcpp::Vec3f resolvedNormal;
-        if (closure.ResolveNormal(ty::ToMx(tangent), ty::ToMx(bitangent),
-                                  ty::ToMx(normalShdWldExt), &resolvedNormal)) {
-            GfVec3f candidate;
-            if (ty::TryResolveNormalShdWldExt(
-                    ty::ToGf(resolvedNormal), normalShdWldExt, &candidate)) {
-                normalShdWldExt = candidate;
-            } else {
-                ++_invalidMaterialNormalCount;
-            }
-        }
-        _invalidMaterialNormalCount.fetch_add(
-            mxcpp::Bsdf::detail::PrepareShadingNormals(
-                &closure.bsdfTree,
-                ty::ToMx(normalShdWldExt),
-                ty::ToMx(interaction.GetNormalGeomWldOut()),
-                ty::ToMx(omegaOutWld),
-                interaction.frontFacing),
-            std::memory_order_relaxed);
+        normalShdWldExt = ty::ToGf(
+            mxcpp::ResolveGraphNormal(closure, ctx));
     }
     const GfVec3f normalShdWldOut = ty::FaceNormalShdWldOut(
         normalShdWldExt, interaction.frontFacing);

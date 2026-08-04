@@ -127,11 +127,6 @@ public:
         _result.root = PruneNode(_source.root);
         if (!_result.IsValid(_result.root)) {
             _result.Clear();
-        } else {
-            // Retained leaves carry their source's prepared normals. Publish
-            // prepared state only after constructing the new tree.
-            _result.shadingNormalsPrepared =
-                _source.shadingNormalsPrepared;
         }
         return std::move(_result);
     }
@@ -1816,19 +1811,17 @@ PruneCausticClassLobes(const Bsdf::ClosureTree& tree)
     return pruner.Run();
 }
 
-std::size_t
+void
 PrepareShadingNormals(
     Bsdf::ClosureTree* tree,
-    const Vec3f& normalShdWldExt,
+    const Vec3f& normalShdWldOut,
     const Vec3f& normalGeomWldOut,
-    const Vec3f& omegaOutWld,
-    bool frontFacing)
+    const Vec3f& omegaOutWld)
 {
     if (!tree) {
-        return 0;
+        return;
     }
 
-    std::size_t invalidCount = 0;
     for (Bsdf::Node& node : tree->nodes) {
         std::visit([&](auto& data) {
             // C++17 visitor dispatch over the finite closure-node variant.
@@ -1844,13 +1837,10 @@ PrepareShadingNormals(
                 std::is_same_v<T, Bsdf::GeneralizedSchlickData> ||
                 std::is_same_v<T, Bsdf::SheenData> ||
                 std::is_same_v<T, Bsdf::AdobeOpenPbrData>) {
-                Vec3f resolved = normalShdWldExt;
-                if (data.hasShadingNormal &&
-                    !TryResolveShadingNormal(
-                        data, normalShdWldExt, &resolved)) {
-                    ++invalidCount;
-                }
-                if (!frontFacing) {
+                Vec3f resolved = data.hasShadingNormal
+                    ? data.normal
+                    : normalShdWldOut;
+                if (Dot(resolved, normalShdWldOut) < 0.0f) {
                     resolved = -resolved;
                 }
                 if (_UsesGeometricNormalCorrection(data) &&
@@ -1863,8 +1853,6 @@ PrepareShadingNormals(
             }
         }, node.data);
     }
-    tree->shadingNormalsPrepared = true;
-    return invalidCount;
 }
 
 }  // namespace detail

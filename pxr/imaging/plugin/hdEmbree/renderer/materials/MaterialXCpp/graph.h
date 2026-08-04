@@ -29,6 +29,28 @@ struct EvalOptions
     bool visibilityOnly = false;
 };
 
+/// Resolves the final closure's graph normal through the exterior tangent
+/// frame in `ctx`.
+///
+/// `closure` must be fully assembled. `ctx.normal` must be a finite unit
+/// exterior normal. Invalid, degenerate, or opposite-hemisphere authored
+/// normals fall back to `ctx.normal` without negation. Does not modify
+/// `closure` and does not throw.
+Vec3f ResolveGraphNormal(
+    const SurfaceClosure& closure,
+    const ShadingContext& ctx);
+
+/// Validates authored leaf normals against `normalShdWldExt`.
+///
+/// `tree` must be non-null and unprepared. `normalShdWldExt` must be the
+/// finite unit exterior normal returned by `ResolveGraphNormal()` for the
+/// same closure. Accepted normals remain in the exterior frame; invalid
+/// values fall back without negation. Does not face or geometrically correct
+/// normals. An empty tree is a no-op. Does not throw.
+void ValidateLeafNormals(
+    Bsdf::ClosureTree* tree,
+    const Vec3f& normalShdWldExt);
+
 /// Collect the ordered, de-duplicated geomprop handle space for a material.
 ///
 /// Only constant string geomprop parameters receive handles. Graph

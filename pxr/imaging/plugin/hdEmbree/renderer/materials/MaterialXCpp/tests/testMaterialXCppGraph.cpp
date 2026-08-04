@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include <functional>
+#include <limits>
 #include <variant>
 
 using namespace mxcpp;
@@ -955,6 +956,138 @@ TestMixSurfaceClosuresPreservesVolumeBoundaryIdentity()
 }
 
 static bool
+TestMixedGraphLeafNormalsValidateAgainstFinalGraphNormal()
+{
+    MaterialGraph network;
+    const Vec3f bgNormal = Vec3f(0.8f, 0.0f, -0.6f);
+    const Vec3f fgNormal = Vec3f(-0.8f, 0.0f, 0.6f).normalized();
+
+    GraphNode bgNormalNode;
+    bgNormalNode.nodeTypeId = "ND_constant_vector3";
+    bgNormalNode.parameters["value"] = Value(bgNormal);
+    network.nodes["/Material/BgNormal"] = bgNormalNode;
+    GraphNode bgBsdf;
+    bgBsdf.nodeTypeId = "ND_dielectric_bsdf";
+    bgBsdf.inputConnections["normal"] = {{"/Material/BgNormal", "out"}};
+    network.nodes["/Material/BgBsdf"] = bgBsdf;
+    GraphNode bgSurface;
+    bgSurface.nodeTypeId = "ND_surface";
+    bgSurface.inputConnections["bsdf"] = {{"/Material/BgBsdf", "out"}};
+    network.nodes["/Material/BgSurface"] = bgSurface;
+
+    GraphNode fgNormalNode;
+    fgNormalNode.nodeTypeId = "ND_constant_vector3";
+    fgNormalNode.parameters["value"] = Value(fgNormal);
+    network.nodes["/Material/FgNormal"] = fgNormalNode;
+    GraphNode fgBsdf;
+    fgBsdf.nodeTypeId = "ND_dielectric_bsdf";
+    fgBsdf.inputConnections["normal"] = {{"/Material/FgNormal", "out"}};
+    network.nodes["/Material/FgBsdf"] = fgBsdf;
+    GraphNode fgSurface;
+    fgSurface.nodeTypeId = "ND_surface";
+    fgSurface.inputConnections["bsdf"] = {{"/Material/FgBsdf", "out"}};
+    network.nodes["/Material/FgSurface"] = fgSurface;
+
+    GraphNode mix;
+    mix.nodeTypeId = "ND_mix_surfaceshader";
+    mix.parameters["mix"] = Value(0.8f);
+    mix.inputConnections["bg"] = {{"/Material/BgSurface", "out"}};
+    mix.inputConnections["fg"] = {{"/Material/FgSurface", "out"}};
+    network.nodes["/Material/Mix"] = mix;
+    network.terminals["surface"] = {"/Material/Mix", "out"};
+
+    CompileResult result = EvalGraph::Compile(network);
+    if (result.status != CompileStatus::Valid || !result.graph) {
+        printf("    Mixed graph compilation failed: %s\n",
+               result.diagnostic.c_str());
+        return false;
+    }
+
+    ShadingContext ctx;
+    const SurfaceClosure evaluated = result.graph->Evaluate(ctx);
+    SurfaceClosure closure = evaluated;
+    const Vec3f normalShdWldExt = ResolveGraphNormal(closure, ctx);
+    if (bgNormal.dot(normalShdWldExt) >= 0.0f ||
+        fgNormal.dot(normalShdWldExt) <= 0.0f) {
+        printf(
+            "    Unexpected mixed normal: (%f,%f,%f), bgDot=%f, fgDot=%f\n",
+            normalShdWldExt[0], normalShdWldExt[1], normalShdWldExt[2],
+            bgNormal.dot(normalShdWldExt),
+            fgNormal.dot(normalShdWldExt));
+        return false;
+    }
+
+    if (closure.bsdfTree.nodes.size() != 3) {
+        return false;
+    }
+    const Bsdf::DielectricData* bgLeaf =
+        std::get_if<Bsdf::DielectricData>(
+            &closure.bsdfTree.nodes[0].data);
+    const Bsdf::DielectricData* fgLeaf =
+        std::get_if<Bsdf::DielectricData>(
+            &closure.bsdfTree.nodes[1].data);
+    if (!bgLeaf || !fgLeaf ||
+        !Test_IsClose(bgLeaf->normal, bgNormal, 1.0e-6f) ||
+        !Test_IsClose(fgLeaf->normal, fgNormal, 1.0e-6f)) {
+        printf(
+            "    Unexpected authored leaves: bg=(%f,%f,%f), "
+            "fg=(%f,%f,%f)\n",
+            bgLeaf ? bgLeaf->normal[0] : 0.0f,
+            bgLeaf ? bgLeaf->normal[1] : 0.0f,
+            bgLeaf ? bgLeaf->normal[2] : 0.0f,
+            fgLeaf ? fgLeaf->normal[0] : 0.0f,
+            fgLeaf ? fgLeaf->normal[1] : 0.0f,
+            fgLeaf ? fgLeaf->normal[2] : 0.0f);
+        return false;
+    }
+
+    ValidateLeafNormals(&closure.bsdfTree, normalShdWldExt);
+    bgLeaf = std::get_if<Bsdf::DielectricData>(
+        &closure.bsdfTree.nodes[0].data);
+    fgLeaf = std::get_if<Bsdf::DielectricData>(
+        &closure.bsdfTree.nodes[1].data);
+    const bool valid = bgLeaf && fgLeaf &&
+        Test_IsClose(bgLeaf->normal, normalShdWldExt, 1.0e-6f) &&
+        Test_IsClose(fgLeaf->normal, fgNormal, 1.0e-6f) &&
+        evaluated.normal == closure.normal;
+    if (!valid) {
+        printf(
+            "    Unexpected validated leaves: graph=(%f,%f,%f), "
+            "bg=(%f,%f,%f), fg=(%f,%f,%f)\n",
+            normalShdWldExt[0], normalShdWldExt[1], normalShdWldExt[2],
+            bgLeaf ? bgLeaf->normal[0] : 0.0f,
+            bgLeaf ? bgLeaf->normal[1] : 0.0f,
+            bgLeaf ? bgLeaf->normal[2] : 0.0f,
+            fgLeaf ? fgLeaf->normal[0] : 0.0f,
+            fgLeaf ? fgLeaf->normal[1] : 0.0f,
+            fgLeaf ? fgLeaf->normal[2] : 0.0f);
+    }
+    return valid;
+}
+
+static bool
+TestResolveGraphNormalFallbacks()
+{
+    ShadingContext ctx;
+    ctx.normal = Vec3f(0.0f, 0.0f, 1.0f);
+
+    SurfaceClosure closure;
+    if (!Test_IsClose(ResolveGraphNormal(closure, ctx), ctx.normal)) {
+        return false;
+    }
+
+    closure.normalSpace = SurfaceNormalSpace::World;
+    closure.normal = -ctx.normal;
+    if (!Test_IsClose(ResolveGraphNormal(closure, ctx), ctx.normal)) {
+        return false;
+    }
+
+    closure.normal = Vec3f(
+        std::numeric_limits<float>::infinity(), 0.0f, 1.0f);
+    return Test_IsClose(ResolveGraphNormal(closure, ctx), ctx.normal);
+}
+
+static bool
 TestEvaluateConstantDisplacement()
 {
     MaterialGraph network;
@@ -1248,6 +1381,8 @@ Test_RegisterGraphTests()
     _REG(TestCompileVolumeOnlyMaterial);
     _REG(TestDotSurfaceShaderTerminalPassThrough);
     _REG(TestMixSurfaceClosuresPreservesVolumeBoundaryIdentity);
+    _REG(TestMixedGraphLeafNormalsValidateAgainstFinalGraphNormal);
+    _REG(TestResolveGraphNormalFallbacks);
     _REG(TestEvaluateConstantDisplacement);
     _REG(TestEvaluatePositionSineDisplacement);
     _REG(TestInputReevaluationUsesModifiedContext);

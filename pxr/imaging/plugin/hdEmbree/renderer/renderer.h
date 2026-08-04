@@ -934,8 +934,6 @@ private:
     /// \param rayHit Valid renderer geometry hit; misses and lights fail.
     /// \param outClosure Non-null output written only after successful graph
     /// evaluation.
-    /// \param normalShdWldOutOutput Optional normalized material-resolved
-    /// shading normal output.
     /// \param normalGeomWldExtOutput Optional normalized authored-exterior
     /// geometric normal output.
     /// \param outGeometry Optional borrowed prototype pointer output, valid
@@ -945,7 +943,6 @@ private:
     bool _TryEvalSurfaceClosureAtHit(
         RTCRayHit const& rayHit, GfVec3f const& omegaOutWld,
         mxcpp::SurfaceClosure* outClosure,
-        GfVec3f* normalShdWldOutOutput = nullptr,
         GfVec3f* normalGeomWldExtOutput = nullptr,
         PrototypeContext const** outGeometry = nullptr) const;
 
@@ -1071,9 +1068,6 @@ private:
     mutable std::atomic<uint64_t> _sssSuccessCount;
     mutable std::atomic<uint64_t> _sssWalkStepCount;
     mutable std::atomic<uint64_t> _sssIntersectionCount;
-
-    // Material normals rejected by finite/length/base-hemisphere checks.
-    mutable std::atomic<uint64_t> _invalidMaterialNormalCount = 0;
 
     // Render start time for elapsed time tracking.
     std::chrono::steady_clock::time_point _renderStartTime;

@@ -6,7 +6,6 @@
 
 #include <renderer/materials/MaterialXCpp/mathTypes.h>
 
-#include <cassert>
 #include <cstdint>
 #include <limits>
 #include <type_traits>
@@ -273,7 +272,6 @@ struct ClosureTree
 {
     std::vector<Node> nodes;
     NodeId root = InvalidNodeId;
-    bool shadingNormalsPrepared = false;
     Vec3f luminanceCoefficients =
         Vec3f(0.212639005871510f,
               0.715168678767756f,
@@ -283,7 +281,6 @@ struct ClosureTree
     {
         nodes.clear();
         root = InvalidNodeId;
-        shadingNormalsPrepared = false;
     }
 
     bool Empty() const
@@ -299,7 +296,6 @@ struct ClosureTree
     template <class T>
     NodeId Add(T data)
     {
-        assert(!shadingNormalsPrepared);
         const NodeId nodeId = static_cast<NodeId>(nodes.size());
         nodes.push_back(Node{NodeData{std::move(data)}});
         return nodeId;
@@ -307,7 +303,6 @@ struct ClosureTree
 
     NodeId Add(NodeData data)
     {
-        assert(!shadingNormalsPrepared);
         const NodeId nodeId = static_cast<NodeId>(nodes.size());
         nodes.push_back(Node{std::move(data)});
         return nodeId;

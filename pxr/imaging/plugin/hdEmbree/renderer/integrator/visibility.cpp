@@ -175,7 +175,7 @@ ty::Renderer::_Visibility(GfVec3f const& posWld,
         GfVec3f normalGeomBlockerWldExt(0.0f);
         ty::PrototypeContext const* hitMesh = nullptr;
         const bool hasClosure = _TryEvalSurfaceClosureAtHit(
-            rayHit, -dirShadowWld, &closure, nullptr,
+            rayHit, -dirShadowWld, &closure,
             &normalGeomBlockerWldExt, &hitMesh);
 
         const bool exitsCurrentMedium =

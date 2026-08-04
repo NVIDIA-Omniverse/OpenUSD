@@ -11,8 +11,6 @@
 
 #include <renderer/materials/MaterialXCpp/materials/bsdf.h>
 
-#include <cstddef>
-
 namespace mxcpp {
 namespace Bsdf {
 namespace detail {
@@ -28,28 +26,23 @@ Bsdf::ClosureTree PruneCausticClassLobes(const Bsdf::ClosureTree& tree);
 /// contain sanitized material parameters. Does not throw.
 bool UsesGeometricNormalCorrection(const Bsdf::AdobeOpenPbrData& data);
 
-/// Resolves and stores every surface leaf normal once for later traversals.
-/// Authored normals are normalized and accepted only in the hemisphere of the
-/// final finite unit exterior material `normalShdWldExt`; invalid values fall
-/// back without negation. This deliberately validates the hierarchy in order:
-/// the graph normal against the exterior smooth frame, then each lobe normal
-/// against the resolved exterior graph normal. The complete normals are faced
-/// to the incident side selected by `frontFacing`. Delta reflective and
+/// Prepares every validated surface leaf normal once for later traversals.
+/// Un-authored leaves inherit finite unit incident-side `normalShdWldOut`;
+/// authored leaves must already contain finite unit exterior normals validated
+/// against the graph normal and are faced to the same side. Delta reflective and
 /// subsurface-entry normals are then raised toward finite unit incident-side
 /// `normalGeomWldOut` when needed to keep their deterministic mirror direction
 /// above the geometric surface. Finite-roughness normals remain uncorrected;
 /// collapsing them onto the grazing threshold creates bright contour ridges.
 /// Their generated directions are instead validated at sampling. `tree` must
-/// be non-null. Returns the number of invalid authored values replaced. Tree
-/// This is a one-shot operation on a tree whose leaves still contain authored
-/// values. The tree must not be mutated afterwards. Allocation-free and does
-/// not throw.
-std::size_t PrepareShadingNormals(
+/// be non-null. This is a one-shot operation on a tree whose authored leaves
+/// have already been validated. The tree must not be mutated afterwards.
+/// Allocation-free and does not throw.
+void PrepareShadingNormals(
     Bsdf::ClosureTree* tree,
-    const Vec3f& normalShdWldExt,
+    const Vec3f& normalShdWldOut,
     const Vec3f& normalGeomWldOut,
-    const Vec3f& omegaOutWld,
-    bool frontFacing = true);
+    const Vec3f& omegaOutWld);
 
 /// Evaluates the closure subtree rooted at `nodeId`.
 /// `nodeId` may be invalid, in which case zero is returned. `interaction`

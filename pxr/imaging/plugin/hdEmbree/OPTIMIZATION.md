@@ -487,6 +487,31 @@ does not isolate individual optimizations. The final reviewed implementation's
 complete Typhoon rendered gate passed 438 cases in 278.77 seconds. Release was
 restored after profiling.
 
+## Normal-Lifecycle Refactor Benchmark (2026-08-04)
+
+The normal-lifecycle refactor resolves the final composited graph normal before
+validating leaf normals, prepares path closures exactly once, and skips closure
+normal work for shadow-surface evaluation. Five fixed-seed Release repetitions
+compared detached `b73f9c0b1` with the complete change on the same machine.
+Both builds used `--complexity high` and `ty:randomNumberSeed = 1`; scene-authored
+resolution, sampling, and path settings were unchanged.
+
+| Case | Metric | Before | After | Delta |
+| --- | --- | ---: | ---: | ---: |
+| `openPbr_parameter_parity` | Renderer time | 0.3942 s | 0.3952 s | +0.25% |
+|  | Samples/s | 28.285 M | 28.205 M | -0.28% |
+|  | End-to-end time | 0.5835 s | 0.5730 s | -1.81% |
+| `transparency_material_gallery` | Renderer time | 1.7550 s | 1.6734 s | -4.65% |
+|  | Samples/s | 6.354 M | 6.658 M | +4.77% |
+|  | End-to-end time | 2.0046 s | 1.8922 s | -5.61% |
+
+The material-heavy result is neutral within run-to-run variation. The
+visibility-heavy result is consistent with removing graph-normal resolution,
+leaf validation, and closure preparation from shadow rays, but the aggregate
+comparison does not isolate those operations. `perf stat` end-to-end relative
+standard deviations were 2.53% before and 0.37% after for the material case,
+and 1.04% before and 1.10% after for the visibility case.
+
 ## Validation Rules
 
 For each optimization:

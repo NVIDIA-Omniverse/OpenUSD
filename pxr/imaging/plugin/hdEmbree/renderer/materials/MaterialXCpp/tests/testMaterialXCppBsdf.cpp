@@ -4,6 +4,7 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
+#include <renderer/materials/MaterialXCpp/graph.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf/closureTraversal.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf/dielectricReflFrontLut.h>
@@ -72,15 +73,14 @@ _PrepareTestClosure(const SurfaceClosure& source,
                     const SurfaceInteraction& interaction)
 {
     SurfaceClosure closure = source;
-    if (closure.HasBsdfTree() &&
-        !closure.bsdfTree.shadingNormalsPrepared) {
+    if (closure.HasBsdfTree()) {
         const Vec3f normalShdWldExt = interaction.frontFacing
             ? interaction.normalShdWldOut
             : -interaction.normalShdWldOut;
+        ValidateLeafNormals(&closure.bsdfTree, normalShdWldExt);
         Bsdf::detail::PrepareShadingNormals(
-            &closure.bsdfTree, normalShdWldExt,
-            interaction.normalGeomWldOut, interaction.omegaOutWld,
-            interaction.frontFacing);
+            &closure.bsdfTree, interaction.normalShdWldOut,
+            interaction.normalGeomWldOut, interaction.omegaOutWld);
     }
     return closure;
 }
@@ -91,6 +91,14 @@ _PdfSurface(const SurfaceClosure& source,
             const Vec3f& omegaInWld)
 {
     const SurfaceClosure closure = _PrepareTestClosure(source, interaction);
+    return Bsdf::PdfSurface(closure, interaction, omegaInWld);
+}
+
+static float
+_PdfPreparedSurface(const SurfaceClosure& closure,
+                    const SurfaceInteraction& interaction,
+                    const Vec3f& omegaInWld)
+{
     return Bsdf::PdfSurface(closure, interaction, omegaInWld);
 }
 
@@ -157,6 +165,59 @@ struct TestSurfaceApi
         float heroWavelengthNm = 0.0f, bool frontFacing = true)
     {
         return _SampleSurface(closure, _MakeSurfaceInteraction(normalShdWldOut, normalSrfWldOut, normalGeomWldOut, omegaOutWld, heroWavelengthNm, frontFacing), u1, u2, uLobe);
+    }
+};
+
+// Explicitly prepared fixtures bypass the convenience preparation above.
+// This keeps the production one-shot preparation contract visible in tests.
+struct PreparedSurfaceApi
+{
+    static Vec3f EvalSurface(
+        const SurfaceClosure& closure, const Vec3f& normalWldOut,
+        const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
+        float heroWavelengthNm = 0.0f, bool frontFacing = true)
+    {
+        const SurfaceInteraction interaction = _MakeSurfaceInteraction(
+            normalWldOut, normalWldOut, normalWldOut, omegaOutWld,
+            heroWavelengthNm, frontFacing);
+        return Bsdf::EvalSurface(closure, interaction, omegaInWld);
+    }
+
+    static Vec3f EvalSurface(
+        const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
+        const Vec3f& normalSrfWldOut, const Vec3f& omegaInWld,
+        const Vec3f& omegaOutWld, float heroWavelengthNm = 0.0f,
+        bool frontFacing = true)
+    {
+        const SurfaceInteraction interaction = _MakeSurfaceInteraction(
+            normalShdWldOut, normalSrfWldOut, normalSrfWldOut,
+            omegaOutWld, heroWavelengthNm, frontFacing);
+        return Bsdf::EvalSurface(closure, interaction, omegaInWld);
+    }
+
+    static Bsdf::BsdfSample SampleSurface(
+        const SurfaceClosure& closure, const Vec3f& normalWldOut,
+        const Vec3f& omegaOutWld, float u1, float u2, float uLobe,
+        float heroWavelengthNm = 0.0f, bool frontFacing = true)
+    {
+        const SurfaceInteraction interaction = _MakeSurfaceInteraction(
+            normalWldOut, normalWldOut, normalWldOut, omegaOutWld,
+            heroWavelengthNm, frontFacing);
+        return Bsdf::SampleSurface(
+            closure, interaction, u1, u2, uLobe);
+    }
+
+    static Bsdf::BsdfSample SampleSurface(
+        const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
+        const Vec3f& normalSrfWldOut, const Vec3f& normalGeomWldOut,
+        const Vec3f& omegaOutWld, float u1, float u2, float uLobe,
+        float heroWavelengthNm = 0.0f, bool frontFacing = true)
+    {
+        const SurfaceInteraction interaction = _MakeSurfaceInteraction(
+            normalShdWldOut, normalSrfWldOut, normalGeomWldOut,
+            omegaOutWld, heroWavelengthNm, frontFacing);
+        return Bsdf::SampleSurface(
+            closure, interaction, u1, u2, uLobe);
     }
 };
 
@@ -2117,7 +2178,7 @@ TestIncidentFrameBackFaceSelectsInteriorIor()
     const Vec3f omegaOutWld = Vec3f(0.2f, -0.98f, 0.0f).normalized();
     Bsdf::detail::PrepareShadingNormals(
         &closure.bsdfTree, incidentN, incidentN, omegaOutWld);
-    const Bsdf::BsdfSample incidentSample = TestSurfaceApi::SampleSurface(
+    const Bsdf::BsdfSample incidentSample = PreparedSurfaceApi::SampleSurface(
         closure, incidentN, omegaOutWld, 0.3f, 0.7f, 0.5f, 0.0f, false);
 
     if (incidentSample.pdfSolidAngle <= 0.0f ||
@@ -2127,10 +2188,10 @@ TestIncidentFrameBackFaceSelectsInteriorIor()
         return false;
     }
 
-    const Vec3f incidentEval = TestSurfaceApi::EvalSurface(
+    const Vec3f incidentEval = PreparedSurfaceApi::EvalSurface(
         closure, incidentN, incidentSample.omegaInWld, omegaOutWld,
         0.0f, false);
-    const float incidentPdf = _PdfSurface(closure, _MakeSurfaceInteraction(incidentN, incidentN, incidentN, omegaOutWld, 0.0f, false), incidentSample.omegaInWld);
+    const float incidentPdf = _PdfPreparedSurface(closure, _MakeSurfaceInteraction(incidentN, incidentN, incidentN, omegaOutWld, 0.0f, false), incidentSample.omegaInWld);
     if (incidentEval.length() <= 0.0f ||
         !Test_IsClose(
             incidentSample.pdfSolidAngle, incidentPdf, 1.0e-6f)) {
@@ -2294,30 +2355,30 @@ TestOpenPbrInterfaceAddsBsdlDiffuseDielectricCompensation()
         const Vec3f omegaInTransmission1Wld = -omegaInReflection1Wld;
         const Vec3f omegaInTransmission2Wld = -omegaInReflection2Wld;
 
-        const Vec3f compensatedR1 = TestSurfaceApi::EvalSurface(
+        const Vec3f compensatedR1 = PreparedSurfaceApi::EvalSurface(
             closure, normalIncidentWldOut, omegaInReflection1Wld, omegaOutWld,
             0.0f, !backfacing);
-        const Vec3f compensatedR2 = TestSurfaceApi::EvalSurface(
+        const Vec3f compensatedR2 = PreparedSurfaceApi::EvalSurface(
             closure, normalIncidentWldOut, omegaInReflection2Wld, omegaOutWld,
             0.0f, !backfacing);
-        const Vec3f compensatedT1 = TestSurfaceApi::EvalSurface(
+        const Vec3f compensatedT1 = PreparedSurfaceApi::EvalSurface(
             closure, normalIncidentWldOut, omegaInTransmission1Wld, omegaOutWld,
             0.0f, !backfacing);
-        const Vec3f compensatedT2 = TestSurfaceApi::EvalSurface(
+        const Vec3f compensatedT2 = PreparedSurfaceApi::EvalSurface(
             closure, normalIncidentWldOut, omegaInTransmission2Wld, omegaOutWld,
             0.0f, !backfacing);
 
         Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(false);
-        const Vec3f rawR1 = TestSurfaceApi::EvalSurface(
+        const Vec3f rawR1 = PreparedSurfaceApi::EvalSurface(
             closure, normalIncidentWldOut, omegaInReflection1Wld, omegaOutWld,
             0.0f, !backfacing);
-        const Vec3f rawR2 = TestSurfaceApi::EvalSurface(
+        const Vec3f rawR2 = PreparedSurfaceApi::EvalSurface(
             closure, normalIncidentWldOut, omegaInReflection2Wld, omegaOutWld,
             0.0f, !backfacing);
-        const Vec3f rawT1 = TestSurfaceApi::EvalSurface(
+        const Vec3f rawT1 = PreparedSurfaceApi::EvalSurface(
             closure, normalIncidentWldOut, omegaInTransmission1Wld, omegaOutWld,
             0.0f, !backfacing);
-        const Vec3f rawT2 = TestSurfaceApi::EvalSurface(
+        const Vec3f rawT2 = PreparedSurfaceApi::EvalSurface(
             closure, normalIncidentWldOut, omegaInTransmission2Wld, omegaOutWld,
             0.0f, !backfacing);
         Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
@@ -2459,7 +2520,7 @@ TestCoupledRoughDielectricDirectionalTransmissionAlbedo()
                     [&](const Vec3f& omegaInUpperWld) {
                         const Vec3f omegaInWld =
                             backfacing ? omegaInUpperWld : -omegaInUpperWld;
-                        return TestSurfaceApi::EvalSurface(
+                        return PreparedSurfaceApi::EvalSurface(
                             closure, normalIncidentWldOut,
                             omegaInWld, omegaOutWld, 0.0f, !backfacing);
                     },
@@ -2797,7 +2858,7 @@ TestCoupledRoughDielectricTransmissionMatchesFixedWalterReferences()
         Bsdf::detail::PrepareShadingNormals(
             &prepared.bsdfTree, normalIncidentWldOut,
             normalIncidentWldOut, omegaOutWld);
-        const Vec3f evaluated = TestSurfaceApi::EvalSurface(
+        const Vec3f evaluated = PreparedSurfaceApi::EvalSurface(
             prepared, normalIncidentWldOut, omegaInWld, omegaOutWld,
             0.0f, !backfacing);
         const int side = backfacing ? 1 : 0;
@@ -2923,7 +2984,7 @@ TestCoupledRoughDielectricSamplesTransmissionBeyondMacroCriticalAngle()
     int transmissionCount = 0;
     for (int i = 0; i < 5000; ++i) {
         const Bsdf::BsdfSample sample =
-            TestSurfaceApi::SampleSurface(closure, normalShdWldOut, omegaOutWld,
+            PreparedSurfaceApi::SampleSurface(closure, normalShdWldOut, omegaOutWld,
                                 nextFloat(), nextFloat(), nextFloat(),
                                 0.0f, false);
         if (!(sample.pdfSolidAngle > 0.0f)) {
@@ -3008,6 +3069,7 @@ TestDeltaDielectricInterfaceTirDoesNotAmplifyThroughput()
 
     const Vec3f normalShdWldOut(0.0f, -1.0f, 0.0f);
     const Vec3f omegaOutWld = Vec3f(0.8f, -0.6f, 0.0f).normalized();
+    ValidateLeafNormals(&c.bsdfTree, normalShdWldOut);
     Bsdf::detail::PrepareShadingNormals(
         &c.bsdfTree, normalShdWldOut, normalShdWldOut, omegaOutWld);
     const Bsdf::DielectricInterfaceData* preparedInterface =
@@ -3019,10 +3081,12 @@ TestDeltaDielectricInterfaceTirDoesNotAmplifyThroughput()
         printf("    Expected TIR interface reflection normal correction\n");
         return false;
     }
-    const auto sample =
-        TestSurfaceApi::SampleSurface(
-            c, normalShdWldOut, omegaOutWld,
-            0.3f, 0.7f, 0.99f, 0.0f, false);
+    const Bsdf::BsdfSample sample = Bsdf::detail::SampleNode(
+        c.bsdfTree, c.bsdfTree.root,
+        _MakeSurfaceInteraction(
+            normalShdWldOut, normalShdWldOut, normalShdWldOut,
+            omegaOutWld, 0.0f, false),
+        0.3f, 0.7f, 0.99f);
     if (sample.pdfSolidAngle <= 0.0f || !sample.isSpecular ||
         sample.isTransmission) {
         printf("    Expected valid delta TIR sample\n");
@@ -3153,11 +3217,10 @@ TestPrunePreservesPreparedLeafNormals()
     const Vec3f omegaOutWld(0.0f, 0.0f, 1.0f);
     const Vec3f omegaInWld =
         Vec3f(0.2f, 0.1f, 0.97f).normalized();
-    if (Bsdf::detail::PrepareShadingNormals(
-            &closure.bsdfTree, normalShdWldOut,
-            normalGeomWldOut, omegaOutWld) != 0) {
-        return false;
-    }
+    ValidateLeafNormals(&closure.bsdfTree, normalShdWldOut);
+    Bsdf::detail::PrepareShadingNormals(
+        &closure.bsdfTree, normalShdWldOut,
+        normalGeomWldOut, omegaOutWld);
 
     const SurfaceClosure pruned = Bsdf::PruneCausticClassLobes(closure);
     const Bsdf::BurleyDiffuseData* prunedDiffuse = nullptr;
@@ -3171,22 +3234,22 @@ TestPrunePreservesPreparedLeafNormals()
     const Bsdf::BurleyDiffuseData* sourceDiffuse =
         std::get_if<Bsdf::BurleyDiffuseData>(
             &closure.bsdfTree.nodes[add.in2].data);
-    if (!pruned.bsdfTree.shadingNormalsPrepared || !prunedDiffuse ||
-        !sourceDiffuse || !prunedDiffuse->hasShadingNormal ||
+    if (!prunedDiffuse || !sourceDiffuse ||
+        !prunedDiffuse->hasShadingNormal ||
         !Test_IsClose(
             prunedDiffuse->normal, sourceDiffuse->normal, 1.0e-6f)) {
         return false;
     }
 
-    const Vec3f sourceEval = TestSurfaceApi::EvalSurface(
+    const Vec3f sourceEval = PreparedSurfaceApi::EvalSurface(
         closure, normalShdWldOut, omegaInWld, omegaOutWld);
-    const Vec3f prunedEval = TestSurfaceApi::EvalSurface(
+    const Vec3f prunedEval = PreparedSurfaceApi::EvalSurface(
         pruned, normalShdWldOut, omegaInWld, omegaOutWld);
-    const float sourcePdf = _PdfSurface(closure, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld), omegaInWld);
-    const float prunedPdf = _PdfSurface(pruned, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld), omegaInWld);
-    const Bsdf::BsdfSample sourceSample = TestSurfaceApi::SampleSurface(
+    const float sourcePdf = _PdfPreparedSurface(closure, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld), omegaInWld);
+    const float prunedPdf = _PdfPreparedSurface(pruned, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld), omegaInWld);
+    const Bsdf::BsdfSample sourceSample = PreparedSurfaceApi::SampleSurface(
         closure, normalShdWldOut, omegaOutWld, 0.3f, 0.7f, 0.2f);
-    const Bsdf::BsdfSample prunedSample = TestSurfaceApi::SampleSurface(
+    const Bsdf::BsdfSample prunedSample = PreparedSurfaceApi::SampleSurface(
         pruned, normalShdWldOut, omegaOutWld, 0.3f, 0.7f, 0.2f);
     return Test_IsClose(sourceEval, prunedEval, 1.0e-6f) &&
         Test_IsClose(sourcePdf, prunedPdf, 1.0e-6f) &&
@@ -4473,7 +4536,7 @@ TestDielectricInterfaceUsesExactFresnel()
         Bsdf::detail::PrepareShadingNormals(
             &prepared.bsdfTree, normalIncidentWldOut,
             normalIncidentWldOut, omegaOutWld);
-        const Bsdf::BsdfSample sample = TestSurfaceApi::SampleSurface(
+        const Bsdf::BsdfSample sample = PreparedSurfaceApi::SampleSurface(
             prepared, normalIncidentWldOut, omegaOutWld,
             0.5f, 0.5f, 0.5f, 0.0f, !c.inside);
         if (!(sample.pdfSolidAngle > 0.0f) || !sample.isSpecular) {
@@ -4527,7 +4590,7 @@ _CheckTransparentClosureEnergy(
                 const float u1 = _CounterRandomFloat(sampleIndex, 0);
                 const float u2 = _CounterRandomFloat(sampleIndex, 1);
                 const float uChoice = _CounterRandomFloat(sampleIndex, 2);
-                const Bsdf::BsdfSample sample = TestSurfaceApi::SampleSurface(
+                const Bsdf::BsdfSample sample = PreparedSurfaceApi::SampleSurface(
                     prepared, normalIncidentWldOut, omegaOutWld,
                     u1, u2, uChoice, 0.0f, side == 0);
                 if (!(sample.pdfSolidAngle > 0.0f)) {
@@ -4718,7 +4781,7 @@ TestOpenPbrAnisotropicTintedPartialTransmissionSamplingMatchesIntegration()
             const float u1 = _CounterRandomFloat(sampleIndex, 10);
             const float u2 = _CounterRandomFloat(sampleIndex, 11);
             const float uChoice = _CounterRandomFloat(sampleIndex, 12);
-            const Bsdf::BsdfSample sample = TestSurfaceApi::SampleSurface(
+            const Bsdf::BsdfSample sample = PreparedSurfaceApi::SampleSurface(
                 prepared, normalIncidentWldOut, omegaOutWld,
                 u1, u2, uChoice, 0.0f, !inside);
             if (sample.pdfSolidAngle > 0.0f) {
@@ -4736,14 +4799,14 @@ TestOpenPbrAnisotropicTintedPartialTransmissionSamplingMatchesIntegration()
             const float radius = std::sqrt(std::max(0.0f, 1.0f - y * y));
             const Vec3f omegaInWld(radius * std::cos(phi), y,
                                    radius * std::sin(phi));
-            const Vec3f evaluated = TestSurfaceApi::EvalSurface(
+            const Vec3f evaluated = PreparedSurfaceApi::EvalSurface(
                 prepared, normalIncidentWldOut, omegaInWld, omegaOutWld,
                 0.0f, !inside);
             integratedEnergy +=
                 evaluated *
                 (std::abs(Dot(normalIncidentWldOut, omegaInWld)) /
                  uniformSpherePdf);
-            const float surfacePdf = _PdfSurface(prepared, _MakeSurfaceInteraction(normalIncidentWldOut, normalIncidentWldOut, normalIncidentWldOut, omegaOutWld, 0.0f, !inside), omegaInWld);
+            const float surfacePdf = _PdfPreparedSurface(prepared, _MakeSurfaceInteraction(normalIncidentWldOut, normalIncidentWldOut, normalIncidentWldOut, omegaOutWld, 0.0f, !inside), omegaInWld);
             if (_FurnaceLuminance(evaluated) > 1.0e-7f &&
                 surfacePdf <= 0.0f) {
                 printf("      evaluated BSDF has no sampling support\n");
@@ -4854,14 +4917,13 @@ TestBackFacePreparationNegatesCompleteExteriorNormal()
     const Vec3f normalShdWldExt(0.0f, 0.0f, 1.0f);
     const Vec3f normalGeomWldOut(0.0f, 0.0f, -1.0f);
     const Vec3f omegaOutWld(0.0f, 0.0f, -1.0f);
-    const std::size_t invalidCount =
-        Bsdf::detail::PrepareShadingNormals(
-            &tree, normalShdWldExt, normalGeomWldOut, omegaOutWld,
-            /* frontFacing = */ false);
+    ValidateLeafNormals(&tree, normalShdWldExt);
+    Bsdf::detail::PrepareShadingNormals(
+        &tree, -normalShdWldExt, normalGeomWldOut, omegaOutWld);
     const Bsdf::DielectricInterfaceData* const prepared =
         std::get_if<Bsdf::DielectricInterfaceData>(
             &tree.nodes[interfaceId].data);
-    if (invalidCount != 0 || !prepared ||
+    if (!prepared ||
         !Test_IsClose(
             prepared->normal, -interface.normal, 1.0e-6f)) {
         return false;
@@ -4869,9 +4931,10 @@ TestBackFacePreparationNegatesCompleteExteriorNormal()
 
     Bsdf::ClosureTree frontTree;
     frontTree.root = frontTree.Add(interface);
+    ValidateLeafNormals(&frontTree, normalShdWldExt);
     Bsdf::detail::PrepareShadingNormals(
         &frontTree, normalShdWldExt, normalShdWldExt,
-        normalShdWldExt, /* frontFacing = */ true);
+        normalShdWldExt);
     const Bsdf::DielectricInterfaceData* const frontPrepared =
         std::get_if<Bsdf::DielectricInterfaceData>(
             &frontTree.nodes[frontTree.root].data);
@@ -4902,7 +4965,7 @@ TestBackFacePreparationNegatesCompleteExteriorNormal()
 }
 
 static bool
-TestPerLobeInvalidNormalsAreObservable()
+TestPerLobeInvalidNormalsFallBack()
 {
     Bsdf::ClosureTree tree;
     Bsdf::ConductorData inverted;
@@ -4926,31 +4989,69 @@ TestPerLobeInvalidNormalsAreObservable()
     const Vec3f normalShdWldOut(0.0f, 0.0f, 1.0f);
     const Vec3f normalGeomWldOut(0.0f, 0.0f, 1.0f);
     const Vec3f omegaOutWld(0.0f, 0.0f, 1.0f);
-    const std::size_t invalidCount =
-        Bsdf::detail::PrepareShadingNormals(
-            &tree, normalShdWldOut, normalGeomWldOut, omegaOutWld);
-    if (invalidCount != 3) {
-        std::printf(
-            "    Expected three invalid per-lobe normals, got %zu\n",
-            invalidCount);
-        return false;
-    }
+    ValidateLeafNormals(&tree, normalShdWldOut);
+    Bsdf::detail::PrepareShadingNormals(
+        &tree, normalShdWldOut, normalGeomWldOut, omegaOutWld);
     const Bsdf::ConductorData* sanitizedInverted =
         std::get_if<Bsdf::ConductorData>(&tree.nodes[0].data);
     const Bsdf::SheenData* sanitizedDegenerate =
         std::get_if<Bsdf::SheenData>(&tree.nodes[1].data);
     const Bsdf::OrenNayarDiffuseData* sanitizedNonFinite =
         std::get_if<Bsdf::OrenNayarDiffuseData>(&tree.nodes[3].data);
+    const Bsdf::BurleyDiffuseData* normalizedValid =
+        std::get_if<Bsdf::BurleyDiffuseData>(&tree.nodes[2].data);
     return sanitizedInverted && sanitizedDegenerate && sanitizedNonFinite &&
+        normalizedValid &&
         Test_IsClose(
             sanitizedInverted->normal, normalShdWldOut, 1.0e-6f) &&
         Test_IsClose(
             sanitizedDegenerate->normal, normalShdWldOut, 1.0e-6f) &&
         Test_IsClose(
             sanitizedNonFinite->normal, normalShdWldOut, 1.0e-6f) &&
+        Test_IsClose(
+            normalizedValid->normal, normalShdWldOut, 1.0e-6f) &&
         sanitizedInverted->hasShadingNormal &&
         sanitizedDegenerate->hasShadingNormal &&
         sanitizedNonFinite->hasShadingNormal;
+}
+
+template <typename T>
+static bool
+_ValidateLeafNormalType()
+{
+    Bsdf::ClosureTree tree;
+    T valid;
+    valid.hasShadingNormal = true;
+    valid.normal = Vec3f(0.0f, 0.0f, 2.0f);
+    const Bsdf::NodeId validId = tree.Add(valid);
+    T invalid;
+    invalid.hasShadingNormal = true;
+    invalid.normal = Vec3f(0.0f, 0.0f, -1.0f);
+    const Bsdf::NodeId invalidId = tree.Add(invalid);
+
+    const Vec3f normalShdWldExt(0.0f, 0.0f, 1.0f);
+    ValidateLeafNormals(&tree, normalShdWldExt);
+    const T* validated = std::get_if<T>(&tree.nodes[validId].data);
+    const T* fallback = std::get_if<T>(&tree.nodes[invalidId].data);
+    return validated && fallback &&
+        Test_IsClose(validated->normal, normalShdWldExt, 1.0e-6f) &&
+        Test_IsClose(fallback->normal, normalShdWldExt, 1.0e-6f);
+}
+
+static bool
+TestValidateLeafNormalsDispatchesEverySurfaceLeafType()
+{
+    return
+        _ValidateLeafNormalType<Bsdf::OrenNayarDiffuseData>() &&
+        _ValidateLeafNormalType<Bsdf::BurleyDiffuseData>() &&
+        _ValidateLeafNormalType<Bsdf::TranslucentData>() &&
+        _ValidateLeafNormalType<Bsdf::SubsurfaceData>() &&
+        _ValidateLeafNormalType<Bsdf::DielectricData>() &&
+        _ValidateLeafNormalType<Bsdf::DielectricInterfaceData>() &&
+        _ValidateLeafNormalType<Bsdf::ConductorData>() &&
+        _ValidateLeafNormalType<Bsdf::GeneralizedSchlickData>() &&
+        _ValidateLeafNormalType<Bsdf::SheenData>() &&
+        _ValidateLeafNormalType<Bsdf::AdobeOpenPbrData>();
 }
 
 static bool
@@ -4975,10 +5076,9 @@ TestAllLeafShadingNormalPreparation()
     const Vec3f normalGeomWldOut(0.0f, 0.0f, 1.0f);
     const Vec3f omegaOutWld =
         Vec3f(0.2f, 0.0f, 0.98f).normalized();
-    if (Bsdf::detail::PrepareShadingNormals(
-            &tree, normalShdWldOut, normalGeomWldOut, omegaOutWld) != 0) {
-        return false;
-    }
+    ValidateLeafNormals(&tree, normalShdWldOut);
+    Bsdf::detail::PrepareShadingNormals(
+        &tree, normalShdWldOut, normalGeomWldOut, omegaOutWld);
 
     const Bsdf::OrenNayarDiffuseData* diffuse =
         std::get_if<Bsdf::OrenNayarDiffuseData>(
@@ -4995,8 +5095,7 @@ TestAllLeafShadingNormalPreparation()
     const Vec3f expectedSpecular =
         Bsdf::detail::EnsureValidSpecularReflection(
             normalGeomWldOut, omegaOutWld, normalShdWldOut);
-    if (!tree.shadingNormalsPrepared || !diffuse || !conductor ||
-        !roughConductor || !authored ||
+    if (!diffuse || !conductor || !roughConductor || !authored ||
         !diffuse->hasShadingNormal || !conductor->hasShadingNormal ||
         !roughConductor->hasShadingNormal || !authored->hasShadingNormal ||
         !Test_IsClose(
@@ -5035,6 +5134,8 @@ TestAppendClosureTreePreservesLeafNormals()
         Vec3f(0.2f, 0.0f, 0.98f).normalized();
     const Vec3f omegaInWld =
         Vec3f(-0.3f, 0.1f, 0.95f).normalized();
+    ValidateLeafNormals(&source, normalShdWldOut);
+    ValidateLeafNormals(&target, normalShdWldOut);
     Bsdf::detail::PrepareShadingNormals(
         &source, normalShdWldOut, normalShdWldOut, omegaOutWld);
     Bsdf::detail::PrepareShadingNormals(
@@ -5132,7 +5233,7 @@ TestRoughReflectiveNormalIgnoresFacetedGeometry()
         const Bsdf::ConductorData* prepared =
             std::get_if<Bsdf::ConductorData>(
                 &closure.bsdfTree.nodes[0].data);
-        const Vec3f evaluated = TestSurfaceApi::EvalSurface(
+        const Vec3f evaluated = PreparedSurfaceApi::EvalSurface(
             closure, normalShdWldOut, omegaInWld, omegaOutWld,
             0.0f, true);
         if (!prepared ||
@@ -5175,18 +5276,18 @@ TestExplicitBaseNormalMatchesInheritedNormal()
     Bsdf::detail::PrepareShadingNormals(
         &explicitClosure.bsdfTree, normalShdWldOut, normalShdWldOut,
         omegaOutWld);
-    const Vec3f inheritedEval = TestSurfaceApi::EvalSurface(
+    const Vec3f inheritedEval = PreparedSurfaceApi::EvalSurface(
         inheritedClosure, normalShdWldOut, omegaInWld, omegaOutWld,
         0.0f, true);
-    const Vec3f explicitEval = TestSurfaceApi::EvalSurface(
+    const Vec3f explicitEval = PreparedSurfaceApi::EvalSurface(
         explicitClosure, normalShdWldOut, omegaInWld, omegaOutWld,
         0.0f, true);
-    const float inheritedPdf = _PdfSurface(inheritedClosure, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld, 0.0f, true), omegaInWld);
-    const float explicitPdf = _PdfSurface(explicitClosure, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld, 0.0f, true), omegaInWld);
-    const Bsdf::BsdfSample inheritedSample = TestSurfaceApi::SampleSurface(
+    const float inheritedPdf = _PdfPreparedSurface(inheritedClosure, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld, 0.0f, true), omegaInWld);
+    const float explicitPdf = _PdfPreparedSurface(explicitClosure, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld, 0.0f, true), omegaInWld);
+    const Bsdf::BsdfSample inheritedSample = PreparedSurfaceApi::SampleSurface(
         inheritedClosure, normalShdWldOut, omegaOutWld,
         0.3f, 0.7f, 0.2f, 0.0f, true);
-    const Bsdf::BsdfSample explicitSample = TestSurfaceApi::SampleSurface(
+    const Bsdf::BsdfSample explicitSample = PreparedSurfaceApi::SampleSurface(
         explicitClosure, normalShdWldOut, omegaOutWld,
         0.3f, 0.7f, 0.2f, 0.0f, true);
     return Test_IsClose(inheritedEval, explicitEval, 1.0e-6f) &&
@@ -5227,7 +5328,7 @@ TestNormalMappedTransmissionSurvivesDirectionAgreement()
         const float u1 = (static_cast<float>(i) + 0.5f) / 64.0f;
         const float u2 =
             (static_cast<float>((i * 13) % 64) + 0.5f) / 64.0f;
-        const Bsdf::BsdfSample sample = TestSurfaceApi::SampleSurface(
+        const Bsdf::BsdfSample sample = PreparedSurfaceApi::SampleSurface(
             closure, normalShdWldOut, normalSrfWldOut, normalSrfWldOut,
             omegaOutWld,
             u1, u2, 0.5f, 0.0f, true);
@@ -5333,11 +5434,10 @@ TestEnsureValidSpecularReflection()
     conductor.hasShadingNormal = true;
     conductor.normal = normalShdWldOut;
     roughClosure.bsdfTree.root = roughClosure.bsdfTree.Add(conductor);
-    if (Bsdf::detail::PrepareShadingNormals(
-            &roughClosure.bsdfTree, normalGeomWldOut,
-            normalGeomWldOut, omegaOutWld) != 0) {
-        return false;
-    }
+    ValidateLeafNormals(&roughClosure.bsdfTree, normalGeomWldOut);
+    Bsdf::detail::PrepareShadingNormals(
+        &roughClosure.bsdfTree, normalGeomWldOut,
+        normalGeomWldOut, omegaOutWld);
     const Bsdf::ConductorData* prepared =
         std::get_if<Bsdf::ConductorData>(
             &roughClosure.bsdfTree.nodes[0].data);
@@ -5359,11 +5459,11 @@ TestEnsureValidSpecularReflection()
             static_cast<float>(sampleCount);
         const float u2 =
             _RadicalInverseBase2(static_cast<std::uint32_t>(i));
-        const Bsdf::BsdfSample sample = TestSurfaceApi::SampleSurface(
+        const Bsdf::BsdfSample sample = PreparedSurfaceApi::SampleSurface(
             roughClosure, normalGeomWldOut, omegaOutWld,
             u1, u2, 0.5f, 0.0f, true);
         if (sample.pdfSolidAngle > 0.0f) {
-            const float evaluatedPdf = _PdfSurface(roughClosure, _MakeSurfaceInteraction(normalGeomWldOut, normalGeomWldOut, normalGeomWldOut, omegaOutWld, 0.0f, true), sample.omegaInWld);
+            const float evaluatedPdf = _PdfPreparedSurface(roughClosure, _MakeSurfaceInteraction(normalGeomWldOut, normalGeomWldOut, normalGeomWldOut, omegaOutWld, 0.0f, true), sample.omegaInWld);
             if (!Test_IsClose(
                     sample.pdfSolidAngle, evaluatedPdf,
                     2.0e-5f * std::max(1.0f, evaluatedPdf))) {
@@ -5381,7 +5481,7 @@ TestEnsureValidSpecularReflection()
         const float phi = _kFurnaceTwoPi * u2;
         const Vec3f uniformDirection(
             radius * std::cos(phi), radius * std::sin(phi), z);
-        const float pdf = _PdfSurface(roughClosure, _MakeSurfaceInteraction(normalGeomWldOut, normalGeomWldOut, normalGeomWldOut, omegaOutWld, 0.0f, true), uniformDirection);
+        const float pdf = _PdfPreparedSurface(roughClosure, _MakeSurfaceInteraction(normalGeomWldOut, normalGeomWldOut, normalGeomWldOut, omegaOutWld, 0.0f, true), uniformDirection);
         integratedMass += pdf;
         if (uniformDirection[0] > 0.0f) {
             integratedPositiveXMass += pdf;
@@ -5412,7 +5512,7 @@ TestEnsureValidSpecularReflection()
     Bsdf::detail::PrepareShadingNormals(
         &deltaClosure.bsdfTree, normalGeomWldOut,
         normalGeomWldOut, omegaOutWld);
-    const Bsdf::BsdfSample deltaSample = TestSurfaceApi::SampleSurface(
+    const Bsdf::BsdfSample deltaSample = PreparedSurfaceApi::SampleSurface(
         deltaClosure, normalGeomWldOut, omegaOutWld,
         0.3f, 0.7f, 0.5f, 0.0f, true);
     if (!deltaSample.isSpecular ||
@@ -5453,14 +5553,14 @@ TestEnsureValidSpecularReflection()
         const float u1 = (static_cast<float>(i) + 0.5f) / 256.0f;
         const float u2 =
             _RadicalInverseBase2(static_cast<std::uint32_t>(i));
-        const Bsdf::BsdfSample sample = TestSurfaceApi::SampleSurface(
+        const Bsdf::BsdfSample sample = PreparedSurfaceApi::SampleSurface(
             adobeClosure, normalShdWldOut, omegaOutWld,
             u1, u2, 0.75f, 0.0f, true);
         if (sample.pdfSolidAngle <= 0.0f || sample.isSubsurface) {
             continue;
         }
-        const float evaluatedPdf = _PdfSurface(adobeClosure, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld, 0.0f, true), sample.omegaInWld);
-        const Vec3f evaluated = TestSurfaceApi::EvalSurface(
+        const float evaluatedPdf = _PdfPreparedSurface(adobeClosure, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld, 0.0f, true), sample.omegaInWld);
+        const Vec3f evaluated = PreparedSurfaceApi::EvalSurface(
             adobeClosure, normalShdWldOut, sample.omegaInWld,
             omegaOutWld, 0.0f, true);
         const Vec3f correctedBasisValue = EvalAdobeOpenPbr(
@@ -5601,7 +5701,7 @@ TestPreparedSpecularNormalsIncludeSubsurfaceOnly()
     const Bsdf::SubsurfaceData* preparedSubsurface =
         std::get_if<Bsdf::SubsurfaceData>(
             &closure.bsdfTree.nodes[2].data);
-    const Bsdf::BsdfSample marker = TestSurfaceApi::SampleSurface(
+    const Bsdf::BsdfSample marker = PreparedSurfaceApi::SampleSurface(
         closure, normalGeomWldOut, normalGeomWldOut, normalGeomWldOut,
         omegaOutWld, 0.3f, 0.7f, 0.5f);
     if (!(preparedDiffuse && preparedTranslucent && preparedSubsurface &&
@@ -5621,7 +5721,7 @@ TestPreparedSpecularNormalsIncludeSubsurfaceOnly()
     Bsdf::detail::PrepareShadingNormals(
         &inheritedClosure.bsdfTree, authoredNormal, normalGeomWldOut,
         omegaOutWld);
-    const Bsdf::BsdfSample inheritedMarker = TestSurfaceApi::SampleSurface(
+    const Bsdf::BsdfSample inheritedMarker = PreparedSurfaceApi::SampleSurface(
         inheritedClosure, authoredNormal, normalGeomWldOut,
         normalGeomWldOut, omegaOutWld, 0.3f, 0.7f, 0.5f);
     const Vec3f corrected = Bsdf::detail::EnsureValidSpecularReflection(
@@ -5871,7 +5971,7 @@ TestStandardSurfaceProjectsEachLayerWithItsExactNormal()
             _RadicalInverseBase2(static_cast<std::uint32_t>(i));
         const float uLobe = std::fmod(
             (static_cast<float>(i) + 0.5f) * 0.61803398875f, 1.0f);
-        const Bsdf::BsdfSample sample = TestSurfaceApi::SampleSurface(
+        const Bsdf::BsdfSample sample = PreparedSurfaceApi::SampleSurface(
             closure, normalShdWldOut, normalSrfWldOut, normalGeomWldOut,
             omegaOutWld, u1, u2, uLobe);
         if (sample.pdfSolidAngle <= 0.0f || sample.isSpecular) {
@@ -5897,7 +5997,7 @@ TestStandardSurfaceProjectsEachLayerWithItsExactNormal()
             return false;
         }
 
-        const Vec3f evaluated = TestSurfaceApi::EvalSurface(
+        const Vec3f evaluated = PreparedSurfaceApi::EvalSurface(
             closure, normalShdWldOut, normalSrfWldOut,
             sample.omegaInWld, omegaOutWld);
         const Vec3f topEvaluated = Bsdf::detail::EvalNode(closure.bsdfTree, layer.top, _MakeSurfaceInteraction(normalShdWldOut, normalSrfWldOut, normalSrfWldOut, omegaOutWld, 0.0f, true), sample.omegaInWld, Bsdf::detail::BumpShadowingContext::Evaluation);
@@ -6176,7 +6276,8 @@ Test_RegisterBsdfTests()
     _REG(TestTreeDielectricCustomNormalMatchesStandaloneShadingNormal);
     _REG(TestPerLobeNormalResolutionIsViewIndependent);
     _REG(TestBackFacePreparationNegatesCompleteExteriorNormal);
-    _REG(TestPerLobeInvalidNormalsAreObservable);
+    _REG(TestPerLobeInvalidNormalsFallBack);
+    _REG(TestValidateLeafNormalsDispatchesEverySurfaceLeafType);
     _REG(TestAllLeafShadingNormalPreparation);
     _REG(TestAppendClosureTreePreservesLeafNormals);
     _REG(TestTreeDiffuseNormalIsIndependentOfViewHemisphere);

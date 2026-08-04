@@ -516,15 +516,27 @@ translucent correction is intentionally not adopted because Cycles marks that
 behavior as a glossy-only bug. Degenerate projected tangents and quartic
 denominators return the input shading normal; these and finite-roughness
 correction are Typhoon's deviations from the Cycles solve.
-`PrepareShadingNormals()` visits every node once, validates authored leaf
-normals in the authored exterior frame, supplies the graph normal to
-un-authored leaves, faces each complete resolved normal to the geometrically
-selected incident side, and applies any required correction before storing it
-in the leaf. Traversal reads only that prepared leaf value. Preparation is
-one-shot: it runs before traversal on fresh graph output, after which the tree
-is immutable. Tree copying, merging, and clearing happen before preparation.
-Prepared-tree pruning builds a new tree whose retained leaves preserve their
-prepared normals, then publishes prepared state after construction.
+Normal handling after graph evaluation has a fixed composable order.
+`ResolveGraphNormal()` resolves the fully assembled closure's graph normal
+through the exterior tangent frame and validates it against the smooth exterior
+normal. `ValidateLeafNormals()` then validates every authored leaf against that
+resolved graph normal while both remain in the exterior frame. The renderer
+faces the graph normal once using the immutable geometric `frontFacing`
+classification. Finally, `PrepareShadingNormals()` supplies that incident-side
+graph normal to un-authored leaves, faces validated authored leaves to the same
+side, and applies any required geometric correction before storing them.
+Rejected graph and leaf normals fall back to their respective validation base
+without negation. Callers may stop after a prefix of this sequence, but must not
+reorder it or skip an intermediate step.
+
+Only path integration validates and prepares the closure tree before BSDF
+traversal. Unlit shading stops after graph-normal resolution because it reads
+only summary color; shadow visibility stops after graph evaluation because it
+reads only scalar, medium, and closure-classification state. Prepared trees are
+immutable. Tree copying, merging, and clearing happen before preparation;
+prepared-tree pruning copies retained leaves with their prepared normals. No
+tree lifecycle flag tracks this program-order contract, and repeated
+preparation is unsupported.
 
 The tiled circle, cloverleaf, and hexagon nodes implement the MaterialX stdlib
 formulas directly and retain their stdlib coordinate folds/constants.
@@ -743,10 +755,14 @@ For each segment, `_IntegratePath()` performs these stages in order:
    default. A synthetic SSS exit replaces the material with a
    unit Lambertian closure so subsurface albedo is not counted twice. Material
    normal inputs are resolved before BSDF work. The renderer-supplied graph
-   normal and tangent frame use the authored exterior orientation. Material and
-   per-lobe normals are accepted only when finite, non-degenerate, and in that
-   smooth exterior hemisphere; rejected values fall back to the base without
-   negation. Each complete resolved normal is then faced to the incident side.
+   normal and tangent frame use the authored exterior orientation. After the
+   graph is fully assembled, `ResolveGraphNormal()` validates its normal
+   against the smooth exterior normal, then `ValidateLeafNormals()` validates
+   every authored leaf against that resolved graph normal. Values are accepted
+   only when finite, non-degenerate, and in the corresponding open exterior
+   hemisphere; rejected values fall back to the validation base without
+   negation. The renderer then faces the graph normal once, and preparation
+   faces each validated leaf to the same incident side.
    The default delta/subsurface normal is corrected once per interaction;
    authored delta and subsurface normals are corrected individually before
    traversal if their mirror direction would fall below the incident-side

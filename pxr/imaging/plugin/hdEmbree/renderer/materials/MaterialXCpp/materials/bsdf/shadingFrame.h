@@ -151,6 +151,50 @@ NormalizeOrFallback(const Vec3f& v, const Vec3f& fallback)
     return v / length;
 }
 
+/// Normalizes `candidate` and validates it against `normalShdWldExt`.
+///
+/// The candidate is accepted only when finite, non-degenerate, and in the
+/// same open hemisphere. `outNormalShdLobeWldExt` must be non-null and is
+/// written only on success. Does not throw.
+inline bool
+TryResolveShadingNormal(
+    const Vec3f& candidate,
+    const Vec3f& normalShdWldExt,
+    Vec3f* outNormalShdLobeWldExt)
+{
+    if (!outNormalShdLobeWldExt) {
+        return false;
+    }
+
+    const double maximumComponent = std::max({
+        std::abs(static_cast<double>(candidate[0])),
+        std::abs(static_cast<double>(candidate[1])),
+        std::abs(static_cast<double>(candidate[2]))});
+    if (!std::isfinite(maximumComponent) || maximumComponent == 0.0) {
+        return false;
+    }
+    const double scaledX =
+        static_cast<double>(candidate[0]) / maximumComponent;
+    const double scaledY =
+        static_cast<double>(candidate[1]) / maximumComponent;
+    const double scaledZ =
+        static_cast<double>(candidate[2]) / maximumComponent;
+    const double length = std::sqrt(
+        scaledX * scaledX + scaledY * scaledY + scaledZ * scaledZ);
+    if (!std::isfinite(length) || length == 0.0) {
+        return false;
+    }
+    const Vec3f normalized(
+        static_cast<float>(scaledX / length),
+        static_cast<float>(scaledY / length),
+        static_cast<float>(scaledZ / length));
+    if (Dot(normalized, normalShdWldExt) <= 0.0f) {
+        return false;
+    }
+    *outNormalShdLobeWldExt = normalized;
+    return true;
+}
+
 /// Resolves the exterior shading normal stored in `data`.
 ///
 /// `DataT` must expose `hasShadingNormal` and `normal`.
@@ -172,46 +216,21 @@ TryResolveShadingNormal(
         return false;
     }
 
-    const double maximumComponent = std::max({
-        std::abs(static_cast<double>(data.normal[0])),
-        std::abs(static_cast<double>(data.normal[1])),
-        std::abs(static_cast<double>(data.normal[2]))});
-    if (!std::isfinite(maximumComponent) || maximumComponent == 0.0) {
-        return false;
-    }
-    const double scaledX =
-        static_cast<double>(data.normal[0]) / maximumComponent;
-    const double scaledY =
-        static_cast<double>(data.normal[1]) / maximumComponent;
-    const double scaledZ =
-        static_cast<double>(data.normal[2]) / maximumComponent;
-    const double length = std::sqrt(
-        scaledX * scaledX + scaledY * scaledY + scaledZ * scaledZ);
-    if (!std::isfinite(length) || length == 0.0) {
-        return false;
-    }
-    const Vec3f candidate(
-        static_cast<float>(scaledX / length),
-        static_cast<float>(scaledY / length),
-        static_cast<float>(scaledZ / length));
-    if (Dot(candidate, normalShdWldExt) <= 0.0f) {
-        return false;
-    }
-    *outNormalShdLobeWldExt = candidate;
-    return true;
+    return TryResolveShadingNormal(
+        data.normal, normalShdWldExt, outNormalShdLobeWldExt);
 }
 
 /// Returns the prepared incident-side normal for a closure leaf. `data.normal`
-/// must have been validated by `PrepareShadingNormals` when
+/// must have been validated before `PrepareShadingNormals` when
 /// `data.hasShadingNormal`; an unprepared leaf without a normal inherits
 /// finite unit `normalShdWldOut`. Returns a finite unit vector and cannot fail.
 template<typename DataT>
 inline Vec3f
 ResolveShadingNormal(const DataT& data, const Vec3f& normalShdWldOut)
 {
-    // PrepareShadingNormals validates authored values and installs any
-    // reflection-safe correction before traversal. A missing normal is
-    // retained only for deliberately unprepared standalone leaf helpers.
+    // Preparation faces validated values and installs any reflection-safe
+    // correction before traversal. A missing normal is retained only for
+    // deliberately unprepared standalone leaf helpers.
     return data.hasShadingNormal ? data.normal : normalShdWldOut;
 }
 

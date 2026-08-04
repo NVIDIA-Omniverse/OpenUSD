@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include <renderer/integrator/medium.h>
+#include <renderer/materials/MaterialXCpp/graph.h>
 #include <renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf/closureTraversal.h>
@@ -50,15 +51,14 @@ _PrepareTestClosure(const SurfaceClosure& source,
                     const SurfaceInteraction& interaction)
 {
     SurfaceClosure closure = source;
-    if (closure.HasBsdfTree() &&
-        !closure.bsdfTree.shadingNormalsPrepared) {
+    if (closure.HasBsdfTree()) {
         const Vec3f normalShdWldExt = interaction.frontFacing
             ? interaction.normalShdWldOut
             : -interaction.normalShdWldOut;
+        ValidateLeafNormals(&closure.bsdfTree, normalShdWldExt);
         Bsdf::detail::PrepareShadingNormals(
-            &closure.bsdfTree, normalShdWldExt,
-            interaction.normalGeomWldOut, interaction.omegaOutWld,
-            interaction.frontFacing);
+            &closure.bsdfTree, interaction.normalShdWldOut,
+            interaction.normalGeomWldOut, interaction.omegaOutWld);
     }
     return closure;
 }

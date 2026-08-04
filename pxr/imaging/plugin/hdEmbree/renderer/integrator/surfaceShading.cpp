@@ -14,7 +14,6 @@
 #include <renderer/geometry/wireframe.h>
 #include <renderer/integrator/shadingNormal.h>
 #include <renderer/materials/MaterialXCpp/graph.h>
-#include <renderer/materials/MaterialXCpp/materials/bsdf/closureTraversal.h>
 #include <renderer/materials/MaterialXCpp/shadingContext.h>
 #include <renderer/rayUtil.h>
 #include <renderer/renderBuffer.h>
@@ -846,8 +845,7 @@ ty::Renderer::_BuildShadingContext(
 bool
 ty::Renderer::_TryEvalSurfaceClosureAtHit(
     RTCRayHit const& rayHit, GfVec3f const& omegaOutWld,
-    mxcpp::SurfaceClosure* outClosure, GfVec3f* normalShdWldOutOutput,
-    GfVec3f* normalGeomWldExtOutput,
+    mxcpp::SurfaceClosure* outClosure, GfVec3f* normalGeomWldExtOutput,
     ty::PrototypeContext const** outGeometry) const
 {
     _SurfaceInteraction interaction;
@@ -872,8 +870,6 @@ ty::Renderer::_TryEvalSurfaceClosureAtHit(
         return false;
     }
 
-    const GfVec3f normalSrfWldExt = interaction.normalSrfWldExt;
-    GfVec3f normalShdWldExt = normalSrfWldExt;
     ty::RayDifferential defaultRayDiff;
     const _ShadingContextOptions options(
         false, surfaceGraph->RequiresObjectSpacePosition());
@@ -898,36 +894,6 @@ ty::Renderer::_TryEvalSurfaceClosureAtHit(
     evalOptions.useAdobeOpenPBR = _settings.useAdobeOpenPBR;
     evalOptions.visibilityOnly = true;
     *outClosure = surfaceGraph->Evaluate(ctx, evalOptions);
-
-    mxcpp::Vec3f resolvedNormal;
-    if (outClosure->ResolveNormal(
-            ctx.tangent,
-            ctx.bitangent,
-            ctx.normal,
-            &resolvedNormal)) {
-        const GfVec3f candidate = ty::ToGf(resolvedNormal);
-        GfVec3f normalizedCandidate;
-        if (ty::TryResolveNormalShdWldExt(
-                candidate, normalSrfWldExt,
-                &normalizedCandidate)) {
-            normalShdWldExt = normalizedCandidate;
-        } else {
-            ++_invalidMaterialNormalCount;
-        }
-    }
-    const GfVec3f normalShdWldOut = ty::FaceNormalShdWldOut(
-        normalShdWldExt, interaction.frontFacing);
-    _invalidMaterialNormalCount.fetch_add(
-        mxcpp::Bsdf::detail::PrepareShadingNormals(
-            &outClosure->bsdfTree,
-            ty::ToMx(normalShdWldExt),
-            ty::ToMx(interaction.GetNormalGeomWldOut()),
-            ty::ToMx(omegaOutWld),
-            interaction.frontFacing),
-        std::memory_order_relaxed);
-    if (normalShdWldOutOutput) {
-        *normalShdWldOutOutput = normalShdWldOut;
-    }
     return true;
 }
 
