@@ -251,16 +251,21 @@ ty::Renderer::_ComputeDirectLightingMIS(
             if (closure) {
                 const mxcpp::Vec3f normalMx = ty::ToMx(normalShdWldOut);
                 const mxcpp::Vec3f omegaInWldMx = ty::ToMx(ls.omegaInWld);
-                const mxcpp::Vec3f omegaOutWldMx = ty::ToMx(omegaOutWld);
+                mxcpp::SurfaceInteraction surfaceInteraction;
+                surfaceInteraction.normalShdWldOut = normalMx;
+                surfaceInteraction.normalSrfWldOut =
+                    ty::ToMx(normalSrfWldOut);
+                surfaceInteraction.normalGeomWldOut =
+                    ty::ToMx(normalGeomWldOut);
+                surfaceInteraction.omegaOutWld = ty::ToMx(omegaOutWld);
+                surfaceInteraction.heroWavelengthNm = heroWavelengthNm;
+                surfaceInteraction.frontFacing = frontFacing;
                 const mxcpp::AdobeOpenPbrEvalPdfResult adobeEvalPdf =
                     (adobeOpenPbrSurface && adobeOpenPbrSurface->valid)
                         ? mxcpp::EvalPdfPreparedAdobeOpenPbrSurface(
                               *adobeOpenPbrSurface, omegaInWldMx)
                         : mxcpp::TryEvalPdfAdobeOpenPbrSurface(
-                              *closure, normalMx,
-                              ty::ToMx(normalSrfWldOut),
-                              ty::ToMx(normalGeomWldOut), frontFacing,
-                              omegaInWldMx, omegaOutWldMx);
+                              *closure, surfaceInteraction, omegaInWldMx);
 
                 GfVec3f bsdfValueCosine(0.0f);
                 float pdfBsdfSolidAngle = 0.0f;
@@ -269,12 +274,9 @@ ty::Renderer::_ComputeDirectLightingMIS(
                     pdfBsdfSolidAngle = adobeEvalPdf.pdfSolidAngle;
                 } else {
                     bsdfValueCosine = ty::ToGf(mxcpp::Bsdf::EvalSurfaceCosine(
-                        *closure, normalMx, ty::ToMx(normalSrfWldOut),
-                        omegaInWldMx, omegaOutWldMx,
-                        heroWavelengthNm, frontFacing));
+                        *closure, surfaceInteraction, omegaInWldMx));
                     pdfBsdfSolidAngle = mxcpp::Bsdf::PdfSurface(
-                        *closure, normalMx, omegaInWldMx, omegaOutWldMx,
-                        heroWavelengthNm, frontFacing);
+                        *closure, surfaceInteraction, omegaInWldMx);
                 }
 
                 for (int i = 0; i < 3; ++i) {

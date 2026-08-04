@@ -23,9 +23,8 @@ namespace detail {
 /// Returns finite non-negative RGB BSDF value. Invalid geometric
 /// configurations contribute zero; this operation does not throw.
 Vec3f EvalLegacySurface(
-    const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
-    const Vec3f& normalSrfWldOut,
-    const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
+    const SurfaceClosure& closure, const SurfaceInteraction& interaction,
+    const Vec3f& omegaInWld,
     BumpShadowingContext bumpContext);
 
 /// Evaluates the legacy summary's mixture PDF.
@@ -35,8 +34,8 @@ Vec3f EvalLegacySurface(
 /// invariants. Returns a finite non-negative solid-angle density; an empty or
 /// degenerate lobe mixture returns zero. This operation does not throw.
 float PdfLegacySurface(
-    const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
-    const Vec3f& omegaInWld, const Vec3f& omegaOutWld);
+    const SurfaceClosure& closure, const SurfaceInteraction& interaction,
+    const Vec3f& omegaInWld);
 
 /// Samples one lobe from the legacy summary.
 /// `normalShdWldOut` and `omegaOutWld` must be finite unit vectors pointing
@@ -46,10 +45,8 @@ float PdfLegacySurface(
 /// mixture returns `pdfSolidAngle == 0`; callers must test it before division.
 /// This operation does not throw.
 Bsdf::BsdfSample SampleLegacySurface(
-    const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
-    const Vec3f& normalSrfWldOut, const Vec3f& normalGeomWldOut,
-    const Vec3f& omegaOutWld, float u1, float u2, float uLobe,
-    bool frontFacing);
+    const SurfaceClosure& closure, const SurfaceInteraction& interaction,
+    float u1, float u2, float uLobe);
 
 /// Clears every legacy BSDF summary field while retaining unrelated closure
 /// state. `closure` must be non-null. This operation cannot fail.

@@ -28,8 +28,7 @@ Bsdf::ClosureTree PruneCausticClassLobes(const Bsdf::ClosureTree& tree);
 /// contain sanitized material parameters. Does not throw.
 bool UsesGeometricNormalCorrection(const Bsdf::AdobeOpenPbrData& data);
 
-/// Stores the diffuse/specular defaults once for later Eval/Sample/PDF
-/// traversals and prepares only leaves recorded with authored normals.
+/// Resolves and stores every surface leaf normal once for later traversals.
 /// Authored normals are normalized and accepted only in the hemisphere of the
 /// final finite unit exterior material `normalShdWldExt`; invalid values fall
 /// back without negation. This deliberately validates the hierarchy in order:
@@ -42,9 +41,9 @@ bool UsesGeometricNormalCorrection(const Bsdf::AdobeOpenPbrData& data);
 /// collapsing them onto the grazing threshold creates bright contour ridges.
 /// Their generated directions are instead validated at sampling. `tree` must
 /// be non-null. Returns the number of invalid authored values replaced. Tree
-/// construction must keep the authored-normal linked index and
-/// `hasDefaultSpecularNormalNodes` synchronized with `nodes`. Allocation-free
-/// and does not throw.
+/// This is a one-shot operation on a tree whose leaves still contain authored
+/// values. The tree must not be mutated afterwards. Allocation-free and does
+/// not throw.
 std::size_t PrepareShadingNormals(
     Bsdf::ClosureTree* tree,
     const Vec3f& normalShdWldExt,
@@ -53,61 +52,43 @@ std::size_t PrepareShadingNormals(
     bool frontFacing = true);
 
 /// Evaluates the closure subtree rooted at `nodeId`.
-/// `nodeId` may be invalid, in which case zero is returned. `normalShdWldOut`,
-/// `omegaInWld`, and `omegaOutWld` must be finite unit vectors; directions
-/// point away from the surface. `heroWavelengthNm` must be finite and is zero
-/// when spectral dispersion is disabled. `frontFacing` is the immutable
-/// geometric interface side and must not be inferred from a shading normal.
+/// `nodeId` may be invalid, in which case zero is returned. `interaction`
+/// satisfies `SurfaceInteraction`'s contract and `omegaInWld` is a finite unit
+/// direction pointing away from the surface. The tree must have been prepared.
 /// Returns a finite non-negative RGB BSDF value; malformed or degenerate nodes
 /// contribute zero. Does not throw.
 Vec3f EvalNode(
     const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-    const Vec3f& normalShdWldOut, const Vec3f& normalSrfWldOut,
-    const Vec3f& omegaInWld,
-    const Vec3f& omegaOutWld, float heroWavelengthNm,
-    bool frontFacing, BumpShadowingContext bumpContext);
+    const SurfaceInteraction& interaction, const Vec3f& omegaInWld,
+    BumpShadowingContext bumpContext);
 
 /// EvalNode with each surface leaf multiplied by its own absolute incident
 /// cosine before composite nodes combine the values.
 Vec3f EvalNodeCosine(
     const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-    const Vec3f& normalShdWldOut, const Vec3f& normalSrfWldOut,
-    const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
-    float heroWavelengthNm, bool frontFacing,
+    const SurfaceInteraction& interaction, const Vec3f& omegaInWld,
     BumpShadowingContext bumpContext);
 
 /// Evaluates the solid-angle PDF of the closure subtree rooted at `nodeId`.
-/// `nodeId` may be invalid, in which case zero is returned. The normal and
-/// directions must be finite unit vectors pointing away from the surface;
-/// the normal selects the incident transport side and need not face
-/// `omegaOutWld` at grazing.
-/// `heroWavelengthNm` must be finite and is zero when dispersion is disabled.
-/// `frontFacing` has `EvalNode`'s geometric-side meaning. Returns a finite
-/// non-negative density; degenerate nodes return zero. Does not throw.
+/// `nodeId` may be invalid, in which case zero is returned. `interaction` and
+/// `omegaInWld` satisfy `EvalNode`'s invariants. Returns a finite non-negative
+/// density; degenerate nodes return zero. Does not throw.
 float PdfNode(
     const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-    const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
-    const Vec3f& omegaOutWld, float heroWavelengthNm,
-    bool frontFacing = true);
+    const SurfaceInteraction& interaction, const Vec3f& omegaInWld);
 
 /// Samples the closure subtree rooted at `nodeId`.
-/// `nodeId` may be invalid. All normals and `omegaOutWld` must be finite unit
-/// directions pointing away from the surface; the normals select the incident
-/// transport side. `normalSrfWldOut` is the smooth unbumped normal and
-/// `normalGeomWldOut` owns reflection/transmission side validity. `u1`, `u2`,
-/// and `uChoice` must
-/// be finite values in [0,1). `heroWavelengthNm` must be finite and is zero
-/// when dispersion is disabled. `frontFacing` has `EvalNode`'s geometric-side
-/// meaning. Returns a sample whose direction is unit length when valid.
+/// `nodeId` may be invalid. `interaction` satisfies `SurfaceInteraction`'s
+/// contract and its geometric normal owns reflection/transmission validity.
+/// `u1`, `u2`, and `uChoice` must be finite values in [0,1). Returns a sample
+/// whose direction is unit length when valid.
 /// Failure, a degenerate subtree, or a selected wrong-side direction returns
 /// zero BSDF and PDF without resampling. Callers must test the PDF before
 /// division. Does not throw.
 Bsdf::BsdfSample SampleNode(
     const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
-    const Vec3f& normalShdWldOut, const Vec3f& normalSrfWldOut,
-    const Vec3f& normalGeomWldOut, const Vec3f& omegaOutWld, float u1,
-    float u2, float uChoice, float heroWavelengthNm,
-    bool frontFacing);
+    const SurfaceInteraction& interaction, float u1, float u2,
+    float uChoice);
 
 }  // namespace detail
 }  // namespace Bsdf

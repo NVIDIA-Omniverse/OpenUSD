@@ -199,42 +199,36 @@ Bsdf::EvalCoat(float coatWeight, float coatRoughness, float coatIor,
 }
 
 Vec3f
-Bsdf::EvalSurface(const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
-                  const Vec3f& normalSrfWldOut, const Vec3f& omegaInWld,
-                  const Vec3f& omegaOutWld,
-                  float heroWavelengthNm, bool frontFacing)
+Bsdf::EvalSurface(const SurfaceClosure& closure,
+                  const SurfaceInteraction& interaction,
+                  const Vec3f& omegaInWld)
 {
     Vec3f bsdfValue =
         closure.HasBsdfTree()
             ? detail::EvalNode(closure.bsdfTree, closure.bsdfTree.root,
-                        normalShdWldOut, normalSrfWldOut,
-                        omegaInWld, omegaOutWld, heroWavelengthNm,
-                        frontFacing,
-                        detail::BumpShadowingContext::Evaluation)
+                               interaction, omegaInWld,
+                               detail::BumpShadowingContext::Evaluation)
             : detail::EvalLegacySurface(
-                  closure, normalShdWldOut, normalSrfWldOut, omegaInWld,
-                  omegaOutWld, detail::BumpShadowingContext::Evaluation);
+                  closure, interaction, omegaInWld,
+                  detail::BumpShadowingContext::Evaluation);
     return detail::SafeVec(bsdfValue * closure.presence);
 }
 
 Vec3f
 Bsdf::EvalSurfaceCosine(
-    const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
-    const Vec3f& normalSrfWldOut, const Vec3f& omegaInWld,
-    const Vec3f& omegaOutWld, float heroWavelengthNm, bool frontFacing)
+    const SurfaceClosure& closure, const SurfaceInteraction& interaction,
+    const Vec3f& omegaInWld)
 {
     Vec3f bsdfValueCosine =
         closure.HasBsdfTree()
             ? detail::EvalNodeCosine(
                   closure.bsdfTree, closure.bsdfTree.root,
-                  normalShdWldOut, normalSrfWldOut, omegaInWld,
-                  omegaOutWld, heroWavelengthNm, frontFacing,
+                  interaction, omegaInWld,
                   detail::BumpShadowingContext::Evaluation)
             : detail::EvalLegacySurface(
-                  closure, normalShdWldOut, normalSrfWldOut, omegaInWld,
-                  omegaOutWld,
+                  closure, interaction, omegaInWld,
                   detail::BumpShadowingContext::Evaluation) *
-                  std::abs(Dot(normalShdWldOut, omegaInWld));
+                  std::abs(Dot(interaction.normalShdWldOut, omegaInWld));
     return detail::SafeVec(bsdfValueCosine * closure.presence);
 }
 
@@ -526,18 +520,14 @@ Bsdf::PdfGGXTransmission(float roughness, float ior,
 }
 
 Bsdf::BsdfSample
-Bsdf::SampleSurface(const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
-                    const Vec3f& normalSrfWldOut,
-                    const Vec3f& normalGeomWldOut,
-                    const Vec3f& omegaOutWld, float u1, float u2, float uLobe,
-                    float heroWavelengthNm, bool frontFacing)
+Bsdf::SampleSurface(const SurfaceClosure& closure,
+                    const SurfaceInteraction& interaction,
+                    float u1, float u2, float uLobe)
 {
     if (closure.HasBsdfTree()) {
         auto sample =
             detail::SampleNode(closure.bsdfTree, closure.bsdfTree.root,
-                        normalShdWldOut, normalSrfWldOut, normalGeomWldOut,
-                        omegaOutWld, u1, u2, uLobe, heroWavelengthNm,
-                        frontFacing);
+                               interaction, u1, u2, uLobe);
         if (!sample.isSpecular) {
             sample.bsdfValue *= closure.presence;
             sample.bsdfValueCosine *= closure.presence;
@@ -545,23 +535,20 @@ Bsdf::SampleSurface(const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
         return sample;
     }
     return detail::SampleLegacySurface(
-        closure, normalShdWldOut, normalSrfWldOut, normalGeomWldOut,
-        omegaOutWld, u1, u2, uLobe, frontFacing);
+        closure, interaction, u1, u2, uLobe);
 }
 
 float
-Bsdf::PdfSurface(const SurfaceClosure& closure, const Vec3f& normalShdWldOut,
-                 const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
-                 float heroWavelengthNm, bool frontFacing)
+Bsdf::PdfSurface(const SurfaceClosure& closure,
+                 const SurfaceInteraction& interaction,
+                 const Vec3f& omegaInWld)
 {
     if (closure.HasBsdfTree()) {
         return detail::PdfNode(closure.bsdfTree, closure.bsdfTree.root,
-                        normalShdWldOut,
-                        omegaInWld, omegaOutWld, heroWavelengthNm,
-                        frontFacing);
+                               interaction, omegaInWld);
     }
     return detail::PdfLegacySurface(
-        closure, normalShdWldOut, omegaInWld, omegaOutWld);
+        closure, interaction, omegaInWld);
 }
 
 SurfaceClosure

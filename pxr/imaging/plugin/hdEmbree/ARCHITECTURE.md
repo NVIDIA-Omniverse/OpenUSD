@@ -488,10 +488,8 @@ MaterialX closure values stay typed through graph evaluation:
 - `ND_dielectric_bsdf` preserves MaterialX `R`, `T`, and `RT` scatter modes.
   When closure trees are merged, every child ID in nested
   mix/layer/add/multiply nodes is remapped before the new root is appended.
-  Node addition also carries the allocation-free sparse authored-normal index
-  and default
-  specular-normal requirement; direct mutation of the node vector would break
-  per-interaction normal preparation.
+  Node addition is allowed only before per-interaction normal preparation;
+  prepared trees are immutable.
 - Typed VDF nodes carry absorption, scattering, and anisotropy into
   `interiorMedium`; `thin_walled` suppresses that medium.
 
@@ -508,8 +506,8 @@ the evaluated displaced-frame position. None uses authored-st `dPdu`/`dPdv` as
 barycentric edges. The ray-derived world hit remains authoritative for
 transport, ray offsets, and geometric AOVs.
 
-Closure trees own per-interaction diffuse and reflection-safe specular default
-normals. Geometric correction covers effectively delta dielectric reflection
+Closure-tree surface leaves own their complete per-interaction prepared normal.
+Geometric correction covers effectively delta dielectric reflection
 and transmission, conductor, coat, generalized Schlick, Adobe OpenPBR, and
 subsurface normals. Finite-roughness, diffuse, sheen, and translucent normals
 remain uncorrected. Adobe OpenPBR has one shared frame, so any active finite
@@ -518,17 +516,15 @@ translucent correction is intentionally not adopted because Cycles marks that
 behavior as a glossy-only bug. Degenerate projected tangents and quartic
 denominators return the input shading normal; these and finite-roughness
 correction are Typhoon's deviations from the Cycles solve.
-Tree construction records only leaves with authored normal state;
-`PrepareShadingNormals()` validates those sparse leaves in the authored
-exterior frame, faces each complete resolved normal to the geometrically
-selected incident side, and does not sweep default-normal or composition
-nodes. Traversal resolves un-authored finite-roughness/diffuse leaves from the
-tree's diffuse default and un-authored delta/subsurface leaves from its one
-shared specular default.
-Tree copying, merging, pruning, and clearing must preserve or rebuild this
-metadata together with node IDs.
-Adding a node invalidates prepared state; prepared-tree pruning rebuilds the
-index and republishes the unchanged prepared defaults only after construction.
+`PrepareShadingNormals()` visits every node once, validates authored leaf
+normals in the authored exterior frame, supplies the graph normal to
+un-authored leaves, faces each complete resolved normal to the geometrically
+selected incident side, and applies any required correction before storing it
+in the leaf. Traversal reads only that prepared leaf value. Preparation is
+one-shot: it runs before traversal on fresh graph output, after which the tree
+is immutable. Tree copying, merging, and clearing happen before preparation.
+Prepared-tree pruning builds a new tree whose retained leaves preserve their
+prepared normals, then publishes prepared state after construction.
 
 The tiled circle, cloverleaf, and hexagon nodes implement the MaterialX stdlib
 formulas directly and retain their stdlib coordinate folds/constants.
@@ -784,8 +780,9 @@ For each segment, `_IntegratePath()` performs these stages in order:
     dispersive closure initializes hero-wavelength transport. The integrator
     prepares the native or Adobe OpenPBR surface and draws the BSDF sample that
     would produce the next segment. Leaf sampling rejects reflection below the
-    geometric or exact lobe normal and transmission above either normal. The
-    diffuse family uses Cycles' strict geometric-side rule. Rejected samples
+    geometric or exact lobe normal and transmission above either normal.
+    Both tests are strict: a sampled direction exactly tangent to either normal
+    is rejected for reflection and transmission. Rejected samples
     are lost without resampling; evaluation and PDF intentionally do not apply
     this geometric test, so grazing normal maps can lose energy and the two MIS
     strategies can have asymmetric support.

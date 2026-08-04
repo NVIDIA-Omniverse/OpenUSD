@@ -466,15 +466,17 @@ ty::Renderer::_IntegratePath(
 
         // Every lobe consumes the same incident-side shading normal.
         // Interface side and transport classification remain separate state.
+        mxcpp::SurfaceInteraction surfaceInteraction;
+        surfaceInteraction.normalShdWldOut = ty::ToMx(normalShdWldOut);
+        surfaceInteraction.normalSrfWldOut = ty::ToMx(normalSrfWldOut);
+        surfaceInteraction.normalGeomWldOut = ty::ToMx(normalGeomWldOut);
+        surfaceInteraction.omegaOutWld = ty::ToMx(omegaOutWld);
+        surfaceInteraction.heroWavelengthNm = path.hero.wavelengthNm;
+        surfaceInteraction.frontFacing = interaction.frontFacing;
         mxcpp::AdobeOpenPbrPreparedSurface adobeOpenPbrSurface;
         if (hasBsdfClosure) {
             adobeOpenPbrSurface = mxcpp::PrepareAdobeOpenPbrSurface(
-                *bsdfClosure,
-                ty::ToMx(normalShdWldOut),
-                ty::ToMx(normalSrfWldOut),
-                ty::ToMx(normalGeomWldOut),
-                interaction.frontFacing,
-                ty::ToMx(omegaOutWld));
+                *bsdfClosure, surfaceInteraction);
         }
 
         // Sample once for possible continuation, independently of direct
@@ -494,16 +496,8 @@ ty::Renderer::_IntegratePath(
                     bsdfSample[2]);
             } else {
                 bs = mxcpp::Bsdf::SampleSurface(
-                    *bsdfClosure,
-                    ty::ToMx(normalShdWldOut),
-                    ty::ToMx(normalSrfWldOut),
-                    ty::ToMx(normalGeomWldOut),
-                    ty::ToMx(omegaOutWld),
-                    bsdfSample[0],
-                    bsdfSample[1],
-                    bsdfSample[2],
-                    path.hero.wavelengthNm,
-                    interaction.frontFacing);
+                    *bsdfClosure, surfaceInteraction, bsdfSample[0],
+                    bsdfSample[1], bsdfSample[2]);
             }
             hasBsdfSample = bs.isSubsurface || bs.pdfSolidAngle > 0.0f;
         }

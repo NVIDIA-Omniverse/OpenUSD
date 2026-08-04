@@ -179,6 +179,23 @@ BumpHemisphereAgreement(const Vec3f& normalSrfWldOut,
         0.0f;
 }
 
+/// Returns whether a sampled direction lies strictly on the side of both the
+/// exact lobe and geometric normals identified by its event label. Lobe
+/// applicability, including the microfacet outgoing-side precondition, is the
+/// leaf's responsibility. All vectors must be finite and unit length.
+inline bool
+SampledDirectionIsValid(bool isTransmission,
+                        const Vec3f& normalShdLobeWldOut,
+                        const Vec3f& normalGeomWldOut,
+                        const Vec3f& omegaInWld)
+{
+    const float lobeSide = Dot(normalShdLobeWldOut, omegaInWld);
+    const float geomSide = Dot(normalGeomWldOut, omegaInWld);
+    return isTransmission
+        ? lobeSide < 0.0f && geomSide < 0.0f
+        : lobeSide > 0.0f && geomSide > 0.0f;
+}
+
 /// Cycles-aligned bump shadowing. Evaluation rejects disagreement for every
 /// lobe; sampling rejects and softens only diffuse-family lobes. PDF is
 /// unaffected.

@@ -7,6 +7,7 @@
 #include <renderer/integrator/medium.h>
 #include <renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf/closureTraversal.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf/microfacet.h>
 #include <renderer/materials/MaterialXCpp/materials/disneyPrincipled.h>
 #include <renderer/materials/MaterialXCpp/materials/gltfPbr.h>
@@ -28,6 +29,67 @@ bool Test_IsClose(const Vec3f& a, const Vec3f& b, float eps = 1e-5f);
 
 #define _REG(name) Test_Register("Materials." #name, &name)
 
+static SurfaceInteraction
+_MakeSurfaceInteraction(
+    const Vec3f& normalShdWldOut, const Vec3f& normalSrfWldOut,
+    const Vec3f& normalGeomWldOut, const Vec3f& omegaOutWld,
+    float heroWavelengthNm = 0.0f, bool frontFacing = true)
+{
+    SurfaceInteraction interaction;
+    interaction.normalShdWldOut = normalShdWldOut;
+    interaction.normalSrfWldOut = normalSrfWldOut;
+    interaction.normalGeomWldOut = normalGeomWldOut;
+    interaction.omegaOutWld = omegaOutWld;
+    interaction.heroWavelengthNm = heroWavelengthNm;
+    interaction.frontFacing = frontFacing;
+    return interaction;
+}
+
+static SurfaceClosure
+_PrepareTestClosure(const SurfaceClosure& source,
+                    const SurfaceInteraction& interaction)
+{
+    SurfaceClosure closure = source;
+    if (closure.HasBsdfTree() &&
+        !closure.bsdfTree.shadingNormalsPrepared) {
+        const Vec3f normalShdWldExt = interaction.frontFacing
+            ? interaction.normalShdWldOut
+            : -interaction.normalShdWldOut;
+        Bsdf::detail::PrepareShadingNormals(
+            &closure.bsdfTree, normalShdWldExt,
+            interaction.normalGeomWldOut, interaction.omegaOutWld,
+            interaction.frontFacing);
+    }
+    return closure;
+}
+
+static float
+_PdfSurface(const SurfaceClosure& source,
+            const SurfaceInteraction& interaction,
+            const Vec3f& omegaInWld)
+{
+    const SurfaceClosure closure = _PrepareTestClosure(source, interaction);
+    return Bsdf::PdfSurface(closure, interaction, omegaInWld);
+}
+
+static Vec3f
+_EvalSurface(const SurfaceClosure& source,
+             const SurfaceInteraction& interaction,
+             const Vec3f& omegaInWld)
+{
+    const SurfaceClosure closure = _PrepareTestClosure(source, interaction);
+    return Bsdf::EvalSurface(closure, interaction, omegaInWld);
+}
+
+static Bsdf::BsdfSample
+_SampleSurface(const SurfaceClosure& source,
+               const SurfaceInteraction& interaction,
+               float u1, float u2, float uLobe)
+{
+    const SurfaceClosure closure = _PrepareTestClosure(source, interaction);
+    return Bsdf::SampleSurface(closure, interaction, u1, u2, uLobe);
+}
+
 // Tests unrelated to normal separation opt into a flat-normal fixture here.
 // Normal-policy tests pass all three normals through the canonical overload.
 struct TestSurfaceApi
@@ -37,9 +99,7 @@ struct TestSurfaceApi
         const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
         float heroWavelengthNm = 0.0f, bool frontFacing = true)
     {
-        return Bsdf::EvalSurface(
-            closure, normalWldOut, normalWldOut, omegaInWld, omegaOutWld,
-            heroWavelengthNm, frontFacing);
+        return _EvalSurface(closure, _MakeSurfaceInteraction(normalWldOut, normalWldOut, normalWldOut, omegaOutWld, heroWavelengthNm, frontFacing), omegaInWld);
     }
 
     static Vec3f EvalSurface(
@@ -48,9 +108,7 @@ struct TestSurfaceApi
         const Vec3f& omegaOutWld, float heroWavelengthNm = 0.0f,
         bool frontFacing = true)
     {
-        return Bsdf::EvalSurface(
-            closure, normalShdWldOut, normalSrfWldOut, omegaInWld,
-            omegaOutWld, heroWavelengthNm, frontFacing);
+        return _EvalSurface(closure, _MakeSurfaceInteraction(normalShdWldOut, normalSrfWldOut, normalSrfWldOut, omegaOutWld, heroWavelengthNm, frontFacing), omegaInWld);
     }
 
     static Bsdf::BsdfSample SampleSurface(
@@ -58,9 +116,7 @@ struct TestSurfaceApi
         const Vec3f& omegaOutWld, float u1, float u2, float uLobe,
         float heroWavelengthNm = 0.0f, bool frontFacing = true)
     {
-        return Bsdf::SampleSurface(
-            closure, normalWldOut, normalWldOut, normalWldOut, omegaOutWld,
-            u1, u2, uLobe, heroWavelengthNm, frontFacing);
+        return _SampleSurface(closure, _MakeSurfaceInteraction(normalWldOut, normalWldOut, normalWldOut, omegaOutWld, heroWavelengthNm, frontFacing), u1, u2, uLobe);
     }
 
     static Bsdf::BsdfSample SampleSurface(
@@ -69,9 +125,7 @@ struct TestSurfaceApi
         const Vec3f& omegaOutWld, float u1, float u2, float uLobe,
         float heroWavelengthNm = 0.0f, bool frontFacing = true)
     {
-        return Bsdf::SampleSurface(
-            closure, normalShdWldOut, normalSrfWldOut, normalGeomWldOut,
-            omegaOutWld, u1, u2, uLobe, heroWavelengthNm, frontFacing);
+        return _SampleSurface(closure, _MakeSurfaceInteraction(normalShdWldOut, normalSrfWldOut, normalGeomWldOut, omegaOutWld, heroWavelengthNm, frontFacing), u1, u2, uLobe);
     }
 };
 
@@ -276,8 +330,7 @@ TestStandardSurfaceGoldMetallicSharpRoughnessStaysStable()
 
         const Vec3f directEval = TestSurfaceApi::EvalSurface(
             c, normalShdWldOut, omegaInMirroredWld, omegaOutWld);
-        const float directPdf = Bsdf::PdfSurface(
-            c, normalShdWldOut, omegaInMirroredWld, omegaOutWld);
+        const float directPdf = _PdfSurface(c, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld), omegaInMirroredWld);
         const bool effectivelySmooth = expectedAlpha < 1.0e-3f;
         if (effectivelySmooth) {
             if (!Test_IsClose(directEval, Vec3f(0.0f), 1.0e-7f) ||
@@ -324,8 +377,7 @@ TestStandardSurfaceGoldMetallicSharpRoughnessStaysStable()
 
         const auto sample = TestSurfaceApi::SampleSurface(c, normalShdWldOut, omegaOutWld,
                                                 0.3f, 0.7f, 0.4f);
-        const float pdf = Bsdf::PdfSurface(c, normalShdWldOut,
-                                           sample.omegaInWld, omegaOutWld);
+        const float pdf = _PdfSurface(c, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld), sample.omegaInWld);
         const float ratio = sample.pdfSolidAngle / std::max(pdf, 1.0e-20f);
         if (sample.isSpecular || sample.pdfSolidAngle <= 0.0f || pdf <= 0.0f ||
             ratio < 0.8f || ratio > 1.2f) {
@@ -1250,9 +1302,7 @@ TestAdobeOpenPbrEvalPdfSurfaceMatchesSeparateCalls()
     omegaInWld.normalize();
     const Vec3f omegaOutWld(0.0f, 0.0f, 1.0f);
 
-    const AdobeOpenPbrEvalPdfResult combined = TryEvalPdfAdobeOpenPbrSurface(
-        closure, normalShdWldOut, normalShdWldOut, normalShdWldOut, true,
-        omegaInWld, omegaOutWld);
+    const AdobeOpenPbrEvalPdfResult combined = TryEvalPdfAdobeOpenPbrSurface(closure, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld, 0.0f, true), omegaInWld);
 #ifdef PXR_HDEMBREE_ENABLE_ADOBE_OPENPBR
     if (!combined.evaluated) {
         printf("    Expected combined Adobe OpenPBR eval/pdf path\n");
@@ -1275,14 +1325,10 @@ TestAdobeOpenPbrEvalPdfSurfaceMatchesSeparateCalls()
     const float separatePdf =
         PdfAdobeOpenPbr(*data, normalShdWldOut, omegaInWld, omegaOutWld);
     const AdobeOpenPbrPreparedSurface prepared =
-        PrepareAdobeOpenPbrSurface(
-            closure, normalShdWldOut, normalShdWldOut,
-            normalShdWldOut, true, omegaOutWld);
+        PrepareAdobeOpenPbrSurface(closure, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld, 0.0f, true));
     const AdobeOpenPbrEvalPdfResult preparedEvalPdf =
         EvalPdfPreparedAdobeOpenPbrSurface(prepared, omegaInWld);
-    const Bsdf::BsdfSample separateSample = SampleAdobeOpenPbr(
-        *data, normalShdWldOut, normalShdWldOut, normalShdWldOut,
-        omegaOutWld, 0.23f, 0.47f, 0.61f, true);
+    const Bsdf::BsdfSample separateSample = SampleAdobeOpenPbr(*data, normalShdWldOut, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld, 0.0f, true), 0.23f, 0.47f, 0.61f);
     const Bsdf::BsdfSample preparedSample =
         SamplePreparedAdobeOpenPbrSurface(prepared, 0.23f, 0.47f, 0.61f);
 
@@ -1321,17 +1367,13 @@ TestAdobeOpenPbrSampleSoftensOnlyDiffuseComponent()
         Vec3f(0.6f, 0.0f, 0.8f).normalized();
     const Vec3f omegaOutWld(0.0f, 0.0f, 1.0f);
     const AdobeOpenPbrPreparedSurface prepared =
-        PrepareAdobeOpenPbrSurface(
-            closure, normalShdWldOut, normalSrfWldOut,
-            normalShdWldOut, true, omegaOutWld);
+        PrepareAdobeOpenPbrSurface(closure, _MakeSurfaceInteraction(normalShdWldOut, normalSrfWldOut, normalShdWldOut, omegaOutWld, 0.0f, true));
     ParamMap specularParams = params;
     specularParams["base_weight"] = Value(0.0f);
     const SurfaceClosure specularClosure =
         EvalAdobeOpenPbr(specularParams);
     const AdobeOpenPbrPreparedSurface specularPrepared =
-        PrepareAdobeOpenPbrSurface(
-            specularClosure, normalShdWldOut, normalSrfWldOut,
-            normalShdWldOut, true, omegaOutWld);
+        PrepareAdobeOpenPbrSurface(specularClosure, _MakeSurfaceInteraction(normalShdWldOut, normalSrfWldOut, normalShdWldOut, omegaOutWld, 0.0f, true));
     for (int i = 0; i < 4096; ++i) {
         const float u1 = (static_cast<float>(i) + 0.5f) / 4096.0f;
         const float u2 = std::fmod(0.61803398875f * i, 1.0f);
@@ -1448,9 +1490,7 @@ TestAdobeOpenPbrPureSubsurfaceUsesRandomWalkPayload()
     data->hasShadingNormal = true;
     data->normal = normalShdLobeWldOut;
     const AdobeOpenPbrPreparedSurface prepared =
-        PrepareAdobeOpenPbrSurface(
-            closure, normalShdWldOut, normalShdWldOut,
-            normalShdWldOut, true, omegaOutWld);
+        PrepareAdobeOpenPbrSurface(closure, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld, 0.0f, true));
     const Bsdf::BsdfSample sample =
         SamplePreparedAdobeOpenPbrSurface(prepared, 0.23f, 0.47f, 0.61f);
     Vec3f dirEntryWld;
@@ -1477,13 +1517,9 @@ TestAdobeOpenPbrPureSubsurfaceUsesRandomWalkPayload()
     const Vec3f hostileNormalGeomWldOut =
         Vec3f(0.9987492f, 0.0f, 0.05f).normalized();
     const AdobeOpenPbrPreparedSurface acceptedPrepared =
-        PrepareAdobeOpenPbrSurface(
-            generatedClosure, normalShdWldOut, normalShdWldOut,
-            normalShdWldOut, true, omegaOutWld);
+        PrepareAdobeOpenPbrSurface(generatedClosure, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, normalShdWldOut, omegaOutWld, 0.0f, true));
     const AdobeOpenPbrPreparedSurface rejectedPrepared =
-        PrepareAdobeOpenPbrSurface(
-            generatedClosure, normalShdWldOut, normalShdWldOut,
-            hostileNormalGeomWldOut, true, omegaOutWld);
+        PrepareAdobeOpenPbrSurface(generatedClosure, _MakeSurfaceInteraction(normalShdWldOut, normalShdWldOut, hostileNormalGeomWldOut, omegaOutWld, 0.0f, true));
     for (int i = 0; i < 4096; ++i) {
         const float u1 = (static_cast<float>(i) + 0.5f) / 4096.0f;
         const float u2 = std::fmod(0.61803398875f * i, 1.0f);

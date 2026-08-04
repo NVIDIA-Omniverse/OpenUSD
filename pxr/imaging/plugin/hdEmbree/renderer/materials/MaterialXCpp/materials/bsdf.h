@@ -7,6 +7,7 @@
 #ifndef MXCPP_MATERIALS_BSDF_H
 #define MXCPP_MATERIALS_BSDF_H
 
+#include <renderer/materials/MaterialXCpp/materials/surfaceInteraction.h>
 #include <renderer/materials/MaterialXCpp/surfaceClosure.h>
 
 namespace mxcpp {
@@ -68,28 +69,21 @@ namespace Bsdf
 
     /// Evaluate the full layered surface model from a closure.
     /// Combines all BSDF lobes with proper energy conservation.
-    /// `normalShdWldOut` is the graph normal on the incident transport side;
-    /// `normalSrfWldOut` is the smooth unbumped normal used for per-lobe bump
-    /// agreement and diffuse softening.
+    /// `interaction` carries the graph, smooth, and geometric normals plus the
+    /// outgoing direction and immutable interface state. Tree traversal reads
+    /// each surface leaf's prepared normal rather than the graph normal.
     /// Returns the outgoing radiance contribution for one light sample.
     Vec3f EvalSurface(const SurfaceClosure& closure,
-                      const Vec3f& normalShdWldOut,
-                      const Vec3f& normalSrfWldOut,
-                      const Vec3f& omegaInWld,
-                      const Vec3f& omegaOutWld, float heroWavelengthNm = 0.0f,
-                      bool frontFacing = true);
+                      const SurfaceInteraction& interaction,
+                      const Vec3f& omegaInWld);
 
     /// Evaluate the full surface model with each leaf multiplied by the
     /// absolute incident cosine of that leaf's resolved shading normal.
     /// Composite closures may contain leaves with different corrected normals,
     /// so this projection cannot be applied once after EvalSurface().
     Vec3f EvalSurfaceCosine(const SurfaceClosure& closure,
-                            const Vec3f& normalShdWldOut,
-                            const Vec3f& normalSrfWldOut,
-                            const Vec3f& omegaInWld,
-                            const Vec3f& omegaOutWld,
-                            float heroWavelengthNm = 0.0f,
-                            bool frontFacing = true);
+                            const SurfaceInteraction& interaction,
+                            const Vec3f& omegaInWld);
 
     // ------------------------------------------------------------------
     // Sampling & PDF (Phase 9)
@@ -182,18 +176,13 @@ namespace Bsdf
     /// geometric side is returned invalid with zero BSDF and PDF; it is not
     /// replaced by another lobe.
     BsdfSample SampleSurface(const SurfaceClosure& closure,
-                             const Vec3f& normalShdWldOut,
-                             const Vec3f& normalSrfWldOut,
-                             const Vec3f& normalGeomWldOut,
-                             const Vec3f& omegaOutWld, float u1, float u2,
-                             float uLobe, float heroWavelengthNm = 0.0f,
-                             bool frontFacing = true);
+                             const SurfaceInteraction& interaction,
+                             float u1, float u2, float uLobe);
 
     /// Evaluates the surface mixture PDF.
     float PdfSurface(const SurfaceClosure& closure,
-                     const Vec3f& normalShdWldOut, const Vec3f& omegaInWld,
-                     const Vec3f& omegaOutWld, float heroWavelengthNm = 0.0f,
-                     bool frontFacing = true);
+                     const SurfaceInteraction& interaction,
+                     const Vec3f& omegaInWld);
 
     /// Return a copy of `closure` with lobes that would be discarded by the
     /// caustic-class path heuristic removed from the BSDF tree.

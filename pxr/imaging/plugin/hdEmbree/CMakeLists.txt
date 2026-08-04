@@ -178,6 +178,7 @@ pxr_plugin(hdEmbree
         renderer/materials/MaterialXCpp/surfaceClosure.h
         renderer/materials/MaterialXCpp/surfaceShaderUtils.h
         renderer/materials/MaterialXCpp/materials/closureTree.h
+        renderer/materials/MaterialXCpp/materials/surfaceInteraction.h
         renderer/materials/MaterialXCpp/materials/bsdf/mathPrimitives.h
         renderer/materials/MaterialXCpp/materials/bsdf/shadingFrame.h
         renderer/materials/MaterialXCpp/materials/bsdf/fresnel.h

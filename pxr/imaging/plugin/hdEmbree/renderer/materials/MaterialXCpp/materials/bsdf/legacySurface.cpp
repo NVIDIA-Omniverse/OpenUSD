@@ -30,22 +30,22 @@ _ComputeLegacyF0(const Vec3f& baseColor, float metallic,
 }
 
 Vec3f
-EvalLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
-                   const Vec3f& normalSrfWldOut,
-                   const Vec3f& omegaInWld, const Vec3f& omegaOutWld,
-                   BumpShadowingContext bumpContext)
+EvalLegacySurface(const SurfaceClosure& c,
+                  const SurfaceInteraction& interaction,
+                  const Vec3f& omegaInWld,
+                  BumpShadowingContext bumpContext)
 {
     const auto luminance = [&](const Vec3f& value) {
         return Bsdf::detail::Luminance(value, c.luminanceCoefficients);
     };
-    const Vec3f normalShdLobeWldOut = normalShdWldOut;
+    const Vec3f normalShdLobeWldOut = interaction.normalShdWldOut;
     if (bumpContext == BumpShadowingContext::Evaluation &&
         !BumpHemisphereAgreement(
-            normalSrfWldOut, normalShdLobeWldOut, omegaInWld)) {
+            interaction.normalSrfWldOut, normalShdLobeWldOut, omegaInWld)) {
         return Vec3f(0.0f);
     }
     const float diffuseBumpShadowing = BumpShadowingTerm(
-        normalSrfWldOut, normalShdLobeWldOut, omegaInWld, true,
+        interaction.normalSrfWldOut, normalShdLobeWldOut, omegaInWld, true,
         bumpContext);
     float NdotL = Dot(normalShdLobeWldOut, omegaInWld);
 
@@ -55,8 +55,8 @@ EvalLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
             c.baseColor, c.metallic, c.specular, c.specularIor);
         bool hasSpecularLobe = (luminance(F0) > kEpsilon);
 
-        Vec3f H = (omegaInWld + omegaOutWld).normalized();
-        float VdotH = std::max(Dot(omegaOutWld, H), 0.0f);
+        Vec3f H = (omegaInWld + interaction.omegaOutWld).normalized();
+        float VdotH = std::max(Dot(interaction.omegaOutWld, H), 0.0f);
 
         Vec3f diffuse(0.0f);
         Vec3f specular(0.0f);
@@ -68,23 +68,23 @@ EvalLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
             kD = kD * (1.0f - c.transmission);
             diffuse = CompMul(
                 kD, Bsdf::EvalLambertian(c.baseColor, normalShdLobeWldOut,
-                                         omegaInWld, omegaOutWld));
+                                         omegaInWld, interaction.omegaOutWld));
 
             specular = Bsdf::EvalGGXSpecular(
                 c.roughness, c.specularIor, CompMul(c.specularColor, F0),
-                normalShdLobeWldOut, omegaInWld, omegaOutWld);
+                normalShdLobeWldOut, omegaInWld, interaction.omegaOutWld);
         } else {
             Vec3f kD = Vec3f(1.0f - c.metallic) * (1.0f - c.transmission);
             diffuse = CompMul(
                 kD, Bsdf::EvalLambertian(c.baseColor, normalShdLobeWldOut,
-                                         omegaInWld, omegaOutWld));
+                                         omegaInWld, interaction.omegaOutWld));
         }
 
         Vec3f sheen(0.0f);
         if (c.sheen > 0.0f) {
             sheen =
                 Bsdf::EvalSheen(c.sheenColor, c.sheenRoughness,
-                                normalShdLobeWldOut, omegaInWld, omegaOutWld) *
+                                normalShdLobeWldOut, omegaInWld, interaction.omegaOutWld) *
                 c.sheen;
         }
 
@@ -93,7 +93,7 @@ EvalLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
         if (c.coat > 0.0f) {
             coatContrib =
                 Bsdf::EvalCoat(c.coat, c.coatRoughness, c.coatIor,
-                               normalShdLobeWldOut, omegaInWld, omegaOutWld);
+                               normalShdLobeWldOut, omegaInWld, interaction.omegaOutWld);
             float coatFresnel = SchlickFresnelScalar(c.coatIor, VdotH);
             coatAttenuation = 1.0f - c.coat * coatFresnel;
         }
@@ -107,7 +107,7 @@ EvalLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
     Vec3f transmitted(0.0f);
     if (c.transmission > 0.0f && NdotL < 0.0f) {
         float absNdotV = std::max(
-            std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), kEpsilon);
+            std::abs(Dot(normalShdLobeWldOut, interaction.omegaOutWld)), kEpsilon);
         float fresnel = SchlickFresnelScalar(c.specularIor, absNdotV);
         transmitted = c.transmissionColor *
             ((1.0f - fresnel) * c.transmission * kInvPi);
@@ -117,13 +117,14 @@ EvalLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
 }
 
 float
-PdfLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
-                  const Vec3f& omegaInWld, const Vec3f& omegaOutWld)
+PdfLegacySurface(const SurfaceClosure& c,
+                 const SurfaceInteraction& interaction,
+                 const Vec3f& omegaInWld)
 {
     const auto luminance = [&](const Vec3f& value) {
         return Bsdf::detail::Luminance(value, c.luminanceCoefficients);
     };
-    const Vec3f normalShdLobeWldOut = normalShdWldOut;
+    const Vec3f normalShdLobeWldOut = interaction.normalShdWldOut;
     Vec3f F0 = _ComputeLegacyF0(
         c.baseColor, c.metallic, c.specular, c.specularIor);
     bool hasSpecularLobe = (luminance(F0) > kEpsilon);
@@ -150,26 +151,24 @@ PdfLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
         pDiffuse * Bsdf::PdfLambertian(normalShdLobeWldOut, omegaInWld);
     pdfSolidAngle +=
         pSpecular * Bsdf::PdfGGXSpecular(c.roughness, normalShdLobeWldOut,
-                                         omegaInWld, omegaOutWld);
+                                         omegaInWld, interaction.omegaOutWld);
     if (c.coat > 0.0f) {
         pdfSolidAngle +=
             pCoat * Bsdf::PdfGGXSpecular(c.coatRoughness, normalShdLobeWldOut,
-                                         omegaInWld, omegaOutWld);
+                                         omegaInWld, interaction.omegaOutWld);
     }
     return pdfSolidAngle;
 }
 
 Bsdf::BsdfSample
-SampleLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
-                     const Vec3f& normalSrfWldOut,
-                     const Vec3f& normalGeomWldOut,
-                     const Vec3f& omegaOutWld, float u1, float u2, float uLobe,
-                     bool frontFacing)
+SampleLegacySurface(const SurfaceClosure& c,
+                    const SurfaceInteraction& interaction,
+                    float u1, float u2, float uLobe)
 {
     const auto luminance = [&](const Vec3f& value) {
         return Bsdf::detail::Luminance(value, c.luminanceCoefficients);
     };
-    const Vec3f normalShdLobeWldOut = normalShdWldOut;
+    const Vec3f normalShdLobeWldOut = interaction.normalShdWldOut;
     Vec3f F0 = _ComputeLegacyF0(
         c.baseColor, c.metallic, c.specular, c.specularIor);
     bool hasSpecularLobe = (luminance(F0) > kEpsilon);
@@ -198,13 +197,11 @@ SampleLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
                                         bool diffuseFamily) {
         sample.bsdfValueCosine = sample.bsdfValue *
             std::abs(Dot(normalShdLobeWldOut, sample.omegaInWld));
-        const bool directionValid = diffuseFamily
-            ? Dot(normalGeomWldOut, sample.omegaInWld) > 0.0f
-            : Dot(normalShdLobeWldOut, omegaOutWld) > 0.0f &&
-                Dot(normalGeomWldOut, sample.omegaInWld) >= 0.0f &&
-                Dot(normalShdLobeWldOut, sample.omegaInWld) >= 0.0f;
+        const bool directionValid = SampledDirectionIsValid(
+            false, normalShdLobeWldOut, interaction.normalGeomWldOut,
+            sample.omegaInWld);
         const bool bumpValid = BumpHemisphereAgreement(
-            normalSrfWldOut, normalShdLobeWldOut, sample.omegaInWld);
+            interaction.normalSrfWldOut, normalShdLobeWldOut, sample.omegaInWld);
         if (!directionValid || (diffuseFamily && !bumpValid)) {
             sample.bsdfValue = Vec3f(0.0f);
             sample.bsdfValueCosine = Vec3f(0.0f);
@@ -215,57 +212,47 @@ SampleLegacySurface(const SurfaceClosure& c, const Vec3f& normalShdWldOut,
 
     if (uLobe < cumDiffuse) {
         auto sample = Bsdf::SampleLambertian(c.baseColor, normalShdLobeWldOut,
-                                             omegaOutWld, u1, u2);
+                                             interaction.omegaOutWld, u1, u2);
         if (sample.pdfSolidAngle <= 0.0f) {
             return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
-        sample.bsdfValue = EvalLegacySurface(c, normalShdWldOut,
-                                              normalSrfWldOut,
-                                              sample.omegaInWld, omegaOutWld,
+        sample.bsdfValue = EvalLegacySurface(c, interaction, sample.omegaInWld,
                                               BumpShadowingContext::Sampling);
-        sample.pdfSolidAngle = PdfLegacySurface(
-            c, normalShdWldOut, sample.omegaInWld, omegaOutWld);
+        sample.pdfSolidAngle = PdfLegacySurface(c, interaction, sample.omegaInWld);
         return finalizeReflection(sample, true);
     }
     if (uLobe < cumSpecular) {
         Vec3f specCol = CompMul(c.specularColor, F0);
         auto sample =
             Bsdf::SampleGGXSpecular(c.roughness, c.specularIor, specCol,
-                                    normalShdLobeWldOut, omegaOutWld, u1, u2);
+                                    normalShdLobeWldOut, interaction.omegaOutWld, u1, u2);
         if (sample.pdfSolidAngle <= 0.0f) {
             return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
-        sample.bsdfValue = EvalLegacySurface(c, normalShdWldOut,
-                                              normalSrfWldOut,
-                                              sample.omegaInWld, omegaOutWld,
+        sample.bsdfValue = EvalLegacySurface(c, interaction, sample.omegaInWld,
                                               BumpShadowingContext::Sampling);
-        sample.pdfSolidAngle = PdfLegacySurface(
-            c, normalShdWldOut, sample.omegaInWld, omegaOutWld);
+        sample.pdfSolidAngle = PdfLegacySurface(c, interaction, sample.omegaInWld);
         return finalizeReflection(sample, false);
     }
     if (uLobe < cumCoat) {
         float coatF0 = SchlickFresnelScalar(c.coatIor, 1.0f);
         auto sample =
             Bsdf::SampleGGXSpecular(c.coatRoughness, c.coatIor, Vec3f(coatF0),
-                                    normalShdLobeWldOut, omegaOutWld, u1, u2);
+                                    normalShdLobeWldOut, interaction.omegaOutWld, u1, u2);
         if (sample.pdfSolidAngle <= 0.0f) {
             return Bsdf::BsdfSample{Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
         }
-        sample.bsdfValue = EvalLegacySurface(c, normalShdWldOut,
-                                              normalSrfWldOut,
-                                              sample.omegaInWld, omegaOutWld,
+        sample.bsdfValue = EvalLegacySurface(c, interaction, sample.omegaInWld,
                                               BumpShadowingContext::Sampling);
-        sample.pdfSolidAngle = PdfLegacySurface(
-            c, normalShdWldOut, sample.omegaInWld, omegaOutWld);
+        sample.pdfSolidAngle = PdfLegacySurface(c, interaction, sample.omegaInWld);
         return finalizeReflection(sample, false);
     }
     Bsdf::BsdfSample sample = SampleDeltaTransmission(
         c.specularIor, c.transmissionColor * (c.transmission * c.presence),
-        1.0f, normalShdWldOut, omegaOutWld, !frontFacing);
-    const bool directionValid =
-        Dot(normalShdLobeWldOut, omegaOutWld) > 0.0f &&
-        Dot(normalGeomWldOut, sample.omegaInWld) < 0.0f &&
-        Dot(normalShdLobeWldOut, sample.omegaInWld) < 0.0f;
+        1.0f, interaction.normalShdWldOut, interaction.omegaOutWld, !interaction.frontFacing);
+    const bool directionValid = SampledDirectionIsValid(
+        true, normalShdLobeWldOut, interaction.normalGeomWldOut,
+        sample.omegaInWld);
     if (!directionValid) {
         sample.bsdfValue = Vec3f(0.0f);
         sample.pdfSolidAngle = 0.0f;
