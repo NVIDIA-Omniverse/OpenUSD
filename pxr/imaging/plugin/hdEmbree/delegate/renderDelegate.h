@@ -41,7 +41,6 @@ class HdEmbreeMesh;
     ((maxBounces, "ty:maxBounces")) \
     ((minBouncesBeforeRR, "ty:minBouncesBeforeRR")) \
     ((lightSamplesPerHit, "ty:lightSamplesPerHit")) \
-    ((stratifyLightSamples, "ty:stratifyLightSamples")) \
     ((showAdaptiveHeatmap, "ty:showAdaptiveHeatmap")) \
     ((fireflyClampThreshold, "ty:fireflyClampThreshold")) \
     ((enableCaustics, "ty:enableCaustics")) \

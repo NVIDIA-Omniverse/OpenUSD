@@ -85,10 +85,6 @@ class "TyphoonRenderSettingsAPI" (
         doc = """Number of light samples per hit point per light."""
     )
 
-    uniform bool ty:stratifyLightSamples = true (
-        doc = """Stratify light samples across the light surface."""
-    )
-
     uniform bool ty:showAdaptiveHeatmap = false (
         doc = """Visualize adaptive sampling convergence as a heatmap."""
     )

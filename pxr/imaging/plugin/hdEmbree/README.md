@@ -179,7 +179,6 @@ invariants are documented under
 | Max Bounces | `ty:maxBounces` | `int` | `16` |
 | Min Bounces Before Russian Roulette | `ty:minBouncesBeforeRR` | `int` | `2` |
 | Light Samples Per Hit | `ty:lightSamplesPerHit` | `int` | `1` |
-| Stratify Light Samples | `ty:stratifyLightSamples` | `bool` | `true` |
 | Show Adaptive Heatmap | `ty:showAdaptiveHeatmap` | `bool` | `false` |
 | Firefly Clamp Threshold | `ty:fireflyClampThreshold` | `float` | `20.0` |
 | Enable Caustics | `ty:enableCaustics` | `bool` | `false` |
@@ -217,10 +216,7 @@ The absolute floor keeps near-black pixels from being judged only by relative er
 `ty:maxBounces` controls the maximum number of indirect light bounces (default `16`). Higher values capture more global illumination but increase render time. An SSS closure (entry + random walk + exit) counts as a single bounce, matching a plain diffuse surface hit. `ty:minBouncesBeforeRR` sets the minimum number of bounces before Russian Roulette path termination kicks in (default `2`). Paths shorter than this threshold are never randomly terminated, ensuring basic indirect illumination is always captured.
 
 ### Light Samples Per Hit (`ty:lightSamplesPerHit`)
-Number of shadow/light samples taken per hit point per light source. Higher values reduce noise in direct lighting at the cost of render time. Must be >= 1.
-
-### Stratify Light Samples (`ty:stratifyLightSamples`)
-When enabled, light samples are stratified across the light surface, providing more uniform coverage and reducing variance compared to purely random sampling.
+Number of shadow/light samples taken per hit point per light source. Higher values reduce noise in direct lighting at the cost of render time. Samples are always stratified across the light surface. Must be >= 1.
 
 ### Caustics (`ty:enableCaustics`, `ty:causticsClampThreshold`)
 When `ty:enableCaustics` is `true`, hdEmbree keeps indirect caustic paths but regularizes sharp lobes after the first non-specular bounce. Contributions on paths that have entered this caustic class are clamped by `ty:causticsClampThreshold`; set the threshold to `0` or below to disable this extra caustic-only clamp.

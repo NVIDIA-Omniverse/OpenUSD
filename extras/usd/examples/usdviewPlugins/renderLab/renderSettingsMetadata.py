@@ -54,10 +54,6 @@ _RENDERERS = {
                 "category": "Path Tracing",
                 "order": 30,
             },
-            "ty:stratifyLightSamples": {
-                "category": "Path Tracing",
-                "order": 40,
-            },
             "ty:enableCaustics": {
                 "category": "Path Tracing",
                 "order": 50,

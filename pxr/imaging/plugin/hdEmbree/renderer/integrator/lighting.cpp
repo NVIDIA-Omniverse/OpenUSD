@@ -161,16 +161,11 @@ ty::Renderer::_ComputeDirectLightingMIS(
     ty::PrototypeContext const* const conservativeOriginPrototype =
         conservativeOwnObject ? interaction.prototypeContext : nullptr;
 
-    // For stratification: compute grid dimensions for lightSampleCount samples.
-    // Find the largest sqrtN such that sqrtN*sqrtN <= lightSampleCount, then
-    // use sqrtN x ceilN grid where ceilN = ceil(lightSampleCount / sqrtN).
-    int stratDimU = 1, stratDimV = 1;
-    if (_settings.stratifyLightSamples && lightSampleCount > 1) {
-        stratDimU =
-            static_cast<int>(std::sqrt(static_cast<float>(lightSampleCount)));
-        if (stratDimU < 1) stratDimU = 1;
-        stratDimV = (lightSampleCount + stratDimU - 1) / stratDimU;
-    }
+    // Stratify every light sample. A single sample naturally uses a 1x1 grid.
+    const int stratDimU =
+        static_cast<int>(std::sqrt(static_cast<float>(lightSampleCount)));
+    const int stratDimV =
+        (lightSampleCount + stratDimU - 1) / stratDimU;
 
     int lightIndex = 0;
     for (auto const& it : _lights.GetLights())
@@ -198,19 +193,12 @@ ty::Renderer::_ComputeDirectLightingMIS(
                     .Split(ty::SampleDomainKey::DirectLightSample,
                            lightSampleCount, indexSampleLight)
                     .Draw2D();
-            // Generate sample coordinates, optionally stratified.
-            float u1, u2;
-            if (_settings.stratifyLightSamples && lightSampleCount > 1) {
-                int indexStratumU = indexSampleLight % stratDimU;
-                int indexStratumV = indexSampleLight / stratDimU;
-                u1 =
-                    (indexStratumU + sample[0]) / static_cast<float>(stratDimU);
-                u2 =
-                    (indexStratumV + sample[1]) / static_cast<float>(stratDimV);
-            } else {
-                u1 = sample[0];
-                u2 = sample[1];
-            }
+            const int indexStratumU = indexSampleLight % stratDimU;
+            const int indexStratumV = indexSampleLight / stratDimU;
+            const float u1 =
+                (indexStratumU + sample[0]) / static_cast<float>(stratDimU);
+            const float u2 =
+                (indexStratumV + sample[1]) / static_cast<float>(stratDimV);
 
             ty::LightSampler::LightSample ls =
                 ty::LightSampler::GetLightSample(light, posWld,
@@ -390,15 +378,11 @@ ty::Renderer::_ComputeMediumDirectLighting(
     const float lightSampleCountInverse =
         1.0f / static_cast<float>(lightSampleCount);
 
-    int stratDimU = 1, stratDimV = 1;
-    if (_settings.stratifyLightSamples && lightSampleCount > 1) {
-        stratDimU =
-            static_cast<int>(std::sqrt(static_cast<float>(lightSampleCount)));
-        if (stratDimU < 1) {
-            stratDimU = 1;
-        }
-        stratDimV = (lightSampleCount + stratDimU - 1) / stratDimU;
-    }
+    // Stratify every light sample. A single sample naturally uses a 1x1 grid.
+    const int stratDimU =
+        static_cast<int>(std::sqrt(static_cast<float>(lightSampleCount)));
+    const int stratDimV =
+        (lightSampleCount + stratDimU - 1) / stratDimU;
 
     int lightIndex = 0;
     for (auto const& it : _lights.GetLights()) {
@@ -424,19 +408,12 @@ ty::Renderer::_ComputeMediumDirectLighting(
                     .Split(ty::SampleDomainKey::MediumDirectLightSample,
                            lightSampleCount, indexSampleLight)
                     .Draw2D();
-            float u1 = 0.0f;
-            float u2 = 0.0f;
-            if (_settings.stratifyLightSamples && lightSampleCount > 1) {
-                int indexStratumU = indexSampleLight % stratDimU;
-                int indexStratumV = indexSampleLight / stratDimU;
-                u1 =
-                    (indexStratumU + sample[0]) / static_cast<float>(stratDimU);
-                u2 =
-                    (indexStratumV + sample[1]) / static_cast<float>(stratDimV);
-            } else {
-                u1 = sample[0];
-                u2 = sample[1];
-            }
+            const int indexStratumU = indexSampleLight % stratDimU;
+            const int indexStratumV = indexSampleLight / stratDimU;
+            const float u1 =
+                (indexStratumU + sample[0]) / static_cast<float>(stratDimU);
+            const float u2 =
+                (indexStratumV + sample[1]) / static_cast<float>(stratDimV);
 
             const ty::LightSampler::LightSample ls =
                 ty::LightSampler::GetLightSample(light, posWld,

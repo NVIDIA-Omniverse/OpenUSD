@@ -16,7 +16,6 @@ def RenderSettings "RenderSettings"
     # int ty:randomNumberSeed = 1
     # int ty:maxBounces = 0
     # int ty:lightSamplesPerHit = 1
-    # bool ty:stratifyLightSamples = "false"
     # int ty:minSamplesBeforeAdaptive = 64
     rel products = [</RenderProduct>]
 }

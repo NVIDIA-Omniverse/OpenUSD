@@ -65,7 +65,6 @@ struct RenderSettings {
     bool enableSceneColors = true;
     int ambientOcclusionSamples = 0;
     int lightSamplesPerHit = 1;
-    bool stratifyLightSamples = true;
 
     // Path depth and contribution policy.
     int maxBounces = 16;

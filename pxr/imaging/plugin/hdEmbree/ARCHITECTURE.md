@@ -976,6 +976,9 @@ Follow the focused and complete validation workflow in
 - New stochastic decision: add a stable `ty::SampleDomainKey`. Never reuse or renumber existing values; they are part of deterministic rendering.
 - Use `Fork` for fixed independent domains, `Split` for one of N samples, `Distrib` for distributed work, and `Chain` for indexed variable-length sequences.
 - Never draw opportunistically from an unrelated domain.
+- Surface and medium direct-light samples are always stratified. The renderer
+  normalizes the sample count to at least one, so the same grid flow handles a
+  single sample as a 1x1 stratum.
 - Update `testenv/testHdEmbreeSampling.cpp`.
 
 ### Geometry and primvars

@@ -937,10 +937,6 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->lightSamplesPerHit,
                 defaults.lightSamplesPerHit);
-        nextSettings.stratifyLightSamples =
-            renderDelegate->GetRenderSetting<bool>(
-                HdEmbreeRenderSettingsTokens->stratifyLightSamples,
-                defaults.stratifyLightSamples);
         nextSettings.showAdaptiveHeatmap =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->showAdaptiveHeatmap,
