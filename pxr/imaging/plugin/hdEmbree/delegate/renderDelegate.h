@@ -45,7 +45,6 @@ class HdEmbreeMesh;
     ((fireflyClampThreshold, "ty:fireflyClampThreshold")) \
     ((enableCaustics, "ty:enableCaustics")) \
     ((causticsClampThreshold, "ty:causticsClampThreshold")) \
-    ((approxTransparentShadows, "ty:approxTransparentShadows")) \
     ((disableShadows, "ty:disableShadows")) \
     ((enableGgxMicrofacetMultipleScattering, "ty:enableGgxMicrofacetMultipleScattering")) \
     ((materialRenderContext, "ty:materialRenderContext")) \

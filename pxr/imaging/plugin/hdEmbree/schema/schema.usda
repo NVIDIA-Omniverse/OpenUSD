@@ -101,10 +101,6 @@ class "TyphoonRenderSettingsAPI" (
         doc = """Clamp threshold for caustic path contributions."""
     )
 
-    uniform bool ty:approxTransparentShadows = true (
-        doc = """Approximate transparent shadows."""
-    )
-
     uniform bool ty:disableShadows = false (
         doc = """Disable shadow visibility rays."""
     )

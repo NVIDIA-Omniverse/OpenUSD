@@ -39,7 +39,7 @@ supported external contract is:
 | `HdEmbreeRendererPlugin` type name, `HdRendererPlugin` base, priority | `plugInfo.json`, `delegate/rendererPlugin.cpp` |
 | `HdEmbree_ImplicitSurfaceSceneIndexPlugin` type name, base, `loadWithRenderer` | `plugInfo.json`, `delegate/implicitSurfaceSceneIndexPlugin.cpp` |
 | `TyphoonRenderSettingsAPI` schema identity, auto-apply to `RenderSettings` | `plugInfo.json`, `schema/generatedSchema.usda` |
-| The 29 `ty:` attribute names, types, defaults, and allowed tokens | `schema/schema.usda`, `HdEmbreeRenderDelegate::_Initialize()` |
+| The 25 `ty:` attribute names, types, defaults, and allowed tokens | `schema/schema.usda`, `HdEmbreeRenderDelegate::_Initialize()` |
 | Generic unnamespaced settings (`domeLightCameraVisibility`) and the namespace list | `HdEmbreeRenderDelegate::GetRenderSettingsNamespaces()` |
 | Material render-context tokens | `HdEmbreeRenderDelegate::GetMaterialRenderContexts()` |
 | Supported AOV names | `renderer/aov/aovOutput.cpp` |
@@ -50,7 +50,7 @@ The USD `TyphoonRenderSettingsAPI` schema is hdEmbree's supported external
 settings interface. Hydra's direct delegate-settings path is an internal
 application-control path, required by usdview and RenderLab, and is not a
 consumer-facing C++ API. RenderLab uses `StageView.SetRendererSetting()` rather
-than authoring USD. Its explicit metadata covers 27 of the 29 `ty:` attributes;
+than authoring USD. Its explicit metadata covers 23 of the 25 `ty:` attributes;
 `ty:disableShadows` and `ty:textureCacheSize` use the default category. Its key
 set must remain a subset of the delegate descriptors.
 
@@ -1006,6 +1006,12 @@ a supported C++ API.
 Changing `ty:materialRenderContext` changes Hydra network selection.
 `HdEmbreeRenderPass::_ResyncMaterialNetworksForRenderContextChange()` must
 request material recompilation whenever that priority changes.
+
+Transparent-shadow policy is not stored as independent renderer state.
+Thin-walled transmission always uses straight RGB shadow attenuation. Thick
+transmission uses the straight-through approximation only when caustics are
+disabled; when caustics are enabled, thick entry boundaries block the straight
+shadow ray and retain the conservative path policy.
 
 The MaterialXCpp GGX multiple-scattering and dielectric-layer throughput
 policies remain process-wide globals. OIIO's primary texture system and its

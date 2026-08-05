@@ -184,7 +184,7 @@ ty::Renderer::_Visibility(GfVec3f const& posWld,
 
         const bool approximateThickTransmission =
             ty::AllowApproximateTransparentShadowAtHit(
-                _settings.approxTransparentShadows,
+                !_settings.enableCaustics,
                 conservativeOriginInstance, conservativeOriginPrototype,
                 hitInstance, hitMesh);
 
@@ -209,7 +209,7 @@ ty::Renderer::_Visibility(GfVec3f const& posWld,
                       closure.transmission > 0.0f))) {
                     // Thin-walled materials have no refractive path to bend.
                     // Thick transparent surfaces use this straight-through
-                    // approximation only when the render setting enables it.
+                    // approximation only when caustic paths are disabled.
                     const bool includeSurfaceTint =
                         closure.thinWalled ||
                         (!closure.hasInteriorMedium &&

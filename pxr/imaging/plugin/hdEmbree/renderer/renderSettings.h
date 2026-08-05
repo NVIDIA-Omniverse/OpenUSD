@@ -74,7 +74,6 @@ struct RenderSettings {
     float causticsClampThreshold = 5.0f;
 
     // Visibility policy.
-    bool approxTransparentShadows = true;
     bool disableShadows = false;
 
     // Material and texture policy.

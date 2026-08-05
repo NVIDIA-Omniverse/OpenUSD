@@ -154,7 +154,7 @@ ty::Renderer::_ComputeDirectLightingMIS(
             ? ty::LightSampler::SamplingMode::ReflectionHemisphere
             : ty::LightSampler::SamplingMode::FullSphere;
     const bool conservativeOwnObject =
-        _settings.approxTransparentShadows &&
+        !_settings.enableCaustics &&
         !ty::AllowApproximateTransparentShadowsForNeeOrigin(closure, true);
     ty::InstanceContext const* const conservativeOriginInstance =
         conservativeOwnObject ? interaction.instanceContext : nullptr;

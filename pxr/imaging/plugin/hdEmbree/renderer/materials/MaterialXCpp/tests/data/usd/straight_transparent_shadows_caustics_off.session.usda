@@ -1,0 +1,9 @@
+#usda 1.0
+(
+    doc = "Session layer for ticket 804: caustics off enables the straight transparent shadow approximation."
+)
+
+over "RenderSettings"
+{
+    bool ty:enableCaustics = false
+}

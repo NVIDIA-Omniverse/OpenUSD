@@ -19,11 +19,6 @@ class "TyphoonRenderSettingsAPI" (
             string userDocBrief = "Ambient occlusion rays generated per camera ray."
         }
     )
-    uniform bool ty:approxTransparentShadows = 1 (
-        customData = {
-            string userDocBrief = "Approximate transparent shadows."
-        }
-    )
     uniform float ty:causticsClampThreshold = 5 (
         customData = {
             string userDocBrief = "Clamp threshold for caustic path contributions."

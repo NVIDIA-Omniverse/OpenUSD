@@ -58,10 +58,6 @@ _RENDERERS = {
                 "category": "Path Tracing",
                 "order": 50,
             },
-            "ty:approxTransparentShadows": {
-                "category": "Path Tracing",
-                "order": 55,
-            },
             "ty:fireflyClampThreshold": {
                 "category": "Path Tracing",
                 "order": 60,

@@ -953,10 +953,6 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<float>(
                 HdEmbreeRenderSettingsTokens->causticsClampThreshold,
                 defaults.causticsClampThreshold);
-        nextSettings.approxTransparentShadows =
-            renderDelegate->GetRenderSetting<bool>(
-                HdEmbreeRenderSettingsTokens->approxTransparentShadows,
-                defaults.approxTransparentShadows);
         nextSettings.disableShadows =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->disableShadows,

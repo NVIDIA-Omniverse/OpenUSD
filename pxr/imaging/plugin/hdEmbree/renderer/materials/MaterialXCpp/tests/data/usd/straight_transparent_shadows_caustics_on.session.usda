@@ -1,0 +1,9 @@
+#usda 1.0
+(
+    doc = "Session layer for ticket 804: caustics on uses conservative thick transparent shadows."
+)
+
+over "RenderSettings"
+{
+    bool ty:enableCaustics = true
+}
