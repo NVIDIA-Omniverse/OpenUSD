@@ -105,10 +105,6 @@ class "TyphoonRenderSettingsAPI" (
         doc = """Disable shadow visibility rays."""
     )
 
-    uniform bool ty:enableGgxMicrofacetMultipleScattering = true (
-        doc = """Use multiple scattering compensation for rough dielectric GGX."""
-    )
-
     uniform token ty:materialRenderContext = "mtlx" (
         allowedTokens = ["mtlx", "default"]
         doc = """Material render context priority."""

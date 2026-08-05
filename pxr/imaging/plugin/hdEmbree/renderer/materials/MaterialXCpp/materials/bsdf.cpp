@@ -26,18 +26,6 @@
 namespace mxcpp {
 
 void
-Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(bool enabled)
-{
-    detail::SetGgxMultipleScatteringState(enabled);
-}
-
-bool
-Bsdf::IsGgxMicrofacetMultipleScatteringEnabled()
-{
-    return detail::IsGgxMultipleScatteringStateEnabled();
-}
-
-void
 Bsdf::SetDielectricLayerThroughputMode(DielectricLayerThroughputMode mode)
 {
     detail::SetDielectricThroughputModeState(mode);

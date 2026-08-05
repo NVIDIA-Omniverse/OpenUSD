@@ -184,7 +184,6 @@ invariants are documented under
 | Enable Caustics | `ty:enableCaustics` | `bool` | `false` |
 | Caustics Clamp Threshold | `ty:causticsClampThreshold` | `float` | `5.0` |
 | Disable Shadows | `ty:disableShadows` | `bool` | `false` |
-| Enable GGX Microfacet Multiple Scattering | `ty:enableGgxMicrofacetMultipleScattering` | `bool` | `true` |
 | Material Render Context | `ty:materialRenderContext` | `token` | `mtlx` |
 | Use Adobe OpenPBR | `ty:useAdobeOpenPBR` | `bool` | `false` |
 | Dielectric Layer Throughput Mode | `ty:dielectricLayerThroughputMode` | `token` | `bsdl` |

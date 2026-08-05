@@ -17,15 +17,6 @@ namespace detail {
 inline constexpr float kBsdlDielectricIorMin = 1.001f;
 inline constexpr float kBsdlDielectricIorMax = 5.0f;
 
-/// Atomically selects whether later GGX evaluations add multiple scattering.
-/// This operation cannot fail.
-void SetGgxMultipleScatteringState(bool enabled);
-
-/// Returns the current GGX multiple-scattering switch.
-/// The atomic read is relaxed; callers require a coherent value, not ordering
-/// with unrelated renderer state. This operation cannot fail.
-bool IsGgxMultipleScatteringStateEnabled();
-
 /// Interpolates directional GGX single-scatter missing energy.
 /// `cosTheta` and `alphaRoughness` must be finite and are clamped to [0,1].
 /// Returns a finite missing-energy fraction in [0,1]. Cannot fail.
@@ -61,16 +52,16 @@ float LookupBsdlDielectricTransmissionSingleScatterAlbedo(
 /// `cosThetaO` and `perceptualRoughness` must be finite and are clamped to
 /// [0,1]. `ior` must be finite and positive and is clamped to the LUT domain.
 /// `backfacing` selects transport from inside the dielectric. Returns the
-/// finite missing-energy fraction in [0,1], or zero when compensation is
-/// disabled or below its roughness threshold. Cannot fail.
+/// finite missing-energy fraction in [0,1], or zero below its roughness
+/// threshold. Cannot fail.
 float BsdlCoupledDielectricCompensation(
     float cosThetaO, float perceptualRoughness, float ior, bool backfacing);
 
 /// Returns the Turquin GGX multiple-scattering scale for one outgoing
 /// direction. `alphaRoughness` and `cosThetaO` must be finite and are clamped
-/// to [0,1]. `fresnel` must be finite and non-negative. Returns one when
-/// compensation is disabled or below its roughness threshold; otherwise
-/// returns a finite non-negative RGB scale. This operation cannot fail.
+/// to [0,1]. `fresnel` must be finite and non-negative. Returns one below the
+/// roughness threshold; otherwise returns a finite non-negative RGB scale. This
+/// operation cannot fail.
 Vec3f TurquinMicrofacetMsScale(
     float alphaRoughness, float cosThetaO, const Vec3f& fresnel);
 

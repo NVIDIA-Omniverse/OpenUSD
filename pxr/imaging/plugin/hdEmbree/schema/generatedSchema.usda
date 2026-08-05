@@ -65,11 +65,6 @@ class "TyphoonRenderSettingsAPI" (
             string userDocBrief = "Apply camera exposure compensation."
         }
     )
-    uniform bool ty:enableGgxMicrofacetMultipleScattering = 1 (
-        customData = {
-            string userDocBrief = "Use multiple scattering compensation for rough dielectric GGX."
-        }
-    )
     uniform bool ty:enableLighting = 1 (
         customData = {
             string userDocBrief = "Evaluate scene lights."

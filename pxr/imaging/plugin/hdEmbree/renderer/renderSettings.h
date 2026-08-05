@@ -77,7 +77,6 @@ struct RenderSettings {
     bool disableShadows = false;
 
     // Material and texture policy.
-    bool enableGgxMicrofacetMultipleScattering = true;
     DielectricLayerThroughputMode dielectricLayerThroughputMode =
         DielectricLayerThroughputMode::Bsdl;
     bool useAdobeOpenPBR = false;

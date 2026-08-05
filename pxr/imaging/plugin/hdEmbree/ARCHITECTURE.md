@@ -1013,13 +1013,14 @@ transmission uses the straight-through approximation only when caustics are
 disabled; when caustics are enabled, thick entry boundaries block the straight
 shadow ray and retain the conservative path policy.
 
-The MaterialXCpp GGX multiple-scattering and dielectric-layer throughput
-policies remain process-wide globals. OIIO's primary texture system and its
-cache-size attribute are also process-wide because it is created in shared
-mode. `SetRenderSettings()` therefore reapplies all three values
-unconditionally; applying them for one stopped renderer can affect another
-renderer that is shading concurrently. Per-evaluation ownership is separate
-work.
+MaterialXCpp always applies GGX multiple-scattering compensation when a lobe's
+algorithmic conditions permit it; there is no mutable policy state or render
+setting. The dielectric-layer throughput policy remains process-wide. OIIO's
+primary texture system and its cache-size attribute are also process-wide
+because it is created in shared mode. `SetRenderSettings()` therefore reapplies
+the latter two values unconditionally; applying them for one stopped renderer
+can affect another renderer that is shading concurrently. Per-evaluation
+ownership is separate work.
 
 Update all relevant surfaces:
 

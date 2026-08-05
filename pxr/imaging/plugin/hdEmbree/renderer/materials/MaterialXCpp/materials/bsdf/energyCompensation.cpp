@@ -22,16 +22,8 @@ namespace detail {
 
 static constexpr float _kTurquinMicrofacetMsMinAlpha = 0.04f * 0.04f;
 
-static std::atomic<bool> _gGgxMicrofacetMultipleScatteringEnabled{true};
 static std::atomic<int> _gDielectricLayerThroughputMode{
     static_cast<int>(Bsdf::DielectricLayerThroughputMode::Bsdl)};
-
-void
-SetGgxMultipleScatteringState(bool enabled)
-{
-    _gGgxMicrofacetMultipleScatteringEnabled.store(
-        enabled, std::memory_order_relaxed);
-}
 
 void
 SetDielectricThroughputModeState(Bsdf::DielectricLayerThroughputMode mode)
@@ -313,13 +305,6 @@ LookupBsdlDielectricTransmissionSingleScatterAlbedo(
         lerpRoughness(ior1) * iorT);
 }
 
-bool
-IsGgxMultipleScatteringStateEnabled()
-{
-    return _gGgxMicrofacetMultipleScatteringEnabled.load(
-        std::memory_order_relaxed);
-}
-
 float
 BsdlCoupledDielectricCompensation(
     float cosThetaO,
@@ -327,8 +312,7 @@ BsdlCoupledDielectricCompensation(
     float ior,
     bool backfacing)
 {
-    if (!IsGgxMultipleScatteringStateEnabled() ||
-        perceptualRoughness < std::sqrt(_kTurquinMicrofacetMsMinAlpha)) {
+    if (perceptualRoughness < std::sqrt(_kTurquinMicrofacetMsMinAlpha)) {
         return 0.0f;
     }
 
@@ -358,8 +342,7 @@ TurquinMicrofacetMsScale(
     float cosThetaO,
     const Vec3f& fresnel)
 {
-    if (!IsGgxMultipleScatteringStateEnabled() ||
-        alphaRoughness < _kTurquinMicrofacetMsMinAlpha) {
+    if (alphaRoughness < _kTurquinMicrofacetMsMinAlpha) {
         return Vec3f(1.0f);
     }
 
@@ -380,8 +363,7 @@ _TurquinDirectionalReflectance(
     float cosThetaO,
     const Vec3f& fresnel)
 {
-    if (!IsGgxMultipleScatteringStateEnabled() ||
-        alphaRoughness < _kTurquinMicrofacetMsMinAlpha) {
+    if (alphaRoughness < _kTurquinMicrofacetMsMinAlpha) {
         return Clamp01(fresnel);
     }
 

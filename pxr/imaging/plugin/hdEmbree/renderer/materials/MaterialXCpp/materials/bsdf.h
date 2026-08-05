@@ -19,11 +19,6 @@ namespace mxcpp {
 /// point away from the surface.
 namespace Bsdf
 {
-    /// Enables Turquin-style multiple-scattering compensation for GGX
-    /// reflection lobes and their layered throughput estimates.
-    void SetGgxMicrofacetMultipleScatteringEnabled(bool enabled);
-    bool IsGgxMicrofacetMultipleScatteringEnabled();
-
     enum class DielectricLayerThroughputMode
     {
         Bsdl,
@@ -141,8 +136,7 @@ namespace Bsdf
     /// Directional-hemispherical transmission albedo of the coupled rough
     /// dielectric interface. roughness contains GGX alpha values; anisotropy
     /// is reduced symmetrically to one azimuth-independent scalar. Compensation
-    /// is applied only when both its argument and the global GGX multiple-
-    /// scattering setting are enabled.
+    /// is applied when its argument is enabled.
     float CoupledRoughDielectricDirectionalTransmissionAlbedo(
         float cosTheta,
         const Vec2f& roughness,

@@ -1193,22 +1193,19 @@ _TestLiveRenderPassesOwnAnonymousBindings()
 }
 
 bool
-_TestProcessGlobalSettingsAreReapplied()
+_TestProcessGlobalDielectricSettingIsReapplied()
 {
     ty::Renderer renderer;
     ty::RenderSettings settings;
-    settings.enableGgxMicrofacetMultipleScattering = false;
     settings.dielectricLayerThroughputMode =
         ty::DielectricLayerThroughputMode::MaterialXGlsl;
     renderer.SetRenderSettings(settings);
 
-    mxcpp::Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(true);
     mxcpp::Bsdf::SetDielectricLayerThroughputMode(
         mxcpp::Bsdf::DielectricLayerThroughputMode::Bsdl);
     renderer.SetRenderSettings(settings);
 
     const bool reapplied =
-        !mxcpp::Bsdf::IsGgxMicrofacetMultipleScatteringEnabled() &&
         mxcpp::Bsdf::GetDielectricLayerThroughputMode() ==
             mxcpp::Bsdf::DielectricLayerThroughputMode::MaterialXGlsl;
     renderer.SetRenderSettings(ty::RenderSettings{});
@@ -1371,14 +1368,12 @@ _TestRenderPassSettingsApplication()
         delegate.CreateRenderPassState();
     renderPassState->SetViewport(GfVec4d(0.0, 0.0, 1.0, 1.0));
 
-    // The first Execute must restore defaults even when the settings version
-    // has not changed and process-wide state was changed externally.
-    mxcpp::Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(false);
+    // The first Execute must restore the process-wide default even when the
+    // settings version has not changed and state was changed externally.
     mxcpp::Bsdf::SetDielectricLayerThroughputMode(
         mxcpp::Bsdf::DielectricLayerThroughputMode::MaterialXGlsl);
     renderPass.Execute(renderPassState, TfTokenVector());
-    if (!mxcpp::Bsdf::IsGgxMicrofacetMultipleScatteringEnabled() ||
-        mxcpp::Bsdf::GetDielectricLayerThroughputMode() !=
+    if (mxcpp::Bsdf::GetDielectricLayerThroughputMode() !=
             mxcpp::Bsdf::DielectricLayerThroughputMode::Bsdl) {
         finish();
         return false;
@@ -1469,7 +1464,7 @@ main()
     TF_AXIOM(_TestEmptyRenderPassBindingsConverge(false));
     TF_AXIOM(_TestEmptyRenderPassBindingsConverge(true));
     TF_AXIOM(_TestLiveRenderPassesOwnAnonymousBindings());
-    TF_AXIOM(_TestProcessGlobalSettingsAreReapplied());
+    TF_AXIOM(_TestProcessGlobalDielectricSettingIsReapplied());
     TF_AXIOM(_TestCameraJitterTileDeterminism());
     TF_AXIOM(_TestRenderPassSettingsApplication());
     return 0;

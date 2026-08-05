@@ -957,11 +957,6 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->disableShadows,
                 defaults.disableShadows);
-        nextSettings.enableGgxMicrofacetMultipleScattering =
-            renderDelegate->GetRenderSetting<bool>(
-                HdEmbreeRenderSettingsTokens
-                    ->enableGgxMicrofacetMultipleScattering,
-                defaults.enableGgxMicrofacetMultipleScattering);
 
         const TfToken defaultDielectricModeToken =
             ty::GetDielectricLayerThroughputModeToken(

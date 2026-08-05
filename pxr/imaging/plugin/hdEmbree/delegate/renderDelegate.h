@@ -46,7 +46,6 @@ class HdEmbreeMesh;
     ((enableCaustics, "ty:enableCaustics")) \
     ((causticsClampThreshold, "ty:causticsClampThreshold")) \
     ((disableShadows, "ty:disableShadows")) \
-    ((enableGgxMicrofacetMultipleScattering, "ty:enableGgxMicrofacetMultipleScattering")) \
     ((materialRenderContext, "ty:materialRenderContext")) \
     ((dielectricLayerThroughputMode, "ty:dielectricLayerThroughputMode")) \
     ((useAdobeOpenPBR, "ty:useAdobeOpenPBR")) \

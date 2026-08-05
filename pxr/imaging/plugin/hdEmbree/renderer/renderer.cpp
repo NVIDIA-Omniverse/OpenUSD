@@ -118,10 +118,9 @@ ty::Renderer::SetRenderSettings(
         std::max(1, normalized.lightSamplesPerHit);
     normalized.tileSize = std::max(1, normalized.tileSize);
 
-    // MaterialXCpp policy and OIIO's shared texture cache are process-wide.
-    // Reapply them because another renderer or caller may have changed them.
-    mxcpp::Bsdf::SetGgxMicrofacetMultipleScatteringEnabled(
-        normalized.enableGgxMicrofacetMultipleScattering);
+    // MaterialXCpp layer-throughput policy and OIIO's shared texture cache are
+    // process-wide. Reapply them because another renderer or caller may have
+    // changed them.
     // Keep the renderer-settings enum independent from the shading API enum.
     mxcpp::Bsdf::SetDielectricLayerThroughputMode(
         normalized.dielectricLayerThroughputMode ==

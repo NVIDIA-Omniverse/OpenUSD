@@ -681,7 +681,6 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             Vec3f throughputRgb(1.0f);
             if (data.scatterMode != Bsdf::ScatterMode::Transmission) {
                 const bool useDirectionalLayerThroughput =
-                    IsGgxMultipleScatteringStateEnabled() &&
                     !HasThinFilm(
                         data.thinFilmWeight,
                         data.thinFilmThickness,
@@ -725,7 +724,6 @@ _EvalThroughput(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             Vec3f throughputRgb(1.0f);
             if (data.reflectionWeight > 0.0f) {
                 const bool useDirectionalLayerThroughput =
-                    IsGgxMultipleScatteringStateEnabled() &&
                     !HasThinFilm(
                         data.thinFilmWeight,
                         data.thinFilmThickness,

@@ -66,10 +66,6 @@ _RENDERERS = {
                 "category": "Path Tracing",
                 "order": 70,
             },
-            "ty:enableGgxMicrofacetMultipleScattering": {
-                "category": "Materials",
-                "order": 10,
-            },
             "ty:materialRenderContext": {
                 "category": "Materials",
                 "order": 20,

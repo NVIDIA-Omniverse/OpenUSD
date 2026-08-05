@@ -22,7 +22,6 @@ microfacet multiple-scattering compensation."""
 
 def RenderSettings "RenderSettings"
 {
-    bool ty:enableGgxMicrofacetMultipleScattering = true
     int ty:lightSamplesPerHit = 1
     rel products = [</RenderProduct>]
 }
