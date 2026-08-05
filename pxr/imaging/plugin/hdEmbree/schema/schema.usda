@@ -53,10 +53,6 @@ class "TyphoonRenderSettingsAPI" (
         doc = """Pixel width and height of each parallel rendering work item."""
     )
 
-    uniform bool ty:jitterCamera = true (
-        doc = """Jitter camera rays within pixels for antialiasing."""
-    )
-
     uniform bool ty:enableExposureCompensation = true (
         doc = """Apply camera exposure compensation."""
     )

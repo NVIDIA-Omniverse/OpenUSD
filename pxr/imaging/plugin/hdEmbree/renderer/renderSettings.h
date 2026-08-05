@@ -54,7 +54,6 @@ struct RenderSettings {
     int samplesToConvergence = 256;
     int randomNumberSeed = -1;
     int tileSize = 8;
-    bool jitterCamera = true;
     bool enableAdaptiveSampling = true;
     float adaptiveThreshold = 0.01f;
     int minSamplesBeforeAdaptive = 64;

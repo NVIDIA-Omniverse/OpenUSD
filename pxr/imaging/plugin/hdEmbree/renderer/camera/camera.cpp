@@ -98,12 +98,9 @@ ty::Renderer::_SampleCameraRay(
     ty::RayDifferential& outDiffRay) const
 {
     // Jitter the camera ray direction.
-    GfVec2f jitter(0.0f, 0.0f);
-    if (_settings.jitterCamera) {
-        jitter = sampler.RootDomain()
-            .Fork(ty::SampleDomainKey::CameraJitter)
-            .Draw2D();
-    }
+    const GfVec2f jitter = sampler.RootDomain()
+        .Fork(ty::SampleDomainKey::CameraJitter)
+        .Draw2D();
 
     // Un-transform the pixel's NDC coordinates through the
     // projection matrix to get the trace of the camera ray in the

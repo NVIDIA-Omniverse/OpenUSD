@@ -90,11 +90,6 @@ class "TyphoonRenderSettingsAPI" (
             string userDocBrief = "Clamp threshold for bright non-caustic path contributions."
         }
     )
-    uniform bool ty:jitterCamera = 1 (
-        customData = {
-            string userDocBrief = "Jitter camera rays within pixels for antialiasing."
-        }
-    )
     uniform int ty:lightSamplesPerHit = 1 (
         customData = {
             string userDocBrief = "Number of light samples per hit point per light."

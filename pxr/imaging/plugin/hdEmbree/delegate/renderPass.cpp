@@ -913,10 +913,6 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->tileSize,
                 defaults.tileSize);
-        nextSettings.jitterCamera =
-            renderDelegate->GetRenderSetting<bool>(
-                HdEmbreeRenderSettingsTokens->jitterCamera,
-                defaults.jitterCamera);
         nextSettings.enableAdaptiveSampling =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,

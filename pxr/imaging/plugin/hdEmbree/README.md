@@ -170,7 +170,6 @@ invariants are documented under
 | Samples To Convergence | `ty:convergedSamplesPerPixel` | `int` | `256` |
 | Random Number Seed | `ty:randomNumberSeed` | `int` | `-1` |
 | Tile Size | `ty:tileSize` | `int` | `8` |
-| Jitter Camera Rays | `ty:jitterCamera` | `bool` | `true` |
 | Dome Light Camera Visibility | `domeLightCameraVisibility` | `bool` | `true` |
 | Enable Exposure Compensation | `ty:enableExposureCompensation` | `bool` | `true` |
 | Dynamic Subdivision Tessellation | `ty:dynamicSubdvTesselation` | `bool` | `false` |

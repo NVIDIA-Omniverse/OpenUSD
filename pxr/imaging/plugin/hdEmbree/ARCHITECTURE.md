@@ -616,8 +616,8 @@ destroying a non-current pass leaves the active render untouched.
    selected by the single `ty::OpenQmcSampler` alias. Every later stochastic
    decision derives a named domain from this root; it must not consume
    unrelated domains opportunistically.
-3. `_SampleCameraRay()` converts the pixel to NDC, optionally draws camera
-   jitter, unprojects through the projection matrix, and constructs either a
+3. `_SampleCameraRay()` draws camera jitter, converts the jittered pixel to
+   NDC, unprojects through the projection matrix, and constructs either a
    perspective or orthographic camera ray. When depth of field is enabled it
    draws a lens point, focuses the ray, and applies the same lens point to the
    x/y differential rays. The origin, normalized direction, and scaled ray

@@ -30,10 +30,6 @@ _RENDERERS = {
                 "category": "Sampling",
                 "order": 20,
             },
-            "ty:jitterCamera": {
-                "category": "Sampling",
-                "order": 25,
-            },
             "ty:enableAdaptiveSampling": {
                 "category": "Sampling",
                 "order": 40,

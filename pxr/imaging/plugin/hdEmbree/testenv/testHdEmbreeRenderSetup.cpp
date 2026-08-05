@@ -1216,7 +1216,7 @@ _TestProcessGlobalSettingsAreReapplied()
 }
 
 bool
-_TestTileSizeAndCameraJitterImages()
+_TestCameraJitterTileDeterminism()
 {
     constexpr unsigned int width = 40;
     constexpr unsigned int height = 8;
@@ -1272,7 +1272,6 @@ _TestTileSizeAndCameraJitterImages()
 
     const auto renderImage =
         [&](int tileSize,
-            bool jitterCamera,
             std::vector<uint8_t>* colorBytes,
             std::vector<uint8_t>* primIdBytes) {
             HdEmbreeRenderBuffer color(SdfPath("/imageColor"));
@@ -1295,7 +1294,6 @@ _TestTileSizeAndCameraJitterImages()
             settings.samplesToConvergence = 16;
             settings.randomNumberSeed = 1;
             settings.tileSize = tileSize;
-            settings.jitterCamera = jitterCamera;
             settings.enableAdaptiveSampling = false;
             settings.enableLighting = false;
             settings.ambientOcclusionSamples = 0;
@@ -1327,24 +1325,18 @@ _TestTileSizeAndCameraJitterImages()
 
     std::vector<uint8_t> tile8Color;
     std::vector<uint8_t> tile32Color;
-    std::vector<uint8_t> noJitterColor;
     std::vector<uint8_t> tile8PrimId;
     std::vector<uint8_t> tile32PrimId;
-    std::vector<uint8_t> noJitterPrimId;
     const bool rendered =
         renderImage(
-            8, true, &tile8Color, &tile8PrimId) &&
+            8, &tile8Color, &tile8PrimId) &&
         renderImage(
-            32, true, &tile32Color, &tile32PrimId) &&
-        renderImage(
-            8, false, &noJitterColor, &noJitterPrimId);
+            32, &tile32Color, &tile32PrimId);
 
     renderer->SetRenderSettings(ty::RenderSettings{});
     return rendered &&
         tile8Color == tile32Color &&
-        tile8PrimId == tile32PrimId &&
-        (noJitterColor != tile8Color ||
-         noJitterPrimId != tile8PrimId);
+        tile8PrimId == tile32PrimId;
 }
 
 bool
@@ -1385,11 +1377,9 @@ _TestRenderPassSettingsApplication()
     mxcpp::Bsdf::SetDielectricLayerThroughputMode(
         mxcpp::Bsdf::DielectricLayerThroughputMode::MaterialXGlsl);
     renderPass.Execute(renderPassState, TfTokenVector());
-    const ty::RenderSettings first = renderer.GetRenderSettings();
     if (!mxcpp::Bsdf::IsGgxMicrofacetMultipleScatteringEnabled() ||
         mxcpp::Bsdf::GetDielectricLayerThroughputMode() !=
-            mxcpp::Bsdf::DielectricLayerThroughputMode::Bsdl ||
-        !first.jitterCamera) {
+            mxcpp::Bsdf::DielectricLayerThroughputMode::Bsdl) {
         finish();
         return false;
     }
@@ -1402,8 +1392,6 @@ _TestRenderPassSettingsApplication()
         HdEmbreeRenderSettingsTokens->maxBounces, VtValue(-2));
     delegate.SetRenderSetting(
         HdEmbreeRenderSettingsTokens->lightSamplesPerHit, VtValue(0));
-    delegate.SetRenderSetting(
-        HdEmbreeRenderSettingsTokens->jitterCamera, VtValue(false));
     delegate.SetRenderSetting(
         HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
         VtValue(std::string("invalid")));
@@ -1419,7 +1407,6 @@ _TestRenderPassSettingsApplication()
     if (normalized.tileSize != 1 ||
         normalized.maxBounces != 0 ||
         normalized.lightSamplesPerHit != 1 ||
-        normalized.jitterCamera ||
         normalized.dielectricLayerThroughputMode !=
             ty::DielectricLayerThroughputMode::Bsdl ||
         dielectricWarnings != 1 ||
@@ -1483,7 +1470,7 @@ main()
     TF_AXIOM(_TestEmptyRenderPassBindingsConverge(true));
     TF_AXIOM(_TestLiveRenderPassesOwnAnonymousBindings());
     TF_AXIOM(_TestProcessGlobalSettingsAreReapplied());
-    TF_AXIOM(_TestTileSizeAndCameraJitterImages());
+    TF_AXIOM(_TestCameraJitterTileDeterminism());
     TF_AXIOM(_TestRenderPassSettingsApplication());
     return 0;
 }
