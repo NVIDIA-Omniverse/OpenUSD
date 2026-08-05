@@ -15,7 +15,6 @@ def RenderSettings "RenderSettings"
 {
     int ty:lightSamplesPerHit = 8
     int ty:maxBounces = 2
-    token ty:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }
 

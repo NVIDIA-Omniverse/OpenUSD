@@ -612,9 +612,10 @@ destroying a non-current pass leaves the active render untouched.
    stride greater than one; full-resolution passes use stride one. Pixels
    already converged under adaptive sampling are skipped.
 2. Each selected pixel gets one `ty::Sampler`, keyed by the frame seed,
-   pixel coordinates, sample number, and configured OpenQMC sequence. Every
-   later stochastic decision derives a named domain from this root; it must not
-   consume unrelated domains opportunistically.
+   pixel coordinates, and sample number. The concrete OpenQMC sampler type is
+   selected by the single `ty::OpenQmcSampler` alias. Every later stochastic
+   decision derives a named domain from this root; it must not consume
+   unrelated domains opportunistically.
 3. `_SampleCameraRay()` converts the pixel to NDC, optionally draws camera
    jitter, unprojects through the projection matrix, and constructs either a
    perspective or orthographic camera ray. When depth of field is enabled it
@@ -971,7 +972,7 @@ Follow the focused and complete validation workflow in
 
 ### Sampling
 
-- New user-selectable sequence: add enum/token/OpenQMC draw logic in `renderer/sampling/sampling.h`, then expose it through config, delegate settings, schema, README, and renderer setters.
+- Change the renderer-wide OpenQMC sequence only through the `ty::OpenQmcSampler` alias in `renderer/sampling/sampling.h`; sampler selection is not runtime render state.
 - New stochastic decision: add a stable `ty::SampleDomainKey`. Never reuse or renumber existing values; they are part of deterministic rendering.
 - Use `Fork` for fixed independent domains, `Split` for one of N samples, `Distrib` for distributed work, and `Chain` for indexed variable-length sequences.
 - Never draw opportunistically from an unrelated domain.

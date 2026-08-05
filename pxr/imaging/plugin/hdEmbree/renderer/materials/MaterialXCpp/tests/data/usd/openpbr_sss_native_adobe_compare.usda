@@ -13,7 +13,6 @@ random-walk SSS."""
 def RenderSettings "RenderSettings"
 {
     int ty:lightSamplesPerHit = 1
-    token ty:samplerSequence = "openqmc_sobolbn"
     bool ty:useAdobeOpenPBR = false
     rel products = [</RenderProduct>]
 }

@@ -191,21 +191,14 @@ public:
     void IssueWarning(TfWarning const& warning) override
     {
         const std::string& commentary = warning.GetCommentary();
-        if (commentary.find("sampler sequence") != std::string::npos) {
-            ++samplerWarnings;
-        }
         if (commentary.find("dielectric layer throughput mode") !=
             std::string::npos) {
             ++dielectricWarnings;
-        }
-        if (commentary.find("sampler sequence") == std::string::npos &&
-            commentary.find("dielectric layer throughput mode") ==
-                std::string::npos) {
+        } else {
             ++unexpectedDiagnostics;
         }
     }
 
-    unsigned int samplerWarnings = 0;
     unsigned int dielectricWarnings = 0;
     unsigned int unexpectedDiagnostics = 0;
 };
@@ -1402,7 +1395,7 @@ _TestRenderPassSettingsApplication()
     }
 
     // A direct delegate update must propagate on the next Execute, normalize
-    // renderer invariants, and canonicalize unknown token values.
+    // renderer invariants, and canonicalize the unknown throughput token.
     delegate.SetRenderSetting(
         HdEmbreeRenderSettingsTokens->tileSize, VtValue(0));
     delegate.SetRenderSetting(
@@ -1412,18 +1405,13 @@ _TestRenderPassSettingsApplication()
     delegate.SetRenderSetting(
         HdEmbreeRenderSettingsTokens->jitterCamera, VtValue(false));
     delegate.SetRenderSetting(
-        HdEmbreeRenderSettingsTokens->samplerSequence,
-        VtValue(std::string("invalid")));
-    delegate.SetRenderSetting(
         HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
         VtValue(std::string("invalid")));
-    unsigned int samplerWarnings = 0;
     unsigned int dielectricWarnings = 0;
     unsigned int unexpectedDiagnostics = 0;
     {
         _ScopedTokenWarningDelegate warnings;
         renderPass.Execute(renderPassState, TfTokenVector());
-        samplerWarnings = warnings.samplerWarnings;
         dielectricWarnings = warnings.dielectricWarnings;
         unexpectedDiagnostics = warnings.unexpectedDiagnostics;
     }
@@ -1432,11 +1420,8 @@ _TestRenderPassSettingsApplication()
         normalized.maxBounces != 0 ||
         normalized.lightSamplesPerHit != 1 ||
         normalized.jitterCamera ||
-        normalized.samplerSequence !=
-            ty::SamplerSequence::OpenQMCSobolBN ||
         normalized.dielectricLayerThroughputMode !=
             ty::DielectricLayerThroughputMode::Bsdl ||
-        samplerWarnings != 1 ||
         dielectricWarnings != 1 ||
         unexpectedDiagnostics != 0) {
         finish();
@@ -1445,9 +1430,6 @@ _TestRenderPassSettingsApplication()
 
     // Lighting suppresses AO; otherwise the enable flag selects the authored
     // AO sample count.
-    delegate.SetRenderSetting(
-        HdEmbreeRenderSettingsTokens->samplerSequence,
-        VtValue(std::string("openqmc_sobolbn")));
     delegate.SetRenderSetting(
         HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
         VtValue(std::string("bsdl")));

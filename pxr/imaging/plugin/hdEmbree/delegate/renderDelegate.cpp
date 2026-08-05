@@ -160,10 +160,6 @@ HdEmbreeRenderDelegate::_Initialize()
         { "Jitter Camera Rays",
             HdEmbreeRenderSettingsTokens->jitterCamera,
             VtValue(defaults.jitterCamera) },
-        { "Sampler Sequence",
-            HdEmbreeRenderSettingsTokens->samplerSequence,
-            VtValue(ty::GetSamplerSequenceToken(
-                defaults.samplerSequence).GetString()) },
         { "Dome Light Camera Visibility",
             HdRenderSettingsTokens->domeLightCameraVisibility,
             VtValue(defaults.domeLightCameraVisibility) },

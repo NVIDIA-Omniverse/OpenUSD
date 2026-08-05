@@ -7,8 +7,6 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_SETTINGS_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_SETTINGS_H
 
-#include <renderer/sampling/sampling.h>
-
 #include "pxr/base/tf/token.h"
 #include "pxr/pxr.h"
 
@@ -57,8 +55,6 @@ struct RenderSettings {
     int randomNumberSeed = -1;
     int tileSize = 8;
     bool jitterCamera = true;
-    SamplerSequence samplerSequence =
-        SamplerSequence::OpenQMCSobolBN;
     bool enableAdaptiveSampling = true;
     float adaptiveThreshold = 0.01f;
     int minSamplesBeforeAdaptive = 64;

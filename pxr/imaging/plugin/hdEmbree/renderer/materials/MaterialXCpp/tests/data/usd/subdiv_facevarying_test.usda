@@ -11,7 +11,6 @@
 
 def RenderSettings "RenderSettings"
 {
-    token ty:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }
 

@@ -35,7 +35,6 @@ class HdEmbreeMesh;
     ((randomNumberSeed, "ty:randomNumberSeed")) \
     ((tileSize, "ty:tileSize")) \
     ((jitterCamera, "ty:jitterCamera")) \
-    ((samplerSequence, "ty:samplerSequence")) \
     ((enableExposureCompensation, "ty:enableExposureCompensation")) \
     ((enableAdaptiveSampling, "ty:enableAdaptiveSampling")) \
     ((adaptiveThreshold, "ty:adaptiveThreshold")) \

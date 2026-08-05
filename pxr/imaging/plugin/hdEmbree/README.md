@@ -171,7 +171,6 @@ invariants are documented under
 | Random Number Seed | `ty:randomNumberSeed` | `int` | `-1` |
 | Tile Size | `ty:tileSize` | `int` | `8` |
 | Jitter Camera Rays | `ty:jitterCamera` | `bool` | `true` |
-| Sampler Sequence | `ty:samplerSequence` | `token` | `openqmc_sobolbn` |
 | Dome Light Camera Visibility | `domeLightCameraVisibility` | `bool` | `true` |
 | Enable Exposure Compensation | `ty:enableExposureCompensation` | `bool` | `true` |
 | Dynamic Subdivision Tessellation | `ty:dynamicSubdvTesselation` | `bool` | `false` |
@@ -204,20 +203,6 @@ When scene lighting is disabled, ambient occlusion can be used instead. The
 number of AO rays per camera ray is controlled by
 `ty:ambientOcclusionSamples`. Set `ty:enableAmbientOcclusion` to `false` to
 disable AO.
-
-### Sampler Sequence (`ty:samplerSequence`)
-Selects the per-pixel sampler implementation. Supported values are:
-
-- `openqmc_sobol`
-- `openqmc_sobolbn`
-- `openqmc_pmj`
-- `openqmc_pmjbn`
-- `openqmc_lattice`
-- `openqmc_latticebn`
-
-If `ty:samplerSequence` is not authored, hdEmbree chooses
-`openqmc_sobolbn`. Unknown sampler tokens fall back to that default and emit a
-warning.
 
 ### Adaptive Sampling (`ty:enableAdaptiveSampling`, `ty:adaptiveThreshold`, `ty:minSamplesBeforeAdaptive`)
 When enabled, per-pixel variance is tracked using Welford's online algorithm. Pixels whose variance metric falls below `ty:adaptiveThreshold` after at least `ty:minSamplesBeforeAdaptive` samples are marked as converged and skipped in subsequent passes. The default minimum sample count is intentionally conservative enough to avoid stopping too early on rare bright events such as sharp finite-light reflections, while still preserving useful speedups for scenes with non-uniform complexity.

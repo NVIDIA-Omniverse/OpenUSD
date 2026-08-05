@@ -14,7 +14,6 @@ and a diagonal high camera."""
 def RenderSettings "RenderSettings"
 {
     int ty:lightSamplesPerHit = 1
-    token ty:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }
 

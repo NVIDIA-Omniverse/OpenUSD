@@ -28,7 +28,6 @@ def RenderSettings "RenderSettings"
     bool ty:stratifyLightSamples = true
     bool ty:enableCaustics = true
     float ty:causticsClampThreshold = 5.0
-    token ty:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }
 

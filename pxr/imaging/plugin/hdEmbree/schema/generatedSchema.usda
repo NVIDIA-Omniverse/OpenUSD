@@ -126,12 +126,6 @@ class "TyphoonRenderSettingsAPI" (
             string userDocBrief = "OpenQMC frame seed."
         }
     )
-    uniform token ty:samplerSequence = "openqmc_sobolbn" (
-        allowedTokens = ["openqmc_sobol", "openqmc_sobolbn", "openqmc_pmj", "openqmc_pmjbn", "openqmc_lattice", "openqmc_latticebn"]
-        customData = {
-            string userDocBrief = "Sampler sequence used for domain-aware renderer sampling."
-        }
-    )
     uniform bool ty:showAdaptiveHeatmap = 0 (
         customData = {
             string userDocBrief = "Visualize adaptive sampling convergence as a heatmap."
@@ -158,4 +152,3 @@ class "TyphoonRenderSettingsAPI" (
         }
     )
 }
-

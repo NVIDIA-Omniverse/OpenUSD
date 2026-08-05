@@ -34,18 +34,6 @@ _RENDERERS = {
                 "category": "Sampling",
                 "order": 25,
             },
-            "ty:samplerSequence": {
-                "category": "Sampling",
-                "order": 30,
-                "allowedTokens": [
-                    "openqmc_sobol",
-                    "openqmc_sobolbn",
-                    "openqmc_pmj",
-                    "openqmc_pmjbn",
-                    "openqmc_lattice",
-                    "openqmc_latticebn",
-                ],
-            },
             "ty:enableAdaptiveSampling": {
                 "category": "Sampling",
                 "order": 40,

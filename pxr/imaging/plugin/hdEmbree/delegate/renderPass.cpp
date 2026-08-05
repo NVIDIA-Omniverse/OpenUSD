@@ -917,23 +917,6 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->jitterCamera,
                 defaults.jitterCamera);
-
-        const TfToken defaultSamplerSequenceToken =
-            ty::GetSamplerSequenceToken(defaults.samplerSequence);
-        const TfToken samplerSequenceToken = _GetTokenRenderSetting(
-            renderDelegate,
-            HdEmbreeRenderSettingsTokens->samplerSequence,
-            defaultSamplerSequenceToken);
-        nextSettings.samplerSequence =
-            ty::GetSamplerSequenceFromToken(samplerSequenceToken);
-        if (ty::GetSamplerSequenceToken(nextSettings.samplerSequence) !=
-            samplerSequenceToken) {
-            TF_WARN("hdEmbree sampler sequence '%s' is unknown; "
-                    "falling back to '%s'.",
-                    samplerSequenceToken.GetText(),
-                    defaultSamplerSequenceToken.GetText());
-            nextSettings.samplerSequence = defaults.samplerSequence;
-        }
         nextSettings.enableAdaptiveSampling =
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,

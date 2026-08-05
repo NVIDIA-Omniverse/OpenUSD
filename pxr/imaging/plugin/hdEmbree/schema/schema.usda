@@ -57,18 +57,6 @@ class "TyphoonRenderSettingsAPI" (
         doc = """Jitter camera rays within pixels for antialiasing."""
     )
 
-    uniform token ty:samplerSequence = "openqmc_sobolbn" (
-        allowedTokens = [
-            "openqmc_sobol",
-            "openqmc_sobolbn",
-            "openqmc_pmj",
-            "openqmc_pmjbn",
-            "openqmc_lattice",
-            "openqmc_latticebn"
-        ]
-        doc = """Sampler sequence used for domain-aware renderer sampling."""
-    )
-
     uniform bool ty:enableExposureCompensation = true (
         doc = """Apply camera exposure compensation."""
     )

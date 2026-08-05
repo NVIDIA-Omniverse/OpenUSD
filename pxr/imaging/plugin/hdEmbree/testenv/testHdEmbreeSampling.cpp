@@ -75,48 +75,6 @@ TestDomainKeyValuesAreStable()
 }
 
 bool
-TestDefaultSamplerSequence()
-{
-    if (ty::GetDefaultSamplerSequence() !=
-        ty::SamplerSequence::OpenQMCSobolBN) {
-        std::printf("    default sampler sequence was unexpected\n");
-        return false;
-    }
-
-    return true;
-}
-
-bool
-TestSamplerSequenceTokens()
-{
-    const ty::SamplerSequence sequences[] = {
-        ty::SamplerSequence::OpenQMCSobol,
-        ty::SamplerSequence::OpenQMCSobolBN,
-        ty::SamplerSequence::OpenQMCPMJ,
-        ty::SamplerSequence::OpenQMCPMJBN,
-        ty::SamplerSequence::OpenQMCLattice,
-        ty::SamplerSequence::OpenQMCLatticeBN,
-    };
-
-    for (ty::SamplerSequence sequence : sequences) {
-        const TfToken token = ty::GetSamplerSequenceToken(sequence);
-        if (ty::GetSamplerSequenceFromToken(token) != sequence) {
-            std::printf("    sampler sequence token did not round-trip: %s\n",
-                        token.GetText());
-            return false;
-        }
-    }
-
-    if (ty::GetSamplerSequenceFromToken(TfToken("unknown")) !=
-        ty::GetDefaultSamplerSequence()) {
-        std::printf("    unknown token did not map to default\n");
-        return false;
-    }
-
-    return true;
-}
-
-bool
 TestFrameSeedUsesSceneFrameUnlessOverridden()
 {
     if (ty::ResolveFrameSeed(-1, 24.0f) != 0x41c00000u ||
@@ -134,8 +92,7 @@ TestFrameSeedUsesSceneFrameUnlessOverridden()
 bool
 TestOpenQmcDomainsAreDeterministicAndSeparated()
 {
-    ty::Sampler sampler(
-        1234u, 8u, 16u, 7u, ty::SamplerSequence::OpenQMCSobolBN);
+    ty::Sampler sampler(1234u, 8u, 16u, 7u);
     const ty::SampleDomain root = sampler.RootDomain();
 
     const GfVec2f cameraA =
@@ -160,8 +117,7 @@ TestOpenQmcDomainsAreDeterministicAndSeparated()
 bool
 TestOpenQmcSplitAndChainAreStable()
 {
-    ty::Sampler sampler(
-        4321u, 4u, 5u, 3u, ty::SamplerSequence::OpenQMCSobolBN);
+    ty::Sampler sampler(4321u, 4u, 5u, 3u);
     const ty::SampleDomain root = sampler.RootDomain();
 
     const GfVec2f splitA =
@@ -192,28 +148,16 @@ TestOpenQmcSplitAndChainAreStable()
 }
 
 bool
-TestAllOpenQmcSequencesDrawSamples()
+TestOpenQmcSamplesStayInUnitInterval()
 {
-    const ty::SamplerSequence sequences[] = {
-        ty::SamplerSequence::OpenQMCSobol,
-        ty::SamplerSequence::OpenQMCSobolBN,
-        ty::SamplerSequence::OpenQMCPMJ,
-        ty::SamplerSequence::OpenQMCPMJBN,
-        ty::SamplerSequence::OpenQMCLattice,
-        ty::SamplerSequence::OpenQMCLatticeBN,
-    };
-
-    for (ty::SamplerSequence sequence : sequences) {
-        ty::Sampler sampler(2468u, 2u, 3u, 4u, sequence);
-        const GfVec4f sample =
-            sampler.RootDomain()
-                .Fork(ty::SampleDomainKey::CameraJitter)
-                .Draw4D();
-        if (!_InUnitInterval(sample)) {
-            std::printf("    OpenQMC sequence produced out-of-range sample: %s\n",
-                        ty::GetSamplerSequenceToken(sequence).GetText());
-            return false;
-        }
+    ty::Sampler sampler(2468u, 2u, 3u, 4u);
+    const GfVec4f sample =
+        sampler.RootDomain()
+            .Fork(ty::SampleDomainKey::CameraJitter)
+            .Draw4D();
+    if (!_InUnitInterval(sample)) {
+        std::printf("    OpenQMC sampler produced an out-of-range sample\n");
+        return false;
     }
 
     return true;
@@ -232,18 +176,14 @@ main()
     const Test tests[] = {
         {"Sampling.TestDomainKeyValuesAreStable",
          &TestDomainKeyValuesAreStable},
-        {"Sampling.TestDefaultSamplerSequence",
-         &TestDefaultSamplerSequence},
-        {"Sampling.TestSamplerSequenceTokens",
-         &TestSamplerSequenceTokens},
         {"Sampling.TestFrameSeedUsesSceneFrameUnlessOverridden",
          &TestFrameSeedUsesSceneFrameUnlessOverridden},
         {"Sampling.TestOpenQmcDomainsAreDeterministicAndSeparated",
          &TestOpenQmcDomainsAreDeterministicAndSeparated},
         {"Sampling.TestOpenQmcSplitAndChainAreStable",
          &TestOpenQmcSplitAndChainAreStable},
-        {"Sampling.TestAllOpenQmcSequencesDrawSamples",
-         &TestAllOpenQmcSequencesDrawSamples},
+        {"Sampling.TestOpenQmcSamplesStayInUnitInterval",
+         &TestOpenQmcSamplesStayInUnitInterval},
     };
 
     int failed = 0;

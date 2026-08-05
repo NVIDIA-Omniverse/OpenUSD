@@ -10,7 +10,6 @@
 #include "pxr/base/gf/vec2f.h"
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/gf/vec4f.h"
-#include "pxr/base/tf/token.h"
 #include "pxr/pxr.h"
 
 #include <oqmc/oqmc.h>
@@ -19,75 +18,12 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
-#include <type_traits>
-#include <variant>
 
 PXR_NAMESPACE_OPEN_SCOPE
 namespace ty {
 
-// ---------------------------------------------------------------------------
-// Sampler sequence selection
-// ---------------------------------------------------------------------------
-
-enum class SamplerSequence : uint8_t
-{
-    OpenQMCSobol,
-    OpenQMCSobolBN,
-    OpenQMCPMJ,
-    OpenQMCPMJBN,
-    OpenQMCLattice,
-    OpenQMCLatticeBN
-};
-
-inline TfToken
-GetSamplerSequenceToken(SamplerSequence sequence)
-{
-    switch (sequence) {
-    case SamplerSequence::OpenQMCSobol:
-        return TfToken("openqmc_sobol");
-    case SamplerSequence::OpenQMCSobolBN:
-        return TfToken("openqmc_sobolbn");
-    case SamplerSequence::OpenQMCPMJ:
-        return TfToken("openqmc_pmj");
-    case SamplerSequence::OpenQMCPMJBN:
-        return TfToken("openqmc_pmjbn");
-    case SamplerSequence::OpenQMCLattice:
-        return TfToken("openqmc_lattice");
-    case SamplerSequence::OpenQMCLatticeBN:
-        return TfToken("openqmc_latticebn");
-    }
-    return TfToken("openqmc_sobolbn");
-}
-
-inline SamplerSequence
-GetDefaultSamplerSequence()
-{
-    return SamplerSequence::OpenQMCSobolBN;
-}
-
-inline SamplerSequence
-GetSamplerSequenceFromToken(TfToken const& token)
-{
-    if (token == TfToken("openqmc_sobol")) {
-        return SamplerSequence::OpenQMCSobol;
-    }
-    if (token == TfToken("openqmc_sobolbn")) {
-        return SamplerSequence::OpenQMCSobolBN;
-    }
-    if (token == TfToken("openqmc_pmj")) {
-        return SamplerSequence::OpenQMCPMJ;
-    }
-    if (token == TfToken("openqmc_pmjbn")) {
-        return SamplerSequence::OpenQMCPMJBN;
-    }
-    if (token == TfToken("openqmc_lattice")) {
-        return SamplerSequence::OpenQMCLattice;
-    }
-    if (token == TfToken("openqmc_latticebn")) {
-        return SamplerSequence::OpenQMCLatticeBN;
-    }
-    return GetDefaultSamplerSequence();
-}
+// The renderer-wide OpenQMC sequence is selected here and nowhere else.
+using OpenQmcSampler = oqmc::SobolBnSampler;
 
 inline uint32_t
 ResolveFrameSeed(int configuredSeed, float sceneFrame)
@@ -144,27 +80,10 @@ SampleDomainKeyValue(SampleDomainKey key)
     return static_cast<uint32_t>(key);
 }
 
-using OpenQmcVariant = std::variant<
-    std::monostate,
-    oqmc::SobolSampler,
-    oqmc::SobolBnSampler,
-    oqmc::PmjSampler,
-    oqmc::PmjBnSampler,
-    oqmc::LatticeSampler,
-    oqmc::LatticeBnSampler>;
-
 struct SampleDomain
 {
-    SamplerSequence sequence =
-        GetDefaultSamplerSequence();
-    OpenQmcVariant openQmcDomain;
-
-    SampleDomain() = default;
-
-    SampleDomain(SamplerSequence samplerSequence,
-                         OpenQmcVariant openQmcSampler)
-        : sequence(samplerSequence)
-        , openQmcDomain(openQmcSampler)
+    explicit SampleDomain(OpenQmcSampler const& openQmcSampler)
+        : openQmcDomain(openQmcSampler)
     {
     }
 
@@ -172,19 +91,7 @@ struct SampleDomain
     {
         const int domainKey =
             static_cast<int>(SampleDomainKeyValue(key));
-        // C++17 requires auto for the std::visit visitor parameter.
-        return std::visit(
-            [this, domainKey](auto const& sampler)
-                -> SampleDomain {
-                using SamplerT = std::decay_t<decltype(sampler)>;
-                if constexpr (std::is_same_v<SamplerT, std::monostate>) {
-                    return SampleDomain();
-                } else {
-                    return SampleDomain(
-                        sequence, sampler.newDomain(domainKey));
-                }
-            },
-            openQmcDomain);
+        return SampleDomain(openQmcDomain.newDomain(domainKey));
     }
 
     SampleDomain Split(SampleDomainKey key,
@@ -195,21 +102,9 @@ struct SampleDomain
         const int safeIndex = std::max(index, 0);
         const int domainKey =
             static_cast<int>(SampleDomainKeyValue(key));
-        // C++17 requires auto for the std::visit visitor parameter.
-        return std::visit(
-            [this, domainKey, safeSize, safeIndex](auto const& sampler)
-                -> SampleDomain {
-                using SamplerT = std::decay_t<decltype(sampler)>;
-                if constexpr (std::is_same_v<SamplerT, std::monostate>) {
-                    return SampleDomain();
-                } else {
-                    return SampleDomain(
-                        sequence,
-                        sampler.newDomainSplit(
-                            domainKey, safeSize, safeIndex));
-                }
-            },
-            openQmcDomain);
+        return SampleDomain(
+            openQmcDomain.newDomainSplit(
+                domainKey, safeSize, safeIndex));
     }
 
     SampleDomain Distrib(SampleDomainKey key,
@@ -218,20 +113,8 @@ struct SampleDomain
         const int safeIndex = std::max(index, 0);
         const int domainKey =
             static_cast<int>(SampleDomainKeyValue(key));
-        // C++17 requires auto for the std::visit visitor parameter.
-        return std::visit(
-            [this, domainKey, safeIndex](auto const& sampler)
-                -> SampleDomain {
-                using SamplerT = std::decay_t<decltype(sampler)>;
-                if constexpr (std::is_same_v<SamplerT, std::monostate>) {
-                    return SampleDomain();
-                } else {
-                    return SampleDomain(
-                        sequence,
-                        sampler.newDomainDistrib(domainKey, safeIndex));
-                }
-            },
-            openQmcDomain);
+        return SampleDomain(
+            openQmcDomain.newDomainDistrib(domainKey, safeIndex));
     }
 
     SampleDomain Chain(SampleDomainKey key,
@@ -240,20 +123,8 @@ struct SampleDomain
         const int safeIndex = std::max(index, 0);
         const int domainKey =
             static_cast<int>(SampleDomainKeyValue(key));
-        // C++17 requires auto for the std::visit visitor parameter.
-        return std::visit(
-            [this, domainKey, safeIndex](auto const& sampler)
-                -> SampleDomain {
-                using SamplerT = std::decay_t<decltype(sampler)>;
-                if constexpr (std::is_same_v<SamplerT, std::monostate>) {
-                    return SampleDomain();
-                } else {
-                    return SampleDomain(
-                        sequence,
-                        sampler.newDomainChain(domainKey, safeIndex));
-                }
-            },
-            openQmcDomain);
+        return SampleDomain(
+            openQmcDomain.newDomainChain(domainKey, safeIndex));
     }
 
     float Draw1D() const
@@ -287,84 +158,48 @@ private:
         static_assert(Size <= 4, "Draw size must be at most four.");
 
         std::array<float, Size> sample{};
-        // C++17 requires auto for the std::visit visitor parameter.
-        std::visit(
-            [&sample](auto const& sampler) {
-                using SamplerT = std::decay_t<decltype(sampler)>;
-                if constexpr (!std::is_same_v<SamplerT, std::monostate>) {
-                    sampler.template drawSample<Size>(sample.data());
-                }
-            },
-            openQmcDomain);
+        openQmcDomain.drawSample<Size>(sample.data());
         return sample;
     }
+
+    OpenQmcSampler openQmcDomain;
 };
 
 struct Sampler
 {
-    SamplerSequence sequence =
-        GetDefaultSamplerSequence();
-    OpenQmcVariant openQmcRoot;
-
     Sampler(uint32_t frameSeed,
-                    uint32_t pixelX,
-                    uint32_t pixelY,
-                    uint32_t sampleIdx,
-                    SamplerSequence samplerSequence)
-        : sequence(samplerSequence)
+            uint32_t pixelX,
+            uint32_t pixelY,
+            uint32_t sampleIdx)
+        : openQmcRoot(
+            static_cast<int>(pixelX),
+            static_cast<int>(pixelY),
+            static_cast<int>(frameSeed & 0x7fffffffu),
+            static_cast<int>(sampleIdx),
+            _GetOpenQMCCache())
     {
-        const int x = static_cast<int>(pixelX);
-        const int y = static_cast<int>(pixelY);
-        const int frame = static_cast<int>(frameSeed & 0x7fffffffu);
-        const int index = static_cast<int>(sampleIdx);
-
-        switch (sequence) {
-        case SamplerSequence::OpenQMCSobol:
-            openQmcRoot = oqmc::SobolSampler(
-                x, y, frame, index, _GetOpenQMCCache<oqmc::SobolSampler>());
-            break;
-        case SamplerSequence::OpenQMCSobolBN:
-            openQmcRoot = oqmc::SobolBnSampler(
-                x, y, frame, index, _GetOpenQMCCache<oqmc::SobolBnSampler>());
-            break;
-        case SamplerSequence::OpenQMCPMJ:
-            openQmcRoot = oqmc::PmjSampler(
-                x, y, frame, index, _GetOpenQMCCache<oqmc::PmjSampler>());
-            break;
-        case SamplerSequence::OpenQMCPMJBN:
-            openQmcRoot = oqmc::PmjBnSampler(
-                x, y, frame, index, _GetOpenQMCCache<oqmc::PmjBnSampler>());
-            break;
-        case SamplerSequence::OpenQMCLattice:
-            openQmcRoot = oqmc::LatticeSampler(
-                x, y, frame, index, _GetOpenQMCCache<oqmc::LatticeSampler>());
-            break;
-        case SamplerSequence::OpenQMCLatticeBN:
-            openQmcRoot = oqmc::LatticeBnSampler(
-                x, y, frame, index, _GetOpenQMCCache<oqmc::LatticeBnSampler>());
-            break;
-        }
     }
 
     SampleDomain RootDomain() const
     {
-        return SampleDomain(sequence, openQmcRoot);
+        return SampleDomain(openQmcRoot);
     }
 
 private:
-    template <typename SamplerT>
     static char*
     _GetOpenQMCCache()
     {
         struct _Cache {
-            std::array<char, SamplerT::cacheSize> bytes{};
+            std::array<char, OpenQmcSampler::cacheSize> bytes{};
 
-            _Cache() { SamplerT::initialiseCache(bytes.data()); }
+            _Cache() { OpenQmcSampler::initialiseCache(bytes.data()); }
         };
 
         static _Cache cache;
         return cache.bytes.data();
     }
+
+    OpenQmcSampler openQmcRoot;
 };
 
 } // namespace ty

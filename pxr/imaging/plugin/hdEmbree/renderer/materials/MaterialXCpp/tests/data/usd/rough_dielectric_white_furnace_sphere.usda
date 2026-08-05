@@ -16,7 +16,6 @@ def RenderSettings "RenderSettings"
 {
     bool ty:enableGgxMicrofacetMultipleScattering = true
     int ty:lightSamplesPerHit = 1
-    token ty:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }
 

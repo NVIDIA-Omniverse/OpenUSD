@@ -18,7 +18,6 @@ def RenderSettings "RenderSettings"
     # int ty:lightSamplesPerHit = 1
     # bool ty:stratifyLightSamples = "false"
     # int ty:minSamplesBeforeAdaptive = 64
-    token ty:samplerSequence = "openqmc_sobolbn"
     rel products = [</RenderProduct>]
 }
 

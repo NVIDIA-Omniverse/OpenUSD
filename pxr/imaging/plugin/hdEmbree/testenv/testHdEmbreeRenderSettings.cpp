@@ -120,7 +120,6 @@ _TestRenderDelegateSettings()
         HdEmbreeRenderSettingsTokens->randomNumberSeed,
         HdEmbreeRenderSettingsTokens->tileSize,
         HdEmbreeRenderSettingsTokens->jitterCamera,
-        HdEmbreeRenderSettingsTokens->samplerSequence,
         HdRenderSettingsTokens->domeLightCameraVisibility,
         HdEmbreeRenderSettingsTokens->enableExposureCompensation,
         HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
@@ -775,7 +774,6 @@ _TestTyphoonRenderSettingsAPI()
         TfToken("ty:randomNumberSeed"),
         TfToken("ty:tileSize"),
         TfToken("ty:jitterCamera"),
-        TfToken("ty:samplerSequence"),
         TfToken("ty:enableExposureCompensation"),
         TfToken("ty:enableAdaptiveSampling"),
         TfToken("ty:adaptiveThreshold"),
@@ -818,14 +816,6 @@ _TestTyphoonRenderSettingsAPI()
             std::printf("non-ty schema property: %s\n", property.GetText());
             return false;
         }
-    }
-
-    TfToken samplerFallback;
-    if (!apiDef->GetAttributeDefinition(TfToken("ty:samplerSequence"))
-            .GetFallbackValue(&samplerFallback) ||
-        samplerFallback != TfToken("openqmc_sobolbn")) {
-        std::printf("unexpected samplerSequence fallback\n");
-        return false;
     }
 
     bool dynamicTessellationFallback = true;
@@ -933,8 +923,6 @@ _TestRenderSettingDefaultParity()
          VtValue(defaults.tileSize)},
         {HdEmbreeRenderSettingsTokens->jitterCamera,
          VtValue(defaults.jitterCamera)},
-        {HdEmbreeRenderSettingsTokens->samplerSequence,
-         VtValue(ty::GetSamplerSequenceToken(defaults.samplerSequence))},
         {HdEmbreeRenderSettingsTokens->enableExposureCompensation,
          VtValue(ty::DefaultEnableExposureCompensation)},
         {HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
@@ -1037,7 +1025,6 @@ _TestRenderSettingDefaultParity()
     }
 
     const TfToken tokenSettings[] = {
-        HdEmbreeRenderSettingsTokens->samplerSequence,
         HdEmbreeRenderSettingsTokens->materialRenderContext,
         HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode
     };

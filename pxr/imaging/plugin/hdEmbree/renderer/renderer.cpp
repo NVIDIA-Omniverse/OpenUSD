@@ -550,9 +550,6 @@ ty::Renderer::Render(HdRenderThread *renderThread)
         }
         std::printf("  Max bounces      : %d\n", _settings.maxBounces);
         std::printf("  Light samples    : %d\n", _settings.lightSamplesPerHit);
-        std::printf("  ty::Sampler sequence : %s\n",
-                    ty::GetSamplerSequenceToken(
-                        _settings.samplerSequence).GetText());
         const uint64_t sssCalls = _sssCallCount.load();
         if (sssCalls > 0) {
             const uint64_t sssSuccesses = _sssSuccessCount.load();
@@ -720,8 +717,7 @@ ty::Renderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
                     baseSeed,
                     x,
                     y,
-                    sampleNum,
-                    _settings.samplerSequence);
+                    sampleNum);
 
                 GfVec3f posRayOrgWld;
                 GfVec3f dirRayWld;
