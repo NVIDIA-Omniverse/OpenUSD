@@ -21,23 +21,17 @@ namespace detail {
 /// failure may propagate as `std::bad_alloc`.
 Bsdf::ClosureTree PruneCausticClassLobes(const Bsdf::ClosureTree& tree);
 
-/// Returns whether Adobe OpenPBR's shared normal may be geometrically
-/// corrected without changing an active finite-roughness lobe. The data must
-/// contain sanitized material parameters. Does not throw.
-bool UsesGeometricNormalCorrection(const Bsdf::AdobeOpenPbrData& data);
-
 /// Prepares every validated surface leaf normal once for later traversals.
 /// Un-authored leaves inherit finite unit incident-side `normalShdWldOut`;
 /// authored leaves must already contain finite unit exterior normals validated
-/// against the graph normal and are faced to the same side. Delta reflective and
+/// against the graph normal and are faced to the same side. Glossy and
 /// subsurface-entry normals are then raised toward finite unit incident-side
 /// `normalGeomWldOut` when needed to keep their deterministic mirror direction
-/// above the geometric surface. Finite-roughness normals remain uncorrected;
-/// collapsing them onto the grazing threshold creates bright contour ridges.
-/// Their generated directions are instead validated at sampling. `tree` must
-/// be non-null. This is a one-shot operation on a tree whose authored leaves
-/// have already been validated. The tree must not be mutated afterwards.
-/// Allocation-free and does not throw.
+/// above the geometric surface. This matches Cycles for both delta and
+/// finite-roughness microfacet closures; generated directions are still
+/// validated at sampling. `tree` must be non-null. This is a one-shot operation
+/// on a tree whose authored leaves have already been validated. The tree must
+/// not be mutated afterwards. Allocation-free and does not throw.
 void PrepareShadingNormals(
     Bsdf::ClosureTree* tree,
     const Vec3f& normalShdWldOut,

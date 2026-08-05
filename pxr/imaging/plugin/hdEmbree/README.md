@@ -289,13 +289,10 @@ in a view-independent exterior frame. Results are validated against the
 exterior smooth/displaced base normal; invalid or inverted results fall back to
 that base. The complete result is then faced to the incident side, preserving
 one physical relief field across the entry and exit sides of a dielectric.
-Delta reflective lobes and subsurface entry normals are raised toward the
-geometric surface when their ideal reflection would otherwise point below it.
-Finite-roughness lobes retain the mapped normal: forcing their mirror direction
-onto the grazing threshold concentrates glossy energy into bright contour
-ridges. Adobe OpenPBR's shared frame remains uncorrected when any active glossy
-component has finite roughness. A corrected lobe uses the same normal for
-Fresnel, reflection,
+Glossy lobes and subsurface entry normals are raised toward the geometric
+surface when their ideal reflection would otherwise point below it, matching
+Cycles for both delta and finite-roughness microfacet closures. A corrected
+lobe uses the same normal for Fresnel, reflection,
 refraction, TIR, evaluation, and PDF.
 Generated reflection directions below the geometric or lobe surface and
 transmission directions above either surface are discarded without resampling.

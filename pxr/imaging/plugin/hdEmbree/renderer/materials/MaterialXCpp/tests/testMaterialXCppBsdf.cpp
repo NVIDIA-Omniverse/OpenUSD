@@ -5107,7 +5107,7 @@ TestAllLeafShadingNormalPreparation()
         return false;
     }
     return Test_IsClose(
-        roughConductor->normal, normalShdWldOut, 1.0e-6f);
+        roughConductor->normal, expectedSpecular, 1.0e-6f);
 }
 
 static bool
@@ -5206,7 +5206,7 @@ TestTreeDiffuseNormalIsIndependentOfViewHemisphere()
 }
 
 static bool
-TestRoughReflectiveNormalIgnoresFacetedGeometry()
+TestRoughReflectiveNormalUsesGeometricCorrection()
 {
     Bsdf::ConductorData conductor;
     conductor.weight = 1.0f;
@@ -5218,12 +5218,11 @@ TestRoughReflectiveNormalIgnoresFacetedGeometry()
 
     const Vec3f normalShdWldOut(0.0f, 0.0f, 1.0f);
     const Vec3f omegaOutWld = Vec3f(0.2f, 0.0f, 0.98f).normalized();
-    const Vec3f omegaInWld = Vec3f(-0.2f, 0.0f, 0.98f).normalized();
     const Vec3f normalGeomWldOut[] = {
         Vec3f(0.0f, 0.0f, 1.0f),
         Vec3f(0.2f, 0.0f, 0.98f).normalized()
     };
-    Vec3f previousEval;
+    Vec3f previousNormal;
     for (int i = 0; i < 2; ++i) {
         SurfaceClosure closure;
         closure.bsdfTree.root = closure.bsdfTree.Add(conductor);
@@ -5233,17 +5232,18 @@ TestRoughReflectiveNormalIgnoresFacetedGeometry()
         const Bsdf::ConductorData* prepared =
             std::get_if<Bsdf::ConductorData>(
                 &closure.bsdfTree.nodes[0].data);
-        const Vec3f evaluated = PreparedSurfaceApi::EvalSurface(
-            closure, normalShdWldOut, omegaInWld, omegaOutWld,
-            0.0f, true);
+        const Vec3f expected =
+            Bsdf::detail::EnsureValidSpecularReflection(
+                normalGeomWldOut[i], omegaOutWld, conductor.normal);
         if (!prepared ||
-            !Test_IsClose(prepared->normal, conductor.normal, 1.0e-6f) ||
-            evaluated.length() <= 0.0f ||
-            (i > 0 && !Test_IsClose(evaluated, previousEval, 1.0e-6f))) {
-            printf("    Rough reflection inherited the polygon normal\n");
+            !Test_IsClose(prepared->normal, expected, 1.0e-6f) ||
+            Test_IsClose(prepared->normal, conductor.normal, 1.0e-5f) ||
+            (i > 0 && Test_IsClose(
+                prepared->normal, previousNormal, 1.0e-5f))) {
+            printf("    Rough reflection missed geometric correction\n");
             return false;
         }
-        previousEval = evaluated;
+        previousNormal = prepared->normal;
     }
     return true;
 }
@@ -5442,66 +5442,57 @@ TestEnsureValidSpecularReflection()
         std::get_if<Bsdf::ConductorData>(
             &roughClosure.bsdfTree.nodes[0].data);
     if (!prepared || !prepared->hasShadingNormal ||
-        !Test_IsClose(prepared->normal, normalShdWldOut, 1.0e-5f)) {
+        !Test_IsClose(prepared->normal, corrected, 1.0e-5f)) {
         return false;
     }
 
-    // PdfSurface deliberately keeps the full shading-normal density while
-    // sampling loses directions rejected below the geometric surface.
-    constexpr int sampleCount = 65536;
-    int sampledValidCount = 0;
-    int sampledPositiveXCount = 0;
-    double integratedMass = 0.0;
-    double integratedPositiveXMass = 0.0;
-    for (int i = 0; i < sampleCount; ++i) {
-        const float u1 =
-            (static_cast<float>(i) + 0.5f) /
-            static_cast<float>(sampleCount);
+    // Match run-0276: a finite-roughness coupled dielectric normal may start
+    // in the surface hemisphere while pointing away from omegaOut. Cycles
+    // correction must recover the outgoing-side precondition and leave valid
+    // transmission support after the geometric sample check.
+    const Vec3f normalAwayWldOut =
+        Vec3f(-0.995f, 0.0f, 0.1f).normalized();
+    if (Dot(normalAwayWldOut, normalGeomWldOut) <= 0.0f ||
+        Dot(normalAwayWldOut, omegaOutWld) >= 0.0f) {
+        return false;
+    }
+    SurfaceClosure roughGlassClosure;
+    Bsdf::DielectricInterfaceData roughGlass;
+    roughGlass.roughness = Vec2f(0.01f);
+    roughGlass.compensateCoupledDielectric = true;
+    roughGlass.hasShadingNormal = true;
+    roughGlass.normal = normalAwayWldOut;
+    roughGlassClosure.bsdfTree.root =
+        roughGlassClosure.bsdfTree.Add(roughGlass);
+    ValidateLeafNormals(&roughGlassClosure.bsdfTree, normalGeomWldOut);
+    Bsdf::detail::PrepareShadingNormals(
+        &roughGlassClosure.bsdfTree, normalGeomWldOut,
+        normalGeomWldOut, omegaOutWld);
+    const Bsdf::DielectricInterfaceData* preparedRoughGlass =
+        std::get_if<Bsdf::DielectricInterfaceData>(
+            &roughGlassClosure.bsdfTree.nodes[0].data);
+    if (!preparedRoughGlass ||
+        Test_IsClose(
+            preparedRoughGlass->normal, normalAwayWldOut, 1.0e-5f) ||
+        Dot(preparedRoughGlass->normal, omegaOutWld) <= 0.0f) {
+        return false;
+    }
+    bool foundRoughTransmission = false;
+    for (int i = 0; i < 4096; ++i) {
+        const float u1 = (static_cast<float>(i) + 0.5f) / 4096.0f;
         const float u2 =
             _RadicalInverseBase2(static_cast<std::uint32_t>(i));
         const Bsdf::BsdfSample sample = PreparedSurfaceApi::SampleSurface(
-            roughClosure, normalGeomWldOut, omegaOutWld,
-            u1, u2, 0.5f, 0.0f, true);
-        if (sample.pdfSolidAngle > 0.0f) {
-            const float evaluatedPdf = _PdfPreparedSurface(roughClosure, _MakeSurfaceInteraction(normalGeomWldOut, normalGeomWldOut, normalGeomWldOut, omegaOutWld, 0.0f, true), sample.omegaInWld);
-            if (!Test_IsClose(
-                    sample.pdfSolidAngle, evaluatedPdf,
-                    2.0e-5f * std::max(1.0f, evaluatedPdf))) {
-                return false;
-            }
-            ++sampledValidCount;
-            if (sample.omegaInWld[0] > 0.0f) {
-                ++sampledPositiveXCount;
-            }
-        }
-
-        const float z = 1.0f - 2.0f * u1;
-        const float radius =
-            std::sqrt(std::max(0.0f, 1.0f - z * z));
-        const float phi = _kFurnaceTwoPi * u2;
-        const Vec3f uniformDirection(
-            radius * std::cos(phi), radius * std::sin(phi), z);
-        const float pdf = _PdfPreparedSurface(roughClosure, _MakeSurfaceInteraction(normalGeomWldOut, normalGeomWldOut, normalGeomWldOut, omegaOutWld, 0.0f, true), uniformDirection);
-        integratedMass += pdf;
-        if (uniformDirection[0] > 0.0f) {
-            integratedPositiveXMass += pdf;
+            roughGlassClosure, normalGeomWldOut, omegaOutWld,
+            u1, u2, 0.99f, 0.0f, true);
+        if (sample.pdfSolidAngle > 0.0f && sample.isTransmission &&
+            Dot(sample.omegaInWld, preparedRoughGlass->normal) < 0.0f &&
+            Dot(sample.omegaInWld, normalGeomWldOut) < 0.0f) {
+            foundRoughTransmission = true;
+            break;
         }
     }
-    const double sphereMeasure = 4.0 * static_cast<double>(_kFurnacePi);
-    integratedMass *= sphereMeasure / sampleCount;
-    integratedPositiveXMass *= sphereMeasure / sampleCount;
-    const double sampledMass =
-        static_cast<double>(sampledValidCount) / sampleCount;
-    const double sampledPositiveXMass =
-        static_cast<double>(sampledPositiveXCount) / sampleCount;
-    if (integratedMass <= sampledMass + 0.01 ||
-        std::abs(sampledPositiveXMass - integratedPositiveXMass) > 0.015) {
-        printf(
-            "    Rough GGX rejection/PDF asymmetry mismatch: "
-            "sampledMass=%f integratedMass=%f "
-            "sampledPositiveX=%f integratedPositiveX=%f\n",
-            sampledMass, integratedMass,
-            sampledPositiveXMass, integratedPositiveXMass);
+    if (!foundRoughTransmission) {
         return false;
     }
 
@@ -5540,7 +5531,7 @@ TestEnsureValidSpecularReflection()
     if (!preparedAdobe || !preparedAdobe->hasShadingNormal ||
         !Test_IsClose(
             preparedAdobe->normal,
-            normalShdWldOut, 1.0e-5f)) {
+            corrected, 1.0e-5f)) {
         return false;
     }
     const AdobeOpenPbrPreparedSurface preparedAdobeSurface =
@@ -5586,7 +5577,7 @@ TestEnsureValidSpecularReflection()
                     preparedAdobe->normal,
                     sample.omegaInWld)),
                 2.0e-5f) ||
-            !Test_IsClose(evaluated, uncorrectedBasisValue, 2.0e-5f) ||
+            !Test_IsClose(evaluated, correctedBasisValue, 2.0e-5f) ||
             !Test_IsClose(
                 evaluatedPdf, preparedEvalPdf.pdfSolidAngle,
                 2.0e-5f * std::max(1.0f, evaluatedPdf)) ||
@@ -5608,8 +5599,7 @@ TestEnsureValidSpecularReflection()
             return false;
         }
         if (Test_IsClose(
-                correctedBasisValue, uncorrectedBasisValue, 1.0e-4f) ||
-            Test_IsClose(evaluated, correctedBasisValue, 1.0e-4f)) {
+                correctedBasisValue, uncorrectedBasisValue, 1.0e-4f)) {
             continue;
         }
         foundAdobeSample = true;
@@ -5619,8 +5609,8 @@ TestEnsureValidSpecularReflection()
         return false;
     }
 
-    // The whole-model prepared path must retain correction when every active
-    // glossy component is delta.
+    // The whole-model prepared path must retain the same correction for delta
+    // glossy components.
     adobe.specularRoughness = 0.0f;
     adobe.coatWeight = 0.0f;
     SurfaceClosure deltaAdobeClosure;
@@ -6281,7 +6271,7 @@ Test_RegisterBsdfTests()
     _REG(TestAllLeafShadingNormalPreparation);
     _REG(TestAppendClosureTreePreservesLeafNormals);
     _REG(TestTreeDiffuseNormalIsIndependentOfViewHemisphere);
-    _REG(TestRoughReflectiveNormalIgnoresFacetedGeometry);
+    _REG(TestRoughReflectiveNormalUsesGeometricCorrection);
     _REG(TestExplicitBaseNormalMatchesInheritedNormal);
     _REG(TestNormalMappedTransmissionSurvivesDirectionAgreement);
     _REG(TestEnsureValidSpecularReflection);

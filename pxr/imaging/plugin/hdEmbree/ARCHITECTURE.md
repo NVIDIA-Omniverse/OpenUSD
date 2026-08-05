@@ -507,15 +507,13 @@ barycentric edges. The ray-derived world hit remains authoritative for
 transport, ray offsets, and geometric AOVs.
 
 Closure-tree surface leaves own their complete per-interaction prepared normal.
-Geometric correction covers effectively delta dielectric reflection
+Geometric correction covers delta and finite-roughness dielectric reflection
 and transmission, conductor, coat, generalized Schlick, Adobe OpenPBR, and
-subsurface normals. Finite-roughness, diffuse, sheen, and translucent normals
-remain uncorrected. Adobe OpenPBR has one shared frame, so any active finite
-glossy component disables correction for the whole model. Unlike Cycles,
-translucent correction is intentionally not adopted because Cycles marks that
-behavior as a glossy-only bug. Degenerate projected tangents and quartic
-denominators return the input shading normal; these and finite-roughness
-correction are Typhoon's deviations from the Cycles solve.
+subsurface normals. Diffuse, sheen, and translucent normals remain uncorrected.
+Unlike Cycles, translucent correction is intentionally not adopted because
+Cycles marks that behavior as a glossy-only bug. Degenerate projected tangents
+and quartic denominators return the input shading normal; these are Typhoon's
+numerical deviations from the Cycles solve.
 Normal handling after graph evaluation has a fixed composable order.
 `ResolveGraphNormal()` resolves the fully assembled closure's graph normal
 through the exterior tangent frame and validates it against the smooth exterior
@@ -763,12 +761,12 @@ For each segment, `_IntegratePath()` performs these stages in order:
    hemisphere; rejected values fall back to the validation base without
    negation. The renderer then faces the graph normal once, and preparation
    faces each validated leaf to the same incident side.
-   The default delta/subsurface normal is corrected once per interaction;
-   authored delta and subsurface normals are corrected individually before
+   The default glossy/subsurface normal is corrected once per interaction;
+   authored glossy and subsurface normals are corrected individually before
    traversal if their mirror direction would fall below the incident-side
-   geometric surface. Finite-roughness normals remain uncorrected because the
-   solve collapses a range of mapped normals onto its grazing threshold,
-   producing bright contour ridges on smooth polygon meshes.
+   geometric surface. This includes finite-roughness microfacet closures so
+   their outgoing-side precondition uses the same Cycles-corrected normal as
+   delta closures.
    Fresnel, TIR, reflection, refraction, evaluation, PDF, and delta paths all
    consume that same prepared lobe normal. Object-space normal maps therefore fall back unless graph
    conversion places their result in the exterior frame. Coupled
