@@ -1,13 +1,45 @@
 # Typhoon / hdEmbree
 
-This is the user guide for Typhoon, the `hdEmbree` CPU path-tracing Hydra render
-delegate. It is authoritative for supported workflows, authored settings and
-AOVs, visible behavior, limitations, and examples. Internal design and file
-ownership are documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+Typhoon is a reference path tracer built into OpenUSD. It is intended to be a readable, community-developed, shared reference for how to implement standard USD features, such as UsdLux lighting, and UsdShade-based MaterialX materials.
 
-Typhoon uses Embree for ray traversal, MaterialX/OpenPBR for shading, USD Lux
-lights, and OpenQMC sampling. It renders interactively in Hydra applications
-and writes stage-authored `UsdRender` products through `usdrender`.
+Typhoon is NOT intended to be a production renderer, nor a replacement for a viewport renderer such as Storm. It is not heavily optimized, but should be fast enough that image regression suites using it can run in a reasonable amount of time.
+
+# Getting Started
+
+After cloning as normal, the quickest and easiest way to build is with [Pixi](https://pixi.prefix.dev/latest/installation/):
+```bash
+# from repo root, NOT pxr/imaging/plugin/hdEmbree
+pixi run configure
+pixi run build
+```
+
+Pixi will handle all dependencies and install the built OpenUSD distribution in its default environment. Once the build has completed, run:
+
+```bash
+# from repo root, NOT pxr/imaging/plugin/hdEmbree
+pixi run usdview /path/to/scene.usd
+```
+
+to run `usdview` with Typhoon already selected as the default renderer. In `usdview` you can use the `RenderLab` plugin to edit certain scene properties at runtime.
+
+## usdrender
+
+This branch also adds a new executable called `usdrender`. This, as its name suggests, renders a USD layer, writing `RenderProduct`s connected to the selected `RenderSettings` to disk.  
+
+### Per-invocation attribute overrides
+
+`usdrender -s` / `--set` authors repeatable attribute overrides into an
+anonymous session layer without modifying the stage:
+
+```sh
+pixi run usdrender scene.usda -r Embree \
+    -s "{settings}.ty:randomNumberSeed = 1" \
+    -s "{settings}.ty:maxBounces = 8" \
+    -s "/Camera.focalLength = 35"
+```
+
+# Navigating the code
+Internal design and file ownership are documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Limitations
 
@@ -40,36 +72,6 @@ products into their viewport without writing their `productName` paths.
 `usdrender` explicitly selects offline mode. hdEmbree writes products only
 after the frame both passes renderer setup and converges; a failed setup leaves
 the expected product absent so `usdrender` reports an error.
-
-### Per-invocation attribute overrides
-
-`usdrender -s` / `--set` authors repeatable attribute overrides into an
-anonymous session layer without modifying the stage:
-
-```sh
-pixi run usdrender scene.usda -r Embree \
-    -s "{settings}.ty:randomNumberSeed = 1" \
-    -s "{settings}.ty:maxBounces = 8" \
-    -s "/Camera.focalLength = 35"
-```
-
-The grammar is `[uniform|varying] [type] /Prim.attribute = USDA-value`.
-Existing schema or authored attributes infer their type and variability;
-explicit declarations must agree. A new custom attribute requires a type, for
-example `-s "bool {settings}.domeLightCameraVisibility = false"`.
-`{settings}` is case-insensitive and resolves once, before overrides, to the
-RenderSettings prim selected by `--renderSettingsPrimPath`,
-`--renderPassPrimPath`, or stage metadata. Every target prim must already be
-defined and included by `--mask`; typos, type mismatches, malformed values,
-undefined or masked-out prims, and native instance proxies fail before any
-override is authored.
-
-Values use USDA syntax: booleans are `true` / `false`, strings are quoted,
-vectors use tuples, and arrays use brackets. Relative asset paths are
-unanchored and resolve through the active resolver context with the current
-working directory first; use an absolute asset path when resolution must be
-unambiguous. With at least one `--set`, `--printOverrides` prints the generated
-session layer and continues.
 
 ## Subdivision complexity and MaterialX displacement
 
@@ -156,6 +158,8 @@ mode shows the nearest surface and does not reveal rear edges. Use
 wire-on-surface for final-render diagnostics. The reconstruction and repr-sync
 invariants are documented under
 [scene synchronization](ARCHITECTURE.md#scene-synchronization).
+
+# Settings
 
 | UI Name | Token | Type | Default |
 |---------|-------|------|---------|
