@@ -22,6 +22,15 @@ _RENDERERS = {
             _DEFAULT_CATEGORY,
         ],
         "settings": {
+            "renderingColorSpace": {
+                "category": "Scene",
+                "order": 5,
+                "allowedTokens": [
+                    "lin_rec709_scene",
+                    "lin_ap1_scene",
+                    "data",
+                ],
+            },
             "ty:convergedSamplesPerPixel": {
                 "category": "Sampling",
                 "order": 10,

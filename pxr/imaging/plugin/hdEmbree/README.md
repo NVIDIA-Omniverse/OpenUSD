@@ -163,6 +163,7 @@ invariants are documented under
 
 | UI Name | Token | Type | Default |
 |---------|-------|------|---------|
+| Rendering Color Space | `renderingColorSpace` | `token` | `lin_rec709_scene` |
 | Enable Scene Colors | `ty:enableSceneColors` | `bool` | `true` |
 | Enable Scene Lighting | `ty:enableLighting` | `bool` | `true` |
 | Enable Ambient Occlusion | `ty:enableAmbientOcclusion` | `bool` | `false` |
@@ -190,6 +191,12 @@ invariants are documented under
 | Texture Cache Size (MB) | `ty:textureCacheSize` | `int` | `16384` |
 
 ## Setting Descriptions
+
+### Rendering Color Space (`renderingColorSpace`)
+Selects the renderer working color space. RenderLab exposes
+`lin_rec709_scene`, `lin_ap1_scene`, and `data`; `data` bypasses source color
+transforms. This is the standard `UsdRenderSettings` attribute rather than a
+Typhoon-namespaced setting.
 
 ### Enable Scene Lighting (`ty:enableLighting`)
 When enabled, the renderer evaluates direct lighting from scene lights (UsdLux-compliant area lights) using MIS-based path tracing. When disabled, falls back to ambient occlusion if that is enabled.

@@ -135,7 +135,7 @@ HdEmbreeRenderDelegate::_Initialize()
     _settingDescriptors = {
         { "Rendering Color Space",
             HdRenderSettingsPrimTokens->renderingColorSpace,
-            VtValue(GfColorSpaceNames->LinearRec709) },
+            VtValue(GfColorSpaceNames->LinearRec709.GetString()) },
         { "Enable Scene Colors",
             HdEmbreeRenderSettingsTokens->enableSceneColors,
             VtValue(defaults.enableSceneColors) },

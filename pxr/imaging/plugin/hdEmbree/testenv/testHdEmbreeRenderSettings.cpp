@@ -169,9 +169,9 @@ _TestRenderDelegateSettings()
 
     const VtValue renderingColorSpaceDefault = delegate.GetRenderSetting(
         HdRenderSettingsPrimTokens->renderingColorSpace);
-    if (!renderingColorSpaceDefault.IsHolding<TfToken>() ||
-        renderingColorSpaceDefault.UncheckedGet<TfToken>() !=
-            GfColorSpaceNames->LinearRec709) {
+    if (!renderingColorSpaceDefault.IsHolding<std::string>() ||
+        renderingColorSpaceDefault.UncheckedGet<std::string>() !=
+            GfColorSpaceNames->LinearRec709.GetString()) {
         std::printf("renderingColorSpace default is not lin_rec709_scene\n");
         return false;
     }
