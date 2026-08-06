@@ -29,7 +29,6 @@ class HdEmbreeMesh;
 #define HDEMBREE_RENDER_SETTINGS_TOKENS \
     ((enableAmbientOcclusion, "ty:enableAmbientOcclusion")) \
     ((enableLighting, "ty:enableLighting")) \
-    ((enableSceneColors, "ty:enableSceneColors")) \
     ((ambientOcclusionSamples, "ty:ambientOcclusionSamples")) \
     ((convergedSamplesPerPixel, "ty:convergedSamplesPerPixel")) \
     ((randomNumberSeed, "ty:randomNumberSeed")) \

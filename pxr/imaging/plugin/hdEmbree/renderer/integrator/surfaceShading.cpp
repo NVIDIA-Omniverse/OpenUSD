@@ -606,10 +606,10 @@ ty::Renderer::_BuildShadingContext(
         }
     }
 
-    // Display color — always sample the authored primvar so that material
-    // evaluation (including opacity) sees the correct value regardless of
-    // the _settings.enableSceneColors display-only flag.
-    GfVec3f displayColor(0.8f);
+    // Display color is always available to material evaluation and renderer
+    // fallbacks. Match Storm's neutral geometry-color default when the primvar
+    // is not authored.
+    GfVec3f displayColor(0.5f);
     {
         auto it = prototypeContext->primvarMap.find(HdTokens->displayColor);
         if (it != prototypeContext->primvarMap.end()) {

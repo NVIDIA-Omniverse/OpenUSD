@@ -545,10 +545,8 @@ ty::Renderer::_IntegratePath(
         } else if (!hasClosure) {
             // Missing/failed materials use diffuse display color so
             // unmaterialized geometry remains visible.
-            GfVec3f matColor = _settings.enableSceneColors
-                ? ty::ToGf(ctx.displayColor) : GfVec3f(0.5f);
             mxcpp::SurfaceClosure fallback;
-            fallback.baseColor = ty::ToMx(matColor);
+            fallback.baseColor = ctx.displayColor;
             fallback.roughness = 1.0f;
             fallback.metallic = 0.0f;
             fallback.specular = 0.0f;

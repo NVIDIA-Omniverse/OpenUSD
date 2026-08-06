@@ -8,15 +8,19 @@
 #include <delegate/renderDelegate.h>
 #include <delegate/renderParam.h>
 #include <delegate/renderPass.h>
+#include <renderer/lights/light.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf.h>
 #include <renderer/renderBuffer.h>
 #include <renderer/renderer.h>
 
+#include "pxr/base/gf/math.h"
+#include "pxr/base/gf/matrix3f.h"
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/vec2i.h"
 #include "pxr/base/tf/diagnostic.h"
 #include "pxr/base/tf/diagnosticMgr.h"
 #include "pxr/imaging/cameraUtil/framing.h"
+#include "pxr/imaging/hd/material.h"
 #include "pxr/imaging/hd/renderBuffer.h"
 #include "pxr/imaging/hd/renderIndex.h"
 #include "pxr/imaging/hd/renderPassState.h"
@@ -1212,6 +1216,233 @@ _TestProcessGlobalDielectricSettingIsReapplied()
     return reapplied;
 }
 
+struct _DisplayColorRenderCase
+{
+    GfVec3f displayColor = GfVec3f(0.25f);
+    bool authorDisplayColor = true;
+    bool bindMaterial = false;
+    bool enableLighting = false;
+    bool addDistantLight = false;
+};
+
+HdMaterialNetwork2
+_MakeDisplayColorTestMaterial()
+{
+    HdMaterialNetwork2 network;
+    const SdfPath surfacePath("/Material/Surface");
+    HdMaterialNode2 surface;
+    surface.nodeTypeId = TfToken("UsdPreviewSurface");
+    surface.parameters[TfToken("diffuseColor")] =
+        VtValue(GfVec3f(0.8f, 0.05f, 0.05f));
+    network.nodes[surfacePath] = surface;
+    network.terminals[TfToken("surface")] =
+        HdMaterialConnection2{surfacePath, TfToken("out")};
+    return network;
+}
+
+bool
+_RenderDisplayColorCase(
+    _DisplayColorRenderCase const& renderCase,
+    GfVec4f* outColor)
+{
+    if (!outColor) {
+        return false;
+    }
+
+    // Declare the borrowed light before the delegate so it outlives the
+    // renderer registry when this function returns.
+    ty::LightData distantLight;
+    distantLight.xformLightToWorld = GfMatrix4f(1.0f);
+    distantLight.normalXformLightToWorld = GfMatrix3f(1.0f);
+    distantLight.xformWorldToLight = GfMatrix4f(1.0f);
+    distantLight.color = GfVec3f(1.0f);
+    distantLight.lightVariant = ty::DistantLight{0.0f};
+
+    HdEmbreeRenderDelegate delegate;
+    std::unique_ptr<HdRenderIndex> renderIndex(
+        HdRenderIndex::New(&delegate, HdDriverVector()));
+    if (!renderIndex) {
+        return false;
+    }
+
+    HdUnitTestDelegate sceneDelegate(
+        renderIndex.get(), SdfPath::AbsoluteRootPath());
+    const SdfPath meshId("/displayColorQuad");
+    const SdfPath materialId("/displayColorMaterial");
+    if (renderCase.bindMaterial) {
+        sceneDelegate.AddMaterialResource(
+            materialId, VtValue(_MakeDisplayColorTestMaterial()));
+    }
+    sceneDelegate.AddMesh(
+        meshId,
+        GfMatrix4f(1.0f),
+        VtVec3fArray{
+            GfVec3f(-2.0f, -2.0f, -2.0f),
+            GfVec3f(2.0f, -2.0f, -2.0f),
+            GfVec3f(2.0f, 2.0f, -2.0f),
+            GfVec3f(-2.0f, 2.0f, -2.0f)},
+        VtIntArray{4},
+        VtIntArray{0, 1, 2, 3},
+        false,
+        SdfPath(),
+        PxOsdOpenSubdivTokens->none,
+        HdTokens->rightHanded,
+        true);
+    if (renderCase.authorDisplayColor) {
+        sceneDelegate.UpdatePrimvarValue(
+            meshId, HdTokens->displayColor,
+            VtValue(renderCase.displayColor));
+    } else {
+        sceneDelegate.RemovePrimvar(meshId, HdTokens->displayColor);
+        sceneDelegate.RemovePrimvar(meshId, HdTokens->displayOpacity);
+    }
+    if (renderCase.bindMaterial) {
+        sceneDelegate.BindMaterial(meshId, materialId);
+        HdSprim* const material = renderIndex->GetSprim(
+            HdPrimTypeTokens->material, materialId);
+        if (!material) {
+            return false;
+        }
+        HdDirtyBits materialBits = material->GetInitialDirtyBitsMask();
+        material->Sync(
+            &sceneDelegate, delegate.GetRenderParam(), &materialBits);
+    }
+
+    HdRprim* const mesh =
+        const_cast<HdRprim*>(renderIndex->GetRprim(meshId));
+    if (!mesh) {
+        return false;
+    }
+    HdDirtyBits meshBits = mesh->GetInitialDirtyBitsMask();
+    mesh->InitRepr(
+        &sceneDelegate, HdReprTokens->smoothHull, &meshBits);
+    mesh->Sync(
+        &sceneDelegate,
+        delegate.GetRenderParam(),
+        &meshBits,
+        HdReprTokens->smoothHull);
+
+    HdEmbreeRenderParam* const renderParam =
+        static_cast<HdEmbreeRenderParam*>(delegate.GetRenderParam());
+    ty::Renderer* const renderer = renderParam->GetRenderer();
+    renderer->SetCamera(GfMatrix4d(1.0), GfMatrix4d(1.0));
+    renderer->SetDataWindow(GfRect2i(GfVec2i(0), 1, 1));
+    if (renderCase.addDistantLight) {
+        renderer->AddLight(SdfPath("/displayColorLight"), &distantLight);
+    }
+
+    HdEmbreeRenderBuffer color(SdfPath("/displayColorOutput"));
+    if (!color.Allocate(
+            GfVec3i(1, 1, 1), HdFormatFloat32Vec4, true)) {
+        return false;
+    }
+    renderer->SetAovBindings({_Binding(HdAovTokens->color, &color)});
+
+    ty::RenderSettings settings;
+    settings.samplesToConvergence = 1;
+    settings.randomNumberSeed = 1;
+    settings.enableAdaptiveSampling = false;
+    settings.enableLighting = renderCase.enableLighting;
+    settings.ambientOcclusionSamples = 0;
+    renderer->SetRenderSettings(settings);
+
+    HdRenderThread renderThread;
+    renderThread.StartRender();
+    renderer->Render(&renderThread);
+    renderThread.StopRender();
+    if (!renderer->DidLastFrameProduceValidPixels() ||
+        renderer->GetCompletedSamples() != 1) {
+        return false;
+    }
+
+    const float* const colorData = static_cast<float const*>(color.Map());
+    if (!colorData) {
+        return false;
+    }
+    *outColor = GfVec4f(
+        colorData[0], colorData[1], colorData[2], colorData[3]);
+    color.Unmap();
+    return true;
+}
+
+bool
+_TestDisplayColorFallbacks()
+{
+    const GfVec3f authoredColor(0.1f, 0.2f, 0.3f);
+    GfVec4f unmaterialized;
+    GfVec4f materialized;
+    if (!_RenderDisplayColorCase(
+            _DisplayColorRenderCase{authoredColor, true, false, false, false},
+            &unmaterialized) ||
+        !_RenderDisplayColorCase(
+            _DisplayColorRenderCase{authoredColor, true, true, false, false},
+            &materialized) ||
+        !GfIsClose(unmaterialized, materialized, 1.0e-5f)) {
+        std::printf("unlit material changed authored displayColor\n");
+        return false;
+    }
+
+    GfVec4f authoredGray;
+    GfVec4f fallbackGray;
+    if (!_RenderDisplayColorCase(
+            _DisplayColorRenderCase{
+                GfVec3f(0.25f), true, false, false, false},
+            &authoredGray) ||
+        !_RenderDisplayColorCase(
+            _DisplayColorRenderCase{
+                GfVec3f(0.0f), false, false, false, false},
+            &fallbackGray)) {
+        return false;
+    }
+    const GfVec4f expectedFallback(
+        2.0f * authoredGray[0],
+        2.0f * authoredGray[1],
+        2.0f * authoredGray[2],
+        1.0f);
+    if (!GfIsClose(fallbackGray, expectedFallback, 1.0e-5f)) {
+        std::printf("missing displayColor did not resolve to neutral gray\n");
+        return false;
+    }
+
+    GfVec4f litColor;
+    GfVec4f litDoubleColor;
+    if (!_RenderDisplayColorCase(
+            _DisplayColorRenderCase{
+                authoredColor, true, false, true, true},
+            &litColor) ||
+        !_RenderDisplayColorCase(
+            _DisplayColorRenderCase{
+                2.0f * authoredColor, true, false, true, true},
+            &litDoubleColor)) {
+        return false;
+    }
+    const GfVec4f expectedLitDouble(
+        2.0f * litColor[0],
+        2.0f * litColor[1],
+        2.0f * litColor[2],
+        1.0f);
+    if (litColor[0] <= 0.0f ||
+        !GfIsClose(litDoubleColor, expectedLitDouble, 1.0e-5f)) {
+        std::printf("lit fallback did not use authored displayColor\n");
+        return false;
+    }
+
+    GfVec4f unlitByMissingLight;
+    if (!_RenderDisplayColorCase(
+            _DisplayColorRenderCase{
+                authoredColor, true, false, true, false},
+            &unlitByMissingLight) ||
+        !GfIsClose(
+            unlitByMissingLight,
+            GfVec4f(0.0f, 0.0f, 0.0f, 1.0f),
+            1.0e-6f)) {
+        std::printf("lit fallback generated radiance without a light\n");
+        return false;
+    }
+
+    return true;
+}
+
 bool
 _TestCameraJitterTileDeterminism()
 {
@@ -1465,6 +1696,7 @@ main()
     TF_AXIOM(_TestEmptyRenderPassBindingsConverge(true));
     TF_AXIOM(_TestLiveRenderPassesOwnAnonymousBindings());
     TF_AXIOM(_TestProcessGlobalDielectricSettingIsReapplied());
+    TF_AXIOM(_TestDisplayColorFallbacks());
     TF_AXIOM(_TestCameraJitterTileDeterminism());
     TF_AXIOM(_TestRenderPassSettingsApplication());
     return 0;

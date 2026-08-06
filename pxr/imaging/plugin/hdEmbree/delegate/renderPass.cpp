@@ -901,10 +901,6 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<bool>(
                 HdRenderSettingsTokens->domeLightCameraVisibility,
                 defaults.domeLightCameraVisibility);
-        nextSettings.enableSceneColors =
-            renderDelegate->GetRenderSetting<bool>(
-                HdEmbreeRenderSettingsTokens->enableSceneColors,
-                defaults.enableSceneColors);
         nextSettings.randomNumberSeed =
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->randomNumberSeed,

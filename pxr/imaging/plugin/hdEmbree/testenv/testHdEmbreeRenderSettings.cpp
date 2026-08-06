@@ -112,7 +112,6 @@ _TestRenderDelegateSettings()
         delegate.GetRenderSettingDescriptors();
     const TfTokenVector expectedKeys = {
         HdRenderSettingsPrimTokens->renderingColorSpace,
-        HdEmbreeRenderSettingsTokens->enableSceneColors,
         HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
         HdEmbreeRenderSettingsTokens->enableLighting,
         HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
@@ -164,6 +163,12 @@ _TestRenderDelegateSettings()
     if (!delegate.GetRenderSetting(
             TfToken("ty:domeLightCameraVisibility")).IsEmpty()) {
         std::printf("old ty dome light render setting exists\n");
+        return false;
+    }
+
+    if (!delegate.GetRenderSetting(
+            TfToken("ty:enableSceneColors")).IsEmpty()) {
+        std::printf("removed enableSceneColors render setting exists\n");
         return false;
     }
 
@@ -762,7 +767,6 @@ _TestTyphoonRenderSettingsAPI()
     }
 
     const TfTokenVector expectedProperties = {
-        TfToken("ty:enableSceneColors"),
         TfToken("ty:enableAmbientOcclusion"),
         TfToken("ty:enableLighting"),
         TfToken("ty:ambientOcclusionSamples"),
@@ -899,8 +903,6 @@ _TestRenderSettingDefaultParity()
 
     const ty::RenderSettings defaults;
     const std::vector<std::pair<TfToken, VtValue>> expected = {
-        {HdEmbreeRenderSettingsTokens->enableSceneColors,
-         VtValue(defaults.enableSceneColors)},
         {HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
          VtValue(ty::DefaultEnableAmbientOcclusion)},
         {HdEmbreeRenderSettingsTokens->enableLighting,

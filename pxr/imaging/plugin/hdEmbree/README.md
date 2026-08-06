@@ -127,8 +127,9 @@ Displacement-only materials use display-color fallback shading on the displaced
 surface. A material with none of these usable terminals warns about its missing
 surface. A malformed displacement-only material emits its actionable
 displacement warning without also treating the intentionally absent surface as
-an error. Rejected surface graphs retain the display-color fallback, while
-rejected displacement graphs leave the surface undisplaced.
+an error. Missing or rejected surface graphs use authored `displayColor` for
+the diffuse fallback, or neutral gray `(0.5, 0.5, 0.5)` with opacity 1 when it
+is not authored. Rejected displacement graphs leave the surface undisplaced.
 Unexpected displacement backend failures produce a runtime error and leave the
 affected generated vertex undisplaced.
 
@@ -164,7 +165,6 @@ invariants are documented under
 | UI Name | Token | Type | Default |
 |---------|-------|------|---------|
 | Rendering Color Space | `renderingColorSpace` | `token` | `lin_rec709_scene` |
-| Enable Scene Colors | `ty:enableSceneColors` | `bool` | `true` |
 | Enable Scene Lighting | `ty:enableLighting` | `bool` | `true` |
 | Enable Ambient Occlusion | `ty:enableAmbientOcclusion` | `bool` | `false` |
 | Ambient Occlusion Samples | `ty:ambientOcclusionSamples` | `int` | `0` |

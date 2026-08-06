@@ -103,10 +103,6 @@ _RENDERERS = {
                 "category": "Diagnostics",
                 "order": 20,
             },
-            "ty:enableSceneColors": {
-                "category": "Scene",
-                "order": 10,
-            },
             "ty:enableLighting": {
                 "category": "Scene",
                 "order": 20,

@@ -25,10 +25,6 @@ class "TyphoonRenderSettingsAPI" (
     }
 )
 {
-    uniform bool ty:enableSceneColors = true (
-        doc = """Use authored scene colors instead of flat white surface colors."""
-    )
-
     uniform bool ty:enableAmbientOcclusion = false (
         doc = """Use ambient occlusion when scene lighting is disabled."""
     )

@@ -242,7 +242,8 @@ corresponding type without changing the semantic name.
 - `integrator/volumeTransport.cpp`: active-medium segment attenuation,
   free-flight scattering, medium roulette, and medium-boundary ownership.
 - `integrator/unlitIntegrator.cpp`: the single-hit unlit integrator. It owns its
-  camera intersection, MaterialX base color, camera-light shading, and AO.
+  camera intersection, authored display-color presentation, camera-light
+  shading, and AO.
 - `integrator/surfaceShading.cpp`: shared hit-normal, MaterialX shading-context,
   visibility-closure, display-wire composition, and ray-differential
   propagation helpers.
@@ -496,7 +497,9 @@ MaterialX closure values stay typed through graph evaluation:
   `interiorMedium`; `thin_walled` suppresses that medium.
 
 `ND_geomcolor_*` reads only Hydra `displayColor`; color4 takes alpha from
-`displayOpacity`. Named geometry data uses `ND_geompropvalue_*`, never
+`displayOpacity`. The shading context always samples authored `displayColor`
+and resolves an absent value to Storm's neutral `(0.5, 0.5, 0.5)` geometry
+color with opacity 1. Named geometry data uses `ND_geompropvalue_*`, never
 `geomColor` or `geomColorN`.
 
 Compiled graphs record whether a reachable node consumes object-space
@@ -748,12 +751,13 @@ For each segment, `_IntegratePath()` performs these stages in order:
    `SurfaceClosure`. Malformed graphs are rejected during compilation, so
    hit-time evaluation does not use exceptions for authored-value, missing
    input, or type-mismatch failures. Missing or rejected surface graphs leave a
-   synthetic diffuse fallback available for direct lighting; displacement-only
-   materials intentionally use that fallback, while volume-only materials use
-   a synthesized transparent medium boundary. Exceptions from OIIO handle
-   resolution, sampling, and color conversion are caught around those backend
-   calls, reported once with the filename, and return the authored texture
-   default. A synthetic SSS exit replaces the material with a
+   synthetic diffuse fallback using resolved `displayColor` available for
+   direct lighting; displacement-only materials intentionally use that
+   fallback, while volume-only materials use a synthesized transparent medium
+   boundary. Exceptions from OIIO handle resolution, sampling, and color
+   conversion are caught around those backend calls, reported once with the
+   filename, and return the authored texture default. A synthetic SSS exit
+   replaces the material with a
    unit Lambertian closure so subsurface albedo is not counted twice. Material
    normal inputs are resolved before BSDF work. The renderer-supplied graph
    normal and tangent frame use the authored exterior orientation. After the
@@ -830,7 +834,8 @@ For each segment, `_IntegratePath()` performs these stages in order:
     for BSDF surfaces, including light selection, linking, colored visibility,
     active-medium attenuation, per-leaf exact-normal cosine projection, and MIS
     against BSDF sampling. A surface without a usable material closure receives
-    the renderer's synthetic diffuse direct lighting fallback.
+    the renderer's synthetic diffuse direct lighting fallback using authored
+    `displayColor`, or neutral gray when it is absent.
 14. **Cross volume-only boundaries.** A closure that only defines an interior
     medium updates the active medium on entry or exit, offsets the unchanged ray
     across the boundary, and continues without consuming a surface bounce.
@@ -872,9 +877,11 @@ branch inside the lit path:
 2. A miss returns the configured clear color. Finite-light geometry returns
    black because scene lighting is explicitly disabled.
 3. For an ordinary surface it resolves instance/prototype state, hit position,
-   smooth normal, shading context, tangent frame, and MaterialX closure.
-4. The output color is the closure's base color, or display color/default gray
-   when no closure is available, multiplied by the camera-facing headlight.
+   smooth normal, shading context, tangent frame, and any MaterialX graph
+   normal needed by the current camera-facing headlight.
+4. The output color is authored `displayColor`, or neutral gray
+   `(0.5, 0.5, 0.5)` when unauthored, multiplied by the camera-facing
+   headlight. Material closure base color is not a presentation color.
 5. When enabled, `_ComputeAmbientOcclusion()` stratifies cosine-weighted
    hemisphere samples and traces Embree occlusion rays; its visibility average
    attenuates the headlight result.

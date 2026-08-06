@@ -70,11 +70,6 @@ class "TyphoonRenderSettingsAPI" (
             string userDocBrief = "Evaluate scene lights."
         }
     )
-    uniform bool ty:enableSceneColors = 1 (
-        customData = {
-            string userDocBrief = "Use authored scene colors instead of flat white surface colors."
-        }
-    )
     uniform float ty:fireflyClampThreshold = 20 (
         customData = {
             string userDocBrief = "Clamp threshold for bright non-caustic path contributions."

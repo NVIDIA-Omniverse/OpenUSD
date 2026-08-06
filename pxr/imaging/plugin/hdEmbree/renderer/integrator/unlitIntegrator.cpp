@@ -121,13 +121,10 @@ ty::Renderer::_IntegrateUnlit(
     const GfVec3f normalShdWldOut = ty::FaceNormalShdWldOut(
         normalShdWldExt, interaction.frontFacing);
 
-    GfVec3f materialColor;
-    if (hasMaterialClosure) {
-        materialColor = ty::ToGf(closure.baseColor);
-    } else {
-        materialColor = _settings.enableSceneColors
-            ? ty::ToGf(ctx.displayColor) : GfVec3f(0.5f);
-    }
+    // Hydra's unlit presentation color is the geometry display color, not a
+    // material-closure summary. Material evaluation above currently remains
+    // responsible only for the shading normal used by the camera headlight.
+    const GfVec3f displayColor = ty::ToGf(ctx.displayColor);
 
     // The unlit integrator uses a camera-facing headlight, optionally
     // attenuated by ambient occlusion, with the resolved material normal.
@@ -141,7 +138,7 @@ ty::Renderer::_IntegrateUnlit(
         domain.Fork(ty::SampleDomainKey::AmbientOcclusion));
 
     const GfVec3f lightingColor =
-        materialColor * diffuseLight * aoLightIntensity;
+        displayColor * diffuseLight * aoLightIntensity;
 
     GfVec4f output;
     output[0] = std::max(0.0f, lightingColor[0]);

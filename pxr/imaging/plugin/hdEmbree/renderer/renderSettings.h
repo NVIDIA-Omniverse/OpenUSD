@@ -62,7 +62,6 @@ struct RenderSettings {
     // Lighting and ambient occlusion.
     bool enableLighting = true;
     bool domeLightCameraVisibility = true;
-    bool enableSceneColors = true;
     int ambientOcclusionSamples = 0;
     int lightSamplesPerHit = 1;
 
