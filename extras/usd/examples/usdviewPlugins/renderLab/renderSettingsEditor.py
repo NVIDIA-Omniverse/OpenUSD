@@ -51,6 +51,11 @@ class RenderSettingsEditor(QtWidgets.QWidget):
         self._originalValues = {}
         self._rowsByWidget = {}
         self._lastRendererId = None
+        self._lastAovToken = None
+        self._updatingAovSelector = False
+        self._aovRow = None
+        self._aovLabel = None
+        self._aovCombo = None
         self._settingLabelWidth = 0
         self._controlHeight = None
 
@@ -73,12 +78,13 @@ class RenderSettingsEditor(QtWidgets.QWidget):
         toolbar.addWidget(self._rendererLabel, 1)
         paneLayout.addLayout(toolbar)
 
-        headerSpacerRow = QtWidgets.QHBoxLayout()
-        headerSpacerRow.setContentsMargins(_GROUP_CONTENT_LEFT_MARGIN, 0, 0, 0)
+        self._headerRow = QtWidgets.QHBoxLayout()
+        self._headerRow.setContentsMargins(
+            _GROUP_CONTENT_LEFT_MARGIN, 0, 0, 0)
         headerSpacerLabel = QtWidgets.QLabel(" ")
         headerSpacerLabel.setWordWrap(True)
-        headerSpacerRow.addWidget(headerSpacerLabel, 1)
-        paneLayout.addLayout(headerSpacerRow)
+        self._headerRow.addWidget(headerSpacerLabel, 1)
+        paneLayout.addLayout(self._headerRow)
         paneLayout.addSpacing(5)
 
         self._scroll = QtWidgets.QScrollArea()
@@ -111,41 +117,121 @@ class RenderSettingsEditor(QtWidgets.QWidget):
         self._clearForm()
 
         if not stageView:
+            self._lastAovToken = None
             self._form.addRow(QtWidgets.QLabel("No stage view"))
             return
 
         settings = renderSettingsMetadata.orderSettings(
             rendererId,
             list(stageView.GetRendererSettingsList()))
-        if not settings:
-            self._form.addRow(QtWidgets.QLabel("No renderer settings"))
-            return
 
         self._settingLabelWidth = self._computeSettingLabelWidth(
-            [setting.name for setting in settings])
+            [setting.name for setting in settings] + ["Viewport AOV"])
 
         self._updating = True
-        useCategories = renderSettingsMetadata.hasRendererMetadata(rendererId)
-        currentCategory = None
-        currentLayout = self._form
-        for setting in settings:
-            settingMetadata = renderSettingsMetadata.getSettingMetadata(
-                rendererId, setting.key)
-            if useCategories:
-                category = settingMetadata.get("category", "Other")
-                if category != currentCategory:
-                    currentLayout = self._addCollapsibleGroup(category)
-                    currentCategory = category
-            self._addSetting(setting, settingMetadata, currentLayout)
-        self._updating = False
+        try:
+            if renderSettingsMetadata.hasRendererMetadata(rendererId):
+                self._addCategorizedSettings(
+                    rendererId, settings, stageView)
+            else:
+                aovLayout = self._addCollapsibleGroup("AOV")
+                self._addAovSelector(aovLayout, stageView, rendererId)
+                for setting in settings:
+                    self._addSetting(setting, {}, self._form)
+        finally:
+            self._updating = False
 
     def closeEvent(self, event):
         self._pollTimer.stop()
         super().closeEvent(event)
 
     def _refreshIfRendererChanged(self):
-        if self._rendererId() != self._lastRendererId:
+        rendererId = self._rendererId()
+        stageView = self._stageView()
+        if rendererId != self._lastRendererId:
             self.refresh()
+        elif self._currentAovToken(stageView) != self._lastAovToken:
+            self._refreshAovSelector(stageView, rendererId)
+
+    def _refreshAovSelector(self, stageView, rendererId):
+        if self._aovCombo is None:
+            self._lastAovToken = self._currentAovToken(stageView)
+            return
+
+        self._updatingAovSelector = True
+        try:
+            self._aovCombo.clear()
+            if not stageView:
+                self._aovCombo.setEnabled(False)
+                self._lastAovToken = None
+                return
+
+            candidates = []
+            candidateIndices = {}
+
+            for aov in stageView.GetRendererAovs():
+                token = str(aov)
+                if not token or token in candidateIndices:
+                    continue
+                candidateIndices[token] = len(candidates)
+                candidates.append([token, token])
+
+            for metadata in renderSettingsMetadata.getAovMetadata(rendererId):
+                token = str(metadata["token"])
+                label = str(metadata.get("label", token))
+                index = candidateIndices.get(token)
+                if index is None:
+                    candidateIndices[token] = len(candidates)
+                    candidates.append([label, token])
+                else:
+                    candidates[index][0] = label
+
+            currentAov = self._currentAovToken(stageView)
+            if currentAov and currentAov not in candidateIndices:
+                candidateIndices[currentAov] = len(candidates)
+                candidates.append([
+                    "<Custom: {}>".format(currentAov),
+                    currentAov,
+                ])
+
+            for label, token in candidates:
+                self._aovCombo.addItem(label, token)
+
+            currentIndex = candidateIndices.get(currentAov, -1)
+            self._aovCombo.setCurrentIndex(currentIndex)
+            self._aovCombo.setEnabled(bool(candidates))
+            self._lastAovToken = currentAov
+        finally:
+            self._updatingAovSelector = False
+
+    def _setViewportAov(self, index):
+        if self._updatingAovSelector or self._aovCombo is None or index < 0:
+            return
+
+        token = self._aovCombo.itemData(index)
+        if token is None:
+            return
+        token = str(token)
+
+        stageView = self._stageView()
+        if not stageView:
+            return
+
+        try:
+            if stageView.SetRendererAov(token):
+                self._lastAovToken = token
+                return
+        except Exception as err:
+            print("RenderLab Viewport AOV error: {}".format(err))
+
+        self._refreshAovSelector(stageView, self._rendererId())
+
+    @staticmethod
+    def _currentAovToken(stageView):
+        if not stageView:
+            return None
+        aov = getattr(stageView, "rendererAovName", None)
+        return str(aov) if aov is not None else None
 
     def _stageView(self):
         stageView = getattr(self._api, "stageView", None)
@@ -175,8 +261,67 @@ class RenderSettingsEditor(QtWidgets.QWidget):
 
     def _clearForm(self):
         self._rowsByWidget = {}
+        self._aovRow = None
+        self._aovLabel = None
+        self._aovCombo = None
         while self._form.rowCount():
             self._form.removeRow(0)
+
+    def _addCategorizedSettings(self, rendererId, settings, stageView):
+        settingsByCategory = {}
+        for setting in settings:
+            metadata = renderSettingsMetadata.getSettingMetadata(
+                rendererId, setting.key)
+            category = metadata.get("category", "Other")
+            settingsByCategory.setdefault(category, []).append(
+                (setting, metadata))
+
+        addedCategories = set()
+        for category in renderSettingsMetadata.getRendererCategories(rendererId):
+            categorySettings = settingsByCategory.get(category, [])
+            if category != "AOV" and not categorySettings:
+                continue
+
+            layout = self._addCollapsibleGroup(category)
+            addedCategories.add(category)
+            if category == "AOV":
+                self._addAovSelector(layout, stageView, rendererId)
+            for setting, metadata in categorySettings:
+                self._addSetting(setting, metadata, layout)
+
+        if "AOV" not in addedCategories:
+            layout = self._addCollapsibleGroup("AOV")
+            self._addAovSelector(layout, stageView, rendererId)
+
+        for category, categorySettings in settingsByCategory.items():
+            if category in addedCategories:
+                continue
+            layout = self._addCollapsibleGroup(category)
+            for setting, metadata in categorySettings:
+                self._addSetting(setting, metadata, layout)
+
+    def _addAovSelector(self, layout, stageView, rendererId):
+        self._aovCombo = NoWheelComboBox()
+        self._aovCombo.setMinimumWidth(_COMBO_BOX_WIDTH)
+        self._aovCombo.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Fixed)
+        self._applyControlHeight(self._aovCombo)
+        self._aovRow = ParameterRow(
+            "Viewport AOV",
+            self._aovCombo,
+            authored=False,
+            labelWidth=self._settingLabelWidth,
+            resetEnabled=False,
+            parent=self._formContainer)
+        self._aovLabel = self._aovRow.labelWidget
+        self._aovLabel.setContextMenuPolicy(QtCore.Qt.NoContextMenu)
+        self._aovLabel.setMinimumHeight(self._aovCombo.minimumHeight())
+        self._aovLabel.setAlignment(
+            QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        self._aovCombo.currentIndexChanged.connect(self._setViewportAov)
+        layout.addRow(self._aovLabel, self._aovCombo)
+        self._refreshAovSelector(stageView, rendererId)
 
     def _addCollapsibleGroup(self, category):
         button = QtWidgets.QToolButton()

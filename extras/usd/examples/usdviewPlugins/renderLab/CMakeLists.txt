@@ -4,6 +4,7 @@ install(
     FILES_MATCHING
         PATTERN "*.py"
         PATTERN "plugInfo.json"
+        PATTERN "testenv" EXCLUDE
 )
 
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json"
@@ -11,6 +12,21 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json"
 install(
     FILES "${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json"
     DESTINATION lib/python
+)
+
+set(PXR_PACKAGE renderLab)
+add_custom_target(${PXR_PACKAGE})
+
+pxr_test_scripts(
+    testenv/testRenderLabRenderSettings.py
+)
+
+pxr_register_test(testRenderLabRenderSettings
+    PYTHON
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testRenderLabRenderSettings"
+    EXPECTED_RETURN_CODE 0
+    ENV
+        QT_QPA_PLATFORM=offscreen
 )
 
 get_property(_pxrExtraPluginsHelp CACHE PXR_EXTRA_PLUGINS PROPERTY HELPSTRING)

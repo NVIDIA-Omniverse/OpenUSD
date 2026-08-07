@@ -11,12 +11,24 @@ _RENDERERS = {
             "HdEmbreeRendererPlugin",
             "Embree",
         },
+        "aovs": [
+            {
+                "label": "adaptiveHeatmap",
+                "token": "adaptiveHeatmap",
+                "order": 10,
+            },
+            {
+                "label": "ambocc",
+                "token": "ambocc",
+                "order": 20,
+            },
+        ],
         "categories": [
             "Sampling",
             "Path Tracing",
             "Transparency",
             "Materials",
-            "Diagnostics",
+            "AOV",
             "Scene",
             _DEFAULT_CATEGORY,
         ],
@@ -91,8 +103,8 @@ _RENDERERS = {
                 ],
             },
             "ty:tileSize": {
-                "category": "Diagnostics",
-                "order": 20,
+                "category": _DEFAULT_CATEGORY,
+                "order": 1000000,
             },
             "domeLightCameraVisibility": {
                 "category": "Scene",
@@ -119,6 +131,7 @@ _RENDERERS = {
             "Culling",
             "Volumes",
             "Lighting",
+            "AOV",
             _DEFAULT_CATEGORY,
         ],
         "settings": {
@@ -176,6 +189,32 @@ def getRendererDisplayName(rendererId):
     if config:
         return config.get("displayName", str(rendererId or ""))
     return str(rendererId or "<none>")
+
+
+def getRendererCategories(rendererId):
+    config = _rendererConfig(rendererId)
+    if not config:
+        return []
+    return list(config.get("categories", []))
+
+
+def getAovMetadata(rendererId):
+    config = _rendererConfig(rendererId)
+    if not config:
+        return []
+
+    metadata = [
+        dict(aov)
+        for aov in config.get("aovs", [])
+        if aov.get("token")
+    ]
+    return sorted(
+        metadata,
+        key=lambda aov: (
+            aov.get("order", 1000),
+            str(aov.get("label", aov["token"])),
+            str(aov["token"]),
+        ))
 
 
 def getSettingMetadata(rendererId, settingKey):
