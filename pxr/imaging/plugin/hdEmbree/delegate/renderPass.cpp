@@ -74,7 +74,8 @@ _AddNamespacedRenderSettings(
             continue;
         }
 
-        if (name == TfToken("ty:domeLightCameraVisibility")) {
+        if (name == TfToken("ty:domeLightCameraVisibility") ||
+            name == TfToken("ty:enableExposureCompensation")) {
             continue;
         }
 
@@ -127,6 +128,10 @@ _GetNamespacedRenderSettings(HdRenderSettingsSchema const &rsSchema)
     _AddRenderSetting(
         namespacedSettings,
         HdRenderSettingsTokens->domeLightCameraVisibility,
+        &renderSettings);
+    _AddRenderSetting(
+        namespacedSettings,
+        HdRenderSettingsTokens->enableExposureCompensation,
         &renderSettings);
     if (HdTokenDataSourceHandle colorSpace =
             rsSchema.GetRenderingColorSpace()) {
@@ -475,15 +480,10 @@ _GetDataWindow(HdRenderPassStateSharedPtr const& renderPassState)
 
 static float
 _GetCameraExposureScale(
-    HdRenderPassStateSharedPtr const& renderPassState,
-    HdRenderDelegate const *renderDelegate)
+    HdRenderPassStateSharedPtr const& renderPassState)
 {
     HdCamera const * const camera = renderPassState->GetCamera();
-    const bool enableExposureCompensation =
-        renderDelegate->GetRenderSetting<bool>(
-            HdEmbreeRenderSettingsTokens->enableExposureCompensation,
-            ty::DefaultEnableExposureCompensation);
-    if (camera && enableExposureCompensation) {
+    if (camera && renderPassState->GetEnableExposureCompensation()) {
         return camera->GetLinearExposureScale();
     }
     return 1.0f;
@@ -996,7 +996,7 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     const GfMatrix4d view = renderPassState->GetWorldToViewMatrix();
     const GfMatrix4d proj = renderPassState->GetProjectionMatrix();
     const float cameraExposureScale =
-        _GetCameraExposureScale(renderPassState, renderDelegate);
+        _GetCameraExposureScale(renderPassState);
     const ty::CameraDepthOfField cameraDepthOfField =
         _GetCameraDepthOfField(renderPassState);
     const bool projectionChanged =

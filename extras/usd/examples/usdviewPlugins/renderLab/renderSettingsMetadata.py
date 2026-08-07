@@ -98,7 +98,7 @@ _RENDERERS = {
                 "category": "Scene",
                 "order": 20,
             },
-            "ty:enableExposureCompensation": {
+            "enableExposureCompensation": {
                 "category": "Scene",
                 "order": 30,
             },

@@ -45,11 +45,6 @@ class "TyphoonRenderSettingsAPI" (
             string userDocBrief = "Enable indirect caustic paths."
         }
     )
-    uniform bool ty:enableExposureCompensation = 1 (
-        customData = {
-            string userDocBrief = "Apply camera exposure compensation."
-        }
-    )
     uniform float ty:fireflyClampThreshold = 20 (
         customData = {
             string userDocBrief = "Clamp threshold for bright non-caustic path contributions."

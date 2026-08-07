@@ -247,14 +247,11 @@ void HdEmbree_TestGLDrawing::InitTest()
         VtValue(HdRprimCollection(
             HdTokens->geometry, HdReprSelector(reprToken))));
 
-    // Keep explicit AOV comparisons deterministic and exercise exposure
-    // without changing this harness's legacy framebuffer path.
+    // Keep explicit AOV comparisons deterministic. Directly constructed
+    // render-pass state enables exposure compensation by default.
     if (!_aov.empty()) {
         _renderDelegate->SetRenderSetting(
             HdEmbreeRenderSettingsTokens->randomNumberSeed, VtValue(1));
-        _renderDelegate->SetRenderSetting(
-            HdEmbreeRenderSettingsTokens->enableExposureCompensation,
-            VtValue(true));
     }
     if (_instance) {
         // Instanced scene. Add test geometry:

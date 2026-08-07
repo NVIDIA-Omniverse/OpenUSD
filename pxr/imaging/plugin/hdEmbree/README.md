@@ -170,7 +170,7 @@ invariants are documented under
 | Random Number Seed | `ty:randomNumberSeed` | `int` | `-1` |
 | Tile Size | `ty:tileSize` | `int` | `8` |
 | Dome Light Camera Visibility | `domeLightCameraVisibility` | `bool` | `true` |
-| Enable Exposure Compensation | `ty:enableExposureCompensation` | `bool` | `true` |
+| Enable Exposure Compensation | `enableExposureCompensation` | `bool` | `true` |
 | Dynamic Subdivision Tessellation | `ty:dynamicSubdvTesselation` | `bool` | `false` |
 | Adaptive Threshold | `ty:adaptiveThreshold` | `float` | `0.01` |
 | Min Samples Before Adaptive | `ty:minSamplesBeforeAdaptive` | `int` | `64` |

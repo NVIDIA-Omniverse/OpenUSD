@@ -17,6 +17,7 @@
 #include "pxr/base/gf/vec2i.h"
 #include "pxr/base/plug/registry.h"
 #include "pxr/base/tf/stringUtils.h"
+#include "pxr/imaging/hd/camera.h"
 #include "pxr/imaging/hd/renderIndex.h"
 #include "pxr/imaging/hd/renderPass.h"
 #include "pxr/imaging/hd/renderPassState.h"
@@ -26,6 +27,7 @@
 #include "pxr/imaging/hd/retainedSceneIndex.h"
 #include "pxr/imaging/hd/sceneGlobalsSchema.h"
 #include "pxr/imaging/hd/tokens.h"
+#include "pxr/imaging/hd/unitTestDelegate.h"
 #include "pxr/usd/sdf/schema.h"
 #include "pxr/usd/sdf/types.h"
 #include "pxr/usd/usd/attribute.h"
@@ -37,6 +39,7 @@
 #include "pxr/usd/usdRender/spec.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <memory>
@@ -116,7 +119,7 @@ _TestRenderDelegateSettings()
         HdEmbreeRenderSettingsTokens->randomNumberSeed,
         HdEmbreeRenderSettingsTokens->tileSize,
         HdRenderSettingsTokens->domeLightCameraVisibility,
-        HdEmbreeRenderSettingsTokens->enableExposureCompensation,
+        HdRenderSettingsTokens->enableExposureCompensation,
         HdEmbreeRenderSettingsTokens->adaptiveThreshold,
         HdEmbreeRenderSettingsTokens->minSamplesBeforeAdaptive,
         HdEmbreeRenderSettingsTokens->maxBounces,
@@ -152,6 +155,20 @@ _TestRenderDelegateSettings()
     if (!dynamicTessellationDefault.IsHolding<bool>() ||
         dynamicTessellationDefault.UncheckedGet<bool>()) {
         std::printf("dynamicSubdvTesselation delegate default is not false\n");
+        return false;
+    }
+
+    const VtValue exposureCompensationDefault = delegate.GetRenderSetting(
+        HdRenderSettingsTokens->enableExposureCompensation);
+    if (!exposureCompensationDefault.IsHolding<bool>() ||
+        !exposureCompensationDefault.UncheckedGet<bool>()) {
+        std::printf("enableExposureCompensation delegate default is not true\n");
+        return false;
+    }
+
+    if (!delegate.GetRenderSetting(
+            TfToken("ty:enableExposureCompensation")).IsEmpty()) {
+        std::printf("old ty exposure compensation render setting exists\n");
         return false;
     }
 
@@ -197,6 +214,8 @@ _TestRenderDelegateSettings()
 
         if (descriptor.key ==
                 HdRenderSettingsTokens->domeLightCameraVisibility ||
+            descriptor.key ==
+                HdRenderSettingsTokens->enableExposureCompensation ||
             descriptor.key ==
                 HdRenderSettingsPrimTokens->renderingColorSpace) {
             continue;
@@ -351,6 +370,18 @@ _RemoveIfExists(const char *filename)
 }
 
 bool
+_WaitForConvergence(HdRenderPassSharedPtr const& renderPass)
+{
+    for (int i = 0; i != 500; ++i) {
+        if (renderPass->IsConverged()) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return false;
+}
+
+bool
 _RunRenderProductOutputCase(const char *filename,
                             bool setInteractive,
                             bool interactive,
@@ -452,14 +483,7 @@ _RunRenderProductOutputCase(const char *filename,
 
     renderPass->Execute(renderPassState, TfTokenVector());
 
-    bool converged = false;
-    for (int i = 0; i != 500; ++i) {
-        if (renderPass->IsConverged()) {
-            converged = true;
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
+    const bool converged = _WaitForConvergence(renderPass);
 
     const bool outputExists = _FileExists(filename);
     if (!_RemoveIfExists(filename)) {
@@ -473,6 +497,118 @@ _RunRenderProductOutputCase(const char *filename,
     if (outputExists != expectOutput) {
         std::printf("RenderProduct output existence mismatch for %s\n",
                     filename);
+        return false;
+    }
+
+    return true;
+}
+
+bool
+_TestExposureCompensationRenderPassState()
+{
+    HdEmbreeRenderDelegate delegate;
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel, VtValue(1));
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->randomNumberSeed, VtValue(1));
+    // The render pass must use the pass state, not read this delegate value
+    // directly. HdxRenderSetupTask owns the standard delegate-to-state bridge.
+    delegate.SetRenderSetting(
+        HdRenderSettingsTokens->enableExposureCompensation, VtValue(false));
+
+    std::unique_ptr<HdRenderIndex> renderIndex(
+        HdRenderIndex::New(&delegate, HdDriverVector()));
+    if (!renderIndex) {
+        std::printf("failed to create exposure render index\n");
+        return false;
+    }
+
+    HdUnitTestDelegate sceneDelegate(
+        renderIndex.get(), SdfPath::AbsoluteRootPath());
+    const SdfPath cameraId("/Camera");
+    sceneDelegate.AddCamera(cameraId);
+    sceneDelegate.UpdateCamera(
+        cameraId, HdCameraTokens->linearExposureScale, VtValue(2.0f));
+
+    HdSprim* const cameraSprim = renderIndex->GetSprim(
+        HdPrimTypeTokens->camera, cameraId);
+    if (!cameraSprim) {
+        std::printf("failed to create exposure test camera\n");
+        return false;
+    }
+    HdDirtyBits cameraBits = cameraSprim->GetInitialDirtyBitsMask();
+    cameraSprim->Sync(
+        &sceneDelegate, delegate.GetRenderParam(), &cameraBits);
+    HdCamera const* const camera = static_cast<HdCamera const*>(cameraSprim);
+    if (camera->GetLinearExposureScale() != 2.0f) {
+        std::printf("unexpected exposure test camera scale\n");
+        return false;
+    }
+
+    HdEmbreeRenderBuffer colorBuffer(SdfPath("/ExposureColorBuffer"));
+    if (!colorBuffer.Allocate(
+            GfVec3i(1, 1, 1), HdFormatFloat32Vec4,
+            /*multiSampled=*/false)) {
+        std::printf("failed to allocate exposure test color buffer\n");
+        return false;
+    }
+
+    HdRenderPassSharedPtr renderPass = delegate.CreateRenderPass(
+        renderIndex.get(), HdRprimCollection());
+    HdRenderPassStateSharedPtr renderPassState =
+        delegate.CreateRenderPassState();
+    renderPassState->SetCamera(camera);
+    renderPassState->SetViewport(GfVec4d(0.0, 0.0, 1.0, 1.0));
+
+    HdRenderPassAovBinding colorAov;
+    colorAov.aovName = HdAovTokens->color;
+    colorAov.renderBuffer = &colorBuffer;
+    colorAov.clearValue = VtValue(GfVec4f(0.125f, 0.25f, 0.375f, 0.8f));
+    renderPassState->SetAovBindings({colorAov});
+
+    const auto renderAndRead = [&]() {
+        renderPass->Execute(renderPassState, TfTokenVector());
+        if (!_WaitForConvergence(renderPass)) {
+            std::printf("exposure render did not converge\n");
+            return GfVec4f(-1.0f);
+        }
+        const float* const data =
+            static_cast<float const*>(colorBuffer.Map());
+        if (!data) {
+            colorBuffer.Unmap();
+            std::printf("failed to map exposure test color buffer\n");
+            return GfVec4f(-1.0f);
+        }
+        const GfVec4f color(data[0], data[1], data[2], data[3]);
+        colorBuffer.Unmap();
+        return color;
+    };
+
+    if (!renderPassState->GetEnableExposureCompensation()) {
+        std::printf("render-pass-state exposure default is not true\n");
+        return false;
+    }
+    const GfVec4f enabledColor = renderAndRead();
+    if (!GfIsClose(
+            enabledColor, GfVec4f(0.25f, 0.5f, 0.75f, 1.0f), 1.0e-6f)) {
+        std::printf("enabled exposure output was incorrect\n");
+        return false;
+    }
+
+    renderPassState->SetEnableExposureCompensation(false);
+    const GfVec4f disabledColor = renderAndRead();
+    if (!GfIsClose(
+            disabledColor,
+            GfVec4f(0.125f, 0.25f, 0.375f, 1.0f),
+            1.0e-6f)) {
+        std::printf("disabled exposure output was incorrect\n");
+        return false;
+    }
+
+    renderPassState->SetEnableExposureCompensation(true);
+    const GfVec4f reenabledColor = renderAndRead();
+    if (!GfIsClose(reenabledColor, enabledColor, 1.0e-6f)) {
+        std::printf("re-enabled exposure output retained stale accumulation\n");
         return false;
     }
 
@@ -644,6 +780,11 @@ _TestActiveRenderSettingsPrimBridge()
             HdRenderSettingsTokens->domeLightCameraVisibility, false);
     const bool authoredDomeLightCameraVisibility =
         !defaultDomeLightCameraVisibility;
+    const bool defaultEnableExposureCompensation =
+        delegate.GetRenderSetting<bool>(
+            HdRenderSettingsTokens->enableExposureCompensation, false);
+    const bool authoredEnableExposureCompensation =
+        !defaultEnableExposureCompensation;
     const bool defaultDisableShadows =
         delegate.GetRenderSetting<bool>(
             HdEmbreeRenderSettingsTokens->disableShadows, false);
@@ -653,22 +794,32 @@ _TestActiveRenderSettingsPrimBridge()
     renderSettingsBuilder.SetRenderingColorSpace(
         HdRetainedTypedSampledDataSource<TfToken>::New(
             GfColorSpaceNames->LinearAP1));
+    const std::array<TfToken, 8> settingNames = {
+        HdEmbreeRenderSettingsTokens->maxBounces,
+        HdEmbreeRenderSettingsTokens->disableShadows,
+        HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
+        TfToken("ty:domeLightCameraVisibility"),
+        HdRenderSettingsTokens->domeLightCameraVisibility,
+        TfToken("ty:enableExposureCompensation"),
+        HdRenderSettingsTokens->enableExposureCompensation,
+        unprefixedMaxBounces
+    };
+    const std::array<HdDataSourceBaseHandle, 8> settingValues = {
+        HdRetainedSampledDataSource::New(VtValue(3)),
+        HdRetainedSampledDataSource::New(
+            VtValue(authoredDisableShadows)),
+        HdRetainedSampledDataSource::New(VtValue(true)),
+        HdRetainedSampledDataSource::New(VtValue(true)),
+        HdRetainedSampledDataSource::New(
+            VtValue(authoredDomeLightCameraVisibility)),
+        HdRetainedSampledDataSource::New(VtValue(true)),
+        HdRetainedSampledDataSource::New(
+            VtValue(authoredEnableExposureCompensation)),
+        HdRetainedSampledDataSource::New(VtValue(99))
+    };
     renderSettingsBuilder.SetNamespacedSettings(
         HdRetainedContainerDataSource::New(
-            HdEmbreeRenderSettingsTokens->maxBounces,
-            HdRetainedSampledDataSource::New(VtValue(3)),
-            HdEmbreeRenderSettingsTokens->disableShadows,
-            HdRetainedSampledDataSource::New(
-                VtValue(authoredDisableShadows)),
-            HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
-            HdRetainedSampledDataSource::New(VtValue(true)),
-            TfToken("ty:domeLightCameraVisibility"),
-            HdRetainedSampledDataSource::New(VtValue(true)),
-            HdRenderSettingsTokens->domeLightCameraVisibility,
-            HdRetainedSampledDataSource::New(
-                VtValue(authoredDomeLightCameraVisibility)),
-            unprefixedMaxBounces,
-            HdRetainedSampledDataSource::New(VtValue(99))));
+            settingNames.size(), settingNames.data(), settingValues.data()));
 
     sceneIndex->AddPrims({
         {SdfPath::AbsoluteRootPath(), TfToken(),
@@ -759,6 +910,20 @@ _TestActiveRenderSettingsPrimBridge()
         return false;
     }
 
+    if (!delegate.GetRenderSetting(
+            TfToken("ty:enableExposureCompensation")).IsEmpty()) {
+        std::printf("active RenderSettings bridged old ty exposure setting\n");
+        return false;
+    }
+
+    const bool enableExposureCompensation = delegate.GetRenderSetting<bool>(
+        HdRenderSettingsTokens->enableExposureCompensation,
+        defaultEnableExposureCompensation);
+    if (enableExposureCompensation != authoredEnableExposureCompensation) {
+        std::printf("active RenderSettings exposure setting was not bridged\n");
+        return false;
+    }
+
     return true;
 }
 
@@ -784,7 +949,6 @@ _TestTyphoonRenderSettingsAPI()
         TfToken("ty:convergedSamplesPerPixel"),
         TfToken("ty:randomNumberSeed"),
         TfToken("ty:tileSize"),
-        TfToken("ty:enableExposureCompensation"),
         TfToken("ty:adaptiveThreshold"),
         TfToken("ty:minSamplesBeforeAdaptive"),
         TfToken("ty:maxBounces"),
@@ -918,8 +1082,6 @@ _TestRenderSettingDefaultParity()
          VtValue(defaults.randomNumberSeed)},
         {HdEmbreeRenderSettingsTokens->tileSize,
          VtValue(defaults.tileSize)},
-        {HdEmbreeRenderSettingsTokens->enableExposureCompensation,
-         VtValue(ty::DefaultEnableExposureCompensation)},
         {HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
          VtValue(ty::DefaultDynamicSubdvTesselation)},
         {HdEmbreeRenderSettingsTokens->adaptiveThreshold,
@@ -985,6 +1147,14 @@ _TestRenderSettingDefaultParity()
             }
             continue;
         }
+        if (descriptor.key ==
+            HdRenderSettingsTokens->enableExposureCompensation) {
+            if (descriptor.defaultValue != VtValue(true)) {
+                std::printf("exposure descriptor default is not true\n");
+                return false;
+            }
+            continue;
+        }
         const auto it = std::find_if(
             expected.begin(), expected.end(),
             [&descriptor](std::pair<TfToken, VtValue> const& entry) {
@@ -1046,6 +1216,9 @@ main()
         return 1;
     }
     if (!_TestRenderProductOutputPolicy()) {
+        return 1;
+    }
+    if (!_TestExposureCompensationRenderPassState()) {
         return 1;
     }
     if (!_TestTyphoonRenderSettingsAPI()) {

@@ -921,7 +921,7 @@ per-pixel mean and variance used by adaptive convergence. It then passes each
 classified AOV through `_WriteAov()`'s direct switch:
 
 - color output consumes the returned radiance and applies camera exposure only at
-  output;
+  output when Hydra enables exposure compensation on the render-pass state;
 - depth, normal, ID, and primvar output interprets the retained `primaryHit`;
 - heatmap output consumes adaptive sample counts rather than scene radiance.
   Binding only `adaptiveHeatmap` still requests hidden radiance evaluation so

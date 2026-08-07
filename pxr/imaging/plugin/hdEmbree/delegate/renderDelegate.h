@@ -30,7 +30,6 @@ class HdEmbreeMesh;
     ((convergedSamplesPerPixel, "ty:convergedSamplesPerPixel")) \
     ((randomNumberSeed, "ty:randomNumberSeed")) \
     ((tileSize, "ty:tileSize")) \
-    ((enableExposureCompensation, "ty:enableExposureCompensation")) \
     ((adaptiveThreshold, "ty:adaptiveThreshold")) \
     ((minSamplesBeforeAdaptive, "ty:minSamplesBeforeAdaptive")) \
     ((maxBounces, "ty:maxBounces")) \

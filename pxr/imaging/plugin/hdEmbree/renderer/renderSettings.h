@@ -79,7 +79,6 @@ struct RenderSettings {
 };
 
 // Render-pass-owned defaults not represented in renderer state.
-constexpr bool DefaultEnableExposureCompensation = true;
 constexpr bool DefaultDynamicSubdvTesselation = false;
 constexpr char DefaultMaterialRenderContext[] = "mtlx";
 
