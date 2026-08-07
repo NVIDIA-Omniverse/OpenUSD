@@ -302,8 +302,10 @@ design and owners.
 - Render setting defaults, schema types, UI values, and
   `GetRenderSetting<T>()` calls must agree. Preserve bridge-owned tracking so
   USD settings do not overwrite direct UI/delegate edits.
-- `domeLightCameraVisibility` is generic and unnamespaced. Never re-add
-  `ty:domeLightCameraVisibility`.
+- `renderingColorSpace` is a standard `RenderSettings` attribute;
+  `domeLightCameraVisibility` and `enableExposureCompensation` are generic
+  Hydra settings. All three are unnamespaced. Never re-add the old
+  `ty:domeLightCameraVisibility` or `ty:enableExposureCompensation` aliases.
 - Keep `schema/schema.usda`, `schema/generatedSchema.usda`, descriptors, and
   tests synchronized for `TyphoonRenderSettingsAPI` changes. Edit RenderLab
   source under `extras/usd/examples/usdviewPlugins/renderLab/`, never the

@@ -39,20 +39,23 @@ supported external contract is:
 | `HdEmbreeRendererPlugin` type name, `HdRendererPlugin` base, priority | `plugInfo.json`, `delegate/rendererPlugin.cpp` |
 | `HdEmbree_ImplicitSurfaceSceneIndexPlugin` type name, base, `loadWithRenderer` | `plugInfo.json`, `delegate/implicitSurfaceSceneIndexPlugin.cpp` |
 | `TyphoonRenderSettingsAPI` schema identity, auto-apply to `RenderSettings` | `plugInfo.json`, `schema/generatedSchema.usda` |
-| The 18 `ty:` attribute names, types, defaults, and allowed tokens | `schema/schema.usda`, `HdEmbreeRenderDelegate::_Initialize()` |
-| Generic unnamespaced settings (`domeLightCameraVisibility`) and the namespace list | `HdEmbreeRenderDelegate::GetRenderSettingsNamespaces()` |
+| The 17 `ty:` attribute names, types, defaults, and allowed tokens | `schema/schema.usda`, `HdEmbreeRenderDelegate::_Initialize()` |
+| Standard/generic unnamespaced settings (`renderingColorSpace`, `domeLightCameraVisibility`, `enableExposureCompensation`) and the namespace list | `HdEmbreeRenderDelegate::_Initialize()`, `HdEmbreeRenderDelegate::GetRenderSettingsNamespaces()`, `delegate/renderPass.cpp` |
 | Material render-context tokens | `HdEmbreeRenderDelegate::GetMaterialRenderContexts()` |
 | Supported AOV names | `renderer/aov/aovOutput.cpp` |
 | The renderer identifiers RenderLab matches on (`"HdEmbreeRendererPlugin"`, `"Embree"`) | `extras/usd/examples/usdviewPlugins/renderLab/renderSettingsMetadata.py` |
-| RenderLab setting keys, a subset of the delegate descriptors | `extras/usd/examples/usdviewPlugins/renderLab/renderSettingsMetadata.py` |
+| RenderLab setting keys and renderer-specific viewport AOV keys | `extras/usd/examples/usdviewPlugins/renderLab/renderSettingsMetadata.py` |
 
 The USD `TyphoonRenderSettingsAPI` schema is hdEmbree's supported external
 settings interface. Hydra's direct delegate-settings path is an internal
 application-control path, required by usdview and RenderLab, and is not a
 consumer-facing C++ API. RenderLab uses `StageView.SetRendererSetting()` rather
-than authoring USD. Its explicit metadata covers 16 of the 18 `ty:` attributes;
-`ty:disableShadows` and `ty:textureCacheSize` use the default category. Its key
-set must remain a subset of the delegate descriptors.
+than authoring USD, and `StageView.SetRendererAov()` to select a viewport AOV.
+Its explicit setting metadata covers 15 of the 17 `ty:` attributes;
+`ty:disableShadows` and `ty:textureCacheSize` use the default category. Its
+setting-key set must remain a subset of the delegate descriptors. Its AOV
+metadata supplements the standard AOVs reported by the active renderer and
+must use names supported by that renderer.
 
 `usdrender -s` / `--set` is the per-invocation authoring path. It lives outside
 hdEmbree in `pxr/usdImaging/bin/usdrender/`: the tool resolves `{settings}`
@@ -924,9 +927,14 @@ classified AOV through `_WriteAov()`'s direct switch:
   output when Hydra enables exposure compensation on the render-pass state;
 - depth, normal, ID, and primvar output interprets the retained `primaryHit`;
 - heatmap output consumes adaptive sample counts rather than scene radiance.
-  Binding only `adaptiveHeatmap` still requests hidden radiance evaluation so
-  those counts are driven by the beauty convergence signal. Without a heatmap
-  binding, no heatmap color conversion or buffer write occurs.
+  `_UpdateVariance()` advances the count before `_WriteAov()` maps
+  `(updatedSampleCount + 1) / samplesToConvergence` through the heatmap ramp.
+  The multisampled render buffer accumulates those colors, and `Resolve()`
+  averages them, so resolved output represents the pixel's sampling history
+  rather than the ramp color of only its final count. Binding only
+  `adaptiveHeatmap` still requests hidden radiance evaluation so those counts
+  are driven by the beauty convergence signal. Without a heatmap binding, no
+  heatmap color conversion or buffer write occurs.
 - `ambocc` output consumes one binary ambient-visibility sample, replicated to
   RGB, for each ordinary primary surface hit. Binding only `ambocc` uses that
   scalar value for adaptive convergence; color or heatmap bindings retain the
@@ -1024,12 +1032,14 @@ Follow the focused and complete validation workflow in
 - Store accumulation state in `renderer/renderer.h`.
 - Compute in `renderer/aov/aovOutput.cpp` or at the appropriate integrator stage.
 - Add a format-aware `_Write*` path through `ty::RenderBufferInterface`; implement any new output operation in `delegate/renderBuffer.*`.
+- Add renderer-specific viewport choices to RenderLab's AOV metadata when the
+  AOV should be directly selectable there.
 
 ### Render settings
 
 hdEmbree's supported external render-settings interface is the USD
 `TyphoonRenderSettingsAPI` schema. Direct Hydra delegate settings remain an
-internal application-control path used by clients such as usdview's renderLab.
+internal application-control path used by clients such as usdview's RenderLab.
 `ty::Renderer` and `ty::RenderSettings` are implementation details, not
 a supported C++ API.
 
@@ -1062,7 +1072,7 @@ Update all relevant surfaces:
 - bridge logic in `delegate/renderPass.cpp`;
 - unified renderer application/state in `renderer/renderer.*` and behavior in
   the owning `aov/`, `camera/`, or `integrator/` file;
-- RenderLab metadata/editor source under
+- RenderLab setting/AOV metadata and editor source under
   `extras/usd/examples/usdviewPlugins/renderLab/` when exposed in that UI;
 - user documentation in `README.md`;
 - coverage in `testenv/testHdEmbreeRenderSettings.cpp`.

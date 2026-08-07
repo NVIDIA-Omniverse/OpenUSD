@@ -20,7 +20,9 @@ Pixi will handle all dependencies and install the built OpenUSD distribution in 
 pixi run usdview /path/to/scene.usd
 ```
 
-to run `usdview` with Typhoon already selected as the default renderer. In `usdview` you can use the `RenderLab` plugin to edit certain scene properties at runtime.
+to run `usdview` with Typhoon already selected as the default renderer. In
+`usdview` you can use the `RenderLab` plugin to edit scene properties and
+renderer settings at runtime, and to select the viewport AOV.
 
 ## usdrender
 
@@ -57,11 +59,13 @@ light shapes can appear to the camera when `visibleInPrimaryRay` is enabled.
 `domeLightCameraVisibility` independently controls dome backgrounds.
 
 The following settings can be configured through the Hydra render-delegate
-settings API. USD `RenderSettings` prim attributes use the `ty:` namespace,
-except the generic `domeLightCameraVisibility` setting. For `usdrender`,
-precedence is built-in default < USD `RenderSettings` prim < command-line
-`--set`. Interactive applications can place direct Hydra renderer settings,
-including UI changes, above authored USD values.
+settings API. Typhoon-specific USD `RenderSettings` prim attributes use the
+`ty:` namespace. The standard `renderingColorSpace` attribute and the generic
+Hydra `domeLightCameraVisibility` and `enableExposureCompensation` settings are
+unnamespaced. For `usdrender`, precedence is built-in default < USD
+`RenderSettings` prim < command-line `--set`. Interactive applications can
+place direct Hydra renderer settings, including UI changes, above authored USD
+values.
 
 ## Render-product output
 
@@ -263,14 +267,19 @@ without editing the stage.
 | `ambocc` | `Float32Vec3` |
 
 ### Adaptive heatmap
-When this AOV is bound, it outputs a heatmap visualizing per-pixel sample
-counts. The color ramp maps the ratio
-`sampleCount / convergedSamplesPerPixel`: blue (few samples) -> cyan -> green
--> yellow -> red (many samples). If it is the only bound AOV, hdEmbree still
-evaluates scene radiance so convergence reflects the same signal as beauty
-rendering. In usdview, choose `Renderer > Hydra AOVs > Other...` and enter
-`adaptiveHeatmap` to display it. The heatmap is computed only while that AOV is
-bound and never replaces the color AOV.
+When this AOV is bound, it accumulates a heatmap of per-pixel sampling
+progress. After the adaptive sample counter is advanced, each sample maps
+`(updatedSampleCount + 1) / convergedSamplesPerPixel` through a blue -> cyan ->
+green -> yellow -> red ramp. Multisample resolve averages those per-sample ramp
+colors, so the resolved pixel visualizes its sampling history rather than being
+a direct color lookup of its final sample count.
+
+If it is the only bound AOV, hdEmbree still evaluates scene radiance so
+convergence reflects the same signal as beauty rendering. In usdview, choose
+`Renderer > Hydra AOVs > Other...` and enter `adaptiveHeatmap`, or open
+`RenderLab > Render Settings > AOV` and select `adaptiveHeatmap` from
+`Viewport AOV`. The heatmap is computed only while that AOV is bound and never
+replaces the color AOV.
 
 ### Ambient occlusion
 When `ambocc` is bound, hdEmbree traces one cosine-weighted ambient-visibility
@@ -287,7 +296,8 @@ When `ambocc` is the only bound AOV, its scalar visibility samples drive the
 convergence statistics without evaluating material closures or path lighting.
 When color is also bound, AO remains independent and never changes the beauty
 sample. In usdview, choose `Renderer > Hydra AOVs > Other...` and enter
-`ambocc` to display it.
+`ambocc`, or open `RenderLab > Render Settings > AOV` and select `ambocc` from
+`Viewport AOV`.
 
 Before rendering, hdEmbree requires at least one hdEmbree-owned AOV buffer,
 supported AOV formats, matching non-zero buffer dimensions, and a non-empty

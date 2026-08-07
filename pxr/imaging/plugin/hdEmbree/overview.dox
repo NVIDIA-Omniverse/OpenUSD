@@ -47,8 +47,9 @@ USD render-settings schema, not its internal C++ module boundaries.
   `RenderSettings`. Renderer-specific attributes use the `ty:` namespace;
   names, types, defaults, and allowed tokens are defined by
   `schema/schema.usda`.
-- Hydra applications may also use direct delegate settings. The generic
-  `domeLightCameraVisibility` setting is deliberately unnamespaced.
+- Hydra applications may also use direct delegate settings. The standard
+  `renderingColorSpace` attribute and generic `domeLightCameraVisibility` and
+  `enableExposureCompensation` settings are deliberately unnamespaced.
 - Lit or unlit color presentation follows
   `HdRenderPassState::GetLightingEnabled()` rather than a Typhoon render
   setting. Lit mode path traces the lights supplied after Hydra scene-light
