@@ -112,7 +112,6 @@ _TestRenderDelegateSettings()
         delegate.GetRenderSettingDescriptors();
     const TfTokenVector expectedKeys = {
         HdRenderSettingsPrimTokens->renderingColorSpace,
-        HdEmbreeRenderSettingsTokens->enableLighting,
         HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
         HdEmbreeRenderSettingsTokens->randomNumberSeed,
         HdEmbreeRenderSettingsTokens->tileSize,
@@ -782,7 +781,6 @@ _TestTyphoonRenderSettingsAPI()
     }
 
     const TfTokenVector expectedProperties = {
-        TfToken("ty:enableLighting"),
         TfToken("ty:convergedSamplesPerPixel"),
         TfToken("ty:randomNumberSeed"),
         TfToken("ty:tileSize"),
@@ -914,8 +912,6 @@ _TestRenderSettingDefaultParity()
 
     const ty::RenderSettings defaults;
     const std::vector<std::pair<TfToken, VtValue>> expected = {
-        {HdEmbreeRenderSettingsTokens->enableLighting,
-         VtValue(defaults.enableLighting)},
         {HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
          VtValue(defaults.samplesToConvergence)},
         {HdEmbreeRenderSettingsTokens->randomNumberSeed,

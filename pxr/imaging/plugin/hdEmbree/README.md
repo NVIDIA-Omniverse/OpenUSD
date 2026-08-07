@@ -166,7 +166,6 @@ invariants are documented under
 | UI Name | Token | Type | Default |
 |---------|-------|------|---------|
 | Rendering Color Space | `renderingColorSpace` | `token` | `lin_rec709_scene` |
-| Enable Scene Lighting | `ty:enableLighting` | `bool` | `true` |
 | Samples To Convergence | `ty:convergedSamplesPerPixel` | `int` | `256` |
 | Random Number Seed | `ty:randomNumberSeed` | `int` | `-1` |
 | Tile Size | `ty:tileSize` | `int` | `8` |
@@ -187,7 +186,7 @@ invariants are documented under
 | Dielectric Layer Throughput Mode | `ty:dielectricLayerThroughputMode` | `token` | `bsdl` |
 | Texture Cache Size (MB) | `ty:textureCacheSize` | `int` | `16384` |
 
-## Setting Descriptions
+## Rendering Behavior and Setting Descriptions
 
 ### Rendering Color Space (`renderingColorSpace`)
 Selects the renderer working color space. RenderLab exposes
@@ -195,12 +194,19 @@ Selects the renderer working color space. RenderLab exposes
 transforms. This is the standard `UsdRenderSettings` attribute rather than a
 Typhoon-namespaced setting.
 
-### Enable Scene Lighting (`ty:enableLighting`)
-When enabled, the renderer evaluates direct lighting from scene lights
-(UsdLux-compliant area lights) using MIS-based path tracing. When disabled,
-the current unlit presentation path uses its camera-facing headlight. Ambient
-occlusion is never multiplied into either result; request the independent
-`ambocc` AOV when that diagnostic is needed.
+### Hydra Lighting State
+
+Lighting presentation follows `HdRenderPassState::GetLightingEnabled()` rather
+than a Typhoon render setting. Enabled color passes always use path tracing and
+evaluate only the lights supplied by Hydra. If scene-light pruning leaves no
+light or emissive source, non-emissive surfaces remain black; hdEmbree does not
+add a headlight or ambient fallback.
+
+When Hydra disables lighting, color passes display authored `displayColor`
+directly, or neutral gray `(0.5, 0.5, 0.5)` when it is unauthored. This unlit
+presentation does not evaluate material closures, surface orientation, scene
+lights, emission transport, indirect bounces, or ambient occlusion. Request the
+independent `ambocc` AOV when that diagnostic is needed.
 
 ### Adaptive Sampling (`ty:adaptiveThreshold`, `ty:minSamplesBeforeAdaptive`)
 Adaptive sampling is always active during progressive rendering. Per-pixel

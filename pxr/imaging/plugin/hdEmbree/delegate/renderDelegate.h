@@ -27,7 +27,6 @@ class HdEmbreeRenderParam;
 class HdEmbreeMesh;
 
 #define HDEMBREE_RENDER_SETTINGS_TOKENS \
-    ((enableLighting, "ty:enableLighting")) \
     ((convergedSamplesPerPixel, "ty:convergedSamplesPerPixel")) \
     ((randomNumberSeed, "ty:randomNumberSeed")) \
     ((tileSize, "ty:tileSize")) \

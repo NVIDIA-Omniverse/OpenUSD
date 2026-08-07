@@ -1283,13 +1283,14 @@ struct _DisplayColorRenderCase
     GfVec3f displayColor = GfVec3f(0.25f);
     bool authorDisplayColor = true;
     bool bindMaterial = false;
-    bool enableLighting = false;
+    bool lightingEnabled = false;
     bool addDistantLight = false;
     bool bindColor = true;
     bool bindAmbientOcclusion = false;
     bool moveCameraToMissAfterFirstRender = false;
     int samplesToConvergence = 1;
     int minSamplesBeforeAdaptive = 64;
+    bool tiltSurface = false;
 };
 
 struct _SurfaceRenderResult
@@ -1349,14 +1350,21 @@ _RenderSurfaceCase(
         sceneDelegate.AddMaterialResource(
             materialId, VtValue(_MakeDisplayColorTestMaterial()));
     }
-    sceneDelegate.AddMesh(
-        meshId,
-        GfMatrix4f(1.0f),
-        VtVec3fArray{
+    const VtVec3fArray points = renderCase.tiltSurface
+        ? VtVec3fArray{
+            GfVec3f(-2.0f, -2.0f, -3.0f),
+            GfVec3f(2.0f, -2.0f, -1.0f),
+            GfVec3f(2.0f, 2.0f, -1.0f),
+            GfVec3f(-2.0f, 2.0f, -3.0f)}
+        : VtVec3fArray{
             GfVec3f(-2.0f, -2.0f, -2.0f),
             GfVec3f(2.0f, -2.0f, -2.0f),
             GfVec3f(2.0f, 2.0f, -2.0f),
-            GfVec3f(-2.0f, 2.0f, -2.0f)},
+            GfVec3f(-2.0f, 2.0f, -2.0f)};
+    sceneDelegate.AddMesh(
+        meshId,
+        GfMatrix4f(1.0f),
+        points,
         VtIntArray{4},
         VtIntArray{0, 1, 2, 3},
         false,
@@ -1433,8 +1441,8 @@ _RenderSurfaceCase(
     settings.minSamplesBeforeAdaptive =
         renderCase.minSamplesBeforeAdaptive;
     settings.randomNumberSeed = 1;
-    settings.enableLighting = renderCase.enableLighting;
     renderer->SetRenderSettings(settings);
+    renderer->SetLightingEnabled(renderCase.lightingEnabled);
 
     HdRenderThread renderThread;
     renderThread.StartRender();
@@ -1504,14 +1512,27 @@ _TestDisplayColorFallbacks()
     const GfVec3f authoredColor(0.1f, 0.2f, 0.3f);
     GfVec4f unmaterialized;
     GfVec4f materialized;
+    const GfVec4f expectedAuthoredColor(
+        authoredColor[0], authoredColor[1], authoredColor[2], 1.0f);
     if (!_RenderDisplayColorCase(
             _DisplayColorRenderCase{authoredColor, true, false, false, false},
             &unmaterialized) ||
         !_RenderDisplayColorCase(
             _DisplayColorRenderCase{authoredColor, true, true, false, false},
             &materialized) ||
+        !GfIsClose(unmaterialized, expectedAuthoredColor, 1.0e-5f) ||
         !GfIsClose(unmaterialized, materialized, 1.0e-5f)) {
-        std::printf("unlit material changed authored displayColor\n");
+        std::printf("unlit output was not authored displayColor\n");
+        return false;
+    }
+
+    _DisplayColorRenderCase tiltedCase{
+        authoredColor, true, true, false, false};
+    tiltedCase.tiltSurface = true;
+    GfVec4f tiltedColor;
+    if (!_RenderDisplayColorCase(tiltedCase, &tiltedColor) ||
+        !GfIsClose(tiltedColor, expectedAuthoredColor, 1.0e-5f)) {
+        std::printf("unlit output changed with surface orientation\n");
         return false;
     }
 
@@ -1527,12 +1548,12 @@ _TestDisplayColorFallbacks()
             &fallbackGray)) {
         return false;
     }
-    const GfVec4f expectedFallback(
-        2.0f * authoredGray[0],
-        2.0f * authoredGray[1],
-        2.0f * authoredGray[2],
-        1.0f);
-    if (!GfIsClose(fallbackGray, expectedFallback, 1.0e-5f)) {
+    if (!GfIsClose(
+            authoredGray, GfVec4f(0.25f, 0.25f, 0.25f, 1.0f),
+            1.0e-5f) ||
+        !GfIsClose(
+            fallbackGray, GfVec4f(0.5f, 0.5f, 0.5f, 1.0f),
+            1.0e-5f)) {
         std::printf("missing displayColor did not resolve to neutral gray\n");
         return false;
     }
@@ -1720,8 +1741,8 @@ _TestCameraJitterTileDeterminism()
             settings.samplesToConvergence = 16;
             settings.randomNumberSeed = 1;
             settings.tileSize = tileSize;
-            settings.enableLighting = false;
             renderer->SetRenderSettings(settings);
+            renderer->SetLightingEnabled(false);
 
             HdRenderThread renderThread;
             renderThread.StartRender();
@@ -1794,6 +1815,7 @@ _TestRenderPassSettingsApplication()
     HdRenderPassStateSharedPtr renderPassState =
         delegate.CreateRenderPassState();
     renderPassState->SetViewport(GfVec4d(0.0, 0.0, 1.0, 1.0));
+    renderPassState->SetLightingEnabled(false);
 
     // The first Execute must restore the process-wide default even when the
     // settings version has not changed and state was changed externally.
@@ -1801,9 +1823,48 @@ _TestRenderPassSettingsApplication()
         mxcpp::Bsdf::DielectricLayerThroughputMode::MaterialXGlsl);
     renderPass.Execute(renderPassState, TfTokenVector());
     if (mxcpp::Bsdf::GetDielectricLayerThroughputMode() !=
-            mxcpp::Bsdf::DielectricLayerThroughputMode::Bsdl) {
+            mxcpp::Bsdf::DielectricLayerThroughputMode::Bsdl ||
+        renderer.GetLightingEnabled()) {
         finish();
         return false;
+    }
+
+    // Hydra lighting is pass-owned presentation state. A change must reach
+    // the shared renderer independently of delegate render settings.
+    renderPassState->SetLightingEnabled(true);
+    renderPass.Execute(renderPassState, TfTokenVector());
+    if (!renderer.GetLightingEnabled()) {
+        finish();
+        return false;
+    }
+
+    // Another pass can replace the shared renderer's presentation state.
+    // Reactivating this pass must republish its cached Hydra lighting value.
+    {
+        HdEmbreeRenderPass secondRenderPass(
+            renderIndex.get(),
+            HdRprimCollection(),
+            &renderThread,
+            &renderer,
+            &sceneVersion,
+            &materialVersion);
+        HdRenderPassStateSharedPtr secondRenderPassState =
+            delegate.CreateRenderPassState();
+        secondRenderPassState->SetViewport(
+            GfVec4d(0.0, 0.0, 1.0, 1.0));
+        secondRenderPassState->SetLightingEnabled(false);
+        secondRenderPass.Execute(
+            secondRenderPassState, TfTokenVector());
+        if (renderer.GetLightingEnabled()) {
+            finish();
+            return false;
+        }
+
+        renderPass.Execute(renderPassState, TfTokenVector());
+        if (!renderer.GetLightingEnabled()) {
+            finish();
+            return false;
+        }
     }
 
     // A direct delegate update must propagate on the next Execute, normalize

@@ -39,7 +39,7 @@ supported external contract is:
 | `HdEmbreeRendererPlugin` type name, `HdRendererPlugin` base, priority | `plugInfo.json`, `delegate/rendererPlugin.cpp` |
 | `HdEmbree_ImplicitSurfaceSceneIndexPlugin` type name, base, `loadWithRenderer` | `plugInfo.json`, `delegate/implicitSurfaceSceneIndexPlugin.cpp` |
 | `TyphoonRenderSettingsAPI` schema identity, auto-apply to `RenderSettings` | `plugInfo.json`, `schema/generatedSchema.usda` |
-| The 25 `ty:` attribute names, types, defaults, and allowed tokens | `schema/schema.usda`, `HdEmbreeRenderDelegate::_Initialize()` |
+| The 18 `ty:` attribute names, types, defaults, and allowed tokens | `schema/schema.usda`, `HdEmbreeRenderDelegate::_Initialize()` |
 | Generic unnamespaced settings (`domeLightCameraVisibility`) and the namespace list | `HdEmbreeRenderDelegate::GetRenderSettingsNamespaces()` |
 | Material render-context tokens | `HdEmbreeRenderDelegate::GetMaterialRenderContexts()` |
 | Supported AOV names | `renderer/aov/aovOutput.cpp` |
@@ -50,7 +50,7 @@ The USD `TyphoonRenderSettingsAPI` schema is hdEmbree's supported external
 settings interface. Hydra's direct delegate-settings path is an internal
 application-control path, required by usdview and RenderLab, and is not a
 consumer-facing C++ API. RenderLab uses `StageView.SetRendererSetting()` rather
-than authoring USD. Its explicit metadata covers 23 of the 25 `ty:` attributes;
+than authoring USD. Its explicit metadata covers 16 of the 18 `ty:` attributes;
 `ty:disableShadows` and `ty:textureCacheSize` use the default category. Its key
 set must remain a subset of the delegate descriptors.
 
@@ -245,8 +245,8 @@ corresponding type without changing the semantic name.
 - `integrator/volumeTransport.cpp`: active-medium segment attenuation,
   free-flight scattering, medium roulette, and medium-boundary ownership.
 - `integrator/unlitIntegrator.cpp`: the single-hit unlit integrator. It owns its
-  camera intersection, authored display-color presentation, camera-light
-  shading, and retained primary hit.
+  camera intersection, authored display-color presentation, and retained
+  primary hit without constructing material or lighting state.
 - `integrator/surfaceShading.cpp`: shared hit-normal, MaterialX shading-context,
   visibility-closure, display-wire composition, and ray-differential
   propagation helpers.
@@ -579,11 +579,14 @@ cannot reconstruct missing per-point or per-proxy categories.
 ### Frame execution
 
 1. Hydra calls `HdEmbreeRenderPass::_Execute()`.
-2. The pass compares scene/settings versions, frame/time, camera/framing, data window, and AOV bindings with the previous execution.
+2. The pass compares scene/settings versions, frame/time, camera/framing,
+   Hydra lighting presentation, data window, and AOV bindings with the previous
+   execution.
 3. The pass resolves delegate and scene-index `HdRenderSettingsSchema` values,
    then applies renderer-consumed settings through one
-   `ty::Renderer::SetRenderSettings()` call. Camera, framing, AOV, scene,
-   and wireframe state retain their dedicated setters.
+   `ty::Renderer::SetRenderSettings()` call. Hydra lighting is pass-owned
+   application state forwarded through `SetLightingEnabled()`; camera, framing,
+   AOV, scene, and wireframe state retain their dedicated setters.
 4. If accumulation-relevant state changed, the pass stops the thread, resets as needed, and starts `ty::Renderer::Render()` on `HdRenderThread`.
 5. Before scene commit or buffer mapping, the renderer validates that the
    scene exists, every AOV is an hdEmbree buffer with a supported format and
@@ -886,17 +889,17 @@ branch inside the lit path:
 1. It intersects the camera ray and stores that result as `primaryHit`.
 2. A miss returns the configured clear color. Finite-light geometry returns
    black because scene lighting is explicitly disabled.
-3. For an ordinary surface it resolves instance/prototype state, hit position,
-   smooth normal, shading context, tangent frame, and any MaterialX graph
-   normal needed by the current camera-facing headlight.
-4. The output color is authored `displayColor`, or neutral gray
-   `(0.5, 0.5, 0.5)` when unauthored, multiplied by the camera-facing
-   headlight. Material closure base color is not a presentation color.
+3. For an ordinary surface it resolves only the instance/prototype state needed
+   to sample authored `displayColor`.
+4. The output is that `displayColor` directly, or neutral gray
+   `(0.5, 0.5, 0.5)` when unauthored. Surface orientation and material closure
+   base color do not affect the presentation color.
 5. The integrator returns linear RGBA and the same primary hit used for
    shading. Ambient occlusion is not part of its color result.
 
-It performs no scene-light sampling, emissive transport, indirect bounces, MIS,
-participating-medium transport, or Russian roulette.
+It performs no material-closure evaluation, normal or derivative construction,
+scene-light sampling, emissive transport, indirect bounces, MIS,
+participating-medium transport, ambient visibility, or Russian roulette.
 
 ### Accumulation and AOV output
 
@@ -948,15 +951,16 @@ than reading one monolithic translation unit:
    `_SampleCameraRay()` in `camera/camera.cpp` for camera/lens sampling, primary
    rays, and ray differentials.
 3. `_EvaluatePixelSample()` in `renderer.cpp`: selects exactly one radiance
-   integrator, then updates adaptive variance and writes classified AOVs using
-   the selected integrator's retained primary hit. Geometric-AOV-only samples
-   take a primary-intersection fast path.
+   integrator from the pass-owned Hydra lighting state, then updates adaptive
+   variance and writes classified AOVs using the selected integrator's retained
+   primary hit. Geometric-AOV-only samples take a primary-intersection fast
+   path regardless of lighting state.
 4. `_IntegratePath()` in `integrator/pathIntegrator.cpp`: lit integration. Its
    first loop iteration traces and retains the camera hit; the same loop handles
    primary and secondary finite lights, camera background, indirect environment,
    material closures, direct light, BSDF/volume/SSS transport, and roulette.
 5. `_IntegrateUnlit()` in `integrator/unlitIntegrator.cpp`: independent
-   single-hit integration for display color and the camera light.
+   single-hit integration for direct authored display color.
 6. `integrator/surfaceShading.cpp`, `lighting.cpp`, `visibility.cpp`, and
    `sss.cpp`: shared shading and transport branches used by the integrators.
 7. `_ComputeAmbientOcclusion()` in `integrator/ambientOcclusion.cpp` and

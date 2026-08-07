@@ -175,6 +175,8 @@ private:
     float _cameraExposureScale;
     // The active camera's physical depth-of-field state.
     ty::CameraDepthOfField _cameraDepthOfField;
+    // Last Hydra lit/unlit presentation state forwarded to the renderer.
+    bool _lightingEnabled;
     // Last Hydra display wire style forwarded to the renderer.
     GfVec4f _wireframeColor;
     float _wireframeLineWidth;

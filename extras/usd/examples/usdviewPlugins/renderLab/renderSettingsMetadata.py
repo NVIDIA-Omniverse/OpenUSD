@@ -94,21 +94,17 @@ _RENDERERS = {
                 "category": "Diagnostics",
                 "order": 20,
             },
-            "ty:enableLighting": {
+            "domeLightCameraVisibility": {
                 "category": "Scene",
                 "order": 20,
             },
-            "domeLightCameraVisibility": {
+            "ty:enableExposureCompensation": {
                 "category": "Scene",
                 "order": 30,
             },
-            "ty:enableExposureCompensation": {
-                "category": "Scene",
-                "order": 40,
-            },
             "ty:dynamicSubdvTesselation": {
                 "category": "Scene",
-                "order": 50,
+                "order": 40,
             },
         },
     },

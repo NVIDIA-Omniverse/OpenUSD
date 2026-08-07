@@ -50,11 +50,6 @@ class "TyphoonRenderSettingsAPI" (
             string userDocBrief = "Apply camera exposure compensation."
         }
     )
-    uniform bool ty:enableLighting = 1 (
-        customData = {
-            string userDocBrief = "Evaluate scene lights."
-        }
-    )
     uniform float ty:fireflyClampThreshold = 20 (
         customData = {
             string userDocBrief = "Clamp threshold for bright non-caustic path contributions."

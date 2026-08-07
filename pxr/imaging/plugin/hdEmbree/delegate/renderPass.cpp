@@ -371,6 +371,7 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _subdivisionProjMatrix(1.0f)
     , _cameraExposureScale(1.0f)
     , _cameraDepthOfField()
+    , _lightingEnabled(true)
     , _wireframeColor(0.0f)
     , _wireframeLineWidth(1.0f)
     , _aovBindings()
@@ -814,6 +815,15 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         }
     }
 
+    const bool lightingEnabled = renderPassState->GetLightingEnabled();
+    if (passActivated || _lightingEnabled != lightingEnabled) {
+        _lightingEnabled = lightingEnabled;
+        _renderThread->StopRender();
+        _renderer->SetLightingEnabled(_lightingEnabled);
+        _renderer->ResetAccumulation();
+        needStartRender = true;
+    }
+
     const GfVec4f wireframeColor = renderPassState->GetWireframeColor();
     const float wireframeLineWidth = renderPassState->GetLineWidth();
     if (passActivated ||
@@ -883,10 +893,6 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->textureCacheSize,
                 defaults.textureCacheSizeMB);
-        nextSettings.enableLighting =
-            renderDelegate->GetRenderSetting<bool>(
-                HdEmbreeRenderSettingsTokens->enableLighting,
-                defaults.enableLighting);
         nextSettings.domeLightCameraVisibility =
             renderDelegate->GetRenderSetting<bool>(
                 HdRenderSettingsTokens->domeLightCameraVisibility,

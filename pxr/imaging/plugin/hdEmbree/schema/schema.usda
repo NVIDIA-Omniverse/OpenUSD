@@ -25,10 +25,6 @@ class "TyphoonRenderSettingsAPI" (
     }
 )
 {
-    uniform bool ty:enableLighting = true (
-        doc = """Evaluate scene lights."""
-    )
-
     uniform int ty:convergedSamplesPerPixel = 256 (
         doc = """Samples per pixel before rendering is considered converged."""
     )

@@ -58,7 +58,6 @@ struct RenderSettings {
     int minSamplesBeforeAdaptive = 64;
 
     // Lighting.
-    bool enableLighting = true;
     bool domeLightCameraVisibility = true;
     int lightSamplesPerHit = 1;
 
@@ -83,9 +82,6 @@ struct RenderSettings {
 constexpr bool DefaultEnableExposureCompensation = true;
 constexpr bool DefaultDynamicSubdvTesselation = false;
 constexpr char DefaultMaterialRenderContext[] = "mtlx";
-
-// Linear multiplier on the fallback headlight. Not a percentage.
-constexpr float CameraLightIntensity = 3.0f;
 
 } // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE

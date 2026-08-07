@@ -263,6 +263,19 @@ public:
         return _settings;
     }
 
+    /// \brief Select Hydra's lit or unlit presentation mode.
+    ///
+    /// This application state is independent of scene-light availability and
+    /// renderer settings. The caller must stop rendering before changing it.
+    /// \param lightingEnabled True for path-traced radiance; false for
+    /// authored display-color presentation.
+    void SetLightingEnabled(bool lightingEnabled);
+
+    /// Return the Hydra lighting state used by subsequent renders.
+    bool GetLightingEnabled() const {
+        return _lightingEnabled;
+    }
+
     /// \brief Set Hydra's display wire color and default line width.
     ///
     /// Mesh repr descriptors decide whether a hit uses these values. A zero
@@ -453,18 +466,16 @@ private:
         Sampler const& sampler,
         RayDifferential const& diffRay);
 
-    /// \brief Integrate a single-hit camera-light sample.
+    /// \brief Integrate a single-hit display-color sample.
     ///
-    /// This integrator owns the primary intersection and performs no indirect
-    /// light transport.
+    /// This integrator owns the primary intersection, samples only authored
+    /// display color, and performs no material or light evaluation.
     /// \param posRayOrgWld Finite world-space camera-ray origin.
     /// \param dirRayWld Normalized finite world-space camera-ray direction.
-    /// \param diffRay Initial pixel-footprint differential state.
     /// \return Unlit radiance and the unchanged primary intersection.
     _PixelSampleResult _IntegrateUnlit(
         GfVec3f const& posRayOrgWld,
-        GfVec3f const& dirRayWld,
-        RayDifferential const& diffRay);
+        GfVec3f const& dirRayWld);
 
     /// Return true when the camera hit requests unlit edge-only display.
     bool _IsEdgeOnlyWireframeHit(RTCRayHit const& primaryHit) const;
@@ -1046,6 +1057,10 @@ private:
 
     // Normalized renderer-consumed settings applied as one stopped update.
     RenderSettings _settings;
+
+    // Pass-owned Hydra presentation state, separate from render settings and
+    // scene-light availability.
+    bool _lightingEnabled;
 
     // Hydra display wire style. Per-mesh reprs decide whether it is active.
     GfVec4f _wireframeColor;

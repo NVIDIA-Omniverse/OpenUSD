@@ -22,9 +22,10 @@ Typhoon is the CPU path-tracing Hydra render delegate implemented by the
 During Hydra synchronization, delegate adapters pull dirty mesh, instance,
 material, light, camera, and render-buffer data into renderer-owned records.
 Scene mutation stops background rendering and advances a scene version. A
-render pass then translates camera, framing, AOV, active RenderSettings, and
-delegate-setting state into `ty::Renderer`, which commits the Embree scene,
-traces progressive samples, and writes Hydra render buffers.
+render pass then translates camera, framing, Hydra lighting presentation, AOV,
+active RenderSettings, and delegate-setting state into `ty::Renderer`, which
+commits the Embree scene, traces progressive samples, and writes Hydra render
+buffers.
 
 The delegate owns the Embree device, root scene, renderer, and render thread.
 Meshes own prototype and instance contexts whose stable addresses Embree
@@ -48,6 +49,12 @@ USD render-settings schema, not its internal C++ module boundaries.
   `schema/schema.usda`.
 - Hydra applications may also use direct delegate settings. The generic
   `domeLightCameraVisibility` setting is deliberately unnamespaced.
+- Lit or unlit color presentation follows
+  `HdRenderPassState::GetLightingEnabled()` rather than a Typhoon render
+  setting. Lit mode path traces the lights supplied after Hydra scene-light
+  pruning; unlit mode displays authored `displayColor` without material or
+  light evaluation. A lightless lit scene receives no headlight or ambient
+  fallback.
 - Material render-context priority supports `mtlx` and `default`.
 - The delegate supports standard color, depth, normal, and ID AOVs, the
   `adaptiveHeatmap` and `ambocc` diagnostics, and float-vector primvar outputs.

@@ -81,6 +81,7 @@ ty::Renderer::Renderer()
     , _cameraDepthOfField()
     , _scene(nullptr)
     , _settings()
+    , _lightingEnabled(true)
     , _wireframeColor(0.0f)
     , _wireframeLineWidth(1.0f)
     , _textureSystem(std::make_unique<ty::OiioTextureSystem>())
@@ -135,6 +136,12 @@ ty::Renderer::SetRenderSettings(
     }
 
     _settings = normalized;
+}
+
+void
+ty::Renderer::SetLightingEnabled(bool lightingEnabled)
+{
+    _lightingEnabled = lightingEnabled;
 }
 
 void
@@ -628,11 +635,11 @@ ty::Renderer::_EvaluatePixelSample(
 {
     _PixelSampleResult result;
     if (_needRadiance) {
-        result = _settings.enableLighting
+        result = _lightingEnabled
             ? _IntegratePath(
                   posRayOrgWld, dirRayWld, diffRay, sampler.RootDomain())
             : _IntegrateUnlit(
-                  posRayOrgWld, dirRayWld, diffRay);
+                  posRayOrgWld, dirRayWld);
         _ApplyWireframe(result.primaryHit, diffRay, &result.color);
     } else {
         // Geometric and ambient-occlusion AOV-only renders need the primary

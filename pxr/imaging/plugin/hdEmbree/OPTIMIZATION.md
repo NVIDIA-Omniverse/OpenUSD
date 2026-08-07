@@ -379,8 +379,8 @@ hose). `_ComputeColor` built a shading context, evaluated the material
 graph, and resolved the shading normal on every camera hit — but with
 lighting enabled it then called `_TracePath`, which re-intersects the same
 ray and re-derives all of that at the hit itself, so the first evaluation
-was never consumed. The closure and resolved normal are only used by the
-camera-light/AO fallback branch.
+was never consumed. At the time, the closure and resolved normal were used
+only by the legacy unlit fallback branch.
 
 Fix: `_ComputeColor` dispatches to `_TracePath` before building any surface
 data; the context build, material evaluation, and normal resolution now run
@@ -389,7 +389,7 @@ only on the no-lighting fallback path.
 Validation: brass sphere 4.50 s -> 3.08 s renderer time (~32%), `Color mat
 evals` 0.57/sample -> 0 with lighting on, and exact `oiiotool --diff`
 matches for both the lit scene and the
-`-s "{settings}.ty:enableLighting = false"` fallback. All
+legacy unlit fallback. All
 hdEmbree/MaterialXCpp unit tests pass.
 
 Follow-up (2026-07-13): the renderer now selects `_IntegratePath` or
@@ -397,6 +397,9 @@ Follow-up (2026-07-13): the renderer now selects `_IntegratePath` or
 returns that retained hit with its radiance for AOV evaluation. This removes the
 remaining duplicate primary intersection from the lit path; the names above
 describe the historical implementation measured by this optimization.
+The unlit path now follows Hydra render-pass lighting state and samples only
+authored `displayColor`, so it no longer performs the material work measured by
+the historical fallback.
 
 ## Cache Reflection-Only Closure Classification (2026-07-27)
 
