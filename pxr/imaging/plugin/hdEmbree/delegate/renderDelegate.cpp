@@ -136,15 +136,9 @@ HdEmbreeRenderDelegate::_Initialize()
         { "Rendering Color Space",
             HdRenderSettingsPrimTokens->renderingColorSpace,
             VtValue(GfColorSpaceNames->LinearRec709.GetString()) },
-        { "Enable Ambient Occlusion",
-            HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
-            VtValue(ty::DefaultEnableAmbientOcclusion) },
         { "Enable Scene Lighting",
             HdEmbreeRenderSettingsTokens->enableLighting,
             VtValue(defaults.enableLighting) },
-        { "Ambient Occlusion Samples",
-            HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
-            VtValue(defaults.ambientOcclusionSamples) },
         { "Samples To Convergence",
             HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
             VtValue(defaults.samplesToConvergence) },
@@ -372,6 +366,9 @@ HdEmbreeRenderDelegate::GetDefaultAovDescriptor(TfToken const& name) const
     } else if (name == ty::AovTokens->adaptiveHeatmap) {
         return HdAovDescriptor(HdFormatFloat32Vec4, true,
                                VtValue(GfVec4f(0.0f)));
+    } else if (name == ty::AovTokens->ambocc) {
+        return HdAovDescriptor(HdFormatFloat32Vec3, true,
+                               VtValue(GfVec3f(0.0f)));
     } else {
         HdParsedAovToken aovId(name);
         if (aovId.isPrimvar) {

@@ -37,7 +37,6 @@ public:
         , _refined(false)
         , _wireframeOnSurface(false)
         , _wireframeOnly(false)
-        , _ao(false)
         , _outputName("color1.png")
     {
         SetCameraRotate(0,0);
@@ -99,13 +98,11 @@ private:
     // - Draw a scene with two instanced cubes?
     //   Or two normal cubes and a plane?
     // - Treat the cubes as subdivision surfaces, and refine them to spheres?
-    // - use ambient occlusion
     bool _smooth;
     bool _instance;
     bool _refined;
     bool _wireframeOnSurface;
     bool _wireframeOnly;
-    bool  _ao;
 
     // For offscreen tests, which AOV should we output?
     // (empty string means we should read color from the framebuffer).
@@ -188,6 +185,10 @@ void HdEmbree_TestGLDrawing::InitTest()
             format = HdFormatFloat32Vec4;
             aovBinding.aovName = ty::AovTokens->adaptiveHeatmap;
             aovBinding.clearValue = VtValue(GfVec4f(0.0f));
+        } else if (_aov == "ambocc") {
+            format = HdFormatFloat32Vec3;
+            aovBinding.aovName = ty::AovTokens->ambocc;
+            aovBinding.clearValue = VtValue(GfVec3f(0.0f));
         }
         aovBinding.renderBufferId = renderBuffer;
         _sceneDelegate->AddRenderBuffer(renderBuffer,
@@ -245,18 +246,6 @@ void HdEmbree_TestGLDrawing::InitTest()
         HdTokens->collection,
         VtValue(HdRprimCollection(
             HdTokens->geometry, HdReprSelector(reprToken))));
-
-    if(_ao) {
-        //
-        // Check ambient occlusion, this might matter especially in the case
-        // where smooth normals are not used since embree renderer then
-        // has to calculate the normals
-        //
-        _renderDelegate->SetRenderSetting(
-            HdEmbreeRenderSettingsTokens->enableAmbientOcclusion, VtValue(true));
-        _renderDelegate->SetRenderSetting(
-            HdEmbreeRenderSettingsTokens->ambientOcclusionSamples, VtValue(16));
-    }
 
     // Keep explicit AOV comparisons deterministic and exercise exposure
     // without changing this harness's legacy framebuffer path.
@@ -521,8 +510,6 @@ void HdEmbree_TestGLDrawing::ParseArgs(int argc, char *argv[])
                    (i+1) < argc) {
             _outputName = std::string(argv[i+1]);
             ++i;
-        } else if (std::string(argv[i]) == "--ao") {
-            _ao = true;
         }
     }
 
@@ -538,7 +525,8 @@ void HdEmbree_TestGLDrawing::ParseArgs(int argc, char *argv[])
         _aov != "normal" &&
         _aov != "Neye" &&
         _aov != "primvars:displayColor" &&
-        _aov != "adaptiveHeatmap") {
+        _aov != "adaptiveHeatmap" &&
+        _aov != "ambocc") {
         TF_WARN("Unrecognized AOV token '%s'", _aov.c_str());
         exit(EXIT_FAILURE);
     }

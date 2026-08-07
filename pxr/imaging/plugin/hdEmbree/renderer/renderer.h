@@ -49,7 +49,8 @@ PXR_NAMESPACE_OPEN_SCOPE
 namespace ty {
 
 #define HDEMBREE_AOV_TOKENS \
-    (adaptiveHeatmap)
+    (adaptiveHeatmap) \
+    (ambocc)
 
 TF_DECLARE_PUBLIC_TOKENS(AovTokens, HDEMBREE_AOV_TOKENS);
 
@@ -341,6 +342,11 @@ public:
     /// \return Atomic count for the current or most recent Render call.
     uint64_t GetSssIntersectionCount() const;
 
+    /// \brief Get ambient-visibility rays issued for the current frame.
+    ///
+    /// \return Atomic ray count for the current or most recent Render call.
+    uint64_t GetAmbientOcclusionRayCount() const;
+
 private:
     struct _SurfaceInteraction;
 
@@ -357,6 +363,8 @@ private:
         RTCRayHit primaryHit{};
         /// Linear, unexposed RGBA radiance; alpha is one when computed.
         GfVec4f color = GfVec4f(0.0f);
+        /// Binary ambient visibility, or zero when no AO ray is issued.
+        float ambientVisibility = 0.0f;
     };
 
     /// \brief Prepare shared state immediately before tracing.
@@ -445,20 +453,18 @@ private:
         Sampler const& sampler,
         RayDifferential const& diffRay);
 
-    /// \brief Integrate a single-hit camera-light and ambient-occlusion sample.
+    /// \brief Integrate a single-hit camera-light sample.
     ///
     /// This integrator owns the primary intersection and performs no indirect
     /// light transport.
     /// \param posRayOrgWld Finite world-space camera-ray origin.
     /// \param dirRayWld Normalized finite world-space camera-ray direction.
     /// \param diffRay Initial pixel-footprint differential state.
-    /// \param domain Root sample domain used for ambient occlusion.
     /// \return Unlit radiance and the unchanged primary intersection.
     _PixelSampleResult _IntegrateUnlit(
         GfVec3f const& posRayOrgWld,
         GfVec3f const& dirRayWld,
-        RayDifferential const& diffRay,
-        SampleDomain const& domain);
+        RayDifferential const& diffRay);
 
     /// Return true when the camera hit requests unlit edge-only display.
     bool _IsEdgeOnlyWireframeHit(RTCRayHit const& primaryHit) const;
@@ -508,19 +514,17 @@ private:
                          TfToken const& primvar,
                          GfVec3f* value);
 
-    /// \brief Estimate hemispherical ambient visibility at a surface point.
+    /// \brief Draw one cosine-weighted ambient-visibility sample for a hit.
     ///
-    /// \param posWld World-space surface position.
-    /// \param normalShdWldOut Normalized material-resolved hemisphere normal.
-    /// \param normalGeomWldExt Authored-exterior geometric normal used to
-    /// offset the ray origin along the true surface, avoiding self-intersection
-    /// independently of the shading normal that orients the sample hemisphere.
+    /// Uses the resolved smooth/displaced surface normal without evaluating a
+    /// material closure. Misses, finite lights, and invalid renderer geometry
+    /// issue no visibility ray and return zero.
+    /// \param rayHit Initialized primary intersection result.
     /// \param domain Deterministic sample domain reserved for AO draws.
-    /// \return Unoccluded fraction in [0,1], or one when AO is disabled.
-    float _ComputeAmbientOcclusion(GfVec3f const& posWld,
-                                   GfVec3f const& normalShdWldOut,
-                                   GfVec3f const& normalGeomWldExt,
-                                   SampleDomain const& domain);
+    /// \return Zero when occluded or no ray is issued; one when unoccluded.
+    float _ComputeAmbientOcclusion(
+        RTCRayHit const& rayHit,
+        SampleDomain const& domain);
 
     /// \brief Estimate direct surface lighting from all linked scene lights.
     ///
@@ -964,7 +968,8 @@ private:
         Normal,
         EyeNormal,
         Primvar,
-        AdaptiveHeatmap
+        AdaptiveHeatmap,
+        AmbientOcclusion
     };
 
     struct _AovOutput {
@@ -981,15 +986,14 @@ private:
     /// \brief Write one sample to a classified AOV.
     ///
     /// The output buffer must be valid and unconverged. Hit-dependent AOVs
-    /// retain their cleared value on misses except ID AOVs, which write -1.
+    /// retain their cleared value on misses except ID AOVs, which write -1,
+    /// and ambient occlusion, which writes its specified miss value of zero.
     /// \param aov Classified output borrowing a non-null buffer.
-    /// \param rayHit Current initialized intersection result.
-    /// \param color Linear scene RGBA sample.
+    /// \param result Current sample values and initialized primary hit.
     /// \param x In-bounds render-buffer x coordinate.
     /// \param y In-bounds render-buffer y coordinate.
     void _WriteAov(_AovOutput const& aov,
-                   RTCRayHit const& rayHit,
-                   GfVec4f const& color,
+                   _PixelSampleResult const& result,
                    unsigned int x,
                    unsigned int y);
 
@@ -1075,6 +1079,7 @@ private:
     mutable std::atomic<uint64_t> _sssSuccessCount;
     mutable std::atomic<uint64_t> _sssWalkStepCount;
     mutable std::atomic<uint64_t> _sssIntersectionCount;
+    std::atomic<uint64_t> _ambientOcclusionRayCount;
 
     // Render start time for elapsed time tracking.
     std::chrono::steady_clock::time_point _renderStartTime;
@@ -1084,6 +1089,7 @@ private:
 
     // Pre-resolved per-frame state (built in _PreRenderSetup).
     bool _needRadiance = false;
+    bool _needAmbientOcclusion = false;
     GfVec4f _colorClearValue;
     std::vector<_AovOutput> _aovOutputs;
 };

@@ -236,6 +236,9 @@ corresponding type without changing the semantic name.
   and ray differentials. Tile/pixel traversal remains in `renderer.cpp`.
 - `aov/aovOutput.cpp`: AOV binding validation, clear/reset behavior, adaptive
   variance tracking, hit AOV evaluation, and format-specific buffer writes.
+- `integrator/ambientOcclusion.cpp`: the AOV-only ambient-visibility
+  integrator. It consumes a retained primary hit and issues exactly one
+  cosine-weighted visibility ray without material or lighting evaluation.
 - `integrator/pathIntegrator.cpp`: the lit multi-bounce control loop. It owns
   the primary hit, surface-event ordering, path state, throughput, BSDF
   continuation, bounce limits, and Russian roulette.
@@ -243,7 +246,7 @@ corresponding type without changing the semantic name.
   free-flight scattering, medium roulette, and medium-boundary ownership.
 - `integrator/unlitIntegrator.cpp`: the single-hit unlit integrator. It owns its
   camera intersection, authored display-color presentation, camera-light
-  shading, and AO.
+  shading, and retained primary hit.
 - `integrator/surfaceShading.cpp`: shared hit-normal, MaterialX shading-context,
   visibility-closure, display-wire composition, and ray-differential
   propagation helpers.
@@ -377,11 +380,12 @@ U/V edge and cell diagonal participates in coverage, including subpixel cells;
 there is no coarser display LOD. Embree's public hit record does not identify a
 private
 transition-fan micro-triangle, so unequal-edge stitch diagonals remain an
-approximation. Edge-only reprs return immediately after the primary camera hit,
-skipping material evaluation, lighting, volumes, ambient occlusion, and path
+approximation. For color output, edge-only reprs return immediately after the
+primary camera hit, skipping material evaluation, lighting, volumes, and path
 bounces. They composite opaque black coverage over the clear color, blend
 non-edge camera samples back to that clear color, and intentionally do not
-perform a second traversal for rear edges.
+perform a second traversal for rear edges. An independently bound `ambocc` AOV
+still consumes the retained hit and issues its diagnostic visibility ray.
 `HdEmbreeRenderPass::_MarkCollectionDirty()` marks rprims `DirtyRepr` whenever
 the collection repr selector or forced-repr state changes. This is required
 because Hydra only rebuilds its dirty list the first time it encounters a
@@ -633,8 +637,12 @@ destroying a non-current pass leaves the active render untouched.
    `_PixelSampleResult` containing linear RGBA radiance and the unchanged first
    Embree result in `primaryHit`.
 5. If neither color nor `adaptiveHeatmap` is bound,
-   `_EvaluatePixelSample()` takes the geometric-AOV fast path: it intersects the
+   `_EvaluatePixelSample()` takes the AOV-only fast path: it intersects the
    primary ray once without invoking either radiance integrator.
+6. When `ambocc` is bound, the retained primary hit is resolved into the
+   smooth/displaced surface frame without material-closure evaluation. One
+   cosine-weighted visibility ray supplies a binary scalar sample. Misses and
+   finite-light geometry issue no AO ray.
 
 The retained `primaryHit` is deliberately distinct from the final path event.
 For example, a stochastic-presence surface may be retained for depth, ID,
@@ -884,10 +892,8 @@ branch inside the lit path:
 4. The output color is authored `displayColor`, or neutral gray
    `(0.5, 0.5, 0.5)` when unauthored, multiplied by the camera-facing
    headlight. Material closure base color is not a presentation color.
-5. When enabled, `_ComputeAmbientOcclusion()` stratifies cosine-weighted
-   hemisphere samples and traces Embree occlusion rays; its visibility average
-   attenuates the headlight result.
-6. The integrator returns linear RGBA and the same primary hit used for shading.
+5. The integrator returns linear RGBA and the same primary hit used for
+   shading. Ambient occlusion is not part of its color result.
 
 It performs no scene-light sampling, emissive transport, indirect bounces, MIS,
 participating-medium transport, or Russian roulette.
@@ -918,6 +924,12 @@ classified AOV through `_WriteAov()`'s direct switch:
   Binding only `adaptiveHeatmap` still requests hidden radiance evaluation so
   those counts are driven by the beauty convergence signal. Without a heatmap
   binding, no heatmap color conversion or buffer write occurs.
+- `ambocc` output consumes one binary ambient-visibility sample, replicated to
+  RGB, for each ordinary primary surface hit. Binding only `ambocc` uses that
+  scalar value for adaptive convergence; color or heatmap bindings retain the
+  radiance convergence signal. AO misses issue no visibility ray but write zero
+  into accumulation so retained preview pixels cannot leak across restarts. No
+  AO computation or write occurs while the AOV is unbound.
 
 The render buffer accumulates samples until resolve/convergence. Thus transport
 is owned by one selected integrator, while accumulation, format conversion, and
@@ -944,11 +956,13 @@ than reading one monolithic translation unit:
    primary and secondary finite lights, camera background, indirect environment,
    material closures, direct light, BSDF/volume/SSS transport, and roulette.
 5. `_IntegrateUnlit()` in `integrator/unlitIntegrator.cpp`: independent
-   single-hit integration for material base color, camera light, and AO.
+   single-hit integration for display color and the camera light.
 6. `integrator/surfaceShading.cpp`, `lighting.cpp`, `visibility.cpp`, and
    `sss.cpp`: shared shading and transport branches used by the integrators.
-7. `_WriteAov()` in `aov/aovOutput.cpp`: direct conversion of the returned
-   color and retained primary hit into Hydra AOV storage.
+7. `_ComputeAmbientOcclusion()` in `integrator/ambientOcclusion.cpp` and
+   `_WriteAov()` in `aov/aovOutput.cpp`: optional one-ray ambient visibility,
+   followed by direct conversion of sample values and the retained primary hit
+   into Hydra AOV storage.
 
 Read `renderer.h` for persistent state and function contracts,
 `geometry/context.h` for hit data, `sampling/sampling.h` for random domains,

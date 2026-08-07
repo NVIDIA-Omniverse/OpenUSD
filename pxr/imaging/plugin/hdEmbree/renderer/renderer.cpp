@@ -96,6 +96,7 @@ ty::Renderer::Renderer()
     , _sssSuccessCount(0)
     , _sssWalkStepCount(0)
     , _sssIntersectionCount(0)
+    , _ambientOcclusionRayCount(0)
 {
 }
 
@@ -244,6 +245,12 @@ ty::Renderer::GetSssIntersectionCount() const
     return _sssIntersectionCount.load();
 }
 
+uint64_t
+ty::Renderer::GetAmbientOcclusionRayCount() const
+{
+    return _ambientOcclusionRayCount.load();
+}
+
 bool
 ty::Renderer::_PreRenderSetup()
 {
@@ -255,6 +262,7 @@ ty::Renderer::_PreRenderSetup()
     _width = 0;
     _height = 0;
     _needRadiance = false;
+    _needAmbientOcclusion = false;
     _colorClearValue = GfVec4f(0.0f);
     _aovOutputs.clear();
     _completedSamples.store(0);
@@ -262,6 +270,7 @@ ty::Renderer::_PreRenderSetup()
     _sssSuccessCount.store(0);
     _sssWalkStepCount.store(0);
     _sssIntersectionCount.store(0);
+    _ambientOcclusionRayCount.store(0);
 
     // Validate every observable failure before committing the scene or
     // mapping a buffer, so setup failure needs no partial cleanup.
@@ -623,10 +632,11 @@ ty::Renderer::_EvaluatePixelSample(
             ? _IntegratePath(
                   posRayOrgWld, dirRayWld, diffRay, sampler.RootDomain())
             : _IntegrateUnlit(
-                  posRayOrgWld, dirRayWld, diffRay, sampler.RootDomain());
+                  posRayOrgWld, dirRayWld, diffRay);
         _ApplyWireframe(result.primaryHit, diffRay, &result.color);
     } else {
-        // Geometric AOV-only renders need the primary hit but no radiance.
+        // Geometric and ambient-occlusion AOV-only renders need the primary
+        // hit but no radiance.
         result.primaryHit.ray.flags = 0;
         ty::PopulateRayHit(
             &result.primaryHit, posRayOrgWld, dirRayWld, 0.0f,
@@ -635,15 +645,23 @@ ty::Renderer::_EvaluatePixelSample(
         rtcIntersect1(_scene, &result.primaryHit);
     }
 
+    if (_needAmbientOcclusion) {
+        result.ambientVisibility = _ComputeAmbientOcclusion(
+            result.primaryHit,
+            sampler.RootDomain().Fork(
+                ty::SampleDomainKey::AmbientOcclusion));
+    }
+
     if (!_pixelConverged.empty()) {
-        const GfVec3f rgb(
-            result.color[0], result.color[1], result.color[2]);
-        _UpdateVariance(x, y, rgb);
+        const GfVec3f convergenceSample = _needRadiance
+            ? GfVec3f(result.color[0], result.color[1], result.color[2])
+            : GfVec3f(result.ambientVisibility);
+        _UpdateVariance(x, y, convergenceSample);
     }
 
     for (_AovOutput const& aov : _aovOutputs) {
         if (!aov.buffer->IsConverged()) {
-            _WriteAov(aov, result.primaryHit, result.color, x, y);
+            _WriteAov(aov, result, x, y);
         }
     }
 }

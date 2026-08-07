@@ -112,9 +112,7 @@ _TestRenderDelegateSettings()
         delegate.GetRenderSettingDescriptors();
     const TfTokenVector expectedKeys = {
         HdRenderSettingsPrimTokens->renderingColorSpace,
-        HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
         HdEmbreeRenderSettingsTokens->enableLighting,
-        HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
         HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
         HdEmbreeRenderSettingsTokens->randomNumberSeed,
         HdEmbreeRenderSettingsTokens->tileSize,
@@ -234,6 +232,15 @@ _TestRenderDelegateSettings()
                         oldHdEmbreeNamespaceKey.GetText());
             return false;
         }
+    }
+
+    const HdAovDescriptor ambientOcclusion =
+        delegate.GetDefaultAovDescriptor(ty::AovTokens->ambocc);
+    if (ambientOcclusion.format != HdFormatFloat32Vec3 ||
+        !ambientOcclusion.multiSampled ||
+        ambientOcclusion.clearValue != VtValue(GfVec3f(0.0f))) {
+        std::printf("unexpected ambocc AOV descriptor\n");
+        return false;
     }
 
     return true;
@@ -775,9 +782,7 @@ _TestTyphoonRenderSettingsAPI()
     }
 
     const TfTokenVector expectedProperties = {
-        TfToken("ty:enableAmbientOcclusion"),
         TfToken("ty:enableLighting"),
-        TfToken("ty:ambientOcclusionSamples"),
         TfToken("ty:convergedSamplesPerPixel"),
         TfToken("ty:randomNumberSeed"),
         TfToken("ty:tileSize"),
@@ -909,12 +914,8 @@ _TestRenderSettingDefaultParity()
 
     const ty::RenderSettings defaults;
     const std::vector<std::pair<TfToken, VtValue>> expected = {
-        {HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
-         VtValue(ty::DefaultEnableAmbientOcclusion)},
         {HdEmbreeRenderSettingsTokens->enableLighting,
          VtValue(defaults.enableLighting)},
-        {HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
-         VtValue(defaults.ambientOcclusionSamples)},
         {HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
          VtValue(defaults.samplesToConvergence)},
         {HdEmbreeRenderSettingsTokens->randomNumberSeed,

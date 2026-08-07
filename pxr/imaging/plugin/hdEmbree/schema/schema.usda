@@ -25,16 +25,8 @@ class "TyphoonRenderSettingsAPI" (
     }
 )
 {
-    uniform bool ty:enableAmbientOcclusion = false (
-        doc = """Use ambient occlusion when scene lighting is disabled."""
-    )
-
     uniform bool ty:enableLighting = true (
         doc = """Evaluate scene lights."""
-    )
-
-    uniform int ty:ambientOcclusionSamples = 0 (
-        doc = """Ambient occlusion rays generated per camera ray."""
     )
 
     uniform int ty:convergedSamplesPerPixel = 256 (

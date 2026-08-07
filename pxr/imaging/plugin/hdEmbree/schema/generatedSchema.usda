@@ -14,11 +14,6 @@ class "TyphoonRenderSettingsAPI" (
             string userDocBrief = "Variance threshold below which a pixel is considered converged."
         }
     )
-    uniform int ty:ambientOcclusionSamples = 0 (
-        customData = {
-            string userDocBrief = "Ambient occlusion rays generated per camera ray."
-        }
-    )
     uniform float ty:causticsClampThreshold = 5 (
         customData = {
             string userDocBrief = "Clamp threshold for caustic path contributions."
@@ -43,11 +38,6 @@ class "TyphoonRenderSettingsAPI" (
     uniform bool ty:dynamicSubdvTesselation = 0 (
         customData = {
             string userDocBrief = "Recompute screen-space subdivision tessellation after camera or viewport changes."
-        }
-    )
-    uniform bool ty:enableAmbientOcclusion = 0 (
-        customData = {
-            string userDocBrief = "Use ambient occlusion when scene lighting is disabled."
         }
     )
     uniform bool ty:enableCaustics = 0 (

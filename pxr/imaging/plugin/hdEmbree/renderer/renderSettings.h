@@ -57,10 +57,9 @@ struct RenderSettings {
     float adaptiveThreshold = 0.01f;
     int minSamplesBeforeAdaptive = 64;
 
-    // Lighting and ambient occlusion.
+    // Lighting.
     bool enableLighting = true;
     bool domeLightCameraVisibility = true;
-    int ambientOcclusionSamples = 0;
     int lightSamplesPerHit = 1;
 
     // Path depth and contribution policy.
@@ -81,7 +80,6 @@ struct RenderSettings {
 };
 
 // Render-pass-owned defaults not represented in renderer state.
-constexpr bool DefaultEnableAmbientOcclusion = false;
 constexpr bool DefaultEnableExposureCompensation = true;
 constexpr bool DefaultDynamicSubdvTesselation = false;
 constexpr char DefaultMaterialRenderContext[] = "mtlx";

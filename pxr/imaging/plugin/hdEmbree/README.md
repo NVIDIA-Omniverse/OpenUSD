@@ -142,10 +142,11 @@ camera result, using `HdRenderPassState`'s wire color, alpha, and line width. An
 unset zero wire color follows Storm's convention and dims the shaded surface
 along edges. Changing usdview's render mode resynchronizes existing meshes, so
 switching between smooth, wire, and wire-on-surface takes effect immediately.
-Wire-only mode performs only the camera intersection and geometric wire
-coverage evaluation. It skips material evaluation, lighting, ambient
-occlusion, volumes, and secondary bounces, and draws opaque black lines over
-the clear color regardless of the render-pass wire color.
+For color output, wire-only mode performs only the camera intersection and
+geometric wire coverage evaluation. It skips material evaluation, lighting,
+volumes, and secondary bounces, and draws opaque black lines over the clear
+color regardless of the render-pass wire color. Independently binding the
+`ambocc` diagnostic still requests its visibility ray.
 
 At low complexity, the overlay shows the rendered control-cage triangles,
 including diagonals. At higher complexity it follows the final adaptive,
@@ -166,8 +167,6 @@ invariants are documented under
 |---------|-------|------|---------|
 | Rendering Color Space | `renderingColorSpace` | `token` | `lin_rec709_scene` |
 | Enable Scene Lighting | `ty:enableLighting` | `bool` | `true` |
-| Enable Ambient Occlusion | `ty:enableAmbientOcclusion` | `bool` | `false` |
-| Ambient Occlusion Samples | `ty:ambientOcclusionSamples` | `int` | `0` |
 | Samples To Convergence | `ty:convergedSamplesPerPixel` | `int` | `256` |
 | Random Number Seed | `ty:randomNumberSeed` | `int` | `-1` |
 | Tile Size | `ty:tileSize` | `int` | `8` |
@@ -197,13 +196,11 @@ transforms. This is the standard `UsdRenderSettings` attribute rather than a
 Typhoon-namespaced setting.
 
 ### Enable Scene Lighting (`ty:enableLighting`)
-When enabled, the renderer evaluates direct lighting from scene lights (UsdLux-compliant area lights) using MIS-based path tracing. When disabled, falls back to ambient occlusion if that is enabled.
-
-### Enable Ambient Occlusion (`ty:enableAmbientOcclusion` / `ty:ambientOcclusionSamples`)
-When scene lighting is disabled, ambient occlusion can be used instead. The
-number of AO rays per camera ray is controlled by
-`ty:ambientOcclusionSamples`. Set `ty:enableAmbientOcclusion` to `false` to
-disable AO.
+When enabled, the renderer evaluates direct lighting from scene lights
+(UsdLux-compliant area lights) using MIS-based path tracing. When disabled,
+the current unlit presentation path uses its camera-facing headlight. Ambient
+occlusion is never multiplied into either result; request the independent
+`ambocc` AOV when that diagnostic is needed.
 
 ### Adaptive Sampling (`ty:adaptiveThreshold`, `ty:minSamplesBeforeAdaptive`)
 Adaptive sampling is always active during progressive rendering. Per-pixel
@@ -257,6 +254,7 @@ without editing the stage.
 | `normal`, `Neye` | `Float32Vec3` |
 | `primvars:<name>` | `Float32Vec3` |
 | `adaptiveHeatmap` | `Float32Vec4` |
+| `ambocc` | `Float32Vec3` |
 
 ### Adaptive heatmap
 When this AOV is bound, it outputs a heatmap visualizing per-pixel sample
@@ -267,6 +265,23 @@ evaluates scene radiance so convergence reflects the same signal as beauty
 rendering. In usdview, choose `Renderer > Hydra AOVs > Other...` and enter
 `adaptiveHeatmap` to display it. The heatmap is computed only while that AOV is
 bound and never replaces the color AOV.
+
+### Ambient occlusion
+When `ambocc` is bound, hdEmbree traces one cosine-weighted ambient-visibility
+ray for every progressive pixel sample that hits ordinary geometry. The
+unoccluded fraction is stored as the same linear value in all three RGB
+channels: zero is fully occluded and one is fully open. Misses issue no AO ray
+and contribute zero so camera or scene restarts cannot retain stale resolved
+pixels.
+
+`ty:convergedSamplesPerPixel` is both the progressive sample limit and the
+maximum number of AO rays per pixel; there is no separate enable flag or AO
+sample-count setting. Adaptive sampling may stop a converged pixel earlier.
+When `ambocc` is the only bound AOV, its scalar visibility samples drive the
+convergence statistics without evaluating material closures or path lighting.
+When color is also bound, AO remains independent and never changes the beauty
+sample. In usdview, choose `Renderer > Hydra AOVs > Other...` and enter
+`ambocc` to display it.
 
 Before rendering, hdEmbree requires at least one hdEmbree-owned AOV buffer,
 supported AOV formats, matching non-zero buffer dimensions, and a non-empty

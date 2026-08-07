@@ -887,16 +887,6 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<bool>(
                 HdEmbreeRenderSettingsTokens->enableLighting,
                 defaults.enableLighting);
-        const bool enableAmbientOcclusion =
-            renderDelegate->GetRenderSetting<bool>(
-                HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
-                ty::DefaultEnableAmbientOcclusion);
-        nextSettings.ambientOcclusionSamples =
-            !nextSettings.enableLighting && enableAmbientOcclusion
-                ? renderDelegate->GetRenderSetting<int>(
-                    HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
-                    defaults.ambientOcclusionSamples)
-                : 0;
         nextSettings.domeLightCameraVisibility =
             renderDelegate->GetRenderSetting<bool>(
                 HdRenderSettingsTokens->domeLightCameraVisibility,

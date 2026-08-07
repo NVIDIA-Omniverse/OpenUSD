@@ -416,16 +416,37 @@ bool
 _TestUnsupportedFormat()
 {
     _Scene scene;
-    _CountingRenderBuffer buffer(
-        SdfPath("/unsupported"), 1, 1, HdFormatInt32);
-    ty::Renderer renderer;
-    HdRenderThread renderThread;
-    _Configure(
-        &renderer,
-        scene.scene,
-        {_Binding(HdAovTokens->color, &buffer)},
-        GfRect2i(GfVec2i(0), 1, 1));
-    return _FailedWithoutWork(&renderer, &renderThread, buffer);
+    const GfRect2i dataWindow(GfVec2i(0), 1, 1);
+    {
+        _CountingRenderBuffer buffer(
+            SdfPath("/unsupportedColor"), 1, 1, HdFormatInt32);
+        ty::Renderer renderer;
+        HdRenderThread renderThread;
+        _Configure(
+            &renderer,
+            scene.scene,
+            {_Binding(HdAovTokens->color, &buffer)},
+            dataWindow);
+        if (!_FailedWithoutWork(&renderer, &renderThread, buffer)) {
+            return false;
+        }
+    }
+    {
+        _CountingRenderBuffer buffer(
+            SdfPath("/unsupportedAmbientOcclusion"),
+            1, 1, HdFormatFloat32Vec4);
+        ty::Renderer renderer;
+        HdRenderThread renderThread;
+        _Configure(
+            &renderer,
+            scene.scene,
+            {_Binding(ty::AovTokens->ambocc, &buffer)},
+            dataWindow);
+        if (!_FailedWithoutWork(&renderer, &renderThread, buffer)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool
@@ -649,6 +670,9 @@ _TestAovOutputDispatch()
             SdfPath("/dispatchEyeNormal"), 1, 1, HdFormatFloat32Vec3);
         _CountingRenderBuffer primvar(
             SdfPath("/dispatchPrimvar"), 1, 1, HdFormatFloat32Vec3);
+        _CountingRenderBuffer ambientOcclusion(
+            SdfPath("/dispatchAmbientOcclusion"),
+            1, 1, HdFormatFloat32Vec3);
         ty::Renderer renderer;
         HdRenderThread renderThread;
         _Configure(
@@ -662,7 +686,8 @@ _TestAovOutputDispatch()
                 _Binding(HdAovTokens->depth, &depth),
                 _Binding(HdAovTokens->normal, &normal),
                 _Binding(HdAovTokens->Neye, &eyeNormal),
-                _Binding(TfToken("primvars:displayColor"), &primvar)
+                _Binding(TfToken("primvars:displayColor"), &primvar),
+                _Binding(ty::AovTokens->ambocc, &ambientOcclusion)
             },
             dataWindow);
         renderThread.StartRender();
@@ -677,7 +702,11 @@ _TestAovOutputDispatch()
             !TF_VERIFY(depth.sampleWriteCount == 0) ||
             !TF_VERIFY(normal.sampleWriteCount == 0) ||
             !TF_VERIFY(eyeNormal.sampleWriteCount == 0) ||
-            !TF_VERIFY(primvar.sampleWriteCount == 0)) {
+            !TF_VERIFY(primvar.sampleWriteCount == 0) ||
+            !TF_VERIFY(ambientOcclusion.sampleWriteCount == 1) ||
+            !TF_VERIFY(
+                ambientOcclusion.firstFloatWrite == GfVec4f(0.0f)) ||
+            !TF_VERIFY(renderer.GetAmbientOcclusionRayCount() == 0)) {
             return false;
         }
     }
@@ -833,6 +862,9 @@ _TestInvalidHitContextsBecomeMisses()
         SdfPath("/invalidContextNormal"), 1, 1, HdFormatFloat32Vec3);
     _CountingRenderBuffer primvar(
         SdfPath("/invalidContextPrimvar"), 1, 1, HdFormatFloat32Vec3);
+    _CountingRenderBuffer ambientOcclusion(
+        SdfPath("/invalidContextAmbientOcclusion"),
+        1, 1, HdFormatFloat32Vec3);
     ty::Renderer renderer;
     HdRenderThread renderThread;
     _Configure(
@@ -842,7 +874,8 @@ _TestInvalidHitContextsBecomeMisses()
             _Binding(HdAovTokens->primId, &primId),
             _Binding(HdAovTokens->cameraDepth, &cameraDepth),
             _Binding(HdAovTokens->normal, &normal),
-            _Binding(TfToken("primvars:displayColor"), &primvar)
+            _Binding(TfToken("primvars:displayColor"), &primvar),
+            _Binding(ty::AovTokens->ambocc, &ambientOcclusion)
         },
         GfRect2i(GfVec2i(0), 1, 1));
     renderThread.StartRender();
@@ -855,7 +888,11 @@ _TestInvalidHitContextsBecomeMisses()
            TF_VERIFY(primId.intWriteCount == 1) &&
            TF_VERIFY(primId.firstIntWrite == -1) &&
            TF_VERIFY(normal.sampleWriteCount == 0) &&
-           TF_VERIFY(primvar.sampleWriteCount == 0);
+           TF_VERIFY(primvar.sampleWriteCount == 0) &&
+           TF_VERIFY(ambientOcclusion.sampleWriteCount == 1) &&
+           TF_VERIFY(
+               ambientOcclusion.firstFloatWrite == GfVec4f(0.0f)) &&
+           TF_VERIFY(renderer.GetAmbientOcclusionRayCount() == 0);
 }
 
 bool
@@ -1248,6 +1285,19 @@ struct _DisplayColorRenderCase
     bool bindMaterial = false;
     bool enableLighting = false;
     bool addDistantLight = false;
+    bool bindColor = true;
+    bool bindAmbientOcclusion = false;
+    bool moveCameraToMissAfterFirstRender = false;
+    int samplesToConvergence = 1;
+    int minSamplesBeforeAdaptive = 64;
+};
+
+struct _SurfaceRenderResult
+{
+    GfVec4f color = GfVec4f(0.0f);
+    GfVec3f ambientOcclusion = GfVec3f(0.0f);
+    int completedSamples = 0;
+    uint64_t ambientOcclusionRayCount = 0;
 };
 
 HdMaterialNetwork2
@@ -1266,11 +1316,12 @@ _MakeDisplayColorTestMaterial()
 }
 
 bool
-_RenderDisplayColorCase(
+_RenderSurfaceCase(
     _DisplayColorRenderCase const& renderCase,
-    GfVec4f* outColor)
+    _SurfaceRenderResult* outResult)
 {
-    if (!outColor) {
+    if (!outResult ||
+        (!renderCase.bindColor && !renderCase.bindAmbientOcclusion)) {
         return false;
     }
 
@@ -1357,35 +1408,93 @@ _RenderDisplayColorCase(
     }
 
     HdEmbreeRenderBuffer color(SdfPath("/displayColorOutput"));
-    if (!color.Allocate(
-            GfVec3i(1, 1, 1), HdFormatFloat32Vec4, true)) {
+    HdEmbreeRenderBuffer ambientOcclusion(
+        SdfPath("/ambientOcclusionOutput"));
+    if ((renderCase.bindColor &&
+         !color.Allocate(
+             GfVec3i(1, 1, 1), HdFormatFloat32Vec4, true)) ||
+        (renderCase.bindAmbientOcclusion &&
+         !ambientOcclusion.Allocate(
+             GfVec3i(1, 1, 1), HdFormatFloat32Vec3, true))) {
         return false;
     }
-    renderer->SetAovBindings({_Binding(HdAovTokens->color, &color)});
+    HdRenderPassAovBindingVector bindings;
+    if (renderCase.bindColor) {
+        bindings.push_back(_Binding(HdAovTokens->color, &color));
+    }
+    if (renderCase.bindAmbientOcclusion) {
+        bindings.push_back(
+            _Binding(ty::AovTokens->ambocc, &ambientOcclusion));
+    }
+    renderer->SetAovBindings(bindings);
 
     ty::RenderSettings settings;
-    settings.samplesToConvergence = 1;
+    settings.samplesToConvergence = renderCase.samplesToConvergence;
+    settings.minSamplesBeforeAdaptive =
+        renderCase.minSamplesBeforeAdaptive;
     settings.randomNumberSeed = 1;
     settings.enableLighting = renderCase.enableLighting;
-    settings.ambientOcclusionSamples = 0;
     renderer->SetRenderSettings(settings);
 
     HdRenderThread renderThread;
     renderThread.StartRender();
     renderer->Render(&renderThread);
     renderThread.StopRender();
+    if (renderCase.moveCameraToMissAfterFirstRender) {
+        GfMatrix4d movedView(1.0);
+        movedView.SetTranslate(GfVec3d(-100.0, 0.0, 0.0));
+        renderer->SetCamera(movedView, GfMatrix4d(1.0));
+        renderer->ResetAccumulation();
+        renderThread.StartRender();
+        renderer->Render(&renderThread);
+        renderThread.StopRender();
+    }
     if (!renderer->DidLastFrameProduceValidPixels() ||
-        renderer->GetCompletedSamples() != 1) {
+        renderer->GetCompletedSamples() < 1) {
         return false;
     }
+    outResult->completedSamples = renderer->GetCompletedSamples();
+    outResult->ambientOcclusionRayCount =
+        renderer->GetAmbientOcclusionRayCount();
 
-    const float* const colorData = static_cast<float const*>(color.Map());
-    if (!colorData) {
+    if (renderCase.bindColor) {
+        const float* const colorData =
+            static_cast<float const*>(color.Map());
+        if (!colorData) {
+            return false;
+        }
+        outResult->color = GfVec4f(
+            colorData[0], colorData[1], colorData[2], colorData[3]);
+        color.Unmap();
+    }
+    if (renderCase.bindAmbientOcclusion) {
+        const float* const ambientOcclusionData =
+            static_cast<float const*>(ambientOcclusion.Map());
+        if (!ambientOcclusionData) {
+            return false;
+        }
+        outResult->ambientOcclusion = GfVec3f(
+            ambientOcclusionData[0],
+            ambientOcclusionData[1],
+            ambientOcclusionData[2]);
+        ambientOcclusion.Unmap();
+    }
+    return true;
+}
+
+bool
+_RenderDisplayColorCase(
+    _DisplayColorRenderCase const& renderCase,
+    GfVec4f* outColor)
+{
+    if (!outColor) {
         return false;
     }
-    *outColor = GfVec4f(
-        colorData[0], colorData[1], colorData[2], colorData[3]);
-    color.Unmap();
+    _SurfaceRenderResult result;
+    if (!_RenderSurfaceCase(renderCase, &result)) {
+        return false;
+    }
+    *outColor = result.color;
     return true;
 }
 
@@ -1468,6 +1577,71 @@ _TestDisplayColorFallbacks()
 }
 
 bool
+_TestAmbientOcclusionAov()
+{
+    _DisplayColorRenderCase baselineCase;
+    baselineCase.displayColor = GfVec3f(0.1f, 0.2f, 0.3f);
+    baselineCase.samplesToConvergence = 8;
+    baselineCase.minSamplesBeforeAdaptive = 9;
+
+    _SurfaceRenderResult baseline;
+    if (!_RenderSurfaceCase(baselineCase, &baseline) ||
+        baseline.completedSamples != 8 ||
+        baseline.ambientOcclusionRayCount != 0) {
+        return false;
+    }
+
+    _DisplayColorRenderCase combinedCase = baselineCase;
+    combinedCase.bindAmbientOcclusion = true;
+    _SurfaceRenderResult combined;
+    if (!_RenderSurfaceCase(combinedCase, &combined) ||
+        combined.completedSamples != 8 ||
+        combined.ambientOcclusionRayCount != 8 ||
+        !GfIsClose(combined.color, baseline.color, 1.0e-6f) ||
+        !GfIsClose(
+            combined.ambientOcclusion, GfVec3f(1.0f), 1.0e-6f)) {
+        return false;
+    }
+
+    // With only ambocc bound, AO itself drives convergence and the renderer
+    // still emits at most one visibility ray per progressive pixel sample.
+    _DisplayColorRenderCase ambientOnlyCase = baselineCase;
+    ambientOnlyCase.bindColor = false;
+    ambientOnlyCase.bindAmbientOcclusion = true;
+    _SurfaceRenderResult ambientOnly;
+    if (!_RenderSurfaceCase(ambientOnlyCase, &ambientOnly) ||
+        ambientOnly.completedSamples != 8 ||
+        ambientOnly.ambientOcclusionRayCount != 8 ||
+        !GfIsClose(
+            ambientOnly.ambientOcclusion, GfVec3f(1.0f), 1.0e-6f)) {
+        return false;
+    }
+
+    ambientOnlyCase.minSamplesBeforeAdaptive = 2;
+    _SurfaceRenderResult adaptiveExit;
+    if (!_RenderSurfaceCase(ambientOnlyCase, &adaptiveExit) ||
+        adaptiveExit.completedSamples != 2 ||
+        adaptiveExit.ambientOcclusionRayCount != 2 ||
+        !GfIsClose(
+            adaptiveExit.ambientOcclusion, GfVec3f(1.0f), 1.0e-6f)) {
+        return false;
+    }
+
+    // Camera invalidation retains the resolved preview while resetting sample
+    // accumulation. A new miss must replace the previous hit rather than
+    // leaving stale AO in the resolved buffer.
+    ambientOnlyCase.samplesToConvergence = 1;
+    ambientOnlyCase.minSamplesBeforeAdaptive = 64;
+    ambientOnlyCase.moveCameraToMissAfterFirstRender = true;
+    _SurfaceRenderResult cameraMoved;
+    return _RenderSurfaceCase(ambientOnlyCase, &cameraMoved) &&
+        cameraMoved.completedSamples == 1 &&
+        cameraMoved.ambientOcclusionRayCount == 0 &&
+        GfIsClose(
+            cameraMoved.ambientOcclusion, GfVec3f(0.0f), 1.0e-6f);
+}
+
+bool
 _TestCameraJitterTileDeterminism()
 {
     constexpr unsigned int width = 40;
@@ -1547,7 +1721,6 @@ _TestCameraJitterTileDeterminism()
             settings.randomNumberSeed = 1;
             settings.tileSize = tileSize;
             settings.enableLighting = false;
-            settings.ambientOcclusionSamples = 0;
             renderer->SetRenderSettings(settings);
 
             HdRenderThread renderThread;
@@ -1664,33 +1837,6 @@ _TestRenderPassSettingsApplication()
         return false;
     }
 
-    // Lighting suppresses AO; otherwise the enable flag selects the authored
-    // AO sample count.
-    delegate.SetRenderSetting(
-        HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
-        VtValue(std::string("bsdl")));
-    for (bool enableLighting : {false, true}) {
-        for (bool enableAmbientOcclusion : {false, true}) {
-            delegate.SetRenderSetting(
-                HdEmbreeRenderSettingsTokens->enableLighting,
-                VtValue(enableLighting));
-            delegate.SetRenderSetting(
-                HdEmbreeRenderSettingsTokens->enableAmbientOcclusion,
-                VtValue(enableAmbientOcclusion));
-            delegate.SetRenderSetting(
-                HdEmbreeRenderSettingsTokens->ambientOcclusionSamples,
-                VtValue(7));
-            renderPass.Execute(renderPassState, TfTokenVector());
-            const int expectedSamples =
-                !enableLighting && enableAmbientOcclusion ? 7 : 0;
-            if (renderer.GetRenderSettings().ambientOcclusionSamples !=
-                expectedSamples) {
-                finish();
-                return false;
-            }
-        }
-    }
-
     finish();
     return true;
 }
@@ -1720,6 +1866,7 @@ main()
     TF_AXIOM(_TestLiveRenderPassesOwnAnonymousBindings());
     TF_AXIOM(_TestProcessGlobalDielectricSettingIsReapplied());
     TF_AXIOM(_TestDisplayColorFallbacks());
+    TF_AXIOM(_TestAmbientOcclusionAov());
     TF_AXIOM(_TestCameraJitterTileDeterminism());
     TF_AXIOM(_TestRenderPassSettingsApplication());
     return 0;

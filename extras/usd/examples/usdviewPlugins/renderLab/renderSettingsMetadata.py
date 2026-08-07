@@ -18,7 +18,6 @@ _RENDERERS = {
             "Materials",
             "Diagnostics",
             "Scene",
-            "Ambient Occlusion",
             _DEFAULT_CATEGORY,
         ],
         "settings": {
@@ -110,14 +109,6 @@ _RENDERERS = {
             "ty:dynamicSubdvTesselation": {
                 "category": "Scene",
                 "order": 50,
-            },
-            "ty:enableAmbientOcclusion": {
-                "category": "Ambient Occlusion",
-                "order": 10,
-            },
-            "ty:ambientOcclusionSamples": {
-                "category": "Ambient Occlusion",
-                "order": 20,
             },
         },
     },

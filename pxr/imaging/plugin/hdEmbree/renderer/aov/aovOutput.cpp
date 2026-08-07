@@ -154,6 +154,7 @@ ty::Renderer::_ValidateAovBindings()
             _aovNames[i].name != HdAovTokens->Neye &&
             _aovNames[i].name != HdAovTokens->normal &&
             _aovNames[i].name != ty::AovTokens->adaptiveHeatmap &&
+            _aovNames[i].name != ty::AovTokens->ambocc &&
             !_aovNames[i].isPrimvar) {
             TF_WARN("Unsupported attachment with Aov '%s' won't be rendered to",
                     _aovNames[i].name.GetText());
@@ -204,6 +205,15 @@ ty::Renderer::_ValidateAovBindings()
         // The adaptive heatmap writes four float color components.
         if (_aovNames[i].name == ty::AovTokens->adaptiveHeatmap &&
             format != HdFormatFloat32Vec4) {
+            TF_WARN("Aov '%s' has unsupported format '%s'",
+                    _aovNames[i].name.GetText(),
+                    TfEnum::GetName(format).c_str());
+            bindingsValid = false;
+        }
+
+        // Ambient occlusion writes scalar visibility replicated to RGB.
+        if (_aovNames[i].name == ty::AovTokens->ambocc &&
+            format != HdFormatFloat32Vec3) {
             TF_WARN("Aov '%s' has unsupported format '%s'",
                     _aovNames[i].name.GetText(),
                     TfEnum::GetName(format).c_str());
@@ -436,6 +446,7 @@ ty::Renderer::_ClassifyAovOutputs()
 {
     _aovOutputs.clear();
     _needRadiance = false;
+    _needAmbientOcclusion = false;
     _colorClearValue = GfVec4f(0.0f);
 
     // Color and adaptive-heatmap output both require actual scene radiance.
@@ -446,6 +457,8 @@ ty::Renderer::_ClassifyAovOutputs()
             _colorClearValue = _GetClearColor(_aovBindings[i].clearValue);
         } else if (_aovNames[i].name == ty::AovTokens->adaptiveHeatmap) {
             _needRadiance = true;
+        } else if (_aovNames[i].name == ty::AovTokens->ambocc) {
+            _needAmbientOcclusion = true;
         }
     }
 
@@ -492,6 +505,10 @@ ty::Renderer::_ClassifyAovOutputs()
                     _AovOutput{
                         rb, _AovKind::AdaptiveHeatmap, TfToken()});
             }
+        } else if (aovName.name == ty::AovTokens->ambocc &&
+                   rb->GetFormat() == HdFormatFloat32Vec3) {
+            _aovOutputs.push_back(
+                _AovOutput{rb, _AovKind::AmbientOcclusion, TfToken()});
         }
     }
 }
@@ -520,14 +537,13 @@ ty::Renderer::_HeatmapColor(float t)
 void
 ty::Renderer::_WriteAov(
     _AovOutput const& aov,
-    RTCRayHit const& rayHit,
-    GfVec4f const& color,
+    _PixelSampleResult const& result,
     unsigned int x, unsigned int y)
 {
     GfVec3i const pixel(x, y, 1);
     switch (aov.kind) {
         case _AovKind::Color: {
-            GfVec4f exposedColor = color;
+            GfVec4f exposedColor = result.color;
             exposedColor[0] *= _cameraExposureScale;
             exposedColor[1] *= _cameraExposureScale;
             exposedColor[2] *= _cameraExposureScale;
@@ -536,21 +552,21 @@ ty::Renderer::_WriteAov(
         }
         case _AovKind::CameraDepth: {
             float depth;
-            if (_ComputeDepth(rayHit, &depth, false)) {
+            if (_ComputeDepth(result.primaryHit, &depth, false)) {
                 aov.buffer->Write(pixel, 1, &depth);
             }
             break;
         }
         case _AovKind::Depth: {
             float depth;
-            if (_ComputeDepth(rayHit, &depth, true)) {
+            if (_ComputeDepth(result.primaryHit, &depth, true)) {
                 aov.buffer->Write(pixel, 1, &depth);
             }
             break;
         }
         case _AovKind::Id: {
             int32_t id;
-            if (!_ComputeId(rayHit, aov.token, &id)) {
+            if (!_ComputeId(result.primaryHit, aov.token, &id)) {
                 id = -1;
             }
             aov.buffer->Write(pixel, 1, &id);
@@ -558,21 +574,21 @@ ty::Renderer::_WriteAov(
         }
         case _AovKind::Normal: {
             GfVec3f normal;
-            if (_ComputeNormal(rayHit, &normal, false)) {
+            if (_ComputeNormal(result.primaryHit, &normal, false)) {
                 aov.buffer->Write(pixel, 3, normal.data());
             }
             break;
         }
         case _AovKind::EyeNormal: {
             GfVec3f normal;
-            if (_ComputeNormal(rayHit, &normal, true)) {
+            if (_ComputeNormal(result.primaryHit, &normal, true)) {
                 aov.buffer->Write(pixel, 3, normal.data());
             }
             break;
         }
         case _AovKind::Primvar: {
             GfVec3f value;
-            if (_ComputePrimvar(rayHit, aov.token, &value)) {
+            if (_ComputePrimvar(result.primaryHit, aov.token, &value)) {
                 aov.buffer->Write(pixel, 3, value.data());
             }
             break;
@@ -586,6 +602,14 @@ ty::Renderer::_WriteAov(
                 static_cast<float>(std::max(1, _settings.samplesToConvergence));
             GfVec4f const heatmapColor = _HeatmapColor(fraction);
             aov.buffer->Write(pixel, 4, heatmapColor.data());
+            break;
+        }
+        case _AovKind::AmbientOcclusion: {
+            // Every pixel sample contributes an AO value. In particular,
+            // misses write zero so a camera restart cannot expose stale data
+            // retained in the resolved preview buffer.
+            const GfVec3f ambientVisibility(result.ambientVisibility);
+            aov.buffer->Write(pixel, 3, ambientVisibility.data());
             break;
         }
     }

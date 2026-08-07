@@ -74,6 +74,7 @@ pxr_plugin(hdEmbree
         renderer/camera/camera.cpp
         renderer/geometry/displacementEvaluation.cpp
         renderer/geometry/wireframe.cpp
+        renderer/integrator/ambientOcclusion.cpp
         renderer/integrator/lighting.cpp
         renderer/integrator/pathIntegrator.cpp
         renderer/integrator/surfaceShading.cpp
