@@ -254,7 +254,7 @@ ty::Renderer::_PreRenderSetup()
     // persists until ResetAccumulation() or a setup failure owns its reset.
     _width = 0;
     _height = 0;
-    _needColor = false;
+    _needRadiance = false;
     _colorClearValue = GfVec4f(0.0f);
     _aovOutputs.clear();
     _completedSamples.store(0);
@@ -302,7 +302,7 @@ ty::Renderer::_PreRenderSetup()
     }
 
     // Build all per-frame state before mapping validated buffers.
-    if (_settings.enableAdaptiveSampling && _width > 0 && _height > 0) {
+    if (_width > 0 && _height > 0) {
         const size_t numPixels = _width * _height;
         _pixelMean.resize(numPixels, GfVec3f(0.0f));
         _pixelM2.resize(numPixels, GfVec3f(0.0f));
@@ -480,8 +480,8 @@ ty::Renderer::Render(HdRenderThread *renderThread)
         // Track the number of completed samples for external consumption.
         _completedSamples.store(i + 1);
 
-        // If adaptive sampling is enabled, check if all pixels converged.
-        if (_settings.enableAdaptiveSampling && !_pixelConverged.empty()) {
+        // Stop once every pixel satisfies the adaptive convergence test.
+        if (!_pixelConverged.empty()) {
             HD_TRACE_SCOPE("ty::Renderer::CheckConvergence");
             bool allConverged = true;
             for (size_t indexPixel = 0;
@@ -584,7 +584,7 @@ ty::Renderer::Render(HdRenderThread *renderThread)
                 avgIntersectionsPerCall);
         }
 
-        if (_settings.enableAdaptiveSampling && !_pixelConverged.empty()) {
+        if (!_pixelConverged.empty()) {
             size_t convergedCount = 0;
             double avgSamples = 0.0;
             for (size_t indexPixel = 0;
@@ -618,7 +618,7 @@ ty::Renderer::_EvaluatePixelSample(
     ty::RayDifferential const& diffRay)
 {
     _PixelSampleResult result;
-    if (_needColor) {
+    if (_needRadiance) {
         result = _settings.enableLighting
             ? _IntegratePath(
                   posRayOrgWld, dirRayWld, diffRay, sampler.RootDomain())
@@ -635,7 +635,7 @@ ty::Renderer::_EvaluatePixelSample(
         rtcIntersect1(_scene, &result.primaryHit);
     }
 
-    if (_settings.enableAdaptiveSampling && !_pixelConverged.empty()) {
+    if (!_pixelConverged.empty()) {
         const GfVec3f rgb(
             result.color[0], result.color[1], result.color[2]);
         _UpdateVariance(x, y, rgb);
@@ -703,11 +703,9 @@ ty::Renderer::_RenderTiles(HdRenderThread *renderThread, int sampleNum,
                     continue;
                 }
 
-                // Skip converged pixels in adaptive sampling mode.
+                // Skip pixels that already satisfy adaptive convergence.
                 const size_t idx = y * _width + x;
-                if (_settings.enableAdaptiveSampling
-                    && !_pixelConverged.empty()
-                    && _pixelConverged[idx]) {
+                if (!_pixelConverged.empty() && _pixelConverged[idx]) {
                     continue;
                 }
 

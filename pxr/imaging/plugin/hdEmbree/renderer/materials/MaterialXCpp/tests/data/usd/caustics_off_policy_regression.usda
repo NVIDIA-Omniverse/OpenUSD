@@ -24,7 +24,6 @@ def RenderSettings "RenderSettings"
     int ty:maxBounces = 16
     int ty:minBouncesBeforeRR = 4
     int ty:lightSamplesPerHit = 1
-    bool ty:enableAdaptiveSampling = false
     bool ty:enableCaustics = true
     float ty:causticsClampThreshold = 5.0
     rel products = [</RenderProduct>]

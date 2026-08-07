@@ -34,13 +34,11 @@ class HdEmbreeMesh;
     ((randomNumberSeed, "ty:randomNumberSeed")) \
     ((tileSize, "ty:tileSize")) \
     ((enableExposureCompensation, "ty:enableExposureCompensation")) \
-    ((enableAdaptiveSampling, "ty:enableAdaptiveSampling")) \
     ((adaptiveThreshold, "ty:adaptiveThreshold")) \
     ((minSamplesBeforeAdaptive, "ty:minSamplesBeforeAdaptive")) \
     ((maxBounces, "ty:maxBounces")) \
     ((minBouncesBeforeRR, "ty:minBouncesBeforeRR")) \
     ((lightSamplesPerHit, "ty:lightSamplesPerHit")) \
-    ((showAdaptiveHeatmap, "ty:showAdaptiveHeatmap")) \
     ((fireflyClampThreshold, "ty:fireflyClampThreshold")) \
     ((enableCaustics, "ty:enableCaustics")) \
     ((causticsClampThreshold, "ty:causticsClampThreshold")) \

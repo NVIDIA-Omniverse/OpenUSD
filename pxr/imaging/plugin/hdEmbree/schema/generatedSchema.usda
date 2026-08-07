@@ -45,11 +45,6 @@ class "TyphoonRenderSettingsAPI" (
             string userDocBrief = "Recompute screen-space subdivision tessellation after camera or viewport changes."
         }
     )
-    uniform bool ty:enableAdaptiveSampling = 1 (
-        customData = {
-            string userDocBrief = "Use adaptive sampling to skip converged pixels."
-        }
-    )
     uniform bool ty:enableAmbientOcclusion = 0 (
         customData = {
             string userDocBrief = "Use ambient occlusion when scene lighting is disabled."
@@ -104,11 +99,6 @@ class "TyphoonRenderSettingsAPI" (
     uniform int ty:randomNumberSeed = -1 (
         customData = {
             string userDocBrief = "OpenQMC frame seed."
-        }
-    )
-    uniform bool ty:showAdaptiveHeatmap = 0 (
-        customData = {
-            string userDocBrief = "Visualize adaptive sampling convergence as a heatmap."
         }
     )
     uniform int ty:textureCacheSize = 16384 (

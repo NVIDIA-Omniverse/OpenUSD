@@ -52,6 +52,9 @@ USD render-settings schema, not its internal C++ module boundaries.
 - The delegate supports standard color, depth, normal, and ID AOVs, the
   `adaptiveHeatmap` diagnostic, and float-vector primvar outputs. `README.md`
   defines the authoritative names and formats.
+- Progressive radiance rendering always uses adaptive sampling. The
+  `adaptiveHeatmap` diagnostic is computed only when its AOV is bound and does
+  not replace color output.
 - Legacy viewport clients that bind no AOVs receive anonymous color and depth
   buffers whose completion drives render-pass convergence. Valid camera
   framing without AOV bindings remains unsupported and settles as a failed

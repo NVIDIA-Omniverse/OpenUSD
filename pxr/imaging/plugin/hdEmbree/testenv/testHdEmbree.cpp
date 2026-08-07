@@ -38,7 +38,6 @@ public:
         , _wireframeOnSurface(false)
         , _wireframeOnly(false)
         , _ao(false)
-        , _showAdaptiveHeatmap(false)
         , _outputName("color1.png")
     {
         SetCameraRotate(0,0);
@@ -107,7 +106,6 @@ private:
     bool _wireframeOnSurface;
     bool _wireframeOnly;
     bool  _ao;
-    bool _showAdaptiveHeatmap;
 
     // For offscreen tests, which AOV should we output?
     // (empty string means we should read color from the framebuffer).
@@ -269,17 +267,6 @@ void HdEmbree_TestGLDrawing::InitTest()
             HdEmbreeRenderSettingsTokens->enableExposureCompensation,
             VtValue(true));
     }
-    if (_aov == "adaptiveHeatmap" || _showAdaptiveHeatmap) {
-        _renderDelegate->SetRenderSetting(
-            HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
-            VtValue(true));
-    }
-    if (_showAdaptiveHeatmap) {
-        _renderDelegate->SetRenderSetting(
-            HdEmbreeRenderSettingsTokens->showAdaptiveHeatmap,
-            VtValue(true));
-    }
-
     if (_instance) {
         // Instanced scene. Add test geometry:
         // - Proto cube.
@@ -536,8 +523,6 @@ void HdEmbree_TestGLDrawing::ParseArgs(int argc, char *argv[])
             ++i;
         } else if (std::string(argv[i]) == "--ao") {
             _ao = true;
-        } else if (std::string(argv[i]) == "--show-adaptive-heatmap") {
-            _showAdaptiveHeatmap = true;
         }
     }
 
@@ -555,10 +540,6 @@ void HdEmbree_TestGLDrawing::ParseArgs(int argc, char *argv[])
         _aov != "primvars:displayColor" &&
         _aov != "adaptiveHeatmap") {
         TF_WARN("Unrecognized AOV token '%s'", _aov.c_str());
-        exit(EXIT_FAILURE);
-    }
-    if (_showAdaptiveHeatmap && _aov != "color") {
-        TF_WARN("--show-adaptive-heatmap requires --aov color");
         exit(EXIT_FAILURE);
     }
 }

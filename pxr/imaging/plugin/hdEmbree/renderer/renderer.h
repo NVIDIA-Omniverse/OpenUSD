@@ -958,7 +958,6 @@ private:
 
     enum class _AovKind {
         Color,
-        ColorAdaptiveHeatmap,
         CameraDepth,
         Depth,
         Id,
@@ -1084,7 +1083,7 @@ private:
     LightRegistry _lights;
 
     // Pre-resolved per-frame state (built in _PreRenderSetup).
-    bool _needColor = false;
+    bool _needRadiance = false;
     GfVec4f _colorClearValue;
     std::vector<_AovOutput> _aovOutputs;
 };

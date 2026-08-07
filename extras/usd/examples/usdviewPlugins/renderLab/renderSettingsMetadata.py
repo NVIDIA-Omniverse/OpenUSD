@@ -39,10 +39,6 @@ _RENDERERS = {
                 "category": "Sampling",
                 "order": 20,
             },
-            "ty:enableAdaptiveSampling": {
-                "category": "Sampling",
-                "order": 40,
-            },
             "ty:adaptiveThreshold": {
                 "category": "Sampling",
                 "order": 50,
@@ -94,10 +90,6 @@ _RENDERERS = {
                     "bsdl",
                     "materialxGlsl",
                 ],
-            },
-            "ty:showAdaptiveHeatmap": {
-                "category": "Diagnostics",
-                "order": 10,
             },
             "ty:tileSize": {
                 "category": "Diagnostics",

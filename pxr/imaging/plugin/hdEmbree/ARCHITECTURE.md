@@ -610,10 +610,11 @@ destroying a non-current pass leaves the active render untouched.
 
 ### Pixel and camera sampling
 
-1. `Render()` divides the active data window into tiles and schedules
+1. `Render()` allocates per-pixel adaptive statistics, divides the active data
+   window into tiles, and schedules
    `_RenderTiles()` with `WorkParallelForN`. Coarse preview passes use a pixel
    stride greater than one; full-resolution passes use stride one. Pixels
-   already converged under adaptive sampling are skipped.
+   already converged under always-on adaptive sampling are skipped.
 2. Each selected pixel gets one `ty::Sampler`, keyed by the frame seed,
    pixel coordinates, and sample number. The concrete OpenQMC sampler type is
    selected by the single `ty::OpenQmcSampler` alias. Every later stochastic
@@ -625,12 +626,13 @@ destroying a non-current pass leaves the active render untouched.
    draws a lens point, focuses the ray, and applies the same lens point to the
    x/y differential rays. The origin, normalized direction, and scaled ray
    differentials are transformed to world space.
-4. `_EvaluatePixelSample()` chooses exactly one radiance integrator:
+4. When color or `adaptiveHeatmap` output needs radiance,
+   `_EvaluatePixelSample()` chooses exactly one radiance integrator:
    `_IntegratePath()` when scene lighting is enabled or `_IntegrateUnlit()`
    otherwise. Both integrators trace their own camera ray and return a
    `_PixelSampleResult` containing linear RGBA radiance and the unchanged first
    Embree result in `primaryHit`.
-5. If neither a color AOV nor adaptive sampling needs radiance,
+5. If neither color nor `adaptiveHeatmap` is bound,
    `_EvaluatePixelSample()` takes the geometric-AOV fast path: it intersects the
    primary ray once without invoking either radiance integrator.
 
@@ -895,10 +897,10 @@ participating-medium transport, or Russian roulette.
 `_PreRenderSetup()` rebuilds AOV validation and output classification every render;
 it does not cache validation because a bound buffer can change format or
 dimensions without changing its pointer.
-`ResetAccumulation()` owns successful-frame adaptive-state resets. Setup leaves
-that reset state allocated and only resizes it when the image dimensions
-change; a terminal setup failure discards it so no later caller can observe the
-previous valid frame's adaptive statistics.
+`ResetAccumulation()` owns successful-frame adaptive-state resets. Setup always
+allocates that state for valid non-empty image dimensions and only resizes it
+when the dimensions change; a terminal setup failure discards it so no later
+caller can observe the previous valid frame's adaptive statistics.
 The renderer publishes synchronized `Pending`, `Valid`, or `Failed` frame
 status across the render and client threads. Offline RenderProducts are written
 only after the current frame is both valid and converged; setup failure still
@@ -913,6 +915,9 @@ classified AOV through `_WriteAov()`'s direct switch:
   output;
 - depth, normal, ID, and primvar output interprets the retained `primaryHit`;
 - heatmap output consumes adaptive sample counts rather than scene radiance.
+  Binding only `adaptiveHeatmap` still requests hidden radiance evaluation so
+  those counts are driven by the beauty convergence signal. Without a heatmap
+  binding, no heatmap color conversion or buffer write occurs.
 
 The render buffer accumulates samples until resolve/convergence. Thus transport
 is owned by one selected integrator, while accumulation, format conversion, and

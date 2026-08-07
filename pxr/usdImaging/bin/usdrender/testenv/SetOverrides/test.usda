@@ -132,7 +132,6 @@ def Scope "Render"
     {
         rel camera = </Camera>
         rel products = [</Render/Product>]
-        uniform bool ty:enableAdaptiveSampling = false
         uniform int ty:convergedSamplesPerPixel = 8
         uniform int ty:randomNumberSeed = 1
     }

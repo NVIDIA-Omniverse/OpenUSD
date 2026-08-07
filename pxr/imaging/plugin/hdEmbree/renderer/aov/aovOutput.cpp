@@ -435,20 +435,22 @@ void
 ty::Renderer::_ClassifyAovOutputs()
 {
     _aovOutputs.clear();
-    _needColor = _settings.enableAdaptiveSampling;
+    _needRadiance = false;
     _colorClearValue = GfVec4f(0.0f);
 
-    // Find color clear value and set _needColor.
+    // Color and adaptive-heatmap output both require actual scene radiance.
+    // The latter keeps adaptive statistics meaningful without a color buffer.
     for (size_t i = 0; i < _aovNames.size(); ++i) {
         if (_aovNames[i].name == HdAovTokens->color) {
-            _needColor = true;
+            _needRadiance = true;
             _colorClearValue = _GetClearColor(_aovBindings[i].clearValue);
-            break;
+        } else if (_aovNames[i].name == ty::AovTokens->adaptiveHeatmap) {
+            _needRadiance = true;
         }
     }
 
-    // Borrow interfaces from buffers mapped earlier in _PreRenderSetup.
-    // They remain valid only until the next setup remaps the buffers.
+    // Borrow interfaces from validated buffers. _PreRenderSetup maps each
+    // buffer immediately after classification.
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
         ty::RenderBufferInterface* rb =
             dynamic_cast<ty::RenderBufferInterface*>(
@@ -456,13 +458,8 @@ ty::Renderer::_ClassifyAovOutputs()
         HdParsedAovToken const& aovName = _aovNames[i];
 
         if (aovName.name == HdAovTokens->color) {
-            _AovKind const kind =
-                (_settings.showAdaptiveHeatmap &&
-                 _settings.enableAdaptiveSampling &&
-                 !_pixelSampleCount.empty())
-                ? _AovKind::ColorAdaptiveHeatmap
-                : _AovKind::Color;
-            _aovOutputs.push_back(_AovOutput{rb, kind, TfToken()});
+            _aovOutputs.push_back(
+                _AovOutput{rb, _AovKind::Color, TfToken()});
         } else if (aovName.name == HdAovTokens->cameraDepth &&
                    rb->GetFormat() == HdFormatFloat32) {
             _aovOutputs.push_back(
@@ -490,8 +487,7 @@ ty::Renderer::_ClassifyAovOutputs()
             _aovOutputs.push_back(
                 _AovOutput{rb, _AovKind::Primvar, aovName.name});
         } else if (aovName.name == ty::AovTokens->adaptiveHeatmap) {
-            if (_settings.enableAdaptiveSampling &&
-                !_pixelSampleCount.empty()) {
+            if (!_pixelSampleCount.empty()) {
                 _aovOutputs.push_back(
                     _AovOutput{
                         rb, _AovKind::AdaptiveHeatmap, TfToken()});
@@ -536,18 +532,6 @@ ty::Renderer::_WriteAov(
             exposedColor[1] *= _cameraExposureScale;
             exposedColor[2] *= _cameraExposureScale;
             aov.buffer->Write(pixel, 4, exposedColor.data());
-            break;
-        }
-        case _AovKind::ColorAdaptiveHeatmap: {
-            // The color replacement deliberately shows the completed count
-            // through WriteOutput; it differs from the dedicated heatmap.
-            size_t const index = y * _width + x;
-            float const fraction =
-                static_cast<float>(_pixelSampleCount[index]) /
-                static_cast<float>(std::max(1, _settings.samplesToConvergence));
-            GfVec4f const heatmapColor = _HeatmapColor(fraction);
-            aov.buffer->WriteOutput(
-                pixel, 4, heatmapColor.data());
             break;
         }
         case _AovKind::CameraDepth: {

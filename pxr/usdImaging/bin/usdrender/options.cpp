@@ -48,7 +48,7 @@ bool ParseOptions(int argc, char **argv, Options *o)
                    "Targets inside native instances or outside --mask are "
                    "rejected. "
                    "Examples: -s '{settings}.ty:maxBounces = 12', "
-                   "-s '{settings}.ty:enableAdaptiveSampling = false', "
+                   "-s '{settings}.ty:adaptiveThreshold = 0.005', "
                    "-s '/Camera.clippingRange = (0.1, 1000)'")
         ->allow_extra_args(false);
     app.add_flag("--printOverrides", o->printOverrides,

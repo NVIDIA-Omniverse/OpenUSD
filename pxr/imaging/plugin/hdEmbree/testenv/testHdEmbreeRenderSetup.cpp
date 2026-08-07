@@ -13,6 +13,8 @@
 #include <renderer/renderBuffer.h>
 #include <renderer/renderer.h>
 
+#include "pxr/base/gf/colorSpace.h"
+#include "pxr/base/gf/frustum.h"
 #include "pxr/base/gf/math.h"
 #include "pxr/base/gf/matrix3f.h"
 #include "pxr/base/gf/matrix4f.h"
@@ -334,7 +336,6 @@ _Configure(
     renderer->SetDataWindow(dataWindow);
     ty::RenderSettings settings;
     settings.samplesToConvergence = 1;
-    settings.enableAdaptiveSampling = false;
     // Every render-setup case exercises the newly exposed zero tile-size
     // input; SetRenderSettings must normalize it before tile partitioning.
     settings.tileSize = 0;
@@ -681,47 +682,13 @@ _TestAovOutputDispatch()
         }
     }
 
-    // The color-replacement heatmap bypasses accumulation and uses the
-    // current sample count.
+    // Color and adaptive heatmap remain independent when bound together.
     {
         _CountingRenderBuffer color(
-            SdfPath("/dispatchColorHeatmap"), 1, 1, HdFormatFloat32Vec4);
-        ty::Renderer renderer;
-        HdRenderThread renderThread;
-        _Configure(
-            &renderer,
-            scene.scene,
-            {_Binding(HdAovTokens->color, &color)},
-            dataWindow);
-        ty::RenderSettings settings;
-        settings.samplesToConvergence = 4;
-        settings.enableAdaptiveSampling = true;
-        settings.minSamplesBeforeAdaptive = 5;
-        settings.showAdaptiveHeatmap = true;
-        renderer.SetRenderSettings(settings);
-        renderThread.StartRender();
-        renderer.Render(&renderThread);
-        if (!TF_VERIFY(
-                color.floatWriteCount == 0,
-                "floatWriteCount=%u", color.floatWriteCount) ||
-            !TF_VERIFY(
-                color.floatOutputWriteCount == 4,
-                "floatOutputWriteCount=%u", color.floatOutputWriteCount) ||
-            !TF_VERIFY(
-                color.firstFloatOutputWrite ==
-                GfVec4f(0.0f, 1.0f, 1.0f, 1.0f))) {
-            return false;
-        }
-    }
-
-    // Adaptive-only output is omitted while disabled, and requesting the
-    // color heatmap still falls back to ordinary color.
-    {
-        _CountingRenderBuffer heatmap(
-            SdfPath("/dispatchDisabledAdaptiveHeatmap"),
+            SdfPath("/dispatchColorWithHeatmap"),
             1, 1, HdFormatFloat32Vec4);
-        _CountingRenderBuffer color(
-            SdfPath("/dispatchDisabledColorHeatmap"),
+        _CountingRenderBuffer heatmap(
+            SdfPath("/dispatchHeatmapWithColor"),
             1, 1, HdFormatFloat32Vec4);
         HdRenderPassAovBinding colorBinding =
             _Binding(HdAovTokens->color, &color);
@@ -732,29 +699,88 @@ _TestAovOutputDispatch()
             &renderer,
             scene.scene,
             {
-                _Binding(
-                    ty::AovTokens->adaptiveHeatmap, &heatmap),
-                colorBinding
+                colorBinding,
+                _Binding(ty::AovTokens->adaptiveHeatmap, &heatmap)
             },
             dataWindow);
         ty::RenderSettings settings;
-        settings.samplesToConvergence = 1;
-        settings.enableAdaptiveSampling = false;
-        settings.showAdaptiveHeatmap = true;
+        settings.samplesToConvergence = 4;
+        settings.minSamplesBeforeAdaptive = 5;
         renderer.SetRenderSettings(settings);
         renderThread.StartRender();
         renderer.Render(&renderThread);
-        if (!TF_VERIFY(heatmap.sampleWriteCount == 0) ||
-            !TF_VERIFY(color.floatWriteCount == 1) ||
+        if (!TF_VERIFY(
+                color.floatWriteCount == 4,
+                "floatWriteCount=%u", color.floatWriteCount) ||
+            !TF_VERIFY(
+                color.floatOutputWriteCount == 0,
+                "floatOutputWriteCount=%u", color.floatOutputWriteCount) ||
+            !TF_VERIFY(
+                color.firstFloatWrite ==
+                GfVec4f(0.25f, 0.25f, 0.25f, 1.0f)) ||
+            !TF_VERIFY(
+                heatmap.floatWriteCount == 4,
+                "heatmap.floatWriteCount=%u", heatmap.floatWriteCount) ||
+            !TF_VERIFY(heatmap.floatOutputWriteCount == 0)) {
+            return false;
+        }
+    }
+
+    // A constant radiance signal converges early without an enable flag.
+    {
+        _CountingRenderBuffer color(
+            SdfPath("/dispatchAlwaysAdaptiveColor"),
+            1, 1, HdFormatFloat32Vec4);
+        HdRenderPassAovBinding colorBinding =
+            _Binding(HdAovTokens->color, &color);
+        colorBinding.clearValue = VtValue(GfVec4f(0.25f));
+        ty::Renderer renderer;
+        HdRenderThread renderThread;
+        _Configure(
+            &renderer,
+            scene.scene,
+            {colorBinding},
+            dataWindow);
+        ty::RenderSettings settings;
+        settings.samplesToConvergence = 8;
+        settings.minSamplesBeforeAdaptive = 2;
+        renderer.SetRenderSettings(settings);
+        renderThread.StartRender();
+        renderer.Render(&renderThread);
+        if (!TF_VERIFY(renderer.GetCompletedSamples() == 2) ||
+            !TF_VERIFY(color.floatWriteCount == 2) ||
             !TF_VERIFY(color.floatOutputWriteCount == 0)) {
             return false;
         }
     }
 
-    // The dedicated heatmap accumulates samples and visualizes count + 1.
+    // Heatmap-only rendering evaluates actual radiance for convergence. A
+    // high-frequency dome keeps this pixel above the zero-threshold floor, so
+    // it reaches the configured sample limit instead of converging on black.
     {
+        ty::LightData dome;
+        dome.xformLightToWorld = GfMatrix4f(1.0f);
+        dome.normalXformLightToWorld = GfMatrix3f(1.0f);
+        dome.xformWorldToLight = GfMatrix4f(1.0f);
+        dome.color = GfVec3f(1.0f);
+        dome.lightVariant = ty::DomeLight();
+        dome.texture.width = 16;
+        dome.texture.height = 8;
+        dome.texture.colorSpaceName = GfColorSpaceNames->LinearRec709;
+        dome.texture.pixels.reserve(
+            dome.texture.width * dome.texture.height);
+        for (int y = 0; y < dome.texture.height; ++y) {
+            for (int x = 0; x < dome.texture.width; ++x) {
+                dome.texture.pixels.push_back(
+                    ((x + y) % 2 == 0)
+                        ? GfVec3f(0.0f)
+                        : GfVec3f(4.0f));
+            }
+        }
+        ty::BuildDomeLightSamplingDistribution(&dome.texture);
+
         _CountingRenderBuffer heatmap(
-            SdfPath("/dispatchAdaptiveHeatmap"),
+            SdfPath("/dispatchHeatmapOnly"),
             1, 1, HdFormatFloat32Vec4);
         ty::Renderer renderer;
         HdRenderThread renderThread;
@@ -763,22 +789,27 @@ _TestAovOutputDispatch()
             scene.scene,
             {_Binding(ty::AovTokens->adaptiveHeatmap, &heatmap)},
             dataWindow);
+        GfFrustum frustum;
+        frustum.SetPerspective(90.0, 1.0, 0.1, 100.0);
+        renderer.SetCamera(
+            frustum.ComputeViewMatrix(),
+            frustum.ComputeProjectionMatrix());
+        renderer.AddLight(SdfPath("/varianceDome"), &dome);
         ty::RenderSettings settings;
-        settings.samplesToConvergence = 4;
-        settings.enableAdaptiveSampling = true;
-        settings.minSamplesBeforeAdaptive = 5;
+        settings.samplesToConvergence = 8;
+        settings.randomNumberSeed = 1;
+        settings.adaptiveThreshold = 0.0f;
+        settings.minSamplesBeforeAdaptive = 4;
         renderer.SetRenderSettings(settings);
         renderThread.StartRender();
         renderer.Render(&renderThread);
-        if (!TF_VERIFY(
-                heatmap.floatWriteCount == 4,
+        if (!TF_VERIFY(renderer.GetCompletedSamples() == 8) ||
+            !TF_VERIFY(
+                heatmap.floatWriteCount == 8,
                 "floatWriteCount=%u", heatmap.floatWriteCount) ||
             !TF_VERIFY(
                 heatmap.floatOutputWriteCount == 0,
-                "floatOutputWriteCount=%u", heatmap.floatOutputWriteCount) ||
-            !TF_VERIFY(
-                heatmap.firstFloatWrite ==
-                GfVec4f(0.0f, 1.0f, 0.0f, 1.0f))) {
+                "floatOutputWriteCount=%u", heatmap.floatOutputWriteCount)) {
             return false;
         }
     }
@@ -959,9 +990,6 @@ _TestEmptyRenderPassBindingsConverge(bool useFraming)
     delegate.SetRenderSetting(
         HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
         VtValue(1));
-    delegate.SetRenderSetting(
-        HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
-        VtValue(false));
     std::unique_ptr<HdRenderIndex> renderIndex(
         HdRenderIndex::New(&delegate, HdDriverVector()));
     if (!renderIndex) {
@@ -1044,9 +1072,6 @@ _TestLiveRenderPassesOwnAnonymousBindings()
     delegate.SetRenderSetting(
         HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
         VtValue(1));
-    delegate.SetRenderSetting(
-        HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
-        VtValue(false));
     std::unique_ptr<HdRenderIndex> renderIndex(
         HdRenderIndex::New(&delegate, HdDriverVector()));
     if (!renderIndex) {
@@ -1341,7 +1366,6 @@ _RenderDisplayColorCase(
     ty::RenderSettings settings;
     settings.samplesToConvergence = 1;
     settings.randomNumberSeed = 1;
-    settings.enableAdaptiveSampling = false;
     settings.enableLighting = renderCase.enableLighting;
     settings.ambientOcclusionSamples = 0;
     renderer->SetRenderSettings(settings);
@@ -1522,7 +1546,6 @@ _TestCameraJitterTileDeterminism()
             settings.samplesToConvergence = 16;
             settings.randomNumberSeed = 1;
             settings.tileSize = tileSize;
-            settings.enableAdaptiveSampling = false;
             settings.enableLighting = false;
             settings.ambientOcclusionSamples = 0;
             renderer->SetRenderSettings(settings);

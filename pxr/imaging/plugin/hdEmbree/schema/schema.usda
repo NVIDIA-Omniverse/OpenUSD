@@ -57,10 +57,6 @@ class "TyphoonRenderSettingsAPI" (
         doc = """Recompute screen-space subdivision tessellation after camera or viewport changes."""
     )
 
-    uniform bool ty:enableAdaptiveSampling = true (
-        doc = """Use adaptive sampling to skip converged pixels."""
-    )
-
     uniform float ty:adaptiveThreshold = 0.01 (
         doc = """Variance threshold below which a pixel is considered converged."""
     )
@@ -79,10 +75,6 @@ class "TyphoonRenderSettingsAPI" (
 
     uniform int ty:lightSamplesPerHit = 1 (
         doc = """Number of light samples per hit point per light."""
-    )
-
-    uniform bool ty:showAdaptiveHeatmap = false (
-        doc = """Visualize adaptive sampling convergence as a heatmap."""
     )
 
     uniform float ty:fireflyClampThreshold = 20.0 (

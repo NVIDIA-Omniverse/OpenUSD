@@ -909,10 +909,6 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->tileSize,
                 defaults.tileSize);
-        nextSettings.enableAdaptiveSampling =
-            renderDelegate->GetRenderSetting<bool>(
-                HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
-                defaults.enableAdaptiveSampling);
         nextSettings.adaptiveThreshold =
             renderDelegate->GetRenderSetting<float>(
                 HdEmbreeRenderSettingsTokens->adaptiveThreshold,
@@ -933,10 +929,6 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->lightSamplesPerHit,
                 defaults.lightSamplesPerHit);
-        nextSettings.showAdaptiveHeatmap =
-            renderDelegate->GetRenderSetting<bool>(
-                HdEmbreeRenderSettingsTokens->showAdaptiveHeatmap,
-                defaults.showAdaptiveHeatmap);
         nextSettings.fireflyClampThreshold =
             renderDelegate->GetRenderSetting<float>(
                 HdEmbreeRenderSettingsTokens->fireflyClampThreshold,

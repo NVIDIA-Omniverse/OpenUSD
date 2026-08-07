@@ -174,13 +174,11 @@ invariants are documented under
 | Dome Light Camera Visibility | `domeLightCameraVisibility` | `bool` | `true` |
 | Enable Exposure Compensation | `ty:enableExposureCompensation` | `bool` | `true` |
 | Dynamic Subdivision Tessellation | `ty:dynamicSubdvTesselation` | `bool` | `false` |
-| Enable Adaptive Sampling | `ty:enableAdaptiveSampling` | `bool` | `true` |
 | Adaptive Threshold | `ty:adaptiveThreshold` | `float` | `0.01` |
 | Min Samples Before Adaptive | `ty:minSamplesBeforeAdaptive` | `int` | `64` |
 | Max Bounces | `ty:maxBounces` | `int` | `16` |
 | Min Bounces Before Russian Roulette | `ty:minBouncesBeforeRR` | `int` | `2` |
 | Light Samples Per Hit | `ty:lightSamplesPerHit` | `int` | `1` |
-| Show Adaptive Heatmap | `ty:showAdaptiveHeatmap` | `bool` | `false` |
 | Firefly Clamp Threshold | `ty:fireflyClampThreshold` | `float` | `20.0` |
 | Enable Caustics | `ty:enableCaustics` | `bool` | `false` |
 | Caustics Clamp Threshold | `ty:causticsClampThreshold` | `float` | `5.0` |
@@ -207,8 +205,16 @@ number of AO rays per camera ray is controlled by
 `ty:ambientOcclusionSamples`. Set `ty:enableAmbientOcclusion` to `false` to
 disable AO.
 
-### Adaptive Sampling (`ty:enableAdaptiveSampling`, `ty:adaptiveThreshold`, `ty:minSamplesBeforeAdaptive`)
-When enabled, per-pixel variance is tracked using Welford's online algorithm. Pixels whose variance metric falls below `ty:adaptiveThreshold` after at least `ty:minSamplesBeforeAdaptive` samples are marked as converged and skipped in subsequent passes. The default minimum sample count is intentionally conservative enough to avoid stopping too early on rare bright events such as sharp finite-light reflections, while still preserving useful speedups for scenes with non-uniform complexity.
+### Adaptive Sampling (`ty:adaptiveThreshold`, `ty:minSamplesBeforeAdaptive`)
+Adaptive sampling is always active during progressive rendering. Per-pixel
+variance is tracked using Welford's online algorithm. Pixels whose variance
+metric falls below `ty:adaptiveThreshold` after at least
+`ty:minSamplesBeforeAdaptive` samples are marked as converged and skipped in
+subsequent passes. `ty:convergedSamplesPerPixel` remains the maximum sample
+count for pixels that do not converge early. The default minimum sample count
+is intentionally conservative enough to avoid stopping too early on rare
+bright events such as sharp finite-light reflections, while still preserving
+useful speedups for scenes with non-uniform complexity.
 Each RGB channel is tested independently with a mixed absolute/relative variance-of-the-mean limit:
 
 ```text
@@ -253,7 +259,14 @@ without editing the stage.
 | `adaptiveHeatmap` | `Float32Vec4` |
 
 ### Adaptive heatmap
-When this AOV is bound (and `ty:enableAdaptiveSampling` is active), it outputs a heatmap visualizing per-pixel sample counts. The color ramp maps the ratio `sampleCount / convergedSamplesPerPixel`: blue (few samples) -> cyan -> green -> yellow -> red (many samples). In usdview, select "adaptiveHeatmap" from the AOV dropdown to display it. The color AOV continues to render normally — the heatmap is written to its own separate buffer.
+When this AOV is bound, it outputs a heatmap visualizing per-pixel sample
+counts. The color ramp maps the ratio
+`sampleCount / convergedSamplesPerPixel`: blue (few samples) -> cyan -> green
+-> yellow -> red (many samples). If it is the only bound AOV, hdEmbree still
+evaluates scene radiance so convergence reflects the same signal as beauty
+rendering. In usdview, choose `Renderer > Hydra AOVs > Other...` and enter
+`adaptiveHeatmap` to display it. The heatmap is computed only while that AOV is
+bound and never replaces the color AOV.
 
 Before rendering, hdEmbree requires at least one hdEmbree-owned AOV buffer,
 supported AOV formats, matching non-zero buffer dimensions, and a non-empty

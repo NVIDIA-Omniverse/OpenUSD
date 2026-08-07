@@ -54,10 +54,8 @@ struct RenderSettings {
     int samplesToConvergence = 256;
     int randomNumberSeed = -1;
     int tileSize = 8;
-    bool enableAdaptiveSampling = true;
     float adaptiveThreshold = 0.01f;
     int minSamplesBeforeAdaptive = 64;
-    bool showAdaptiveHeatmap = false;
 
     // Lighting and ambient occlusion.
     bool enableLighting = true;

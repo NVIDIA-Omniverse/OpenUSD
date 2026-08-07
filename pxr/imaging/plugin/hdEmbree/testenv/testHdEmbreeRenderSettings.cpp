@@ -120,13 +120,11 @@ _TestRenderDelegateSettings()
         HdEmbreeRenderSettingsTokens->tileSize,
         HdRenderSettingsTokens->domeLightCameraVisibility,
         HdEmbreeRenderSettingsTokens->enableExposureCompensation,
-        HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
         HdEmbreeRenderSettingsTokens->adaptiveThreshold,
         HdEmbreeRenderSettingsTokens->minSamplesBeforeAdaptive,
         HdEmbreeRenderSettingsTokens->maxBounces,
         HdEmbreeRenderSettingsTokens->minBouncesBeforeRR,
         HdEmbreeRenderSettingsTokens->lightSamplesPerHit,
-        HdEmbreeRenderSettingsTokens->showAdaptiveHeatmap,
         HdEmbreeRenderSettingsTokens->fireflyClampThreshold,
         HdEmbreeRenderSettingsTokens->enableCaustics,
         HdEmbreeRenderSettingsTokens->causticsClampThreshold,
@@ -170,6 +168,16 @@ _TestRenderDelegateSettings()
             TfToken("ty:enableSceneColors")).IsEmpty()) {
         std::printf("removed enableSceneColors render setting exists\n");
         return false;
+    }
+
+    for (TfToken const& removedSetting : {
+            TfToken("ty:enableAdaptiveSampling"),
+            TfToken("ty:showAdaptiveHeatmap")}) {
+        if (!delegate.GetRenderSetting(removedSetting).IsEmpty()) {
+            std::printf("removed adaptive render setting exists: %s\n",
+                        removedSetting.GetText());
+            return false;
+        }
     }
 
     const VtValue renderingColorSpaceDefault = delegate.GetRenderSetting(
@@ -774,13 +782,11 @@ _TestTyphoonRenderSettingsAPI()
         TfToken("ty:randomNumberSeed"),
         TfToken("ty:tileSize"),
         TfToken("ty:enableExposureCompensation"),
-        TfToken("ty:enableAdaptiveSampling"),
         TfToken("ty:adaptiveThreshold"),
         TfToken("ty:minSamplesBeforeAdaptive"),
         TfToken("ty:maxBounces"),
         TfToken("ty:minBouncesBeforeRR"),
         TfToken("ty:lightSamplesPerHit"),
-        TfToken("ty:showAdaptiveHeatmap"),
         TfToken("ty:fireflyClampThreshold"),
         TfToken("ty:enableCaustics"),
         TfToken("ty:causticsClampThreshold"),
@@ -919,8 +925,6 @@ _TestRenderSettingDefaultParity()
          VtValue(ty::DefaultEnableExposureCompensation)},
         {HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
          VtValue(ty::DefaultDynamicSubdvTesselation)},
-        {HdEmbreeRenderSettingsTokens->enableAdaptiveSampling,
-         VtValue(defaults.enableAdaptiveSampling)},
         {HdEmbreeRenderSettingsTokens->adaptiveThreshold,
          VtValue(defaults.adaptiveThreshold)},
         {HdEmbreeRenderSettingsTokens->minSamplesBeforeAdaptive,
@@ -931,8 +935,6 @@ _TestRenderSettingDefaultParity()
          VtValue(defaults.minBouncesBeforeRR)},
         {HdEmbreeRenderSettingsTokens->lightSamplesPerHit,
          VtValue(defaults.lightSamplesPerHit)},
-        {HdEmbreeRenderSettingsTokens->showAdaptiveHeatmap,
-         VtValue(defaults.showAdaptiveHeatmap)},
         {HdEmbreeRenderSettingsTokens->fireflyClampThreshold,
          VtValue(defaults.fireflyClampThreshold)},
         {HdEmbreeRenderSettingsTokens->enableCaustics,
