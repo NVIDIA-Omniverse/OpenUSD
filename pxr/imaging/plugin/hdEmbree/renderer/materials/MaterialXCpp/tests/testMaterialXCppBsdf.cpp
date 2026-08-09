@@ -7,13 +7,17 @@
 #include <renderer/materials/MaterialXCpp/graph.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf/closureTraversal.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf/dielectric.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf/dielectricReflFrontLut.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf/dielectricTransmissionLut.h>
+#include <renderer/materials/MaterialXCpp/materials/bsdf/fresnel.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf/microfacet.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf/shadingFrame.h>
 
 #define BSDL_UNROLL()
 #include <BSDL/MTX/bsdf_dielectric_decl.h>
+#include <BSDL/microfacet_tools_impl.h>
+#include <BSDL/MTX/bsdf_dielectric_impl.h>
 #include <BSDL/MTX/bsdf_dielectric_transback_luts.h>
 #include <BSDL/MTX/bsdf_dielectric_transfront_luts.h>
 #undef BSDL_UNROLL
@@ -2442,6 +2446,225 @@ TestBsdlDielectricTransmissionRuntimeLutMatchesGeneratedTables()
                 runtimeBack,
                 generatedBack[i]);
             return false;
+        }
+    }
+    return true;
+}
+
+/// Diagnostic: does BSDL's missing energy complement OUR single-scattering
+/// lobe?
+///
+/// The compensation contract is that the coupled interface's directional
+/// energy albedo is one. We add a cosine lobe carrying `missingEnergy`, so the
+/// contract holds only if our own single-scattering albedo is exactly
+/// `1 - missingEnergy`. The LUT was baked against BSDL's lobe, not ours, and
+/// nothing has ever checked that the two agree.
+///
+/// Integrates the production integrand from closureTraversal directly, by
+/// deterministic quadrature over the whole sphere, and prints the budget.
+/// The transmission evaluator carries no `1/eta^2`, so these hemisphere
+/// integrals are energy fractions and their sum must be one.
+static bool
+TestCoupledRoughDielectricCompensationBudget()
+{
+    using namespace Bsdf::detail;
+    printf("    Coupled dielectric compensation budget (ior 1.5):\n");
+    printf("      side  rough   cos    A_refl    A_trans    A_single   "
+           "missingE   A_single+E   deficit\n");
+    constexpr int kThetaSteps = 256;
+    constexpr int kPhiSteps = 512;
+    const Vec3f normalWldOut(0.0f, 1.0f, 0.0f);
+    for (const bool frontFacing : {true, false}) {
+        for (const float perceptualRoughness : {0.2f, 0.4f, 0.6f, 0.8f, 1.0f}) {
+            for (const float cosTheta : {0.15f, 0.35f, 0.6f, 0.85f, 1.0f}) {
+                Bsdf::DielectricInterfaceData data;
+                data.roughness = Vec2f(perceptualRoughness * perceptualRoughness);
+                data.tangent = Vec3f(0.0f, 0.0f, 1.0f);
+                data.compensateCoupledDielectric = true;
+                const float effectiveIor = data.ior;
+                const bool backside = !frontFacing;
+                const Vec3f omegaOutWld =
+                    _DirectionFromCosThetaYUp(cosTheta);
+                const SurfaceInteraction interaction =
+                    _MakeSurfaceInteraction(
+                        normalWldOut, normalWldOut, normalWldOut, omegaOutWld,
+                        0.0f, frontFacing);
+
+                double reflected = 0.0;
+                double transmitted = 0.0;
+                const double cellSolidAngle = 4.0 * M_PI /
+                    (double(kThetaSteps) * double(kPhiSteps));
+                for (int it = 0; it < kThetaSteps; ++it) {
+                    const float z = 1.0f -
+                        2.0f * (float(it) + 0.5f) / float(kThetaSteps);
+                    const float radius =
+                        std::sqrt(std::max(0.0f, 1.0f - z * z));
+                    for (int ip = 0; ip < kPhiSteps; ++ip) {
+                        const float phi = 2.0f * float(M_PI) *
+                            (float(ip) + 0.5f) / float(kPhiSteps);
+                        const Vec3f omegaInWld(
+                            radius * std::cos(phi), z, radius * std::sin(phi));
+                        const double weight =
+                            double(std::abs(z)) * cellSolidAngle;
+                        if (IsSameSide(
+                                normalWldOut, omegaInWld, omegaOutWld)) {
+                            const Vec3f fresnel =
+                                DielectricInterfaceReflectionCoefficient(
+                                    data,
+                                    ReflectionFresnelCosTheta(
+                                        omegaInWld, omegaOutWld),
+                                    effectiveIor, backside);
+                            reflected += double(
+                                EvalMicrofacetReflectionIsotropic(
+                                    std::clamp(
+                                        data.roughness[0], kMinMicrofacetAlpha,
+                                        1.0f),
+                                    fresnel, 1.0f, normalWldOut, omegaInWld,
+                                    omegaOutWld,
+                                    /* compensateMissingEnergy = */ false)[0]) *
+                                weight;
+                        } else {
+                            transmitted += double(
+                                EvalCoupledRoughDielectricTransmission(
+                                    data, effectiveIor, backside,
+                                    normalWldOut, omegaInWld,
+                                    omegaOutWld)[0]) *
+                                weight;
+                        }
+                    }
+                }
+
+                // The same albedo the analytic way: a plain visible-normal
+                // walk accumulating G2/G1, which is what the change of
+                // variables in the transmission evaluator reduces to. If this
+                // disagrees with the quadrature above, the evaluator is not
+                // the standard single-scattering lobe.
+                const Vec2f alpha = ClampAlpha(data.roughness);
+                const float etaRelative =
+                    backside ? 1.0f / effectiveIor : effectiveIor;
+                const Vec3f omegaOutLocal(
+                    std::sqrt(std::max(0.0f, 1.0f - cosTheta * cosTheta)),
+                    0.0f, cosTheta);
+                double vndfReflected = 0.0;
+                double vndfTransmitted = 0.0;
+                constexpr int kVndfSamples = 1 << 18;
+                for (int i = 0; i < kVndfSamples; ++i) {
+                    const Vec3f wm = SampleGGX_VNDF_Anisotropic(
+                        omegaOutLocal, alpha,
+                        _CounterRandomFloat(i, 7100),
+                        _CounterRandomFloat(i, 7101));
+                    const float cosMO = Dot(omegaOutLocal, wm);
+                    if (cosMO <= 0.0f) {
+                        continue;
+                    }
+                    const float g1Out = std::max(
+                        GGX_G1_Anisotropic(alpha, omegaOutLocal), kEpsilon);
+                    const Vec3f omegaInReflected =
+                        2.0f * cosMO * wm - omegaOutLocal;
+                    const float fresnel = MaterialXDielectricFresnel(
+                        cosMO, etaRelative);
+                    if (omegaInReflected[2] > 0.0f) {
+                        vndfReflected += double(
+                            fresnel *
+                            GGX_G_Anisotropic(
+                                alpha, omegaOutLocal, omegaInReflected) /
+                            g1Out);
+                    }
+                    const float sin2T = (1.0f / (etaRelative * etaRelative)) *
+                        std::max(0.0f, 1.0f - cosMO * cosMO);
+                    if (sin2T < 1.0f) {
+                        const float cosT =
+                            std::sqrt(std::max(0.0f, 1.0f - sin2T));
+                        const Vec3f omegaInRefracted =
+                            (-1.0f / etaRelative) * omegaOutLocal +
+                            (cosMO / etaRelative - cosT) * wm;
+                        if (omegaInRefracted[2] < 0.0f) {
+                            // Smith G2 for the transmitted pair uses the
+                            // transmitted direction's own slope, which is what
+                            // the evaluator's mirrored argument evaluates to.
+                            vndfTransmitted += double(
+                                (1.0f - fresnel) *
+                                GGX_G_Anisotropic(
+                                    alpha, omegaOutLocal, omegaInRefracted) /
+                                g1Out);
+                        }
+                    }
+                }
+                vndfReflected /= double(kVndfSamples);
+                vndfTransmitted /= double(kVndfSamples);
+
+                // BSDL's own lobe, the one the table was actually baked
+                // against, driven by its own sampler. If its albedo is
+                // 1 - missingEnergy while ours is not, the table is right and
+                // the lobe we pair it with is the wrong one.
+                const float tableIndex = std::sqrt(
+                    (effectiveIor - kBsdlDielectricIorMin) /
+                    (kBsdlDielectricIorMax - kBsdlDielectricIorMin));
+                bsdl::mtx::DielectricBSDF<bsdl::mtx::DielectricFresnel> bsdlSpec(
+                    bsdl::GGXDist(perceptualRoughness, 0.0f),
+                    bsdl::mtx::DielectricFresnel::from_table_index(
+                        tableIndex, backside),
+                    cosTheta, perceptualRoughness, true);
+                const Imath::V3f bsdlOut(
+                    std::sqrt(std::max(0.0f, 1.0f - cosTheta * cosTheta)),
+                    0.0f, cosTheta);
+                double bsdlReflected = 0.0;
+                double bsdlTransmitted = 0.0;
+                constexpr int kBsdlSamples = 1 << 18;
+                for (int i = 0; i < kBsdlSamples; ++i) {
+                    const bsdl::Sample s = bsdlSpec.sample(
+                        bsdlOut,
+                        _CounterRandomFloat(i, 7200),
+                        _CounterRandomFloat(i, 7201),
+                        _CounterRandomFloat(i, 7202));
+                    if (s.pdf > 0.0f) {
+                        if (s.wi.z > 0.0f) {
+                            bsdlReflected += double(s.weight.max());
+                        } else {
+                            bsdlTransmitted += double(s.weight.max());
+                        }
+                    }
+                }
+                bsdlReflected /= double(kBsdlSamples);
+                bsdlTransmitted /= double(kBsdlSamples);
+                const double bsdlAlbedo = bsdlReflected + bsdlTransmitted;
+
+                // BSDL's other dielectric table. It bakes the same eval under
+                // an unbiased proposal instead of the reflection-optimized
+                // sampler, so it is the referee between the two transmission
+                // numbers above.
+                const float unbiasedTransmission =
+                    LookupBsdlDielectricTransmissionSingleScatterAlbedo(
+                        cosTheta, perceptualRoughness, effectiveIor, backside);
+
+                const CoupledDielectricCompensation compensation =
+                    GetCoupledDielectricCompensation(
+                        data, effectiveIor, backside, normalWldOut,
+                        omegaOutWld);
+                const double single = reflected + transmitted;
+                const double total =
+                    single + double(compensation.missingEnergy);
+                printf("      %-5s %5.2f  %4.2f  %8.5f  %8.5f  %9.5f  "
+                       "%8.5f  %10.5f  %+8.5f   | 1-E=%.5f  bsdl R=%.5f "
+                       "T=%.5f sum=%.5f  sum/(1-E)=%.4f  ourT/bsdlT=%.3f  "
+                       "unbiasedT=%.5f  ourT/unbiasedT=%.3f\n",
+                       frontFacing ? "front" : "back", perceptualRoughness,
+                       cosTheta, reflected, transmitted, single,
+                       compensation.missingEnergy, total, total - 1.0,
+                       1.0 - double(compensation.missingEnergy),
+                       bsdlReflected, bsdlTransmitted, bsdlAlbedo,
+                       bsdlAlbedo /
+                           std::max(
+                               1.0 - double(compensation.missingEnergy),
+                               1.0e-9),
+                       transmitted / std::max(bsdlTransmitted, 1.0e-9),
+                       unbiasedTransmission,
+                       transmitted /
+                           std::max(double(unbiasedTransmission), 1.0e-9));
+                (void)vndfReflected;
+                (void)vndfTransmitted;
+                (void)interaction;
+            }
         }
     }
     return true;
@@ -6240,6 +6463,7 @@ Test_RegisterBsdfTests()
     _REG(TestDielectricInterfaceLayerDoesNotDoubleAttenuateTransmission);
     _REG(TestOpenPbrInterfaceAddsBsdlDiffuseDielectricCompensation);
     _REG(TestBsdlDielectricTransmissionRuntimeLutMatchesGeneratedTables);
+    _REG(TestCoupledRoughDielectricCompensationBudget);
     _REG(TestCoupledRoughDielectricDirectionalTransmissionAlbedo);
     _REG(TestStraightShadowDielectricTransmissionPolicy);
     _REG(TestCoupledRoughDielectricTransmissionMatchesFixedWalterReferences);
