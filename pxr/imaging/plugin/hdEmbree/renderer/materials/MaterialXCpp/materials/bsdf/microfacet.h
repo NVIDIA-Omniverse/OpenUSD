@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace mxcpp {
 namespace Bsdf {
@@ -304,63 +305,43 @@ PdfGGX_VNDF(
 
 /// Evaluates the anisotropic GGX normal distribution.
 /// `alpha` components must be finite and positive; `wmLocal` must be a finite
-/// unit local normal. Returns finite non-negative density; grazing or
-/// non-finite intermediate geometry returns zero.
+/// unit local normal. Returns finite non-negative density; non-finite
+/// intermediate geometry returns zero.
 inline float
 GGX_D_Anisotropic(const Vec2f& alpha, const Vec3f& wmLocal)
 {
-    const float tan2Theta = Tan2Theta(wmLocal);
-    if (!std::isfinite(tan2Theta)) {
+    if (wmLocal[2] <= 0.0f) {
         return 0.0f;
     }
 
-    const float cosTheta2 = wmLocal[2] * wmLocal[2];
-    const float cosTheta4 = cosTheta2 * cosTheta2;
-    if (cosTheta4 <= kEpsilon) {
-        return 0.0f;
-    }
-
-    const float sinTheta2 = std::max(0.0f, 1.0f - cosTheta2);
-    float cosPhi2 = 1.0f;
-    float sinPhi2 = 0.0f;
-    if (sinTheta2 > kEpsilon) {
-        cosPhi2 = wmLocal[0] * wmLocal[0] / sinTheta2;
-        sinPhi2 = wmLocal[1] * wmLocal[1] / sinTheta2;
-    }
-
-    const float e = tan2Theta *
-        (cosPhi2 / (alpha[0] * alpha[0]) +
-         sinPhi2 / (alpha[1] * alpha[1]));
-    const float denom = kPi * alpha[0] * alpha[1] * cosTheta4 *
-        (1.0f + e) * (1.0f + e);
+    // This vector form remains finite at grazing angles. The equivalent
+    // tan(theta) form loses valid density when cos(theta)^4 approaches the
+    // renderer's general geometric epsilon.
+    const float scaledX = wmLocal[0] / alpha[0];
+    const float scaledY = wmLocal[1] / alpha[1];
+    const float sum =
+        scaledX * scaledX + scaledY * scaledY + wmLocal[2] * wmLocal[2];
+    const float denom = kPi * alpha[0] * alpha[1] * sum * sum;
     return (std::isfinite(denom) && denom > 0.0f) ? 1.0f / denom : 0.0f;
 }
 
 /// Evaluates anisotropic GGX's Smith lambda term.
 /// `alpha` components must be finite and positive and `wLocal` a finite unit
-/// direction. Returns finite non-negative lambda; an exactly grazing
-/// direction returns zero as the implementation's conservative fallback.
+/// direction. Returns non-negative lambda; an exactly grazing direction
+/// returns infinity.
 inline float
 GGX_Lambda_Anisotropic(const Vec2f& alpha, const Vec3f& wLocal)
 {
-    const float tan2Theta = Tan2Theta(wLocal);
-    if (!std::isfinite(tan2Theta)) {
-        return 0.0f;
+    const float absCosTheta = std::abs(wLocal[2]);
+    if (absCosTheta == 0.0f) {
+        return std::numeric_limits<float>::infinity();
     }
-
-    const float sinTheta2 =
-        std::max(0.0f, 1.0f - wLocal[2] * wLocal[2]);
-    float cosPhi2 = 1.0f;
-    float sinPhi2 = 0.0f;
-    if (sinTheta2 > kEpsilon) {
-        cosPhi2 = wLocal[0] * wLocal[0] / sinTheta2;
-        sinPhi2 = wLocal[1] * wLocal[1] / sinTheta2;
-    }
-
-    const float alpha2 =
-        cosPhi2 * alpha[0] * alpha[0] +
-        sinPhi2 * alpha[1] * alpha[1];
-    return (std::sqrt(1.0f + alpha2 * tan2Theta) - 1.0f) * 0.5f;
+    const float stretchedLength = std::sqrt(
+        alpha[0] * alpha[0] * wLocal[0] * wLocal[0] +
+        alpha[1] * alpha[1] * wLocal[1] * wLocal[1] +
+        wLocal[2] * wLocal[2]);
+    return std::max(
+        0.0f, (stretchedLength / absCosTheta - 1.0f) * 0.5f);
 }
 
 /// Evaluates anisotropic Smith G1 for finite positive `alpha` and a finite
@@ -424,6 +405,110 @@ SampleGGX_VNDF_Anisotropic(
         alpha[0] * nh[0], alpha[1] * nh[1], std::max(1.0e-6f, nh[2]));
     wm.normalize();
     return wm;
+}
+
+/// Samples the bounded anisotropic GGX visible-normal distribution optimized
+/// for reflection (Eto and Tokuyoshi, listings 1 and 2). `omegaOutLocal` must
+/// be a finite unit positive-hemisphere direction; `alpha` must be finite and
+/// positive; `u1`/`u2` must be finite in [0,1). Returns a finite unit normal.
+inline Vec3f
+SampleGGXBoundedVNDF_Anisotropic(
+    const Vec3f& omegaOutLocal, const Vec2f& alpha, float u1, float u2)
+{
+    Vec3f omegaOutStandard(
+        omegaOutLocal[0] * alpha[0],
+        omegaOutLocal[1] * alpha[1],
+        omegaOutLocal[2]);
+    omegaOutStandard.normalize();
+
+    const float phi = 2.0f * kPi * u1;
+    const float minAlpha = std::clamp(
+        std::min(alpha[0], alpha[1]), 0.0f, 1.0f);
+    const float s = 1.0f + std::sqrt(
+        omegaOutLocal[0] * omegaOutLocal[0] +
+        omegaOutLocal[1] * omegaOutLocal[1]);
+    const float alphaSquared = minAlpha * minAlpha;
+    const float sSquared = s * s;
+    const float k = (1.0f - alphaSquared) * sSquared /
+        (sSquared + alphaSquared *
+            omegaOutLocal[2] * omegaOutLocal[2]);
+    const float b = k * omegaOutStandard[2];
+    const float z = (1.0f - u2) * (1.0f + b) - b;
+    const float sinTheta = std::sqrt(std::clamp(
+        1.0f - z * z, 0.0f, 1.0f));
+    const Vec3f omegaInStandard(
+        sinTheta * std::cos(phi), sinTheta * std::sin(phi), z);
+    const Vec3f wmStandard = omegaOutStandard + omegaInStandard;
+    Vec3f wmLocal(
+        wmStandard[0] * alpha[0],
+        wmStandard[1] * alpha[1],
+        wmStandard[2]);
+    wmLocal.normalize();
+    return wmLocal;
+}
+
+/// Returns the bounded-reflection VNDF density divided by the GGX NDF at
+/// `wmLocal`. Inputs satisfy `SampleGGXBoundedVNDF_Anisotropic`. Returns a
+/// finite non-negative ratio; cannot fail.
+inline float
+GGXBoundedVNDF_DRatio_Anisotropic(
+    const Vec3f& omegaOutLocal, const Vec3f& wmLocal, const Vec2f& alpha)
+{
+    const Vec2f stretchedOut(
+        omegaOutLocal[0] * alpha[0],
+        omegaOutLocal[1] * alpha[1]);
+    const float stretchedLength = std::sqrt(
+        Dot(stretchedOut, stretchedOut) +
+        omegaOutLocal[2] * omegaOutLocal[2]);
+    const float minAlpha = std::clamp(
+        std::min(alpha[0], alpha[1]), 0.0f, 1.0f);
+    const float s = 1.0f + std::sqrt(
+        omegaOutLocal[0] * omegaOutLocal[0] +
+        omegaOutLocal[1] * omegaOutLocal[1]);
+    const float alphaSquared = minAlpha * minAlpha;
+    const float sSquared = s * s;
+    const float k = (1.0f - alphaSquared) * sSquared /
+        (sSquared + alphaSquared *
+            omegaOutLocal[2] * omegaOutLocal[2]);
+    const float denom = k * omegaOutLocal[2] + stretchedLength;
+    if (denom <= kEpsilon || wmLocal[2] <= 0.0f) {
+        return 0.0f;
+    }
+    return 2.0f * omegaOutLocal[2] / denom;
+}
+
+/// Returns whether `wmLocal` lies in the spherical-cap support sampled by
+/// `SampleGGXBoundedVNDF_Anisotropic`. Inputs satisfy that function's
+/// direction and alpha invariants. Cannot fail.
+inline bool
+GGXBoundedVNDFContainsNormal_Anisotropic(
+    const Vec3f& omegaOutLocal, const Vec3f& wmLocal, const Vec2f& alpha)
+{
+    Vec3f omegaOutStandard(
+        omegaOutLocal[0] * alpha[0],
+        omegaOutLocal[1] * alpha[1],
+        omegaOutLocal[2]);
+    omegaOutStandard.normalize();
+    Vec3f wmStandard(
+        wmLocal[0] / alpha[0],
+        wmLocal[1] / alpha[1],
+        wmLocal[2]);
+    wmStandard.normalize();
+    const Vec3f omegaInStandard =
+        2.0f * Dot(omegaOutStandard, wmStandard) * wmStandard -
+        omegaOutStandard;
+
+    const float minAlpha = std::clamp(
+        std::min(alpha[0], alpha[1]), 0.0f, 1.0f);
+    const float s = 1.0f + std::sqrt(
+        omegaOutLocal[0] * omegaOutLocal[0] +
+        omegaOutLocal[1] * omegaOutLocal[1]);
+    const float alphaSquared = minAlpha * minAlpha;
+    const float sSquared = s * s;
+    const float k = (1.0f - alphaSquared) * sSquared /
+        (sSquared + alphaSquared *
+            omegaOutLocal[2] * omegaOutLocal[2]);
+    return omegaInStandard[2] >= -k * omegaOutStandard[2];
 }
 
 /// Evaluates the anisotropic visible-normal solid-angle density.

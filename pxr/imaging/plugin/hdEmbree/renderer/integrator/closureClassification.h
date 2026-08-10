@@ -18,6 +18,9 @@ struct SurfaceClosure;
 PXR_NAMESPACE_OPEN_SCOPE
 namespace ty {
 
+struct InstanceContext;
+struct PrototypeContext;
+
 /// Return whether an evaluated closure permits reflection transport only.
 ///
 /// The closure must be fully evaluated. Malformed or unclassified BSDF trees
@@ -26,6 +29,25 @@ bool IsReflectionOnlyClosure(mxcpp::SurfaceClosure const& closure);
 
 /// Return whether a closure is a transparent, scattering-free volume boundary.
 bool IsVolumeOnlyBoundary(mxcpp::SurfaceClosure const& closure);
+
+/// Return whether a direct-light shadow ray may use approximate straight
+/// traversal through thick transmissive blockers.
+/// `closure` is the evaluated NEE origin, or null for a medium or synthetic
+/// diffuse origin. Coupled thick dielectric origins always return false;
+/// other origins follow `settingEnabled`.
+bool AllowApproximateTransparentShadowsForNeeOrigin(
+    mxcpp::SurfaceClosure const* closure, bool settingEnabled);
+
+/// Return whether a thick transmissive hit may use approximate straight
+/// traversal for the current NEE segment. A coupled origin is identified by
+/// both stable instance and prototype pointers; only that same object is
+/// conservative. Null origin pointers impose no per-object exception.
+bool AllowApproximateTransparentShadowAtHit(
+    bool settingEnabled,
+    InstanceContext const* conservativeOriginInstance,
+    PrototypeContext const* conservativeOriginPrototype,
+    InstanceContext const* hitInstance,
+    PrototypeContext const* hitPrototype);
 
 } // namespace ty
 PXR_NAMESPACE_CLOSE_SCOPE

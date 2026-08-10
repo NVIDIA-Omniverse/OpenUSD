@@ -4,9 +4,12 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
+#include <renderer/geometry/context.h>
 #include <renderer/integrator/closureClassification.h>
 #include <renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf.h>
+#include <renderer/materials/MaterialXCpp/materials/openPbr.h>
+#include <renderer/materials/MaterialXCpp/materials/usdPreviewSurface.h>
 
 #include <cstdio>
 #include <functional>
@@ -58,6 +61,17 @@ _ClassifyTree(Bsdf::ClosureTree const& tree)
     SurfaceClosure closure;
     closure.bsdfTree = tree;
     return PXR_INTERNAL_NS::ty::IsReflectionOnlyClosure(closure);
+}
+
+static bool
+_AllowApproximateTransparentShadows(
+    Bsdf::ClosureTree const& tree, bool settingEnabled = true)
+{
+    SurfaceClosure closure;
+    closure.bsdfTree = tree;
+    return PXR_INTERNAL_NS::ty::
+        AllowApproximateTransparentShadowsForNeeOrigin(
+            &closure, settingEnabled);
 }
 
 static Bsdf::NodeId
@@ -401,6 +415,239 @@ VolumeBoundaryPolicy()
     return passed;
 }
 
+static bool
+CoupledThickDielectricPolicy()
+{
+    Bsdf::DielectricInterfaceData coupledThick;
+    coupledThick.compensateCoupledDielectric = true;
+
+    Bsdf::ClosureTree tree;
+    const Bsdf::NodeId coupledId = tree.Add(coupledThick);
+    tree.root = coupledId;
+    bool passed = _Check(
+        !_AllowApproximateTransparentShadows(tree),
+        "coupled thick origin disables approximate visibility");
+    passed &= _Check(
+        !_AllowApproximateTransparentShadows(tree, false),
+        "disabled setting remains conservative at a coupled origin");
+
+    std::get<Bsdf::DielectricInterfaceData>(tree.nodes[coupledId].data)
+        .thinWalled = true;
+    passed &= _Check(
+        _AllowApproximateTransparentShadows(tree),
+        "thin-walled coupled origin keeps approximate visibility");
+
+    std::get<Bsdf::DielectricInterfaceData>(tree.nodes[coupledId].data)
+        .thinWalled = false;
+    std::get<Bsdf::DielectricInterfaceData>(tree.nodes[coupledId].data)
+        .compensateCoupledDielectric = false;
+    passed &= _Check(
+        _AllowApproximateTransparentShadows(tree),
+        "uncoupled thick origin keeps approximate visibility");
+
+    Bsdf::DielectricInterfaceData& coupledLeaf =
+        std::get<Bsdf::DielectricInterfaceData>(
+            tree.nodes[coupledId].data);
+    coupledLeaf.compensateCoupledDielectric = true;
+    coupledLeaf.reflectionWeight = 0.0f;
+    passed &= _Check(
+        _AllowApproximateTransparentShadows(tree),
+        "reflection-disabled interface is not coupled");
+    coupledLeaf.reflectionWeight = 1.0f;
+    coupledLeaf.transmissionWeight = 0.0f;
+    passed &= _Check(
+        _AllowApproximateTransparentShadows(tree),
+        "transmission-disabled interface is not coupled");
+
+    tree = Bsdf::ClosureTree{};
+    coupledThick.compensateCoupledDielectric = true;
+    const Bsdf::NodeId diffuseId = tree.Add(Bsdf::OrenNayarDiffuseData{});
+    const Bsdf::NodeId nestedCoupledId = tree.Add(coupledThick);
+    Bsdf::MixData mix;
+    mix.fg = nestedCoupledId;
+    mix.bg = diffuseId;
+    mix.mix = 0.0f;
+    tree.root = tree.Add(mix);
+    passed &= _Check(
+        _AllowApproximateTransparentShadows(tree),
+        "diffuse origin ignores an inactive coupled branch");
+
+    std::get<Bsdf::MixData>(tree.nodes[tree.root].data).mix =
+        0.5f * _reflectionOnlyEps;
+    passed &= _Check(
+        !_AllowApproximateTransparentShadows(tree),
+        "any positive coupled mix selects conservative visibility");
+
+    std::get<Bsdf::MixData>(tree.nodes[tree.root].data).mix = 0.5f;
+    passed &= _Check(
+        !_AllowApproximateTransparentShadows(tree),
+        "active coupled origin branch selects conservative visibility");
+
+    Bsdf::AddData add;
+    add.in1 = diffuseId;
+    add.in2 = nestedCoupledId;
+    tree.root = tree.Add(add);
+    passed &= _Check(
+        !_AllowApproximateTransparentShadows(tree),
+        "add containing coupled glass selects conservative visibility");
+
+    Bsdf::MultiplyData multiply;
+    multiply.input = nestedCoupledId;
+    multiply.weight = Vec3f(0.0f);
+    tree.root = tree.Add(multiply);
+    passed &= _Check(
+        _AllowApproximateTransparentShadows(tree),
+        "zero-weight coupled branch keeps diffuse-origin visibility");
+
+    multiply.weight = Vec3f(0.5f * _reflectionOnlyEps, 0.0f, 0.0f);
+    tree.nodes[tree.root].data = multiply;
+    passed &= _Check(
+        !_AllowApproximateTransparentShadows(tree),
+        "any positive coupled branch selects conservative visibility");
+
+    ParamMap openPbrParams;
+    openPbrParams["transmission_weight"] = Value(1.0f);
+    openPbrParams["geometry_thin_walled"] = Value(false);
+    const SurfaceClosure openPbrClosure = EvalOpenPbr(openPbrParams);
+    passed &= _Check(
+        !PXR_INTERNAL_NS::ty::
+            AllowApproximateTransparentShadowsForNeeOrigin(
+                &openPbrClosure, true),
+        "layered native OpenPBR glass selects conservative visibility");
+
+    ParamMap previewParams;
+    previewParams["opacity"] = Value(0.0f);
+    previewParams["opacityThreshold"] = Value(0.0f);
+    const SurfaceClosure previewClosure =
+        EvalUsdPreviewSurface(previewParams);
+    passed &= _Check(
+        !PXR_INTERNAL_NS::ty::
+            AllowApproximateTransparentShadowsForNeeOrigin(
+                &previewClosure, true),
+        "layered UsdPreview glass selects conservative visibility");
+
+    const SurfaceClosure adobeClosure = EvalAdobeOpenPbr(openPbrParams);
+    passed &= _Check(
+        !PXR_INTERNAL_NS::ty::
+            AllowApproximateTransparentShadowsForNeeOrigin(
+                &adobeClosure, true),
+        "Adobe OpenPBR glass selects conservative visibility");
+
+    Bsdf::AdobeOpenPbrData adobeData;
+    adobeData.transmissionWeight = 1.0f;
+    tree = Bsdf::ClosureTree{};
+    const Bsdf::NodeId adobeId = tree.Add(adobeData);
+    tree.root = adobeId;
+    passed &= _Check(
+        !_AllowApproximateTransparentShadows(tree),
+        "direct Adobe coupled thick leaf selects conservative visibility");
+
+    std::get<Bsdf::AdobeOpenPbrData>(tree.nodes[adobeId].data)
+        .baseMetalness = 1.0f;
+    passed &= _Check(
+        _AllowApproximateTransparentShadows(tree),
+        "fully metallic Adobe leaf has no active dielectric origin");
+
+    std::get<Bsdf::AdobeOpenPbrData>(tree.nodes[adobeId].data)
+        .baseMetalness = 0.0f;
+    std::get<Bsdf::AdobeOpenPbrData>(tree.nodes[adobeId].data)
+        .geometryThinWalled = true;
+    passed &= _Check(
+        _AllowApproximateTransparentShadows(tree),
+        "direct thin-walled Adobe leaf keeps approximate visibility");
+
+    Bsdf::AdobeOpenPbrData& adobeLeaf =
+        std::get<Bsdf::AdobeOpenPbrData>(tree.nodes[adobeId].data);
+    adobeLeaf.geometryThinWalled = false;
+    adobeLeaf.specularWeight = 0.0f;
+    passed &= _Check(
+        _AllowApproximateTransparentShadows(tree),
+        "specular-disabled Adobe leaf is not coupled");
+    adobeLeaf.specularWeight = 1.0f;
+    adobeLeaf.transmissionWeight = 0.0f;
+    passed &= _Check(
+        _AllowApproximateTransparentShadows(tree),
+        "transmission-disabled Adobe leaf is not coupled");
+
+    openPbrParams["base_metalness"] = Value(1.0f);
+    const SurfaceClosure nativeMetalClosure = EvalOpenPbr(openPbrParams);
+    const SurfaceClosure adobeMetalClosure =
+        EvalAdobeOpenPbr(openPbrParams);
+    passed &= _Check(
+        PXR_INTERNAL_NS::ty::
+            AllowApproximateTransparentShadowsForNeeOrigin(
+                &nativeMetalClosure, true),
+        "fully metallic native OpenPBR has no active dielectric origin");
+    passed &= _Check(
+        PXR_INTERNAL_NS::ty::
+            AllowApproximateTransparentShadowsForNeeOrigin(
+                &adobeMetalClosure, true),
+        "fully metallic Adobe OpenPBR matches native origin policy");
+
+    openPbrParams["base_metalness"] = Value(0.0f);
+    openPbrParams["geometry_thin_walled"] = Value(true);
+    const SurfaceClosure adobeThinClosure =
+        EvalAdobeOpenPbr(openPbrParams);
+    passed &= _Check(
+        PXR_INTERNAL_NS::ty::
+            AllowApproximateTransparentShadowsForNeeOrigin(
+                &adobeThinClosure, true),
+        "thin-walled Adobe OpenPBR keeps approximate visibility");
+
+    SurfaceClosure diffuseClosure;
+    diffuseClosure.bsdfTree.root = diffuseClosure.bsdfTree.Add(
+        Bsdf::OrenNayarDiffuseData{});
+    passed &= _Check(
+        PXR_INTERNAL_NS::ty::
+            AllowApproximateTransparentShadowsForNeeOrigin(
+                &diffuseClosure, true),
+        "diffuse origin allows approximation through later glass blockers");
+    passed &= _Check(
+        PXR_INTERNAL_NS::ty::
+            AllowApproximateTransparentShadowsForNeeOrigin(nullptr, true),
+        "medium origin allows approximation through later glass blockers");
+    passed &= _Check(
+        !PXR_INTERNAL_NS::ty::
+            AllowApproximateTransparentShadowsForNeeOrigin(
+                &diffuseClosure, false),
+        "disabled setting remains conservative at a diffuse origin");
+    return passed;
+}
+
+static bool
+TransparentShadowHitPolicy()
+{
+    PXR_INTERNAL_NS::ty::InstanceContext originInstance;
+    PXR_INTERNAL_NS::ty::InstanceContext otherInstance;
+    PXR_INTERNAL_NS::ty::PrototypeContext originPrototype;
+    PXR_INTERNAL_NS::ty::PrototypeContext otherPrototype;
+
+    bool passed = _Check(
+        !PXR_INTERNAL_NS::ty::AllowApproximateTransparentShadowAtHit(
+            false, nullptr, nullptr, &otherInstance, &otherPrototype),
+        "disabled setting stays conservative for every hit");
+    passed &= _Check(
+        PXR_INTERNAL_NS::ty::AllowApproximateTransparentShadowAtHit(
+            true, nullptr, nullptr, &otherInstance, &otherPrototype),
+        "origin without coupled glass allows approximate blockers");
+    passed &= _Check(
+        !PXR_INTERNAL_NS::ty::AllowApproximateTransparentShadowAtHit(
+            true, &originInstance, &originPrototype,
+            &originInstance, &originPrototype),
+        "same coupled origin object is conservative");
+    passed &= _Check(
+        PXR_INTERNAL_NS::ty::AllowApproximateTransparentShadowAtHit(
+            true, &originInstance, &originPrototype,
+            &otherInstance, &originPrototype),
+        "another instance of the origin prototype stays approximate");
+    passed &= _Check(
+        PXR_INTERNAL_NS::ty::AllowApproximateTransparentShadowAtHit(
+            true, &originInstance, &originPrototype,
+            &originInstance, &otherPrototype),
+        "another prototype stays approximate");
+    return passed;
+}
+
 }  // namespace
 
 void
@@ -412,4 +659,6 @@ Test_RegisterClosureClassificationTests()
     _REG(NestedComposite);
     _REG(ClosurePolicy);
     _REG(VolumeBoundaryPolicy);
+    _REG(CoupledThickDielectricPolicy);
+    _REG(TransparentShadowHitPolicy);
 }

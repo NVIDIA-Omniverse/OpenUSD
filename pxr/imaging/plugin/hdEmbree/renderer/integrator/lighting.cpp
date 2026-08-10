@@ -153,6 +153,13 @@ ty::Renderer::_ComputeDirectLightingMIS(
         (closure && ty::IsReflectionOnlyClosure(*closure))
             ? ty::LightSampler::SamplingMode::ReflectionHemisphere
             : ty::LightSampler::SamplingMode::FullSphere;
+    const bool conservativeOwnObject =
+        _settings.approxTransparentShadows &&
+        !ty::AllowApproximateTransparentShadowsForNeeOrigin(closure, true);
+    ty::InstanceContext const* const conservativeOriginInstance =
+        conservativeOwnObject ? interaction.instanceContext : nullptr;
+    ty::PrototypeContext const* const conservativeOriginPrototype =
+        conservativeOwnObject ? interaction.prototypeContext : nullptr;
 
     // For stratification: compute grid dimensions for lightSampleCount samples.
     // Find the largest sqrtN such that sqrtN*sqrtN <= lightSampleCount, then
@@ -242,7 +249,8 @@ ty::Renderer::_ComputeDirectLightingMIS(
                     shadowOffsetWeight;
             GfVec3f visibility = _Visibility(
                 posVisibilityWld, normalGeomWldExt, ls.omegaInWld,
-                ls.distanceWld * 0.99f, light.shadowLink, mediumState);
+                ls.distanceWld * 0.99f, light.shadowLink, mediumState,
+                conservativeOriginInstance, conservativeOriginPrototype);
             if (ty::IsNearlyBlack(visibility)) {
                 continue;
             }
@@ -448,7 +456,8 @@ ty::Renderer::_ComputeMediumDirectLighting(
             // ray-offset reference so the origin advances toward the light.
             const GfVec3f visibility = _Visibility(
                 posWld, ls.omegaInWld, ls.omegaInWld,
-                ls.distanceWld * 0.99f, light.shadowLink, mediumState);
+                ls.distanceWld * 0.99f, light.shadowLink, mediumState,
+                nullptr, nullptr);
             if (ty::IsNearlyBlack(visibility)) {
                 continue;
             }

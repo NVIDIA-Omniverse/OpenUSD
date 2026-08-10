@@ -11,6 +11,7 @@
 #include <renderer/materials/MaterialXCpp/materials/adobeOpenPbr.h>
 #include <renderer/materials/MaterialXCpp/materials/bsdf.h>
 
+#include <type_traits>
 #include <variant>
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -129,6 +130,63 @@ _IsReflectionOnlyNode(
     return false;
 }
 
+static bool
+_HasCoupledThickDielectricNode(
+    mxcpp::Bsdf::ClosureTree const& tree,
+    mxcpp::Bsdf::NodeId nodeId)
+{
+    const mxcpp::Bsdf::Node* const node = tree.Get(nodeId);
+    if (!node) {
+        return false;
+    }
+
+    // Any active coupled thick interface makes the NEE origin conservative:
+    // a straight shadow ray through that same object cannot represent the
+    // refracted path evaluated by the BSDF strategy.
+    return std::visit(
+        [&](const auto& data) -> bool {
+            using T = std::decay_t<decltype(data)>;
+            if constexpr (std::is_same_v<T, mxcpp::Bsdf::AdobeOpenPbrData>) {
+                return !data.geometryThinWalled &&
+                       data.specularWeight > 0.0f &&
+                       data.transmissionWeight > 0.0f &&
+                       data.baseMetalness < 1.0f;
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::DielectricInterfaceData>) {
+                return data.compensateCoupledDielectric &&
+                       !data.thinWalled &&
+                       data.reflectionWeight > 0.0f &&
+                       data.transmissionWeight > 0.0f;
+            } else if constexpr (std::is_same_v<T, mxcpp::Bsdf::MixData>) {
+                if (data.mix <= 0.0f) {
+                    return _HasCoupledThickDielectricNode(tree, data.bg);
+                }
+                if (data.mix >= 1.0f) {
+                    return _HasCoupledThickDielectricNode(tree, data.fg);
+                }
+                return _HasCoupledThickDielectricNode(tree, data.fg) ||
+                       _HasCoupledThickDielectricNode(tree, data.bg);
+            } else if constexpr (std::is_same_v<T, mxcpp::Bsdf::LayerData>) {
+                return _HasCoupledThickDielectricNode(tree, data.top) ||
+                       _HasCoupledThickDielectricNode(tree, data.base);
+            } else if constexpr (std::is_same_v<T, mxcpp::Bsdf::AddData>) {
+                return _HasCoupledThickDielectricNode(tree, data.in1) ||
+                       _HasCoupledThickDielectricNode(tree, data.in2);
+            } else if constexpr (
+                std::is_same_v<T, mxcpp::Bsdf::MultiplyData>) {
+                const bool active =
+                    data.weight[0] > 0.0f ||
+                    data.weight[1] > 0.0f ||
+                    data.weight[2] > 0.0f;
+                return active &&
+                       _HasCoupledThickDielectricNode(tree, data.input);
+            } else {
+                return false;
+            }
+        },
+        node->data);
+}
+
 
 bool
 ty::IsReflectionOnlyClosure(mxcpp::SurfaceClosure const& closure)
@@ -153,6 +211,32 @@ ty::IsVolumeOnlyBoundary(mxcpp::SurfaceClosure const& closure)
     return closure.isVolumeBoundary &&
            !closure.HasBsdfTree() &&
            _IsEffectivelyZero(closure.opacity);
+}
+
+bool
+ty::AllowApproximateTransparentShadowsForNeeOrigin(
+    mxcpp::SurfaceClosure const* closure, bool settingEnabled)
+{
+    if (!settingEnabled || !closure || !closure->HasBsdfTree()) {
+        return settingEnabled;
+    }
+    return !_HasCoupledThickDielectricNode(
+        closure->bsdfTree, closure->bsdfTree.root);
+}
+
+bool
+ty::AllowApproximateTransparentShadowAtHit(
+    bool settingEnabled,
+    ty::InstanceContext const* conservativeOriginInstance,
+    ty::PrototypeContext const* conservativeOriginPrototype,
+    ty::InstanceContext const* hitInstance,
+    ty::PrototypeContext const* hitPrototype)
+{
+    const bool hitsConservativeOrigin =
+        conservativeOriginInstance && conservativeOriginPrototype &&
+        hitInstance == conservativeOriginInstance &&
+        hitPrototype == conservativeOriginPrototype;
+    return settingEnabled && !hitsConservativeOrigin;
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

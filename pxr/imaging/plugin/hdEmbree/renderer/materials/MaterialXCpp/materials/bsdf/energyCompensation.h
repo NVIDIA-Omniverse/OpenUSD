@@ -57,22 +57,13 @@ float LookupBsdlDielectricReflFrontFilter(
 float LookupBsdlDielectricTransmissionSingleScatterAlbedo(
     float cosTheta, float perceptualRoughness, float ior, bool backfacing);
 
-/// Energy split for the cosine multiple-scattering lobe of a coupled
-/// reflection/transmission interface.
-struct CoupledDielectricCompensation
-{
-    /// Fraction of directional single-scatter energy missing, in [0,1].
-    float missingEnergy = 0.0f;
-    /// Fraction of compensation energy assigned to reflection, in [0,1].
-    float reflectionRatio = 0.0f;
-};
-
-/// Computes BSDL's coupled-dielectric missing energy and reflection split.
+/// Computes BSDL's coupled-dielectric missing energy.
 /// `cosThetaO` and `perceptualRoughness` must be finite and are clamped to
 /// [0,1]. `ior` must be finite and positive and is clamped to the LUT domain.
-/// `backfacing` selects transport from inside the dielectric. Returns zero
-/// compensation when the LUT predicts no missing energy; cannot fail.
-CoupledDielectricCompensation BsdlCoupledDielectricCompensation(
+/// `backfacing` selects transport from inside the dielectric. Returns the
+/// finite missing-energy fraction in [0,1], or zero when compensation is
+/// disabled or below its roughness threshold. Cannot fail.
+float BsdlCoupledDielectricCompensation(
     float cosThetaO, float perceptualRoughness, float ior, bool backfacing);
 
 /// Returns the Turquin GGX multiple-scattering scale for one outgoing

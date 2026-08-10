@@ -12,8 +12,6 @@
 #    include <BSDL/MTX/bsdf_dielectric_bothback_luts.h>
 #    include <BSDL/MTX/bsdf_dielectric_bothfront_luts.h>
 #    include <BSDL/MTX/bsdf_dielectric_reflfront_luts.h>
-#    include <BSDL/MTX/bsdf_dielectric_transback_luts.h>
-#    include <BSDL/MTX/bsdf_dielectric_transfront_luts.h>
 #endif
 
 BSDL_ENTER_NAMESPACE
@@ -79,34 +77,6 @@ DielectricBSDF<Fresnel>::DielectricBSDF(const GGXDist& dist,
     }
 }
 
-template<typename Fresnel>
-BSDL_INLINE_METHOD float
-DielectricBSDF<Fresnel>::transmission_vndf_pdf(
-    Imath::V3f wo, Imath::V3f wi) const
-{
-    if (wo.z <= 0.0f || wi.z >= 0.0f)
-        return 0.0f;
-
-    const float eta = f.refraction_eta();
-    Imath::V3f Ht = eta * wi + wo;
-    if (Ht.length() <= FLOAT_MIN)
-        return 0.0f;
-    Ht.normalize();
-    Ht *= eta > 1.0f ? -1.0f : 1.0f;
-
-    const float cosHO = Ht.dot(wo);
-    const float cosHI = Ht.dot(wi);
-    const float denom = cosHI * eta + cosHO;
-    if (Ht.z <= 0.0f || cosHO <= 0.0f || cosHI >= 0.0f ||
-        std::abs(denom) <= FLOAT_MIN) {
-        return 0.0f;
-    }
-
-    const float jacobian =
-        (-cosHI * cosHO * SQR(eta)) / (wo.z * SQR(denom));
-    return jacobian * d.G1(wo) * d.D(Ht);
-}
-
 BSDL_INLINE_METHOD
 DielectricReflFront::DielectricReflFront(float cosNO, float roughness_index,
                                          float fresnel_index)
@@ -135,110 +105,6 @@ DielectricBothBack::DielectricBothBack(float cosNO, float roughness_index,
         DielectricFresnel::from_table_index(fresnel_index, true), cosNO,
         roughness_index, true)
 {
-}
-
-BSDL_INLINE_METHOD
-DielectricTransFront::DielectricTransFront(
-    float cosNO, float roughness_index, float fresnel_index)
-    : DielectricBSDF<DielectricFresnel>(
-        GGXDist(roughness_index, 0),
-        DielectricFresnel::from_table_index(fresnel_index, false), cosNO,
-        roughness_index, true)
-{
-}
-
-BSDL_INLINE_METHOD Sample
-DielectricTransFront::sample(
-    Imath::V3f wo, float randu, float randv, float /*randw*/) const
-{
-    const float z = randu;
-    const float r = sqrtf(std::max(0.0f, 1.0f - z * z));
-    const float phi = 2.0f * PI * randv;
-    const Imath::V3f wi = {r * cosf(phi), r * sinf(phi), -z};
-    Sample s = DielectricBSDF<DielectricFresnel>::eval(wo, wi);
-    // eval().weight * eval().pdf is f * abs(cosThetaI). Dividing by
-    // the uniform-hemisphere PDF integrates directional transmission energy
-    // without inheriting the runtime sampler's reflection-optimized bias.
-    s.weight *= s.pdf * (2.0f * PI);
-    // MIS requires both techniques to evaluate the same visible-normal
-    // transmission proposal density at this direction.
-    s.pdf = transmission_vndf_pdf(wo, wi);
-    return s;
-}
-
-BSDL_INLINE_METHOD Sample
-DielectricTransFront::sample_importance(
-    Imath::V3f wo, float randu, float randv, float /*randw*/) const
-{
-    const Imath::V3f m = d.sample(wo, randu, randv);
-    const float cosMO = wo.dot(m);
-    if (cosMO <= 0.0f)
-        return {};
-
-    const Imath::V3f wi = refract(wo, m, f.refraction_eta());
-    if (wi.z >= 0.0f)
-        return {};
-
-    const float pdf = transmission_vndf_pdf(wo, wi);
-    if (pdf <= 0.0f)
-        return {};
-
-    Sample s = DielectricBSDF<DielectricFresnel>::eval(wo, wi);
-    s.weight *= s.pdf / pdf;
-    s.pdf = pdf;
-    return s;
-}
-
-BSDL_INLINE_METHOD
-DielectricTransBack::DielectricTransBack(
-    float cosNO, float roughness_index, float fresnel_index)
-    : DielectricBSDF<DielectricFresnel>(
-        GGXDist(roughness_index, 0),
-        DielectricFresnel::from_table_index(fresnel_index, true), cosNO,
-        roughness_index, true)
-{
-}
-
-BSDL_INLINE_METHOD Sample
-DielectricTransBack::sample(
-    Imath::V3f wo, float randu, float randv, float /*randw*/) const
-{
-    const float z = randu;
-    const float r = sqrtf(std::max(0.0f, 1.0f - z * z));
-    const float phi = 2.0f * PI * randv;
-    const Imath::V3f wi = {r * cosf(phi), r * sinf(phi), -z};
-    Sample s = DielectricBSDF<DielectricFresnel>::eval(wo, wi);
-    // eval().weight * eval().pdf is f * abs(cosThetaI). Dividing by
-    // the uniform-hemisphere PDF integrates directional transmission energy
-    // without inheriting the runtime sampler's reflection-optimized bias.
-    s.weight *= s.pdf * (2.0f * PI);
-    // MIS requires both techniques to evaluate the same visible-normal
-    // transmission proposal density at this direction.
-    s.pdf = transmission_vndf_pdf(wo, wi);
-    return s;
-}
-
-BSDL_INLINE_METHOD Sample
-DielectricTransBack::sample_importance(
-    Imath::V3f wo, float randu, float randv, float /*randw*/) const
-{
-    const Imath::V3f m = d.sample(wo, randu, randv);
-    const float cosMO = wo.dot(m);
-    if (cosMO <= 0.0f)
-        return {};
-
-    const Imath::V3f wi = refract(wo, m, f.refraction_eta());
-    if (wi.z >= 0.0f)
-        return {};
-
-    const float pdf = transmission_vndf_pdf(wo, wi);
-    if (pdf <= 0.0f)
-        return {};
-
-    Sample s = DielectricBSDF<DielectricFresnel>::eval(wo, wi);
-    s.weight *= s.pdf / pdf;
-    s.pdf = pdf;
-    return s;
 }
 
 template<typename Fresnel>

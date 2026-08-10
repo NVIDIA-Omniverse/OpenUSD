@@ -168,7 +168,7 @@ FindCoupledTransmissionInterfaceForStraightShadow(
 /// finite unit vectors; `backside` selects the inside-to-outside interface
 /// order; `data` optical fields are finite. Returns zero when coupled sampling
 /// is disabled, otherwise bounded compensation. Cannot fail.
-CoupledDielectricCompensation GetCoupledDielectricCompensation(
+float GetCoupledDielectricCompensation(
     const Bsdf::DielectricInterfaceData& data, float effectiveIor,
     bool backside, const Vec3f& normalShdLobeWldOut,
     const Vec3f& omegaOutWld);
@@ -191,6 +191,15 @@ float PdfCoupledRoughDielectric(
     const Bsdf::DielectricInterfaceData& data, float effectiveIor,
     bool backside, const Vec3f& normalShdLobeWldOut,
     const Vec3f& omegaInWld, const Vec3f& omegaOutWld);
+
+/// Returns whether a coupled rough-dielectric direction pair lies within the
+/// bounded reflection-VNDF sampler's support. `data`, normal, and directions
+/// satisfy `PdfCoupledRoughDielectric`. Cannot fail.
+bool CoupledRoughDielectricDirectionInSampleSupport(
+    const Bsdf::DielectricInterfaceData& data,
+    const Vec3f& normalShdLobeWldOut,
+    const Vec3f& omegaInWld,
+    const Vec3f& omegaOutWld);
 
 /// Samples coupled rough dielectric reflection, transmission, or compensation.
 /// Optical/geometric inputs satisfy the coupled evaluator; `u1`, `u2`, and

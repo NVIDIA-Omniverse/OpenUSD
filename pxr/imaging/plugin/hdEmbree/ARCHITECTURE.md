@@ -285,12 +285,14 @@ corresponding type without changing the semantic name.
   `reflectionOnlyInterfaces` -> `dielectric` -> `legacySurface` ->
   `closureTraversal`. Dependencies only point left-to-right; table data lives
   in `bsdf/*Lut.h` and is consumed by `energyCompensation.cpp`.
-  Regenerate the committed LUT headers whenever the analytic endpoint,
-  quadratic roughness mapping, or uniform/visible-normal MIS bake changes.
+  Regenerate the committed LUT headers whenever their analytic endpoint,
+  coordinate mapping, or sampling bake changes.
   `mathPrimitives`, `shadingFrame`, `fresnel`, and `sheen` are header-only.
   Hot distributions, visibility terms, sampling/PDF primitives, and predicates
   in `microfacet`, `diffuse`, `reflectionOnlyInterfaces`, and `dielectric`
   remain inline; their larger lobe evaluators and samplers stay out of line.
+  Anisotropic GGX distribution and Smith masking use stable vector forms so
+  finite grazing density is not truncated by a general geometric epsilon.
   Cold helpers and mutable configuration state remain translation-unit-local.
 - First-party includes are resolved from the private hdEmbree source-root
   include directory. Cross-directory includes use angle-bracket
@@ -772,16 +774,28 @@ For each segment, `_IntegratePath()` performs these stages in order:
    conversion places their result in the exterior frame. Coupled
    dielectric closures carry an explicit combined reflection/refraction
    compensation policy enabled by OpenPBR and metalness-workflow
-   UsdPreviewSurface. Missing energy is restored with an additive cosine
-   multiple-scattering lobe rather than scaling the glossy lobes. Rough coupled
-   glossy events select reflection or refraction from exact Fresnel after
-   sampling the visible microfacet. Straight-shadow attenuation for these
+   UsdPreviewSurface. They use stock BSDL's bounded reflection-VNDF sampler and
+   branch between reflection and refraction with exact Fresnel. The stock BSDL
+   Both table supplies the directional missing-energy fraction; the existing
+   reflection and transmission evaluations are scaled together by
+   `1 / max(0.01, 1 - missingEnergy)`. Sampling and PDF contain no separate
+   compensation lobe or mixture. Direct-light evaluation and PDF truncate
+   microfacet normals outside the bounded sampler's inverse-stretch support;
+   analytically continuing that PDF beyond the sampled cap gains energy under
+   next-event estimation.
+   Thin-walled interfaces always use straight-shadow attenuation. The biased
+   thick-surface approximation remains enabled by default, but a direct-light
+   shadow ray originating at a coupled thick dielectric uses conservative
+   visibility when it intersects that same instance and prototype. This keeps
+   its visibility consistent with refracted BSDF transport while preserving
+   approximate traversal through unrelated blockers and for diffuse or medium
+   origins. Straight-shadow attenuation for these
    coupled interfaces uses exact Fresnel through alpha 0.002, blends
    smoothly to a front/back directional transmission LUT through alpha 0.07,
-   and uses the LUT directly above that band. Its analytic smooth row,
-   quadratic near-zero roughness spacing, and uniform/visible-normal MIS bake
-   preserve the narrow transmission lobe and critical-angle transition near
-   that limit.
+   and uses the LUT directly above that band. The checked-in LUT has an analytic
+   exact-Fresnel smooth row and linear cosine/perceptual-roughness axes. Its
+   generator lives under `renderer/materials/MaterialXCpp/lut/` and integrates
+   stock BSDL's bounded sampler without modifying vendored BSDL.
    Standard Surface retains separate reflection and transmission lobes; its
    thin-walled transmission uses IOR 1 so the transmitted direction remains
    undeflected.
@@ -799,7 +813,9 @@ For each segment, `_IntegratePath()` performs these stages in order:
     is rejected for reflection and transmission. Rejected samples
     are lost without resampling; evaluation and PDF intentionally do not apply
     this geometric test, so grazing normal maps can lose energy and the two MIS
-    strategies can have asymmetric support.
+    strategies can have asymmetric support. This geometric-normal policy is
+    separate from the coupled dielectric's bounded-VNDF support test, which is
+    applied consistently to sampling, evaluation, and PDF.
 12. **Handle subsurface scattering.** `_TraceSubsurface()` in `sss.cpp` applies
     the selected entry direction and weight, then `ty::RandomWalkSSS()` walks
     inside the owning mesh. Matching Cycles, entry refraction uses the selected

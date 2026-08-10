@@ -58,9 +58,6 @@ template<typename Fresnel> struct DielectricBSDF {
     static constexpr const char* NS = "mtx";
 
 protected:
-    BSDL_INLINE_METHOD float transmission_vndf_pdf(
-        Imath::V3f wo, Imath::V3f wi) const;
-
     GGXDist d;
     Fresnel f;
     float E_ms;
@@ -99,39 +96,6 @@ struct DielectricBothBack : public DielectricBSDF<DielectricFresnel> {
         return "MTX/bsdf_dielectric_bothback_luts.h";
     }
     static const char* struct_name() { return "DielectricBothBack"; }
-    static BSDL_INLINE_METHOD Energy& get_energy();
-};
-
-// Directional-hemispherical single-scatter transmission albedo bake types.
-// Their generated tables store transmitted energy directly, unlike the
-// missing-energy tables used by TabulatedEnergyCurve.
-struct DielectricTransFront : public DielectricBSDF<DielectricFresnel> {
-    explicit BSDL_INLINE_METHOD DielectricTransFront(
-        float cosNO, float roughness_index, float fresnel_index);
-    BSDL_INLINE_METHOD Sample sample(
-        Imath::V3f wo, float randu, float randv, float randw) const;
-    BSDL_INLINE_METHOD Sample sample_importance(
-        Imath::V3f wo, float randu, float randv, float randw) const;
-    static const char* lut_header()
-    {
-        return "MTX/bsdf_dielectric_transfront_luts.h";
-    }
-    static const char* struct_name() { return "DielectricTransFront"; }
-    static BSDL_INLINE_METHOD Energy& get_energy();
-};
-
-struct DielectricTransBack : public DielectricBSDF<DielectricFresnel> {
-    explicit BSDL_INLINE_METHOD DielectricTransBack(
-        float cosNO, float roughness_index, float fresnel_index);
-    BSDL_INLINE_METHOD Sample sample(
-        Imath::V3f wo, float randu, float randv, float randw) const;
-    BSDL_INLINE_METHOD Sample sample_importance(
-        Imath::V3f wo, float randu, float randv, float randw) const;
-    static const char* lut_header()
-    {
-        return "MTX/bsdf_dielectric_transback_luts.h";
-    }
-    static const char* struct_name() { return "DielectricTransBack"; }
     static BSDL_INLINE_METHOD Energy& get_energy();
 };
 

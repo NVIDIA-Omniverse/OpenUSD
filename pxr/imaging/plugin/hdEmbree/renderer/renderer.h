@@ -827,12 +827,17 @@ private:
     /// \param distanceWld Positive maximum trace distance.
     /// \param shadowLink Light shadow-link token to test against blockers.
     /// \param mediumState Medium initially containing the shadow segment.
+    /// \param conservativeOriginInstance Optional NEE-origin instance whose
+    /// own thick dielectric may not use approximate straight traversal.
+    /// \param conservativeOriginPrototype Matching prototype for that origin.
     /// \return Per-channel visibility in [0,1].
     GfVec3f _Visibility(
         GfVec3f const& posWld, GfVec3f const& dirOffsetReferenceWld,
         GfVec3f const& dirShadowWld, float distanceWld,
         TfToken const& shadowLink,
-        MediumState const& mediumState = MediumState()) const;
+        MediumState const& mediumState = MediumState(),
+        InstanceContext const* conservativeOriginInstance = nullptr,
+        PrototypeContext const* conservativeOriginPrototype = nullptr) const;
 
     /// \brief Find the nearest analytic finite light along a ray.
     ///
@@ -936,6 +941,8 @@ private:
     /// evaluation.
     /// \param normalGeomWldExtOutput Optional normalized authored-exterior
     /// geometric normal output.
+    /// \param outInstance Optional borrowed instance pointer output, valid
+    /// while its scene geometry user data remains registered.
     /// \param outGeometry Optional borrowed prototype pointer output, valid
     /// while the scene geometry user data remains registered; it may be set
     /// even when no material graph is bound.
@@ -944,6 +951,7 @@ private:
         RTCRayHit const& rayHit, GfVec3f const& omegaOutWld,
         mxcpp::SurfaceClosure* outClosure,
         GfVec3f* normalGeomWldExtOutput = nullptr,
+        InstanceContext const** outInstance = nullptr,
         PrototypeContext const** outGeometry = nullptr) const;
 
     // ---- AOV output classification (built once in _PreRenderSetup) ----

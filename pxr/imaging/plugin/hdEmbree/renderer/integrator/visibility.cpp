@@ -68,7 +68,10 @@ ty::Renderer::_Visibility(GfVec3f const& posWld,
                           GfVec3f const& dirOffsetReferenceWld,
                           GfVec3f const& dirShadowWld,
                           float distanceWld, TfToken const& shadowLink,
-                          ty::MediumState const& mediumState) const
+                          ty::MediumState const& mediumState,
+                          ty::InstanceContext const* conservativeOriginInstance,
+                          ty::PrototypeContext const*
+                              conservativeOriginPrototype) const
 {
     constexpr int kMaxTransparentHits = 16;
     constexpr int kMaxIntersections = 256;
@@ -173,10 +176,17 @@ ty::Renderer::_Visibility(GfVec3f const& posWld,
         // shading point's normal, not this blocker's, and medium callers pass
         // a light direction.
         GfVec3f normalGeomBlockerWldExt(0.0f);
+        ty::InstanceContext const* hitInstance = nullptr;
         ty::PrototypeContext const* hitMesh = nullptr;
         const bool hasClosure = _TryEvalSurfaceClosureAtHit(
             rayHit, -dirShadowWld, &closure,
-            &normalGeomBlockerWldExt, &hitMesh);
+            &normalGeomBlockerWldExt, &hitInstance, &hitMesh);
+
+        const bool approximateThickTransmission =
+            ty::AllowApproximateTransparentShadowAtHit(
+                _settings.approxTransparentShadows,
+                conservativeOriginInstance, conservativeOriginPrototype,
+                hitInstance, hitMesh);
 
         const bool exitsCurrentMedium =
             shadowMedium.active && hitMesh == shadowMedium.ownerGeometry;
@@ -189,11 +199,11 @@ ty::Renderer::_Visibility(GfVec3f const& posWld,
             surfaceVisibility = GfVec3f(1.0f);
         } else if (hasClosure) {
             const bool useStraightTransmission =
-                closure.thinWalled || _settings.approxTransparentShadows;
+                closure.thinWalled || approximateThickTransmission;
             if (useStraightTransmission) {
                 GfVec3f transmissionVisibility(0.0f);
                 if (closure.thinWalled ||
-                    (_settings.approxTransparentShadows &&
+                    (approximateThickTransmission &&
                      (exitsCurrentMedium ||
                       exitsStraightTransparent ||
                       closure.transmission > 0.0f))) {
@@ -242,7 +252,7 @@ ty::Renderer::_Visibility(GfVec3f const& posWld,
             shadowMedium.active = true;
             shadowMedium.medium = closure.interiorMedium;
             shadowMedium.ownerGeometry = hitMesh;
-        } else if (_settings.approxTransparentShadows && !shadowMedium.active &&
+        } else if (approximateThickTransmission && !shadowMedium.active &&
                    hasClosure && !closure.thinWalled &&
                    closure.transmission > 0.0f && hitMesh &&
                    GfDot(dirShadowWld, normalGeomBlockerWldExt) < 0.0f) {

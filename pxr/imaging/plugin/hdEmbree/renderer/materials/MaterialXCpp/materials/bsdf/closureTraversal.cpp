@@ -388,6 +388,12 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
             }
             const bool compensateCoupledDielectric =
                 UsesCoupledRoughDielectricSampling(data);
+            if (compensateCoupledDielectric && sameSide &&
+                !CoupledRoughDielectricDirectionInSampleSupport(
+                    data, normalShdLobeWldOut, omegaInWld,
+                    interaction.omegaOutWld)) {
+                return Vec3f(0.0f);
+            }
             if (sameSide && data.reflectionWeight > 0.0f) {
                 const Vec3f fresnel = DielectricInterfaceReflectionCoefficient(
                     data, ReflectionFresnelCosTheta(omegaInWld, interaction.omegaOutWld),
@@ -459,22 +465,11 @@ _EvalNode(const Bsdf::ClosureTree& tree, Bsdf::NodeId nodeId,
                 }
             }
             if (compensateCoupledDielectric) {
-                const CoupledDielectricCompensation compensation =
+                const float missingEnergy =
                     GetCoupledDielectricCompensation(
                         data, effectiveIor, !interaction.frontFacing,
                         normalShdLobeWldOut, interaction.omegaOutWld);
-                if (compensation.missingEnergy > 0.0f) {
-                    const float sideRatio = sameSide
-                        ? compensation.reflectionRatio
-                        : 1.0f - compensation.reflectionRatio;
-                    const Vec3f tint = sameSide
-                        ? SafeVec(data.reflectionTint) *
-                            Clamp01(data.reflectionWeight)
-                        : SafeVec(data.transmissionTint) *
-                            Clamp01(data.transmissionWeight);
-                    result += tint *
-                        (compensation.missingEnergy * sideRatio * kInvPi);
-                }
+                result /= std::max(0.01f, 1.0f - missingEnergy);
             }
             return SafeVec(result);
         } else if constexpr (std::is_same_v<T, Bsdf::ConductorData>) {

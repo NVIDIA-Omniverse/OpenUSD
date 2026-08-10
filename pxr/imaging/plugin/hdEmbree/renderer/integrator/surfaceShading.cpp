@@ -846,6 +846,7 @@ bool
 ty::Renderer::_TryEvalSurfaceClosureAtHit(
     RTCRayHit const& rayHit, GfVec3f const& omegaOutWld,
     mxcpp::SurfaceClosure* outClosure, GfVec3f* normalGeomWldExtOutput,
+    ty::InstanceContext const** outInstance,
     ty::PrototypeContext const** outGeometry) const
 {
     _SurfaceInteraction interaction;
@@ -856,6 +857,9 @@ ty::Renderer::_TryEvalSurfaceClosureAtHit(
         return false;
     }
 
+    if (outInstance) {
+        *outInstance = instanceContext;
+    }
     if (outGeometry) {
         *outGeometry = prototypeContext;
     }

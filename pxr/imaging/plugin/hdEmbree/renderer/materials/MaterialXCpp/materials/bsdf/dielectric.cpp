@@ -203,7 +203,7 @@ FindCoupledTransmissionInterfaceForStraightShadow(
         : nullptr;
 }
 
-CoupledDielectricCompensation
+float
 GetCoupledDielectricCompensation(const Bsdf::DielectricInterfaceData& data,
                                   float effectiveIor,
                                   bool backside,
@@ -211,7 +211,7 @@ GetCoupledDielectricCompensation(const Bsdf::DielectricInterfaceData& data,
                                   const Vec3f& omegaOutWld)
 {
     if (!UsesCoupledRoughDielectricSampling(data)) {
-        return {};
+        return 0.0f;
     }
     return BsdlCoupledDielectricCompensation(
         std::max(std::abs(Dot(normalShdLobeWldOut, omegaOutWld)), kEpsilon),
@@ -259,6 +259,10 @@ EvalCoupledRoughDielectricTransmission(
     }
 
     const Vec2f alpha = ClampAlpha(data.roughness);
+    if (!GGXBoundedVNDFContainsNormal_Anisotropic(
+            omegaOutLocal, wmLocal, alpha)) {
+        return Vec3f(0.0f);
+    }
     const float D = GGX_D_Anisotropic(alpha, wmLocal);
     const Vec3f omegaInReflectionSideWld(omegaInLocal[0], omegaInLocal[1],
                                          -omegaInLocal[2]);
@@ -270,6 +274,29 @@ EvalCoupledRoughDielectricTransmission(
     const float scale = D * G * std::abs(cosMO * cosMI) /
         std::max(cosThetaO * cosThetaI * denom2, kEpsilon);
     return SafeVec(transmission * scale);
+}
+
+bool
+CoupledRoughDielectricDirectionInSampleSupport(
+    const Bsdf::DielectricInterfaceData& data,
+    const Vec3f& normalShdLobeWldOut,
+    const Vec3f& omegaInWld,
+    const Vec3f& omegaOutWld)
+{
+    const Frame frame =
+        Frame::FromNormalAndTangent(normalShdLobeWldOut, data.tangent);
+    const Vec3f omegaOutLocal = frame.ToLocal(omegaOutWld);
+    const Vec3f omegaInLocal = frame.ToLocal(omegaInWld);
+    Vec3f wmLocal = omegaOutLocal + omegaInLocal;
+    if (omegaOutLocal[2] <= 0.0f || wmLocal.length() < kEpsilon) {
+        return false;
+    }
+    wmLocal.normalize();
+    if (wmLocal[2] < 0.0f) {
+        wmLocal = -wmLocal;
+    }
+    return GGXBoundedVNDFContainsNormal_Anisotropic(
+        omegaOutLocal, wmLocal, ClampAlpha(data.roughness));
 }
 
 float
@@ -311,35 +338,32 @@ PdfCoupledRoughDielectric(const Bsdf::DielectricInterfaceData& data,
         DielectricInterfaceSelectionProbabilities(
             data, cosMO, effectiveIor, backside);
     const Vec2f alpha = ClampAlpha(data.roughness);
-    const float pdfMicrofacetNormalSolidAngle =
-        PdfGGX_VNDF_Anisotropic(omegaOutLocal, wmLocal, alpha);
+    if (!GGXBoundedVNDFContainsNormal_Anisotropic(
+            omegaOutLocal, wmLocal, alpha)) {
+        return 0.0f;
+    }
+    const float D = GGX_D_Anisotropic(alpha, wmLocal);
+    const float boundedD =
+        GGXBoundedVNDF_DRatio_Anisotropic(
+            omegaOutLocal, wmLocal, alpha) * D;
     float specularPdf = 0.0f;
     if (reflection) {
-        specularPdf = selection.reflection * pdfMicrofacetNormalSolidAngle /
-                      (4.0f * cosMO);
+        specularPdf = selection.reflection * boundedD /
+            (4.0f * omegaOutLocal[2]);
     } else if (Dot(omegaInLocal, wmLocal) * Dot(omegaOutLocal, wmLocal) <
                0.0f) {
         const float denom =
             Dot(omegaInLocal, wmLocal) + Dot(omegaOutLocal, wmLocal) / etaPbrt;
         const float denom2 = denom * denom;
         if (denom2 > kEpsilon) {
-            const float dwmDwi = std::abs(Dot(omegaInLocal, wmLocal)) / denom2;
-            specularPdf =
-                selection.transmission * pdfMicrofacetNormalSolidAngle * dwmDwi;
+            const float jacobian =
+                -Dot(omegaInLocal, wmLocal) * cosMO /
+                (omegaOutLocal[2] * denom2);
+            specularPdf = selection.transmission * boundedD * jacobian;
         }
     }
 
-    const CoupledDielectricCompensation compensation =
-        GetCoupledDielectricCompensation(data, effectiveIor, backside,
-                                          normalShdLobeWldOut, omegaOutWld);
-    const float specularProbability = 1.0f - compensation.missingEnergy;
-    const float compensationSideRatio = reflection
-        ? compensation.reflectionRatio
-        : 1.0f - compensation.reflectionRatio;
-    const float compensationPdf =
-        compensation.missingEnergy * compensationSideRatio *
-        CosineHemispherePdf(std::abs(omegaInLocal[2]));
-    return specularProbability * specularPdf + compensationPdf;
+    return specularPdf;
 }
 
 Bsdf::BsdfSample
@@ -358,38 +382,9 @@ SampleCoupledRoughDielectric(const Bsdf::DielectricInterfaceData& data,
             Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
     }
 
-    const CoupledDielectricCompensation compensation =
-        GetCoupledDielectricCompensation(data, effectiveIor, backside,
-                                          normalShdLobeWldOut, omegaOutWld);
-    const float specularProbability = 1.0f - compensation.missingEnergy;
-    if (compensation.missingEnergy > 0.0f && u1 >= specularProbability) {
-        const float remappedU1 = (u1 - specularProbability) /
-            compensation.missingEnergy;
-        Vec3f omegaInLocal = SampleCosineHemisphere(remappedU1, u2);
-        const bool sampleReflection =
-            uChoice < compensation.reflectionRatio;
-        if (!sampleReflection) {
-            omegaInLocal[2] = -omegaInLocal[2];
-        }
-        Bsdf::BsdfSample sample{frame.ToWorld(omegaInLocal), Vec3f(0.0f), 1.0f,
-                                false};
-        sample.isTransmission = !sampleReflection;
-        sample.eta = sampleReflection
-            ? 1.0f
-            : (backside
-                ? std::max(effectiveIor, kEpsilon)
-                : 1.0f / std::max(effectiveIor, kEpsilon));
-        return sample;
-    }
-
-    if (specularProbability <= 0.0f) {
-        return Bsdf::BsdfSample{
-            Vec3f(0.0f), Vec3f(0.0f), 0.0f, false};
-    }
-    u1 /= specularProbability;
     const Vec2f alpha = ClampAlpha(data.roughness);
     const Vec3f wmLocal =
-        SampleGGX_VNDF_Anisotropic(omegaOutLocal, alpha, u1, u2);
+        SampleGGXBoundedVNDF_Anisotropic(omegaOutLocal, alpha, u1, u2);
     const float cosMO = std::abs(Dot(omegaOutLocal, wmLocal));
     const DielectricInterfaceSelection selection =
         DielectricInterfaceSelectionProbabilities(

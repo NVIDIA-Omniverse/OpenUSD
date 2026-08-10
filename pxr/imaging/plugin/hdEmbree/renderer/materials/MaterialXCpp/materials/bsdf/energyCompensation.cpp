@@ -266,9 +266,7 @@ LookupBsdlDielectricTransmissionSingleScatterAlbedo(
         ior0 + 1, lut::kBsdlDielectricTransmissionIorCount - 1);
     const float iorT = iorCoord - static_cast<float>(ior0);
 
-    // Transmission rows use quadratic perceptual-roughness spacing so the
-    // narrow lobe and critical-angle transition remain resolved near smooth.
-    const float roughnessCoord = std::sqrt(roughness) * static_cast<float>(
+    const float roughnessCoord = roughness * static_cast<float>(
         lut::kBsdlDielectricTransmissionRoughnessCount - 1);
     const int roughness0 = std::clamp(
         static_cast<int>(roughnessCoord),
@@ -322,41 +320,7 @@ IsGgxMultipleScatteringStateEnabled()
         std::memory_order_relaxed);
 }
 
-static float
-_AverageFresnelDielectric(float eta)
-{
-    if (eta < 1.0f) {
-        return 0.997118f +
-            eta * (0.1014f + eta * (-0.965241f - eta * 0.130607f));
-    }
-    return (eta - 1.0f) / (4.08567f + 1.00071f * eta);
-}
-
-static float
-_AverageBsdlDielectricBothMissingEnergy(
-    float perceptualRoughness,
-    float ior,
-    bool backfacing)
-{
-    // Four-point Gauss-Legendre integration of the cosine-weighted average
-    // 2 * integral(E(c) * c, c=0..1). The factor of two cancels the interval
-    // transform, leaving the standard quadrature weights below.
-    constexpr float cosTheta[4] = {
-        0.0694318442f, 0.3300094782f, 0.6699905218f, 0.9305681558f};
-    constexpr float weight[4] = {
-        0.1739274226f, 0.3260725774f, 0.3260725774f, 0.1739274226f};
-    float average = 0.0f;
-    for (int i = 0; i < 4; ++i) {
-        average += weight[i] * cosTheta[i] *
-            _LookupBsdlDielectricBothMissingEnergy(
-                cosTheta[i], perceptualRoughness, ior, backfacing);
-    }
-    return Clamp01(average);
-}
-
-
-
-CoupledDielectricCompensation
+float
 BsdlCoupledDielectricCompensation(
     float cosThetaO,
     float perceptualRoughness,
@@ -365,37 +329,14 @@ BsdlCoupledDielectricCompensation(
 {
     if (!IsGgxMultipleScatteringStateEnabled() ||
         perceptualRoughness < std::sqrt(_kTurquinMicrofacetMsMinAlpha)) {
-        return {};
+        return 0.0f;
     }
 
-    const float missingEnergy = _LookupBsdlDielectricBothMissingEnergy(
+    return _LookupBsdlDielectricBothMissingEnergy(
         cosThetaO,
         perceptualRoughness,
         ior,
         backfacing);
-    if (missingEnergy <= 0.0f) {
-        return {};
-    }
-
-    const float eta = backfacing
-        ? 1.0f / std::max(ior, kEpsilon)
-        : std::max(ior, kEpsilon);
-    const float ratioFront = Clamp01(_AverageFresnelDielectric(eta));
-    const float ratioBack = Clamp01(_AverageFresnelDielectric(1.0f / eta));
-    const float averageCurrent = _AverageBsdlDielectricBothMissingEnergy(
-        perceptualRoughness, ior, backfacing);
-    const float averageOpposite = _AverageBsdlDielectricBothMissingEnergy(
-        perceptualRoughness, ior, !backfacing);
-    const float left = (1.0f - ratioFront) /
-        std::max(averageOpposite, kEpsilon);
-    const float right = (1.0f - ratioBack) /
-        std::max(averageCurrent, kEpsilon) * eta * eta;
-    const float x = right > 1.0e12f
-        ? 1.0f
-        : right / std::max(left + right, kEpsilon);
-    const float reflectionRatio = Clamp01(
-        1.0f - x * (1.0f - ratioFront));
-    return {missingEnergy, reflectionRatio};
 }
 
 Bsdf::DielectricLayerThroughputMode

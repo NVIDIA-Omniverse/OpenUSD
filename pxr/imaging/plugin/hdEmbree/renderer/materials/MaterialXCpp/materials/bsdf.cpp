@@ -357,11 +357,9 @@ Bsdf::CoupledRoughDielectricDirectionalTransmissionAlbedo(
     float albedo = detail::LookupBsdlDielectricTransmissionSingleScatterAlbedo(
         cosTheta, perceptualRoughness, ior, backfacing);
     if (compensateMultipleScattering) {
-        const detail::CoupledDielectricCompensation compensation =
-            detail::BsdlCoupledDielectricCompensation(
-                cosTheta, perceptualRoughness, ior, backfacing);
-        albedo += compensation.missingEnergy *
-            (1.0f - compensation.reflectionRatio);
+        const float missingEnergy = detail::BsdlCoupledDielectricCompensation(
+            cosTheta, perceptualRoughness, ior, backfacing);
+        albedo /= std::max(0.01f, 1.0f - missingEnergy);
     }
     if (alpha < detail::kTransmissionFresnelBlendMaxAlpha) {
         float t = (alpha - detail::kTransmissionExactFresnelMaxAlpha) /

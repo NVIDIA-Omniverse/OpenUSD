@@ -476,6 +476,13 @@ pxr_build_test(testMaterialXCpp
         renderer/materials/MaterialXCpp/nodes/colorTransformNodes.cpp
 )
 
+add_executable(generateHdEmbreeDielectricTransmissionLut EXCLUDE_FROM_ALL
+    renderer/materials/MaterialXCpp/lut/generateDielectricTransmissionLut.cpp)
+target_link_libraries(generateHdEmbreeDielectricTransmissionLut
+    PRIVATE BSDL::BSDL Threads::Threads ${__MXCPP_TEST_IMATH_LIBS})
+target_compile_features(generateHdEmbreeDielectricTransmissionLut
+    PRIVATE cxx_std_17)
+
 pxr_register_test(testMaterialXCpp
     COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testMaterialXCpp"
     EXPECTED_RETURN_CODE 0

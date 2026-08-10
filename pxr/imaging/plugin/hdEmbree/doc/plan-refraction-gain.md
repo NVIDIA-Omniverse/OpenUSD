@@ -241,73 +241,171 @@ above shows is our lobe.
 
 ---
 
-## Option 2: derive the missing energy from tables we already have
+## Option 2: revert to stock BSDL and move our lobe onto it
 
-Compute `missingEnergy = 1 - A_reflection - A_transmission` from tabulated
-single-scatter albedos of the two lobes we actually evaluate, instead of reading
-a missing-energy table baked against someone else's lobe.
+Keep `use_bvn_refraction = true` and rebake nothing. Drop the local additions to
+the vendored tree, sample and weight the coupled dielectric the way
+`DielectricBSDF` does, and apply the stock `Both` tables the way `DielectricLobe`
+applies them. The end state is that no file under `renderer/materials/BSDL/`
+differs from upstream, and every table we read describes the lobe we evaluate.
 
-### Why it is correct
+This is option 3's transport change taken to its conclusion: option 3 stops at
+sampling and leaves the compensation form open; this option also reverts the
+local bake types and commits to BSDL's multiplicative compensation. Option 3's
+objections apply here too and are restated under Cost and risk.
 
-It states the contract directly. It also has the pleasant property that half the
-work is already done and already validated: `A_transmission` is
-`LookupBsdlDielectricTransmissionSingleScatterAlbedo`, which measurement 4 shows
-matches our transmission lobe to 1 to 2 percent, front and back.
+### What reverting removes
 
-### What is missing
+The local patch is additive. Since before `9b9641f55`, `renderer/materials/BSDL/`
+is +36/-0 in `MTX/bsdf_dielectric_decl.h`, +134/-0 in
+`MTX/bsdf_dielectric_impl.h`, +92/-2 in `src/genluts.cpp` and +3/-1 in
+`bsdl.cmake`; the two `genluts.cpp` deletions are the templating of
+`bake_emiss_tables` on `store_energy`. It adds `DielectricTransFront/Back` and a
+second bake mode and changes nothing BSDL evaluates or samples, so reverting it
+is not itself a fix for the gain — it is what makes the tree verbatim.
 
-`A_reflection` for the coupled interface, that is `E_vndf[F(cosMO) * G2/G1]`,
-front and back. `DielectricReflFront` cannot supply it: it bakes the
-**reflection-only** dielectric, whose `sample()` is
-`sample_turquin_microms_reflection` and is therefore already compensated, and
-there is no back-side companion.
+It does have one consequence to plan for. Reverting deletes
+`MTX/bsdf_dielectric_trans{front,back}_luts.h`, and with them the source of
+`dielectricTransmissionLut.h` and
+`LookupBsdlDielectricTransmissionSingleScatterAlbedo`. That lookup feeds
+`Bsdf::CoupledRoughDielectricDirectionalTransmissionAlbedo`, the approximate
+transparent-shadow albedo in `bsdf.cpp`. Stock BSDL tabulates no equivalent: it
+splits nothing out of the `Both` tables, and `DielectricReflFront` is the
+reflection-only dielectric with no back-side companion. The bake moves to the
+MaterialXCpp side, driving stock BSDL through its public API; step 5 has the
+detail.
 
 ### Steps
 
-1. **`renderer/materials/BSDL/include/BSDL/MTX/bsdf_dielectric_{decl,impl}.h`** —
-   add `DielectricReflOnlyFront` and `DielectricReflOnlyBack` bake types with
-   `lut_header()` names of their own. Their `sample`/`sample_importance` follow
-   the `DielectricTrans*` pattern but over the **upper** hemisphere and taking
-   the reflection branch only, weighted by `F(cosMO)`.
-2. **`renderer/materials/BSDL/src/genluts.cpp`** — add them to
-   `BAKE_TRANSMISSION_ALBEDO_LIST`, which uses `store_energy = true` and stores
-   `E` rather than `1 - E`. Note this list also squares the roughness index, so
-   the new table's roughness axis is `sqrt(perceptual roughness)`, matching the
-   transmission table's; the lookup must use `std::sqrt(roughness)` like
-   `LookupBsdlDielectricTransmissionSingleScatterAlbedo` and not like
-   `_LookupBsdlDielectricBothMissingEnergy`.
-3. **New `renderer/materials/MaterialXCpp/materials/bsdf/dielectricReflectionAlbedoLut.h`**
-   plus `LookupBsdlDielectricReflectionSingleScatterAlbedo` in
-   `energyCompensation.{h,cpp}`, alongside the transmission lookup it mirrors.
-4. **`energyCompensation.cpp`** — in `BsdlCoupledDielectricCompensation`, replace
-   the `_LookupBsdlDielectricBothMissingEnergy` call with
-   `Clamp01(1 - A_refl - A_trans)`. Two independently interpolated tables can sum
-   to slightly over one near smooth, so the clamp is load-bearing, not
-   decorative.
-5. **Leave `reflectionRatio` alone.** It splits the *missing* energy between the
-   two sides and is derived from average Fresnel; the split of present energy is
-   a different quantity and substituting one for the other would be a new bug.
-   `_AverageBsdlDielectricBothMissingEnergy` still reads the old `Both` table for
-   that ratio, so the table stays in the build even though its direct use goes
-   away. Decide explicitly whether to keep it or rebake it too.
+1. **Revert the vendored tree.** `git revert` the BSDL hunks of `9b9641f55` and
+   `da2bf2d3d`: the two bake types in `MTX/bsdf_dielectric_{decl,impl}.h`,
+   `compute_transmission_E` and the `store_energy` template parameter in
+   `genluts.cpp`, and the two `_bsdl_lut_headers` entries in `bsdl.cmake`.
+   Confirm with `git diff` against upstream that nothing under
+   `renderer/materials/BSDL/` remains local.
+2. **`microfacet.h`** — port `GGXDist::sample_for_refl` and `GGXDist::D_refl_D`
+   from `renderer/materials/BSDL/include/BSDL/microfacet_tools_impl.h`, listings
+   1 and 2 of Eto and Tokuyoshi. Both are anisotropic in `ax`/`ay` already, so
+   they drop into the anisotropic path without a second isotropic variant.
+3. **`dielectric.cpp` sampling and pdf.** `SampleCoupledRoughDielectric` draws
+   its microfacet normal from `sample_for_refl` instead of
+   `SampleGGX_VNDF_Anisotropic`; `PdfCoupledRoughDielectric` replaces
+   `PdfGGX_VNDF_Anisotropic` with `D_refl_D * D`, on both the reflection and the
+   transmission branch, matching `DielectricBSDF::eval`'s
+   `D_refl / (4 cosNO) * F.max()` and `D_refl * J * Ft.max()`. The two must move
+   together: the returned pdf is what the integrator's MIS weights use, so a
+   sampler on one density and a pdf on another is worse than either.
+4. **The eval functions do not change.** Under `use_bvn_refraction`, BSDL's
+   `out * pdf` still equals `f * |cos|`; the bounded VNDF moves the proposal
+   density only, not the BSDF value. Assert that identity in
+   `testMaterialXCppBsdf.cpp` rather than assuming it, for both branches.
+5. **Bake the transparent-shadow albedo MaterialXCpp-side, through BSDL's public
+   API.** A small generator beside the MaterialXCpp tests, linking `BSDL::BSDL`
+   and including `BSDL/microfacet_tools_{decl,impl}.h` and
+   `BSDL/MTX/bsdf_dielectric_{decl,impl}.h` in that order, constructs
+   `bsdl::mtx::DielectricBSDF<DielectricFresnel>` from `GGXDist(roughness,
+   aniso, flip)`, `DielectricFresnel(eta, backfacing)` and `cosNO` with
+   `dorefr = true`, and estimates
+
+   ```
+   E_trans = mean over samples of (s.wi.z < 0 ? s.weight.max() : 0),
+             s = bsdf.sample(wo, u1, u2, u3)
+   ```
+
+   That is the transmission half of exactly what the runtime sampler delivers,
+   bounded VNDF included, so the table describes the transported lobe rather
+   than an idealised one. `testMaterialXCppBsdf.cpp` already instantiates
+   `DielectricBSDF` this way, so the include order and the link are proven; no
+   new BSDL type, no `genluts.cpp` change, nothing vendored is touched.
+
+   Consume it as `E_trans / max(0.01f, 1 - E_ms)`, the same scale transport
+   applies. Because `E_refl + E_trans == 1 - E_ms` by construction — all three
+   are means over the same sampler — the shadow albedo is at most one without a
+   clamp, and it agrees with transport at every grid point instead of to within
+   a percent or two.
+
+   Bake it on the `Both` tables' axes: `DielectricBSDF::get_cosine(c)`, linear
+   perceptual roughness, `DielectricFresnel::table_index()`. The old table used
+   a `sqrt` roughness axis only because `bake_emiss_tables` squares the index
+   under `store_energy`; owning the bake means one axis convention, so the new
+   lookup reuses `_LookupBsdlDielectricBothMissingEnergy`'s coordinate code
+   instead of a second variant of it.
+
+   Follow the existing convention for the output: a generator target that is not
+   part of the default build, writing a checked-in
+   `renderer/materials/MaterialXCpp/materials/bsdf/dielectricTransmissionLut.h`
+   with a header comment naming the generator and the sampler it measured.
+6. **`energyCompensation.{h,cpp}`** — `BsdlCoupledDielectricCompensation`
+   returns the missing energy alone. Delete `reflectionRatio`,
+   `_AverageFresnelDielectric` and `_AverageBsdlDielectricBothMissingEnergy`: the
+   four-point Gauss-Legendre average and the average-Fresnel split exist solely
+   to aim the added cosine lobe, and a multiplicative compensation never needs to
+   know which side the missing energy belongs to. `bsdf.cpp`'s
+   `CoupledRoughDielectricDirectionalTransmissionAlbedo` follows: the
+   `albedo += missingEnergy * (1 - reflectionRatio)` line becomes the step 5
+   scale. Its exact-Fresnel branch below `kTransmissionExactFresnelMaxAlpha` and
+   the smooth blend above it are unaffected.
+7. **`closureTraversal.cpp:461-478`** — delete the added-lobe block. Scale the
+   coupled reflection and transmission contributions by
+   `1 / max(0.01f, 1 - missingEnergy)`, which is `DielectricLobe::eval_impl`
+   verbatim. Keep passing `!compensateCoupledDielectric` to
+   `EvalMicrofacetReflection*`: the `Both` table covers the reflection branch, so
+   the generic GGX compensation stays off there.
+8. **`dielectric.cpp` compensation.** `SampleCoupledRoughDielectric` loses its
+   cosine-lobe branch and its `u1` remap; `PdfCoupledRoughDielectric` loses
+   `specularProbability` and `compensationPdf`. Compensation stops perturbing the
+   pdf entirely, matching `DielectricLobe::sample_impl`, which scales the weight
+   and leaves the pdf alone.
+9. **Close the gap that hid this.** Add a byte-identity test for the `Both`
+   tables mirroring the transmission one that step 1 deletes, in
+   `testMaterialXCppBsdf.cpp`. There is currently no such test for `Both`, which
+   is why the table and the lobe were never compared.
 
 ### Validation
 
-Same as option 1, plus: assert that `A_refl` from the new table matches the
-budget diagnostic's measured `A_refl` column, which is already known to equal
-BSDL's reflection to four decimals.
+Same as option 1, plus:
+
+- `weight * pdf == f * |cos|` for both branches under bounded VNDF, as step 4;
+- our sampled transmission albedo must now land on BSDL's sampler column of the
+  measurement-3 table, not on the unbiased column, at every grid point. That is
+  the check that says the two sides finally agree;
+- `E_refl + E_trans == 1 - E_ms` from step 5's bake against the stock `Both`
+  tables, to Monte-Carlo tolerance, at every grid point. It is the budget
+  assertion for the shadow table and it is exact by construction, so a failure
+  means the bake and the table disagree about the sampler;
+- the four `openpbr_dielectic_r*` fixtures under a dome light, not only the
+  budget quadrature. The compensation form and the pdf both moved, so a
+  quadrature that only integrates `f * cos` cannot see a broken MIS weight.
 
 ### Cost and risk
 
-- Two table lookups per shade where there was one, on a path that already does
-  several.
-- Two independent interpolations mean the sum can drift from the true albedo in
-  a way a single table cannot; the residual will not be identically zero at the
-  grid points the way option 1's is.
-- Still requires patching vendored BSDL and regenerating, so it is not cheaper
-  than option 1 in the place that matters. Its advantage is that it reuses a
-  table already proven against our lobe, and that the resulting quantity is by
-  construction the complement of what we evaluate.
+- No table is rebaked and no vendored file stays modified, which is the point of
+  the option. The cost lands entirely in transport, which is the largest blast
+  radius of any option here: sampling, pdf, MIS weights and the compensation form
+  all move at once.
+- It imports the bias BSDL flags in its own comment. Directional transmission
+  drops by up to 42% at roughness 1.0 and returns as a broader scaled lobe.
+  Rough glass loses refraction and gains haze. **This is an accepted trade**:
+  the policy is to run BSDL's model everywhere, in transport and in the shadow
+  bake alike, rather than to keep a locally corrected lobe that no table
+  describes.
+- **Furnace closure under NEE still has to be measured.** `D_refl_D` is finite
+  for every microfacet normal, so the bounded-VNDF pdf is the analytic
+  continuation of a truncated density: it returns a positive pdf for normals the
+  sampler can never produce. Under BSDF sampling alone the compensation closes,
+  because `E_ms` measured exactly what the sampler misses. Under NEE plus MIS,
+  eval still delivers those refracted directions weighted by `p_L / (p_L + p_B)`
+  with a `p_B` no strategy realises, so the weights across strategies do not sum
+  to one there. Measure the dome-light furnace; do not infer closure from the
+  budget table. If it does not close, the residual is in the MIS weight, not the
+  compensation, and the consistent fix is to truncate `eval` to the same cap the
+  sampler uses: invert `sample_for_refl`'s stretch, `m_std ∝ (m.x / ax, m.y / ay,
+  m.z)` and `o_std = 2 (i_std . m_hat) m_hat - i_std`, and return zero when
+  `o_std.z < -k * i_std.z`. The lobe is then genuinely truncated on both sides,
+  its albedo is exactly `1 - E_ms`, and closure holds under any estimator, at the
+  cost of a hard edge at grazing.
+- Scaling instead of adding removes the non-reciprocity listed as out of scope,
+  and takes a branch out of a hot sampling path.
 
 ---
 
@@ -348,21 +446,38 @@ dielectric exactly as BSDL does, so the existing `Both` table applies unchanged.
 
 ---
 
-## Recommendation
+## Decision
 
-**Option 1**, with option 2 as the fallback if patching the vendored bake is
-judged unacceptable. Reject option 3 as a fix; consider its first step as a
-diagnostic cross-check if the attribution needs to be nailed down harder than
-the four measurements above already do.
+**Option 2.** The policy is to run BSDL's model everywhere — bounded-VNDF
+sampling in transport, BSDL's multiplicative compensation, and a shadow table
+baked through BSDL's public API against the same sampler — rather than to keep a
+locally corrected lobe that no upstream table describes. The refraction bias
+BSDL documents is accepted, in exchange for one lobe with one owner and a
+vendored tree that is verbatim upstream.
 
-Whichever is chosen, two things should land regardless:
+Options 1 and 3 are kept above as the alternatives that were rejected, and as
+the record of why. Option 1 is correct and is the fallback if option 2's
+dome-light furnace cannot be made to close, but it grows the local patch and
+leaves our lobe unlike anything upstream bakes. Option 3 is option 2's transport
+half without the revert or the compensation change, so it is subsumed rather
+than rejected; its first step is still worth doing alone as the diagnostic
+cross-check if the attribution ever needs nailing down harder than the four
+measurements above already do.
+
+Two things land regardless of which option is taken:
 
 - the byte-identity test for the `Both` tables, which is missing and which is
   the reason a table baked against a different lobe went unnoticed;
-- the budget assertion, `A_single + missingEnergy == 1` to about 1%, which is
-  the check that catches this whole class of defect in one run. Every existing
-  test compared the lobe against itself or the table against itself, and none
-  compared the two against each other.
+- a budget assertion comparing the lobe against the table rather than either
+  against itself, which is the check that catches this whole class of defect in
+  one run. Note that its statement is option-dependent, and that
+  `TestCoupledRoughDielectricCompensationBudget` currently quadratures the
+  production integrand, so it asserts the option 1 form. Under option 1 it is
+  `A_single + missingEnergy == 1` to about 1% on that quadrature. Under option 2
+  the quadrature exceeds `1 - E_ms` by design, because eval is unbounded while
+  the sampler is capped; the equivalent assertion is
+  `E_refl + E_trans == 1 - E_ms` over the bounded-VNDF sampler, plus the
+  dome-light furnace to cover what the sampler and the evaluator disagree about.
 
 ## Reproducing
 
