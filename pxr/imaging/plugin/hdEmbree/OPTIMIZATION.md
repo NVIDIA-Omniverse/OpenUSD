@@ -34,16 +34,9 @@ readelf -S .pixi/envs/default/plugin/usd/hdEmbree.so \
 
 ## Reproducing A Test Render
 
-Use a pytest dry run to obtain the exact `usdrender` invocation without
-rendering:
-
-```sh
-cd /path/to/typhoon-tests
-pixi run pytest material-fidelity \
-    --typhoon-provider /path/to/openusd \
-    -k input_coat_darkening \
-    --typhoon-dry-run -s
-```
+Use the owning rendered-regression harness's dry-run facility to obtain the
+exact `usdrender` invocation without rendering. Keep machine-specific checkout
+and provider paths out of recorded commands.
 
 Use a fixed random seed for repeatable profiling. The
 `input_coat_darkening` fixture authors a 512 by 512 resolution and 64 samples
@@ -59,12 +52,12 @@ the system paths explicitly:
 
 ```sh
 pixi run --clean-env -x /usr/bin/env \
-    PATH=/path/to/openusd/.pixi/envs/default/bin:/usr/bin:/bin \
+    PATH="$PWD/.pixi/envs/default/bin:/usr/bin:/bin" \
     /usr/bin/perf stat -r 5 -d \
     -o /tmp/typhoon-input-coat-darkening-stat.txt -- \
     usdrender --complexity high --renderer Embree \
     -s "{settings}.ty:randomNumberSeed = 1" \
-    /path/to/typhoon-tests/material-fidelity/surfaces/open_pbr_surface/input_coat_darkening.usda \
+    <stage.usda> \
     --outputRoot /tmp/typhoon-profile-stat
 ```
 
@@ -90,13 +83,13 @@ Collect frame-pointer call stacks for all renderer worker threads:
 
 ```sh
 pixi run --clean-env -x /usr/bin/env \
-    PATH=/path/to/openusd/.pixi/envs/default/bin:/usr/bin:/bin \
+    PATH="$PWD/.pixi/envs/default/bin:/usr/bin:/bin" \
     /usr/bin/perf record \
     -o /tmp/typhoon-input-coat-darkening.data \
     -F 499 -e cycles:u -g --call-graph fp -- \
     usdrender --complexity high --renderer Embree \
     -s "{settings}.ty:randomNumberSeed = 1" \
-    /path/to/typhoon-tests/material-fidelity/surfaces/open_pbr_surface/input_coat_darkening.usda \
+    <stage.usda> \
     --outputRoot /tmp/typhoon-profile-record
 ```
 
@@ -134,7 +127,7 @@ Enable OpenUSD's global trace collector for a direct render:
 PXR_ENABLE_GLOBAL_TRACE=1 \
 pixi run usdrender \
     -s "{settings}.ty:randomNumberSeed = 1" \
-    /path/to/typhoon-tests/material-fidelity/surfaces/open_pbr_surface/input_coat_darkening.usda \
+    <stage.usda> \
     --outputRoot /tmp/typhoon-profile-trace \
     > /tmp/typhoon-input-coat-darkening-trace.txt 2>&1
 ```

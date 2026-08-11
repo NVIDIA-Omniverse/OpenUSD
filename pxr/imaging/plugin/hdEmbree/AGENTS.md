@@ -209,17 +209,10 @@ The first profile build can take several minutes. Later builds may use
 `pixi run --skip-deps build-profile`. If `perf` reports permission errors,
 check `kernel.perf_event_paranoid`.
 
-Get the exact renderer command for one case without rendering:
-
-```sh
-cd /path/to/typhoon-tests
-pixi run pytest material-fidelity \
-    --typhoon-provider /path/to/openusd \
-    -k <case-name> --typhoon-dry-run -s
-```
-
-Profile that `usdrender` command, not pytest/report generation. Fix
-`ty:randomNumberSeed` and keep all other scene settings unchanged. Run from the
+Get the exact renderer command for one case from the owning rendered-regression
+harness without rendering. Do not record a machine-specific checkout or
+provider path. Profile that `usdrender` command, not pytest/report generation.
+Fix `ty:randomNumberSeed` and keep all other scene settings unchanged. Run from the
 OpenUSD repository root so `$PWD/.pixi` selects this provider.
 
 Use at least five repetitions:
