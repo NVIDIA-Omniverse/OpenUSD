@@ -31,19 +31,29 @@ Before editing renderer behavior, use the targeted links in
 [Architecture quick links](#architecture-quick-links). Do not copy the linked
 design back into this guide.
 
+Unless a command block says otherwise, run commands from the OpenUSD
+repository root.
+
 ## Project goals
 
 Typhoon is a reference path tracer. Human and agent readability takes priority.
 
-1. Keep it simple. Do not add an abstraction unless it removes at least twice as much code as it adds. Avoid verbose C++ constructs.
-2. Prefer linear flow. Do not split logic into many tiny helpers that force the reader to jump around.
-3. Comment all code for human readers. Comment WHAT code is intended to do and WHY, not HOW it does it or how syntax works. Function declarations document input invariants, failure modes, and returned errors.  Comment each logical section of a definition with its purpose and reason.
+1. Keep it simple. Do not add an abstraction unless it removes at least twice
+   as much code as it adds. Avoid verbose C++ constructs.
+2. Prefer linear flow. Do not split logic into many tiny helpers that force the
+   reader to jump around.
+3. Comment intent, invariants, non-obvious policy, and each logical section's
+   purpose and reason. Do not comment syntax or obvious plumbing. Function
+   declarations document input invariants, failure modes, and returned errors.
+   Do not add or rewrite comments in generated or vendored code solely to
+   satisfy these rules.
 
 ## Naming rules
 
 The complete, authoritative naming table is
-[Common-quantity naming](ARCHITECTURE.md#common-quantity-naming). Mandatory
-rules needed before editing:
+[Common-quantity naming](ARCHITECTURE.md#common-quantity-naming). The condensed
+rules below are mandatory but non-exhaustive. Read the complete table before
+introducing or renaming a shared quantity:
 
 - Use the established `normal`, `omegaIn`/`omegaOut`, `radiance`,
   `iorIn`/`iorOut`, `eta`, `absorption`, `scattering`, and `extinction` roots.
@@ -142,10 +152,10 @@ downloads OpenQMC 0.7.1, and the hdEmbree CMake target requires the imported
 `OpenQMC::OpenQMC` target. Keep these three provisioning surfaces synchronized
 when changing the dependency.
 
-The profile task uses a separate `build-profile` tree with `RelWithDebInfo`,
-`-O3`, debug information, and frame pointers. It replaces only the installed
-hdEmbree plugin while retaining the Release OpenUSD runtime. Run
-`pixi run build` after profiling to restore the Release plugin.
+The profiling build replaces the installed hdEmbree plugin. Run
+`pixi run build` after profiling to restore the Release plugin. Profiling
+configuration, rationale, measurements, and history belong in
+`OPTIMIZATION.md`.
 
 ## Focused tests
 
@@ -205,9 +215,8 @@ readelf -S .pixi/envs/default/plugin/usd/hdEmbree.so \
     | rg 'debug_info|debug_line'
 ```
 
-The first profile build can take several minutes. Later builds may use
-`pixi run --skip-deps build-profile`. If `perf` reports permission errors,
-check `kernel.perf_event_paranoid`.
+Later builds may use `pixi run --skip-deps build-profile`. If `perf` reports
+permission errors, check `kernel.perf_event_paranoid`.
 
 Get the exact renderer command for one case from the owning rendered-regression
 harness without rendering. Do not record a machine-specific checkout or

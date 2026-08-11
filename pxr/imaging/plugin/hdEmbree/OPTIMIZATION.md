@@ -23,7 +23,9 @@ pixi run build-profile
 
 `build-profile` installs the profiled hdEmbree plugin into the active Pixi
 environment while retaining the regular Release OpenUSD runtime. Running
-`pixi run build` restores the normal Release plugin.
+`pixi run build` restores the normal Release plugin. The first profile build
+can take several minutes; later builds may use
+`pixi run --skip-deps build-profile`.
 
 Verify that the installed profile plugin contains line information:
 

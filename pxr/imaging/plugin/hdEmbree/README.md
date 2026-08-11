@@ -139,13 +139,26 @@ The absolute floor keeps near-black pixels from being judged only by relative er
 Number of shadow/light samples taken per hit point per light source. Higher values reduce noise in direct lighting at the cost of render time. Samples are always stratified across the light surface. Must be >= 1.
 
 ### Caustics and Transparent Shadows (`ty:enableCaustics`, `ty:causticsClampThreshold`)
-When `ty:enableCaustics` is `true`, hdEmbree keeps indirect caustic paths but regularizes sharp lobes after the first non-specular bounce. Contributions on paths that have entered this caustic class are clamped by `ty:causticsClampThreshold`; set the threshold to `0` or below to disable this extra caustic-only clamp. Thick transmissive entry boundaries block straight shadow rays in this mode instead of receiving a separate transparent-shadow approximation.
+When `ty:enableCaustics` is `true`, hdEmbree keeps indirect reflective and
+refractive caustics. Sharp lobes are regularized after the first non-specular
+bounce, and caustic-path contributions are limited by
+`ty:causticsClampThreshold`; set the threshold to `0` or below to disable that
+clamp. Thick transmissive boundaries use conservative visibility rather than a
+straight-through shadow approximation.
 
-When `ty:enableCaustics` is `false` (default), hdEmbree treats specular or dielectric-boundary events after a diffuse-like surface, subsurface, or medium scatter as a caustic-class heuristic rather than a strict full-path caustics proof. It prunes those lobes from BSDF continuation sampling and direct-light BSDF evaluation when the native closure tree exposes them, then keeps a post-sample guard for backend-specific or geometry-dependent cases that can only be classified after sampling. Glossy dielectric traversal seen directly by the camera is not treated as a diffuse caustic ancestor merely because it has a finite PDF. This removes high-variance reflective/refractive caustics such as bright floor sparkles under glass objects, at the cost of omitting those caustic contributions. To keep direct lighting usable under thick glass in this mode, shadow rays use a biased straight-through transparent-shadow approximation instead of solving a Snell-refraction caustic path.
+When caustics are disabled (the default), hdEmbree removes high-variance
+caustic paths such as bright floor sparkles under glass. This deliberately
+omits those contributions. Direct lighting through thick transmissive blockers
+instead uses a biased, unrefracted RGB transparent-shadow approximation that
+accounts for opacity, transmission, tint, and interior-medium attenuation.
+Thin-walled transmission always uses straight RGB shadow attenuation in both
+modes. A coupled thick dielectric remains conservatively opaque to a shadow
+ray that originates on the same object.
 
-Thin-walled transmissive surfaces always use straight RGB shadow attenuation in both caustics modes because there is no thickness or refractive path to solve. For thick transmissive surfaces, the straight-through approximation is enabled only when caustics are disabled. Direct-light shadow rays originating at a coupled thick dielectric still use conservative visibility when they intersect that same object, because straight traversal cannot participate consistently in MIS with that dielectric's refracted BSDF path. Other objects on the segment use approximate traversal, as does coupled thick glass intersected by a shadow ray from a diffuse surface or medium. When caustics are enabled, current-medium exits retain conservative visibility, and thick entry boundaries do not continue along the unrefracted shadow ray.
-
-The approximation applies RGB attenuation from surface opacity, dielectric transmission, transmission tint, and active interior-medium transmittance. Legacy and unsupported interfaces use Schlick Fresnel transmission. Near-smooth coupled dielectric interfaces use exact dielectric Fresnel through alpha 0.002 and transition smoothly to baked front/back directional-hemispherical transmission albedo through alpha 0.07, including their multiple-scattering transmission share when compensation is enabled, so roughness loss is applied independently at every crossed interface. The transmission LUT has an analytic Fresnel smooth row and is generated from the same bounded BSDL sampler used for rough coupled transport. For regular thick transmission with an interior medium, the surface tint is skipped so `transmission_color` is not applied once by the surface and again by Beer or Adobe OpenPBR volume transmittance.
+The exact caustic classification, transparent-shadow policy, Fresnel/LUT
+transition, and MIS constraints are documented in the
+[lit segment loop](ARCHITECTURE.md#lit-segment-loop) and
+[render settings](ARCHITECTURE.md#render-settings).
 
 ### Disable Shadows (`ty:disableShadows`)
 When `ty:disableShadows` is `true`, shadow visibility rays return fully visible. Direct light sampling, emitted-light hits, dome evaluation, and camera visibility still run, so this removes occlusion along direct light paths without hiding lights or geometry from the camera. The default is `false`.
@@ -301,10 +314,12 @@ Before rendering, hdEmbree requires at least one hdEmbree-owned AOV buffer,
 supported AOV formats, matching non-zero buffer dimensions, and a non-empty
 data window contained by every buffer. Invalid setup emits a specific warning,
 performs no sampling or buffer mapping, and terminates that render invocation.
-Legacy viewport clients that provide no AOV bindings receive anonymous color
-and depth buffers; render-pass convergence follows those internal buffers.
-Valid camera framing without AOV bindings remains unsupported and settles as a
-failed frame, so it cannot write a stale `RenderProduct`.
+Legacy viewport clients that use neither Hydra's framing API nor explicit AOV
+bindings receive anonymous color and depth buffers; render-pass convergence
+follows those internal buffers. Clients that supply valid Hydra framing must
+also provide AOV bindings. Without them, anonymous buffers are not allocated
+and the invocation settles as a failed frame, so it cannot write a stale
+`RenderProduct`.
 
 ## Material Interpretation Notes
 
@@ -312,30 +327,23 @@ failed frame, so it cannot write a stale `RenderProduct`.
 
 hdEmbree keeps the authored-outside facet normal separate from smooth,
 displaced, and material-mapped shading normals. Boundary crossings, media, and
-ray offsets use only the facet normal. Materials evaluate normal and bump maps
-in a view-independent exterior frame. Results are validated against the
-exterior smooth/displaced base normal; invalid or inverted results fall back to
-that base. The complete result is then faced to the incident side, preserving
-one physical relief field across the entry and exit sides of a dielectric.
-Glossy lobes and subsurface entry normals are raised toward the geometric
-surface when their ideal reflection would otherwise point below it, matching
-Cycles for both delta and finite-roughness microfacet closures. A corrected
-lobe uses the same normal for Fresnel, reflection,
-refraction, TIR, evaluation, and PDF.
-Generated reflection directions below the geometric or lobe surface and
-transmission directions above either surface are discarded without resampling.
-Direct evaluation and PDF do not apply that geometric rejection, matching
-Cycles; strongly mapped grazing facets can therefore become darker than true
-displacement. Smooth-base/material-normal agreement is evaluated per lobe, and
-diffuse-family values receive continuous bump-terminator softening. Layered
-materials project each lobe by its own exact-normal cosine before combining
-the response, avoiding grazing energy spikes from one graph-normal cosine. On
-coarse smooth triangles, direct-light shadow origins are lifted
-toward the interpolated surface near a facet terminator using the triangle's
-actual positions; authored texture-coordinate scale does not affect that lift.
-Thick dielectric side
-selection happens before material evaluation; thin-walled transmission never
-changes persistent medium state.
+ray offsets use only the facet normal. Normal and bump maps are evaluated in a
+view-independent exterior frame, validated against the smooth or displaced
+surface, and then faced to the incident side. Invalid or inverted mapped
+normals fall back to the underlying surface normal, preserving one relief field
+across both sides of a dielectric.
+
+hdEmbree corrects glossy and subsurface normals near coarse geometric
+terminators and rejects sampled reflection or transmission directions that
+cross the wrong side of the geometric or lobe surface. Strong normal maps at
+grazing angles can therefore appear darker than true displacement. Thick
+dielectrics use the geometric side for medium transitions; thin-walled
+transmission never changes persistent medium state.
+
+The normal lifecycle, per-lobe correction, sampling constraints, derivative
+handling, and shadow-terminator offset are documented under
+[material compilation and evaluation](ARCHITECTURE.md#material-compilation-and-evaluation)
+and the [lit segment loop](ARCHITECTURE.md#lit-segment-loop).
 
 ### Rough and thin-walled transmission
 
