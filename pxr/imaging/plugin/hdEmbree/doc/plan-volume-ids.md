@@ -1,27 +1,4 @@
-# hdEmbree TODO
-
-## Geometry
-
-- Evaluate a smooth-shadow-terminator lift for refined and displaced
-  prototypes. The current correction is intentionally limited to coarse,
-  undisplaced triangles because their corner-normal cage has a clear geometric
-  interpretation; refined/displaced geometry needs a limit-surface-aware
-  offset to avoid over-correction.
-
-## Material fidelity
-
-- Replace the Schlick approximation used for dielectric reflection with exact
-  dielectric Fresnel, or otherwise match MaterialX OSL/BSDL. Schlick can be
-  too reflective at very grazing angles and is a likely contributor to the
-  stronger specular highlights seen in the OpenPBR fuzz-weight sweep.
-
-- Implement and select the Zeltner sheen model when `SheenMode::Zeltner` is
-  requested. OpenPBR currently records the Zeltner mode, but sheen evaluation
-  does not consult it and instead uses the existing Charlie/Conty-style lobe.
-  MaterialX's OSL generator also drops the sheen `mode` argument, so OSL
-  reference images may not expose this mismatch.
-
-## Volume priorities and exact dielectric Fresnel
+# Volume priorities and exact dielectric Fresnel
 
 Implement exact dielectric Fresnel and priority-based nested-volume tracking
 as one coordinated change. Nested media require the incident and transmitted
@@ -35,7 +12,7 @@ volume controls IOR and participating-medium transport. Intersections that do
 not change the dominant logical volume are false interfaces: update the
 interior state, continue the ray, and do not shade or consume a bounce.
 
-### Authored data and semantics
+## Authored data and semantics
 
 Add two integer primvars:
 
@@ -66,7 +43,7 @@ int[] primvars:ty:volumePriority = [10] (
   are harmless; overlapping instances intentionally form one union. Geometry
   that must remain distinct needs distinct IDs.
 
-### Interior state and boundary classification
+## Interior state and boundary classification
 
 Replace the single `ty::MediumState` owner pointer with a small interior
 list. Use inline storage for the common case and permit overflow rather than
@@ -119,7 +96,7 @@ Add diagnostics and counters for negative winding counts, incompatible
 properties sharing an ID, equal-priority overlaps, maximum interior-list depth,
 and excessive consecutive false intersections.
 
-### Geometry metadata plumbing
+## Geometry metadata plumbing
 
 - Cache volume metadata in `ty::PrototypeContext` beside the existing
   primvar samplers.
@@ -131,7 +108,7 @@ and excessive consecutive false intersections.
   unflipped face orientation, material, and evaluated interior properties.
   Main paths, visibility rays, and SSS must use the same classification rules.
 
-### Main path traversal and medium transport
+## Main path traversal and medium transport
 
 - Add an inner intersection loop within each path bounce. It repeatedly traces
   past false interfaces until it reaches a real surface, a medium event, a
@@ -151,7 +128,7 @@ and excessive consecutive false intersections.
 - Clear dielectrics must still participate even when their
   `MediumProperties` are vacuum, because their IOR affects nested refraction.
 
-### Exact Fresnel and nested IORs
+## Exact Fresnel and nested IORs
 
 Store absolute IOR on every logical volume; the default exterior is vacuum/air
 with IOR 1.0. At a real interface, derive `iorIn` and `iorOut` from the
@@ -173,7 +150,7 @@ dominant entries before and after the crossing.
   explicit. Its canonical table coordinate must use the correct ratio for the
   current pair of media on either side.
 
-### Visibility and transparent shadows
+## Visibility and transparent shadows
 
 Replace the shadow path's single copied medium with a copy of the full interior
 tracker.
@@ -188,7 +165,7 @@ tracker.
 - Ensure a lower-priority proxy boundary never adds a tint or visibility loss
   while hidden inside a higher-priority volume.
 
-### Random-walk subsurface scattering
+## Random-walk subsurface scattering
 
 The SSS walker currently treats any hit on the same Embree geometry as an exit.
 Pass the logical volume ID and initial winding state into the walk instead.
@@ -203,7 +180,7 @@ Pass the logical volume ID and initial winding state into the walk instead.
 - Keep the existing random-walk coefficient and phase-function logic unchanged
   until boundary tracking is independently validated.
 
-### Initial state for cameras inside volumes
+## Initial state for cameras inside volumes
 
 Do not assume primary rays begin in air. Seed a reusable tracker for the camera
 position by casting a deterministic probe from outside the scene bounds to the
@@ -215,7 +192,7 @@ model. Emit useful diagnostics for open or inconsistently wound tagged meshes,
 since no priority algorithm can infer a reliable interior from arbitrary
 non-manifold boundaries.
 
-### Tests
+## Tests
 
 First unit-test the renderer-independent interior-list state machine:
 
@@ -250,7 +227,7 @@ After the tests are implemented, launch the required adversarial test review to
 check that they validate intended transport behavior rather than encoding the
 new implementation's current output.
 
-### Rollout, debugging, and performance
+## Rollout, debugging, and performance
 
 - Add a temporary render-setting or environment switch so the priority path
   can be compared against legacy single-medium tracking during development.
@@ -264,7 +241,7 @@ new implementation's current output.
 - Retain the switch for one release cycle if existing scenes show unexpected
   changes, then make priority tracking the default for authored volume IDs.
 
-### Suggested commit sequence
+## Suggested commit sequence
 
 1. Add volume primvar ingestion and the tested interior-list state machine.
 2. Integrate false-interface traversal and dominant-medium selection into main
@@ -275,7 +252,7 @@ new implementation's current output.
 6. Add camera-inside initialization, integration fixtures, diagnostics,
    documentation, and profiling results.
 
-### References
+## References
 
 - Schmidt and Budge, "Simple Nested Dielectrics in Ray Traced Images":
   https://escholarship.org/content/qt9h83s3m0/qt9h83s3m0_noSplash_693fb7df0433335e068723e435d6a371.pdf
