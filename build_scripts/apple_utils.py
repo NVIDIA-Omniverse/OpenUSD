@@ -166,7 +166,11 @@ def GetSDKRoot(context) -> Optional[str]:
 
 def GetSDKVersion(context):
     sdk_basename = os.path.basename(GetSDKRoot(context))
-    return re.search(r'\d+\.\d+', sdk_basename).group()
+    match = re.search(r'\d+\.\d+', sdk_basename)
+    if not match:
+        raise RuntimeError(
+            f"Could not determine SDK version from path: {sdk_basename}")
+    return match.group()
 
 def SetTarget(context):
     targetName = normalizeBuildTarget(context.buildTarget)
