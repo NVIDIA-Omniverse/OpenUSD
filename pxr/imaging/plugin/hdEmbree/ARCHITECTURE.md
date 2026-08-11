@@ -14,7 +14,6 @@ points. It does not define user workflows or contributor commands.
 - [`overview.dox`](overview.dox): short generated Hydra/plugin overview and
   external runtime contract.
 - [`OPTIMIZATION.md`](OPTIMIZATION.md): measured performance history.
-- [`TODO.md`](TODO.md): actionable future work.
 
 The documentation-maintenance policy and authority boundaries are defined in
 the [agent guide](AGENTS.md#documentation-map).
@@ -204,7 +203,6 @@ corresponding type without changing the semantic name.
 - `AGENTS.md`: build, test, profiling, and maintenance workflow.
 - `overview.dox`: Doxygen overview.
 - `OPTIMIZATION.md`: profiling results and optimization notes.
-- `TODO.md`: known future work.
 - `testenv/`: focused integration and unit-style C++ tests.
 
 ### `delegate/`: Hydra integration

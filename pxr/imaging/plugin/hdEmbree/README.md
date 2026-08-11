@@ -1,4 +1,4 @@
-# Typhoon / hdEmbree
+# Typhoon
 
 Typhoon is a reference path tracer built into OpenUSD. It is intended to be a readable, community-developed, shared reference for how to implement standard USD features, such as UsdLux lighting, and UsdShade-based MaterialX materials.
 
@@ -11,6 +11,9 @@ After cloning as normal, the quickest and easiest way to build is with [Pixi](ht
 # from repo root, NOT pxr/imaging/plugin/hdEmbree
 pixi run configure
 pixi run build
+pixi run ctest \
+    --test-dir build/pxr/imaging/plugin/hdEmbree \
+    --output-on-failure
 ```
 
 Pixi will handle all dependencies and install the built OpenUSD distribution in its default environment. Once the build has completed, run:
@@ -23,6 +26,27 @@ pixi run usdview /path/to/scene.usd
 to run `usdview` with Typhoon already selected as the default renderer. In
 `usdview` you can use the `RenderLab` plugin to edit scene properties and
 renderer settings at runtime, and to select the viewport AOV.
+
+## Running Tests
+
+### Unit Tests
+
+To run the unit tests:
+```bash
+# from repo root, NOT pxr/imaging/plugin/hdEmbree
+pixi run ctest \
+    --test-dir build/pxr/imaging/plugin/hdEmbree \
+    --output-on-failure
+```
+
+### Image Regression Tests
+
+The image regression test suite is in a separate repository: https://github.com/anderslanglands/typhoon-test-suite
+```bash
+git clone --recursive https://github.com/anderslanglands/typhoon-test-suite.git
+cd typhoon-test-suite
+pixi run pytest
+```
 
 ## usdrender
 
@@ -41,129 +65,7 @@ pixi run usdrender scene.usda -r Embree \
 ```
 
 # Navigating the code
-Internal design and file ownership are documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
-
-## Limitations
-
-- Render-pass collection include/exclude paths and render tags are unsupported;
-  every pass traces the whole synchronized scene.
-- Multiple simultaneous hdEmbree render passes are unsupported. They share one
-  delegate renderer and overwrite common outputs instead of compositing.
-
-## Supported lighting
-
-Typhoon supports USD Lux cylinder, disk, distant, dome, rect, and sphere
-lights, including common LightAPI controls, color temperature, normalization,
-shaping, IES profiles, dome/rect textures, and light/shadow linking. Finite
-light shapes can appear to the camera when `visibleInPrimaryRay` is enabled.
-`domeLightCameraVisibility` independently controls dome backgrounds.
-
-The following settings can be configured through the Hydra render-delegate
-settings API. Typhoon-specific USD `RenderSettings` prim attributes use the
-`ty:` namespace. The standard `renderingColorSpace` attribute and the generic
-Hydra `domeLightCameraVisibility` and `enableExposureCompensation` settings are
-unnamespaced. For `usdrender`, precedence is built-in default < USD
-`RenderSettings` prim < command-line `--set`. Interactive applications can
-place direct Hydra renderer settings, including UI changes, above authored USD
-values.
-
-## Render-product output
-
-hdEmbree writes active stage-authored `RenderProduct` files only for offline
-clients that set Hydra's `enableInteractive` render setting to `false`. An
-unset value is treated as interactive, so viewers such as usdview render the
-products into their viewport without writing their `productName` paths.
-`usdrender` explicitly selects offline mode. hdEmbree writes products only
-after the frame both passes renderer setup and converges; a failed setup leaves
-the expected product absent so `usdrender` reports an error.
-
-## Subdivision complexity and MaterialX displacement
-
-At `low` complexity, hdEmbree triangulates the authored subdivision control
-cage without evaluating subdivision displacement. Higher complexities use
-screen-space adaptive subdivision:
-
-| Complexity | Geometry / target edge length |
-|------------|-------------------------------|
-| `veryhigh` | subdivision, 0.5 pixel |
-| `high` | subdivision, 1 pixel |
-| `medium` | subdivision, 4 pixels |
-| `low` | triangulated control cage |
-
-The target is measured after instance transforms. Displaced quadrilateral faces
-may refine to at most twice the camera-derived level to follow screen-space
-curvature without opening shared edges. See
-[scene synchronization](ARCHITECTURE.md#scene-synchronization) for the
-authoritative level, displacement, and commit invariants.
-
-Subdivision requires an attached `HdCamera`. By default, the first camera and
-valid viewport determine tessellation for the render pass lifetime. Set
-`ty:dynamicSubdvTesselation = true` to recompute after camera or viewport
-changes; expensive displacement graphs can make those updates costly.
-Instance, topology, and display-style changes still update affected geometry.
-Meshes with `subdivisionScheme = "none"` remain triangles at every complexity.
-
-Vertex, varying, uniform, and indexed face-varying primvars retain their Hydra
-interpolation and seam behavior. Embree cannot distinguish OpenSubdiv's
-`cornersOnly`, `cornersPlus1`, and `cornersPlus2` face-varying rules, so those
-three produce the same closest-supported corner behavior.
-
-A material can connect `ND_displacement_float` to its `displacement` terminal.
-Displacement applies only at medium or higher complexity to a subdivision
-scheme such as `catmullClark`. The graph receives object-space position and
-normal, `st`, numeric geomprops at supported Hydra interpolations, and constant
-string/filename geomprops. Embree limits interpolated subdivision attributes
-to float-based scalar/vector types. Point-instancer transforms and per-instance
-primvars cannot vary a shared prototype's displacement.
-
-MaterialX `geompropvalue` names must be constant strings. Connected, absent, or
-non-string names produce one recoverable diagnostic and make only that node
-evaluate its authored default.
-
-Material terminals are validated when the material is synchronized. A
-malformed surface/displacement graph emits one warning identifying the
-material, terminal, and first failing node; unauthored optional terminals
-remain silent. Volume-only materials create a transparent participating-medium
-boundary, including where all evaluated medium coefficients are zero.
-Mixing surface-shader closures preserves that boundary identity only when
-every input with nonzero weight is itself a volume boundary.
-Displacement-only materials use display-color fallback shading on the displaced
-surface. A material with none of these usable terminals warns about its missing
-surface. A malformed displacement-only material emits its actionable
-displacement warning without also treating the intentionally absent surface as
-an error. Missing or rejected surface graphs use authored `displayColor` for
-the diffuse fallback, or neutral gray `(0.5, 0.5, 0.5)` with opacity 1 when it
-is not authored. Rejected displacement graphs leave the surface undisplaced.
-Unexpected displacement backend failures produce a runtime error and leave the
-affected generated vertex undisplaced.
-
-## Hydra wireframe display
-
-hdEmbree honors the standard mesh `wireOnSurf`, `refinedWireOnSurf`, `wire`,
-and `refinedWire` reprs selected by clients such as usdview. Wire-on-surface is
-the recommended mode: it composites a screen-space line over the final shaded
-camera result, using `HdRenderPassState`'s wire color, alpha, and line width. An
-unset zero wire color follows Storm's convention and dims the shaded surface
-along edges. Changing usdview's render mode resynchronizes existing meshes, so
-switching between smooth, wire, and wire-on-surface takes effect immediately.
-For color output, wire-only mode performs only the camera intersection and
-geometric wire coverage evaluation. It skips material evaluation, lighting,
-volumes, and secondary bounces, and draws opaque black lines over the clear
-color regardless of the render-pass wire color. Independently binding the
-`ambocc` diagnostic still requests its visibility ray.
-
-At low complexity, the overlay shows the rendered control-cage triangles,
-including diagonals. At higher complexity it follows the final adaptive,
-displaced diced grid. Subpixel cells appear as filtered dense coverage; zoom or
-increase output resolution to resolve them. Line width stays in framebuffer
-pixels and is stable during progressive rendering.
-
-Embree does not expose its private transition-fan triangle IDs, so stitch
-diagonals where opposing subdivision levels differ are approximate. Wire-only
-mode shows the nearest surface and does not reveal rear edges. Use
-wire-on-surface for final-render diagnostics. The reconstruction and repr-sync
-invariants are documented under
-[scene synchronization](ARCHITECTURE.md#scene-synchronization).
+Design and code structure are documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 # Settings
 
@@ -253,6 +155,102 @@ A value of `-1` (default) derives the OpenQMC seed from the scene frame. Any
 other value selects an explicit deterministic/repeatable sampler sequence. Use
 `usdrender -s "{settings}.ty:randomNumberSeed = 1"` for fixed-seed comparisons
 without editing the stage.
+
+## Subdivision complexity and MaterialX displacement
+
+At `low` complexity, hdEmbree triangulates the authored subdivision control
+cage without evaluating subdivision displacement. Higher complexities use
+screen-space adaptive subdivision:
+
+| Complexity | Geometry / target edge length |
+|------------|-------------------------------|
+| `veryhigh` | subdivision, 0.5 pixel |
+| `high` | subdivision, 1 pixel |
+| `medium` | subdivision, 4 pixels |
+| `low` | triangulated control cage |
+
+The target is measured after instance transforms. Displaced quadrilateral faces
+may refine to at most twice the camera-derived level to follow screen-space
+curvature without opening shared edges. See
+[scene synchronization](ARCHITECTURE.md#scene-synchronization) for the
+authoritative level, displacement, and commit invariants.
+
+Subdivision requires an attached `HdCamera`. By default, the first camera and
+valid viewport determine tessellation for the render pass lifetime. Set
+`ty:dynamicSubdvTesselation = true` to recompute after camera or viewport
+changes; expensive displacement graphs can make those updates costly.
+Instance, topology, and display-style changes still update affected geometry.
+Meshes with `subdivisionScheme = "none"` remain triangles at every complexity.
+
+Vertex, varying, uniform, and indexed face-varying primvars retain their Hydra
+interpolation and seam behavior. Embree cannot distinguish OpenSubdiv's
+`cornersOnly`, `cornersPlus1`, and `cornersPlus2` face-varying rules, so those
+three produce the same closest-supported corner behavior.
+
+A material can connect `ND_displacement_float` to its `displacement` terminal.
+Displacement applies only at medium or higher complexity to a subdivision
+scheme such as `catmullClark`. The graph receives object-space position and
+normal, `st`, numeric geomprops at supported Hydra interpolations, and constant
+string/filename geomprops. Embree limits interpolated subdivision attributes
+to float-based scalar/vector types. Point-instancer transforms and per-instance
+primvars cannot vary a shared prototype's displacement.
+
+MaterialX `geompropvalue` names must be constant strings. Connected, absent, or
+non-string names produce one recoverable diagnostic and make only that node
+evaluate its authored default.
+
+Material terminals are validated when the material is synchronized. A
+malformed surface/displacement graph emits one warning identifying the
+material, terminal, and first failing node; unauthored optional terminals
+remain silent. Volume-only materials create a transparent participating-medium
+boundary, including where all evaluated medium coefficients are zero.
+Mixing surface-shader closures preserves that boundary identity only when
+every input with nonzero weight is itself a volume boundary.
+Displacement-only materials use display-color fallback shading on the displaced
+surface. A material with none of these usable terminals warns about its missing
+surface. A malformed displacement-only material emits its actionable
+displacement warning without also treating the intentionally absent surface as
+an error. Rejected surface graphs retain the display-color fallback, while
+rejected displacement graphs leave the surface undisplaced.
+Unexpected displacement backend failures produce a runtime error and leave the
+affected generated vertex undisplaced.
+
+## Hydra wireframe display
+
+hdEmbree honors the standard mesh `wireOnSurf`, `refinedWireOnSurf`, `wire`,
+and `refinedWire` reprs selected by clients such as usdview. Wire-on-surface is
+the recommended mode: it composites a screen-space line over the final shaded
+camera result, using `HdRenderPassState`'s wire color, alpha, and line width. An
+unset zero wire color follows Storm's convention and dims the shaded surface
+along edges. Changing usdview's render mode resynchronizes existing meshes, so
+switching between smooth, wire, and wire-on-surface takes effect immediately.
+Wire-only mode performs only the camera intersection and geometric wire
+coverage evaluation. It skips material evaluation, lighting, ambient
+occlusion, volumes, and secondary bounces, and draws opaque black lines over
+the clear color regardless of the render-pass wire color.
+
+At low complexity, the overlay shows the rendered control-cage triangles,
+including diagonals. At higher complexity it follows the final adaptive,
+displaced diced grid. Subpixel cells appear as filtered dense coverage; zoom or
+increase output resolution to resolve them. Line width stays in framebuffer
+pixels and is stable during progressive rendering.
+
+Embree does not expose its private transition-fan triangle IDs, so stitch
+diagonals where opposing subdivision levels differ are approximate. Wire-only
+mode shows the nearest surface and does not reveal rear edges. Use
+wire-on-surface for final-render diagnostics. The reconstruction and repr-sync
+invariants are documented under
+[scene synchronization](ARCHITECTURE.md#scene-synchronization).
+
+## RenderProduct output
+
+hdEmbree writes active stage-authored `RenderProduct` files only for offline
+clients that set Hydra's `enableInteractive` render setting to `false`. An
+unset value is treated as interactive, so viewers such as usdview render the
+products into their viewport without writing their `productName` paths.
+`usdrender` explicitly selects offline mode. hdEmbree writes products only
+after the frame both passes renderer setup and converges; a failed setup leaves
+the expected product absent so `usdrender` reports an error.
 
 ## AOVs
 

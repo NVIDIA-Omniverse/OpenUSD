@@ -17,7 +17,6 @@ in `ARCHITECTURE.md`; user-visible behavior belongs in `README.md`.
   external runtime contract.
 - [`OPTIMIZATION.md`](OPTIMIZATION.md): measured performance history and
   reproducible profiling findings.
-- [`TODO.md`](TODO.md): actionable future work.
 
 Update every affected authority in the same change. A user-visible change
 updates `README.md`; a design, ownership, invariant, or extension-point change
@@ -25,7 +24,7 @@ updates `ARCHITECTURE.md`; a contributor command or mandatory editing rule
 change updates `AGENTS.md`; an external plugin identity, schema identity,
 settings namespace, or AOV contract change updates `overview.dox`. Update more
 than one only when the change crosses those boundaries. Keep optimization
-measurements in `OPTIMIZATION.md` and future work in `TODO.md`; include only
+measurements in `OPTIMIZATION.md`; include only
 enough architectural context there to keep an entry durable.
 
 Before editing renderer behavior, use the targeted links in
@@ -36,13 +35,9 @@ design back into this guide.
 
 Typhoon is a reference path tracer. Human and agent readability takes priority.
 
-1. Keep it simple. Do not add an abstraction unless it removes at least twice
-   as much code as it adds. Avoid fancy C++.
-2. Prefer linear flow. Do not split logic into many tiny helpers that force the
-   reader to jump around.
-3. Comment what code is intended to do, not how syntax works. Function
-   declarations document input invariants, failure modes, and returned errors.
-   Comment each logical section of a definition with its purpose and reason.
+1. Keep it simple. Do not add an abstraction unless it removes at least twice as much code as it adds. Avoid verbose C++ constructs.
+2. Prefer linear flow. Do not split logic into many tiny helpers that force the reader to jump around.
+3. Comment all code for human readers. Comment WHAT code is intended to do and WHY, not HOW it does it or how syntax works. Function declarations document input invariants, failure modes, and returned errors.  Comment each logical section of a definition with its purpose and reason.
 
 ## Naming rules
 
