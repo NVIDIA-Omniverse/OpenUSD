@@ -51,7 +51,7 @@ if (PXR_BUILD_PRMAN_PLUGIN)
     if (EXISTS "${prmanPluginAbsPath}")
         add_subdirectory("${prmanPluginPath}")
     else()
-        message(FATAL_ERROR "No RenderMan plugin not found at "
+        message(FATAL_ERROR "No RenderMan plugin found at "
                 "${prmanPluginAbsPath}. Check client mapping")
     endif()
 endif()
