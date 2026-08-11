@@ -151,6 +151,7 @@ pxr_plugin(hdEmbree
         renderer/integrator/closureClassification
 
     PRIVATE_HEADERS
+        renderer/api.h
         renderer/colorManagement.h
         renderer/heroWavelength.h
         renderer/rayUtil.h
@@ -208,6 +209,11 @@ target_include_directories(hdEmbree
     PRIVATE
         "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>"
 )
+
+if (WIN32)
+    # Tests link private plugin symbols, which Windows does not export by default.
+    set_target_properties(hdEmbree PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
 
 if (X11_FOUND OR APPLE)
 pxr_build_test(testHdEmbree

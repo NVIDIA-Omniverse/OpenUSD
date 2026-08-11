@@ -7,6 +7,7 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_H
 
+#include "api.h"
 #include "colorManagement.h"
 #include "renderSettings.h"
 
@@ -52,7 +53,7 @@ namespace ty {
     (adaptiveHeatmap) \
     (ambocc)
 
-TF_DECLARE_PUBLIC_TOKENS(AovTokens, HDEMBREE_AOV_TOKENS);
+TF_DECLARE_PUBLIC_TOKENS(AovTokens, HDEMBREE_API, HDEMBREE_AOV_TOKENS);
 
 class RenderBufferInterface;
 

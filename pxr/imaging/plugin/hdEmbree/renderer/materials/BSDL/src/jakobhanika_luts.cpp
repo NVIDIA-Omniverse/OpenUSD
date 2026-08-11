@@ -14,6 +14,10 @@
 #include <cstring>
 #include <vector>
 
+#ifdef _MSC_VER
+#define strcasecmp _stricmp
+#endif
+
 #include "parallel.h"
 
 /**

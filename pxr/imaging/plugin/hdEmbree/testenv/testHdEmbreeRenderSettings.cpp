@@ -436,12 +436,13 @@ _RunRenderProductOutputCase(const char *filename,
     }
 
     std::unique_ptr<HdRenderIndex> renderIndex(
-        HdRenderIndex::NewForBackendEmulation(
-            &delegate, HdDriverVector(), sceneIndex));
+        HdRenderIndex::New(&delegate, HdDriverVector()));
     if (!renderIndex) {
         std::printf("failed to create render-product test index\n");
         return false;
     }
+    renderIndex->InsertSceneIndex(
+        sceneIndex, SdfPath::AbsoluteRootPath(), false);
 
     HdEmbreeRenderBuffer colorBuffer(SdfPath("/ColorBuffer"));
     if (!colorBuffer.Allocate(
@@ -833,12 +834,13 @@ _TestActiveRenderSettingsPrimBridge()
     });
 
     std::unique_ptr<HdRenderIndex> renderIndex(
-        HdRenderIndex::NewForBackendEmulation(
-            &delegate, HdDriverVector(), sceneIndex));
+        HdRenderIndex::New(&delegate, HdDriverVector()));
     if (!renderIndex) {
         std::printf("failed to create render index\n");
         return false;
     }
+    renderIndex->InsertSceneIndex(
+        sceneIndex, SdfPath::AbsoluteRootPath(), false);
 
     HdEmbreeRenderBuffer colorBuffer(SdfPath("/ColorBuffer"));
     if (!colorBuffer.Allocate(

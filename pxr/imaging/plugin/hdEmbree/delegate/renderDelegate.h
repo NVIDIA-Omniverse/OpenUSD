@@ -7,6 +7,7 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_DELEGATE_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_DELEGATE_H
 
+#include <renderer/api.h>
 #include <renderer/renderer.h>
 
 #include "pxr/base/gf/matrix4d.h"
@@ -45,7 +46,10 @@ class HdEmbreeMesh;
     ((dynamicSubdvTesselation, "ty:dynamicSubdvTesselation")) \
     ((textureCacheSize, "ty:textureCacheSize"))
 
-TF_DECLARE_PUBLIC_TOKENS(HdEmbreeRenderSettingsTokens, HDEMBREE_RENDER_SETTINGS_TOKENS);
+TF_DECLARE_PUBLIC_TOKENS(
+    HdEmbreeRenderSettingsTokens,
+    HDEMBREE_API,
+    HDEMBREE_RENDER_SETTINGS_TOKENS);
 
 ///
 /// \class HdEmbreeRenderDelegate
