@@ -86,8 +86,6 @@ export CXXFLAGS="${CXXFLAGS//-pipe/}"
 export CFLAGS="${CFLAGS//-ffunction-sections/}"
 export CFLAGS="${CFLAGS//-pipe/}"
 
-python_site_packages="$(python -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
-
 cmake -S . -B build -G Ninja \
 -DCMAKE_BUILD_TYPE=Release \
 -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX" \
@@ -127,7 +125,6 @@ cmake -S . -B build -G Ninja \
 -DPython3_FIND_STRATEGY=LOCATION \
 -DPython3_FIND_REGISTRY=NEVER \
 -DPython3_FIND_FRAMEWORK=NEVER \
--DPXR_PYTHON_INSTALL_DIR="$python_site_packages" \
 -DPXR_PYTHON_SHEBANG="$CONDA_PREFIX/bin/python" \
 -DCMAKE_INSTALL_MESSAGE=LAZY'''
 ] }

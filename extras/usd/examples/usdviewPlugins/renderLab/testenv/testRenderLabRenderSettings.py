@@ -6,20 +6,10 @@
 # https://openusd.org/license.
 #
 
-import os
-import sys
 import unittest
 
-from pxr import UsdImagingGL
+from pxr import Plug, UsdImagingGL
 from pxr.Usdviewq.qt import QtWidgets
-
-_installPluginPath = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "lib",
-    "python",
-)
-if os.path.isdir(_installPluginPath):
-    sys.path.insert(0, _installPluginPath)
 
 from renderLab import renderSettingsMetadata
 from renderLab.renderSettingsEditor import RenderSettingsEditor
@@ -86,6 +76,11 @@ class TestRenderLabRenderSettings(unittest.TestCase):
         self.editor.close()
         self.editor.deleteLater()
         self._application.processEvents()
+
+    def test_PluginIsInstalledAndLoadable(self):
+        plugin = Plug.Registry().GetPluginWithName("renderLab")
+        self.assertIsNotNone(plugin)
+        plugin.Load()
 
     def _items(self):
         combo = self.editor._aovCombo

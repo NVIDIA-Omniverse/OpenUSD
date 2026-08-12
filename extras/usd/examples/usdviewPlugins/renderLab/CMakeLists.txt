@@ -1,17 +1,14 @@
 install(
     DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/"
-    DESTINATION lib/python/renderLab
+    DESTINATION "${PXR_PYTHON_INSTALL_DIR}/renderLab"
     FILES_MATCHING
         PATTERN "*.py"
-        PATTERN "plugInfo.json"
         PATTERN "testenv" EXCLUDE
 )
 
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json"
-    "{\n    \"Includes\": [ \"renderLab/\" ]\n}\n")
 install(
-    FILES "${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json"
-    DESTINATION lib/python
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugInfo.json"
+    DESTINATION "lib/usd/renderLab/resources"
 )
 
 set(PXR_PACKAGE renderLab)
@@ -28,8 +25,3 @@ pxr_register_test(testRenderLabRenderSettings
     ENV
         QT_QPA_PLATFORM=offscreen
 )
-
-get_property(_pxrExtraPluginsHelp CACHE PXR_EXTRA_PLUGINS PROPERTY HELPSTRING)
-list(APPEND PXR_EXTRA_PLUGINS "lib/python")
-set(PXR_EXTRA_PLUGINS "${PXR_EXTRA_PLUGINS}"
-    CACHE INTERNAL "${_pxrExtraPluginsHelp}")
