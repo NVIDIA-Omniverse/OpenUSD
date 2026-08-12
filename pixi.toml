@@ -1,23 +1,30 @@
 [workspace]
 name = "openusd"
-platforms = ["linux-64", "win-64"]
+platforms = ["linux-64", "win-64", "osx-arm64"]
 channels = ["https://conda.anaconda.org/anderslanglands", "conda-forge"]
 channel-priority = "strict"
 
 [dependencies]
 python = "3.11.*"
-openimageio = "2.5.*"
+blosc = "*"
+draco = "*"
+openimageio-dev = "2.5.*"
 openimageio-format-gif = "2.5.*"
 openimageio-format-webp = "2.5.*"
-opensubdiv-gpu = "*"
-tbb = "*"
+opencolorio-dev = "2.5.*"
+opensubdiv-gpu-dev = "3.7.*"
+openvdb-dev = "13.0.*"
+tbb-devel = ">=2022.3,<2023"
 pyside6 = "*"
 pyopengl = "==3.1.10"
 jinja2 = "*"
 embree = "4.4.*"
-openqmc = "==0.7.1"
-materialx-render = "==1.39.4"
-numpy = "*"
+openqmc-dev = "==0.7.1"
+imath-dev = "3.2.*"
+libboost-devel = "*"
+materialx-dev = "1.39.*"
+materialx-render = "1.39.*"
+zlib = "*"
 
 # Build deps
 cmake = "*"
@@ -34,12 +41,9 @@ export CXXFLAGS="${CXXFLAGS} -fno-visibility-inlines-hidden"
 export DEBUG_CXXFLAGS="${DEBUG_CXXFLAGS} -fno-visibility-inlines-hidden"
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
 -DPXR_PY_UNDEFINED_DYNAMIC_LOOKUP=OFF \
--DPXR_OIIO_PLUGIN_ENABLED=TRUE \
 -DPXR_BUILD_EMBREE_PLUGIN=TRUE \
 -DPXR_BUILD_OPENIMAGEIO_PLUGIN=TRUE \
--DPXR_ENABLE_OPENQMC_SUPPORT=TRUE \
 -DPXR_ENABLE_MATERIALX_SUPPORT=TRUE \
--DPXR_HDEMBREE_ENABLE_OPENQMC=2 \
 -DCMAKE_INSTALL_MESSAGE=LAZY \
 -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX'''
 ] }
@@ -53,12 +57,9 @@ export DEBUG_CXXFLAGS="${DEBUG_CXXFLAGS} -fno-visibility-inlines-hidden"
 cmake -B build-profile -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
 -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O3 -g -DNDEBUG -fno-omit-frame-pointer" \
 -DPXR_PY_UNDEFINED_DYNAMIC_LOOKUP=OFF \
--DPXR_OIIO_PLUGIN_ENABLED=TRUE \
 -DPXR_BUILD_EMBREE_PLUGIN=TRUE \
 -DPXR_BUILD_OPENIMAGEIO_PLUGIN=TRUE \
--DPXR_ENABLE_OPENQMC_SUPPORT=TRUE \
 -DPXR_ENABLE_MATERIALX_SUPPORT=TRUE \
--DPXR_HDEMBREE_ENABLE_OPENQMC=2 \
 -DCMAKE_INSTALL_MESSAGE=LAZY \
 -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX'''
 ] }
@@ -66,7 +67,6 @@ cmake -B build-profile -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
 build = { cmd = '''
 set -e
 cmake --build build --target install
-python -c "import os, pathlib, sysconfig; p = pathlib.Path(sysconfig.get_path('purelib'), 'openusd-pxr.pth'); p.parent.mkdir(parents=True, exist_ok=True); p.write_text(os.path.join(os.environ['CONDA_PREFIX'], 'lib', 'python') + '\n')"
 ''', depends-on = ["configure"] }
 
 build-profile = { cmd = "cmake --build build-profile --target pxr/imaging/plugin/hdEmbree/install", depends-on = ["configure-profile"] }
@@ -75,13 +75,73 @@ usdview = { cmd = "usdview --complexity high --renderer Embree" }
 usdrecord = { cmd = "usdrecord --complexity high --renderer Embree" }
 usdrender = { cmd = "usdrender --complexity high --renderer Embree" }
 
-[target.win-64.dependencies]
-tbb-devel = "*"
+[target.osx-arm64.tasks]
+configure = { cmd = [
+    "bash",
+    "-lc",
+'''set -e
+export CXXFLAGS="${CXXFLAGS//-fvisibility-inlines-hidden/}"
+export CXXFLAGS="${CXXFLAGS//-ffunction-sections/}"
+export CXXFLAGS="${CXXFLAGS//-pipe/}"
+export CFLAGS="${CFLAGS//-ffunction-sections/}"
+export CFLAGS="${CFLAGS//-pipe/}"
+
+python_site_packages="$(python -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
+
+cmake -S . -B build -G Ninja \
+-DCMAKE_BUILD_TYPE=Release \
+-DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX" \
+-DCMAKE_INSTALL_LIBDIR=lib \
+-DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+-DBUILD_SHARED_LIBS=ON \
+-DPXR_BUILD_MONOLITHIC=OFF \
+-DPXR_ENABLE_PYTHON_SUPPORT=ON \
+-DPXR_PY_UNDEFINED_DYNAMIC_LOOKUP=ON \
+-DPXR_ENABLE_GL_SUPPORT=ON \
+-DPXR_ENABLE_METAL_SUPPORT=ON \
+-DPXR_ENABLE_VULKAN_SUPPORT=OFF \
+-DPXR_BUILD_EMBREE_PLUGIN=ON \
+-DPXR_BUILD_OPENIMAGEIO_PLUGIN=ON \
+-DPXR_BUILD_OPENCOLORIO_PLUGIN=ON \
+-DPXR_BUILD_IMAGEIO_PLUGIN=ON \
+-DPXR_BUILD_DRACO_PLUGIN=ON \
+-DPXR_ENABLE_MATERIALX_SUPPORT=ON \
+-DPXR_ENABLE_OPENVDB_SUPPORT=ON \
+-DPXR_ENABLE_PRECOMPILED_HEADERS=OFF \
+-DPXR_FIND_TBB_IN_CONFIG=ON \
+-DTBB_ROOT="$CONDA_PREFIX" \
+-DTBB_ROOT_DIR="$CONDA_PREFIX" \
+-DOpenSubdiv_ROOT="$CONDA_PREFIX" \
+-DOPENSUBDIV_ROOT_DIR="$CONDA_PREFIX" \
+-DOpenImageIO_ROOT="$CONDA_PREFIX" \
+-DOIIO_LOCATION="$CONDA_PREFIX" \
+-DOpenColorIO_ROOT="$CONDA_PREFIX" \
+-DMaterialX_ROOT="$CONDA_PREFIX" \
+-DOPENVDB_LOCATION="$CONDA_PREFIX" \
+-DOpenVDB_ROOT="$CONDA_PREFIX" \
+-DDRACO_ROOT="$CONDA_PREFIX" \
+-DEMBREE_LOCATION="$CONDA_PREFIX" \
+-DOpenQMC_ROOT="$CONDA_PREFIX" \
+-DPython3_EXECUTABLE="$CONDA_PREFIX/bin/python" \
+-DPython3_ROOT_DIR="$CONDA_PREFIX" \
+-DPython3_FIND_STRATEGY=LOCATION \
+-DPython3_FIND_REGISTRY=NEVER \
+-DPython3_FIND_FRAMEWORK=NEVER \
+-DPXR_PYTHON_INSTALL_DIR="$python_site_packages" \
+-DPXR_PYTHON_SHEBANG="$CONDA_PREFIX/bin/python" \
+-DCMAKE_INSTALL_MESSAGE=LAZY'''
+] }
+
+build = { cmd = "cmake --build build --target install --parallel 24", depends-on = ["configure"] }
+
+usdview = { cmd = "usdview --complexity high --renderer Embree" }
+usdrecord = { cmd = "usdrecord --complexity high --renderer Embree" }
+usdrender = { cmd = "usdrender --complexity high --renderer Embree" }
 
 [target.win-64.tasks]
-configure = { cmd = '''"$CONDA_PREFIX/Library/bin/cmake.exe" -B build -G Ninja -DPXR_PY_UNDEFINED_DYNAMIC_LOOKUP=OFF -DPXR_OIIO_PLUGIN_ENABLED=TRUE -DPXR_BUILD_EMBREE_PLUGIN=TRUE -DPXR_BUILD_OPENIMAGEIO_PLUGIN=TRUE -DPXR_ENABLE_OPENQMC_SUPPORT=TRUE -DPXR_ENABLE_MATERIALX_SUPPORT=TRUE -DPXR_HDEMBREE_ENABLE_OPENQMC=2 -DPXR_ENABLE_PRECOMPILED_HEADERS=OFF -DCMAKE_SUPPRESS_REGENERATION=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="/utf-8" -DCMAKE_INSTALL_MESSAGE=LAZY -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX"''' }
+configure = { cmd = '''"$CONDA_PREFIX/Library/bin/cmake.exe" -B build -G Ninja -DPXR_PY_UNDEFINED_DYNAMIC_LOOKUP=OFF -DPXR_BUILD_EMBREE_PLUGIN=TRUE -DPXR_BUILD_OPENIMAGEIO_PLUGIN=TRUE -DPXR_ENABLE_MATERIALX_SUPPORT=TRUE -DPXR_ENABLE_PRECOMPILED_HEADERS=OFF -DCMAKE_SUPPRESS_REGENERATION=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="/utf-8" -DCMAKE_INSTALL_MESSAGE=LAZY -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX"''' }
 
-build = { cmd = '''"$CONDA_PREFIX/Library/bin/cmake.exe" --build build --target install && "$CONDA_PREFIX/python.exe" -c "import os, pathlib, sysconfig; prefix = os.environ['CONDA_PREFIX']; p = pathlib.Path(sysconfig.get_path('purelib'), 'openusd-pxr.pth'); p.parent.mkdir(parents=True, exist_ok=True); dll_line = 'import os; os._openusd_dll_dirs=[os.add_dll_directory(os.path.join(os.environ[' + repr('CONDA_PREFIX') + '], path)) for path in ' + repr(('Lib', 'Library/bin')) + ' if os.path.isdir(os.path.join(os.environ[' + repr('CONDA_PREFIX') + '], path))]\n'; p.write_text(dll_line + os.path.join(prefix, 'lib', 'python') + '\n')"''', depends-on = ["configure"] }
+build = { cmd = '''"$CONDA_PREFIX/Library/bin/cmake.exe" --build build --target install && "$CONDA_PREFIX/python.exe" -c "import os, pathlib, sysconfig; p = pathlib.Path(sysconfig.get_path('purelib'), 'openusd-pxr.pth'); p.parent.mkdir(parents=True, exist_ok=True); dll_line = 'import os; os._openusd_dll_dirs=[os.add_dll_directory(os.path.join(os.environ[' + repr('CONDA_PREFIX') + '], path)) for path in ' + repr(('Lib', 'Library/bin')) + ' if os.path.isdir(os.path.join(os.environ[' + repr('CONDA_PREFIX') + '], path))]\n'; p.write_text(dll_line)"''', depends-on = ["configure"] }
 
 usdview = { cmd = "usdview --complexity high --renderer Embree" }
 usdrecord = { cmd = "usdrecord --complexity high --renderer Embree" }
