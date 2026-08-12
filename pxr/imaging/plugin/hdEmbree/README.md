@@ -64,6 +64,15 @@ pixi run usdrender scene.usda -r Embree \
     -s "/Camera.focalLength = 35"
 ```
 
+# Contributing
+
+Please make PRs to this repository targeting the `typhoon` branch. This is a community-driven project and we look forward to your contributions. In particular we are eager to merge:
+
+- Correctness and bug fixes.
+- Missing functionality, as prescribed by OpenUSD. For example, we do not currently support UsdVol volumes.
+- Readability enhancements and code simplification: anything that makes the code easier to grok for humans is hugely beneficial.
+- Optimizations, as long as they don't hurt readability: Typhoon is a reference renderer, not a production renderer, but we'd still like regression suites to run as fast as possible. Optimizations that _also_ simplify the code are particularly welcome.
+
 # Navigating the code
 Design and code structure are documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 

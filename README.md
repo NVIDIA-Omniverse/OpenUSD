@@ -1,5 +1,9 @@
-Universal Scene Description
-===========================
+Universal Scene Description - Typhoon Fork
+==========================================
+
+This branch is the fork of OpenUSD containing Typhoon, the proposed OpenUSD reference renderer. Please see [Typhoon's README for information on building and running with Typhoon enabled](pxr/imaging/plugin/hdEmbree/README.md)
+
+---
 
 Universal Scene Description (USD) is an efficient, scalable system for
 authoring, reading, and streaming time-sampled scene description for
