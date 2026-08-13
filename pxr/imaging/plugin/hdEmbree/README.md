@@ -73,12 +73,70 @@ pixi run ctest \
 
 ### Image Regression Tests
 
-The image regression test suite is in a separate repository: https://github.com/anderslanglands/typhoon-test-suite
+The image regression tests live in the separate
+[typhoon-test-suite](https://github.com/anderslanglands/typhoon-test-suite)
+repository. Clone its pinned assets and download the published reference images
+before running the suite:
+
 ```bash
 git clone --recursive https://github.com/anderslanglands/typhoon-test-suite.git
 cd typhoon-test-suite
-pixi run pytest
+pixi run download-references
+pixi run test
 ```
+
+By default, the suite uses the packaged `openusd-typhoon` version pinned in its
+`pixi.lock`. To test the build installed by this OpenUSD checkout instead,
+create the following gitignored `goldeneye.local.toml` in the
+`typhoon-test-suite` root. Replace `/path/to/OpenUSD` with the path to this
+repository:
+
+```toml
+[renderers.typhoon]
+command = [
+    "pixi", "run",
+    "--manifest-path", "/path/to/OpenUSD/pixi.toml",
+    "--clean-env",
+    "usdrender",
+    "{usd_path}",
+    "--outputRoot", "{suite_output_root}",
+]
+```
+
+`pixi run test` accepts any test file or subtree. The available suite paths are:
+
+| Path | Coverage |
+|------|----------|
+| `test-suite` | General renderer and material integration fixtures |
+| `test-suite/furnace` | OpenPBR furnace and normal-map fixtures |
+| `materials` | All renderer-focused material fixtures below |
+| `materials/geometric` | Geometry inputs, primvars, and shading frames |
+| `materials/misc` | Time-sampled behavior |
+| `materials/open_pbr` | OpenPBR features, transmission, volume, and displacement |
+| `materials/pbr` | MaterialX PBR closures, layers, subsurface, and volume |
+| `materials/standard_surface` | Standard Surface features and transmission |
+| `materials/textures` | Image formats, addressing, UDIMs, blur, and triplanar projection |
+| `usdlux` | UsdLux lights, shaping, visibility, and IES behavior |
+
+For example, run one subcategory or one fixture with:
+
+```bash
+pixi run test materials/pbr
+pixi run test materials/open_pbr/displacement.usda
+```
+
+Each test run writes an HTML report below `_output/run-NNNN` and updates the
+project-level `_output/index.html`. Serve the reports from the test-suite root
+with:
+
+```bash
+pixi run view
+```
+
+Open <http://127.0.0.1:8000/> in a browser to select and inspect a run. Keep the
+command running while viewing the report and press Ctrl-C to stop the server.
+
+![Typhoon test suite report viewer](doc/images/typhoon-test-suite-view.png)
 
 ## usdrender
 
