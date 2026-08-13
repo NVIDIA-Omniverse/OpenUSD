@@ -29,6 +29,36 @@ to run `usdview` with Typhoon already selected as the default renderer. In
 `usdview` you can use the `RenderLab` plugin to edit scene properties and
 renderer settings at runtime, and to select the viewport AOV.
 
+## RenderLab
+
+RenderLab is a bundled `usdview` plugin for interactively inspecting and
+adjusting a scene while Typhoon is rendering. Open it from
+`RenderLab > Open RenderLab` in the `usdview` menu bar.
+
+![RenderLab](doc/images/renderlab.png)
+
+RenderLab provides three tabs:
+
+- **Render Settings** groups the active renderer's controls by purpose and
+  applies changes immediately. The **Viewport AOV** menu switches the viewport
+  between the renderer's available outputs, including Typhoon's
+  `adaptiveHeatmap` and `ambocc` diagnostic AOVs.
+- **Camera & Light** lists the cameras and lights on the stage and exposes their
+  commonly used USD attributes. A camera can be made the view camera from its
+  context menu. Enable **Interactive** to edit the selected camera with the
+  usual Alt-drag viewport controls. Alt+Shift+left-drag rotates the selected
+  dome light.
+- **Material** lists materials for the MaterialX (`mtlx`) or universal
+  (`default`) render context and exposes shader inputs using their Sdr
+  metadata. **Follow Selection** selects the material bound to the current
+  prim, and connected inputs can be followed upstream through the shader
+  network.
+
+Camera, light, and material edits are authored as session-layer overrides, so
+the source USD layers are not modified. Renderer settings and the selected AOV
+are runtime state for the current `usdview` session. Modified parameters can be
+reset to the value they had when the editor was opened.
+
 ## Running Tests
 
 ### Unit Tests
