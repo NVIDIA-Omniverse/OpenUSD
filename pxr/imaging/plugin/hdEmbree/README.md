@@ -1,3 +1,5 @@
+![Typhoon](doc/images/readme-header.png)
+
 # Typhoon
 
 Typhoon is a reference path tracer built into OpenUSD. It is intended to be a readable, community-developed, shared reference for how to implement standard USD features, such as UsdLux lighting, and UsdShade-based MaterialX materials.
@@ -66,7 +68,7 @@ pixi run usdrender scene.usda -r Embree \
 
 # Contributing
 
-Please make PRs to this repository targeting the `typhoon` branch. This is a community-driven project and we look forward to your contributions. In particular we are eager to merge:
+Please make PRs to this repository targeting the `typhoon/main` branch. This is a community-driven project and we look forward to your contributions. In particular we are eager to merge:
 
 - Correctness and bug fixes.
 - Missing functionality, as prescribed by OpenUSD. For example, we do not currently support UsdVol volumes.
