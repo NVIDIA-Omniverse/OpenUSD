@@ -142,6 +142,11 @@ command running while viewing the report and press Ctrl-C to stop the server.
 
 This branch also adds a new executable called `usdrender`. This, as its name suggests, renders a USD layer, writing `RenderProduct`s connected to the selected `RenderSettings` to disk.  
 
+`usdrender` defaults to high mesh-refinement complexity. It uses an explicitly
+requested renderer first, then a renderer authored on the selected
+`RenderPass`, and otherwise defaults to Embree. `--complexity` and `--renderer`
+override these defaults.
+
 ### Per-invocation attribute overrides
 
 `usdrender -s` / `--set` authors repeatable attribute overrides into an

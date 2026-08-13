@@ -31,7 +31,7 @@ bool ParseOptions(int argc, char **argv, Options *o)
     app.add_option("--camera,-c", o->camera);
     app.add_option("--frames,-f", o->frames);
     app.add_flag("--defaultTime", o->defaultTime);
-    std::string complexity = "low";
+    std::string complexity = "high";
     app.add_option("--complexity", complexity)
         ->check(CLI::IsMember({"low", "medium", "high", "veryhigh"}));
     app.add_option("--colorCorrectionMode", o->colorCorrection);

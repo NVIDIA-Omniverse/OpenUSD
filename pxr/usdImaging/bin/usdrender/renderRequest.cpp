@@ -133,9 +133,9 @@ static SdfPath _Settings(const Options &o, const UsdStagePtr &s,
     return SdfPath(p);
 }
 
-// Resolve a requested renderer by plugin id or display name. The sentinel
-// token distinguishes an unknown explicit renderer from no renderer selection,
-// which allows Hydra to retain its normal default in the latter case.
+// Resolve the command-line renderer, then the RenderPass renderer, and finally
+// the offline tool's Embree default by plugin id or display name. The sentinel
+// token distinguishes an unavailable selection from a valid plugin.
 static TfToken _Renderer(const Options &o, const UsdStagePtr &s,
                          const SdfPath &pass)
 {
@@ -147,7 +147,7 @@ static TfToken _Renderer(const Options &o, const UsdStagePtr &s,
         q = t.GetString();
     }
     if (q.empty())
-        return {};
+        q = "Embree";
     for (const TfToken &id : UsdImagingGLEngine::GetRendererPlugins())
         if (id == TfToken(q) ||
             UsdImagingGLEngine::GetRendererDisplayName(id) == q)

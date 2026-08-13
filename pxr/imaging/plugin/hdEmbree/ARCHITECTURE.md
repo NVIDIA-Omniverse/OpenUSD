@@ -67,6 +67,9 @@ command-line opinion stronger than the root stage and a supplied
 `usdrender` owns output-root redirection, frame-placeholder expansion, parent
 directory creation, and the session-layer `productName` override. hdEmbree
 consumes the resulting `productName` verbatim and must not expand placeholders.
+The tool defaults to high refinement complexity. Renderer selection prefers an
+explicit command-line choice, then the selected RenderPass's authored renderer,
+then Embree.
 Legacy `usdrecord` uses `UsdAppUtilsFrameRecorder`; `usdrender` does not.
 
 ### Upstream contracts

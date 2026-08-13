@@ -32,6 +32,11 @@ ninja = "*"
 c-compiler = "*"
 cxx-compiler = "*"
 
+[tasks]
+usdview = { cmd = "usdview" }
+usdrecord = { cmd = "usdrecord" }
+usdrender = { cmd = "usdrender" }
+
 [target.linux-64.tasks]
 configure = { cmd = [
     "bash",
@@ -70,10 +75,6 @@ cmake --build build --target install
 ''', depends-on = ["configure"] }
 
 build-profile = { cmd = "cmake --build build-profile --target pxr/imaging/plugin/hdEmbree/install", depends-on = ["configure-profile"] }
-
-usdview = { cmd = "usdview --complexity high --renderer Embree" }
-usdrecord = { cmd = "usdrecord --complexity high --renderer Embree" }
-usdrender = { cmd = "usdrender --complexity high --renderer Embree" }
 
 [target.osx-arm64.tasks]
 configure = { cmd = [
@@ -131,15 +132,7 @@ cmake -S . -B build -G Ninja \
 
 build = { cmd = "cmake --build build --target install --parallel 24", depends-on = ["configure"] }
 
-usdview = { cmd = "usdview --complexity high --renderer Embree" }
-usdrecord = { cmd = "usdrecord --complexity high --renderer Embree" }
-usdrender = { cmd = "usdrender --complexity high --renderer Embree" }
-
 [target.win-64.tasks]
 configure = { cmd = '''"$CONDA_PREFIX/Library/bin/cmake.exe" -B build -G Ninja -DPXR_PY_UNDEFINED_DYNAMIC_LOOKUP=OFF -DPXR_BUILD_EMBREE_PLUGIN=TRUE -DPXR_BUILD_OPENIMAGEIO_PLUGIN=TRUE -DPXR_ENABLE_MATERIALX_SUPPORT=TRUE -DPXR_ENABLE_PRECOMPILED_HEADERS=OFF -DCMAKE_SUPPRESS_REGENERATION=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="/utf-8" -DCMAKE_INSTALL_MESSAGE=LAZY -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX"''' }
 
 build = { cmd = '''"$CONDA_PREFIX/Library/bin/cmake.exe" --build build --target install && "$CONDA_PREFIX/python.exe" -c "import os, pathlib, sysconfig; p = pathlib.Path(sysconfig.get_path('purelib'), 'openusd-pxr.pth'); p.parent.mkdir(parents=True, exist_ok=True); dll_line = 'import os; os._openusd_dll_dirs=[os.add_dll_directory(os.path.join(os.environ[' + repr('CONDA_PREFIX') + '], path)) for path in ' + repr(('Lib', 'Library/bin')) + ' if os.path.isdir(os.path.join(os.environ[' + repr('CONDA_PREFIX') + '], path))]\n'; p.write_text(dll_line)"''', depends-on = ["configure"] }
-
-usdview = { cmd = "usdview --complexity high --renderer Embree" }
-usdrecord = { cmd = "usdrecord --complexity high --renderer Embree" }
-usdrender = { cmd = "usdrender --complexity high --renderer Embree" }

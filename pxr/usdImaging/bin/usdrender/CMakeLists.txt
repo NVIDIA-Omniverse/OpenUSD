@@ -34,6 +34,19 @@ pxr_register_test(testUsdRenderOverrides
     EXPECTED_RETURN_CODE 0
 )
 
+pxr_build_test(testUsdRenderOptions
+    LIBRARIES
+        usd
+    CPPFILES
+        options.cpp
+        testenv/testUsdRenderOptions.cpp
+)
+
+pxr_register_test(testUsdRenderOptions
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testUsdRenderOptions"
+    EXPECTED_RETURN_CODE 0
+)
+
 if (PXR_BUILD_EMBREE_PLUGIN AND BUILD_SHARED_LIBS)
     pxr_register_test(testUsdRenderSetOverrides
         COMMAND "${PYTHON_EXECUTABLE} testUsdRenderSetOverrides.py ${CMAKE_INSTALL_PREFIX}/bin/usdrender"
@@ -42,7 +55,7 @@ if (PXR_BUILD_EMBREE_PLUGIN AND BUILD_SHARED_LIBS)
     )
 
     pxr_register_test(testUsdRenderCpuFrames
-        COMMAND "${CMAKE_INSTALL_PREFIX}/bin/usdrender test.usda --disableGpu --renderer Embree --enableCameraLight --frames 1:2 --outputRoot outputs"
+        COMMAND "${CMAKE_INSTALL_PREFIX}/bin/usdrender test.usda --disableGpu --enableCameraLight --frames 1:2 --outputRoot outputs"
         IMAGE_DIFF_COMPARE
             outputs/frame.0001.png
             outputs/frame.0002.png
@@ -50,6 +63,12 @@ if (PXR_BUILD_EMBREE_PLUGIN AND BUILD_SHARED_LIBS)
         FAIL_PERCENT 0.001
         WARN 0.001
         WARN_PERCENT 0.001
+        EXPECTED_RETURN_CODE 0
+        TESTENV testenv/CpuFrames
+    )
+
+    pxr_register_test(testUsdRenderDefaults
+        COMMAND "${PYTHON_EXECUTABLE} testUsdRenderDefaults.py ${CMAKE_INSTALL_PREFIX}/bin/usdrender"
         EXPECTED_RETURN_CODE 0
         TESTENV testenv/CpuFrames
     )
