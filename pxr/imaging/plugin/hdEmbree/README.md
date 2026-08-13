@@ -29,39 +29,9 @@ to run `usdview` with Typhoon already selected as the default renderer. In
 `usdview` you can use the `RenderLab` plugin to edit scene properties and
 renderer settings at runtime, and to select the viewport AOV.
 
-## RenderLab
+# Running Tests
 
-RenderLab is a bundled `usdview` plugin for interactively inspecting and
-adjusting a scene while Typhoon is rendering. Open it from
-`RenderLab > Open RenderLab` in the `usdview` menu bar.
-
-![RenderLab](doc/images/renderlab.png)
-
-RenderLab provides three tabs:
-
-- **Render Settings** groups the active renderer's controls by purpose and
-  applies changes immediately. The **Viewport AOV** menu switches the viewport
-  between the renderer's available outputs, including Typhoon's
-  `adaptiveHeatmap` and `ambocc` diagnostic AOVs.
-- **Camera & Light** lists the cameras and lights on the stage and exposes their
-  commonly used USD attributes. A camera can be made the view camera from its
-  context menu. Enable **Interactive** to edit the selected camera with the
-  usual Alt-drag viewport controls. Alt+Shift+left-drag rotates the selected
-  dome light.
-- **Material** lists materials for the MaterialX (`mtlx`) or universal
-  (`default`) render context and exposes shader inputs using their Sdr
-  metadata. **Follow Selection** selects the material bound to the current
-  prim, and connected inputs can be followed upstream through the shader
-  network.
-
-Camera, light, and material edits are authored as session-layer overrides, so
-the source USD layers are not modified. Renderer settings and the selected AOV
-are runtime state for the current `usdview` session. Modified parameters can be
-reset to the value they had when the editor was opened.
-
-## Running Tests
-
-### Unit Tests
+## Unit Tests
 
 To run the unit tests:
 ```bash
@@ -71,7 +41,7 @@ pixi run ctest \
     --output-on-failure
 ```
 
-### Image Regression Tests
+## Image Regression Tests
 
 The image regression tests live in the separate
 [typhoon-test-suite](https://github.com/anderslanglands/typhoon-test-suite)
@@ -138,7 +108,7 @@ command running while viewing the report and press Ctrl-C to stop the server.
 
 ![Typhoon test suite report viewer](doc/images/typhoon-test-suite-view.png)
 
-## usdrender
+# usdrender
 
 This branch also adds a new executable called `usdrender`. This, as its name suggests, renders a USD layer, writing `RenderProduct`s connected to the selected `RenderSettings` to disk.  
 
@@ -147,7 +117,7 @@ requested renderer first, then a renderer authored on the selected
 `RenderPass`, and otherwise defaults to Embree. `--complexity` and `--renderer`
 override these defaults.
 
-### Per-invocation attribute overrides
+## Per-invocation attribute overrides
 
 `usdrender -s` / `--set` authors repeatable attribute overrides into an
 anonymous session layer without modifying the stage:
@@ -159,17 +129,35 @@ pixi run usdrender scene.usda -r Embree \
     -s "/Camera.focalLength = 35"
 ```
 
-# Contributing
+# RenderLab
 
-Please make PRs to this repository targeting the `typhoon/main` branch. This is a community-driven project and we look forward to your contributions. In particular we are eager to merge:
+RenderLab is a bundled `usdview` plugin for interactively inspecting and
+adjusting a scene while Typhoon is rendering. Open it from
+`RenderLab > Open RenderLab` in the `usdview` menu bar.
 
-- Correctness and bug fixes.
-- Missing functionality, as prescribed by OpenUSD. For example, we do not currently support UsdVol volumes.
-- Readability enhancements and code simplification: anything that makes the code easier to grok for humans is hugely beneficial.
-- Optimizations, as long as they don't hurt readability: Typhoon is a reference renderer, not a production renderer, but we'd still like regression suites to run as fast as possible. Optimizations that _also_ simplify the code are particularly welcome.
+![RenderLab](doc/images/renderlab.png)
 
-# Navigating the code
-Design and code structure are documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+RenderLab provides three tabs:
+
+- **Render Settings** groups the active renderer's controls by purpose and
+  applies changes immediately. The **Viewport AOV** menu switches the viewport
+  between the renderer's available outputs, including Typhoon's
+  `adaptiveHeatmap` and `ambocc` diagnostic AOVs.
+- **Camera & Light** lists the cameras and lights on the stage and exposes their
+  commonly used USD attributes. A camera can be made the view camera from its
+  context menu. Enable **Interactive** to edit the selected camera with the
+  usual Alt-drag viewport controls. Alt+Shift+left-drag rotates the selected
+  dome light.
+- **Material** lists materials for the MaterialX (`mtlx`) or universal
+  (`default`) render context and exposes shader inputs using their Sdr
+  metadata. **Follow Selection** selects the material bound to the current
+  prim, and connected inputs can be followed upstream through the shader
+  network.
+
+Camera, light, and material edits are authored as session-layer overrides, so
+the source USD layers are not modified. Renderer settings and the selected AOV
+are runtime state for the current `usdview` session. Modified parameters can be
+reset to the value they had when the editor was opened.
 
 # Settings
 
@@ -481,3 +469,16 @@ Cycles, in contrast, multiplies the incoming radius by `1 / (4π) ≈ 0.0796` in
 - **hdEmbree radius → Cycles radius**: multiply by `4π` (~12.6).
 
 Everything else (the Chiang albedo → α polynomial remap, the random-walk step cap of 256, Dwivedi guided sampling, MIS channel selection) matches Cycles directly.
+
+# Contributing
+
+Please make PRs to this repository targeting the `typhoon/main` branch. This is a community-driven project and we look forward to your contributions. In particular we are eager to merge:
+
+- Correctness and bug fixes.
+- Missing functionality, as prescribed by OpenUSD. For example, we do not currently support UsdVol volumes.
+- Readability enhancements and code simplification: anything that makes the code easier to grok for humans is hugely beneficial.
+- Optimizations, as long as they don't hurt readability: Typhoon is a reference renderer, not a production renderer, but we'd still like regression suites to run as fast as possible. Optimizations that _also_ simplify the code are particularly welcome.
+
+## Navigating the code
+
+Design and code structure are documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
