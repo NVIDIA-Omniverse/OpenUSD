@@ -479,6 +479,12 @@ Please make PRs to this repository targeting the `typhoon/main` branch. This is 
 - Readability enhancements and code simplification: anything that makes the code easier to grok for humans is hugely beneficial.
 - Optimizations, as long as they don't hurt readability: Typhoon is a reference renderer, not a production renderer, but we'd still like regression suites to run as fast as possible. Optimizations that _also_ simplify the code are particularly welcome.
 
+## Features TODO list
+
+- [ ] UsdVol volumes (VDB fields)
+- [ ] Light Path Expressions and standard AOV names
+- [ ] Merge typhoon/physical-lighting
+
 ## Navigating the code
 
 Design and code structure are documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
