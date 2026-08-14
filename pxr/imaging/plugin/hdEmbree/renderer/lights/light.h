@@ -112,6 +112,13 @@ struct IesShaping
     PxrIESFile iesFile;
     bool normalize = false;
     float angleScale = 0.0f;
+
+    /// Photometric power treats the IES profile as luminous intensity. Finite
+    /// emitters convert candela to luminance using their projected physical
+    /// area; sceneUnitArea compensates UsdLux normalize handling.
+    bool convertCandelaToLuminance = false;
+    float metersPerUnit = 1.0f;
+    float sceneUnitArea = 1.0f;
 };
 
 struct DirectionalShapingDistribution

@@ -546,8 +546,10 @@ _TestExposureCompensationRenderPassState()
         return false;
     }
 
-    HdEmbreeRenderBuffer colorBuffer(SdfPath("/ExposureColorBuffer"));
-    if (!colorBuffer.Allocate(
+    std::unique_ptr<HdEmbreeRenderBuffer> colorBuffer =
+        std::make_unique<HdEmbreeRenderBuffer>(
+            SdfPath("/ExposureColorBuffer"));
+    if (!colorBuffer->Allocate(
             GfVec3i(1, 1, 1), HdFormatFloat32Vec4,
             /*multiSampled=*/false)) {
         std::printf("failed to allocate exposure test color buffer\n");
@@ -563,7 +565,7 @@ _TestExposureCompensationRenderPassState()
 
     HdRenderPassAovBinding colorAov;
     colorAov.aovName = HdAovTokens->color;
-    colorAov.renderBuffer = &colorBuffer;
+    colorAov.renderBuffer = colorBuffer.get();
     colorAov.clearValue = VtValue(GfVec4f(0.125f, 0.25f, 0.375f, 0.8f));
     renderPassState->SetAovBindings({colorAov});
 
@@ -574,14 +576,14 @@ _TestExposureCompensationRenderPassState()
             return GfVec4f(-1.0f);
         }
         const float* const data =
-            static_cast<float const*>(colorBuffer.Map());
+            static_cast<float const*>(colorBuffer->Map());
         if (!data) {
-            colorBuffer.Unmap();
+            colorBuffer->Unmap();
             std::printf("failed to map exposure test color buffer\n");
             return GfVec4f(-1.0f);
         }
         const GfVec4f color(data[0], data[1], data[2], data[3]);
-        colorBuffer.Unmap();
+        colorBuffer->Unmap();
         return color;
     };
 
@@ -594,7 +596,7 @@ _TestExposureCompensationRenderPassState()
             enabledColor,
             GfVec4f(0.125f, 0.25f, 0.375f, 1.0f),
             1.0e-6f) ||
-        colorBuffer.GetPresentationExposureScale() != 2.0f) {
+        colorBuffer->GetPresentationExposureScale() != 2.0f) {
         std::printf("enabled exposure changed HDR storage or scale\n");
         return false;
     }
@@ -605,7 +607,7 @@ _TestExposureCompensationRenderPassState()
             disabledColor,
             GfVec4f(0.125f, 0.25f, 0.375f, 1.0f),
             1.0e-6f) ||
-        colorBuffer.GetPresentationExposureScale() != 1.0f) {
+        colorBuffer->GetPresentationExposureScale() != 1.0f) {
         std::printf("disabled exposure changed HDR storage or scale\n");
         return false;
     }
@@ -613,10 +615,110 @@ _TestExposureCompensationRenderPassState()
     renderPassState->SetEnableExposureCompensation(true);
     const GfVec4f reenabledColor = renderAndRead();
     if (!GfIsClose(reenabledColor, enabledColor, 1.0e-6f) ||
-        colorBuffer.GetPresentationExposureScale() != 2.0f) {
+        colorBuffer->GetPresentationExposureScale() != 2.0f) {
         std::printf("re-enabled exposure reset HDR accumulation or scale\n");
         return false;
     }
+
+    // Reusing a color buffer for a data AOV must not retain presentation
+    // exposure on that data.
+    colorAov.aovName = ty::AovTokens->adaptiveHeatmap;
+    renderPassState->SetAovBindings({colorAov});
+    renderPass->Execute(renderPassState, TfTokenVector());
+    if (!_WaitForConvergence(renderPass) ||
+        colorBuffer->GetPresentationExposureScale() != 1.0f) {
+        std::printf("data AOV retained color presentation exposure\n");
+        return false;
+    }
+
+    colorAov.aovName = HdAovTokens->color;
+    renderPassState->SetAovBindings({colorAov});
+    renderPass->Execute(renderPassState, TfTokenVector());
+    if (!_WaitForConvergence(renderPass) ||
+        colorBuffer->GetPresentationExposureScale() != 2.0f) {
+        std::printf("reused color AOV did not restore presentation exposure\n");
+        return false;
+    }
+
+    // Unbinding must not mutate the borrowed buffer; it may already be gone.
+    renderPassState->SetAovBindings(HdRenderPassAovBindingVector());
+    renderPass->Execute(renderPassState, TfTokenVector());
+    if (!_WaitForConvergence(renderPass) ||
+        colorBuffer->GetPresentationExposureScale() != 2.0f) {
+        std::printf("unbinding mutated detached color buffer\n");
+        return false;
+    }
+
+    colorAov.renderBuffer = colorBuffer.get();
+    renderPassState->SetAovBindings({colorAov});
+    renderPass->Execute(renderPassState, TfTokenVector());
+    if (!_WaitForConvergence(renderPass) ||
+        colorBuffer->GetPresentationExposureScale() != 2.0f) {
+        std::printf("rebound color AOV did not restore exposure\n");
+        return false;
+    }
+
+    // Hydra may destroy borrowed AOV buffers before installing replacement
+    // bindings. Model RemoveBprim's Finalize-then-delete sequence; rebinding
+    // must not dereference the expired buffer.
+    colorBuffer->Finalize(delegate.GetRenderParam());
+    colorBuffer.reset();
+    renderPassState->SetAovBindings(HdRenderPassAovBindingVector());
+    renderPass->Execute(renderPassState, TfTokenVector());
+    if (!_WaitForConvergence(renderPass)) {
+        std::printf("render did not converge after expired AOV rebinding\n");
+        return false;
+    }
+
+    // Hydra may also destroy borrowed buffers before its render task releases
+    // the pass. Pass destruction must clear bindings without dereferencing
+    // the expired buffer.
+    colorBuffer = std::make_unique<HdEmbreeRenderBuffer>(
+        SdfPath("/TeardownExposureColorBuffer"));
+    if (!colorBuffer->Allocate(
+            GfVec3i(1, 1, 1), HdFormatFloat32Vec4,
+            /*multiSampled=*/false)) {
+        std::printf("failed to allocate teardown exposure color buffer\n");
+        return false;
+    }
+    colorAov.renderBuffer = colorBuffer.get();
+    renderPassState->SetAovBindings({colorAov});
+    renderPass->Execute(renderPassState, TfTokenVector());
+    if (!_WaitForConvergence(renderPass)) {
+        std::printf("teardown exposure render did not converge\n");
+        return false;
+    }
+
+    // Pass destruction cannot safely mutate a borrowed buffer. A subsequent
+    // pass normalizes the still-live buffer when reusing it for a data AOV.
+    renderPass.reset();
+    if (colorBuffer->GetPresentationExposureScale() != 2.0f) {
+        std::printf("pass destruction mutated detached color buffer\n");
+        return false;
+    }
+    renderPass = delegate.CreateRenderPass(
+        renderIndex.get(), HdRprimCollection());
+    colorAov.aovName = ty::AovTokens->adaptiveHeatmap;
+    renderPassState->SetAovBindings({colorAov});
+    renderPass->Execute(renderPassState, TfTokenVector());
+    if (!_WaitForConvergence(renderPass) ||
+        colorBuffer->GetPresentationExposureScale() != 1.0f) {
+        std::printf("new pass retained detached color exposure on data AOV\n");
+        return false;
+    }
+
+    // Also retain the exact shutdown ordering that exposed the original UAF.
+    colorAov.aovName = HdAovTokens->color;
+    renderPassState->SetAovBindings({colorAov});
+    renderPass->Execute(renderPassState, TfTokenVector());
+    if (!_WaitForConvergence(renderPass) ||
+        colorBuffer->GetPresentationExposureScale() != 2.0f) {
+        std::printf("new pass did not restore color exposure\n");
+        return false;
+    }
+    colorBuffer->Finalize(delegate.GetRenderParam());
+    colorBuffer.reset();
+    renderPass.reset();
 
     return true;
 }

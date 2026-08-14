@@ -5,20 +5,32 @@
 // https://openusd.org/license.
 //
 #include <delegate/light.h>
+#include <delegate/renderParam.h>
 #include <renderer/lights/lightSampler.h>
 #include <renderer/lights/lightSamplerCommon.h>
+#include <renderer/renderer.h>
 
+#include "pxr/base/arch/fileSystem.h"
 #include "pxr/base/gf/color.h"
 #include "pxr/base/gf/colorSpace.h"
 #include "pxr/base/gf/matrix3f.h"
+#include "pxr/base/gf/matrix4d.h"
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/vec2f.h"
+#include "pxr/base/vt/value.h"
+#include "pxr/imaging/hd/renderThread.h"
+#include "pxr/imaging/hd/sceneDelegate.h"
+#include "pxr/imaging/hd/tokens.h"
+#include "pxr/usd/sdf/assetPath.h"
 
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <exception>
+#include <fstream>
 #include <functional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -27,6 +39,38 @@ namespace {
 
 int _totalTests = 0;
 int _failedTests = 0;
+const SdfPath _lightPath("/Light");
+
+class _LightSyncDelegate final : public HdSceneDelegate
+{
+public:
+    _LightSyncDelegate()
+        : HdSceneDelegate(nullptr, SdfPath::AbsoluteRootPath())
+    {
+    }
+
+    void Set(TfToken const& key, VtValue const& value)
+    {
+        _values[key] = value;
+    }
+
+    VtValue GetLightParamValue(
+        SdfPath const&, TfToken const& paramName) override
+    {
+        const std::unordered_map<
+            TfToken, VtValue, TfToken::HashFunctor>::const_iterator it =
+                _values.find(paramName);
+        return it == _values.end() ? VtValue() : it->second;
+    }
+
+    GfMatrix4d GetTransform(SdfPath const&) override
+    {
+        return GfMatrix4d(1.0);
+    }
+
+private:
+    std::unordered_map<TfToken, VtValue, TfToken::HashFunctor> _values;
+};
 
 struct _TestEntry {
     std::string name;
@@ -78,6 +122,136 @@ TestPhysicalScaleMultipliesEmission()
         return false;
     }
     return true;
+}
+
+bool
+TestPhotometricIesSyncUsesPowerModeOnly()
+{
+    static const char* const iesText =
+        "IESNA:LM-63-1995\n"
+        "TILT=NONE\n"
+        "1 1000 1 3 1 1 1 1 1 1 1 1 1\n"
+        "0 45 90\n"
+        "0\n"
+        "100 50 10\n";
+
+    const std::string directory = ArchMakeTmpSubdir(
+        ArchGetTmpDir(), "testHdEmbreePhotometricIes_");
+    if (directory.empty()) {
+        std::printf("    could not create temporary IES directory\n");
+        return false;
+    }
+    const std::string iesPath = directory + "/profile.ies";
+    {
+        std::ofstream iesStream(iesPath);
+        iesStream << iesText;
+        if (!iesStream) {
+            std::printf("    could not write temporary IES profile\n");
+            ArchRmDir(directory.c_str());
+            return false;
+        }
+    }
+
+    _LightSyncDelegate delegate;
+    delegate.Set(HdLightTokens->color, VtValue(GfVec3f(1.0f)));
+    delegate.Set(HdLightTokens->intensity, VtValue(1.0f));
+    delegate.Set(HdLightTokens->diffuse, VtValue(1.0f));
+    delegate.Set(HdLightTokens->exposure, VtValue(0.0f));
+    delegate.Set(HdLightTokens->enableColorTemperature, VtValue(false));
+    delegate.Set(HdLightTokens->width, VtValue(2.0f));
+    delegate.Set(HdLightTokens->height, VtValue(3.0f));
+    delegate.Set(HdLightTokens->normalize, VtValue(true));
+    delegate.Set(HdLightTokens->metersPerUnit, VtValue(0.5));
+    delegate.Set(HdLightTokens->photometricPower, VtValue(600.0f));
+    delegate.Set(
+        HdLightTokens->shapingIesFile,
+        VtValue(SdfAssetPath(iesPath, iesPath)));
+
+    ty::Renderer renderer;
+    HdRenderThread renderThread;
+    std::atomic<int> sceneVersion{0};
+    std::atomic<int> materialVersion{0};
+    HdEmbreeRenderParam renderParam(
+        nullptr, nullptr, &renderThread, &renderer, nullptr,
+        &sceneVersion, &materialVersion);
+    HdEmbree_Light light(_lightPath, HdSprimTypeTokens->rectLight);
+    HdDirtyBits dirtyBits = light.GetInitialDirtyBitsMask();
+    light.Sync(&delegate, &renderParam, &dirtyBits);
+
+    const ty::LightData& powerLight = light.LightData();
+    const float expectedPowerScale = 600.0f * 6.0f *
+        HdLight::EmissionLuminanceFactor(
+            &delegate, _lightPath, HdSprimTypeTokens->rectLight);
+    bool result = powerLight.shaping.ies.convertCandelaToLuminance &&
+        _IsClose(powerLight.shaping.ies.metersPerUnit, 0.5f) &&
+        _IsClose(powerLight.shaping.ies.sceneUnitArea, 6.0f) &&
+        _IsClose(powerLight.physicalScale, expectedPowerScale);
+    if (!result) {
+        std::printf(
+            "    Sync did not compose IES power conversion and normalize\n");
+    }
+
+    delegate.Set(HdLightTokens->photometricIlluminance, VtValue(100.0f));
+    delegate.Set(
+        HdLightTokens->photometricIlluminanceDistance, VtValue(2.0f));
+    dirtyBits = HdLight::DirtyParams;
+    light.Sync(&delegate, &renderParam, &dirtyBits);
+    const ty::LightData& illuminanceLight = light.LightData();
+    const float expectedIlluminanceScale =
+        HdLight::ComputePhysicalScalingFactor(
+            &delegate, _lightPath, HdSprimTypeTokens->rectLight);
+    if (illuminanceLight.shaping.ies.convertCandelaToLuminance ||
+        !_IsClose(
+            illuminanceLight.physicalScale, expectedIlluminanceScale)) {
+        std::printf(
+            "    valid illuminance and distance did not take precedence\n");
+        result = false;
+    }
+
+    light.Finalize(&renderParam);
+
+    delegate.Set(HdLightTokens->photometricIlluminance, VtValue(0.0f));
+    delegate.Set(
+        HdLightTokens->photometricIlluminanceDistance, VtValue(0.0f));
+    delegate.Set(HdLightTokens->radius, VtValue(2.0f));
+    delegate.Set(HdLightTokens->length, VtValue(3.0f));
+    const float pi = static_cast<float>(M_PI);
+    const auto checkShapeSync = [&](
+        TfToken const& lightType,
+        float expectedSceneUnitArea,
+        const char* shapeName) {
+        HdEmbree_Light shapeLight(_lightPath, lightType);
+        HdDirtyBits shapeDirtyBits = shapeLight.GetInitialDirtyBitsMask();
+        shapeLight.Sync(&delegate, &renderParam, &shapeDirtyBits);
+        const ty::LightData& shapeData = shapeLight.LightData();
+        const float expectedScale = 600.0f * expectedSceneUnitArea *
+            HdLight::EmissionLuminanceFactor(
+                &delegate, _lightPath, lightType);
+        const bool shapeResult =
+            shapeData.shaping.ies.convertCandelaToLuminance &&
+            _IsClose(
+                shapeData.shaping.ies.sceneUnitArea,
+                expectedSceneUnitArea) &&
+            _IsClose(shapeData.physicalScale, expectedScale);
+        if (!shapeResult) {
+            std::printf(
+                "    %s Sync did not cache normalized emitter area\n",
+                shapeName);
+        }
+        shapeLight.Finalize(&renderParam);
+        return shapeResult;
+    };
+    result = checkShapeSync(
+            HdSprimTypeTokens->diskLight, 4.0f * pi, "disk") &&
+        checkShapeSync(
+            HdSprimTypeTokens->sphereLight, 16.0f * pi, "sphere") &&
+        checkShapeSync(
+            HdSprimTypeTokens->cylinderLight, 12.0f * pi, "cylinder") &&
+        result;
+
+    std::remove(iesPath.c_str());
+    ArchRmDir(directory.c_str());
+    return result;
 }
 
 GfVec3f
@@ -678,6 +852,141 @@ TestIesDirectionalDistributionBuildsAndSamples()
     if (!_IsClose(sample.pdfSolidAngle, evaluatedPdf, 1e-5f)) {
         std::printf("    sampled/evaluated IES pdf mismatch: %f vs %f\n",
                     sample.pdfSolidAngle, evaluatedPdf);
+        return false;
+    }
+
+    return true;
+}
+
+bool
+TestAreaPhotometricIesDividesByProjectedArea()
+{
+    static const char* const iesText =
+        "IESNA:LM-63-1995\n"
+        "TILT=NONE\n"
+        "1 1000 1 3 1 1 1 1 1 1 1 1 1\n"
+        "0 45 90\n"
+        "0\n"
+        "100 50 10\n";
+
+    const GfVec3f position(0.0f);
+    const float pi = static_cast<float>(M_PI);
+    const auto checkProjectedArea = [=](
+        ty::LightData light,
+        GfVec3f direction,
+        float projectedAreaSceneUnits,
+        const char* shapeName) {
+        light.physicalScale = 3.0f;
+        light.shaping.ies.convertCandelaToLuminance = true;
+        light.shaping.ies.metersPerUnit = 0.5f;
+        if (!light.shaping.ies.iesFile.load(iesText)) {
+            std::printf("    could not load synthetic IES profile\n");
+            return false;
+        }
+
+        direction.Normalize();
+        const ty::LightSampler::LightSample evaluated =
+            ty::LightSampler::EvaluateLightDirection(
+                light, position, direction);
+        if (!evaluated.valid) {
+            std::printf(
+                "    expected %s IES direction to evaluate\n", shapeName);
+            return false;
+        }
+
+        const float profileIntegral = light.shaping.ies.iesFile.power() *
+            2.0f * pi;
+        const GfVec3f directionLight =
+            light.xformWorldToLight.TransformDir(direction).GetNormalized();
+        const float iesValue = light.shaping.ies.iesFile.eval(
+            std::acos(directionLight[2]), 0.0f, 0.0f);
+        const float projectedAreaPhysical =
+            projectedAreaSceneUnits * 0.25f;
+        const float expected = 3.0f * iesValue /
+            (profileIntegral * projectedAreaPhysical);
+        if (!_IsClose(evaluated.radianceIn, GfVec3f(expected), 1e-5f)) {
+            std::printf(
+                "    expected %s projected-area IES radiance %f, got "
+                "(%f, %f, %f)\n",
+                shapeName,
+                expected,
+                evaluated.radianceIn[0],
+                evaluated.radianceIn[1],
+                evaluated.radianceIn[2]);
+            return false;
+        }
+        return true;
+    };
+
+    GfVec3f planarDirection(0.5f, 0.0f, 4.0f);
+    planarDirection.Normalize();
+    const float planarCosine = planarDirection[2];
+
+    GfMatrix4f affineXform(1.0f);
+    affineXform.SetRow3(0, GfVec3f(1.5f, 0.2f, 0.1f));
+    affineXform.SetRow3(1, GfVec3f(0.3f, 1.2f, 0.4f));
+    affineXform.SetRow3(2, GfVec3f(0.2f, 0.5f, 0.9f));
+    const GfVec3f affineCenter(0.7f, -0.4f, 5.0f);
+    affineXform.SetRow3(3, affineCenter);
+    GfVec3f affineDirection = affineCenter;
+    affineDirection.Normalize();
+    const auto applyTransform = [&affineXform](ty::LightData* light) {
+        light->xformLightToWorld = affineXform;
+        light->xformWorldToLight = affineXform.GetInverse();
+        light->normalXformLightToWorld =
+            light->xformWorldToLight.ExtractRotationMatrix().GetTranspose();
+    };
+
+    ty::LightData disk =
+        _MakeDiskLight(GfVec3f(0.0f), 2.0f);
+    applyTransform(&disk);
+    const GfVec3f diskRadiusXWld = affineXform.TransformDir(
+        GfVec3f(2.0f, 0.0f, 0.0f));
+    const GfVec3f diskRadiusYWld = affineXform.TransformDir(
+        GfVec3f(0.0f, 2.0f, 0.0f));
+    const float diskProjectedArea = pi * std::abs(GfDot(
+        affineDirection, GfCross(diskRadiusXWld, diskRadiusYWld)));
+
+    ty::LightData sphere =
+        _MakeSphereLight(GfVec3f(0.0f), 1.0f);
+    applyTransform(&sphere);
+    const GfVec3f sphereAxisXWld = affineXform.TransformDir(
+        GfVec3f(1.0f, 0.0f, 0.0f));
+    const GfVec3f sphereAxisYWld = affineXform.TransformDir(
+        GfVec3f(0.0f, 1.0f, 0.0f));
+    const GfVec3f sphereAxisZWld = affineXform.TransformDir(
+        GfVec3f(0.0f, 0.0f, 1.0f));
+    const float sphereProjectedYZ = GfDot(
+        affineDirection, GfCross(sphereAxisYWld, sphereAxisZWld));
+    const float sphereProjectedZX = GfDot(
+        affineDirection, GfCross(sphereAxisZWld, sphereAxisXWld));
+    const float sphereProjectedXY = GfDot(
+        affineDirection, GfCross(sphereAxisXWld, sphereAxisYWld));
+    const float sphereProjectedArea = pi * std::sqrt(
+        ty::Sqr(sphereProjectedYZ) + ty::Sqr(sphereProjectedZX) +
+        ty::Sqr(sphereProjectedXY));
+
+    ty::LightData cylinder =
+        _MakeCylinderLight(GfVec3f(0.0f), 1.0f, 2.0f);
+    applyTransform(&cylinder);
+    const GfVec3f cylinderAxisWld = affineXform.TransformDir(
+        GfVec3f(2.0f, 0.0f, 0.0f));
+    const float cylinderProjectedY = GfDot(
+        affineDirection, GfCross(cylinderAxisWld, sphereAxisYWld));
+    const float cylinderProjectedZ = GfDot(
+        affineDirection, GfCross(cylinderAxisWld, sphereAxisZWld));
+    const float cylinderProjectedArea = 2.0f * std::sqrt(
+        ty::Sqr(cylinderProjectedY) + ty::Sqr(cylinderProjectedZ));
+
+    if (!checkProjectedArea(
+            _MakeRectLight(GfVec3f(0.0f, 0.0f, 4.0f), 2.0f, 2.0f),
+            planarDirection, 4.0f * planarCosine, "rect") ||
+        !checkProjectedArea(
+            disk, affineDirection, diskProjectedArea, "disk") ||
+        !checkProjectedArea(
+            sphere, affineDirection, sphereProjectedArea, "sphere") ||
+        !checkProjectedArea(
+            cylinder, affineDirection, cylinderProjectedArea, "cylinder")) {
         return false;
     }
 
@@ -1323,6 +1632,8 @@ main(int /*argc*/, char** /*argv*/)
 {
     _Register("PhysicalScaleMultipliesEmission",
               &TestPhysicalScaleMultipliesEmission);
+    _Register("PhotometricIesSyncUsesPowerModeOnly",
+              &TestPhotometricIesSyncUsesPowerModeOnly);
     _Register("DomeDistributionBuildsCdfs", &TestDomeDistributionBuildsCdfs);
     _Register("DomeTextureConvertsToRenderColorSpace",
               &TestDomeTextureConvertsToRenderColorSpace);
@@ -1344,6 +1655,8 @@ main(int /*argc*/, char** /*argv*/)
               &TestDirectionalShapingDistributionPdfNormalizes);
     _Register("IesDirectionalDistributionBuildsAndSamples",
               &TestIesDirectionalDistributionBuildsAndSamples);
+    _Register("AreaPhotometricIesDividesByProjectedArea",
+              &TestAreaPhotometricIesDividesByProjectedArea);
     _Register("NarrowConeDirectionalDistributionSamplesWithinCone",
               &TestNarrowConeDirectionalDistributionSamplesWithinCone);
     _Register("NarrowIesBeamDirectionalDistributionIsValid",

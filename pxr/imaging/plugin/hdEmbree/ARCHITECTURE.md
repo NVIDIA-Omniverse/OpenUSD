@@ -927,8 +927,10 @@ classified AOV through `_WriteAov()`'s direct switch:
 - color output stores the returned radiance as unexposed HDR. The render pass
   records the active camera exposure on the color buffer when Hydra enables
   exposure compensation, and Hdx applies that scale only to its private CPU
-  staging copy immediately before GPU upload. Exposure edits therefore update
-  presentation without resetting progressive accumulation;
+  staging copy immediately before GPU upload. Each execution first normalizes
+  all current live bindings so a buffer reused for a data AOV cannot inherit
+  color exposure. Exposure edits therefore update presentation without
+  resetting progressive accumulation;
 - depth, normal, ID, and primvar output interprets the retained `primaryHit`;
 - heatmap output consumes adaptive sample counts rather than scene radiance.
   `_UpdateVariance()` advances the count before `_WriteAov()` maps
@@ -1010,6 +1012,15 @@ Follow the focused and complete validation workflow in
   in `lightSamplerCommon.*`.
 - Add visible Embree geometry for finite camera-visible lights.
 - Keep radiance evaluation, sampling PDF, normalization, shaping, IES, texture orientation, and linking consistent.
+- For rect, disk, sphere, and open-cylinder lights whose selected physical
+  input is positive `photometric:power`, treat an IES profile as luminous
+  intensity rather than a dimensionless shaping mask. Convert candela to
+  luminance by dividing the normalized profile by the emitter's physical
+  projected area in the evaluated direction; compensate the renderer's
+  scene-unit area normalization so `normalize` does not change the photometric
+  power target. A valid positive illuminance-and-distance pair retains Hydra's
+  precedence over power. Profile integration uses the unscaled IES angular
+  domain, matching UsdLux's existing `angleScale` convention.
 - Extend light-sampler tests and add a render fixture for visibility/synchronization. Use the external `typhoon-test-suite/usdlux` frame sweeps for LightAPI and sampler regressions.
 
 ### Sampling

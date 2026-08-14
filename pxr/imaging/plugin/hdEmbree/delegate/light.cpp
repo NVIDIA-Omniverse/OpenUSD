@@ -27,6 +27,7 @@
 #include <fstream>
 #include <functional>
 #include <sstream>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -111,6 +112,30 @@ _IesKnotToEvalTheta(float angle, float angleScale)
         return _pi - angleScale * (angle - _pi);
     }
     return angle;
+}
+
+float
+_IesProfileSolidAngle(PxrIESFile const& iesFile)
+{
+    std::vector<float> const& verticalAngles = iesFile.verticalAngles();
+    if (verticalAngles.empty()) {
+        return 2.0f * _pi;
+    }
+
+    const auto [angleMin, angleMax] = std::minmax_element(
+        verticalAngles.cbegin(), verticalAngles.cend());
+    constexpr float hemisphereFudgeFactor = 0.1f;
+    const bool isSphere = (*angleMax - *angleMin) >
+        (_pi / 2.0f + hemisphereFudgeFactor);
+    return _pi * (isSphere ? 4.0f : 2.0f);
+}
+
+float
+_IesIntegratedPower(PxrIESFile const& iesFile)
+{
+    // PxrIESFile::power() is average intensity over the profile's covered
+    // sphere or hemisphere. Photometric power needs raw integrated candela.
+    return iesFile.power() * _IesProfileSolidAngle(iesFile);
 }
 
 std::string
@@ -593,6 +618,197 @@ _SyncLightTexture(const SdfPath& id, ty::LightData& light,
     light.texture = _LoadLightTexture(path);
 }
 
+float
+_GetMetersPerUnit(HdSceneDelegate* sceneDelegate, SdfPath const& id)
+{
+    const VtValue value = sceneDelegate->GetLightParamValue(
+        id, HdLightTokens->metersPerUnit);
+    double metersPerUnit = 1.0;
+    if (value.IsHolding<double>()) {
+        metersPerUnit = value.UncheckedGet<double>();
+    } else if (value.IsHolding<float>()) {
+        metersPerUnit = value.UncheckedGet<float>();
+    }
+    return metersPerUnit > 0.0 && std::isfinite(metersPerUnit)
+        ? static_cast<float>(metersPerUnit)
+        : 1.0f;
+}
+
+float
+_GetPositiveLightParam(
+    HdSceneDelegate* sceneDelegate, SdfPath const& id, TfToken const& token)
+{
+    const VtValue value = sceneDelegate->GetLightParamValue(
+        id, token);
+    float result = 0.0f;
+    if (value.IsHolding<float>()) {
+        result = value.UncheckedGet<float>();
+    } else if (value.IsHolding<double>()) {
+        result = static_cast<float>(value.UncheckedGet<double>());
+    } else if (value.IsHolding<int>()) {
+        result = static_cast<float>(value.UncheckedGet<int>());
+    }
+    return result > 0.0f && std::isfinite(result) ? result : 0.0f;
+}
+
+float
+_GetPositivePhotometricPower(
+    HdSceneDelegate* sceneDelegate, SdfPath const& id)
+{
+    return _GetPositiveLightParam(
+        sceneDelegate, id, HdLightTokens->photometricPower);
+}
+
+bool
+_PhotometricPowerIsSelected(
+    HdSceneDelegate* sceneDelegate, SdfPath const& id)
+{
+    if (_GetPositivePhotometricPower(sceneDelegate, id) <= 0.0f) {
+        return false;
+    }
+
+    const float illuminance = _GetPositiveLightParam(
+        sceneDelegate, id, HdLightTokens->photometricIlluminance);
+    const float illuminanceDistance = _GetPositiveLightParam(
+        sceneDelegate, id, HdLightTokens->photometricIlluminanceDistance);
+    return illuminance <= 0.0f || illuminanceDistance <= 0.0f;
+}
+
+float
+_RectSceneUnitArea(ty::LightData const& light, ty::RectLight const& rect)
+{
+    const GfVec3f u = light.xformLightToWorld.TransformDir(
+        GfVec3f(rect.width, 0.0f, 0.0f));
+    const GfVec3f v = light.xformLightToWorld.TransformDir(
+        GfVec3f(0.0f, rect.height, 0.0f));
+    return GfCross(u, v).GetLength();
+}
+
+float
+_DiskSceneUnitArea(ty::LightData const& light, ty::DiskLight const& disk)
+{
+    const float radius = std::max(0.0f, disk.radius);
+    const float a = light.xformLightToWorld.TransformDir(
+        GfVec3f(radius, 0.0f, 0.0f)).GetLength();
+    const float b = light.xformLightToWorld.TransformDir(
+        GfVec3f(0.0f, radius, 0.0f)).GetLength();
+    return _pi * a * b;
+}
+
+float
+_SphereSceneUnitArea(ty::LightData const& light, ty::SphereLight const& sphere)
+{
+    const float radius = std::max(0.0f, sphere.radius);
+    const float a = light.xformLightToWorld.TransformDir(
+        GfVec3f(radius, 0.0f, 0.0f)).GetLength();
+    const float b = light.xformLightToWorld.TransformDir(
+        GfVec3f(0.0f, radius, 0.0f)).GetLength();
+    const float c = light.xformLightToWorld.TransformDir(
+        GfVec3f(0.0f, 0.0f, radius)).GetLength();
+    const float ab = std::pow(a * b, 1.6f);
+    const float ac = std::pow(a * c, 1.6f);
+    const float bc = std::pow(b * c, 1.6f);
+    return std::pow((ab + ac + bc) / 3.0f, 1.0f / 1.6f) *
+        4.0f * _pi;
+}
+
+float
+_CylinderSceneUnitArea(
+    ty::LightData const& light, ty::CylinderLight const& cylinder)
+{
+    const float radius = std::max(0.0f, cylinder.radius);
+    const float length = std::max(0.0f, cylinder.length);
+    const float lengthWld = light.xformLightToWorld.TransformDir(
+        GfVec3f(length, 0.0f, 0.0f)).GetLength();
+    const float a = light.xformLightToWorld.TransformDir(
+        GfVec3f(0.0f, radius, 0.0f)).GetLength();
+    const float b = light.xformLightToWorld.TransformDir(
+        GfVec3f(0.0f, 0.0f, radius)).GetLength();
+    const float perimeterWld = _pi *
+        (3.0f * (a + b) -
+         std::sqrt((3.0f * a + b) * (a + 3.0f * b)));
+    return perimeterWld * lengthWld;
+}
+
+float
+_IesEmitterAreaSceneUnits(ty::LightData const& light)
+{
+    // C++17 requires auto for the std::visit visitor parameter.
+    return std::visit([&light](auto const& typedLight) -> float {
+        using T = std::decay_t<decltype(typedLight)>;
+        if constexpr (std::is_same_v<T, ty::RectLight>) {
+            return _RectSceneUnitArea(light, typedLight);
+        } else if constexpr (std::is_same_v<T, ty::DiskLight>) {
+            return _DiskSceneUnitArea(light, typedLight);
+        } else if constexpr (std::is_same_v<T, ty::SphereLight>) {
+            return _SphereSceneUnitArea(light, typedLight);
+        } else if constexpr (std::is_same_v<T, ty::CylinderLight>) {
+            return _CylinderSceneUnitArea(light, typedLight);
+        } else {
+            return 0.0f;
+        }
+    }, light.lightVariant);
+}
+
+void
+_UpdatePhotometricIesProjection(
+    HdSceneDelegate* sceneDelegate,
+    SdfPath const& id,
+    ty::LightData* light)
+{
+    ty::IesShaping& ies = light->shaping.ies;
+    ies.convertCandelaToLuminance = false;
+    ies.metersPerUnit = 1.0f;
+    ies.sceneUnitArea = 1.0f;
+
+    if (!ies.iesFile.valid() ||
+        !_PhotometricPowerIsSelected(sceneDelegate, id)) {
+        return;
+    }
+
+    const float sceneUnitArea = _IesEmitterAreaSceneUnits(*light);
+    if (sceneUnitArea <= 0.0f || !std::isfinite(sceneUnitArea)) {
+        return;
+    }
+
+    const float metersPerUnit = _GetMetersPerUnit(sceneDelegate, id);
+    ies.convertCandelaToLuminance = true;
+    ies.metersPerUnit = metersPerUnit;
+    ies.sceneUnitArea = sceneUnitArea;
+}
+
+void
+_ApplyPhotometricIesPowerScale(
+    HdSceneDelegate* sceneDelegate,
+    SdfPath const& id,
+    ty::LightData* light)
+{
+    ty::IesShaping const& ies = light->shaping.ies;
+    if (!ies.convertCandelaToLuminance) {
+        return;
+    }
+
+    const float power = _GetPositivePhotometricPower(sceneDelegate, id);
+    if (power <= 0.0f) {
+        return;
+    }
+
+    const TfToken lightType = _GetLightType(light->lightVariant);
+    float scale = power * HdLight::EmissionLuminanceFactor(
+        sceneDelegate, id, lightType);
+    if (lightType == HdSprimTypeTokens->rectLight) {
+        scale *= HdLight::RectTextureLuminanceFactor(sceneDelegate, id);
+    }
+
+    if (light->normalize) {
+        // EvalAreaLight divides normalized lights by scene-unit area. The IES
+        // evaluator already uses physical projected area, so compensate here.
+        scale *= ies.sceneUnitArea;
+    }
+
+    light->physicalScale = scale;
+}
+
 } // anonymous namespace
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -629,13 +845,16 @@ ty::EvaluateDirectionalShaping(
 
     ty::IesShaping const& ies = shaping.ies;
     if (ies.iesFile.valid()) {
-        const float norm = ies.normalize ? ies.iesFile.power() : 1.0f;
+        const float norm = ies.convertCandelaToLuminance
+            ? _IesIntegratedPower(ies.iesFile)
+            : (ies.normalize ? ies.iesFile.power() : 1.0f);
         const float iesWeight =
             (norm > 0.0f)
                 ? ies.iesFile.eval(_Theta(omegaInLocal), _Phi(omegaInLocal),
                                    ies.angleScale) /
                       norm
                 : 0.0f;
+
         shapingWeight *= iesWeight;
     }
 
@@ -1289,6 +1508,7 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
             _lightData.shaping.coneSoftness = value.UncheckedGet<float>();
         }
 
+        _lightData.shaping.ies.iesFile.clear();
         if (VtValue const value = sceneDelegate->GetLightParamValue(
                 id, HdLightTokens->shapingIesFile);
             value.IsHolding<SdfAssetPath>()) {
@@ -1325,6 +1545,7 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
             _lightData.shaping.ies.angleScale = value.UncheckedGet<float>();
         }
 
+        _UpdatePhotometricIesProjection(sceneDelegate, id, &_lightData);
         ty::BuildDirectionalShapingDistribution(&_lightData.shaping);
     }
 
@@ -1340,8 +1561,10 @@ HdEmbree_Light::Sync(HdSceneDelegate *sceneDelegate,
     if (bits & (HdLight::DirtyTransform |
                 HdLight::DirtyParams |
                 HdLight::DirtyResource)) {
+        _UpdatePhotometricIesProjection(sceneDelegate, id, &_lightData);
         _lightData.physicalScale = HdLight::ComputePhysicalScalingFactor(
             sceneDelegate, id, _GetLightType(_lightData.lightVariant));
+        _ApplyPhotometricIesPowerScale(sceneDelegate, id, &_lightData);
     }
 
     ty::Renderer *renderer = embreeRenderParam->GetRenderer();

@@ -417,12 +417,6 @@ HdEmbreeRenderPass::~HdEmbreeRenderPass()
     // non-current pass must not cancel another live pass's render.
     if (_hasInstalledAovBindings &&
         _aovBindingsVersion == _renderer->GetAovBindingsVersion()) {
-        HdRenderBuffer* const colorBuffer = _GetColorRenderBuffer(
-            _renderer->GetAovBindings(), nullptr);
-        if (HdEmbreeRenderBuffer* const embreeColorBuffer =
-                dynamic_cast<HdEmbreeRenderBuffer*>(colorBuffer)) {
-            embreeColorBuffer->SetPresentationExposureScale(1.0f);
-        }
         _renderThread->StopRender();
         _renderer->SetAovBindings(HdRenderPassAovBindingVector());
     }
@@ -768,14 +762,21 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     // XXX: Add collection and renderTags support.
     // XXX: Add clip planes support.
 
-    // A live pass can replace all state in the shared renderer. Drop any
-    // binding set not installed by this pass, then republish this pass's
-    // cached inputs even when its local values have not changed.
+    // A live pass can replace all state in the shared renderer. Drop bindings
+    // before any renderer operation when another pass installed them or this
+    // pass received replacements; Hydra may already have destroyed the old
+    // borrowed buffers. Then republish this pass's cached inputs even when its
+    // local values have not changed.
+    HdRenderPassAovBindingVector const requestedAovBindings =
+        renderPassState->GetAovBindings();
     const bool passActivated =
         !_hasInstalledAovBindings ||
         _aovBindingsVersion != _renderer->GetAovBindingsVersion();
-    bool needStartRender = passActivated;
-    if (passActivated) {
+    const bool bindingsChanged =
+        _hasInstalledAovBindings &&
+        _aovBindings != requestedAovBindings;
+    bool needStartRender = passActivated || bindingsChanged;
+    if (passActivated || bindingsChanged) {
         _renderThread->StopRender();
         if (!_renderer->GetAovBindings().empty()) {
             _renderer->SetAovBindings(HdRenderPassAovBindingVector());
@@ -1123,28 +1124,10 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
     //
     // If the renderer AOV bindings are empty, force a bindings update so that
     // we always get a chance to add color/depth on the first time through.
-    HdRenderPassAovBindingVector aovBindings =
-        renderPassState->GetAovBindings();
+    HdRenderPassAovBindingVector aovBindings = requestedAovBindings;
     if (!_hasInstalledAovBindings ||
         _aovBindings != aovBindings ||
         _renderer->GetAovBindings().empty()) {
-        HdRenderPassAovBindingVector const& activeBindings =
-            _renderer->GetAovBindings();
-        HdRenderBuffer* const previousColorBuffer =
-            activeBindings.empty()
-                ? nullptr
-                : _GetColorRenderBuffer(activeBindings, nullptr);
-        HdRenderBuffer* const nextColorBuffer =
-            aovBindings.empty()
-                ? &_colorBuffer
-                : _GetColorRenderBuffer(aovBindings, nullptr);
-        if (previousColorBuffer != nextColorBuffer) {
-            if (HdEmbreeRenderBuffer* const previousEmbreeColorBuffer =
-                    dynamic_cast<HdEmbreeRenderBuffer*>(previousColorBuffer)) {
-                previousEmbreeColorBuffer->SetPresentationExposureScale(1.0f);
-            }
-        }
-
         _aovBindings = aovBindings;
 
         _renderThread->StopRender();
@@ -1174,8 +1157,17 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         !_renderer->GetAovBindings().empty(),
         "No aov bindings to render into");
 
-    // Exposure is presentation state. Keep progressive HDR accumulation
-    // unchanged so camera exposure edits do not restart rendering.
+    // Exposure is presentation state. Normalize every live binding so a
+    // buffer reused for a non-color AOV cannot retain color exposure. Keep
+    // progressive HDR accumulation unchanged so exposure edits do not restart
+    // rendering.
+    for (HdRenderPassAovBinding const& binding :
+         _renderer->GetAovBindings()) {
+        if (HdEmbreeRenderBuffer* const embreeBuffer =
+                dynamic_cast<HdEmbreeRenderBuffer*>(binding.renderBuffer)) {
+            embreeBuffer->SetPresentationExposureScale(1.0f);
+        }
+    }
     HdRenderBuffer* const colorBuffer =
         _aovBindings.empty()
             ? static_cast<HdRenderBuffer*>(&_colorBuffer)

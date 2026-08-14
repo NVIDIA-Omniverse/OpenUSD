@@ -23,6 +23,89 @@ _DotZeroClip(GfVec3f const& a, GfVec3f const& b)
     return std::max(0.0f, GfDot(a, b));
 }
 
+static float
+_ProjectedDiskAreaSceneUnits(
+    ty::LightData const& light,
+    ty::DiskLight const& disk,
+    GfVec3f const& omegaInWld)
+{
+    const GfVec3f radiusXWld = light.xformLightToWorld.TransformDir(
+        GfVec3f(disk.radius, 0.0f, 0.0f));
+    const GfVec3f radiusYWld = light.xformLightToWorld.TransformDir(
+        GfVec3f(0.0f, disk.radius, 0.0f));
+    return ty::Pi * std::abs(GfDot(
+        omegaInWld, GfCross(radiusXWld, radiusYWld)));
+}
+
+static float
+_ProjectedSphereAreaSceneUnits(
+    ty::LightData const& light,
+    ty::SphereLight const& sphere,
+    GfVec3f const& omegaInWld)
+{
+    const GfVec3f axisXWld = light.xformLightToWorld.TransformDir(
+        GfVec3f(sphere.radius, 0.0f, 0.0f));
+    const GfVec3f axisYWld = light.xformLightToWorld.TransformDir(
+        GfVec3f(0.0f, sphere.radius, 0.0f));
+    const GfVec3f axisZWld = light.xformLightToWorld.TransformDir(
+        GfVec3f(0.0f, 0.0f, sphere.radius));
+    const float projectedYZ = GfDot(
+        omegaInWld, GfCross(axisYWld, axisZWld));
+    const float projectedZX = GfDot(
+        omegaInWld, GfCross(axisZWld, axisXWld));
+    const float projectedXY = GfDot(
+        omegaInWld, GfCross(axisXWld, axisYWld));
+    return ty::Pi * std::sqrt(
+        ty::Sqr(projectedYZ) + ty::Sqr(projectedZX) +
+        ty::Sqr(projectedXY));
+}
+
+static float
+_ProjectedCylinderAreaSceneUnits(
+    ty::LightData const& light,
+    ty::CylinderLight const& cylinder,
+    GfVec3f const& omegaInWld)
+{
+    const GfVec3f axisWld = light.xformLightToWorld.TransformDir(
+        GfVec3f(cylinder.length, 0.0f, 0.0f));
+    const GfVec3f radiusYWld = light.xformLightToWorld.TransformDir(
+        GfVec3f(0.0f, cylinder.radius, 0.0f));
+    const GfVec3f radiusZWld = light.xformLightToWorld.TransformDir(
+        GfVec3f(0.0f, 0.0f, cylinder.radius));
+    const float projectedY = GfDot(
+        omegaInWld, GfCross(axisWld, radiusYWld));
+    const float projectedZ = GfDot(
+        omegaInWld, GfCross(axisWld, radiusZWld));
+    return 2.0f * std::sqrt(
+        ty::Sqr(projectedY) + ty::Sqr(projectedZ));
+}
+
+static float
+_ProjectedEmitterAreaSceneUnits(
+    ty::LightData const& light,
+    ty::ShapeSample const& shapeSample,
+    GfVec3f const& omegaInWld,
+    float cosThetaOffNormal)
+{
+    if (std::holds_alternative<ty::RectLight>(light.lightVariant)) {
+        return shapeSample.pdfAreaInverse * cosThetaOffNormal;
+    }
+    if (const ty::DiskLight* disk =
+            std::get_if<ty::DiskLight>(&light.lightVariant)) {
+        return _ProjectedDiskAreaSceneUnits(light, *disk, omegaInWld);
+    }
+    if (const ty::SphereLight* sphere =
+            std::get_if<ty::SphereLight>(&light.lightVariant)) {
+        return _ProjectedSphereAreaSceneUnits(light, *sphere, omegaInWld);
+    }
+    if (const ty::CylinderLight* cylinder =
+            std::get_if<ty::CylinderLight>(&light.lightVariant)) {
+        return _ProjectedCylinderAreaSceneUnits(
+            light, *cylinder, omegaInWld);
+    }
+    return 0.0f;
+}
+
 static GfVec3f
 _BlackbodyTemperatureAsRgb(
     float kelvinColorTemp, ty::RenderColorSpace renderColorSpace)
@@ -275,6 +358,19 @@ ty::EvalAreaLight(
     radianceEmitted = GfCompMult(
         radianceEmitted,
         ty::EvaluateDirectionalShaping(light.shaping, omegaInLocal));
+
+    if (light.shaping.ies.convertCandelaToLuminance) {
+        const float projectedAreaSceneUnits =
+            _ProjectedEmitterAreaSceneUnits(
+                light, ss, omegaInWld, cosThetaOffNormal);
+        const float metersPerUnit = light.shaping.ies.metersPerUnit;
+        const float projectedAreaPhysical = projectedAreaSceneUnits *
+            metersPerUnit * metersPerUnit;
+        radianceEmitted = projectedAreaPhysical > 0.0f &&
+                std::isfinite(projectedAreaPhysical)
+            ? radianceEmitted / projectedAreaPhysical
+            : GfVec3f(0.0f);
+    }
 
     return ty::LightSampler::LightSample{
         radianceEmitted, omegaInWld, distanceWld, pdfSolidAngleInverse,
