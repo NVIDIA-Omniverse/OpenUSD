@@ -481,8 +481,11 @@ Please make PRs to this repository targeting the `typhoon/main` branch. This is 
 
 ## Features TODO list
 
+- [ ] UsdGeomCurve & Chiang hair BSDF
+- [ ] Motion blur
 - [ ] UsdVol volumes (VDB fields)
 - [ ] Light Path Expressions and standard AOV names
+- [ ] Mesh lights
 - [ ] Merge typhoon/physical-lighting
 
 ## Navigating the code
