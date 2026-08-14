@@ -8,7 +8,10 @@ Typhoon is NOT intended to be a production renderer, nor a replacement for a vie
 
 # Getting Started
 
-After cloning as normal, the quickest and easiest way to build is with [Pixi](https://pixi.prefix.dev/latest/installation/):
+After cloning as normal, the quickest and easiest way to build is with
+[Pixi](https://pixi.prefix.dev/latest/installation/). The same configure and
+build steps work on Linux, Windows, and macOS; Pixi automatically selects the
+platform-specific configuration:
 ```bash
 # from repo root, NOT pxr/imaging/plugin/hdEmbree
 pixi run configure
