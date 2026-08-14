@@ -52,7 +52,7 @@ before running the suite:
 git clone --recursive https://github.com/anderslanglands/typhoon-test-suite.git
 cd typhoon-test-suite
 pixi run download-references
-pixi run test
+pixi run pytest
 ```
 
 By default, the suite uses the packaged `openusd-typhoon` version pinned in its
@@ -73,7 +73,7 @@ command = [
 ]
 ```
 
-`pixi run test` accepts any test file or subtree. The available suite paths are:
+`pixi run pytest` accepts any test file or subtree. The available suite paths are:
 
 | Path | Coverage |
 |------|----------|
@@ -91,8 +91,8 @@ command = [
 For example, run one subcategory or one fixture with:
 
 ```bash
-pixi run test materials/pbr
-pixi run test materials/open_pbr/displacement.usda
+pixi run pytest materials/pbr
+pixi run pytest materials/open_pbr/displacement.usda
 ```
 
 Each test run writes an HTML report below `_output/run-NNNN` and updates the
