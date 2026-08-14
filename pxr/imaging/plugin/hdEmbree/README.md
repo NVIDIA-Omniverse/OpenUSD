@@ -22,7 +22,7 @@ Pixi will handle all dependencies and install the built OpenUSD distribution in 
 
 ```bash
 # from repo root, NOT pxr/imaging/plugin/hdEmbree
-pixi run usdview /path/to/scene.usd
+pixi run usdview --renderer Embree --complexity high /path/to/scene.usd
 ```
 
 to run `usdview` with Typhoon already selected as the default renderer. In
