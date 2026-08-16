@@ -32,6 +32,17 @@ to run `usdview` with Typhoon already selected as the default renderer. In
 `usdview` you can use the `RenderLab` plugin to edit scene properties and
 renderer settings at runtime, and to select the viewport AOV.
 
+## Prebuilt Conda Packages
+
+To just run OpenUSD with Typhoon without building anything, use the prebuilt conda packages:
+
+```bash
+pixi exec --spec openusd-typhoon \
+--channel https://conda.anaconda.org/anderslanglands \
+--channel conda-forge \
+usdview --complexity high --renderer Embree /path/to/layer.usd
+```
+
 # Running Tests
 
 ## Unit Tests
