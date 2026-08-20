@@ -4,6 +4,18 @@
 
 Typhoon is a reference path tracer built into OpenUSD. It is intended to be a readable, community-developed, shared reference for how to implement standard USD features, such as UsdLux lighting, and UsdShade-based MaterialX materials.
 
+Key features include:
+
+- QMC path tracing
+- Adaptive sampling
+- UsdLux
+- IES profiles
+- C++ MaterialX implementation
+- OpenPBR surface
+- Subdivision surfaces
+- Displacement
+- Hydra AOVs
+
 Typhoon is NOT intended to be a production renderer, nor a replacement for a viewport renderer such as Storm. It is not heavily optimized, but should be fast enough that image regression suites using it can run in a reasonable amount of time.
 
 # Getting Started
@@ -504,4 +516,23 @@ Please make PRs to this repository targeting the `typhoon/main` branch. This is 
 
 ## Navigating the code
 
-Design and code structure are documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+```text
+hdEmbree/
+├── delegate/              Hydra integration and scene-data translation
+├── renderer/              CPU path tracer and renderer-owned support code
+│   ├── aov/               AOV accumulation and output
+│   ├── camera/            Camera and primary-ray sampling
+│   ├── geometry/          Hit data, primvars, and surface geometry helpers
+│   ├── integrator/        Path tracing, lighting, volumes, and subsurface transport
+│   ├── lights/            Light representations and sampling
+│   ├── materials/         MaterialX evaluation and texture access
+│   │   ├── BSDL/          BSDF closures and supporting scattering code
+│   │   └── MaterialXCpp/  CPU MaterialX graph compiler and evaluator
+│   └── sampling/          OpenQMC sequence and sample-domain management
+├── schema/                TyphoonRenderSettingsAPI schema
+├── testenv/               Focused C++ tests
+└── doc/                   Images and supporting design notes
+```
+
+For a more detailed guide to the design and code structure, see
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
