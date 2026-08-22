@@ -3,12 +3,16 @@
 This is the mandatory editing and validation guide for the `hdEmbree` Hydra
 render delegate, also known as Typhoon. It is authoritative for coding rules,
 build/test/profile commands, and maintenance pitfalls. Developer design belongs
-in `ARCHITECTURE.md`; user-visible behavior belongs in `README.md`.
+in `ARCHITECTURE.md`; user-visible behavior belongs in `README.md`; build and
+packaging procedures for Houdini belong in
+`third_party/houdini/typhoon/BUILD.md`.
 
 ## Documentation map
 
 - [`README.md`](README.md): user-facing capabilities, workflows, settings,
   AOVs, limitations, and examples.
+- [`third_party/houdini/typhoon/BUILD.md`](../../../../third_party/houdini/typhoon/BUILD.md):
+  supported Houdini build, package, and validation procedures.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md): authoritative dependency boundaries,
   ownership, frame/path flows, invariants, responsibility map, and extension
   points.
@@ -21,10 +25,12 @@ in `ARCHITECTURE.md`; user-visible behavior belongs in `README.md`.
 Update every affected authority in the same change. A user-visible change
 updates `README.md`; a design, ownership, invariant, or extension-point change
 updates `ARCHITECTURE.md`; a contributor command or mandatory editing rule
-change updates `AGENTS.md`; an external plugin identity, schema identity,
-settings namespace, or AOV contract change updates `overview.dox`. Update more
-than one only when the change crosses those boundaries. Keep optimization
-measurements in `OPTIMIZATION.md`; include only
+change updates `AGENTS.md`; a build or packaging workflow change updates
+`third_party/houdini/typhoon/BUILD.md` when it affects the standalone Houdini
+target; an external plugin identity, schema identity, settings namespace, or
+AOV contract change updates `overview.dox`. Update more than one only when the
+change crosses those boundaries. Keep optimization measurements in
+`OPTIMIZATION.md`; include only
 enough architectural context there to keep an entry durable.
 
 Before editing renderer behavior, use the targeted links in
@@ -140,6 +146,14 @@ consistency:
 - Legacy frame-recorder path:
   `pixi run usdrecord <stage.usda> <output-image>`
 
+Run the Houdini commands below from `third_party/houdini/typhoon`, which owns a
+separate Pixi workspace:
+
+- Configure Houdini 22 package: `HFS=/path/to/houdini pixi run houdini-configure`
+- Build Houdini 22 plugin: `HFS=/path/to/houdini pixi run houdini-build`
+- Install package tree: `HFS=/path/to/houdini pixi run houdini-package`
+- Verify discovery and render: `HFS=/path/to/houdini pixi run houdini-smoke`
+
 Always use `pixi run build` for normal builds and `pixi run build-profile` for
 profiling builds. Never invoke Ninja or `cmake --build` directly, including
 through `pixi run`. The Linux configure task uses Ninja, Release, Embree,
@@ -147,10 +161,22 @@ OpenImageIO, OpenQMC, and MaterialX and installs into `$CONDA_PREFIX`. The
 Windows task uses the same core options, disables precompiled headers and CMake
 regeneration, and adds `/utf-8`.
 
+The cross-platform Pixi workspace under `third_party/houdini/typhoon` is
+independent of the root workspace and supports Linux x86-64, Windows x86-64,
+and Apple Silicon macOS. Houdini owns OpenUSD/Hydra, Embree, OpenImageIO,
+Imath, TBB, Python, C++20, and the platform C++ ABI. Do not add those Pixi
+libraries to the standalone target or its runtime path. Run the four supported
+Houdini tasks; do not invoke the standalone CMake or Ninja build directly. The
+installed tree is `third_party/houdini/typhoon/build/package` and contains the
+`typhoon.json` manifest plus its `typhoon/` payload. Its contents can be copied
+directly into Houdini's user `packages/` directory and are valid only for the
+Houdini SDK and operating system that configured them.
+
 Pixi pins OpenQMC 0.7.1. The upstream `build_usd.py --embree` workflow also
-downloads OpenQMC 0.7.1, and the hdEmbree CMake target requires the imported
-`OpenQMC::OpenQMC` target. Keep these three provisioning surfaces synchronized
-when changing the dependency.
+downloads OpenQMC 0.7.1, the hdEmbree CMake target requires the imported
+`OpenQMC::OpenQMC` target, and the Houdini package installs the library from
+its isolated Pixi feature. Keep these provisioning surfaces synchronized when
+changing the dependency.
 
 The profiling build replaces the installed hdEmbree plugin. Run
 `pixi run build` after profiling to restore the Release plugin. Profiling

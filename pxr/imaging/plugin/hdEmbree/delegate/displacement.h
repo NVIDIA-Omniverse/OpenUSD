@@ -7,9 +7,9 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_DISPLACEMENT_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_DISPLACEMENT_H
 
-#include "pxr/pxr.h"
+#include <renderer/embreeCompat.h>
 
-#include <embree4/rtcore_geometry.h>
+#include "pxr/pxr.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 

@@ -1,0 +1,8 @@
+@echo off
+setlocal
+
+set "TYPHOON_PACKAGE_DIR=%~dp0"
+set "HOUDINI_PATH=%TYPHOON_PACKAGE_DIR%;&"
+set "PATH=%TYPHOON_PACKAGE_DIR%lib;%PATH%"
+
+"@HFS_NATIVE@\bin\husk.exe" %*

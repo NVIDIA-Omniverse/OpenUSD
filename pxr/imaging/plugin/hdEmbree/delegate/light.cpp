@@ -9,6 +9,7 @@
 #include "renderParam.h"
 
 #include <renderer/debugCodes.h>
+#include <renderer/embreeCompat.h>
 #include <renderer/renderer.h>
 
 #include "pxr/base/gf/color.h"
@@ -18,9 +19,6 @@
 #include "pxr/imaging/hd/sceneDelegate.h"
 #include "pxr/imaging/hd/tokens.h"
 #include "pxr/imaging/hio/image.h"
-
-#include <embree4/rtcore_buffer.h>
-#include <embree4/rtcore_scene.h>
 
 #include <algorithm>
 #include <cmath>

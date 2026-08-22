@@ -25,7 +25,7 @@ ty::Renderer::_IntegrateUnlit(
         &rayHit, posRayOrgWld, dirRayWld, 0.0f,
         std::numeric_limits<float>::max(),
         ty::RayMask::Camera);
-    rtcIntersect1(_scene, &rayHit);
+    ty::Intersect1(_scene, &rayHit);
 
     if (_IsEdgeOnlyWireframeHit(rayHit)) {
         // Skip display-color sampling. _ApplyWireframe() will draw solid

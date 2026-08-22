@@ -1,0 +1,11 @@
+{
+    "houdini": "@Houdini_VERSION@",
+    "openusd": "0.26.5",
+    "pxrVersion": @TYPHOON_PXR_VERSION@,
+    "embree": "@TYPHOON_EMBREE_VERSION@",
+    "openImageIO": "@TYPHOON_OIIO_VERSION@",
+    "platform": "@CMAKE_SYSTEM_NAME@",
+    "architecture": "@CMAKE_SYSTEM_PROCESSOR@",
+    "compiler": "@CMAKE_CXX_COMPILER_ID@ @CMAKE_CXX_COMPILER_VERSION@",
+    "cxxStandard": 20
+}

@@ -7,10 +7,10 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_DISPLACEMENT_EVALUATION_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_DISPLACEMENT_EVALUATION_H
 
+#include <renderer/embreeCompat.h>
+
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/pxr.h"
-
-#include <embree4/rtcore_geometry.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
 namespace ty {

@@ -8,6 +8,7 @@
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDERER_PLUGIN_H
 
 #include "pxr/imaging/hd/rendererPlugin.h"
+#include "pxr/imaging/hd/version.h"
 #include "pxr/pxr.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -28,7 +29,11 @@ class HdEmbreeRendererPlugin final : public HdRendererPlugin
 public:
     HdEmbreeRendererPlugin() = default;
 
+#if HD_API_VERSION >= 101
     HdContainerDataSourceHandle GetSceneIndexCreateArgs() const override;
+#else
+    HdContainerDataSourceHandle GetSceneIndexInputArgs() const override;
+#endif
     
     /// Construct a new render delegate of type HdEmbreeRenderDelegate.
     /// Embree render delegates own the embree scene object, so a new render
@@ -52,7 +57,11 @@ public:
     /// Checks to see if the embree plugin is supported on the running system
     ///
     bool IsSupported(
+#if HD_API_VERSION >= 98
         const HdRendererCreateArgsSchema &rendererCreateArgs,
+#else
+        HdRendererCreateArgs const& rendererCreateArgs,
+#endif
         std::string *reasonWhyNot = nullptr) const override;
 
 private:

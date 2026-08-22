@@ -108,7 +108,18 @@ ty::Renderer::SetAovBindings(
     _aovBindings = aovBindings;
     _aovNames.resize(_aovBindings.size());
     for (size_t i = 0; i < _aovBindings.size(); ++i) {
-        _aovNames[i] = HdParsedAovToken(_aovBindings[i].aovName);
+        TfToken const& aovName = _aovBindings[i].aovName;
+#if defined(TYPHOON_HOUDINI_BUILD)
+        // Husk binds its conventional beauty output as C or Ci even when the
+        // RenderVar source is color.
+        if (aovName == TfToken("C") || aovName == TfToken("Ci")) {
+            _aovNames[i] = HdParsedAovToken(HdAovTokens->color);
+        } else {
+            _aovNames[i] = HdParsedAovToken(aovName);
+        }
+#else
+        _aovNames[i] = HdParsedAovToken(aovName);
+#endif
     }
     ++_aovBindingsVersion;
 }

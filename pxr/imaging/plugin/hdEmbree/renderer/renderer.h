@@ -9,6 +9,7 @@
 
 #include "api.h"
 #include "colorManagement.h"
+#include "embreeCompat.h"
 #include "renderSettings.h"
 
 #include <renderer/geometry/context.h>
@@ -28,10 +29,6 @@
 #include "pxr/imaging/hd/aov.h"
 #include "pxr/imaging/hd/renderThread.h"
 #include "pxr/pxr.h"
-
-#include <embree4/rtcore.h>
-#include <embree4/rtcore_device.h>
-#include <embree4/rtcore_ray.h>
 
 #include <atomic>
 #include <cstdint>

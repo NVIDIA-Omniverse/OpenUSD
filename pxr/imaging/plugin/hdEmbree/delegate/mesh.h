@@ -7,6 +7,7 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_MESH_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_MESH_H
 
+#include <renderer/embreeCompat.h>
 #include <renderer/geometry/meshSamplers.h>
 #include <renderer/lights/lightLinking.h>
 
@@ -17,9 +18,6 @@
 #include "pxr/imaging/hd/mesh.h"
 #include "pxr/imaging/hd/vertexAdjacency.h"
 #include "pxr/pxr.h"
-
-#include <embree4/rtcore.h>
-#include <embree4/rtcore_ray.h>
 
 #include <memory>
 #include <vector>

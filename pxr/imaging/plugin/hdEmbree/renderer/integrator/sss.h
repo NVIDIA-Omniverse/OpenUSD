@@ -4,11 +4,11 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_SSS_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_SSS_H
 
+#include <renderer/embreeCompat.h>
+
 #include "pxr/base/gf/matrix4f.h"
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/pxr.h"
-
-#include <embree4/rtcore.h>
 
 #include <cstdint>
 

@@ -1,0 +1,7 @@
+{
+    "enable": true,
+    "hpath": "$HOUDINI_USER_PREF_DIR/packages/typhoon",
+    "preload_libraries": [
+        "$HOUDINI_USER_PREF_DIR/packages/typhoon/lib/@TYPHOON_OPENQMC_RUNTIME_NAME@"
+    ]
+}

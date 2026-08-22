@@ -1,0 +1,76 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    renderSettingsPrimPath = "/Render/Settings"
+    upAxis = "Y"
+)
+
+def Scope "Render"
+{
+    def RenderSettings "Settings"
+    {
+        int2 resolution = (64, 64)
+        rel products = </Render/Product>
+        int ty:convergedSamplesPerPixel = 4
+        int ty:minSamplesBeforeAdaptive = 4
+        int ty:randomNumberSeed = 1
+        uniform token[] materialBindingPurposes = ["full", "preview"]
+    }
+
+    def RenderProduct "Product"
+    {
+        rel camera = </World/Camera>
+        rel orderedVars = </Render/Product/Color>
+        token productName = "smoke.exr"
+
+        def RenderVar "Color"
+        {
+            string driver:parameters:aov:husk:name = "C"
+            token dataType = "color4f"
+            string sourceName = "color"
+            token sourceType = "raw"
+        }
+    }
+}
+
+def Xform "World"
+{
+    def Camera "Camera"
+    {
+        float2 clippingRange = (0.1, 1000)
+        float focalLength = 50
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        double3 xformOp:translate = (0, 0, 5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "Sphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </World/Material>
+        double radius = 1
+    }
+
+    def DomeLight "Dome"
+    {
+        color3f inputs:color = (1, 1, 1)
+        float inputs:exposure = 0
+        float inputs:intensity = 0.5
+    }
+
+    def Material "Material"
+    {
+        token outputs:surface.connect = </World/Material/Preview.outputs:surface>
+
+        def Shader "Preview"
+        {
+            uniform token info:id = "UsdPreviewSurface"
+            color3f inputs:diffuseColor = (0.1, 0.4, 0.8)
+            float inputs:metallic = 0
+            float inputs:roughness = 0.35
+            token outputs:surface
+        }
+    }
+}

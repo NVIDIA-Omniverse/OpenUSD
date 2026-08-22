@@ -10,8 +10,7 @@
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RAY_UTIL_H
 
 #include "renderer.h"
-
-#include <embree4/rtcore_ray.h>
+#include "embreeCompat.h"
 
 #include <limits>
 

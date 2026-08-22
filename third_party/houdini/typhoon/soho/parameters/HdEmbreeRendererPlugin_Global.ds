@@ -1,0 +1,487 @@
+/// Render Settings LOP controls for the Typhoon render delegate.
+///
+/// Houdini finds this file from the Hydra plugin type name and adds its
+/// parameters to newly created Render Settings LOPs. Parameter names encode
+/// the USD attribute names so the standard LOP property editor authors the
+/// corresponding TyphoonRenderSettingsAPI attributes.
+
+#include "$HFS/houdini/soho/parameters/CommonMacros.ds"
+
+{
+    name        "typhoon"
+    label       "Typhoon"
+    parmtag     { spare_opfilter        "!!SHOP/PROPERTIES!!" }
+    parmtag     { spare_classtags       "render" }
+
+    group {
+        name    "global"
+        label   "Global"
+
+        groupcollapsible {
+            name    "TyphoonRenderSettingsAPI_Sampling"
+            label   "Sampling"
+            grouptag { "group_default" "1" }
+
+            parm {
+                name    "xn__tyconvergedSamplesPerPixel_control_cwb"
+                label   "Samples To Convergence"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tyconvergedSamplesPerPixel_bjb"
+                label   "Samples To Convergence"
+                type    int
+                size    1
+                default { 256 }
+                range   { 1! 4096 }
+                disablewhen "{ xn__tyconvergedSamplesPerPixel_control_cwb == block } { xn__tyconvergedSamplesPerPixel_control_cwb == none }"
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "int" }
+                help    "Maximum samples per pixel before rendering is considered converged."
+            }
+
+            parm {
+                name    "xn__tyrandomNumberSeed_control_bjb"
+                label   "Random Number Seed"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tyrandomNumberSeed_94a"
+                label   "Random Number Seed"
+                type    int
+                size    1
+                default { -1 }
+                disablewhen "{ xn__tyrandomNumberSeed_control_bjb == block } { xn__tyrandomNumberSeed_control_bjb == none }"
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "int" }
+                help    "OpenQMC frame seed. A value of -1 uses the current scene frame."
+            }
+
+            parm {
+                name    "xn__tyadaptiveThreshold_control_xkb"
+                label   "Adaptive Threshold"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tyadaptiveThreshold_w6a"
+                label   "Adaptive Threshold"
+                type    float
+                size    1
+                default { 0.01 }
+                range   { 0! 1 }
+                disablewhen "{ xn__tyadaptiveThreshold_control_xkb == block } { xn__tyadaptiveThreshold_control_xkb == none }"
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "float" }
+                help    "Variance threshold below which a pixel is considered converged."
+            }
+
+            parm {
+                name    "xn__tyminSamplesBeforeAdaptive_control_cwb"
+                label   "Min Samples Before Adaptive"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tyminSamplesBeforeAdaptive_bjb"
+                label   "Min Samples Before Adaptive"
+                type    int
+                size    1
+                default { 64 }
+                range   { 1! 1024 }
+                disablewhen "{ xn__tyminSamplesBeforeAdaptive_control_cwb == block } { xn__tyminSamplesBeforeAdaptive_control_cwb == none }"
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "int" }
+                help    "Minimum samples per pixel before adaptive convergence checks begin."
+            }
+
+            parm {
+                name    "xn__tytileSize_control_94a"
+                label   "Tile Size"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tytileSize_8ra"
+                label   "Tile Size"
+                type    int
+                size    1
+                default { 8 }
+                range   { 1! 256 }
+                disablewhen "{ xn__tytileSize_control_94a == block } { xn__tytileSize_control_94a == none }"
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "int" }
+                help    "Pixel width and height of each parallel rendering work item."
+            }
+        }
+
+        groupcollapsible {
+            name    "TyphoonRenderSettingsAPI_PathTracing"
+            label   "Path Tracing"
+            grouptag { "group_default" "1" }
+
+            parm {
+                name    "xn__tymaxBounces_control_j8a"
+                label   "Max Bounces"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tymaxBounces_iva"
+                label   "Max Bounces"
+                type    int
+                size    1
+                default { 16 }
+                range   { 0! 128 }
+                disablewhen "{ xn__tymaxBounces_control_j8a == block } { xn__tymaxBounces_control_j8a == none }"
+                parmtag { "spare_category" "Path Tracing" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "int" }
+                help    "Maximum number of indirect light bounces."
+            }
+
+            parm {
+                name    "xn__tyminBouncesBeforeRR_control_kmb"
+                label   "Min Bounces Before Russian Roulette"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tyminBouncesBeforeRR_j8a"
+                label   "Min Bounces Before Russian Roulette"
+                type    int
+                size    1
+                default { 2 }
+                range   { 0! 128 }
+                disablewhen "{ xn__tyminBouncesBeforeRR_control_kmb == block } { xn__tyminBouncesBeforeRR_control_kmb == none }"
+                parmtag { "spare_category" "Path Tracing" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "int" }
+                help    "Minimum number of bounces before Russian Roulette path termination."
+            }
+
+            parm {
+                name    "xn__tylightSamplesPerHit_control_kmb"
+                label   "Light Samples Per Hit"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tylightSamplesPerHit_j8a"
+                label   "Light Samples Per Hit"
+                type    int
+                size    1
+                default { 1 }
+                range   { 1! 64 }
+                disablewhen "{ xn__tylightSamplesPerHit_control_kmb == block } { xn__tylightSamplesPerHit_control_kmb == none }"
+                parmtag { "spare_category" "Path Tracing" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "int" }
+                help    "Number of light samples per hit point per light."
+            }
+
+            parm {
+                name    "xn__tyfireflyClampThreshold_control_grb"
+                label   "Firefly Clamp Threshold"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tyfireflyClampThreshold_feb"
+                label   "Firefly Clamp Threshold"
+                type    float
+                size    1
+                default { 20.0 }
+                range   { 0! 1000 }
+                disablewhen "{ xn__tyfireflyClampThreshold_control_grb == block } { xn__tyfireflyClampThreshold_control_grb == none }"
+                parmtag { "spare_category" "Path Tracing" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "float" }
+                help    "Clamp threshold for bright non-caustic path contributions."
+            }
+
+            parm {
+                name    "xn__tyenableCaustics_control_1fb"
+                label   "Enable Caustics"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'bool')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tyenableCaustics_01a"
+                label   "Enable Caustics"
+                type    toggle
+                size    1
+                default { 0 }
+                disablewhen "{ xn__tyenableCaustics_control_1fb == block } { xn__tyenableCaustics_control_1fb == none }"
+                parmtag { "spare_category" "Path Tracing" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "bool" }
+                help    "Enable indirect caustic paths."
+            }
+
+            parm {
+                name    "xn__tycausticsClampThreshold_control_2sb"
+                label   "Caustics Clamp Threshold"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tycausticsClampThreshold_1fb"
+                label   "Caustics Clamp Threshold"
+                type    float
+                size    1
+                default { 5.0 }
+                range   { 0! 1000 }
+                disablewhen "{ xn__tycausticsClampThreshold_control_2sb == block } { xn__tycausticsClampThreshold_control_2sb == none }"
+                parmtag { "spare_category" "Path Tracing" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "float" }
+                help    "Clamp threshold for caustic path contributions."
+            }
+        }
+
+        groupcollapsible {
+            name    "TyphoonRenderSettingsAPI_Materials"
+            label   "Materials"
+            grouptag { "group_default" "1" }
+
+            parm {
+                name    "xn__tymaterialRenderContext_control_grb"
+                label   "Material Render Context"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'token')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tymaterialRenderContext_feb"
+                label   "Material Render Context"
+                type    string
+                size    1
+                default { "mtlx" }
+                disablewhen "{ xn__tymaterialRenderContext_control_grb == block } { xn__tymaterialRenderContext_control_grb == none }"
+                menu {
+                    "mtlx"      "MaterialX"
+                    "default"   "Universal"
+                }
+                parmtag { "spare_category" "Materials" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "token" }
+                help    "Material output context priority used by Typhoon."
+            }
+
+            parm {
+                name    "xn__tyuseAdobeOpenPBR_control_ohb"
+                label   "Use Adobe OpenPBR"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'bool')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tyuseAdobeOpenPBR_n3a"
+                label   "Use Adobe OpenPBR"
+                type    toggle
+                size    1
+                default { 0 }
+                disablewhen "{ xn__tyuseAdobeOpenPBR_control_ohb == block } { xn__tyuseAdobeOpenPBR_control_ohb == none }"
+                parmtag { "spare_category" "Materials" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "bool" }
+                help    "Use the Adobe OpenPBR BSDF for OpenPBR Surface."
+            }
+
+            parm {
+                name    "xn__tydielectricLayerThroughputMode_control_h4b"
+                label   "Dielectric Layer Throughput Mode"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'token')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tydielectricLayerThroughputMode_grb"
+                label   "Dielectric Layer Throughput Mode"
+                type    string
+                size    1
+                default { "bsdl" }
+                disablewhen "{ xn__tydielectricLayerThroughputMode_control_h4b == block } { xn__tydielectricLayerThroughputMode_control_h4b == none }"
+                menu {
+                    "bsdl"           "BSDL"
+                    "materialxGlsl"  "MaterialX GLSL"
+                }
+                parmtag { "spare_category" "Materials" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "token" }
+                help    "Rough dielectric top-layer throughput estimate mode."
+            }
+
+            parm {
+                name    "xn__tytextureCacheSize_control_bjb"
+                label   "Texture Cache Size (MB)"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tytextureCacheSize_94a"
+                label   "Texture Cache Size (MB)"
+                type    int
+                size    1
+                default { 16384 }
+                range   { 1! 131072 }
+                disablewhen "{ xn__tytextureCacheSize_control_bjb == block } { xn__tytextureCacheSize_control_bjb == none }"
+                parmtag { "spare_category" "Materials" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "int" }
+                help    "Size in MB of the OpenImageIO texture and tile cache."
+            }
+        }
+
+        groupcollapsible {
+            name    "TyphoonRenderSettingsAPI_Scene"
+            label   "Scene"
+            grouptag { "group_default" "1" }
+
+            parm {
+                name    "xn__tydynamicSubdvTesselation_control_pub"
+                label   "Dynamic Subdivision Tessellation"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'bool')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tydynamicSubdvTesselation_ohb"
+                label   "Dynamic Subdivision Tessellation"
+                type    toggle
+                size    1
+                default { 0 }
+                disablewhen "{ xn__tydynamicSubdvTesselation_control_pub == block } { xn__tydynamicSubdvTesselation_control_pub == none }"
+                parmtag { "spare_category" "Scene" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "bool" }
+                help    "Recompute screen-space subdivision tessellation after camera or viewport changes."
+            }
+
+            parm {
+                name    "xn__tydisableShadows_control_1fb"
+                label   "Disable Shadows"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'bool')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tydisableShadows_01a"
+                label   "Disable Shadows"
+                type    toggle
+                size    1
+                default { 0 }
+                disablewhen "{ xn__tydisableShadows_control_1fb == block } { xn__tydisableShadows_control_1fb == none }"
+                parmtag { "spare_category" "Scene" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "bool" }
+                help    "Disable shadow visibility rays."
+            }
+        }
+    }
+}

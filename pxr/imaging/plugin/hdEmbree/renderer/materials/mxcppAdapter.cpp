@@ -235,9 +235,15 @@ _ConvertValue(const VtValue& value)
         return mxcpp::Value(value.UncheckedGet<std::string>());
     if (value.IsHolding<TfToken>())
         return mxcpp::Value(value.UncheckedGet<TfToken>().GetString());
-    if (value.IsHolding<SdfAssetPath>())
-        return mxcpp::Value(
-            value.UncheckedGet<SdfAssetPath>().GetResolvedPath());
+    if (value.IsHolding<SdfAssetPath>()) {
+        const SdfAssetPath& assetPath =
+            value.UncheckedGet<SdfAssetPath>();
+        std::string path = assetPath.GetResolvedPath();
+        if (path.empty()) {
+            path = assetPath.GetAssetPath();
+        }
+        return mxcpp::Value(path);
+    }
 
     // Unsupported type — return empty.
     return mxcpp::Value();

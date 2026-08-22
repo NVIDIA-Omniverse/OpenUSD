@@ -113,7 +113,7 @@ ty::Renderer::_Visibility(GfVec3f const& posWld,
             kRayBias,
             distanceRemainingWld,
             ty::RayMask::Camera);
-        rtcIntersect1(_scene, &rayHit);
+        ty::Intersect1(_scene, &rayHit);
 
         if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
             if (shadowMedium.active && distanceRemainingWld > 0.0f) {

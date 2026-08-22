@@ -2,5 +2,6 @@
 .DS_Store
 .AppleDouble
 .pixi/envs
+third_party/houdini/typhoon/.pixi
 build
 build-profile

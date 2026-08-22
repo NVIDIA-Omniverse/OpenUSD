@@ -9,11 +9,9 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_GEOMETRY_SURFACE_DERIVATIVES_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_GEOMETRY_SURFACE_DERIVATIVES_H
 
-#include "pxr/base/gf/vec3f.h"
+#include <renderer/embreeCompat.h>
 
-#include <embree4/rtcore_geometry.h>
-#include <embree4/rtcore_ray.h>
-#include <embree4/rtcore_scene.h>
+#include "pxr/base/gf/vec3f.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 namespace ty {

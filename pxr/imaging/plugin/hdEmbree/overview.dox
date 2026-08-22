@@ -69,6 +69,10 @@ USD render-settings schema, not its internal C++ module boundaries.
   buffers whose completion drives render-pass convergence. Valid camera
   framing without AOV bindings remains unsupported and settles as a failed
   frame.
+- The Linux Houdini 22 package registers `HdEmbreeRendererPlugin` as
+  `Typhoon` in Houdini. It is rebuilt against the host installation's OpenUSD
+  0.26.5, Embree 3, OpenImageIO, Imath, TBB, C++20, and standard-library ABI;
+  it does not load the normal Pixi versions of those libraries.
 
 Offline clients set `enableInteractive = false`. After a valid frame converges,
 the render pass writes active stage-authored RenderProducts through Hio.

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+package_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+export HOUDINI_PATH="${package_dir}:&"
+
+exec "@HFS@/bin/husk" "$@"

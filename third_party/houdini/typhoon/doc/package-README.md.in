@@ -1,0 +1,69 @@
+<!-- Generated package documentation; edit doc/package-README.md.in. -->
+
+# Typhoon for Houdini @Houdini_VERSION@
+
+This @CMAKE_SYSTEM_NAME@/@CMAKE_SYSTEM_PROCESSOR@ package was built against
+OpenUSD 0.26.5, Embree @TYPHOON_EMBREE_VERSION@, OpenImageIO
+@TYPHOON_OIIO_VERSION@, C++20, and the C++ ABI provided by this Houdini
+installation.
+
+The renderer ID is `HdEmbreeRendererPlugin`; Houdini displays it as `Typhoon`.
+
+Verify discovery:
+
+```text
+@TYPHOON_HUSK_WRAPPER_COMMAND@ --list-renderers
+```
+
+Render:
+
+```text
+@TYPHOON_HUSK_WRAPPER_COMMAND@ -R HdEmbreeRendererPlugin scene.usda
+```
+
+## Houdini UI setup
+
+The build output has the same layout as Houdini's user package directory. Copy
+the contents of `build/package` from the Typhoon source workspace into the
+`packages` directory below `HOUDINI_USER_PREF_DIR`. Run
+`hconfig -ap HOUDINI_USER_PREF_DIR` from Houdini's Command Line Tools to find
+the exact directory on Linux, Windows, or macOS.
+
+For the default Linux location:
+
+```sh
+mkdir -p "$HOME/houdini22.0/packages"
+cp -a build/package/. "$HOME/houdini22.0/packages/"
+```
+
+The installed layout is:
+
+```text
+~/houdini22.0/packages/
+|-- typhoon.json
+`-- typhoon/
+```
+
+The included `typhoon.json` adds the adjacent payload through
+`$HOUDINI_USER_PREF_DIR/packages/typhoon` and preloads the packaged OpenQMC
+runtime. Restart Houdini after installing or updating it. In a Solaris
+(`/stage`) Scene View, open the viewport renderer selector and choose
+**Typhoon**. For an offline render, create or select a USD Render ROP and choose
+**Typhoon** as its renderer; the underlying Hydra renderer ID is
+`HdEmbreeRendererPlugin`.
+
+New standard Render Settings LOPs include a **Typhoon** tab containing the
+renderer-specific settings. For an existing Render Settings LOP, choose
+**Initialize Parameters > Rebuild Renderer-Specific Parameters** after loading
+the package. A setting is authored only after its control menu is changed from
+**Do Nothing** to **Set or Create**.
+
+If Typhoon is missing from either menu, confirm that the configured directory
+contains `UsdRenderers.json`, then run the discovery command above from the
+same Houdini installation.
+
+For a one-session setup without installing the package manifest, prepend the
+payload directory containing this README to `HOUDINI_PATH` before launching
+Houdini.
+
+OpenUSD and OpenQMC notices are included in the `licenses` directory.

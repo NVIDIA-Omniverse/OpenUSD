@@ -16,6 +16,7 @@
 
 #include "pxr/base/gf/colorSpace.h"
 #include "pxr/base/tf/diagnostic.h"
+#include "pxr/base/vt/array.h"
 #include "pxr/imaging/hd/bprim.h"
 #include "pxr/imaging/hd/camera.h"
 #include "pxr/imaging/hd/extComputation.h"
@@ -278,6 +279,21 @@ HdRenderSettingDescriptorList
 HdEmbreeRenderDelegate::GetRenderSettingDescriptors() const
 {
     return _settingDescriptors;
+}
+
+TfToken
+HdEmbreeRenderDelegate::GetMaterialBindingPurpose() const
+{
+    const VtValue value = GetRenderSetting(
+        HdRenderSettingsPrimTokens->materialBindingPurposes);
+    if (value.IsHolding<VtTokenArray>()) {
+        const VtTokenArray& purposes = value.UncheckedGet<VtTokenArray>();
+        if (!purposes.empty()) {
+            return purposes.front();
+        }
+    }
+
+    return HdTokens->full;
 }
 
 TfTokenVector

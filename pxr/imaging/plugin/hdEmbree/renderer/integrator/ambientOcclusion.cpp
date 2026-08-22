@@ -86,7 +86,7 @@ ty::Renderer::_ComputeAmbientOcclusion(
     shadow.flags = 0;
     ty::PopulateRay(&shadow, posRayOrgWld, dirShadowWld, 1e-4f);
     _ambientOcclusionRayCount.fetch_add(1, std::memory_order_relaxed);
-    rtcOccluded1(_scene, &shadow);
+    ty::Occluded1(_scene, &shadow);
 
     // With cosine-weighted hemisphere sampling, Lambertian ambient
     // visibility is the binary unoccluded fraction. Embree sets tfar to

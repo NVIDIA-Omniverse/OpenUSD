@@ -1,0 +1,23 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "houdini-release",
+            "displayName": "Typhoon for Houdini 22",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/package",
+                "HFS": "$env{HFS}",
+                "TYPHOON_OPENQMC_ROOT": "$env{CONDA_PREFIX}"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "houdini-release",
+            "configurePreset": "houdini-release"
+        }
+    ]
+}

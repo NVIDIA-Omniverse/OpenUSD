@@ -23,7 +23,9 @@ Typhoon is NOT intended to be a production renderer, nor a replacement for a vie
 After cloning as normal, the quickest and easiest way to build is with
 [Pixi](https://pixi.prefix.dev/latest/installation/). The same configure and
 build steps work on Linux, Windows, and macOS; Pixi automatically selects the
-platform-specific configuration:
+platform-specific configuration.
+
+The shortest standard build is:
 ```bash
 # from repo root, NOT pxr/imaging/plugin/hdEmbree
 pixi run configure
@@ -495,6 +497,33 @@ Cycles, in contrast, multiplies the incoming radius by `1 / (4π) ≈ 0.0796` in
 - **hdEmbree radius → Cycles radius**: multiply by `4π` (~12.6).
 
 Everything else (the Chiang albedo → α polynomial remap, the random-walk step cap of 256, Dwivedi guided sampling, MIS channel selection) matches Cycles directly.
+
+# Houdini 22 package
+
+Native Linux x86-64, Windows x86-64, and Apple Silicon macOS builds can produce
+a Hydra plugin package for Houdini 22. The package compiles against Houdini's
+OpenUSD 0.26.5, Embree 3, OpenImageIO, Imath, TBB, C++20, and platform ABI
+rather than the normal Pixi runtime dependencies. Follow the
+[Houdini package build instructions](../../../../third_party/houdini/typhoon/BUILD.md).
+
+The package is written to `third_party/houdini/typhoon/build/package` with the
+same layout as Houdini's user package directory. Copy its contents into the
+`packages` directory below `HOUDINI_USER_PREF_DIR`, or use the payload's Husk
+wrapper directly. On Linux and macOS:
+
+```bash
+third_party/houdini/typhoon/build/package/typhoon/husk-typhoon \
+    -R HdEmbreeRendererPlugin scene.usda
+```
+
+On Windows, use `build\package\typhoon\husk-typhoon.cmd`.
+
+Houdini displays the renderer as **Typhoon**. New standard Render Settings
+LOPs include a Typhoon tab for authoring `TyphoonRenderSettingsAPI` attributes.
+`houdini-smoke` verifies plugin discovery, this Render Settings integration,
+and a self-contained 64x64 render. A package is tied to the Houdini SDK used
+for its build; rebuild it rather than moving one DSO between Houdini release
+lines.
 
 # Contributing
 

@@ -1,0 +1,15 @@
+{
+    "HdEmbreeRendererPlugin": {
+        "valid": true,
+        "menulabel": "Typhoon",
+        "menupriority": 45,
+        "depthstyle": "opengl",
+        "allowbackgroundupdate": true,
+        "pauseonupdate": true,
+        "defaultpurposes": [ "render" ],
+        "drawmodesupport": false,
+        "aovsupport": true,
+        "showinviewportmenu": true,
+        "husk.fast-exit": 0
+    }
+}

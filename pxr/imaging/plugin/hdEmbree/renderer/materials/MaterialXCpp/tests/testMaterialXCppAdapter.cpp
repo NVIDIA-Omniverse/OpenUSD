@@ -13,6 +13,7 @@
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/gf/vec4f.h"
 #include "pxr/base/vt/value.h"
+#include "pxr/usd/sdf/assetPath.h"
 
 #include <cmath>
 #include <cstdio>
@@ -125,6 +126,39 @@ TestConvertNativeUsdNodesToCanonicalMxcppNodes()
     }
 
     return true;
+}
+
+static bool
+TestConvertAssetPathUsesResolvedPathThenAuthoredFallback()
+{
+    HdMaterialNetwork2 network;
+
+    const SdfPath texturePath("/Material/Texture");
+    HdMaterialNode2 textureNode;
+    textureNode.nodeTypeId = TfToken("UsdUVTexture");
+    textureNode.parameters[TfToken("resolvedFile")] = VtValue(
+        SdfAssetPath(
+            "textures/color.<UDIM>.exr",
+            "/show/textures/color.<UDIM>.exr"));
+    textureNode.parameters[TfToken("authoredFile")] = VtValue(
+        SdfAssetPath("textures/fallback.<UDIM>.exr"));
+    network.nodes[texturePath] = textureNode;
+
+    const MaterialGraph graph = ty::ConvertHdNetworkToMxcppGraph(network);
+    const auto nodeIt = graph.nodes.find(texturePath.GetString());
+    if (nodeIt == graph.nodes.end()) {
+        std::printf("    Missing converted texture node\n");
+        return false;
+    }
+
+    const Value& resolved = nodeIt->second.parameters.at("resolvedFile");
+    const Value& authored = nodeIt->second.parameters.at("authoredFile");
+    return ValueHolds<std::string>(resolved) &&
+        ValueGet<std::string>(resolved) ==
+            "/show/textures/color.<UDIM>.exr" &&
+        ValueHolds<std::string>(authored) &&
+        ValueGet<std::string>(authored) ==
+            "textures/fallback.<UDIM>.exr";
 }
 
 static bool
@@ -342,6 +376,7 @@ void
 Test_RegisterAdapterTests()
 {
     _REG(TestConvertNativeUsdNodesToCanonicalMxcppNodes);
+    _REG(TestConvertAssetPathUsesResolvedPathThenAuthoredFallback);
     _REG(TestConvertAuthoredSolidColorsToRenderSpace);
     _REG(TestConnectedColorInputSkipsConstantColorTransform);
     _REG(TestConvertMaterialXUsdPrimvarReaderStringToCanonicalNode);

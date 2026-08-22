@@ -28,6 +28,22 @@ hdEmbree is one plugin target with three source submodules:
 
 The intended dependency direction is `Hydra -> delegate -> renderer`. Renderer code depends only on renderer-owned runtime records and interfaces; delegate adapters populate or implement those contracts.
 
+The repository-level `third_party/houdini/typhoon/` directory is a separate
+packaging surface, not a fourth runtime module. It compiles the same delegate
+and renderer sources against the ABI-sensitive libraries supplied by Houdini
+22. OpenUSD, Hydra, Embree, OpenImageIO, Imath, TBB, the C++ standard, and the
+standard-library ABI are owned by Houdini in that build. Pixi supplies only
+CMake, Ninja, and OpenQMC. The normal OpenUSD build continues to own Embree 4
+and its Pixi dependency set.
+
+`renderer/embreeCompat.h` is the single Embree 3/4 API boundary. Production
+code includes it instead of versioned Embree headers and calls its scalar
+intersection helpers. The Houdini target selects its namespaced Embree 3
+headers explicitly because the isolated OpenQMC environment may also expose
+Embree 4 headers; normal OpenUSD builds retain version-based detection.
+Houdini-specific AOV aliases and accumulation behavior are compile-time policy
+selected only by the standalone package target.
+
 hdEmbree exposes no supported hand-written C++ API and installs no
 hand-written headers. Hydra loads the plugin through `plugInfo.json`; the
 supported external contract is:
@@ -208,6 +224,12 @@ corresponding type without changing the semantic name.
 - `OPTIMIZATION.md`: profiling results and optimization notes.
 - `testenv/`: focused integration and unit-style C++ tests.
 
+`third_party/houdini/typhoon/` owns the standalone Houdini CMake target, its
+local Pixi workspace and lockfile, `BUILD.md`, package resources, build
+manifest, wrapper, and smoke stage. That workspace orchestrates the target
+without exposing Pixi's OpenUSD, Embree, OIIO, Imath, TBB, or Python libraries
+to the plugin.
+
 ### `delegate/`: Hydra integration
 
 - `rendererPlugin.h/.cpp`: `HdRendererPlugin` entry point; reports support and creates/deletes `HdEmbreeRenderDelegate`.
@@ -227,6 +249,8 @@ corresponding type without changing the semantic name.
 
 - `renderer.h/.cpp`: `ty::Renderer` central façade, persistent frame state,
   settings, and the progressive preview/full-resolution render loop.
+- `embreeCompat.h`: Embree 3/4 include, namespace, and scalar traversal
+  compatibility boundary.
 - `rendererMath.h`, `rayUtil.h`, `heroWavelength.h`, and
   `geometry/normalTransforms.h`: focused inline numeric, ray, spectral, and
   normal-transform helpers shared by renderer translation units.
@@ -946,6 +970,11 @@ classified AOV through `_WriteAov()`'s direct switch:
 The render buffer accumulates samples until resolve/convergence. Thus transport
 is owned by one selected integrator, while accumulation, format conversion, and
 Hydra buffer writes remain renderer/AOV responsibilities.
+
+Husk names conventional beauty bindings `C` or `Ci` and marks output-plane
+buffers single-sampled. The Houdini package maps those names to Hydra color and
+keeps Typhoon's own progressive accumulation enabled. These adaptations are
+compile-time-only and do not change normal Hydra clients.
 
 ## Reading the renderer
 

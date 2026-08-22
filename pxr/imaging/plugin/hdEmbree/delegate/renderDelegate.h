@@ -8,6 +8,7 @@
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_DELEGATE_H
 
 #include <renderer/api.h>
+#include <renderer/embreeCompat.h>
 #include <renderer/renderer.h>
 
 #include "pxr/base/gf/matrix4d.h"
@@ -16,8 +17,6 @@
 #include "pxr/imaging/hd/renderDelegate.h"
 #include "pxr/imaging/hd/renderThread.h"
 #include "pxr/pxr.h"
-
-#include <embree4/rtcore.h>
 
 #include <mutex>
 #include <vector>
@@ -234,14 +233,9 @@ public:
     ///   \param tracker The change tracker passed to prim Sync().
     void CommitResources(HdChangeTracker *tracker) override;
 
-    /// This function tells the scene which material variant to reference.
-    /// Embree doesn't currently use materials but raytraced backends generally
-    /// specify "full".
-    ///   \return A token specifying which material variant this renderer
-    ///           prefers.
-    TfToken GetMaterialBindingPurpose() const override {
-        return HdTokens->full;
-    }
+    /// Return the first material binding purpose requested by the active
+    /// RenderSettings prim, or "full" when no purpose is provided.
+    TfToken GetMaterialBindingPurpose() const override;
 
     TfTokenVector GetMaterialRenderContexts() const override;
 

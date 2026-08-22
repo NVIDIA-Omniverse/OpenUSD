@@ -9,10 +9,10 @@
 
 #include "light.h"
 
+#include <renderer/embreeCompat.h>
+
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/path.h"
-
-#include <embree4/rtcore_common.h>
 
 #include <map>
 #include <mutex>

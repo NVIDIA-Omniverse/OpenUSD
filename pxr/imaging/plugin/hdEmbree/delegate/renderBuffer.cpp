@@ -123,7 +123,14 @@ HdEmbreeRenderBuffer::Allocate(GfVec3i const& dimensions,
     _format = format;
     _buffer.resize(_GetBufferSize(GfVec2i(_width, _height), format));
     
+#if defined(TYPHOON_HOUDINI_FORCE_MULTISAMPLED)
+    // Husk allocates output-plane buffers as single-sampled but expects the
+    // delegate to own progressive accumulation. Typhoon's accumulation is
+    // stored in this buffer, so retain it for the Houdini compatibility build.
+    _multiSampled = true;
+#else
     _multiSampled = multiSampled;
+#endif
     if (_multiSampled) {
         _sampleBuffer.resize(_GetBufferSize(GfVec2i(_width, _height),
             _GetSampleFormat(format)));

@@ -153,6 +153,7 @@ pxr_plugin(hdEmbree
     PRIVATE_HEADERS
         renderer/api.h
         renderer/colorManagement.h
+        renderer/embreeCompat.h
         renderer/heroWavelength.h
         renderer/rayUtil.h
         renderer/renderSettings.h

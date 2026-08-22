@@ -295,7 +295,7 @@ _TraceSssBoundary(_SssWalkState const& state, ty::SssInput const& input,
     rayHit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
     rayHit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
 
-    rtcIntersect1(traceScene, &rayHit);
+    ty::Intersect1(traceScene, &rayHit);
 
     result.foundSurface = (rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID);
     if (!result.foundSurface) {

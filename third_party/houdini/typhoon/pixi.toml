@@ -1,0 +1,26 @@
+[workspace]
+name = "typhoon-houdini22"
+platforms = ["linux-64", "win-64", "osx-arm64"]
+channels = ["https://conda.anaconda.org/anderslanglands", "conda-forge"]
+channel-priority = "strict"
+
+[dependencies]
+cmake = "*"
+ninja = "*"
+openqmc-dev = "==0.7.1"
+
+[tasks]
+houdini-configure = { cmd = "cmake --preset houdini-release" }
+
+houdini-build = { cmd = "cmake --build --preset houdini-release", depends-on = ["houdini-configure"] }
+
+houdini-package = { cmd = "cmake -P package.cmake", depends-on = ["houdini-build"] }
+
+[target.linux-64.tasks]
+houdini-smoke = { cmd = "bash smoke.sh", depends-on = ["houdini-package"] }
+
+[target.osx-arm64.tasks]
+houdini-smoke = { cmd = "bash smoke.sh", depends-on = ["houdini-package"] }
+
+[target.win-64.tasks]
+houdini-smoke = { cmd = "cmd.exe /d /c smoke.cmd", depends-on = ["houdini-package"] }

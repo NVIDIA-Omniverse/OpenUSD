@@ -7,13 +7,12 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_PARAM_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_RENDER_PARAM_H
 
+#include <renderer/embreeCompat.h>
 #include <renderer/materials/materialEvalContext.h>
 
 #include "pxr/imaging/hd/renderDelegate.h"
 #include "pxr/imaging/hd/renderThread.h"
 #include "pxr/pxr.h"
-
-#include <embree4/rtcore.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
 

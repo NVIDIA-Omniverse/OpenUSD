@@ -148,7 +148,7 @@ ty::Renderer::_IntegratePath(
                 std::numeric_limits<float>::max(),
                 emitterOnlyBounce ? ty::RayMask::Light
                                   : ty::RayMask::Camera);
-            rtcIntersect1(_scene, &rayHit);
+            ty::Intersect1(_scene, &rayHit);
         }
 
         // Preserve the camera result once for geometric AOVs; later path

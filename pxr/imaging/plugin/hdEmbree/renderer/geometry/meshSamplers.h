@@ -9,12 +9,11 @@
 
 #include "primvarSampler.h"
 
+#include <renderer/embreeCompat.h>
+
 #include "pxr/base/vt/types.h"
 #include "pxr/imaging/hd/meshUtil.h"
 #include "pxr/pxr.h"
-
-#include <embree4/rtcore.h>
-#include <embree4/rtcore_geometry.h>
 
 #include <bitset>
 

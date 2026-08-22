@@ -9,6 +9,7 @@
 
 #include "primvarSampler.h"
 
+#include <renderer/embreeCompat.h>
 #include <renderer/lights/lightLinking.h>
 #include <renderer/materials/material.h>
 #include <renderer/materials/materialEvalContext.h>
@@ -18,8 +19,6 @@
 #include "pxr/base/vt/array.h"
 #include "pxr/imaging/hd/enums.h"
 #include "pxr/pxr.h"
-
-#include <embree4/rtcore.h>
 
 #include <atomic>
 #include <memory>

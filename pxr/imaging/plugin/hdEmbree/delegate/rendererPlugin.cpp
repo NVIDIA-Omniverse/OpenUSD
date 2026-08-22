@@ -10,7 +10,12 @@
 #include "pxr/imaging/hd/renderDelegateInfo.h"
 #include "pxr/imaging/hd/rendererPluginRegistry.h"
 #include "pxr/imaging/hd/retainedDataSource.h"
+#include "pxr/imaging/hd/version.h"
+#if HD_API_VERSION >= 101
 #include "pxr/imaging/hd/sceneIndexCreateArgsSchema.h"
+#else
+#include "pxr/imaging/hd/sceneIndexInputArgsSchema.h"
+#endif
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -37,10 +42,18 @@ _RenderDelegateInfo()
 }
 
 HdContainerDataSourceHandle
+#if HD_API_VERSION >= 101
 HdEmbreeRendererPlugin::GetSceneIndexCreateArgs() const
+#else
+HdEmbreeRendererPlugin::GetSceneIndexInputArgs() const
+#endif
 {
     static HdContainerDataSourceHandle const result =
+#if HD_API_VERSION >= 101
         HdSceneIndexCreateArgsSchema::Builder()
+#else
+        HdSceneIndexInputArgsSchema::Builder()
+#endif
             .SetMotionBlurSupport(
                 HdRetainedTypedSampledDataSource<bool>::New(false))
             .SetCameraMotionBlurSupport(
@@ -74,7 +87,11 @@ HdEmbreeRendererPlugin::DeleteRenderDelegate(HdRenderDelegate *renderDelegate)
 
 bool 
 HdEmbreeRendererPlugin::IsSupported(
+#if HD_API_VERSION >= 98
     const HdRendererCreateArgsSchema & /* rendererCreateArgs */,
+#else
+    HdRendererCreateArgs const& /* rendererCreateArgs */,
+#endif
     std::string * /* reasonWhyNot */) const
 {
     // Nothing more to check for now, we assume if the plugin loads correctly
