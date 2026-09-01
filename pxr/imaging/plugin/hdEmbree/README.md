@@ -504,7 +504,7 @@ Native Linux x86-64, Windows x86-64, and Apple Silicon macOS builds can produce
 a Hydra plugin package for Houdini 22. The package compiles against Houdini's
 OpenUSD 0.26.5, Embree 3, OpenImageIO, Imath, TBB, C++20, and platform ABI
 rather than the normal Pixi runtime dependencies. Follow the
-[Houdini package build instructions](../../../../third_party/houdini/typhoon/BUILD.md).
+[Houdini package build instructions](../../../../third_party/houdini/typhoon/README.md).
 
 The package is written to `third_party/houdini/typhoon/build/package` with the
 same layout as Houdini's user package directory. Copy its contents into the

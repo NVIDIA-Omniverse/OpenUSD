@@ -225,7 +225,7 @@ corresponding type without changing the semantic name.
 - `testenv/`: focused integration and unit-style C++ tests.
 
 `third_party/houdini/typhoon/` owns the standalone Houdini CMake target, its
-local Pixi workspace and lockfile, `BUILD.md`, package resources, build
+local Pixi workspace and lockfile, `README.md`, package resources, build
 manifest, wrapper, and smoke stage. That workspace orchestrates the target
 without exposing Pixi's OpenUSD, Embree, OIIO, Imath, TBB, or Python libraries
 to the plugin.

@@ -5,13 +5,13 @@ render delegate, also known as Typhoon. It is authoritative for coding rules,
 build/test/profile commands, and maintenance pitfalls. Developer design belongs
 in `ARCHITECTURE.md`; user-visible behavior belongs in `README.md`; build and
 packaging procedures for Houdini belong in
-`third_party/houdini/typhoon/BUILD.md`.
+`third_party/houdini/typhoon/README.md`.
 
 ## Documentation map
 
 - [`README.md`](README.md): user-facing capabilities, workflows, settings,
   AOVs, limitations, and examples.
-- [`third_party/houdini/typhoon/BUILD.md`](../../../../third_party/houdini/typhoon/BUILD.md):
+- [`third_party/houdini/typhoon/README.md`](../../../../third_party/houdini/typhoon/README.md):
   supported Houdini build, package, and validation procedures.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md): authoritative dependency boundaries,
   ownership, frame/path flows, invariants, responsibility map, and extension
@@ -26,7 +26,7 @@ Update every affected authority in the same change. A user-visible change
 updates `README.md`; a design, ownership, invariant, or extension-point change
 updates `ARCHITECTURE.md`; a contributor command or mandatory editing rule
 change updates `AGENTS.md`; a build or packaging workflow change updates
-`third_party/houdini/typhoon/BUILD.md` when it affects the standalone Houdini
+`third_party/houdini/typhoon/README.md` when it affects the standalone Houdini
 target; an external plugin identity, schema identity, settings namespace, or
 AOV contract change updates `overview.dox`. Update more than one only when the
 change crosses those boundaries. Keep optimization measurements in
