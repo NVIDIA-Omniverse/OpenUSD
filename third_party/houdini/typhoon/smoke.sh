@@ -8,10 +8,13 @@ output_path="${script_dir}/build/smoke.exr"
 : "${HFS:?Set HFS to the Houdini installation used to build the package}"
 
 test -f "${package_root}/typhoon.json"
+test -x "${script_dir}/build/testHdEmbreeCurveIntersections"
 
 # Validate only the package under build, even when another Typhoon package is
 # enabled in the user's Houdini preferences.
 export HOUDINI_PACKAGE_SKIP=1
+
+"${script_dir}/build/testHdEmbreeCurveIntersections"
 
 "${package_dir}/husk-typhoon" --list-renderers 2>&1 \
     | grep -F HdEmbreeRendererPlugin

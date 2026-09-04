@@ -4,7 +4,7 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-// Subdivision and triangle surface-frame resolution.
+// Mesh and curve surface-frame resolution.
 //
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_GEOMETRY_SURFACE_DERIVATIVES_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_GEOMETRY_SURFACE_DERIVATIVES_H
@@ -34,6 +34,22 @@ GfVec3f ResolveObjectSpaceNormal(
     RTCRayHit const& rayHit,
     DisplacedSubdivFrame* displacedFrame = nullptr);
 
+/// Resolve the object-space position of the actual intersected surface.
+///
+/// When exact mesh interpolation is requested, triangles and subdivision
+/// surfaces may replace transform cancellation with primitive interpolation.
+/// Curves always retain the inverse-transformed ray hit because vertex
+/// interpolation on an Embree curve returns its centerline rather than its
+/// surface. A valid displaced frame takes precedence for subdivision.
+GfVec3f ResolveObjectSpaceSurfacePosition(
+    PrototypeContext const* prototypeContext,
+    InstanceContext const* instanceContext,
+    RTCScene rootScene,
+    unsigned int geomID,
+    RTCRayHit const& rayHit,
+    DisplacedSubdivFrame const* displacedFrame,
+    bool exactMeshInterpolation);
+
 /// Compute object-space triangle surface and normal derivatives.
 ///
 /// All pointers must be valid and `primID` must address the prototype's cached
@@ -45,6 +61,26 @@ void ComputeTriangleSurfaceDerivatives(
     float u,
     float v,
     GfVec3f const& normal,
+    GfVec3f* outDPdu,
+    GfVec3f* outDPdv,
+    GfVec3f* outDndu,
+    GfVec3f* outDndv);
+
+/// Compute an object-space curve frame from the centerline derivative and
+/// Embree's actual surface normal.
+///
+/// The curve's generated primitive ID remains in Embree's record-local
+/// domain. Sphere points and invalid/degenerate centerline derivatives return
+/// a deterministic orthonormal frame. Curve normal derivatives are zero
+/// because authored ribbon normals orient geometry and are not surface-normal
+/// samples.
+void ComputeCurveSurfaceDerivatives(
+    PrototypeContext const* prototypeContext,
+    RTCScene rootScene,
+    unsigned int geomID,
+    unsigned int primitiveId,
+    float u,
+    GfVec3f const& surfaceNormal,
     GfVec3f* outDPdu,
     GfVec3f* outDPdv,
     GfVec3f* outDndu,

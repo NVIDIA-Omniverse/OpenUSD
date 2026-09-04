@@ -1,0 +1,30 @@
+#usda 1.0
+(
+    upAxis = "Y"
+)
+
+def BasisCurves "Curves"
+{
+    uniform token type = "cubic"
+    uniform token basis = "bspline"
+    uniform token wrap = "pinned"
+    int[] curveVertexCounts = [3, 3]
+    point3f[] points = [
+        (-1.5, -1, 0),
+        (-1.5, 1, 0),
+        (-1.5, 2, 0),
+        (0, -1, 0),
+        (0, 1, 0),
+        (0, 2, 0)
+    ]
+    float[] widths = [0.4] (
+        interpolation = "constant"
+    )
+    color3f[] primvars:displayColor = [
+        (0.05, 0.2, 0.8),
+        (0.8, 0.1, 0.05)
+    ] (
+        interpolation = "uniform"
+    )
+    int[] primvars:displayColor:indices = [1, 0]
+}

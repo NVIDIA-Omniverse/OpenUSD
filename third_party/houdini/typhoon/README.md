@@ -51,8 +51,9 @@ pixi run houdini-smoke
 ```
 
 Each task depends on the preceding task, so this single command performs the
-complete configure, build, package, renderer discovery, Render Settings LOP UI
-integration, and smoke-render workflow:
+complete configure, build, package, Embree 3 direct curve-intersection test,
+renderer discovery, Render Settings LOP UI integration, and tube/ribbon
+smoke-render workflow:
 
 ```bash
 pixi run houdini-smoke
@@ -66,6 +67,8 @@ The source files and generated build tree are kept together under
 - `soho/parameters/HdEmbreeRendererPlugin_Global.ds`: Typhoon controls added
   to standard Render Settings LOPs.
 - `build/`: standalone CMake build tree.
+- `build/testHdEmbreeCurveIntersections`: direct production-helper contract
+  test (`.exe` on Windows).
 - `build/package/`: contents ready to copy into Houdini's `packages/`
   directory. It contains `typhoon.json` and the `typhoon/` payload directory.
 - `build/smoke.exr`: smoke-test output.
@@ -113,7 +116,11 @@ Rebuild it for a different Houdini release. Do not add Pixi-provided OpenUSD,
 Embree, OpenImageIO, Imath, TBB, or Python libraries to this package or its
 runtime path.
 
-The smoke task starts Husk and therefore requires access to a valid Houdini
-license service. A licensing failure after a successful build and renderer
-discovery does not indicate a compiler or plugin-loading failure; restore
-license access and rerun `houdini-smoke`.
+The smoke task first requires the direct intersection test to report Embree 3
+and pass its tube/ribbon endpoint, shading-frame, and ownership checks. It then
+checks renderer discovery, verifies that the Render Settings LOP authors the
+float `ty:minCurveWidth` property with default `0.001`, and renders the 64x64
+smoke scene. Starting Houdini tools requires access to a valid license service.
+A licensing failure after a successful build and direct test does not indicate
+a compiler or plugin-loading failure; restore license access and rerun
+`houdini-smoke`.

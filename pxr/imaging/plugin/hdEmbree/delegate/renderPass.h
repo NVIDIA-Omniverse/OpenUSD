@@ -92,11 +92,13 @@ private:
     /// Reconcile active RenderSettings opinions owned by this bridge with the
     /// delegate settings map.
     ///
-    /// A delegate value equal to its last bridged value remains bridge-owned:
-    /// it may be updated or reset when the authored opinion disappears, using
-    /// its descriptor default when present and an empty value otherwise.
-    /// Differing direct delegate/UI values are preserved. Returns true only
-    /// when the delegate settings version changed.
+    /// A delegate value equal to the effective value produced by its last
+    /// bridged opinion remains bridge-owned: it may be updated or reset when
+    /// the authored opinion disappears, using its descriptor default when
+    /// present and an empty value otherwise. Authored and effective snapshots
+    /// are separate because setting boundaries may normalize values. Differing
+    /// direct delegate/UI values are preserved. Returns true only when the
+    /// delegate settings version changed.
     bool _UpdateRenderSettingsFromActiveRenderSettingsPrim();
 
     /// Write supported color/raw raster products to their authored productName
@@ -139,10 +141,15 @@ private:
     // Identity and presence of the last active RenderSettings prim.
     SdfPath _lastRenderSettingsPrimPath;
     bool _hasAppliedRenderSettingsPrim;
-    // Values still owned by the RenderSettings-to-delegate bridge. A matching
-    // current delegate value remains eligible for stale-opinion reset.
+    // Authored values still owned by the RenderSettings-to-delegate bridge.
+    // These remain unnormalized so scene-index changes are compared exactly.
     TfHashMap<TfToken, VtValue, TfToken::HashFunctor>
         _lastBridgedRenderSettings;
+    // Effective delegate values produced by those authored opinions. A
+    // matching current delegate value remains eligible for update/reset even
+    // when a setting boundary (for example minCurveWidth) normalized it.
+    TfHashMap<TfToken, VtValue, TfToken::HashFunctor>
+        _lastBridgedDelegateValues;
 
     // The last material render-context priority order seen by this pass.
     TfTokenVector _lastMaterialRenderContexts;

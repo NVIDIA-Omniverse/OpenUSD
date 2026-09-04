@@ -9,6 +9,8 @@
 
 #include "pxr/pxr.h"
 
+#include <cstddef>
+
 #if defined(TYPHOON_HOUDINI_BUILD)
 #include <embree3/rtcore.h>
 #elif __has_include(<embree4/rtcore.h>)
@@ -26,6 +28,34 @@ RTC_NAMESPACE_USE
 PXR_NAMESPACE_OPEN_SCOPE
 
 namespace ty {
+
+/// Bind external immutable storage to an Embree geometry. Keeping this call
+/// behind the compatibility layer lets record code share one buffer contract
+/// between the Embree 3 and 4 builds.
+inline void
+SetSharedGeometryBuffer(
+    RTCGeometry geometry,
+    RTCBufferType type,
+    unsigned int slot,
+    RTCFormat format,
+    void const* data,
+    size_t byteStride,
+    size_t itemCount)
+{
+    rtcSetSharedGeometryBuffer(
+        geometry, type, slot, format, data, 0, byteStride, itemCount);
+}
+
+/// Install one decision function for camera/intersection and
+/// shadow/occlusion traversal.
+inline void
+SetGeometryFilterFunctions(
+    RTCGeometry geometry,
+    RTCFilterFunctionN filter)
+{
+    rtcSetGeometryIntersectFilterFunction(geometry, filter);
+    rtcSetGeometryOccludedFilterFunction(geometry, filter);
+}
 
 inline void
 Intersect1(RTCScene scene, RTCRayHit* rayHit)

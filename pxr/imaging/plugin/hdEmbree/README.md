@@ -12,6 +12,7 @@ Key features include:
 - IES profiles
 - C++ MaterialX implementation
 - OpenPBR surface
+- UsdGeomBasisCurves tubes and oriented ribbons
 - Subdivision surfaces
 - Displacement
 - Hydra AOVs
@@ -198,6 +199,7 @@ reset to the value they had when the editor was opened.
 | Dome Light Camera Visibility | `domeLightCameraVisibility` | `bool` | `true` |
 | Enable Exposure Compensation | `enableExposureCompensation` | `bool` | `true` |
 | Dynamic Subdivision Tessellation | `ty:dynamicSubdvTesselation` | `bool` | `false` |
+| Minimum Curve Width | `ty:minCurveWidth` | `float` | `0.001` |
 | Adaptive Threshold | `ty:adaptiveThreshold` | `float` | `0.01` |
 | Min Samples Before Adaptive | `ty:minSamplesBeforeAdaptive` | `int` | `64` |
 | Max Bounces | `ty:maxBounces` | `int` | `16` |
@@ -288,6 +290,49 @@ A value of `-1` (default) derives the OpenQMC seed from the scene frame. Any
 other value selects an explicit deterministic/repeatable sampler sequence. Use
 `usdrender -s "{settings}.ty:randomNumberSeed = 1"` for fixed-seed comparisons
 without editing the stage.
+
+### Minimum Curve Width (`ty:minCurveWidth`)
+
+Sets the minimum BasisCurves diameter in prototype object space. The default is
+`0.001`; negative values warn and are treated as zero. The bound supplies a
+fallback when widths are absent or invalid and clamps the complete continuous
+authored width profile, not only its control values. Instance transforms scale
+the resulting width naturally, while camera and viewport changes do not affect
+it. A runtime change is applied to every live curve before the next render
+starts, so that render never uses the previous radius buffers for one frame.
+
+## BasisCurves geometry
+
+hdEmbree renders Hydra `basisCurves` / `UsdGeomBasisCurves` as Embree round
+tubes by default and as normal-oriented ribbons when valid normals are
+present. Authored widths control both shapes; missing or invalid widths use the
+minimum-width fallback. The geometry implementation supports linear curves;
+cubic Bezier, B-spline, and Catmull-Rom curves; `nonperiodic`, `periodic`, and
+`pinned` wrap; constant, uniform, varying, and vertex primvars; indexed
+topology and primvars; topological visibility; and instancing. Invalid local
+ribbon orientation falls back only where necessary without changing the
+authored material or ID domain.
+
+MaterialX geomprops, `displayColor`, `displayOpacity`, and `st` use the same
+curve sampler. Internal Embree spans may be converted or subdivided, but
+shading values are evaluated at the corresponding authored segment parameter.
+The `elementId` AOV and face selection report the authored curve index, never
+the generated Embree primitive index; `primId` and `instanceId` retain their
+normal Hydra meanings.
+
+Embree's normal at the actual tube or ribbon surface is the geometric and
+pre-material surface normal. A ribbon's authored normal only orients its
+geometry and does not replace that hit normal. The curve centerline derivative
+supplies the independent tangent; collapsed spans use a deterministic finite
+frame. Object-space material position remains on the hit surface rather than
+being projected back to the centerline.
+
+BasisCurves geometry support is complete for the combinations listed above.
+Curves use the existing MaterialX surface models; a dedicated Chiang hair BSDF
+is not supported. BasisCurves deformation motion blur is not supported.
+Ray-facing flat curves, camera- or pixel-space minimum width, synthetic end
+caps, `UsdGeomHermiteCurves`, and `UsdGeomNurbsCurves` are outside the supported
+scope. Curve wire and points repr requests reuse the surface representation.
 
 ## Subdivision complexity and MaterialX displacement
 
@@ -396,6 +441,11 @@ the expected product absent so `usdrender` reports an error.
 | `primvars:<name>` | `Float32Vec3` |
 | `adaptiveHeatmap` | `Float32Vec4` |
 | `ambocc` | `Float32Vec3` |
+
+For BasisCurves, `elementId` is the authored curve index even when one authored
+span expands into several Embree primitives. Normal, depth, primvar, and ID
+AOVs all interpret the same retained surface hit used by camera shading and
+ambient visibility.
 
 ### Adaptive heatmap
 When this AOV is bound, it accumulates a heatmap of per-pixel sampling
@@ -520,10 +570,11 @@ On Windows, use `build\package\typhoon\husk-typhoon.cmd`.
 
 Houdini displays the renderer as **Typhoon**. New standard Render Settings
 LOPs include a Typhoon tab for authoring `TyphoonRenderSettingsAPI` attributes.
-`houdini-smoke` verifies plugin discovery, this Render Settings integration,
-and a self-contained 64x64 render. A package is tied to the Houdini SDK used
-for its build; rebuild it rather than moving one DSO between Houdini release
-lines.
+`houdini-smoke` runs the direct curve intersection contract against Houdini's
+Embree 3, verifies plugin discovery and this Render Settings integration, and
+renders a self-contained 64x64 scene containing a tube and an oriented ribbon.
+A package is tied to the Houdini SDK used for its build; rebuild it rather than
+moving one DSO between Houdini release lines.
 
 # Contributing
 
@@ -536,8 +587,8 @@ Please make PRs to this repository targeting the `typhoon/main` branch. This is 
 
 ## Features TODO list
 
-- [ ] UsdGeomCurve & Chiang hair BSDF
-- [ ] Motion blur
+- [ ] Dedicated Chiang hair BSDF
+- [ ] Motion blur, including BasisCurves deformation motion blur
 - [ ] UsdVol volumes (VDB fields)
 - [ ] Light Path Expressions and standard AOV names
 - [ ] Mesh lights

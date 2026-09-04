@@ -78,6 +78,8 @@ list(REMOVE_DUPLICATES _typhoonHoudiniLibraryHints)
 
 find_library(TYPHOON_EMBREE_LIBRARY embree_sidefx
     HINTS ${_typhoonHoudiniLibraryHints} NO_DEFAULT_PATH REQUIRED)
+find_library(TYPHOON_HIO_LIBRARY pxr_hio
+    HINTS ${_typhoonHoudiniLibraryHints} NO_DEFAULT_PATH REQUIRED)
 find_library(TYPHOON_OIIO_LIBRARY OpenImageIO_sidefx
     HINTS ${_typhoonHoudiniLibraryHints} NO_DEFAULT_PATH REQUIRED)
 find_library(TYPHOON_OIIO_UTIL_LIBRARY OpenImageIO_Util_sidefx
@@ -148,6 +150,8 @@ endfunction()
 
 _typhoon_add_houdini_library(Embree::Embree
     "${TYPHOON_EMBREE_LIBRARY}")
+_typhoon_add_houdini_library(Houdini::Hio
+    "${TYPHOON_HIO_LIBRARY}")
 _typhoon_add_houdini_library(OpenImageIO::OpenImageIO
     "${TYPHOON_OIIO_LIBRARY}")
 _typhoon_add_houdini_library(OpenImageIO::OpenImageIO_Util
@@ -174,6 +178,7 @@ target_link_libraries(hdEmbree PRIVATE
     BSDL_spectral_luts
     OpenQMC::OpenQMC
     Embree::Embree
+    Houdini::Hio
     OpenImageIO::OpenImageIO
     OpenImageIO::OpenImageIO_Util
     Imath::Imath)
@@ -211,6 +216,41 @@ set_target_properties(hdEmbree PROPERTIES
     OUTPUT_NAME "hdEmbree"
     BUILD_RPATH "${_typhoonBuildRpath}"
     INSTALL_RPATH "${_typhoonInstallRpath}")
+
+# The direct contract test reuses the production curve implementation. Export
+# that implementation explicitly on Windows instead of relying on incidental
+# DLL exports.
+if(WIN32)
+    set_target_properties(hdEmbree PROPERTIES
+        WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
+
+add_executable(testHdEmbreeCurveIntersections
+    "${TYPHOON_ROOT}/testenv/testHdEmbreeCurveIntersections.cpp")
+target_compile_features(testHdEmbreeCurveIntersections PRIVATE cxx_std_20)
+target_compile_definitions(testHdEmbreeCurveIntersections PRIVATE
+    TYPHOON_HOUDINI_BUILD)
+target_include_directories(testHdEmbreeCurveIntersections PRIVATE
+    "${HFS}/toolkit/include"
+    "${TYPHOON_ROOT}")
+target_link_libraries(testHdEmbreeCurveIntersections PRIVATE
+    Houdini
+    HoudiniThirdParty
+    OpenQMC::OpenQMC
+    Embree::Embree
+    hdEmbree)
+
+if(APPLE)
+    set(_typhoonCurveTestRpath
+        "@loader_path;${_typhoonBuildRpath}")
+elseif(UNIX)
+    set(_typhoonCurveTestRpath
+        "\$ORIGIN;${_typhoonBuildRpath}")
+else()
+    set(_typhoonCurveTestRpath "")
+endif()
+set_target_properties(testHdEmbreeCurveIntersections PROPERTIES
+    BUILD_RPATH "${_typhoonCurveTestRpath}")
 
 set(PLUG_INFO_LIBRARY_PATH "../hdEmbree${CMAKE_SHARED_LIBRARY_SUFFIX}")
 set(PLUG_INFO_RESOURCE_PATH "resources")

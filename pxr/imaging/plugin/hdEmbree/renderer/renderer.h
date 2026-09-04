@@ -31,6 +31,7 @@
 #include "pxr/pxr.h"
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -759,6 +760,16 @@ private:
             _ResolvedNormalDerivativeProvenance::None;
     };
 
+    /// Renderer-visible identity decoded from one Embree hit. Generated
+    /// primitive IDs remain private to geometry samplers; elementId and the
+    /// optional curve fields name the authored Hydra domains.
+    struct _HitIdentity {
+        int32_t elementId = -1;
+        size_t authoredSegmentId = std::numeric_limits<size_t>::max();
+        float authoredU = 0.0f;
+        bool isCurve = false;
+    };
+
     /// Hit-local surface data with topology and shading meanings kept
     /// separate. Both normals are normalized world-space values with authored
     /// exterior orientation and are never faced toward the current path.
@@ -772,6 +783,7 @@ private:
             std::numeric_limits<unsigned int>::max();
         float baryU = 0.0f;
         float baryV = 0.0f;
+        _HitIdentity identity;
         DisplacedSubdivFrame displacedFrame;
         bool frontFacing = true;
         bool doubleSided = false;
@@ -794,6 +806,14 @@ private:
     /// derivatives are deliberately unrelated to this calculation.
     GfVec3f _ComputeSmoothShadowOffsetOut(
         _SurfaceInteraction const& interaction) const;
+
+    /// Decode renderer-visible authored identity exactly once for every
+    /// geometry family. Curve generated primitive IDs and local U stay
+    /// available separately for sampler lookup.
+    static bool _TryDecodeHitIdentity(
+        PrototypeContext const* prototypeContext,
+        RTCRayHit const& rayHit,
+        _HitIdentity* outIdentity);
 
     /// \brief Propagate or discard ray differentials after a BSDF sample.
     ///

@@ -90,6 +90,7 @@ pxr_plugin(hdEmbree
 
     PRIVATE_CLASSES
         delegate/adaptiveSubdivision
+        delegate/basisCurves
         delegate/instancer
         delegate/light
         renderer/lights/lightSampler
@@ -97,6 +98,11 @@ pxr_plugin(hdEmbree
         renderer/lights/lightRegistry
         delegate/material
         delegate/mesh
+        renderer/geometry/curveEmbree
+        renderer/geometry/curveGeometry
+        renderer/geometry/curveSamplers
+        renderer/geometry/curveTopology
+        renderer/geometry/intersectionFilter
         renderer/geometry/meshSamplers
         renderer/integrator/medium
         renderer/materials/mxcppAdapter
@@ -254,6 +260,136 @@ pxr_register_test(testHdEmbreeLightSamplers
 )
 endif()
 
+# Keep renderer-specific imaging coverage with hdEmbree while reusing the
+# generic usdImagingGL drawing harness.
+pxr_build_test(testHdEmbreeBasisCurvesImaging
+    LIBRARIES
+        arch
+        garch
+        glf
+        hd
+        hdEmbree
+        hdSt
+        hdx
+        hgi
+        sdf
+        tf
+        usd
+        usdGeom
+        usdImaging
+        usdImagingGL
+        usdUtils
+        vt
+    CPPFILES
+        ../../../usdImaging/usdImagingGL/unitTestGLDrawing.cpp
+        testenv/testHdEmbreeBasisCurvesImaging.cpp
+)
+
+if (TARGET testHdEmbreeBasisCurvesImaging)
+    _pxr_init_rpath(_hdEmbreeBasisCurvesImagingTestRpath "tests")
+    _pxr_add_rpath(
+        _hdEmbreeBasisCurvesImagingTestRpath
+        "${CMAKE_INSTALL_PREFIX}/lib")
+    _pxr_add_rpath(
+        _hdEmbreeBasisCurvesImagingTestRpath
+        "${CMAKE_INSTALL_PREFIX}/plugin/usd")
+    _pxr_install_rpath(
+        _hdEmbreeBasisCurvesImagingTestRpath
+        testHdEmbreeBasisCurvesImaging)
+endif()
+
+pxr_register_test(testHdEmbreeBasisCurvesImaging
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdEmbreeBasisCurvesImaging -renderer HdEmbreeRendererPlugin -offscreen -stage test.usda -write testHdEmbreeBasisCurvesImaging.png"
+    IMAGE_DIFF_COMPARE
+        testHdEmbreeBasisCurvesImaging_000.png
+        testHdEmbreeBasisCurvesImaging_001.png
+    FAIL_PERCENT 1
+    PERCEPTUAL
+    EXPECTED_RETURN_CODE 0
+    TESTENV testenv/testHdEmbreeBasisCurvesImaging
+    ENV
+        HDEMBREE_JITTER_CAMERA=0
+        HDEMBREE_AMBIENT_OCCLUSION_SAMPLES=0
+        HDEMBREE_SAMPLES_TO_CONVERGENCE=1
+        USDIMAGINGGL_ENGINE_ENABLE_SCENE_INDEX=false
+)
+
+pxr_register_test(testHdEmbreeBasisCurvesImaging_SceneIndex
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdEmbreeBasisCurvesImaging -renderer HdEmbreeRendererPlugin -offscreen -stage test.usda -write testHdEmbreeBasisCurvesImaging.png"
+    IMAGE_DIFF_COMPARE
+        testHdEmbreeBasisCurvesImaging_000.png
+        testHdEmbreeBasisCurvesImaging_001.png
+    FAIL_PERCENT 1
+    PERCEPTUAL
+    EXPECTED_RETURN_CODE 0
+    TESTENV testenv/testHdEmbreeBasisCurvesImaging
+    ENV
+        HDEMBREE_JITTER_CAMERA=0
+        HDEMBREE_AMBIENT_OCCLUSION_SAMPLES=0
+        HDEMBREE_SAMPLES_TO_CONVERGENCE=1
+        USDIMAGINGGL_ENGINE_ENABLE_SCENE_INDEX=true
+)
+
+pxr_build_test(testHdEmbreeBasisCurves
+    LIBRARIES
+        hd
+        hdEmbree
+        hdx
+        sdf
+        tf
+        usd
+        usdGeom
+        usdImaging
+        vt
+    CPPFILES
+        ../../hdx/unitTestUtils.cpp
+        testenv/testHdEmbreeBasisCurves.cpp
+)
+
+if (TARGET testHdEmbreeBasisCurves)
+    _pxr_init_rpath(_hdEmbreeBasisCurvesTestRpath "tests")
+    _pxr_add_rpath(
+        _hdEmbreeBasisCurvesTestRpath "${CMAKE_INSTALL_PREFIX}/lib")
+    _pxr_add_rpath(
+        _hdEmbreeBasisCurvesTestRpath "${CMAKE_INSTALL_PREFIX}/plugin/usd")
+    _pxr_install_rpath(
+        _hdEmbreeBasisCurvesTestRpath testHdEmbreeBasisCurves)
+endif()
+
+pxr_register_test(testHdEmbreeBasisCurves
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdEmbreeBasisCurves"
+    EXPECTED_RETURN_CODE 0
+)
+
+pxr_build_test(testHdEmbreeCurveIntersections
+    LIBRARIES
+        gf
+        hd
+        hdEmbree
+        tf
+        vt
+        ${EMBREE_LIBRARY}
+    CPPFILES
+        testenv/testHdEmbreeCurveIntersections.cpp
+)
+
+if (TARGET testHdEmbreeCurveIntersections)
+    _pxr_init_rpath(_hdEmbreeCurveIntersectionsTestRpath "tests")
+    _pxr_add_rpath(
+        _hdEmbreeCurveIntersectionsTestRpath "${CMAKE_INSTALL_PREFIX}/lib")
+    _pxr_add_rpath(
+        _hdEmbreeCurveIntersectionsTestRpath
+        "${CMAKE_INSTALL_PREFIX}/plugin/usd")
+    _pxr_install_rpath(
+        _hdEmbreeCurveIntersectionsTestRpath
+        testHdEmbreeCurveIntersections)
+endif()
+
+pxr_register_test(testHdEmbreeCurveIntersections
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdEmbreeCurveIntersections"
+    EXPECTED_RETURN_CODE 0
+)
+
 pxr_build_test(testHdEmbreeSampling
     LIBRARIES
         tf
@@ -383,6 +519,18 @@ pxr_register_test(testHdEmbreeRenderSettings
         ${PXR_PLUGINPATH_NAME}=${CMAKE_INSTALL_PREFIX}/plugin/usd
     EXPECTED_RETURN_CODE 0
 )
+
+pxr_test_scripts(
+    testenv/testHdEmbreeSchemaValidation.py
+)
+
+if (TARGET usdGenSchema_script)
+    pxr_register_test(testHdEmbreeSchemaValidation
+        PYTHON
+        COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testHdEmbreeSchemaValidation --schema=${CMAKE_CURRENT_SOURCE_DIR}/schema/schema.usda --generated-schema=${CMAKE_CURRENT_SOURCE_DIR}/schema/generatedSchema.usda --plug-info=${CMAKE_CURRENT_SOURCE_DIR}/plugInfo.json --usd-gen-schema=${CMAKE_INSTALL_PREFIX}/bin/usdGenSchema"
+        EXPECTED_RETURN_CODE 0
+    )
+endif()
 
 pxr_build_test(testHdEmbreeRenderSetup
     LIBRARIES

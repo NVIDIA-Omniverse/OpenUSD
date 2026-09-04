@@ -41,6 +41,10 @@ class "TyphoonRenderSettingsAPI" (
         doc = """Recompute screen-space subdivision tessellation after camera or viewport changes."""
     )
 
+    uniform float ty:minCurveWidth = 0.001 (
+        doc = """Minimum BasisCurves diameter in prototype object space."""
+    )
+
     uniform float ty:adaptiveThreshold = 0.01 (
         doc = """Variance threshold below which a pixel is considered converged."""
     )

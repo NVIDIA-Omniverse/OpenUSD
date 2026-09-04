@@ -11,22 +11,27 @@ set "PACKAGE_ROOT=%SCRIPT_DIR%build\package"
 set "PACKAGE_DIR=%PACKAGE_ROOT%\typhoon"
 set "OUTPUT_PATH=%SCRIPT_DIR%build\smoke.exr"
 set "HOUDINI_PACKAGE_SKIP=1"
+set "PATH=%SCRIPT_DIR%build;%PACKAGE_DIR%\dso\usd_plugins;%PACKAGE_DIR%\lib;%HFS%\bin;%HFS%\dsolib;%PATH%"
 
 if not exist "%PACKAGE_ROOT%\typhoon.json" exit /b 3
+if not exist "%SCRIPT_DIR%build\testHdEmbreeCurveIntersections.exe" exit /b 4
+
+"%SCRIPT_DIR%build\testHdEmbreeCurveIntersections.exe"
+if errorlevel 1 exit /b 5
 
 call "%PACKAGE_DIR%\husk-typhoon.cmd" --list-renderers 2>&1 ^
     | findstr /c:"HdEmbreeRendererPlugin" >nul
-if errorlevel 1 exit /b 4
+if errorlevel 1 exit /b 6
 
 set "HOUDINI_PATH=%PACKAGE_DIR%;&"
 "%HFS%\bin\hython.exe" "%SCRIPT_DIR%smoke_ui.py"
-if errorlevel 1 exit /b 5
+if errorlevel 1 exit /b 7
 
 call "%PACKAGE_DIR%\husk-typhoon.cmd" ^
     -R HdEmbreeRendererPlugin ^
     -o "%OUTPUT_PATH%" ^
     --headlight distant ^
     "%SCRIPT_DIR%smoke.usda"
-if errorlevel 1 exit /b 6
+if errorlevel 1 exit /b 8
 
-if not exist "%OUTPUT_PATH%" exit /b 7
+if not exist "%OUTPUT_PATH%" exit /b 9

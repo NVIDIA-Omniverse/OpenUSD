@@ -233,12 +233,17 @@ to the plugin.
 ### `delegate/`: Hydra integration
 
 - `rendererPlugin.h/.cpp`: `HdRendererPlugin` entry point; reports support and creates/deletes `HdEmbreeRenderDelegate`.
-- `renderDelegate.h/.cpp`: central factory and lifetime owner. Declares setting tokens/descriptors; advertises supported Rprim, Sprim, and Bprim types; creates scene adapters, buffers, and passes; owns the Embree device/top-level scene, renderer, render thread, and render param.
+- `renderDelegate.h/.cpp`: central factory and lifetime owner. Declares setting tokens/descriptors; advertises supported Rprim, Sprim, and Bprim types; creates scene adapters, buffers, and passes; owns the Embree device/top-level scene, renderer, render thread, and render param. It also owns the normalized minimum-curve-width value and epoch plus the mutex-protected live BasisCurves registry used for synchronous setting rebuilds.
 - `renderParam.h`: synchronization bridge. Scene edits stop rendering, acquire the Embree scene for mutation, and increment the scene version used to restart accumulation. Edits that can alter generated displacement also increment a narrower displacement version used to schedule prototype retessellation.
-- `renderPass.h/.cpp`: converts `HdRenderPassState`, camera, framing, AOVs, wire color/width, scene-index render settings/products, and delegate settings into renderer setters. Starts/restarts rendering, reports convergence, and writes active render products.
+- `renderPass.h/.cpp`: converts `HdRenderPassState`, camera, framing, AOVs, wire color/width, scene-index render settings/products, and delegate settings into renderer setters. After Hydra Sync it applies a changed effective curve minimum through the delegate registry before publishing that same value to renderer settings. It starts/restarts rendering, reports convergence, and writes active render products.
   It requires an attached `HdCamera` and snapshots the first valid camera/data window for screen-space subdivision. Scene edits reuse that snapshot; `ty:dynamicSubdvTesselation` enables resnapshotting and recomputation after projection or data-window changes.
 - `renderBuffer.h/.cpp`: CPU-backed `HdRenderBuffer` storage, mapping, format conversion, convergence, and renderer write access.
 - `mesh.h/.cpp`: `HdMesh` adapter. Pulls topology, points, transforms, subdivision data, primvars, materials, categories, active repr, and instancing; `_PopulateRtMesh()` builds/updates Embree prototypes, then `_UpdateInstances()` separately resizes and populates top-level instances when instance state is dirty. The mesh uniquely owns one prototype context and one context in each instance record; Embree borrows their stable addresses as geometry user data. It applies levels computed by `adaptiveSubdivision.*`, stores wireframe topology/display state in the prototype context, and supplies the Embree subdivision displacement callback declared in `displacement.h`.
+- `basisCurves.h/.cpp`: `HdBasisCurves` adapter. It caches only
+  dirty-authored and computed scene data, canonicalizes topology, builds all
+  representation-homogeneous curve records before publishing them, and owns
+  their prototype/instance Embree lifetime. The delegate advertises this
+  adapter together with meshes after its renderer hit consumers are connected.
 - `adaptiveSubdivision.h/.cpp`: deterministic screen-space edge projection, guarded homogeneous view-volume clipping, shared-edge/instance maximum selection, complexity targets, fixed 3x3 displaced-quad chord probes, Embree level clamping, and quad transition balancing.
 - `instancer.h/.cpp`: `HdInstancer` adapter; computes instance transforms and per-instance category/light-linking context.
 - `material.h/.cpp`: `HdMaterial` adapter; pulls Hydra networks, normalizes them through `mxcppAdapter`, owns separate compiled surface and optional displacement `mxcpp::EvalGraph` objects, and updates a stable renderer material-data handle.
@@ -249,13 +254,37 @@ to the plugin.
 
 - `renderer.h/.cpp`: `ty::Renderer` central façade, persistent frame state,
   settings, and the progressive preview/full-resolution render loop.
-- `embreeCompat.h`: Embree 3/4 include, namespace, and scalar traversal
+- `embreeCompat.h`: Embree 3/4 include, namespace, scalar traversal,
+  immutable shared-buffer binding, and dual intersection/occlusion-filter
   compatibility boundary.
 - `rendererMath.h`, `rayUtil.h`, `heroWavelength.h`, and
   `geometry/normalTransforms.h`: focused inline numeric, ray, spectral, and
   normal-transform helpers shared by renderer translation units.
-- `geometry/surfaceDerivatives.h/.cpp`: triangle/subdivision shading frames,
-  authored/displaced normals, and surface derivatives.
+- `geometry/surfaceDerivatives.h/.cpp`: geometry-kind-dispatched triangle,
+  subdivision, and curve shading frames; authored/displaced mesh normals;
+  centerline curve tangents; and object-space surface positions.
+- `geometry/curveTopology.h/.cpp`: pure BasisCurves topology validation and
+  canonical authored-segment construction. It owns logical-control to
+  physical-point mapping, periodic and pinned control descriptors, authored
+  interpolation domains, topological visibility, and stable authored
+  curve/segment/U metadata; it does not create Embree geometry or evaluate
+  point values.
+- `geometry/curveGeometry.h/.cpp`: pure BasisCurves point, width, and normal
+  evaluation. It validates selected geometry inputs, constructs continuous
+  profiles, chooses native/Hermite/round-linear/sphere-point plans per span,
+  repairs local ribbon orientation, and preserves authored metadata; it does
+  not create or commit Embree geometry.
+- `geometry/curveEmbree.h/.cpp`: representation-homogeneous, stable-address
+  curve record data and Embree buffer binding. It packs float4
+  position/radius and Hermite tangent/radius-derivative data, oriented normal
+  data, and explicit round-linear neighbor flags. It owns neither an
+  `RTCGeometry` nor a scene attachment.
+- `geometry/curveSamplers.h/.cpp`: generated-hit decode and constant, uniform,
+  varying, and authored-basis vertex interpolation for curve material
+  primvars, including validated indexed flattening.
+- `geometry/intersectionFilter.h/.cpp`: one prototype filter dispatch shared
+  by intersection and occlusion traversal. It composes mesh/curve culling with
+  removal of only authored terminal round-linear spheres.
 - `integrator/closureClassification.h/.cpp`: transport classification of
   compiled material closures.
 - `integrator/transportPolicy.h`: contribution cutoff, firefly-clamping, and
@@ -332,7 +361,9 @@ to the plugin.
   quoted basename. hdEmbree headers remain uninstalled implementation details.
 - `materials/BSDL/`: BSDF support library and generated lookup tables.
 - `geometry/context.h`: Embree prototype and instance hit data: identities,
-  properties, `std::unordered_map`-owned primvar samplers,
+  scoped triangle/subdivision/round-curve/oriented-ribbon geometry kind,
+  record-local generated curve metadata, properties,
+  `std::unordered_map`-owned primvar samplers,
   material-handle-indexed observing sampler and uniform-value bindings,
   derivatives, transforms, and categories.
 - `geometry/displacementEvaluation.h/.cpp`: shared build-time and hit-time
@@ -360,19 +391,33 @@ to the plugin.
 - `schema.usda`: authored `TyphoonRenderSettingsAPI`.
 - `generatedSchema.usda`: generated runtime schema consumed by USD.
 - `generatedSchema.classes.txt`: CMake manifest. Source paths point into `schema/`; installed resource names remain unchanged.
+- `testHdEmbreeSchemaValidation` stages the plugin root and source schema in a
+  temporary directory, runs the same build's `usdGenSchema`, and compares its
+  output with the tracked generated schema after normalizing only platform
+  newlines. It never generates into the source tree.
 
 ## Delegate-to-renderer data flow
 
 ### Scene synchronization
 
 1. Hydra creates `HdEmbreeRenderDelegate` through `HdEmbreeRendererPlugin`.
-2. `CreateRprim/CreateSprim/CreateBprim` create mesh, material, light, and render-buffer adapters.
-3. During `HdRenderIndex::SyncAll()`, Hydra calls each adapter's `Sync()`: meshes pull geometry/primvars/bindings/instances; materials compile networks; lights pull Lux/texture/IES/linking data; instancers update transforms and contexts.
-4. Mutating adapters use `HdEmbreeRenderParam::AcquireSceneForEdit()` or `NotifySceneChange()`. This stops background rendering before shared state changes and increments the scene version. Material Sync additionally increments the material version, including failed/empty recompiles. After `SyncAll()`, the render pass observes that version and refreshes every mesh's handle-indexed geomprop bindings before any camera-gated subdivision recommit or render.
-5. Mesh prototypes/instances are attached to the top-level `RTCScene`.
+2. `CreateRprim/CreateSprim/CreateBprim` create mesh and BasisCurves geometry,
+   material, light, and render-buffer adapters. `mesh` and `basisCurves` are
+   both advertised Rprim types.
+3. During `HdRenderIndex::SyncAll()`, Hydra calls each adapter's `Sync()`: meshes and curves pull geometry/primvars/bindings/instances; materials compile networks; lights pull Lux/texture/IES/linking data; instancers update transforms and contexts.
+4. Mutating adapters use `HdEmbreeRenderParam::AcquireSceneForEdit()` or `NotifySceneChange()`. This stops background rendering before shared state changes and increments the scene version. Material Sync additionally increments the material version, including failed/empty recompiles. After `SyncAll()`, the render pass observes that version and refreshes every live geometry prototype's handle-indexed geomprop bindings before any camera-gated subdivision recommit or render.
+5. The render pass then bridges the active RenderSettings prim. If the
+   normalized `ty:minCurveWidth` epoch changed, the delegate holds its live
+   registry lock, keeps rendering stopped, and asks every registered curve to
+   rebuild from its cached canonical topology, points, and selected primvar
+   sources. No SceneDelegate pull occurs on this path. Each curve commits its
+   replacement prototype and then its existing instances; the renderer
+   performs the deferred root-scene commit. Only an effective-value change
+   advances the epoch and resets accumulation.
+6. Geometry prototypes/instances are attached to the top-level `RTCScene`.
    `ty::PrototypeContext` and `ty::InstanceContext` make synchronized
    renderer data available at hits without retaining Hydra adapter objects.
-6. At low complexity, subdivision meshes render as triangulated control cages.
+7. At low complexity, subdivision meshes render as triangulated control cages.
    For medium and higher, the pass projects authored control edges through the
    stored subdivision view/projection and all instance transforms. Projection
    uses a 10% X/Y view guard for displaced patches, converts complexity to a
@@ -610,8 +655,10 @@ cannot reconstruct missing per-point or per-proxy categories.
 2. The pass compares scene/settings versions, frame/time, camera/framing,
    Hydra lighting presentation, data window, and AOV bindings with the previous
    execution.
-3. The pass resolves delegate and scene-index `HdRenderSettingsSchema` values,
-   then applies renderer-consumed settings through one
+3. The pass resolves delegate and scene-index `HdRenderSettingsSchema` values.
+   It synchronously applies a changed effective curve minimum to all live
+   BasisCurves while rendering is stopped, then passes that exact normalized
+   value with the other renderer-consumed settings through one
    `ty::Renderer::SetRenderSettings()` call. Hydra lighting is pass-owned
    application state forwarded through `SetLightingEnabled()`; camera, framing,
    AOV, scene, and wireframe state retain their dedicated setters.
@@ -788,6 +835,25 @@ For each segment, `_IntegratePath()` performs these stages in order:
    for ray-differential propagation are separately faced to the incident side.
    All normal vectors use inverse-transpose transforms under non-uniform
    instance transforms.
+
+   Curve records enter this boundary through the same scoped `GeometryKind`
+   dispatch as triangle and subdivision records. For round and
+   normal-oriented curves, Embree `Ng` is the normal of the actual intersected
+   surface; an authored ribbon normal remains geometry-orientation input and
+   never overwrites it. `rtcInterpolate1(VERTEX)` is used only for the
+   centerline derivative. That derivative is projected onto the surface to
+   construct the tangent, while the object-space material position is the
+   inverse-transformed ray hit and therefore stays on the tube or ribbon.
+   A collapsed sphere-point representation bypasses centerline normalization
+   and builds a deterministic orthonormal frame from surface `Ng`.
+
+   Before shading, one renderer-owned hit decoder maps a generated curve
+   primitive and local U through record metadata to authored curve ID,
+   authored segment ID, and authored U. `mxcpp::ShadingContext::faceId`,
+   uniform sampling, and the public `elementId` AOV use the authored curve ID;
+   curve samplers alone receive generated primitive IDs so they can perform
+   the same metadata lookup. Mesh IDs continue through the existing coarse
+   face-parameter decode.
 9. **Evaluate the material.** The bound `mxcpp::EvalGraph` produces a
    `SurfaceClosure`. Malformed graphs are rejected during compilation, so
    hit-time evaluation does not use exceptions for authored-value, missing
@@ -950,7 +1016,11 @@ classified AOV through `_WriteAov()`'s direct switch:
 
 - color output consumes the returned radiance and applies camera exposure only at
   output when Hydra enables exposure compensation on the render-pass state;
-- depth, normal, ID, and primvar output interprets the retained `primaryHit`;
+- depth, normal, ID, and primvar output interprets the retained `primaryHit`.
+  Normal output rebuilds the same central surface interaction used by shading,
+  while ID output uses the same authored-hit decoder. Consequently a curve's
+  `elementId` is stable across native, Hermite, linearized, and sphere-point
+  records;
 - heatmap output consumes adaptive sample counts rather than scene radiance.
   `_UpdateVariance()` advances the count before `_WriteAov()` maps
   `(updatedSampleCount + 1) / samplesToConvergence` through the heatmap ramp.
@@ -1056,6 +1126,175 @@ Follow the focused and complete validation workflow in
 - Put primitive IDs, culling/refinement flags, derivatives, material handles, and other hit-time state in renderer-owned contexts; do not make the renderer query the Hydra Rprim.
 - Add interpolation to `renderer/geometry/meshSamplers.*` for new primvar representations.
 
+BasisCurves topology is normalized before geometry representation is chosen.
+`ty::CanonicalizeCurveTopology()` consumes raw type, basis, wrap, counts,
+optional topology indices, topological visibility, and the physical points
+array size. A successful result is the only input accepted by later curve
+geometry, sampling, and hit-decoding layers. It keeps these domains separate:
+
+- logical controls are the checked sum of `curveVertexCounts`;
+- the referenced-point domain is the smallest physical point prefix through
+  `max(curveIndices)`, or all logical controls for unindexed topology;
+- physical points are the complete authored points array, which may have an
+  unreferenced suffix for indexed topology;
+- authored segments use the UsdGeom basis/wrap segment-count rules;
+- varying values use `segmentCount + 1` for nonperiodic/pinned curves and
+  `segmentCount` for periodic curves;
+- uniform values remain indexed by authored curve, while vertex values use the
+  physical point domain through the logical-to-physical topology mapping.
+
+The canonicalizer follows the UsdGeomBasisCurves validity, segment, and varying
+tables rather than permissive computation helpers. In particular, linear
+nonperiodic curves require at least three controls and linear periodic curves
+require at least four. Linear basis is ignored; `pinned` is valid only for
+cubic B-spline and Catmull-Rom. Periodic segments use cyclic authored controls
+and never acquire authored endpoints. Pinned topology uses synthetic control
+descriptors for `2 * P[0] - P[1]` and `2 * P[n-1] - P[n-2]`; it never appends
+values to an authored array.
+
+Every surviving canonical segment carries authored curve and segment IDs, a
+segment-local authored U interval, and authored endpoint flags. Invisible
+curves and point-dependent spans are omitted without compressing those IDs.
+Out-of-range topological-visibility IDs are ignored like Hydra's visibility
+utility and counted as recoveries; malformed type/basis/wrap, counts, topology
+indices, point-domain relationships, or checked domain arithmetic are fatal.
+A fatal result contains only its aggregated diagnostic and no partial canonical
+topology.
+
+`ty::BuildCurveGeometry()` consumes that canonical value plus points, the
+authored width/normal source pairs, and an object-space minimum diameter. It
+validates finite referenced points before producing any plan. Width source
+precedence is `primvars:widths`, built-in `widths`, then the minimum; normal
+precedence is `primvars:normals`, then built-in `normals`. Source presence is
+recorded separately from validity, so a malformed higher-priority source never
+falls through to a lower authored source. A malformed width source uses the
+minimum constant profile, while a malformed normal source makes the whole prim
+a tube. Constant, uniform, varying, vertex, and independent primvar-index
+domains are flattened only after their authored domain has been validated.
+
+Position and vertex-profile evaluation use the exact linear, Bezier, uniform
+B-spline, or Catmull-Rom polynomial for each canonical span. Pinned position
+controls resolve topology indices first and evaluate each synthetic endpoint
+exactly once. Pinned width and normal controls are transient evaluations of the
+original authored interpolation domain; no authored array acquires a phantom
+element. Cubic varying width, cubic ribbon varying normal, a continuous-width
+rewrite, successful local normal repair, or span-local tube fallback selects
+exact Hermite data. A representable unmodified cubic span retains its native
+basis. Linear tubes remain round-linear, and linear ribbons use straight
+Hermite data with equal endpoint tangents.
+
+The minimum is a continuous hard bound, not a control-only clamp. Scalar
+profile extrema partition the polynomial into monotonic ranges; threshold
+roots split an authored span into exact source-polynomial and constant-minimum
+pieces without changing its centerline. Diameter becomes radius only when plan
+controls are emitted. A positive profile may converge to a zero-width tip, but
+a prim whose visible profiles are all zero produces no primitive plan.
+
+Finite zero tangents are local geometry failures rather than point-validation
+errors. An affected cubic span is subdivided into round-linear pieces with
+bounded position and width error, zero-length generated pieces are discarded,
+and a polynomial that is fully collapsed becomes exactly one sphere-point
+plan. Local invalid ribbon normals are projected, transported from valid
+anchors within the same authored curve, and revalidated; ambiguous antipodal
+or anchorless spans alone become tubes. Periodic anchor search is cyclic, while
+nonperiodic and pinned endpoints permit one-sided transport. Every split plan
+retains the authored curve/segment IDs and remaps its local interval into the
+original authored U range. All recoveries are returned as per-build aggregate
+counts rather than emitting hit-time diagnostics.
+
+`ty::BuildCurveGeometryRecords()` groups those plans by surface family and
+representation. Tube records bind Embree round native, Hermite, or linear
+curves; ribbon records bind the matching normal-oriented native or Hermite
+curves; collapsed spans bind sphere points. Vertices are immutable float4
+position/radius values. Hermite tangent W contains the radius derivative, and
+normal-oriented Hermite records carry both normal and normal-derivative
+buffers. Round-linear records explicitly bind a four-byte-strided UCHAR flags
+buffer: each primitive has private guard vertices, while the neighbor bits and
+guards describe only real adjacent spans, including a periodic seam.
+
+Each record owns a separately allocated `ty::PrototypeContext`, so moving the
+record pointer in an Rprim container cannot invalidate Embree user data. The
+context's scoped `GeometryKind` distinguishes triangle meshes, subdivision
+meshes, round curves, and oriented ribbons; curve native/Hermite/linear/sphere
+representation remains a separate scoped value. Its record-local metadata
+array has exactly one entry per Embree primitive. `ty::DecodeCurveHit()` maps
+the generated primitive ID and local U through that array to authored curve
+ID, segment ID, and segment-local U. Neither generated record ordering nor an
+Embree primitive ID is an authored element ID.
+
+`ty::CreateCurvePrimvarSampler()` makes one sampler against one record-local
+metadata array. Constant uses the BasisCurves prim value, uniform uses authored
+curve ID, varying linearly blends authored segment boundaries (cyclically at a
+periodic seam), and vertex evaluates the authored linear, Bezier, B-spline, or
+Catmull-Rom basis after remapping generated U. Pinned phantom vertex values are
+derived transiently as `2 * endpoint - neighbor`. Indexed values are checked
+for authored-domain count and source range before being flattened into
+sampler-owned stable storage. Invalid and face-varying general primvars return
+a diagnostic without invalidating geometry or any other sampler.
+
+`ty::PrototypeGeometryFilter()` is installed as both the Embree intersection
+and occlusion filter. It leaves inactive packet lanes untouched, rejects the
+`u == 0` or `u == 1` sphere only when round-linear metadata names an authored
+nonperiodic/pinned start or end, and then applies display culling. Periodic
+seams, internal joints, record boundaries, native/Hermite curves, oriented
+ribbons, and collapsed sphere-point fallbacks never enter the endpoint rule.
+`FaceCullBypassRayId` bypasses only display culling and cannot close an authored
+open endpoint.
+
+This layer binds buffers, context, and filters to an externally owned handle
+but never creates the production `RTCGeometry`, retains an attached geometry
+ID, attaches, commits, detaches, or releases it. `HdEmbreeBasisCurves` owns
+that production lifecycle and destroys each Embree handle before the record's
+context, metadata, or buffer storage. The direct Embree test is the only owner
+of temporary handles in this layer and follows the same teardown order.
+
+`HdEmbreeBasisCurves` integrates those pure layers without changing their
+contracts. One Rprim owns one dynamic prototype scene, zero or more production
+curve records, and one top-level instance per flattened Hydra instance. An
+uninstanced curve still uses one identity instance. Each production record
+owns its `RTCGeometry`, prototype-scene attachment ID, and one
+`CurveGeometryRecordData`; therefore its Embree handle is detached and
+released before the stable context and shared buffers are destroyed. Finalize
+first removes all root-scene instances, then prototype records, and releases
+the prototype scene last.
+
+Curve Sync snapshots the change tracker's Rprim bits before Hydra's dependency
+propagation is interpreted as source provenance. Raw `DirtyPrimvar`,
+`DirtyWidths`, `DirtyNormals`, and `DirtyComputationPrimvarDesc` bits control
+descriptor enumeration and value/index pulls; the propagated mask controls
+topology-dependent recomputation. Consequently a topology-only edit
+revalidates cached widths, normals, and every general sampler against the new
+domains without querying their clean descriptors or values. Descriptor
+identity includes the `indexed` flag. Indexed values and indices are cached
+together, and indexed/unindexed transitions discard the previous flattened
+sampler. Computed descriptors and values are cached independently from
+authored values: a computed source wins only its same-named authored source,
+while removing that descriptor restores the retained authored cache.
+
+The Rprim has no private minimum-width default. Its internal injection method
+accepts the render-delegate-owned normalized value plus a change epoch. The
+delegate injects its current snapshot while a factory-created Rprim is being
+registered, so a curve created after a non-default setting cannot build one
+frame with the default. Before any injection, a directly constructed test
+Rprim reports validation failure and publishes a committed empty prototype.
+Fatal topology or point validation and a valid all-zero effective width result
+use the same empty publication rule, so stale curve records cannot survive and
+a later valid dirty update can recover the same Rprim. Replacement commit order
+is prototype geometry, prototype scene, instance geometry, then the existing
+deferred root-scene commit. All replacement records are fully bound and
+committed before any is attached.
+
+Patch/surface repr is the current curve representation. Wire and points repr
+requests deterministically reuse that surface representation rather than
+creating incomplete alternate geometry. Transform, instancer, instance-index,
+visibility, and category changes update only top-level instances; they do not
+replace prototype buffers or contexts. Material and general-primvar updates
+clear all geomprop observers before sampler mutation and resolve every record's
+material table after ownership is stable. With shading, AOV, picking, and
+selection consumers connected, `GetSupportedRprimTypes()` advertises
+`basisCurves`; `CreateRprim()` and the render-index path therefore activate the
+complete adapter rather than an internal-only factory branch.
+
 ### AOVs
 
 - Accept/validate bindings in `delegate/renderPass.*`.
@@ -1076,6 +1315,18 @@ a supported C++ API.
 Changing `ty:materialRenderContext` changes Hydra network selection.
 `HdEmbreeRenderPass::_ResyncMaterialNetworksForRenderContextChange()` must
 request material recompilation whenever that priority changes.
+
+`ty:minCurveWidth` is a float whose single renderer-owned default is `0.001`.
+It denotes a prototype/object-space diameter. `SetRenderSetting()` converts the
+authored value and normalizes it once with `max(0, value)`; a negative update
+emits one warning. The settings map, `ty::RenderSettings`, and every curve
+receive only that normalized value. The delegate advances a monotonic epoch
+only when the effective value changes. Its mutex-protected live registry makes
+creation, removal, and the post-Sync rebuild walk mutually exclusive; each
+Rprim additionally serializes cached-input Sync and setting rebuild. The
+rebuild never reads a SceneDelegate, never regenerates instance transforms,
+and runs only after rendering has stopped. Camera, projection, viewport, and
+data-window changes are unrelated to this epoch.
 
 Transparent-shadow policy is not stored as independent renderer state.
 Thin-walled transmission always uses straight RGB shadow attenuation. Thick

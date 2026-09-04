@@ -6,6 +6,7 @@
 //
 // Hit interpretation and shading-context construction.
 
+#include <renderer/geometry/curveSamplers.h>
 #include <renderer/geometry/meshSamplers.h>
 #include <renderer/geometry/normalTransforms.h>
 #include <renderer/geometry/primvarSampling.h>
@@ -22,6 +23,7 @@
 
 #include "pxr/base/work/loops.h"
 #include "pxr/base/work/threadLimits.h"
+#include "pxr/imaging/hd/meshUtil.h"
 #include "pxr/imaging/hd/perfLog.h"
 #include "pxr/imaging/hd/tokens.h"
 
@@ -465,31 +467,100 @@ ty::Renderer::_PropagateRayDifferential(
 }
 
 bool
+ty::Renderer::_TryDecodeHitIdentity(
+    ty::PrototypeContext const* prototypeContext,
+    RTCRayHit const& rayHit,
+    _HitIdentity* outIdentity)
+{
+    if (!prototypeContext || !outIdentity ||
+        rayHit.hit.primID == RTC_INVALID_GEOMETRY_ID) {
+        return false;
+    }
+
+    _HitIdentity identity;
+    identity.authoredU = rayHit.hit.u;
+    switch (prototypeContext->geometryKind) {
+    case ty::GeometryKind::roundCurve:
+    case ty::GeometryKind::orientedRibbon: {
+        ty::DecodedCurveHit decoded;
+        if (!ty::DecodeCurveHit(
+                prototypeContext->curvePrimitiveMetadata,
+                rayHit.hit.primID,
+                rayHit.hit.u,
+                &decoded) ||
+            decoded.authoredCurveId >
+                static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
+            return false;
+        }
+        identity.elementId = static_cast<int32_t>(decoded.authoredCurveId);
+        identity.authoredSegmentId = decoded.authoredSegmentId;
+        identity.authoredU = decoded.authoredU;
+        identity.isCurve = true;
+        break;
+    }
+    case ty::GeometryKind::triangleMesh:
+    case ty::GeometryKind::subdivisionMesh:
+        if (prototypeContext->primitiveParams.empty()) {
+            if (rayHit.hit.primID > static_cast<unsigned int>(
+                    std::numeric_limits<int32_t>::max())) {
+                return false;
+            }
+            identity.elementId = static_cast<int32_t>(rayHit.hit.primID);
+        } else {
+            if (rayHit.hit.primID >=
+                prototypeContext->primitiveParams.size()) {
+                return false;
+            }
+            identity.elementId =
+                HdMeshUtil::DecodeFaceIndexFromCoarseFaceParam(
+                    prototypeContext->primitiveParams[rayHit.hit.primID]);
+        }
+        break;
+    }
+
+    *outIdentity = identity;
+    return true;
+}
+
+bool
 ty::Renderer::_TryBuildSurfaceInteraction(
     RTCRayHit const& rayHit, GfVec3f const& omegaOutWld,
     _SurfaceInteraction* outInteraction,
     ty::InstanceContext const** outInstance,
     ty::PrototypeContext const** outPrototype) const
 {
-    if (!outInteraction ||
+    if (!outInteraction || !_scene ||
         rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID ||
+        rayHit.hit.instID[0] == RTC_INVALID_GEOMETRY_ID ||
         _GetLightGeometryHit(rayHit)) {
         return false;
     }
 
+    RTCGeometry const instanceGeometry =
+        rtcGetGeometry(_scene, rayHit.hit.instID[0]);
+    if (!instanceGeometry) {
+        return false;
+    }
     ty::InstanceContext const* instanceContext =
         static_cast<ty::InstanceContext const*>(
-            rtcGetGeometryUserData(
-                rtcGetGeometry(_scene, rayHit.hit.instID[0])));
-    if (!instanceContext) {
+            rtcGetGeometryUserData(instanceGeometry));
+    if (!instanceContext || !instanceContext->rootScene) {
         return false;
     }
     RTCGeometry const prototypeGeometry =
         rtcGetGeometry(instanceContext->rootScene, rayHit.hit.geomID);
+    if (!prototypeGeometry) {
+        return false;
+    }
     ty::PrototypeContext const* prototypeContext =
         static_cast<ty::PrototypeContext const*>(
             rtcGetGeometryUserData(prototypeGeometry));
     if (!prototypeContext) {
+        return false;
+    }
+
+    _HitIdentity identity;
+    if (!_TryDecodeHitIdentity(prototypeContext, rayHit, &identity)) {
         return false;
     }
 
@@ -530,6 +601,7 @@ ty::Renderer::_TryBuildSurfaceInteraction(
     interaction.primitiveId = rayHit.hit.primID;
     interaction.baryU = rayHit.hit.u;
     interaction.baryV = rayHit.hit.v;
+    interaction.identity = identity;
     interaction.displacedFrame = displacedFrame;
     interaction.frontFacing = GfDot(normalGeomWldExt, omegaOutWld) > 0.0f;
     interaction.doubleSided = prototypeContext->doubleSided;
@@ -552,10 +624,11 @@ ty::Renderer::_ComputeSmoothShadowOffsetOut(
         interaction.prototypeContext;
     ty::InstanceContext const* const instanceContext =
         interaction.instanceContext;
-    // Refined/displaced prototypes already shade a finely tessellated surface;
-    // lifting them from their control cage would over-correct the origin.
+    // Only coarse triangles use the control-cage lift. Subdivision and curve
+    // prototypes already expose their actual intersected surface.
     if (!prototypeContext || !instanceContext ||
-        prototypeContext->refined || prototypeContext->displaced ||
+        prototypeContext->geometryKind != ty::GeometryKind::triangleMesh ||
+        prototypeContext->displaced ||
         !prototypeContext->triangleNormalSampler) {
         return GfVec3f(0.0f);
     }
@@ -634,65 +707,45 @@ ty::Renderer::_BuildShadingContext(
     GfVec3f dPdu, dPdv, dndu, dndv;
     const GfVec3f objectNormal =
         ty::TransformNormalToObject(instanceContext, normalSrfWldExt);
-    if (prototypeContext->refined) {
+    switch (prototypeContext->geometryKind) {
+    case ty::GeometryKind::subdivisionMesh:
         ty::ComputeSubdivSurfaceDerivatives(
             prototypeContext,
             instanceContext->rootScene, rayHit.hit.geomID,
             rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v,
             objectNormal, &dPdu, &dPdv, &dndu, &dndv,
             displacedFrame);
-    } else {
+        break;
+    case ty::GeometryKind::triangleMesh:
         ty::ComputeTriangleSurfaceDerivatives(
             prototypeContext,
             rayHit.hit.primID, rayHit.hit.u, rayHit.hit.v, objectNormal,
             &dPdu, &dPdv, &dndu, &dndv);
+        break;
+    case ty::GeometryKind::roundCurve:
+    case ty::GeometryKind::orientedRibbon:
+        ty::ComputeCurveSurfaceDerivatives(
+            prototypeContext,
+            instanceContext->rootScene,
+            rayHit.hit.geomID,
+            rayHit.hit.primID,
+            rayHit.hit.u,
+            objectNormal,
+            &dPdu,
+            &dPdv,
+            &dndu,
+            &dndv);
+        break;
     }
 
-    GfVec3f posHitObj =
-        instanceContext->worldToObjectMatrix.Transform(posHitWld);
-    if (displacedFrame) {
-        posHitObj = displacedFrame->posObj;
-    } else if (options.computeObjectSpacePosition) {
-        // Exact primitive interpolation avoids crossing a discontinuous
-        // procedural cell boundary through transform cancellation. Coarse
-        // triangles reuse the genuine corner cache needed by smooth shadows.
-        GfVec3f p0;
-        GfVec3f p1;
-        GfVec3f p2;
-        if (!prototypeContext->refined &&
-            ty::SampleTrianglePositions(
-                prototypeContext, rayHit.hit.primID, &p0, &p1, &p2)) {
-            const GfVec3f interpolatedPos =
-                ty::InterpolateTrianglePosition(
-                    p0, p1, p2, rayHit.hit.u, rayHit.hit.v);
-            if (ty::IsFinite(interpolatedPos)) {
-                posHitObj = interpolatedPos;
-            }
-        } else {
-            RTCGeometry const prototypeGeometry = rtcGetGeometry(
-                instanceContext->rootScene, rayHit.hit.geomID);
-            if (prototypeGeometry) {
-                // rtcInterpolate1 writes through SIMD-width arrays.
-                alignas(16) float sampled[4] = {};
-                rtcInterpolate1(
-                    prototypeGeometry,
-                    rayHit.hit.primID,
-                    rayHit.hit.u,
-                    rayHit.hit.v,
-                    RTC_BUFFER_TYPE_VERTEX,
-                    0,
-                    sampled,
-                    nullptr,
-                    nullptr,
-                    3);
-                const GfVec3f interpolatedPos(
-                    sampled[0], sampled[1], sampled[2]);
-                if (ty::IsFinite(interpolatedPos)) {
-                    posHitObj = interpolatedPos;
-                }
-            }
-        }
-    }
+    const GfVec3f posHitObj = ty::ResolveObjectSpaceSurfacePosition(
+        prototypeContext,
+        instanceContext,
+        instanceContext->rootScene,
+        rayHit.hit.geomID,
+        rayHit,
+        displacedFrame,
+        options.computeObjectSpacePosition);
     const GfVec3f objectDPdu = dPdu;
     const GfVec3f objectDPdv = dPdv;
 
@@ -712,7 +765,7 @@ ty::Renderer::_BuildShadingContext(
     GfVec3f tangent(1.0f, 0.0f, 0.0f);
     GfVec3f bitangent(0.0f, 1.0f, 0.0f);
     bool haveTangentFrame = false;
-    {
+    if (!interaction.identity.isCurve) {
         const auto sampleFrame = [&](
             ty::PrimvarSampler const* tangentSampler,
             ty::PrimvarSampler const* bitangentSampler) {
@@ -813,8 +866,8 @@ ty::Renderer::_BuildShadingContext(
         materialEvalServices->renderColorSpace);
     ctx.luminanceCoefficients =
         ty::ToMx(materialEvalServices->luminanceCoefficients);
-    ctx.faceId = rayHit.hit.primID;
-    ctx.baryU = rayHit.hit.u;
+    ctx.faceId = interaction.identity.elementId;
+    ctx.baryU = interaction.identity.authoredU;
     ctx.baryV = rayHit.hit.v;
     ctx.dPdu = ty::ToMx(dPdu);
     ctx.dPdv = ty::ToMx(dPdv);

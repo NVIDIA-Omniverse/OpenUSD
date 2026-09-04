@@ -363,6 +363,7 @@ HdEmbreeRenderPass::HdEmbreeRenderPass(HdRenderIndex *index,
     , _lastRenderSettingsPrimPath()
     , _hasAppliedRenderSettingsPrim(false)
     , _lastBridgedRenderSettings()
+    , _lastBridgedDelegateValues()
     , _lastMaterialRenderContexts()
     , _lastFrame(0.0)
     , _lastTime(0.0)
@@ -693,6 +694,7 @@ HdEmbreeRenderPass::_UpdateRenderSettingsFromActiveRenderSettingsPrim()
 
     const unsigned int oldVersion = delegate->GetRenderSettingsVersion();
     _RenderSettingsMap newBridgedRenderSettings;
+    _RenderSettingsMap newBridgedDelegateValues;
 
     // Remove stale bridge-owned opinions first so disappearing USD values
     // reveal delegate defaults without clobbering later direct overrides.
@@ -700,7 +702,10 @@ HdEmbreeRenderPass::_UpdateRenderSettingsFromActiveRenderSettingsPrim()
         const TfToken &key = previous.first;
         const auto currentIt = currentRenderSettings.find(key);
         const VtValue delegateValue = delegate->GetRenderSetting(key);
-        const bool bridgeOwnsKey = delegateValue == previous.second;
+        const auto effectiveIt = _lastBridgedDelegateValues.find(key);
+        const bool bridgeOwnsKey =
+            effectiveIt != _lastBridgedDelegateValues.end() &&
+            delegateValue == effectiveIt->second;
 
         if (currentIt == currentRenderSettings.end()) {
             if (bridgeOwnsKey) {
@@ -715,10 +720,16 @@ HdEmbreeRenderPass::_UpdateRenderSettingsFromActiveRenderSettingsPrim()
         }
 
         if (bridgeOwnsKey) {
-            delegate->SetRenderSetting(key, currentIt->second);
+            if (currentIt->second != previous.second) {
+                delegate->SetRenderSetting(key, currentIt->second);
+            }
             newBridgedRenderSettings[key] = currentIt->second;
+            newBridgedDelegateValues[key] = currentIt->second == previous.second
+                ? effectiveIt->second
+                : delegate->GetRenderSetting(key);
         } else if (delegateValue == currentIt->second) {
             newBridgedRenderSettings[key] = currentIt->second;
+            newBridgedDelegateValues[key] = delegateValue;
         }
     }
 
@@ -734,6 +745,7 @@ HdEmbreeRenderPass::_UpdateRenderSettingsFromActiveRenderSettingsPrim()
         const VtValue delegateValue = delegate->GetRenderSetting(key);
         if (delegateValue == current.second) {
             newBridgedRenderSettings[key] = current.second;
+            newBridgedDelegateValues[key] = delegateValue;
             continue;
         }
 
@@ -745,6 +757,8 @@ HdEmbreeRenderPass::_UpdateRenderSettingsFromActiveRenderSettingsPrim()
             delegateValue == defaultValue) {
             delegate->SetRenderSetting(key, current.second);
             newBridgedRenderSettings[key] = current.second;
+            newBridgedDelegateValues[key] =
+                delegate->GetRenderSetting(key);
         }
     }
 
@@ -752,6 +766,7 @@ HdEmbreeRenderPass::_UpdateRenderSettingsFromActiveRenderSettingsPrim()
         hasActiveRenderSettingsPrim ? rsPath : SdfPath();
     _hasAppliedRenderSettingsPrim = hasActiveRenderSettingsPrim;
     _lastBridgedRenderSettings.swap(newBridgedRenderSettings);
+    _lastBridgedDelegateValues.swap(newBridgedDelegateValues);
 
     return delegate->GetRenderSettingsVersion() != oldVersion;
 }
@@ -885,6 +900,10 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
         // Resolve Hydra values and cross-setting policy into one renderer
         // value before applying it while rendering is stopped.
         ty::RenderSettings nextSettings = defaults;
+        HdEmbreeRenderDelegate* const embreeRenderDelegate =
+            static_cast<HdEmbreeRenderDelegate*>(renderDelegate);
+        nextSettings.minimumCurveWidth =
+            embreeRenderDelegate->SynchronizeBasisCurvesMinimumWidth();
         nextSettings.samplesToConvergence =
             renderDelegate->GetRenderSetting<int>(
                 HdEmbreeRenderSettingsTokens->convergedSamplesPerPixel,
@@ -970,6 +989,15 @@ HdEmbreeRenderPass::_Execute(HdRenderPassStateSharedPtr const& renderPassState,
 
         _renderer->SetRenderSettings(nextSettings);
         _hasAppliedRendererSettings = true;
+
+        // Minimum-width synchronization can rebuild prototype and instance
+        // geometry after the scene-version snapshot above. Consume that
+        // publication in this Execute so it cannot cause a redundant frame.
+        currentSceneVersion = _sceneVersion->load();
+        if (_lastSceneVersion != currentSceneVersion) {
+            sceneChanged = true;
+            _lastSceneVersion = currentSceneVersion;
+        }
 
         if (materialRenderContextsChanged || materialColorSpaceChanged) {
             _ResyncMaterialNetworksForRenderSettingsChange(GetRenderIndex());

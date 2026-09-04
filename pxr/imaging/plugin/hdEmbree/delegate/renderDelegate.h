@@ -18,12 +18,14 @@
 #include "pxr/imaging/hd/renderThread.h"
 #include "pxr/pxr.h"
 
+#include <cstdint>
 #include <mutex>
 #include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
 class HdEmbreeRenderParam;
+class HdEmbreeBasisCurves;
 class HdEmbreeMesh;
 
 #define HDEMBREE_RENDER_SETTINGS_TOKENS \
@@ -39,6 +41,7 @@ class HdEmbreeMesh;
     ((enableCaustics, "ty:enableCaustics")) \
     ((causticsClampThreshold, "ty:causticsClampThreshold")) \
     ((disableShadows, "ty:disableShadows")) \
+    ((minCurveWidth, "ty:minCurveWidth")) \
     ((materialRenderContext, "ty:materialRenderContext")) \
     ((dielectricLayerThroughputMode, "ty:dielectricLayerThroughputMode")) \
     ((useAdobeOpenPBR, "ty:useAdobeOpenPBR")) \
@@ -123,6 +126,12 @@ public:
     HdRenderSettingDescriptorList
         GetRenderSettingDescriptors() const override;
 
+    /// Store a renderer setting. Minimum curve width is converted to the
+    /// typed, non-negative value shared by renderer and curve geometry.
+    void SetRenderSetting(
+        TfToken const& key,
+        VtValue const& value) override;
+
     /// Return true to indicate that pausing and resuming are supported.
     bool IsPauseSupported() const override;
 
@@ -179,11 +188,17 @@ public:
         GfRect2i const& dataWindow,
         bool forceDisplacementRebuild);
 
-    /// Refresh material geomprop bindings on all live mesh prototypes.
+    /// Refresh material geomprop bindings on all live geometry prototypes.
     ///
-    /// Rendering must be stopped. The walk is unconditional so triangle
-    /// meshes and temporarily undisplaced subdivision meshes are included.
+    /// Rendering must be stopped. The walk is unconditional so curves,
+    /// triangle meshes, and temporarily undisplaced subdivision meshes are
+    /// included.
     void RefreshMaterialBindings();
+
+    /// Apply the current minimum curve width to every live BasisCurves Rprim
+    /// from its cached Hydra input and return that same normalized value for
+    /// renderer settings. Rendering must already be stopped by the caller.
+    float SynchronizeBasisCurvesMinimumWidth();
 
     /// Create a hydra Sprim, representing scene or viewport state like cameras
     /// or lights.
@@ -301,6 +316,15 @@ private:
     // Live meshes used for camera-adaptive subdivision updates.
     std::mutex _meshRegistryMutex;
     std::vector<HdEmbreeMesh*> _meshes;
+
+    // Live BasisCurves share renderer-owned minimum-width state through this
+    // registry. Creation, destruction, and rebuild iteration use the same
+    // mutex so no stale Rprim pointer can be observed.
+    std::mutex _basisCurvesRegistryMutex;
+    std::vector<HdEmbreeBasisCurves*> _basisCurves;
+    float _minimumCurveWidth = ty::DefaultMinimumCurveWidth;
+    std::uint64_t _minimumCurveWidthEpoch = 0;
+    std::uint64_t _appliedMinimumCurveWidthEpoch = 0;
 
     // A callback that interprets embree error codes and injects them into
     // the hydra logging system.

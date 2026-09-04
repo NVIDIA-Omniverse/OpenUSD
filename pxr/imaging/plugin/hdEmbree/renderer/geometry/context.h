@@ -7,6 +7,7 @@
 #ifndef PXR_IMAGING_PLUGIN_HD_EMBREE_CONTEXT_H
 #define PXR_IMAGING_PLUGIN_HD_EMBREE_CONTEXT_H
 
+#include "curveGeometry.h"
 #include "primvarSampler.h"
 
 #include <renderer/embreeCompat.h>
@@ -50,15 +51,27 @@ enum class TriangleCornerSamplerKind
     faceVarying
 };
 
+/// Surface family of the Embree prototype geometry owning this context.
+/// Curve representation details stay in CurveGeometryRepresentation so they
+/// cannot be inferred from mesh-only flags such as `refined`.
+enum class GeometryKind
+{
+    triangleMesh,
+    subdivisionMesh,
+    roundCurve,
+    orientedRibbon
+};
+
 
 /// \class PrototypeContext
 ///
 /// Renderer state attached to Embree prototype geometry as user data.
 ///
-/// HdEmbreeMesh owns this object and every owning container within it. Its
-/// address remains stable while the attached geometry can be traversed.
-/// Observing pointers name state owned by that mesh, its bound material Sprim,
-/// or the Renderer. Sync may mutate this context only after
+/// The owning Rprim geometry record owns this object and every owning
+/// container within it. Its address remains stable while the attached geometry
+/// can be traversed. Observing pointers name state owned by that record or
+/// Rprim, its bound material Sprim, or the Renderer. Sync may mutate this
+/// context only after
 /// HdEmbreeRenderParam::AcquireSceneForEdit() has stopped rendering; geometry
 /// commit callbacks and render workers otherwise treat it as read-only. The
 /// displacement callback may atomically set displacementExceptionReported.
@@ -66,6 +79,15 @@ enum class TriangleCornerSamplerKind
 struct PrototypeContext
 {
     int32_t primId = 0;
+    GeometryKind geometryKind = GeometryKind::triangleMesh;
+    /// Record-wide curve buffer representation. This field is meaningful only
+    /// for roundCurve and orientedRibbon contexts.
+    CurveGeometryRepresentation curveRepresentation =
+        CurveGeometryRepresentation::roundLinear;
+    /// Record-local Embree primitive ID to authored curve/segment/U mapping.
+    /// The owning curve record finishes this vector before binding its stable
+    /// context address and never mutates it while Embree can traverse it.
+    std::vector<CurveSegmentMetadata> curvePrimitiveMetadata;
     HdCullStyle cullStyle = HdCullStyleDontCare;
     bool doubleSided = false;
     bool refined = false;

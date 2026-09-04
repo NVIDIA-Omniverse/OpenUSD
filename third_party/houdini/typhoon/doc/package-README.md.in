@@ -8,6 +8,8 @@ OpenUSD 0.26.5, Embree @TYPHOON_EMBREE_VERSION@, OpenImageIO
 installation.
 
 The renderer ID is `HdEmbreeRendererPlugin`; Houdini displays it as `Typhoon`.
+It renders supported `UsdGeomBasisCurves` as round tubes or normal-oriented
+ribbons using the Embree 3 supplied by Houdini.
 
 Verify discovery:
 
@@ -56,7 +58,8 @@ New standard Render Settings LOPs include a **Typhoon** tab containing the
 renderer-specific settings. For an existing Render Settings LOP, choose
 **Initialize Parameters > Rebuild Renderer-Specific Parameters** after loading
 the package. A setting is authored only after its control menu is changed from
-**Do Nothing** to **Set or Create**.
+**Do Nothing** to **Set or Create**. **Minimum Curve Width** authors the float
+`ty:minCurveWidth` property; its default is `0.001` in prototype object space.
 
 If Typhoon is missing from either menu, confirm that the configured directory
 contains `UsdRenderers.json`, then run the discovery command above from the

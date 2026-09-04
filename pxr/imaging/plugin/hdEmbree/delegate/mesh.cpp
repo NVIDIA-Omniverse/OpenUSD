@@ -14,6 +14,7 @@
 
 #include <renderer/geometry/context.h>
 #include <renderer/geometry/displacementEvaluation.h>
+#include <renderer/geometry/intersectionFilter.h>
 #include <renderer/geometry/primvarSampling.h>
 #include <renderer/materials/MaterialXCpp/graph.h>
 
@@ -916,76 +917,6 @@ HdEmbreeMesh::Sync(HdSceneDelegate *sceneDelegate,
         embreeRenderParam->GetMaterialEvalServices(),
         dirtyBits,
         desc);
-}
-
-/* static */
-void HdEmbreeMesh::_EmbreeCullFaces(const RTCFilterFunctionNArguments* args)
-{
-    if ( !args ) {
-        // This breaks the Embree API spec so we shouldn't get here.
-        TF_CODING_ERROR("_EmbreeCullFaces got NULL args pointer");
-        return;
-    }
-
-    // Pull out the prototype context.
-    // Only HdEmbreeMesh gets HdEmbreeMesh::_EmbreeCullFaces bound
-    // as an intersection filter. The filter is bound to the prototype,
-    // whose renderer context contains all values needed by the filter.
-    ty::PrototypeContext *ctx =
-        static_cast<ty::PrototypeContext*>(args->geometryUserPtr);
-    if (!ctx) {
-        TF_CODING_ERROR("_EmbreeCullFaces got NULL prototype context");
-        return;
-    }
-
-    // Note: this is called to filter every candidate ray hit
-    // with the bound object, so this function should be fast.
-    for (unsigned int i = 0; i < args->N; ++i) {
-        // -1 = valid, 0 = invalid.
-        // If it's already been marked invalid, skip our own opinion.
-        if (args->valid[i] != -1) {
-            continue;
-        }
-        if (RTCRayN_id(args->ray, args->N, i) ==
-            ty::FaceCullBypassRayId) {
-            continue;
-        }
-
-        // Calculate whether the provided hit is a front-face or back-face.
-        // This is verbose because of SOA struct access, but it's just
-        // dot(hit.Ng, ray.dir).
-        const bool isFrontFace =
-            ctx->orientationSign * (
-            RTCHitN_Ng_x(args->hit, args->N, i) *
-                RTCRayN_dir_x(args->ray, args->N, i) +
-            RTCHitN_Ng_y(args->hit, args->N, i) *
-                RTCRayN_dir_y(args->ray, args->N, i) +
-            RTCHitN_Ng_z(args->hit, args->N, i) *
-                RTCRayN_dir_z(args->ray, args->N, i)
-            ) < 0.0f;
-
-        // Determine if we should ignore this hit. HdCullStyleBack means
-        // cull back faces.
-        bool cull = false;
-        switch(ctx->cullStyle) {
-            case HdCullStyleBack:
-                cull = !isFrontFace; break;
-            case HdCullStyleFront:
-                cull =  isFrontFace; break;
-
-            case HdCullStyleBackUnlessDoubleSided:
-                cull = !isFrontFace && !ctx->doubleSided; break;
-            case HdCullStyleFrontUnlessDoubleSided:
-                cull =  isFrontFace && !ctx->doubleSided; break;
-
-            default: break;
-        }
-        if (cull) {
-            // This is how you reject a hit in embree3 instead of setting
-            // geomId to invalid on the ray
-            args->valid[i] = 0;
-        }
-    }
 }
 
 bool
@@ -2037,6 +1968,9 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
             std::make_unique<ty::PrototypeContext>();
         rtcSetGeometryUserData(_geometry, _prototypeContext.get());
         _prototypeContext->primId = GetPrimId();
+        _prototypeContext->geometryKind = _refined
+            ? ty::GeometryKind::subdivisionMesh
+            : ty::GeometryKind::triangleMesh;
         _prototypeContext->cullStyle = _cullStyle;
         _prototypeContext->doubleSided = _doubleSided;
         _prototypeContext->refined = _refined;
@@ -2069,9 +2003,9 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         _prototypeContext->subdivisionLevels = &_subdivisionLevels;
         _prototypeContext->material = nullptr;
 
-        // Add _EmbreeCullFaces as a filter function for backface culling.
-        rtcSetGeometryIntersectFilterFunction(_geometry,_EmbreeCullFaces);
-        rtcSetGeometryOccludedFilterFunction(_geometry,_EmbreeCullFaces);
+        // Camera and shadow traversal share culling semantics. The same
+        // dispatch also handles open curve endpoints for curve records.
+        ty::BindPrototypeGeometryFilter(_geometry);
 
         // Force the smooth normals code to rebuild the "normals" primvar the
         // next time smooth normals is enabled.

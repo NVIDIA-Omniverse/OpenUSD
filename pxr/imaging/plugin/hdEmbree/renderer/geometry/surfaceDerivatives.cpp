@@ -4,7 +4,7 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-// Subdivision and triangle surface-frame resolution.
+// Mesh and curve surface-frame resolution.
 //
 #include "surfaceDerivatives.h"
 #include "context.h"
@@ -12,7 +12,9 @@
 #include "meshSamplers.h"
 #include "normalTransforms.h"
 #include "primvarSampling.h"
+#include "triangleMesh.h"
 
+#include <renderer/rayUtil.h>
 #include <renderer/rendererMath.h>
 
 #include "pxr/base/tf/token.h"
@@ -119,10 +121,24 @@ ty::ResolveObjectSpaceNormal(
     GfVec3f normal = prototypeContext->orientationSign * GfVec3f(
         rayHit.hit.Ng_x, rayHit.hit.Ng_y, rayHit.hit.Ng_z);
 
+    // For round and normal-oriented curves, Ng is the normal of the actual
+    // intersected surface. Authored ribbon normals are geometry-orientation
+    // input and must never replace it as a shading normal.
+    switch (prototypeContext->geometryKind) {
+    case ty::GeometryKind::roundCurve:
+    case ty::GeometryKind::orientedRibbon:
+        return normal;
+    case ty::GeometryKind::triangleMesh:
+    case ty::GeometryKind::subdivisionMesh:
+        break;
+    }
+
     // rtcInterpolate ignores displacement, so reconstruct the differential
     // frame of P + D*N explicitly. Embree's hit Ng remains the true facet
     // orientation and is the fallback for invalid graph/patch evaluations.
-    if (prototypeContext->displaced) {
+    if (prototypeContext->geometryKind ==
+            ty::GeometryKind::subdivisionMesh &&
+        prototypeContext->displaced) {
         ty::DisplacedSubdivFrame displacedFrame;
         if (ty::ComputeDisplacedSubdivFrame(
                 rtcGetGeometry(rootScene, geomID),
@@ -153,7 +169,8 @@ ty::ResolveObjectSpaceNormal(
         }
     }
 
-    if (prototypeContext->refined) {
+    if (prototypeContext->geometryKind ==
+        ty::GeometryKind::subdivisionMesh) {
         GfVec3f limitNormal;
         if (_TryComputeSubdivLimitNormal(
                 rootScene,
@@ -167,6 +184,151 @@ ty::ResolveObjectSpaceNormal(
     }
 
     return normal;
+}
+
+GfVec3f
+ty::ResolveObjectSpaceSurfacePosition(
+    ty::PrototypeContext const* prototypeContext,
+    ty::InstanceContext const* instanceContext,
+    RTCScene rootScene,
+    unsigned int geomID,
+    RTCRayHit const& rayHit,
+    ty::DisplacedSubdivFrame const* displacedFrame,
+    bool exactMeshInterpolation)
+{
+    const GfVec3f posHitWld = ty::CalculateHitPosition(rayHit);
+    GfVec3f posHitObj = instanceContext
+        ? instanceContext->worldToObjectMatrix.Transform(posHitWld)
+        : posHitWld;
+    if (displacedFrame && displacedFrame->valid) {
+        return displacedFrame->posObj;
+    }
+    if (!prototypeContext || !exactMeshInterpolation) {
+        return posHitObj;
+    }
+
+    switch (prototypeContext->geometryKind) {
+    case ty::GeometryKind::roundCurve:
+    case ty::GeometryKind::orientedRibbon:
+        return posHitObj;
+    case ty::GeometryKind::triangleMesh: {
+        GfVec3f p0;
+        GfVec3f p1;
+        GfVec3f p2;
+        if (ty::SampleTrianglePositions(
+                prototypeContext, rayHit.hit.primID, &p0, &p1, &p2)) {
+            const GfVec3f interpolatedPos =
+                ty::InterpolateTrianglePosition(
+                    p0, p1, p2, rayHit.hit.u, rayHit.hit.v);
+            if (ty::IsFinite(interpolatedPos)) {
+                return interpolatedPos;
+            }
+        }
+        break;
+    }
+    case ty::GeometryKind::subdivisionMesh:
+        break;
+    }
+
+    RTCGeometry const geometry = rootScene
+        ? rtcGetGeometry(rootScene, geomID)
+        : nullptr;
+    if (geometry) {
+        GfVec3f interpolatedPos;
+        _InterpolateSubdivPosition(
+            geometry,
+            rayHit.hit.primID,
+            rayHit.hit.u,
+            rayHit.hit.v,
+            &interpolatedPos,
+            nullptr,
+            nullptr);
+        if (ty::IsFinite(interpolatedPos)) {
+            return interpolatedPos;
+        }
+    }
+    return posHitObj;
+}
+
+void
+ty::ComputeCurveSurfaceDerivatives(
+    ty::PrototypeContext const* prototypeContext,
+    RTCScene rootScene,
+    unsigned int geomID,
+    unsigned int primitiveId,
+    float u,
+    GfVec3f const& surfaceNormal,
+    GfVec3f* outDPdu,
+    GfVec3f* outDPdv,
+    GfVec3f* outDndu,
+    GfVec3f* outDndv)
+{
+    *outDndu = GfVec3f(0.0f);
+    *outDndv = GfVec3f(0.0f);
+
+    GfVec3f normal;
+    if (!ty::TryNormalizeDirection(surfaceNormal, &normal)) {
+        normal = GfVec3f(0.0f, 0.0f, 1.0f);
+    }
+
+    const auto buildFallback = [&]() {
+        GfBuildOrthonormalFrame(normal, outDPdu, outDPdv);
+    };
+
+    if (!prototypeContext || !rootScene ||
+        primitiveId >= prototypeContext->curvePrimitiveMetadata.size() ||
+        !std::isfinite(u) || u < 0.0f || u > 1.0f ||
+        prototypeContext->curveRepresentation ==
+            ty::CurveGeometryRepresentation::spherePoint) {
+        buildFallback();
+        return;
+    }
+
+    RTCGeometry const geometry = rtcGetGeometry(rootScene, geomID);
+    if (!geometry) {
+        buildFallback();
+        return;
+    }
+
+    // rtcInterpolate1 returns the centerline derivative for curve vertex
+    // buffers. SIMD-width writes require padded temporaries even though only
+    // three components are requested.
+    alignas(16) float sampled[4] = {};
+    alignas(16) float sampledDu[4] = {};
+    rtcInterpolate1(
+        geometry,
+        primitiveId,
+        u,
+        0.0f,
+        RTC_BUFFER_TYPE_VERTEX,
+        0,
+        sampled,
+        sampledDu,
+        nullptr,
+        3);
+    const GfVec3f centerlineDerivative(
+        sampledDu[0], sampledDu[1], sampledDu[2]);
+    GfVec3f tangent = centerlineDerivative -
+        normal * GfDot(normal, centerlineDerivative);
+    GfVec3f tangentDirection;
+    if (!ty::IsFinite(centerlineDerivative) ||
+        !ty::TryNormalizeDirection(tangent, &tangentDirection)) {
+        buildFallback();
+        return;
+    }
+
+    GfVec3f bitangent = GfCross(normal, tangentDirection);
+    if (!ty::TryNormalizeDirection(bitangent, &bitangent)) {
+        buildFallback();
+        return;
+    }
+
+    // Preserve the centerline parameter scale in dPdu while exposing a
+    // stable transverse direction. Curve-specific texture filtering is out of
+    // scope, so dPdv intentionally carries orientation rather than a radius
+    // derivative with representation-dependent magnitude.
+    *outDPdu = tangent;
+    *outDPdv = bitangent;
 }
 
 void

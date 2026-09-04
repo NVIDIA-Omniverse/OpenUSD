@@ -303,9 +303,6 @@ private:
         RTCScene scene, RTCDevice device,
         RTCGeometry* geometry, unsigned* rtcId);
 
-    // An embree intersection filter callback, for doing backface culling.
-    static void _EmbreeCullFaces(const RTCFilterFunctionNArguments* args);
-
 private:
     // Every HdEmbreeMesh is treated as instanced; if there's no instancer,
     // the prototype has a single identity instance. The prototype is stored

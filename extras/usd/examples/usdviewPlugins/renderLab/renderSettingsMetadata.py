@@ -118,6 +118,10 @@ _RENDERERS = {
                 "category": "Scene",
                 "order": 40,
             },
+            "ty:minCurveWidth": {
+                "category": "Scene",
+                "order": 50,
+            },
         },
     },
     "storm": {

@@ -71,6 +71,11 @@ class "TyphoonRenderSettingsAPI" (
             string userDocBrief = "Minimum number of bounces before Russian Roulette path termination."
         }
     )
+    uniform float ty:minCurveWidth = 0.001 (
+        customData = {
+            string userDocBrief = "Minimum BasisCurves diameter in prototype object space."
+        }
+    )
     uniform int ty:minSamplesBeforeAdaptive = 64 (
         customData = {
             string userDocBrief = "Minimum samples per pixel before adaptive convergence checks begin."
@@ -97,3 +102,4 @@ class "TyphoonRenderSettingsAPI" (
         }
     )
 }
+

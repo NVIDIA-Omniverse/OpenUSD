@@ -19,8 +19,9 @@ Typhoon is the CPU path-tracing Hydra render delegate implemented by the
 `hdEmbree` plugin. Hydra discovers renderer identity `Embree` and creates
 `HdEmbreeRendererPlugin` through `plugInfo.json`.
 
-During Hydra synchronization, delegate adapters pull dirty mesh, instance,
-material, light, camera, and render-buffer data into renderer-owned records.
+During Hydra synchronization, delegate adapters pull dirty mesh, BasisCurves,
+instance, material, light, camera, and render-buffer data into renderer-owned
+records.
 Scene mutation stops background rendering and advances a scene version. A
 render pass then translates camera, framing, Hydra lighting presentation, AOV,
 active RenderSettings, and delegate-setting state into `ty::Renderer`, which
@@ -28,11 +29,11 @@ commits the Embree scene, traces progressive samples, and writes Hydra render
 buffers.
 
 The delegate owns the Embree device, root scene, renderer, and render thread.
-Meshes own prototype and instance contexts whose stable addresses Embree
-borrows as geometry user data. `CommitResources()` does no BVH work; scene
-commit is deferred until renderer setup has validated the scene and AOVs.
-Failed setup parks usable buffers but cannot publish a valid frame or write a
-stale RenderProduct.
+Meshes and BasisCurves own prototype and instance contexts whose stable
+addresses Embree borrows as geometry user data. `CommitResources()` does no
+BVH work; scene commit is deferred until renderer setup has validated the
+scene and AOVs. Failed setup parks usable buffers but cannot publish a valid
+frame or write a stale RenderProduct.
 
 ## Supported external contract
 
@@ -47,9 +48,22 @@ USD render-settings schema, not its internal C++ module boundaries.
   `RenderSettings`. Renderer-specific attributes use the `ty:` namespace;
   names, types, defaults, and allowed tokens are defined by
   `schema/schema.usda`.
+- The advertised Rprim types are `mesh` and `basisCurves`. BasisCurves support
+  includes round tubes and normal-oriented ribbons, linear and supported cubic
+  bases, all UsdGeom wrap modes, authored-domain primvar sampling, instancing,
+  topological visibility, AOVs, picking, and selection. Generated Embree
+  primitive IDs remain internal: public `elementId` values are authored curve
+  indices.
 - Hydra applications may also use direct delegate settings. The standard
   `renderingColorSpace` attribute and generic `domeLightCameraVisibility` and
   `enableExposureCompensation` settings are deliberately unnamespaced.
+- `ty:minCurveWidth` is a float with default `0.001`. It is the minimum
+  BasisCurves diameter in prototype object space. The delegate clamps a
+  negative authored setting to zero once at the setting boundary and supplies
+  that same normalized value to renderer state and curve geometry. A changed
+  effective value synchronously rebuilds every live curve from cached Hydra
+  input before rendering resumes; camera and viewport changes do not trigger
+  this rebuild.
 - Lit or unlit color presentation follows
   `HdRenderPassState::GetLightingEnabled()` rather than a Typhoon render
   setting. Lit mode path traces the lights supplied after Hydra scene-light
@@ -60,6 +74,10 @@ USD render-settings schema, not its internal C++ module boundaries.
 - The delegate supports standard color, depth, normal, and ID AOVs, the
   `adaptiveHeatmap` and `ambocc` diagnostics, and float-vector primvar outputs.
   `README.md` defines the authoritative names and formats.
+- Curve surface normals come from Embree's actual tube/ribbon hit `Ng`;
+  authored ribbon normals orient geometry, and centerline derivatives provide
+  independent tangents. Camera, path, shadow/visibility, ambient-occlusion,
+  material, and AOV consumers share this hit contract.
 - Progressive radiance rendering always uses adaptive sampling. The
   `adaptiveHeatmap` diagnostic is computed only when its AOV is bound and does
   not replace color output.
@@ -69,10 +87,15 @@ USD render-settings schema, not its internal C++ module boundaries.
   buffers whose completion drives render-pass convergence. Valid camera
   framing without AOV bindings remains unsupported and settles as a failed
   frame.
-- The Linux Houdini 22 package registers `HdEmbreeRendererPlugin` as
-  `Typhoon` in Houdini. It is rebuilt against the host installation's OpenUSD
-  0.26.5, Embree 3, OpenImageIO, Imath, TBB, C++20, and standard-library ABI;
-  it does not load the normal Pixi versions of those libraries.
+- BasisCurves do not add a dedicated Chiang hair BSDF. BasisCurves deformation
+  motion blur is not supported. Ray-facing flat curves, camera/pixel-space
+  width, synthetic caps, `UsdGeomHermiteCurves`, and `UsdGeomNurbsCurves` are
+  not part of this support.
+- The standalone Houdini 22 package registers `HdEmbreeRendererPlugin` as
+  `Typhoon` in Houdini. It is rebuilt for Linux x86-64, Windows x86-64, or Apple
+  Silicon macOS against the host installation's OpenUSD 0.26.5, Embree 3,
+  OpenImageIO, Imath, TBB, C++20, and standard-library ABI; it does not load the
+  normal Pixi versions of those libraries.
 
 Offline clients set `enableInteractive = false`. After a valid frame converges,
 the render pass writes active stage-authored RenderProducts through Hio.

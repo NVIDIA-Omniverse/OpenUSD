@@ -6,15 +6,13 @@
 //
 // AOV validation, accumulation, dispatch, and hit outputs.
 
-#include <renderer/geometry/normalTransforms.h>
-#include <renderer/geometry/surfaceDerivatives.h>
 #include <renderer/rayUtil.h>
 #include <renderer/renderBuffer.h>
 #include <renderer/renderer.h>
+#include <renderer/rendererMath.h>
 
 #include "pxr/base/work/loops.h"
 #include "pxr/base/work/threadLimits.h"
-#include "pxr/imaging/hd/meshUtil.h"
 #include "pxr/imaging/hd/perfLog.h"
 #include "pxr/imaging/hd/renderBuffer.h"
 #include "pxr/imaging/hd/tokens.h"
@@ -651,9 +649,9 @@ ty::Renderer::_UpdateVariance(
 
 bool
 ty::Renderer::_ComputeId(RTCRayHit const& rayHit, TfToken const& idType,
-                             int32_t *id)
+                         int32_t* id)
 {
-    if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
+    if (!id || rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
         return false;
     }
     if (_GetLightGeometryHit(rayHit)) {
@@ -667,15 +665,15 @@ ty::Renderer::_ComputeId(RTCRayHit const& rayHit, TfToken const& idType,
         return false;
     }
 
+    _HitIdentity identity;
+    if (!_TryDecodeHitIdentity(prototypeContext, rayHit, &identity)) {
+        return false;
+    }
+
     if (idType == HdAovTokens->primId) {
         *id = prototypeContext->primId;
     } else if (idType == HdAovTokens->elementId) {
-        if (prototypeContext->primitiveParams.empty()) {
-            *id = rayHit.hit.primID;
-        } else {
-            *id = HdMeshUtil::DecodeFaceIndexFromCoarseFaceParam(
-                prototypeContext->primitiveParams[rayHit.hit.primID]);
-        }
+        *id = identity.elementId;
     } else if (idType == HdAovTokens->instanceId) {
         *id = instanceContext->instanceId;
     } else {
@@ -711,47 +709,43 @@ ty::Renderer::_ComputeDepth(RTCRayHit const& rayHit,
 
 bool
 ty::Renderer::_ComputeNormal(RTCRayHit const& rayHit,
-                             GfVec3f *normal,
+                             GfVec3f* normal,
                              bool eye)
 {
-    if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
-        return false;
-    }
-    if (_GetLightGeometryHit(rayHit)) {
-        return false;
-    }
-
-    ty::InstanceContext const* instanceContext;
-    ty::PrototypeContext const* prototypeContext;
-    if (!_GetHitContexts(
-            _scene, rayHit, &instanceContext, &prototypeContext)) {
+    if (!normal || rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID ||
+        _GetLightGeometryHit(rayHit)) {
         return false;
     }
 
-    const GfVec3f normalGeomObjExt = ty::ResolveObjectSpaceNormal(
-        prototypeContext, instanceContext->rootScene, rayHit.hit.geomID,
-        rayHit);
+    GfVec3f omegaOutWld(
+        -rayHit.ray.dir_x, -rayHit.ray.dir_y, -rayHit.ray.dir_z);
+    if (!ty::TryNormalizeDirection(omegaOutWld, &omegaOutWld)) {
+        return false;
+    }
+    _SurfaceInteraction interaction;
+    if (!_TryBuildSurfaceInteraction(
+            rayHit, omegaOutWld, &interaction)) {
+        return false;
+    }
 
-    const GfVec3f normalGeomWldExt =
-        ty::TransformNormalToWorld(instanceContext, normalGeomObjExt);
-    GfVec3f normalGeomResult = eye
-        ? GfVec3f(_viewMatrix.TransformDir(normalGeomWldExt))
-        : normalGeomWldExt;
-    normalGeomResult.Normalize();
+    GfVec3f result = eye
+        ? GfVec3f(_viewMatrix.TransformDir(interaction.normalSrfWldExt))
+        : interaction.normalSrfWldExt;
+    if (!ty::TryNormalizeDirection(result, &result)) {
+        return false;
+    }
 
-    *normal = normalGeomResult;
+    *normal = result;
     return true;
 }
 
 bool
 ty::Renderer::_ComputePrimvar(RTCRayHit const& rayHit,
-                                  TfToken const& primvar,
-                                  GfVec3f *value)
+                              TfToken const& primvar,
+                              GfVec3f* value)
 {
-    if (rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
-        return false;
-    }
-    if (_GetLightGeometryHit(rayHit)) {
+    if (!value || rayHit.hit.geomID == RTC_INVALID_GEOMETRY_ID ||
+        _GetLightGeometryHit(rayHit)) {
         return false;
     }
 
@@ -761,6 +755,10 @@ ty::Renderer::_ComputePrimvar(RTCRayHit const& rayHit,
     ty::PrototypeContext const* prototypeContext;
     if (!_GetHitContexts(
             _scene, rayHit, &validatedInstanceContext, &prototypeContext)) {
+        return false;
+    }
+    _HitIdentity identity;
+    if (!_TryDecodeHitIdentity(prototypeContext, rayHit, &identity)) {
         return false;
     }
 

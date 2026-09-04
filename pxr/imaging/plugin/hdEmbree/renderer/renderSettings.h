@@ -13,6 +13,8 @@
 PXR_NAMESPACE_OPEN_SCOPE
 namespace ty {
 
+constexpr float DefaultMinimumCurveWidth = 0.001f;
+
 /// Rough dielectric top-layer throughput estimator.
 enum class DielectricLayerThroughputMode {
     Bsdl,
@@ -70,6 +72,10 @@ struct RenderSettings {
 
     // Visibility policy.
     bool disableShadows = false;
+
+    // Geometry policy. The render delegate normalizes this object-space
+    // diameter before the value reaches the renderer or curve Rprims.
+    float minimumCurveWidth = DefaultMinimumCurveWidth;
 
     // Material and texture policy.
     DielectricLayerThroughputMode dielectricLayerThroughputMode =

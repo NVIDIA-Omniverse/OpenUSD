@@ -16,6 +16,7 @@
 #include "pxr/base/gf/math.h"
 #include "pxr/base/gf/vec2i.h"
 #include "pxr/base/plug/registry.h"
+#include "pxr/base/tf/diagnosticTrap.h"
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/imaging/hd/camera.h"
 #include "pxr/imaging/hd/renderIndex.h"
@@ -129,6 +130,7 @@ _TestRenderDelegateSettings()
         HdEmbreeRenderSettingsTokens->enableCaustics,
         HdEmbreeRenderSettingsTokens->causticsClampThreshold,
         HdEmbreeRenderSettingsTokens->disableShadows,
+        HdEmbreeRenderSettingsTokens->minCurveWidth,
         HdEmbreeRenderSettingsTokens->materialRenderContext,
         HdEmbreeRenderSettingsTokens->useAdobeOpenPBR,
         HdEmbreeRenderSettingsTokens->dielectricLayerThroughputMode,
@@ -155,6 +157,15 @@ _TestRenderDelegateSettings()
     if (!dynamicTessellationDefault.IsHolding<bool>() ||
         dynamicTessellationDefault.UncheckedGet<bool>()) {
         std::printf("dynamicSubdvTesselation delegate default is not false\n");
+        return false;
+    }
+
+    const VtValue minimumCurveWidthDefault = delegate.GetRenderSetting(
+        HdEmbreeRenderSettingsTokens->minCurveWidth);
+    if (!minimumCurveWidthDefault.IsHolding<float>() ||
+        minimumCurveWidthDefault.UncheckedGet<float>() !=
+            ty::DefaultMinimumCurveWidth) {
+        std::printf("minCurveWidth delegate default is not 0.001f\n");
         return false;
     }
 
@@ -262,6 +273,78 @@ _TestRenderDelegateSettings()
     }
 
     return true;
+}
+
+size_t
+_CountMinimumCurveWidthWarnings(std::vector<TfWarning> const& warnings)
+{
+    return std::count_if(
+        warnings.begin(), warnings.end(), [](TfWarning const& warning) {
+            return warning.GetCommentary().find("ty:minCurveWidth") !=
+                std::string::npos;
+        });
+}
+
+bool
+_TestMinimumCurveWidthNormalization()
+{
+    {
+        HdRenderSettingsMap initialSettings;
+        initialSettings[HdEmbreeRenderSettingsTokens->minCurveWidth] =
+            VtValue(-0.5f);
+        TfDiagnosticTrap initialSettingsTrap;
+        HdEmbreeRenderDelegate initializedDelegate(initialSettings);
+        const std::vector<TfWarning> initialSettingsWarnings =
+            initialSettingsTrap.GetWarnings();
+        initialSettingsTrap.Clear();
+        if (_CountMinimumCurveWidthWarnings(initialSettingsWarnings) != 1 ||
+            initializedDelegate.GetRenderSetting<float>(
+                HdEmbreeRenderSettingsTokens->minCurveWidth, -1.0f) !=
+                0.0f ||
+            initializedDelegate.SynchronizeBasisCurvesMinimumWidth() !=
+                0.0f) {
+            std::printf("initial minCurveWidth setting was not normalized\n");
+            return false;
+        }
+    }
+
+    HdEmbreeRenderDelegate delegate;
+    const unsigned int initialVersion = delegate.GetRenderSettingsVersion();
+
+    TfDiagnosticTrap firstNegativeTrap;
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->minCurveWidth, VtValue(-0.25f));
+    const std::vector<TfWarning> firstWarnings =
+        firstNegativeTrap.GetWarnings();
+    firstNegativeTrap.Clear();
+    if (_CountMinimumCurveWidthWarnings(firstWarnings) != 1 ||
+        delegate.GetRenderSetting<float>(
+            HdEmbreeRenderSettingsTokens->minCurveWidth, -1.0f) != 0.0f ||
+        delegate.SynchronizeBasisCurvesMinimumWidth() != 0.0f ||
+        delegate.GetRenderSettingsVersion() != initialVersion + 1) {
+        std::printf("negative minCurveWidth was not normalized once\n");
+        return false;
+    }
+
+    const unsigned int zeroVersion = delegate.GetRenderSettingsVersion();
+    TfDiagnosticTrap sameEffectiveTrap;
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->minCurveWidth, VtValue(-1.0f));
+    const std::vector<TfWarning> sameEffectiveWarnings =
+        sameEffectiveTrap.GetWarnings();
+    sameEffectiveTrap.Clear();
+    if (_CountMinimumCurveWidthWarnings(sameEffectiveWarnings) != 1 ||
+        delegate.GetRenderSettingsVersion() != zeroVersion ||
+        delegate.SynchronizeBasisCurvesMinimumWidth() != 0.0f) {
+        std::printf("same effective minCurveWidth changed runtime state\n");
+        return false;
+    }
+
+    delegate.SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->minCurveWidth, VtValue(0.02f));
+    return delegate.GetRenderSetting<float>(
+               HdEmbreeRenderSettingsTokens->minCurveWidth, -1.0f) == 0.02f &&
+        delegate.SynchronizeBasisCurvesMinimumWidth() == 0.02f;
 }
 
 bool
@@ -678,6 +761,13 @@ _TestAuthoredNamespacedSettings()
         return false;
     }
 
+    UsdAttribute minimumCurveWidthAttr =
+        settings.GetPrim().GetAttribute(TfToken("ty:minCurveWidth"));
+    if (!minimumCurveWidthAttr || !minimumCurveWidthAttr.Set(0.02f)) {
+        std::printf("failed to author ty:minCurveWidth\n");
+        return false;
+    }
+
     UsdAttribute domeVisibilityAttr = settings.GetPrim().CreateAttribute(
         HdRenderSettingsTokens->domeLightCameraVisibility,
         SdfValueTypeNames->Bool);
@@ -694,7 +784,9 @@ _TestAuthoredNamespacedSettings()
         !_HasSettingValue<bool>(
             namespacedSettings, "ty:disableShadows", true) ||
         !_HasSettingValue<bool>(
-            namespacedSettings, "ty:dynamicSubdvTesselation", true)) {
+            namespacedSettings, "ty:dynamicSubdvTesselation", true) ||
+        !_HasSettingValue<float>(
+            namespacedSettings, "ty:minCurveWidth", 0.02f)) {
         return false;
     }
 
@@ -720,7 +812,9 @@ _TestAuthoredNamespacedSettings()
         !_HasSettingValue<bool>(
             allCustomSettings, "ty:disableShadows", true) ||
         !_HasSettingValue<bool>(
-            allCustomSettings, "ty:dynamicSubdvTesselation", true)) {
+            allCustomSettings, "ty:dynamicSubdvTesselation", true) ||
+        !_HasSettingValue<float>(
+            allCustomSettings, "ty:minCurveWidth", 0.02f)) {
         return false;
     }
     // An empty namespace request means all namespaced custom settings, not
@@ -745,7 +839,9 @@ _TestAuthoredNamespacedSettings()
         !_HasSettingValue<bool>(
             requestedSettings, "ty:disableShadows", true) ||
         !_HasSettingValue<bool>(
-            requestedSettings, "ty:dynamicSubdvTesselation", true)) {
+            requestedSettings, "ty:dynamicSubdvTesselation", true) ||
+        !_HasSettingValue<float>(
+            requestedSettings, "ty:minCurveWidth", 0.02f)) {
         return false;
     }
     if (requestedSettings.find("domeLightCameraVisibility") !=
@@ -795,21 +891,23 @@ _TestActiveRenderSettingsPrimBridge()
     renderSettingsBuilder.SetRenderingColorSpace(
         HdRetainedTypedSampledDataSource<TfToken>::New(
             GfColorSpaceNames->LinearAP1));
-    const std::array<TfToken, 8> settingNames = {
+    const std::array<TfToken, 9> settingNames = {
         HdEmbreeRenderSettingsTokens->maxBounces,
         HdEmbreeRenderSettingsTokens->disableShadows,
         HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
+        HdEmbreeRenderSettingsTokens->minCurveWidth,
         TfToken("ty:domeLightCameraVisibility"),
         HdRenderSettingsTokens->domeLightCameraVisibility,
         TfToken("ty:enableExposureCompensation"),
         HdRenderSettingsTokens->enableExposureCompensation,
         unprefixedMaxBounces
     };
-    const std::array<HdDataSourceBaseHandle, 8> settingValues = {
+    const std::array<HdDataSourceBaseHandle, 9> settingValues = {
         HdRetainedSampledDataSource::New(VtValue(3)),
         HdRetainedSampledDataSource::New(
             VtValue(authoredDisableShadows)),
         HdRetainedSampledDataSource::New(VtValue(true)),
+        HdRetainedSampledDataSource::New(VtValue(-0.02f)),
         HdRetainedSampledDataSource::New(VtValue(true)),
         HdRetainedSampledDataSource::New(
             VtValue(authoredDomeLightCameraVisibility)),
@@ -862,7 +960,25 @@ _TestActiveRenderSettingsPrimBridge()
     colorAov.clearValue = VtValue(GfVec4f(0.0f));
     renderPassState->SetAovBindings({colorAov});
 
+    TfDiagnosticTrap activeMinimumTrap;
     renderPass->Execute(renderPassState, TfTokenVector());
+    const std::vector<TfWarning> activeMinimumWarnings =
+        activeMinimumTrap.GetWarnings();
+    activeMinimumTrap.Clear();
+    if (_CountMinimumCurveWidthWarnings(activeMinimumWarnings) != 1) {
+        std::printf("active negative minCurveWidth did not warn once\n");
+        return false;
+    }
+
+    TfDiagnosticTrap unchangedActiveTrap;
+    renderPass->Execute(renderPassState, TfTokenVector());
+    const std::vector<TfWarning> unchangedActiveWarnings =
+        unchangedActiveTrap.GetWarnings();
+    unchangedActiveTrap.Clear();
+    if (_CountMinimumCurveWidthWarnings(unchangedActiveWarnings) != 0) {
+        std::printf("unchanged active minCurveWidth warned again\n");
+        return false;
+    }
 
     const int maxBounces = delegate.GetRenderSetting<int>(
         HdEmbreeRenderSettingsTokens->maxBounces, 0);
@@ -890,6 +1006,12 @@ _TestActiveRenderSettingsPrimBridge()
     if (!delegate.GetRenderSetting<bool>(
             HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation, false)) {
         std::printf("active RenderSettings ty:dynamicSubdvTesselation was not bridged\n");
+        return false;
+    }
+
+    if (delegate.GetRenderSetting<float>(
+            HdEmbreeRenderSettingsTokens->minCurveWidth, -1.0f) != 0.0f) {
+        std::printf("active RenderSettings ty:minCurveWidth was not normalized\n");
         return false;
     }
 
@@ -923,6 +1045,16 @@ _TestActiveRenderSettingsPrimBridge()
         defaultEnableExposureCompensation);
     if (enableExposureCompensation != authoredEnableExposureCompensation) {
         std::printf("active RenderSettings exposure setting was not bridged\n");
+        return false;
+    }
+
+    sceneIndex->RemovePrims({renderSettingsPath});
+    renderPass->Execute(renderPassState, TfTokenVector());
+    if (delegate.GetRenderSetting<float>(
+            HdEmbreeRenderSettingsTokens->minCurveWidth, -1.0f) !=
+        ty::DefaultMinimumCurveWidth) {
+        std::printf(
+            "removed active minCurveWidth did not restore its default\n");
         return false;
     }
 
@@ -960,6 +1092,7 @@ _TestTyphoonRenderSettingsAPI()
         TfToken("ty:enableCaustics"),
         TfToken("ty:causticsClampThreshold"),
         TfToken("ty:disableShadows"),
+        TfToken("ty:minCurveWidth"),
         TfToken("ty:materialRenderContext"),
         TfToken("ty:useAdobeOpenPBR"),
         TfToken("ty:dielectricLayerThroughputMode"),
@@ -1003,6 +1136,14 @@ _TestTyphoonRenderSettingsAPI()
             .GetFallbackValue(&disableShadowsFallback) ||
         disableShadowsFallback != false) {
         std::printf("unexpected disableShadows fallback\n");
+        return false;
+    }
+
+    float minimumCurveWidthFallback = -1.0f;
+    if (!apiDef->GetAttributeDefinition(TfToken("ty:minCurveWidth"))
+            .GetFallbackValue(&minimumCurveWidthFallback) ||
+        minimumCurveWidthFallback != ty::DefaultMinimumCurveWidth) {
+        std::printf("unexpected minCurveWidth fallback\n");
         return false;
     }
 
@@ -1086,6 +1227,8 @@ _TestRenderSettingDefaultParity()
          VtValue(defaults.tileSize)},
         {HdEmbreeRenderSettingsTokens->dynamicSubdvTesselation,
          VtValue(ty::DefaultDynamicSubdvTesselation)},
+        {HdEmbreeRenderSettingsTokens->minCurveWidth,
+         VtValue(defaults.minimumCurveWidth)},
         {HdEmbreeRenderSettingsTokens->adaptiveThreshold,
          VtValue(defaults.adaptiveThreshold)},
         {HdEmbreeRenderSettingsTokens->minSamplesBeforeAdaptive,
@@ -1215,6 +1358,9 @@ main()
         return 1;
     }
     if (!_TestRenderDelegateSettings()) {
+        return 1;
+    }
+    if (!_TestMinimumCurveWidthNormalization()) {
         return 1;
     }
     if (!_TestRenderProductOutputPolicy()) {

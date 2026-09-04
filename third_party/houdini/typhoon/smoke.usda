@@ -50,7 +50,48 @@ def Xform "World"
     )
     {
         rel material:binding = </World/Material>
-        double radius = 1
+        double radius = 0.6
+    }
+
+    def BasisCurves "Tube" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </World/Material>
+        int[] curveVertexCounts = [3]
+        float3[] extent = [(-1.3, -1.05, -0.15), (-1, 1.05, 0.15)]
+        point3f[] points = [
+            (-1.15, -0.9, 0),
+            (-1.15, 0, 0),
+            (-1.15, 0.9, 0)
+        ]
+        uniform token type = "linear"
+        uniform token wrap = "nonperiodic"
+        float[] widths = [0.3] (
+            interpolation = "constant"
+        )
+    }
+
+    def BasisCurves "Ribbon" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </World/Material>
+        int[] curveVertexCounts = [3]
+        float3[] extent = [(1, -1.05, -0.15), (1.3, 1.05, 0.15)]
+        normal3f[] normals = [(0, 0, 1)] (
+            interpolation = "constant"
+        )
+        point3f[] points = [
+            (1.15, -0.9, 0),
+            (1.15, 0, 0),
+            (1.15, 0.9, 0)
+        ]
+        uniform token type = "linear"
+        uniform token wrap = "nonperiodic"
+        float[] widths = [0.3] (
+            interpolation = "constant"
+        )
     }
 
     def DomeLight "Dome"

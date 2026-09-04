@@ -222,7 +222,7 @@ The mandatory complete gate is:
 ```sh
 cd /path/to/typhoon-test-suite
 powerprofilesctl launch --profile performance -- \
-    pixi run pytest --renderer typhoon-local
+    pixi run pytest --renderer typhoon
 ```
 
 Let it finish. Every test must pass and elapsed time must be reported. For a

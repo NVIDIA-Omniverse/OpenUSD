@@ -459,6 +459,32 @@
             }
 
             parm {
+                name    "xn__tyminCurveWidth_control_feb"
+                label   "Minimum Curve Width"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__tyminCurveWidth_e0a"
+                label   "Minimum Curve Width"
+                type    float
+                size    1
+                default { 0.001 }
+                range   { 0! 1 }
+                disablewhen "{ xn__tyminCurveWidth_control_feb == block } { xn__tyminCurveWidth_control_feb == none }"
+                parmtag { "spare_category" "Scene" }
+                parmtag { "usdapischema" "TyphoonRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "float" }
+                help    "Minimum BasisCurves diameter in prototype object space."
+            }
+
+            parm {
                 name    "xn__tydisableShadows_control_1fb"
                 label   "Disable Shadows"
                 type    string

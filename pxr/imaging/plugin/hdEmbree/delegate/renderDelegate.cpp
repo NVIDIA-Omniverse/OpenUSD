@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "renderDelegate.h"
+#include "basisCurves.h"
 #include "instancer.h"
 #include "light.h"
 #include "material.h"
@@ -49,10 +50,10 @@ _GetMaterialRenderContextSetting(const HdRenderDelegate& renderDelegate)
     return ty::DefaultMaterialRenderContext;
 }
 
-// XXX: Add other Rprim types later.
 const TfTokenVector HdEmbreeRenderDelegate::SUPPORTED_RPRIM_TYPES =
 {
     HdPrimTypeTokens->mesh,
+    HdPrimTypeTokens->basisCurves,
 };
 
 // XXX: Add other Sprim types later.
@@ -179,6 +180,9 @@ HdEmbreeRenderDelegate::_Initialize()
         { "Disable Shadows",
             HdEmbreeRenderSettingsTokens->disableShadows,
             VtValue(defaults.disableShadows) },
+        { "Minimum Curve Width",
+            HdEmbreeRenderSettingsTokens->minCurveWidth,
+            VtValue(defaults.minimumCurveWidth) },
         { "Material Render Context",
             HdEmbreeRenderSettingsTokens->materialRenderContext,
             VtValue(std::string(ty::DefaultMaterialRenderContext)) },
@@ -197,6 +201,9 @@ HdEmbreeRenderDelegate::_Initialize()
             VtValue(defaults.textureCacheSizeMB) },
     };
     _PopulateDefaultSettings(_settingDescriptors);
+    SetRenderSetting(
+        HdEmbreeRenderSettingsTokens->minCurveWidth,
+        GetRenderSetting(HdEmbreeRenderSettingsTokens->minCurveWidth));
 
     // Initialize the embree library handle (_rtcDevice).
     _rtcDevice = rtcNewDevice(nullptr);
@@ -279,6 +286,40 @@ HdRenderSettingDescriptorList
 HdEmbreeRenderDelegate::GetRenderSettingDescriptors() const
 {
     return _settingDescriptors;
+}
+
+void
+HdEmbreeRenderDelegate::SetRenderSetting(
+    TfToken const& key,
+    VtValue const& value)
+{
+    if (key != HdEmbreeRenderSettingsTokens->minCurveWidth) {
+        HdRenderDelegate::SetRenderSetting(key, value);
+        return;
+    }
+
+    const VtValue converted = VtValue::Cast<float>(value);
+    const float authoredMinimum = converted.GetWithDefault(
+        ty::DefaultMinimumCurveWidth);
+    if (authoredMinimum < 0.0f) {
+        TF_WARN(
+            "hdEmbree render setting '%s' is negative (%g); clamping it "
+            "to zero.",
+            key.GetText(), authoredMinimum);
+    }
+    const float normalizedMinimum = std::max(0.0f, authoredMinimum);
+
+    std::lock_guard<std::mutex> lock(_basisCurvesRegistryMutex);
+    HdRenderDelegate::SetRenderSetting(key, VtValue(normalizedMinimum));
+    if (_minimumCurveWidth == normalizedMinimum) {
+        return;
+    }
+
+    _minimumCurveWidth = normalizedMinimum;
+    ++_minimumCurveWidthEpoch;
+    if (_basisCurves.empty()) {
+        _appliedMinimumCurveWidthEpoch = _minimumCurveWidthEpoch;
+    }
 }
 
 TfToken
@@ -474,6 +515,17 @@ HdEmbreeRenderDelegate::CreateRprim(TfToken const& typeId,
             _meshes.push_back(mesh);
         }
         return mesh;
+    } else if (typeId == HdPrimTypeTokens->basisCurves) {
+        HdEmbreeBasisCurves* basisCurves =
+            new HdEmbreeBasisCurves(rprimId);
+        {
+            std::lock_guard<std::mutex> lock(
+                _basisCurvesRegistryMutex);
+            basisCurves->SetMinimumWidth(
+                _minimumCurveWidth, _minimumCurveWidthEpoch);
+            _basisCurves.push_back(basisCurves);
+        }
+        return basisCurves;
     } else {
         TF_CODING_ERROR("Unknown Rprim Type %s", typeId.GetText());
     }
@@ -489,6 +541,15 @@ HdEmbreeRenderDelegate::DestroyRprim(HdRprim *rPrim)
         auto it = std::find(_meshes.begin(), _meshes.end(), mesh);
         if (it != _meshes.end()) {
             _meshes.erase(it);
+        }
+    }
+    if (HdEmbreeBasisCurves* basisCurves =
+            dynamic_cast<HdEmbreeBasisCurves*>(rPrim)) {
+        std::lock_guard<std::mutex> lock(_basisCurvesRegistryMutex);
+        auto const it = std::find(
+            _basisCurves.begin(), _basisCurves.end(), basisCurves);
+        if (it != _basisCurves.end()) {
+            _basisCurves.erase(it);
         }
     }
     delete rPrim;
@@ -514,10 +575,44 @@ HdEmbreeRenderDelegate::UpdateAdaptiveSubdivision(
 void
 HdEmbreeRenderDelegate::RefreshMaterialBindings()
 {
-    std::lock_guard<std::mutex> lock(_meshRegistryMutex);
-    for (HdEmbreeMesh* mesh : _meshes) {
-        mesh->RefreshMaterialBindings();
+    {
+        std::lock_guard<std::mutex> lock(_meshRegistryMutex);
+        for (HdEmbreeMesh* mesh : _meshes) {
+            mesh->RefreshMaterialBindings();
+        }
     }
+    {
+        std::lock_guard<std::mutex> lock(_basisCurvesRegistryMutex);
+        for (HdEmbreeBasisCurves* basisCurves : _basisCurves) {
+            basisCurves->RefreshMaterialBindings();
+        }
+    }
+}
+
+float
+HdEmbreeRenderDelegate::SynchronizeBasisCurvesMinimumWidth()
+{
+    std::lock_guard<std::mutex> lock(_basisCurvesRegistryMutex);
+    if (_appliedMinimumCurveWidthEpoch == _minimumCurveWidthEpoch) {
+        return _minimumCurveWidth;
+    }
+
+    bool geometryChanged = false;
+    if (!_basisCurves.empty()) {
+        _renderParam->AcquireSceneForEdit();
+        for (HdEmbreeBasisCurves* basisCurves : _basisCurves) {
+            geometryChanged |= basisCurves->RebuildForMinimumWidth(
+                _minimumCurveWidth,
+                _minimumCurveWidthEpoch,
+                _renderParam.get());
+        }
+    }
+    _appliedMinimumCurveWidthEpoch = _minimumCurveWidthEpoch;
+
+    if (geometryChanged) {
+        _renderer.ResetAccumulation();
+    }
+    return _minimumCurveWidth;
 }
 
 HdSprim *

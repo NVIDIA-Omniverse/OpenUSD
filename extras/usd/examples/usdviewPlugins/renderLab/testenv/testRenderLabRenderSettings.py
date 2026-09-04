@@ -176,6 +176,11 @@ class TestRenderLabRenderSettings(unittest.TestCase):
                 settingType.STRING,
                 "lin_rec709_scene"),
             _RendererSetting(
+                "ty:minCurveWidth",
+                "Minimum Curve Width",
+                settingType.FLOAT,
+                0.001),
+            _RendererSetting(
                 "unmappedSetting",
                 "Unmapped Setting",
                 settingType.INT,
@@ -194,6 +199,13 @@ class TestRenderLabRenderSettings(unittest.TestCase):
         self.assertNotIn("Diagnostics", self._groupNames())
         self.assertEqual(
             self._groupLabels("AOV"), ["Viewport AOV"])
+        self.assertEqual(
+            self._groupLabels("Scene"),
+            ["Rendering Color Space", "Minimum Curve Width"])
+        self.assertEqual(
+            renderSettingsMetadata.getSettingMetadata(
+                "HdEmbreeRendererPlugin", "ty:minCurveWidth"),
+            {"category": "Scene", "order": 50})
         otherSettingRow = next(iter(self.editor._rowsByWidget.values()))
         self.assertEqual(
             self.editor._aovLabel.styleSheet(),
