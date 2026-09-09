@@ -568,6 +568,9 @@ set(__MXCPP_TEST_LIBS
     ${__MXCPP_TEST_IMATH_LIBS}
     ${EMBREE_LIBRARY}
 )
+if (PXR_BUILD_OPENIMAGEIO_PLUGIN)
+    list(APPEND __MXCPP_TEST_LIBS ${OIIO_LIBRARIES})
+endif()
 if (PXR_ENABLE_ADOBE_OPENPBR_SUPPORT)
     list(APPEND __MXCPP_TEST_LIBS
         AdobeOpenPBR::AdobeOpenPBR
@@ -578,6 +581,7 @@ endif()
 pxr_build_test(testMaterialXCpp
     LIBRARIES
         ${__MXCPP_TEST_LIBS}
+        arch
         gf
         hd
         sdf
@@ -590,7 +594,9 @@ pxr_build_test(testMaterialXCpp
         renderer/materials/MaterialXCpp/tests/testMaterialXCppMaterials.cpp
         renderer/materials/MaterialXCpp/tests/testMaterialXCppGraph.cpp
         renderer/materials/MaterialXCpp/tests/testMaterialXCppAdapter.cpp
+        renderer/materials/MaterialXCpp/tests/testMaterialXCppTextureSystem.cpp
         renderer/colorManagement.cpp
+        renderer/materials/oiioTextureSystem.cpp
         renderer/materials/MaterialXCpp/tests/testClosureClassification.cpp
         renderer/integrator/closureClassification.cpp
         renderer/integrator/medium.cpp

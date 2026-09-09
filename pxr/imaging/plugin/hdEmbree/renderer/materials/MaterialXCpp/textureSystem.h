@@ -59,6 +59,8 @@ struct Texture2DRequest
 
     TextureDataRole dataRole = TextureDataRole::NonColor;
     std::string sourceColorSpace;
+    // Only native UsdUVTexture's auto/default policy requests file inspection.
+    bool inferSrgbFromFile = false;
 
     int channelCount = 4;
     float channelFillValue = 0.0f;

@@ -625,6 +625,15 @@ MaterialX blur nodes instead propagate subtree-local preblur to OIIO
 it with repeated UV samples; constants stay stable and image inputs use the
 authored `size`.
 
+Only the native `UsdUVTexture` evaluator may request automatic source
+color-space detection. For `sourceColorSpace = "auto"`, including its
+unauthored default, the OIIO backend resolves sRGB from the concrete texture
+handle's `ImageSpec`: sRGB-indicative gamma/color-space metadata takes
+precedence, then a metadata-free 8-bit RGB or RGBA image falls back to sRGB;
+all other inputs remain raw. Cache this binary result by concrete handle after
+UDIM tile resolution. MaterialX `ND_UsdUVTexture*`, generic image nodes, and
+explicit source color spaces must not opt into this inspection path.
+
 PNG image nodes require straight alpha. A dedicated PNG OIIO texture system
 enables `unassociatedalpha`; do not enable it globally for other formats.
 MaterialX `st` stays in lower-left convention through graph evaluation. The

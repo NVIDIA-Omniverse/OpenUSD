@@ -965,7 +965,7 @@ _ResolveUsdUvTextureSourceColorSpace(const std::string& sourceColorSpace)
         return "srgb_rec709_scene";
     }
     if (sourceColorSpace == "auto") {
-        // Automatic file-metadata detection is not implemented by this node.
+        // Native UsdUVTexture defers this decision to the texture backend.
         return {};
     }
     return sourceColorSpace;
@@ -977,16 +977,16 @@ _GetUsdSourceColorSpace(const ParamMap& inputs)
     const std::string explicitColorSpace =
         Get<std::string>(inputs, _kSourceColorSpace, std::string());
     if (!explicitColorSpace.empty()) {
-        return _ResolveUsdUvTextureSourceColorSpace(explicitColorSpace);
+        return explicitColorSpace;
     }
 
-    return _ResolveUsdUvTextureSourceColorSpace(
-        Get<std::string>(inputs, _kFileColorSpace, std::string()));
+    return Get<std::string>(inputs, _kFileColorSpace, std::string());
 }
 
 static void
 _EvalUsdUvTextureNode(const ParamMap& inputs,
                       const ShadingContext& ctx,
+                      const bool enableAutomaticColorSpace,
                       NodeOutputMap* outputs)
 {
     const Vec4f fallback =
@@ -1014,7 +1014,12 @@ _EvalUsdUvTextureNode(const ParamMap& inputs,
         request.filterType = TextureFilterType::Linear;
         request.frame = ctx.frame;
         request.dataRole = TextureDataRole::Color;
-        request.sourceColorSpace = _GetUsdSourceColorSpace(inputs);
+        const std::string sourceColorSpace = _GetUsdSourceColorSpace(inputs);
+        request.sourceColorSpace =
+            _ResolveUsdUvTextureSourceColorSpace(sourceColorSpace);
+        request.inferSrgbFromFile =
+            enableAutomaticColorSpace &&
+            (sourceColorSpace.empty() || sourceColorSpace == "auto");
         request.channelCount = 4;
         request.channelFillValue = 1.0f;
         request.defaultValue = fallback;
@@ -1026,6 +1031,24 @@ _EvalUsdUvTextureNode(const ParamMap& inputs,
 
     _SetUsdUvTextureOutputs(
         _ApplyScaleBias(sampledValue, scale, bias), outputs);
+}
+
+static void
+_EvalNativeUsdUvTextureNode(const ParamMap& inputs,
+                            const ShadingContext& ctx,
+                            NodeOutputMap* outputs)
+{
+    _EvalUsdUvTextureNode(
+        inputs, ctx, /* enableAutomaticColorSpace = */ true, outputs);
+}
+
+static void
+_EvalMaterialXUsdUvTextureNode(const ParamMap& inputs,
+                               const ShadingContext& ctx,
+                               NodeOutputMap* outputs)
+{
+    _EvalUsdUvTextureNode(
+        inputs, ctx, /* enableAutomaticColorSpace = */ false, outputs);
 }
 
 }  // namespace
@@ -1082,9 +1105,9 @@ RegisterTextureNodes(NodeRegistry& reg)
     _REG("ND_gltf_normalmap_vector3", &_EvalGltfNormalMap);
     _REG("ND_gltf_normalmap", &_EvalGltfNormalMap);
 
-    _REG("UsdUVTexture", &_EvalUsdUvTextureNode);
-    _REG("ND_UsdUVTexture", &_EvalUsdUvTextureNode);
-    _REG("ND_UsdUVTexture_23", &_EvalUsdUvTextureNode);
+    _REG("UsdUVTexture", &_EvalNativeUsdUvTextureNode);
+    _REG("ND_UsdUVTexture", &_EvalMaterialXUsdUvTextureNode);
+    _REG("ND_UsdUVTexture_23", &_EvalMaterialXUsdUvTextureNode);
 }
 
 #undef _REG

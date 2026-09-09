@@ -16,12 +16,77 @@
 #include <unordered_set>
 
 #if defined(PXR_OIIO_PLUGIN_ENABLED)
+#include <OpenImageIO/imageio.h>
 #include <OpenImageIO/texture.h>
 #include <OpenImageIO/ustring.h>
 #include <tbb/concurrent_unordered_map.h>
 #endif
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+namespace {
+
+#if defined(PXR_OIIO_PLUGIN_ENABLED)
+
+std::string
+_NormalizeColorSpaceName(const std::string& name)
+{
+    std::string normalized;
+    normalized.reserve(name.size());
+    for (const char c : name) {
+        const unsigned char value = static_cast<unsigned char>(c);
+        if (std::isalnum(value)) {
+            normalized.push_back(
+                static_cast<char>(std::tolower(value)));
+        }
+    }
+    return normalized;
+}
+
+std::string
+_ResolveUsdUvTextureAutoSourceColorSpace(const OIIO::ImageSpec& spec)
+{
+    static const std::string srgbColorSpace = "srgb_rec709_scene";
+
+    const std::string metadataColorSpace(
+        spec.get_string_attribute("oiio:ColorSpace"));
+    const std::string normalizedColorSpace =
+        _NormalizeColorSpaceName(metadataColorSpace);
+    if (normalizedColorSpace.rfind("srgb", 0) == 0 ||
+        normalizedColorSpace == "gamma22" ||
+        normalizedColorSpace.rfind("g22rec709", 0) == 0) {
+        return srgbColorSpace;
+    }
+
+    const float gamma = spec.get_float_attribute("oiio:Gamma", 0.0f);
+    constexpr float gammaTolerance = 0.1f;
+    if (gamma > 0.0f) {
+        if (std::abs(gamma - 2.2f) < gammaTolerance ||
+            std::abs(gamma - (1.0f / 2.2f)) < gammaTolerance) {
+            return srgbColorSpace;
+        }
+        return {};
+    }
+
+    if (!metadataColorSpace.empty()) {
+        return {};
+    }
+
+    const int bitsPerSample =
+        spec.get_int_attribute("oiio:BitsPerSample", 0);
+    const bool isEightBit = bitsPerSample > 0
+        ? bitsPerSample == 8
+        : spec.format == OIIO::TypeDesc::UINT8;
+    if (isEightBit && (spec.nchannels == 3 || spec.nchannels == 4)) {
+        return srgbColorSpace;
+    }
+
+    return {};
+}
+
+#endif
+
+}  // namespace
 
 struct ty::OiioTextureSystem::_Impl
 {
@@ -48,6 +113,9 @@ struct ty::OiioTextureSystem::_Impl
     };
     mutable tbb::concurrent_unordered_map<std::string, _CachedHandle>
         handleCache;
+    mutable tbb::concurrent_unordered_map<
+        OIIO::TextureSystem::TextureHandle*, std::string>
+        automaticColorSpaceCache;
 
     const _CachedHandle& ResolveHandle(
         OIIO::TextureSystem* const system,
@@ -69,6 +137,32 @@ struct ty::OiioTextureSystem::_Impl
         // Node references into the map stay valid because entries are never
         // erased.
         return handleCache.insert({filePath, entry}).first->second;
+    }
+
+    const std::string& ResolveUsdUvTextureAutoSourceColorSpace(
+        OIIO::TextureSystem* const system,
+        OIIO::TextureSystem::Perthread* const threadInfo,
+        OIIO::TextureSystem::TextureHandle* const handle) const
+    {
+        static const std::string noColorSpace;
+        if (!system || !handle) {
+            return noColorSpace;
+        }
+
+        const auto it = automaticColorSpaceCache.find(handle);
+        if (it != automaticColorSpaceCache.end()) {
+            return it->second;
+        }
+
+        OIIO::ImageSpec spec;
+        const std::string resolvedColorSpace =
+            system->get_imagespec(handle, threadInfo, 0, spec)
+            ? _ResolveUsdUvTextureAutoSourceColorSpace(spec)
+            : std::string();
+
+        // Handles and entries remain stable for the texture system lifetime.
+        return automaticColorSpaceCache
+            .insert({handle, resolvedColorSpace}).first->second;
     }
 #endif
     mutable std::mutex warningMutex;
@@ -100,34 +194,36 @@ _ShouldWarnOnce(ty::OiioTextureSystem::_Impl* const impl,
 }
 
 bool
-_ShouldApplyColorTransform(const mxcpp::Texture2DRequest& request)
+_ShouldApplyColorTransform(const mxcpp::Texture2DRequest& request,
+                           const std::string& sourceColorSpace)
 {
     return request.dataRole == mxcpp::TextureDataRole::Color &&
            request.channelCount >= 3 &&
-           !request.sourceColorSpace.empty();
+           !sourceColorSpace.empty();
 }
 
 void
 _ApplyColorTransform(
     const mxcpp::Texture2DRequest& request,
+    const std::string& sourceColorSpace,
     float* sampled,
     ty::OiioTextureSystem::_Impl* impl,
     ty::RenderColorSpace renderColorSpace)
 {
-    if (!_ShouldApplyColorTransform(request) || !sampled) {
+    if (!_ShouldApplyColorTransform(request, sourceColorSpace) || !sampled) {
         return;
     }
 
     GfVec3f rgb(sampled[0], sampled[1], sampled[2]);
     if (!ty::ConvertToRenderColorSpace(
-            request.sourceColorSpace, renderColorSpace, &rgb)) {
+            sourceColorSpace, renderColorSpace, &rgb)) {
         const std::string warningKey =
-            request.filePath + "|" + request.sourceColorSpace;
+            request.filePath + "|" + sourceColorSpace;
         if (_ShouldWarnOnce(impl, warningKey)) {
             TF_WARN(
                 "Unsupported MaterialX texture color space '%s' for '%s'. "
                 "Leaving sampled values unchanged.",
-                request.sourceColorSpace.c_str(),
+                sourceColorSpace.c_str(),
                 request.filePath.c_str());
         }
         return;
@@ -407,6 +503,11 @@ ty::OiioTextureSystem::Sample2D(
         t = 1.0f - _LocalUdimCoord(request.st[1]);
     }
 
+    const std::string& sourceColorSpace = request.inferSrgbFromFile
+        ? _impl->ResolveUsdUvTextureAutoSourceColorSpace(
+              textureSystem, threadInfo, handle)
+        : request.sourceColorSpace;
+
     const bool ok =
         handle && textureSystem->good(handle) &&
         textureSystem->texture(
@@ -442,7 +543,7 @@ ty::OiioTextureSystem::Sample2D(
     }
 
     _ApplyColorTransform(
-        request, sampled, _impl.get(), _renderColorSpace);
+        request, sourceColorSpace, sampled, _impl.get(), _renderColorSpace);
 
     mxcpp::Texture2DResult result;
     result.value = mxcpp::Vec4f(sampled[0], sampled[1], sampled[2], sampled[3]);

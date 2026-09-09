@@ -2016,9 +2016,66 @@ static bool TestUsdUvTextureUsesNativeWrapAndColorSpaceSemantics() {
            Test_IsClose(request.frame, 18.0f) &&
            request.dataRole == TextureDataRole::Color &&
            request.sourceColorSpace == "srgb_rec709_scene" &&
+           !request.inferSrgbFromFile &&
            request.channelCount == 4 &&
            Test_IsClose(request.channelFillValue, 1.0f) &&
            Test_IsClose(request.defaultValue, Vec4f(0.1f, 0.2f, 0.3f, 0.4f));
+}
+
+static bool TestOnlyNativeUsdUvTextureRequestsAutomaticColorSpace() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/test_usd_uv_auto.tx"));
+    in["sourceColorSpace"] = Value(std::string("auto"));
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult.value = Vec4f(0.2f, 0.3f, 0.4f, 1.0f);
+    textureSystem.nextResult.status = TextureSampleStatus::Ok;
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+
+    _EvalWithCtx("UsdUVTexture", in, ctx);
+    if (!textureSystem.called ||
+        !textureSystem.lastRequest.inferSrgbFromFile ||
+        !textureSystem.lastRequest.sourceColorSpace.empty()) {
+        printf("    native UsdUVTexture did not request auto detection\n");
+        return false;
+    }
+
+    textureSystem.called = false;
+    _EvalWithCtx("ND_UsdUVTexture", in, ctx);
+    if (!textureSystem.called ||
+        textureSystem.lastRequest.inferSrgbFromFile ||
+        !textureSystem.lastRequest.sourceColorSpace.empty()) {
+        printf("    MaterialX UsdUVTexture unexpectedly requested auto detection\n");
+        return false;
+    }
+
+    ParamMap imageIn;
+    imageIn["file"] = Value(std::string("/tmp/test_image_auto.tx"));
+    imageIn["colorSpace:file"] = Value(std::string("auto"));
+    textureSystem.called = false;
+    _EvalWithCtx("ND_image_color3", imageIn, ctx);
+    return textureSystem.called &&
+           !textureSystem.lastRequest.inferSrgbFromFile &&
+           textureSystem.lastRequest.sourceColorSpace == "auto";
+}
+
+static bool TestNativeUsdUvTextureDefaultsToAutomaticColorSpace() {
+    ParamMap in;
+    in["file"] = Value(std::string("/tmp/test_usd_uv_default_auto.tx"));
+
+    _TestTextureSystem textureSystem;
+    textureSystem.nextResult.value = Vec4f(0.2f, 0.3f, 0.4f, 1.0f);
+    textureSystem.nextResult.status = TextureSampleStatus::Ok;
+
+    ShadingContext ctx;
+    ctx.textureSystem = &textureSystem;
+
+    _EvalWithCtx("UsdUVTexture", in, ctx);
+    return textureSystem.called &&
+           textureSystem.lastRequest.inferSrgbFromFile &&
+           textureSystem.lastRequest.sourceColorSpace.empty();
 }
 
 static bool TestUsdUvTextureFallsBackToFileColorSpaceMetadata() {
@@ -3179,6 +3236,8 @@ Test_RegisterNodeTests()
     _REG(TestImageNodeUsesTextureSystem);
     _REG(TestImageNodeConstantWrapReturnsDefault);
     _REG(TestUsdUvTextureUsesNativeWrapAndColorSpaceSemantics);
+    _REG(TestOnlyNativeUsdUvTextureRequestsAutomaticColorSpace);
+    _REG(TestNativeUsdUvTextureDefaultsToAutomaticColorSpace);
     _REG(TestUsdUvTextureFallsBackToFileColorSpaceMetadata);
     _REG(TestMaterialXUsdUvTextureOutputsRgbaAndScaledFallback);
     _REG(TestTiledImageTransformsTexcoords);

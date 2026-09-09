@@ -493,6 +493,22 @@ and the invocation settles as a failed frame, so it cannot write a stale
 
 ## Material Interpretation Notes
 
+### `UsdUVTexture` automatic source color space
+
+For the native `UsdUVTexture` node, an authored `sourceColorSpace = "auto"`
+(or the unauthored default) follows the USD Preview Surface rule. hdEmbree asks
+OpenImageIO for the concrete image's channel count, component format, and
+gamma/color-space metadata. Metadata indicative of sRGB selects the sRGB
+transfer curve. With no relevant metadata, an 8-bit three- or four-channel
+image selects sRGB; every other image is read as raw data. An explicit `raw` or
+`sRGB` continues to override automatic detection.
+
+The resulting RGB is converted into the active rendering color space; alpha is
+not color transformed. UDIM metadata is resolved per concrete tile. This
+automatic policy is intentionally limited to the native `UsdUVTexture`
+identifier. MaterialX `ND_UsdUVTexture*` and generic image nodes retain their
+existing file color-space behavior.
+
 ### Normal orientation and double-sided shading
 
 hdEmbree keeps the authored-outside facet normal separate from smooth,
