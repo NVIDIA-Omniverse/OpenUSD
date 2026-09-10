@@ -10,7 +10,7 @@ endif()
 
 if(PXR_ENABLE_PYTHON_SUPPORT)
     set_property(
-        SOURCE pyLock.cpp singleton.cpp
+        SOURCE pyLock.cpp pyObjWrapper.cpp singleton.cpp
         APPEND PROPERTY COMPILE_DEFINITIONS Py_LIMITED_API=0x030A0000)
 endif()
 
@@ -278,6 +278,7 @@ pxr_library(tf
         pxrDoubleConversion/string-to-double.h
         pxrDoubleConversion/strtod.h
         pxrLZ4/lz4.h
+        pyErrorImpl.h
         pyLockImpl.h
         pyWeakObject.h
 
@@ -292,6 +293,7 @@ pxr_library(tf
         pxrDoubleConversion/string-to-double.cc
         pxrDoubleConversion/strtod.cc
         pxrLZ4/lz4.cpp
+        pyObjWrapperBoost.cpp
 
     PYMODULE_CPPFILES
         module.cpp

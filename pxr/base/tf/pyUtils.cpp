@@ -11,6 +11,7 @@
 #include "pxr/base/tf/errorMark.h"
 #include "pxr/base/tf/pyEnum.h"
 #include "pxr/base/tf/pyError.h"
+#include "pxr/base/tf/pyErrorImpl.h"
 #include "pxr/base/tf/pyErrorInternal.h"
 #include "pxr/base/tf/pyInterpreter.h"
 #include "pxr/base/tf/pyLock.h"
@@ -33,6 +34,12 @@ using std::vector;
 PXR_NAMESPACE_OPEN_SCOPE
 
 using namespace pxr_boost::python;
+
+void
+Tf_PyThrowErrorAlreadySet()
+{
+    pxr_boost::python::throw_error_already_set();
+}
 
 void
 TfPyThrowIndexError(const char* msg)

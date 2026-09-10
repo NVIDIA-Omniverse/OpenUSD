@@ -17,8 +17,10 @@
 // for build issues when including Python.h
 #include "pxr/base/tf/pySafePython.h"
 
+#ifndef Py_LIMITED_API
 #include "pxr/external/boost/python/object_fwd.hpp"
 #include "pxr/external/boost/python/object_operators.hpp"
+#endif
 
 #include <iosfwd>
 #include <memory>
@@ -62,10 +64,9 @@ private:
 /// copy construction, assignment, (in)equality comparison, hash_value(), and
 /// destruction.
 ///
-/// None of those work correctly in the presence of an unlocked GIL for
-/// pxr_boost::python::object.  This class only actually acquires the GIL for default
-/// construction, destruction and for some (in)equality comparisons.  The other
-/// operations do not require taking the GIL.
+/// Python refcount operations require the GIL. This class acquires the GIL for
+/// default construction, construction from PyObject*, destruction, and for some
+/// (in)equality comparisons. The other operations do not require taking the GIL.
 ///
 /// This is primarily useful in cases where a Python object might be
 /// destroyed without a locked GIL by a client blind to that fact.  This occurs
@@ -75,15 +76,19 @@ private:
 /// GIL is held but it's unreasonable to require that the registry know that.
 /// This class helps solve that problem.
 ///
-/// This class also provides many of the operators that pxr_boost::python::object
-/// provides, by virtue of deriving from pxr_boost::python::api::object_operators<T>.
-/// However it is important to note that callers must ensure the GIL is held
-/// before using these operators!
+/// In non-limited builds, this class also provides many of the operators that
+/// pxr_boost::python::object provides, by virtue of deriving from
+/// pxr_boost::python::api::object_operators<T>. However it is important to note
+/// that callers must ensure the GIL is held before using these operators.
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
 class TfPyObjWrapper
+#ifndef Py_LIMITED_API
     : public pxr_boost::python::api::object_operators<TfPyObjWrapper>
+#endif
 {
+#ifndef Py_LIMITED_API
     typedef pxr_boost::python::object object;
+#endif
 
 public:
 
@@ -91,10 +96,12 @@ public:
     /// The GIL need not be held by the caller.
     TF_API TfPyObjWrapper();
 
+#ifndef Py_LIMITED_API
     /// Construct a TfPyObjectWrapper wrapping \a obj.
     /// The GIL must be held by the caller.  Note, allowing the implicit
     /// conversion is intended here.
     TF_API TfPyObjWrapper(object obj);
+#endif
 
     /// Construct a TfPyObjectWrapper from a borrowed reference to \a obj.
     /// The GIL need not be held by the caller.
@@ -106,11 +113,13 @@ public:
     TF_API TfPyObjWrapper(PyObject *obj, TfPyNewReferenceTag);
 
 
+#ifndef Py_LIMITED_API
     /// Underlying boost python object access.
     /// This method returns a new object, so the GIL need not be held to call
     /// this.  However, the caller is strongly advised to ensure the GIL is
     /// held, since otherwise operating on the returned object requires it.
     TF_API object Get() const;
+#endif
 
     /// Underlying PyObject* access.
     /// This method returns a pointer, so technically, the GIL need not be
@@ -139,12 +148,14 @@ public:
 
 private:
 
+#ifndef Py_LIMITED_API
     // Befriend object_operators to allow it access to implicit conversion to
     // pxr_boost::python::object.
     friend class pxr_boost::python::api::object_operators<TfPyObjWrapper>;
     operator object() const {
         return Get();
     }
+#endif
 
     // Store a shared_ptr to a PyObject. The shared_ptr preserves this class's
     // existing size while keeping Boost.Python out of the owned representation.

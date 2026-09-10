@@ -10,14 +10,9 @@
 #include "pxr/base/tf/pyObjWrapper.h"
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
+#include "pxr/base/tf/pyErrorImpl.h"
 #include "pxr/base/tf/pyLock.h"
-#include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/type.h"
-
-#include "pxr/external/boost/python/borrowed.hpp"
-#include "pxr/external/boost/python/errors.hpp"
-#include "pxr/external/boost/python/handle.hpp"
-#include "pxr/external/boost/python/object.hpp"
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -32,7 +27,7 @@ PyObject *
 _ExpectNonNull(PyObject *obj)
 {
     if (!obj) {
-        pxr_boost::python::throw_error_already_set();
+        Tf_PyThrowErrorAlreadySet();
     }
     return obj;
 }
@@ -62,11 +57,6 @@ TfPyObjWrapper::TfPyObjWrapper()
 {
 }
 
-TfPyObjWrapper::TfPyObjWrapper(pxr_boost::python::object obj)
-    : TfPyObjWrapper(obj.ptr(), TfPyBorrowedReference)
-{
-}
-
 TfPyObjWrapper::TfPyObjWrapper(PyObject *obj, TfPyBorrowedReferenceTag)
     : _objectPtr(_NewReferenceFromBorrowed(obj), _DecrefObjectWithLock())
 {
@@ -75,15 +65,6 @@ TfPyObjWrapper::TfPyObjWrapper(PyObject *obj, TfPyBorrowedReferenceTag)
 TfPyObjWrapper::TfPyObjWrapper(PyObject *obj, TfPyNewReferenceTag)
     : _objectPtr(_ExpectNonNull(obj), _DecrefObjectWithLock())
 {
-}
-
-pxr_boost::python::object
-TfPyObjWrapper::Get() const
-{
-    TfPyLock lock;
-    return object(
-        pxr_boost::python::handle<>(
-            pxr_boost::python::borrowed(ptr())));
 }
 
 PyObject *
@@ -103,7 +84,7 @@ TfPyObjWrapper::operator==(TfPyObjWrapper const &other) const
     TfPyLock lock;
     int result = PyObject_RichCompareBool(ptr(), other.ptr(), Py_EQ);
     if (result == -1) {
-        pxr_boost::python::throw_error_already_set();
+        Tf_PyThrowErrorAlreadySet();
     }
     return result == 1;
 }
