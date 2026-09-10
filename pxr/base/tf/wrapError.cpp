@@ -127,7 +127,7 @@ _RepostErrors(pxr_boost::python::object exc)
     }
 
     if ((PyObject *)exc.ptr()->ob_type ==
-        Tf_PyGetErrorExceptionClass().get()) {
+        Tf_PyGetErrorExceptionClass()) {
         object args = exc.attr("args");
         extract<vector<TfError> > extractor(args);
         if (extractor.check()) {
@@ -150,6 +150,12 @@ _RepostErrors(pxr_boost::python::object exc)
             printf("Tf.RepostErrors: invalid exception type\n");
     }
     return false;
+}
+
+static void
+_SetErrorExceptionClass(pxr_boost::python::object const &cls)
+{
+    Tf_PySetErrorExceptionClass(cls.ptr());
 }
 
 static void
@@ -191,7 +197,7 @@ void wrapError() {
     def("ReportActiveErrorMarks", TfReportActiveErrorMarks);
     def("SetPythonExceptionDebugTracingEnabled",
         _SetPythonExceptionDebugTracingEnabled, arg("enabled"));
-    def("__SetErrorExceptionClass", Tf_PySetErrorExceptionClass);
+    def("__SetErrorExceptionClass", _SetErrorExceptionClass);
     TfPyContainerConversions::from_python_sequence< vector<TfError>,
         TfPyContainerConversions::variable_capacity_policy >();
 

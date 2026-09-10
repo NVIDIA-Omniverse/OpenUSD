@@ -10,32 +10,31 @@
 #include "pxr/base/tf/pyErrorInternal.h"
 
 #include "pxr/base/tf/enum.h"
+#include "pxr/base/tf/pySafePython.h"
 #include "pxr/base/tf/registryManager.h"
 #include "pxr/base/tf/staticData.h"
 
-#include "pxr/external/boost/python/handle.hpp"
-#include "pxr/external/boost/python/object.hpp"
-
 PXR_NAMESPACE_OPEN_SCOPE
-
-using namespace pxr_boost::python;
 
 TF_REGISTRY_FUNCTION(TfEnum) {
     TF_ADD_ENUM_NAME(TF_PYTHON_EXCEPTION);
 }
 
-// The held handle<> is intentionally leaked to avoid Python refcount ops
+// The held reference is intentionally leaked to avoid Python refcount ops
 // during shutdown, which is unsafe if Python has been finalized.
-static TfStaticData<handle<>> _ExceptionClass;
+static TfStaticData<PyObject *> _ExceptionClass;
 
-handle<> Tf_PyGetErrorExceptionClass()
+PyObject *
+Tf_PyGetErrorExceptionClass()
 {
     return *_ExceptionClass;
 }
 
-void Tf_PySetErrorExceptionClass(object const &cls)
+void
+Tf_PySetErrorExceptionClass(PyObject *cls)
 {
-    *_ExceptionClass = handle<>(borrowed(cls.ptr()));
+    Py_XINCREF(cls);
+    *_ExceptionClass = cls;
 }
 
 TfPyExceptionStateScope::TfPyExceptionStateScope() :

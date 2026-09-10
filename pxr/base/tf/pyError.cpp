@@ -65,9 +65,9 @@ bool TfPyConvertTfErrorsToPythonException(TfErrorMark const &m) {
                 args.append(*e);
         }
         // make and set a python exception
-        handle<> excObj(PyObject_CallObject(Tf_PyGetErrorExceptionClass().get(),
+        handle<> excObj(PyObject_CallObject(Tf_PyGetErrorExceptionClass(),
                                             tuple(args).ptr()));
-        PyErr_SetObject(Tf_PyGetErrorExceptionClass().get(), excObj.get());
+        PyErr_SetObject(Tf_PyGetErrorExceptionClass(), excObj.get());
         m.Clear();
         return true;
     }
@@ -83,7 +83,7 @@ TfPyConvertPythonExceptionToTfErrors()
  
     // Replace the errors in m with errors parsed out of the exception.
     if (exc.GetType()) {
-        if (exc.GetType() == Tf_PyGetErrorExceptionClass().get() &&
+        if (exc.GetType() == Tf_PyGetErrorExceptionClass() &&
             exc.GetValue()) {
             // Replace the errors in m with errors pulled out of exc.
             object exception = object(handle<>(borrowed(exc.GetValue())));
