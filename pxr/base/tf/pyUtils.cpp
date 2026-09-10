@@ -11,7 +11,6 @@
 #include "pxr/base/tf/errorMark.h"
 #include "pxr/base/tf/pyEnum.h"
 #include "pxr/base/tf/pyError.h"
-#include "pxr/base/tf/pyErrorImpl.h"
 #include "pxr/base/tf/pyErrorInternal.h"
 #include "pxr/base/tf/pyInterpreter.h"
 #include "pxr/base/tf/pyLock.h"
@@ -34,56 +33,6 @@ using std::vector;
 PXR_NAMESPACE_OPEN_SCOPE
 
 using namespace pxr_boost::python;
-
-void
-Tf_PyThrowErrorAlreadySet()
-{
-    // Preserve Boost.Python behavior until binding boundaries translate
-    // TfPyErrorAlreadySet to their own error propagation mechanism.
-    pxr_boost::python::throw_error_already_set();
-}
-
-void
-TfPyThrowIndexError(const char* msg)
-{
-    PyErr_SetString(PyExc_IndexError, msg);
-    pxr_boost::python::throw_error_already_set();
-}
-
-void
-TfPyThrowRuntimeError(const char *msg)
-{
-    PyErr_SetString(PyExc_RuntimeError, msg);
-    pxr_boost::python::throw_error_already_set();
-}
-
-void
-TfPyThrowStopIteration(const char *msg)
-{
-    PyErr_SetString(PyExc_StopIteration, msg);
-    pxr_boost::python::throw_error_already_set();
-}
-
-void
-TfPyThrowKeyError(const char *msg)
-{
-    PyErr_SetString(PyExc_KeyError, msg);
-    pxr_boost::python::throw_error_already_set();
-}
-
-void
-TfPyThrowValueError(const char *msg)
-{
-    PyErr_SetString(PyExc_ValueError, msg);
-    pxr_boost::python::throw_error_already_set();
-}
-
-void
-TfPyThrowTypeError(const char *msg)
-{
-    PyErr_SetString(PyExc_TypeError, msg);
-    pxr_boost::python::throw_error_already_set();
-}
 
 bool
 TfPyIsNone(pxr_boost::python::object const &obj)

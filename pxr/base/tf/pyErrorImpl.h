@@ -29,6 +29,13 @@ public:
     }
 };
 
+void Tf_PySetIndexError(const char *msg);
+void Tf_PySetRuntimeError(const char *msg);
+void Tf_PySetStopIteration(const char *msg);
+void Tf_PySetKeyError(const char *msg);
+void Tf_PySetValueError(const char *msg);
+void Tf_PySetTypeError(const char *msg);
+
 TF_API void Tf_PyThrowErrorAlreadySet();
 
 PXR_NAMESPACE_CLOSE_SCOPE
