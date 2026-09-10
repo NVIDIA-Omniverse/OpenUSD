@@ -8,6 +8,7 @@
 //
 
 #include "pxr/pxr.h"
+#include "pxr/base/tf/diagnosticLite.h"
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/pyInterpreter.h"
 
@@ -21,8 +22,10 @@ testLock(bool verbose)
     TfPyLock lock;
     
     TfPyInitialize();
+    TF_AXIOM(!TfPyLock::IsHeldByCurrentThread());
 
     lock.Acquire();
+    TF_AXIOM(TfPyLock::IsHeldByCurrentThread());
     
     printf("===== Expected error output =====\n");
     lock.Acquire();
@@ -30,9 +33,12 @@ testLock(bool verbose)
 
     {
         TF_PY_ALLOW_THREADS_IN_SCOPE();
+        TF_AXIOM(!TfPyLock::IsHeldByCurrentThread());
     }
+    TF_AXIOM(TfPyLock::IsHeldByCurrentThread());
     
     lock.Release();
+    TF_AXIOM(!TfPyLock::IsHeldByCurrentThread());
 
     printf("===== Expected error output =====\n");
     lock.Release();

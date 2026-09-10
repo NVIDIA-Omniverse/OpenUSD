@@ -16,6 +16,20 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
+bool
+TfPyLock::IsHeldByCurrentThread()
+{
+    if (!Py_IsInitialized()) {
+        return false;
+    }
+
+#ifdef Py_LIMITED_API
+    return PyThreadState_GetDict() != nullptr;
+#else
+    return PyGILState_Check();
+#endif
+}
+
 TfPyLock::TfPyLock()
     : _acquired(false)
     , _allowingThreads(false)
@@ -115,7 +129,7 @@ TfPyLock::EndAllowThreads()
     // In case of an exception, it's possible that some non-exception-safe GIL
     // code has failed to restore it to the unlocked state.  If we see that it's
     // locked just complain and continue.
-    if (ARCH_UNLIKELY(PyGILState_Check())) {
+    if (ARCH_UNLIKELY(IsHeldByCurrentThread())) {
         char const * const exceptionMsg = std::uncaught_exceptions()
             ? "during exception unwinding " : "";
         TF_WARN("GIL corruption detected %s- this thread holds the GIL in "
@@ -131,7 +145,7 @@ TfPyLock::EndAllowThreads()
 TfPyEnsureGILUnlockedObj::TfPyEnsureGILUnlockedObj()
     : _lock(TfPyLock::_ConstructUnlocked)
 {
-    if (PyGILState_Check()) {
+    if (TfPyLock::IsHeldByCurrentThread()) {
         _lock.Acquire();
         _lock.BeginAllowThreads();
     }        
