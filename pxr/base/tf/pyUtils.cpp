@@ -73,44 +73,6 @@ TfPyIsInitialized()
     return Py_IsInitialized();
 }
 
-string
-TfPyObjectRepr(pxr_boost::python::object const &t)
-{
-    if (!TfPyIsInitialized()) {
-        // CODE_COVERAGE_OFF
-        TF_CODING_ERROR("Called TfPyRepr without python being initialized!");
-        return "<error: python not initialized>";
-        // CODE_COVERAGE_ON
-    }
-    // Take the interpreter lock as we're about to call back to Python.
-    TfPyLock pyLock;
-
-    // In case the try block throws, we'll return this string.
-    string reprString("<invalid repr>");
-
-    try {
-        handle<> repr(PyObject_Repr(t.ptr()));
-        reprString = extract<string>(repr.get());
-
-        // Python's repr() for NaN and Inf are not valid python which evaluates
-        // to themselves.  Special case them here to produce python which has
-        // this property.  This is unpleasant since we're not producing the real
-        // python repr, but we want everything coming out of here (if at all
-        // possible) to have this property.
-        if (reprString == "nan")
-            reprString = "float('nan')";
-        if (reprString == "inf")
-            reprString = "float('inf')";
-        if (reprString == "-inf")
-            reprString = "-float('inf')";
-
-    } catch (error_already_set const &) {
-        PyErr_Clear();
-    }
-    return reprString;
-}
-
-
 pxr_boost::python::object
 TfPyEvaluate(std::string const &expr, dict const& extraGlobals)
 {

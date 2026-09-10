@@ -11,6 +11,7 @@
 
 #include "pxr/base/tf/pyErrorImpl.h"
 #include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsImpl.h"
 
 #include "pxr/external/boost/python/errors.hpp"
 
@@ -64,6 +65,12 @@ TfPyThrowTypeError(const char *msg)
 {
     Tf_PySetTypeError(msg);
     Tf_PyThrowErrorAlreadySet();
+}
+
+std::string
+TfPyObjectRepr(pxr_boost::python::object const &t)
+{
+    return Tf_PyObjectRepr(t.ptr());
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

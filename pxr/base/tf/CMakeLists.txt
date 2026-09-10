@@ -11,7 +11,8 @@ endif()
 if(PXR_ENABLE_PYTHON_SUPPORT)
     set_property(
         SOURCE pyError.cpp pyErrorImpl.cpp pyErrorInternal.cpp
-               pyExceptionState.cpp pyLock.cpp pyObjWrapper.cpp singleton.cpp
+               pyExceptionState.cpp pyLock.cpp pyObjWrapper.cpp
+               pyUtilsImpl.cpp singleton.cpp
         APPEND PROPERTY COMPILE_DEFINITIONS Py_LIMITED_API=0x030A0000)
 endif()
 
@@ -281,6 +282,7 @@ pxr_library(tf
         pxrLZ4/lz4.h
         pyErrorImpl.h
         pyLockImpl.h
+        pyUtilsImpl.h
         pyWeakObject.h
 
     CPPFILES
@@ -298,6 +300,7 @@ pxr_library(tf
         pyErrorImpl.cpp
         pyObjWrapperBoost.cpp
         pyUtilsBoost.cpp
+        pyUtilsImpl.cpp
 
     PYMODULE_CPPFILES
         module.cpp
