@@ -106,14 +106,11 @@ public:
     TF_API TfPyObjWrapper(PyObject *obj, TfPyNewReferenceTag);
 
 
-    /// Underlying object access.
-    /// This method returns a reference, so technically, the GIL need not be
-    /// held to call this.  However, the caller is strongly advised to ensure
-    /// the GIL is held, since assigning this object to another or otherwise
-    /// operating on the returned object requires it.
-    object const &Get() const {
-        return *_objectPtr;
-    }
+    /// Underlying boost python object access.
+    /// This method returns a new object, so the GIL need not be held to call
+    /// this.  However, the caller is strongly advised to ensure the GIL is
+    /// held, since otherwise operating on the returned object requires it.
+    TF_API object Get() const;
 
     /// Underlying PyObject* access.
     /// This method returns a pointer, so technically, the GIL need not be
@@ -145,12 +142,13 @@ private:
     // Befriend object_operators to allow it access to implicit conversion to
     // pxr_boost::python::object.
     friend class pxr_boost::python::api::object_operators<TfPyObjWrapper>;
-    operator object const &() const {
+    operator object() const {
         return Get();
     }
 
-    // Store a shared_ptr to a python object.
-    std::shared_ptr<object> _objectPtr;
+    // Store a shared_ptr to a PyObject. The shared_ptr preserves this class's
+    // existing size while keeping Boost.Python out of the owned representation.
+    std::shared_ptr<PyObject> _objectPtr;
 };
 
 static_assert(sizeof(TfPyObjWrapper) == sizeof(TfPyObjWrapperStub),

@@ -14,6 +14,8 @@
 #include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/type.h"
 
+#include "pxr/external/boost/python/borrowed.hpp"
+#include "pxr/external/boost/python/errors.hpp"
 #include "pxr/external/boost/python/handle.hpp"
 #include "pxr/external/boost/python/object.hpp"
 
@@ -26,73 +28,84 @@ TF_REGISTRY_FUNCTION(TfType)
 
 namespace {
 
-// A custom deleter for shared_ptr<pxr_boost::python::object> that takes the
-// python lock before deleting the python object.  This is necessary since it's
+PyObject *
+_ExpectNonNull(PyObject *obj)
+{
+    if (!obj) {
+        pxr_boost::python::throw_error_already_set();
+    }
+    return obj;
+}
+
+PyObject *
+_NewReferenceFromBorrowed(PyObject *obj)
+{
+    TfPyLock lock;
+    Py_INCREF(_ExpectNonNull(obj));
+    return obj;
+}
+
+// A custom deleter for shared_ptr<PyObject> that takes the python lock before
+// decrementing the python object's refcount.  This is necessary since it's
 // invalid to decrement the python refcount without holding the lock.
-struct _DeleteObjectWithLock {
-    void operator()(pxr_boost::python::object *obj) const {
+struct _DecrefObjectWithLock {
+    void operator()(PyObject *obj) const {
         PXR_NS::TfPyLock lock;
-        delete obj;
+        Py_DECREF(obj);
     }
 };
-
-pxr_boost::python::object
-_ObjectFromBorrowedReference(PyObject *obj)
-{
-    TfPyLock lock;
-    return pxr_boost::python::object(
-        pxr_boost::python::handle<>(
-            pxr_boost::python::borrowed(obj)));
-}
-
-pxr_boost::python::object
-_ObjectFromNewReference(PyObject *obj)
-{
-    TfPyLock lock;
-    return pxr_boost::python::object(pxr_boost::python::handle<>(obj));
-}
 
 }
 
 TfPyObjWrapper::TfPyObjWrapper()
+    : TfPyObjWrapper(Py_None, TfPyBorrowedReference)
 {
-    TfPyLock lock;
-    TfPyObjWrapper none((pxr_boost::python::object())); // <- extra parens for "most
-                                                    // vexing parse".
-    *this = none;
 }
 
 TfPyObjWrapper::TfPyObjWrapper(pxr_boost::python::object obj)
-    : _objectPtr(new object(obj), _DeleteObjectWithLock())
+    : TfPyObjWrapper(obj.ptr(), TfPyBorrowedReference)
 {
 }
 
 TfPyObjWrapper::TfPyObjWrapper(PyObject *obj, TfPyBorrowedReferenceTag)
-    : TfPyObjWrapper(_ObjectFromBorrowedReference(obj))
+    : _objectPtr(_NewReferenceFromBorrowed(obj), _DecrefObjectWithLock())
 {
 }
 
 TfPyObjWrapper::TfPyObjWrapper(PyObject *obj, TfPyNewReferenceTag)
-    : TfPyObjWrapper(_ObjectFromNewReference(obj))
+    : _objectPtr(_ExpectNonNull(obj), _DecrefObjectWithLock())
 {
+}
+
+pxr_boost::python::object
+TfPyObjWrapper::Get() const
+{
+    TfPyLock lock;
+    return object(
+        pxr_boost::python::handle<>(
+            pxr_boost::python::borrowed(ptr())));
 }
 
 PyObject *
 TfPyObjWrapper::ptr() const
 {
-    return _objectPtr->ptr();
+    return _objectPtr.get();
 }
 
 bool
 TfPyObjWrapper::operator==(TfPyObjWrapper const &other) const
 {
     // If they point to the exact same object instance, we know they're equal.
-    if (_objectPtr == other._objectPtr)
+    if (ptr() == other.ptr())
         return true;
 
     // Otherwise lock and let python determine equality.
     TfPyLock lock;
-    return Get() == other.Get();
+    int result = PyObject_RichCompareBool(ptr(), other.ptr(), Py_EQ);
+    if (result == -1) {
+        pxr_boost::python::throw_error_already_set();
+    }
+    return result == 1;
 }
 
 bool
