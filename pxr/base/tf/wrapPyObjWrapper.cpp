@@ -39,7 +39,7 @@ private:
             ((converter::rvalue_from_python_storage<TfPyObjWrapper>*)data)
             ->storage.bytes;
         // Make a TfPyObjWrapper holding the Python object.
-        new (storage) TfPyObjWrapper(object(borrowed(obj_ptr)));
+        new (storage) TfPyObjWrapper(TfPyObjWrapper::FromBorrowed(obj_ptr));
         data->convertible = storage;
     }
 };
@@ -47,7 +47,7 @@ private:
 struct Tf_PyObjWrapperToPython {
     static PyObject *
     convert(TfPyObjWrapper const &val) {
-        return incref(val.Get().ptr());
+        return incref(val.ptr());
     }
 };
 

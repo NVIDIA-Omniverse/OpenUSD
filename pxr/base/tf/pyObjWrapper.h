@@ -49,9 +49,9 @@ private:
 
 /// \class TfPyObjWrapper
 ///
-/// Boost Python object wrapper.
+/// Python object wrapper.
 ///
-/// Provides a wrapper around pxr_boost::python::object that works correctly for the
+/// Provides a wrapper around a Python object that works correctly for the
 /// following basic operations regardless of the GIL state: default construction,
 /// copy construction, assignment, (in)equality comparison, hash_value(), and
 /// destruction.
@@ -61,11 +61,11 @@ private:
 /// construction, destruction and for some (in)equality comparisons.  The other
 /// operations do not require taking the GIL.
 ///
-/// This is primarily useful in cases where a pxr_boost::python::object might be
+/// This is primarily useful in cases where a Python object might be
 /// destroyed without a locked GIL by a client blind to that fact.  This occurs
 /// when a registry, for example, holds type-erased objects.  If one
 /// of the type-erased objects in the registry happens to hold a
-/// pxr_boost::python::object, that type-erased object must be destroyed while the
+/// Python object, that type-erased object must be destroyed while the
 /// GIL is held but it's unreasonable to require that the registry know that.
 /// This class helps solve that problem.
 ///
@@ -89,6 +89,14 @@ public:
     /// The GIL must be held by the caller.  Note, allowing the implicit
     /// conversion is intended here.
     TF_API TfPyObjWrapper(object obj);
+
+    /// Construct a TfPyObjectWrapper from a borrowed reference to \a obj.
+    /// The GIL must be held by the caller.
+    TF_API static TfPyObjWrapper FromBorrowed(PyObject *obj);
+
+    /// Construct a TfPyObjectWrapper from a new reference to \a obj.
+    /// The GIL must be held by the caller. This function steals the reference.
+    TF_API static TfPyObjWrapper FromNewReference(PyObject *obj);
 
     /// Underlying object access.
     /// This method returns a reference, so technically, the GIL need not be

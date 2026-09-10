@@ -14,6 +14,7 @@
 #include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/type.h"
 
+#include "pxr/external/boost/python/handle.hpp"
 #include "pxr/external/boost/python/object.hpp"
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -47,6 +48,22 @@ TfPyObjWrapper::TfPyObjWrapper()
 TfPyObjWrapper::TfPyObjWrapper(pxr_boost::python::object obj)
     : _objectPtr(new object(obj), _DeleteObjectWithLock())
 {
+}
+
+TfPyObjWrapper
+TfPyObjWrapper::FromBorrowed(PyObject *obj)
+{
+    TfPyLock lock;
+    return TfPyObjWrapper(
+        object(pxr_boost::python::handle<>(
+            pxr_boost::python::borrowed(obj))));
+}
+
+TfPyObjWrapper
+TfPyObjWrapper::FromNewReference(PyObject *obj)
+{
+    TfPyLock lock;
+    return TfPyObjWrapper(object(pxr_boost::python::handle<>(obj)));
 }
 
 PyObject *
