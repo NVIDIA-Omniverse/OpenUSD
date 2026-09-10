@@ -15,7 +15,9 @@
 #include "pxr/base/tf/api.h"
 #include "pxr/base/tf/errorMark.h"
 
+#ifndef Py_LIMITED_API
 #include "pxr/external/boost/python/default_call_policies.hpp"
+#endif
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -42,6 +44,7 @@ void TfPyConvertPythonExceptionToTfErrors();
 /// required for wrapped functions and methods that do not appear directly in an
 /// extension module.  For instance, the map and sequence proxy objects use
 /// this, since they are created on the fly.
+#ifndef Py_LIMITED_API
 template <typename Base = pxr_boost::python::default_call_policies>
 struct TfPyRaiseOnError : Base
 {
@@ -84,6 +87,7 @@ struct TfPyRaiseOnError : Base
         return result;
     }
 };
+#endif // Py_LIMITED_API
 
 PXR_NAMESPACE_CLOSE_SCOPE
 

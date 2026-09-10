@@ -10,6 +10,7 @@
 #include "pxr/pxr.h"
 
 #include "pxr/base/tf/api.h"
+#include "pxr/base/tf/errorMark.h"
 #include "pxr/base/tf/pyExceptionState.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -20,6 +21,10 @@ enum Tf_PyExceptionErrorCode {
 
 TF_API PyObject *Tf_PyGetErrorExceptionClass();
 TF_API void Tf_PySetErrorExceptionClass(PyObject *cls);
+
+PyObject *Tf_PyCreateErrorException(TfErrorMark const &m);
+bool Tf_PyAppendErrorsFromException(PyObject *exception);
+void Tf_PyRethrowSavedTfException(PyObject *exception);
 
 /// RAII class to save and restore the Python exception state.  The client
 /// must hold the GIL during all methods, including the c'tor and d'tor.
