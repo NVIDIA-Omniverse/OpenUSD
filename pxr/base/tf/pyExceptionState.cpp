@@ -18,7 +18,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 namespace {
 
 void
-XIncRef(PyObject *obj)
+_IncRefIfNotNull(PyObject *obj)
 {
     if (obj) {
         Py_IncRef(obj);
@@ -26,7 +26,7 @@ XIncRef(PyObject *obj)
 }
 
 void
-XDecRef(PyObject *obj)
+_DecRefIfNotNull(PyObject *obj)
 {
     if (obj) {
         Py_DecRef(obj);
@@ -34,11 +34,11 @@ XDecRef(PyObject *obj)
 }
 
 void
-XSetNewRef(PyObject **dst, PyObject *src)
+_SetNewRef(PyObject **dst, PyObject *src)
 {
     PyObject *old = *dst;
     *dst = src;
-    XDecRef(old);
+    _DecRefIfNotNull(old);
 }
 
 }
@@ -46,9 +46,9 @@ XSetNewRef(PyObject **dst, PyObject *src)
 TfPyExceptionState::TfPyExceptionState(TfPyExceptionState const &other)
 {
     TfPyLock lock;
-    XIncRef(other._type);
-    XIncRef(other._value);
-    XIncRef(other._trace);
+    _IncRefIfNotNull(other._type);
+    _IncRefIfNotNull(other._value);
+    _IncRefIfNotNull(other._trace);
     _type = other._type;
     _value = other._value;
     _trace = other._trace;
@@ -62,21 +62,21 @@ TfPyExceptionState::operator=(TfPyExceptionState const &other)
     }
 
     TfPyLock lock;
-    XIncRef(other._type);
-    XIncRef(other._value);
-    XIncRef(other._trace);
-    XSetNewRef(&_type, other._type);
-    XSetNewRef(&_value, other._value);
-    XSetNewRef(&_trace, other._trace);
+    _IncRefIfNotNull(other._type);
+    _IncRefIfNotNull(other._value);
+    _IncRefIfNotNull(other._trace);
+    _SetNewRef(&_type, other._type);
+    _SetNewRef(&_value, other._value);
+    _SetNewRef(&_trace, other._trace);
     return *this;
 }
 
 TfPyExceptionState::~TfPyExceptionState()
 {
     TfPyLock lock;
-    XSetNewRef(&_type, nullptr);
-    XSetNewRef(&_value, nullptr);
-    XSetNewRef(&_trace, nullptr);
+    _SetNewRef(&_type, nullptr);
+    _SetNewRef(&_value, nullptr);
+    _SetNewRef(&_trace, nullptr);
 }
 
 TfPyExceptionState
@@ -145,9 +145,9 @@ TfPyExceptionState::GetExceptionString() const
         Py_DecRef(iter);
     }
 
-    XDecRef(exception);
-    XDecRef(formatException);
-    XDecRef(tbModule);
+    _DecRefIfNotNull(exception);
+    _DecRefIfNotNull(formatException);
+    _DecRefIfNotNull(tbModule);
 
     PyErr_Clear();
     PyErr_Restore(savedType, savedValue, savedTrace);
