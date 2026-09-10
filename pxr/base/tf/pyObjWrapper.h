@@ -31,6 +31,12 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
+struct TfPyBorrowedReferenceTag {};
+struct TfPyNewReferenceTag {};
+
+inline constexpr TfPyBorrowedReferenceTag TfPyBorrowedReference = {};
+inline constexpr TfPyNewReferenceTag TfPyNewReference = {};
+
 // We define the empty stub for ABI compatibility even if Python support is
 // enabled so we can make sure size and alignment is the same.
 class TfPyObjWrapperStub
@@ -91,12 +97,14 @@ public:
     TF_API TfPyObjWrapper(object obj);
 
     /// Construct a TfPyObjectWrapper from a borrowed reference to \a obj.
-    /// The GIL must be held by the caller.
-    TF_API static TfPyObjWrapper FromBorrowed(PyObject *obj);
+    /// The GIL need not be held by the caller.
+    TF_API TfPyObjWrapper(PyObject *obj, TfPyBorrowedReferenceTag);
 
     /// Construct a TfPyObjectWrapper from a new reference to \a obj.
-    /// The GIL must be held by the caller. This function steals the reference.
-    TF_API static TfPyObjWrapper FromNewReference(PyObject *obj);
+    /// The GIL need not be held by the caller. This function steals the
+    /// reference.
+    TF_API TfPyObjWrapper(PyObject *obj, TfPyNewReferenceTag);
+
 
     /// Underlying object access.
     /// This method returns a reference, so technically, the GIL need not be

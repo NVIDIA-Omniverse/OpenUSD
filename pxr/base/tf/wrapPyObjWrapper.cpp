@@ -39,7 +39,7 @@ private:
             ((converter::rvalue_from_python_storage<TfPyObjWrapper>*)data)
             ->storage.bytes;
         // Make a TfPyObjWrapper holding the Python object.
-        new (storage) TfPyObjWrapper(TfPyObjWrapper::FromBorrowed(obj_ptr));
+        new (storage) TfPyObjWrapper(obj_ptr, TfPyBorrowedReference);
         data->convertible = storage;
     }
 };

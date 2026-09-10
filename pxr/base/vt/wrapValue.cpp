@@ -228,7 +228,7 @@ struct Vt_ValueFromPython {
         } else {
             // Fall back to generic python object.
             new (storage)
-                VtValue(TfPyObjWrapper::FromBorrowed(obj_ptr));
+                VtValue(TfPyObjWrapper(obj_ptr, TfPyBorrowedReference));
             data->convertible = storage; 
             return;
         }

@@ -35,6 +35,23 @@ struct _DeleteObjectWithLock {
         delete obj;
     }
 };
+
+pxr_boost::python::object
+_ObjectFromBorrowedReference(PyObject *obj)
+{
+    TfPyLock lock;
+    return pxr_boost::python::object(
+        pxr_boost::python::handle<>(
+            pxr_boost::python::borrowed(obj)));
+}
+
+pxr_boost::python::object
+_ObjectFromNewReference(PyObject *obj)
+{
+    TfPyLock lock;
+    return pxr_boost::python::object(pxr_boost::python::handle<>(obj));
+}
+
 }
 
 TfPyObjWrapper::TfPyObjWrapper()
@@ -50,20 +67,14 @@ TfPyObjWrapper::TfPyObjWrapper(pxr_boost::python::object obj)
 {
 }
 
-TfPyObjWrapper
-TfPyObjWrapper::FromBorrowed(PyObject *obj)
+TfPyObjWrapper::TfPyObjWrapper(PyObject *obj, TfPyBorrowedReferenceTag)
+    : TfPyObjWrapper(_ObjectFromBorrowedReference(obj))
 {
-    TfPyLock lock;
-    return TfPyObjWrapper(
-        object(pxr_boost::python::handle<>(
-            pxr_boost::python::borrowed(obj))));
 }
 
-TfPyObjWrapper
-TfPyObjWrapper::FromNewReference(PyObject *obj)
+TfPyObjWrapper::TfPyObjWrapper(PyObject *obj, TfPyNewReferenceTag)
+    : TfPyObjWrapper(_ObjectFromNewReference(obj))
 {
-    TfPyLock lock;
-    return TfPyObjWrapper(object(pxr_boost::python::handle<>(obj)));
 }
 
 PyObject *
