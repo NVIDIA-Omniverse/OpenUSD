@@ -3385,6 +3385,82 @@ TestProductionAdaptiveLevelsForRefinedComplexities()
 
 
 bool
+TestBilinearCubeRemainsLinearWhenRefined()
+{
+    _EmbreeTestContext context;
+    HdEmbreeRenderDelegate* const renderDelegate =
+        dynamic_cast<HdEmbreeRenderDelegate*>(context.renderDelegate);
+    HdRenderIndex* const renderIndex = context.renderIndex.get();
+    if (!renderDelegate || !renderIndex) {
+        return false;
+    }
+
+    HdUnitTestDelegate delegate(
+        renderIndex, SdfPath::AbsoluteRootPath());
+    SdfPath const id("/bilinearCube");
+    delegate.AddCube(
+        id, GfMatrix4f(1.0f), false, SdfPath(),
+        PxOsdOpenSubdivTokens->bilinear);
+    delegate.SetRefineLevel(id, 3);
+
+    HdRprim* const rprim =
+        const_cast<HdRprim*>(renderIndex->GetRprim(id));
+    HdDirtyBits bits = rprim->GetInitialDirtyBitsMask();
+    rprim->InitRepr(&delegate, HdReprTokens->refined, &bits);
+    rprim->Sync(
+        &delegate, renderDelegate->GetRenderParam(),
+        &bits, HdReprTokens->refined);
+
+    RTCScene const root = static_cast<HdEmbreeRenderParam*>(
+        renderDelegate->GetRenderParam())->AcquireSceneForEdit();
+    rtcCommitScene(root);
+    if (!renderDelegate->UpdateAdaptiveSubdivision(
+            GfMatrix4d(1.0), GfMatrix4d(1.0),
+            GfRect2i(GfVec2i(0), 100, 100), false)) {
+        return false;
+    }
+    rtcCommitScene(root);
+
+    RTCGeometry const instance = rtcGetGeometry(root, 0);
+    ty::InstanceContext* const instanceContext = instance
+        ? static_cast<ty::InstanceContext*>(
+            rtcGetGeometryUserData(instance))
+        : nullptr;
+    RTCGeometry const prototype = instanceContext
+        ? rtcGetGeometry(instanceContext->rootScene, 0)
+        : nullptr;
+    ty::PrototypeContext* const prototypeContext = prototype
+        ? static_cast<ty::PrototypeContext*>(
+            rtcGetGeometryUserData(prototype))
+        : nullptr;
+
+    RTCBounds bounds{};
+    rtcGetSceneBounds(root, &bounds);
+
+    RTCRayHit rayHit{};
+    rayHit.ray.org_x = 0.9f;
+    rayHit.ray.org_y = 0.9f;
+    rayHit.ray.org_z = 2.0f;
+    rayHit.ray.dir_z = -1.0f;
+    rayHit.ray.tnear = 0.0f;
+    rayHit.ray.tfar = std::numeric_limits<float>::infinity();
+    rayHit.ray.mask = 0xffffffffu;
+    rayHit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+    rtcIntersect1(root, &rayHit);
+
+    return prototypeContext && prototypeContext->refined &&
+        _Close(bounds.lower_x, -1.0f) &&
+        _Close(bounds.lower_y, -1.0f) &&
+        _Close(bounds.lower_z, -1.0f) &&
+        _Close(bounds.upper_x, 1.0f) &&
+        _Close(bounds.upper_y, 1.0f) &&
+        _Close(bounds.upper_z, 1.0f) &&
+        rayHit.hit.geomID != RTC_INVALID_GEOMETRY_ID &&
+        _Close(rayHit.ray.tfar, 1.0f);
+}
+
+
+bool
 TestLowComplexityUsesTriangulatedControlCage()
 {
     _EmbreeTestContext context;
@@ -3677,6 +3753,8 @@ main()
          &TestRenderPassRequiresCameraAndGatesDynamicTessellation},
         {"Subdivision.TestProductionAdaptiveLevelsForRefinedComplexities",
          &TestProductionAdaptiveLevelsForRefinedComplexities},
+        {"Subdivision.TestBilinearCubeRemainsLinearWhenRefined",
+         &TestBilinearCubeRemainsLinearWhenRefined},
         {"Subdivision.TestLowComplexityUsesTriangulatedControlCage",
          &TestLowComplexityUsesTriangulatedControlCage},
         {"Subdivision.TestUsdImagingExtractsSurfaceAndDisplacementTerminals",

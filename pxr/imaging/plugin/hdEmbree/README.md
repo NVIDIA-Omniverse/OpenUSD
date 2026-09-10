@@ -359,6 +359,10 @@ valid viewport determine tessellation for the render pass lifetime. Set
 changes; expensive displacement graphs can make those updates costly.
 Instance, topology, and display-style changes still update affected geometry.
 Meshes with `subdivisionScheme = "none"` remain triangles at every complexity.
+Meshes with `subdivisionScheme = "bilinear"`, including Hydra's mesh
+representation of `UsdGeomCube`, remain piecewise linear at higher
+complexities while still using Embree subdivision geometry for adaptive
+tessellation and MaterialX displacement.
 
 Vertex, varying, uniform, and indexed face-varying primvars retain their Hydra
 interpolation and seam behavior. Embree cannot distinguish OpenSubdiv's

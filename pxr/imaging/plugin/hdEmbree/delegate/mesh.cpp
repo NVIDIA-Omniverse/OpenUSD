@@ -2026,21 +2026,34 @@ HdEmbreeMesh::_PopulateRtMesh(HdSceneDelegate* sceneDelegate,
         context->displacementWorldToObjectMatrix = _transform.GetInverse();
     }
 
-    // If the subdiv tags changed or the mesh was recreated, we need to update
-    // the subdivision boundary mode.
+    // If the subdiv tags changed or the mesh was recreated, update the
+    // subdivision interpolation mode.
     if (newMesh || HdChangeTracker::IsSubdivTagsDirty(*dirtyBits, id)) {
         if (doRefine) {
-            TfToken const vertexRule =
-                _topology.GetSubdivTags().GetVertexInterpolationRule();
-
-            if (vertexRule == PxOsdOpenSubdivTokens->none) {
-                rtcSetGeometrySubdivisionMode(_geometry,0,RTC_SUBDIVISION_MODE_NO_BOUNDARY);
-            } else if (vertexRule == PxOsdOpenSubdivTokens->edgeOnly) {
-                rtcSetGeometrySubdivisionMode(_geometry,0,RTC_SUBDIVISION_MODE_SMOOTH_BOUNDARY);
-            } else if (vertexRule == PxOsdOpenSubdivTokens->edgeAndCorner) {
-                rtcSetGeometrySubdivisionMode(_geometry,0,RTC_SUBDIVISION_MODE_PIN_CORNERS);
+            if (_topology.GetScheme() == PxOsdOpenSubdivTokens->bilinear) {
+                // Keep bilinear patches piecewise linear while retaining
+                // Embree subdivision geometry for adaptive tessellation and
+                // displacement.
+                rtcSetGeometrySubdivisionMode(
+                    _geometry, 0, RTC_SUBDIVISION_MODE_PIN_ALL);
             } else {
-                if (!vertexRule.IsEmpty()) {
+                TfToken const vertexRule =
+                    _topology.GetSubdivTags().GetVertexInterpolationRule();
+
+                if (vertexRule == PxOsdOpenSubdivTokens->none) {
+                    rtcSetGeometrySubdivisionMode(
+                        _geometry, 0,
+                        RTC_SUBDIVISION_MODE_NO_BOUNDARY);
+                } else if (vertexRule == PxOsdOpenSubdivTokens->edgeOnly) {
+                    rtcSetGeometrySubdivisionMode(
+                        _geometry, 0,
+                        RTC_SUBDIVISION_MODE_SMOOTH_BOUNDARY);
+                } else if (
+                    vertexRule == PxOsdOpenSubdivTokens->edgeAndCorner) {
+                    rtcSetGeometrySubdivisionMode(
+                        _geometry, 0,
+                        RTC_SUBDIVISION_MODE_PIN_CORNERS);
+                } else if (!vertexRule.IsEmpty()) {
                     TF_WARN("Unknown vertex interpolation rule: %s",
                             vertexRule.GetText());
                 }

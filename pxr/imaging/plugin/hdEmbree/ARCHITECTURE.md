@@ -418,10 +418,14 @@ to the plugin.
    `ty::PrototypeContext` and `ty::InstanceContext` make synchronized
    renderer data available at hits without retaining Hydra adapter objects.
 7. At low complexity, subdivision meshes render as triangulated control cages.
-   For medium and higher, the pass projects authored control edges through the
-   stored subdivision view/projection and all instance transforms. Projection
-   uses a 10% X/Y view guard for displaced patches, converts complexity to a
-   pixel-edge target, and clamps candidate Embree levels to `[4, 4096]`. A
+   At medium and higher, `bilinear` topology maps Embree geometry topology 0 to
+   `RTC_SUBDIVISION_MODE_PIN_ALL`; this preserves piecewise-linear shapes such
+   as Hydra's generated `UsdGeomCube` mesh while retaining the refined path for
+   adaptive tessellation and displacement. The pass projects authored control
+   edges through the stored subdivision view/projection and all instance
+   transforms. Projection uses a 10% X/Y view guard for displaced patches,
+   converts complexity to a pixel-edge target, and clamps candidate Embree
+   levels to `[4, 4096]`. A
    monotone fixed-point pass raises levels until shared authored edges agree
    and opposite edges of every authored quad differ by at most 2:1. Displaced
    quads then evaluate final object-space positions at the 3x3 product of
