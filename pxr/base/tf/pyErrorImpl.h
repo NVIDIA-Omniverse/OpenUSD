@@ -11,7 +11,23 @@
 
 #include "pxr/base/tf/api.h"
 
+#include <exception>
+
 PXR_NAMESPACE_OPEN_SCOPE
+
+/// Binding-neutral sentinel for future use when Python's error indicator is
+/// set and C++ control flow must exit immediately. Binding adapters should
+/// translate this to their own "Python error already set" mechanism.
+///
+/// This is not thrown yet; current Boost.Python code still throws
+/// pxr_boost::python::error_already_set for compatibility.
+class TfPyErrorAlreadySet : public std::exception
+{
+public:
+    const char *what() const noexcept override {
+        return "Python error already set";
+    }
+};
 
 TF_API void Tf_PyThrowErrorAlreadySet();
 

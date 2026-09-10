@@ -38,6 +38,8 @@ using namespace pxr_boost::python;
 void
 Tf_PyThrowErrorAlreadySet()
 {
+    // Preserve Boost.Python behavior until binding boundaries translate
+    // TfPyErrorAlreadySet to their own error propagation mechanism.
     pxr_boost::python::throw_error_already_set();
 }
 
