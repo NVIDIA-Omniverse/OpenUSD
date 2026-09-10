@@ -8,6 +8,9 @@
 #define PXR_BASE_TF_PY_LOCK_IMPL_H
 
 #include "pxr/pxr.h"
+
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+
 #include "pxr/base/tf/pySafePython.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -27,5 +30,7 @@ Tf_PyGilIsHeldByCurrentThread()
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE
+
+#endif // PXR_PYTHON_SUPPORT_ENABLED
 
 #endif // PXR_BASE_TF_PY_LOCK_IMPL_H
