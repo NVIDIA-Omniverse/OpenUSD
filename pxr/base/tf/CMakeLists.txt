@@ -272,6 +272,7 @@ pxr_library(tf
         pxrDoubleConversion/string-to-double.h
         pxrDoubleConversion/strtod.h
         pxrLZ4/lz4.h
+        pyLockImpl.h
         pyWeakObject.h
 
     CPPFILES

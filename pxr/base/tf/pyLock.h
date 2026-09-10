@@ -125,12 +125,6 @@ public:
     /// \a BeginAllowThreads must have been successfully called first.
     TF_API void EndAllowThreads();
 
-    /// Return true if the current thread already has Python's lock.
-    ///
-    /// In builds using Python's Limited API, this checks for an attached
-    /// Python thread state instead of calling PyGILState_Check().
-    TF_API static bool IsHeldByCurrentThread();
-
 private:
     // Non-acquiring constructor for TfPyEnsureGILUnlockedObj's use.
     friend struct TfPyEnsureGILUnlockedObj;

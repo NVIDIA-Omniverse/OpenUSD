@@ -9,6 +9,7 @@
 #include "pxr/base/tf/singleton.h"
 #include "pxr/base/tf/instantiateSingleton.h"
 #include "pxr/base/tf/pyLock.h"
+#include "pxr/base/tf/pyLockImpl.h"
 
 #include <memory>
 
@@ -21,7 +22,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 Tf_SingletonPyGILDropper::Tf_SingletonPyGILDropper()
 {
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
-    if (TfPyLock::IsHeldByCurrentThread()) {
+    if (Tf_PyGilIsHeldByCurrentThread()) {
         _pyLock = std::make_unique<TfPyLock>();
         _pyLock->BeginAllowThreads();
     }

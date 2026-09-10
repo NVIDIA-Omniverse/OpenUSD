@@ -10,6 +10,7 @@
 #include "pxr/pxr.h"
 #include "pxr/base/tf/diagnosticLite.h"
 #include "pxr/base/tf/pyLock.h"
+#include "pxr/base/tf/pyLockImpl.h"
 #include "pxr/base/tf/pyInterpreter.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -22,10 +23,10 @@ testLock(bool verbose)
     TfPyLock lock;
     
     TfPyInitialize();
-    TF_AXIOM(!TfPyLock::IsHeldByCurrentThread());
+    TF_AXIOM(!Tf_PyGilIsHeldByCurrentThread());
 
     lock.Acquire();
-    TF_AXIOM(TfPyLock::IsHeldByCurrentThread());
+    TF_AXIOM(Tf_PyGilIsHeldByCurrentThread());
     
     printf("===== Expected error output =====\n");
     lock.Acquire();
@@ -33,12 +34,12 @@ testLock(bool verbose)
 
     {
         TF_PY_ALLOW_THREADS_IN_SCOPE();
-        TF_AXIOM(!TfPyLock::IsHeldByCurrentThread());
+        TF_AXIOM(!Tf_PyGilIsHeldByCurrentThread());
     }
-    TF_AXIOM(TfPyLock::IsHeldByCurrentThread());
+    TF_AXIOM(Tf_PyGilIsHeldByCurrentThread());
     
     lock.Release();
-    TF_AXIOM(!TfPyLock::IsHeldByCurrentThread());
+    TF_AXIOM(!Tf_PyGilIsHeldByCurrentThread());
 
     printf("===== Expected error output =====\n");
     lock.Release();
