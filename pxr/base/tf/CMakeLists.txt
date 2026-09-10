@@ -8,6 +8,12 @@ if(WIN32)
     set(WINLIBS Shlwapi.lib)
 endif()
 
+if(PXR_ENABLE_PYTHON_SUPPORT)
+    set_property(
+        SOURCE pyLock.cpp singleton.cpp
+        APPEND PROPERTY COMPILE_DEFINITIONS Py_LIMITED_API=0x030A0000)
+endif()
+
 # Add a test that WindowsImportWrapper adds entries on the PATH in the correct order, to ensure
 # that the correct dlls needed by python modules are loaded
 function(add_py_dll_link_test)
