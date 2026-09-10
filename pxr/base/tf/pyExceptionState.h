@@ -7,18 +7,14 @@
 
 #include "pxr/pxr.h"
 #include "pxr/base/tf/api.h"
-#include "pxr/external/boost/python/handle.hpp"
 
 #include <string>
+
+typedef struct _object PyObject;
 
 PXR_NAMESPACE_OPEN_SCOPE
 
 struct TfPyExceptionState {
-    TfPyExceptionState(pxr_boost::python::handle<> const &type,
-                       pxr_boost::python::handle<> const &value,
-                       pxr_boost::python::handle<> const &trace) :
-            _type(type), _value(value), _trace(trace) {}
-
     TF_API
     ~TfPyExceptionState();
 
@@ -34,9 +30,10 @@ struct TfPyExceptionState {
     TF_API
     static TfPyExceptionState Fetch();
 
-    pxr_boost::python::handle<> const &GetType() const { return _type; }
-    pxr_boost::python::handle<> const &GetValue() const { return _value; }
-    pxr_boost::python::handle<> const &GetTrace() const { return _trace; }
+    // Returned pointers are borrowed references.
+    PyObject *GetType() const { return _type; }
+    PyObject *GetValue() const { return _value; }
+    PyObject *GetTrace() const { return _trace; }
 
     // Move this object's exception state into Python's current exception state,
     // as by PyErr_Restore().  This leaves this object's exception state clear.
@@ -49,7 +46,11 @@ struct TfPyExceptionState {
     std::string GetExceptionString() const;
 
 private:
-    pxr_boost::python::handle<> _type, _value, _trace;
+    // Takes ownership of new references, as returned by PyErr_Fetch().
+    TfPyExceptionState(PyObject *type, PyObject *value, PyObject *trace) :
+        _type(type), _value(value), _trace(trace) {}
+
+    PyObject *_type, *_value, *_trace;
 };
 
 PXR_NAMESPACE_CLOSE_SCOPE

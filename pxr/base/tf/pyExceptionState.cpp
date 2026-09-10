@@ -7,21 +7,48 @@
 
 #include "pxr/pxr.h"
 
-#include "pxr/base/tf/pyErrorInternal.h"
+#include "pxr/base/tf/pyExceptionState.h"
 #include "pxr/base/tf/pyLock.h"
-
-#include "pxr/external/boost/python/object.hpp"
-#include "pxr/external/boost/python/extract.hpp"
+#include "pxr/base/tf/pySafePython.h"
 
 using std::string;
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-using namespace pxr_boost::python;
+namespace {
+
+void
+XIncRef(PyObject *obj)
+{
+    if (obj) {
+        Py_IncRef(obj);
+    }
+}
+
+void
+XDecRef(PyObject *obj)
+{
+    if (obj) {
+        Py_DecRef(obj);
+    }
+}
+
+void
+XSetNewRef(PyObject **dst, PyObject *src)
+{
+    PyObject *old = *dst;
+    *dst = src;
+    XDecRef(old);
+}
+
+}
 
 TfPyExceptionState::TfPyExceptionState(TfPyExceptionState const &other)
 {
     TfPyLock lock;
+    XIncRef(other._type);
+    XIncRef(other._value);
+    XIncRef(other._trace);
     _type = other._type;
     _value = other._value;
     _trace = other._trace;
@@ -30,40 +57,46 @@ TfPyExceptionState::TfPyExceptionState(TfPyExceptionState const &other)
 TfPyExceptionState &
 TfPyExceptionState::operator=(TfPyExceptionState const &other)
 {
+    if (this == &other) {
+        return *this;
+    }
+
     TfPyLock lock;
-    _type = other._type;
-    _value = other._value;
-    _trace = other._trace;
+    XIncRef(other._type);
+    XIncRef(other._value);
+    XIncRef(other._trace);
+    XSetNewRef(&_type, other._type);
+    XSetNewRef(&_value, other._value);
+    XSetNewRef(&_trace, other._trace);
     return *this;
 }
 
 TfPyExceptionState::~TfPyExceptionState()
 {
     TfPyLock lock;
-    _type.reset();
-    _value.reset();
-    _trace.reset();
+    XSetNewRef(&_type, nullptr);
+    XSetNewRef(&_value, nullptr);
+    XSetNewRef(&_trace, nullptr);
 }
 
 TfPyExceptionState
 TfPyExceptionState::Fetch() {
     TfPyLock lock;
-    PyObject *excType, *excValue, *excTrace;
+    PyObject *excType = nullptr;
+    PyObject *excValue = nullptr;
+    PyObject *excTrace = nullptr;
     PyErr_Fetch(&excType, &excValue, &excTrace);
-    return TfPyExceptionState {
-        handle<>(allow_null(excType)),
-        handle<>(allow_null(excValue)),
-        handle<>(allow_null(excTrace))
-    };
+    return TfPyExceptionState(excType, excValue, excTrace);
 }
 
 void
 TfPyExceptionState::Restore()
 {
     TfPyLock lock;
-    // We have to call release() here since PyErr_Restore() "steals" our
-    // reference count.
-    PyErr_Restore(_type.release(), _value.release(), _trace.release());
+    PyErr_Restore(_type, _value, _trace);
+    _type = nullptr;
+    _value = nullptr;
+    _trace = nullptr;
 }
 
 string 
@@ -71,20 +104,54 @@ TfPyExceptionState::GetExceptionString() const
 {
     TfPyLock lock;
     string s;
-    // Save the exception state so we can restore it -- getting the exception
-    // string should not affect the exception state.
-    TfPyExceptionStateScope exceptionStateScope;
-    try {
-        object tbModule(handle<>(PyImport_ImportModule("traceback")));
-        object exception =
-            tbModule.attr("format_exception")(_type, _value, _trace);
-        pxr_boost::python::ssize_t size = len(exception);
-        for (pxr_boost::python::ssize_t i = 0; i != size; ++i) {
-            s += extract<string>(exception[i]);
-        }
-    } catch (pxr_boost::python::error_already_set const &) {
-        // Just ignore the exception.
+
+    if (!_type) {
+        return s;
     }
+
+    PyObject *savedType = nullptr;
+    PyObject *savedValue = nullptr;
+    PyObject *savedTrace = nullptr;
+    PyErr_Fetch(&savedType, &savedValue, &savedTrace);
+
+    PyObject *tbModule = PyImport_ImportModule("traceback");
+    PyObject *formatException = tbModule ?
+        PyObject_GetAttrString(tbModule, "format_exception") : nullptr;
+
+    PyObject *exception = nullptr;
+    if (formatException) {
+        exception = PyObject_CallFunctionObjArgs(
+            formatException,
+            _type,
+            _value ? _value : Py_None,
+            _trace ? _trace : Py_None,
+            nullptr);
+    }
+
+    PyObject *iter = exception ? PyObject_GetIter(exception) : nullptr;
+    if (iter) {
+        PyObject *item = nullptr;
+        while ((item = PyIter_Next(iter))) {
+            const char *itemStr = PyUnicode_AsUTF8(item);
+            if (itemStr) {
+                s += itemStr;
+            }
+            Py_DecRef(item);
+            if (!itemStr) {
+                PyErr_Clear();
+                break;
+            }
+        }
+        Py_DecRef(iter);
+    }
+
+    XDecRef(exception);
+    XDecRef(formatException);
+    XDecRef(tbModule);
+
+    PyErr_Clear();
+    PyErr_Restore(savedType, savedValue, savedTrace);
+
     return s;
 }
 

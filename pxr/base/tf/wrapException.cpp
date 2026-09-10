@@ -69,7 +69,13 @@ static void Translate(TfBaseException const &exc)
     std::exception_ptr cppExc = std::current_exception();
     if (TF_VERIFY(cppExc)) {
         TfPyExceptionStateScope pyExcState;
-        pxr_boost::python::object pyErr(pyExcState.Get().GetValue());
+        PyObject *pyErrValue = pyExcState.Get().GetValue();
+        if (!TF_VERIFY(pyErrValue)) {
+            return;
+        }
+        pxr_boost::python::object pyErr(
+            pxr_boost::python::handle<>(
+                pxr_boost::python::borrowed(pyErrValue)));
         uintptr_t cppExcAddr;
         std::unique_ptr<std::exception_ptr>
             cppExecPtrPtr(new std::exception_ptr(cppExc));

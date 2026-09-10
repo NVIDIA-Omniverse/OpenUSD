@@ -83,10 +83,10 @@ TfPyConvertPythonExceptionToTfErrors()
  
     // Replace the errors in m with errors parsed out of the exception.
     if (exc.GetType()) {
-        if (exc.GetType().get() == Tf_PyGetErrorExceptionClass().get() &&
+        if (exc.GetType() == Tf_PyGetErrorExceptionClass().get() &&
             exc.GetValue()) {
             // Replace the errors in m with errors pulled out of exc.
-            object exception = object(exc.GetValue());
+            object exception = object(handle<>(borrowed(exc.GetValue())));
             object args = exception.attr("args");
             extract<vector<TfError> > extractor(args);
             if (extractor.check()) {
@@ -99,7 +99,7 @@ TfPyConvertPythonExceptionToTfErrors()
         }
     }
     else if (exc.GetValue()) {
-        object exception(exc.GetValue());
+        object exception(handle<>(borrowed(exc.GetValue())));
         if (PyObject_HasAttrString(exception.ptr(), "_pxr_SavedTfException")) {
             extract<uintptr_t>
                 extractor(exception.attr("_pxr_SavedTfException"));
