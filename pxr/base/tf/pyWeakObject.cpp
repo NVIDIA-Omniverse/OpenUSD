@@ -8,9 +8,6 @@
 
 #include "pxr/base/tf/pyWeakObject.h"
 #include "pxr/base/tf/instantiateSingleton.h"
-#include "pxr/base/tf/pyUtils.h"
-
-#include "pxr/external/boost/python/class.hpp"
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -59,89 +56,119 @@ Tf_PyWeakObjectRegistry::Remove(PyObject *obj)
     _weakObjects.erase(obj);
 }
 
-// A deleter instance is passed to PyWeakref_NewRef as the callback object
-// so that when the python object we have the weak ref to dies, we can
-// delete the corresponding weak object.
-struct Tf_PyWeakObjectDeleter {
-    static int WrapIfNecessary();
-    explicit Tf_PyWeakObjectDeleter(Tf_PyWeakObjectPtr const &self);
-    void Deleted(PyObject * /* weakRef */);
-private:
-    Tf_PyWeakObjectPtr _self;
-};
+namespace {
 
-int
-Tf_PyWeakObjectDeleter::WrapIfNecessary()
-{
-    if (TfPyIsNone(TfPyGetClassObject<Tf_PyWeakObjectDeleter>())) {
-        pxr_boost::python::class_<Tf_PyWeakObjectDeleter>
-            ("Tf_PyWeakObject__Deleter", pxr_boost::python::no_init)
-            .def("__call__", &Tf_PyWeakObjectDeleter::Deleted);
-    }
-    return 1;
-}
-
-Tf_PyWeakObjectDeleter::Tf_PyWeakObjectDeleter(Tf_PyWeakObjectPtr const &self)
-    : _self(self)
-{
-    static int ensureWrapped = WrapIfNecessary();
-    (void)ensureWrapped;
-}
+char const *_WeakObjectPtrCapsuleName = "pxr.Tf._PyWeakObjectPtr";
 
 void
-Tf_PyWeakObjectDeleter::Deleted(PyObject * /* weakRef */)
+_DeleteWeakObjectPtrCapsule(PyObject *capsule)
 {
-    _self->Delete();
+    void *ptr = PyCapsule_GetPointer(capsule, _WeakObjectPtrCapsuleName);
+    if (!ptr) {
+        PyErr_Clear();
+        return;
+    }
+    delete static_cast<Tf_PyWeakObjectPtr *>(ptr);
 }
 
+PyObject *
+_WeakObjectDeleted(PyObject *self, PyObject * /* weakRef */)
+{
+    void *ptr = PyCapsule_GetPointer(self, _WeakObjectPtrCapsuleName);
+    if (!ptr) {
+        return nullptr;
+    }
+
+    Tf_PyWeakObjectPtr const &weakObj =
+        *static_cast<Tf_PyWeakObjectPtr *>(ptr);
+    if (weakObj) {
+        weakObj->Delete();
+    }
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+PyObject *
+_CreateWeakObjectDeletedCallback(Tf_PyWeakObjectPtr const &self)
+{
+    static PyMethodDef methodDef = {
+        "_Tf_PyWeakObjectDeleted",
+        _WeakObjectDeleted,
+        METH_O,
+        nullptr
+    };
+
+    Tf_PyWeakObjectPtr *ptr = new Tf_PyWeakObjectPtr(self);
+    PyObject *capsule = PyCapsule_New(
+        ptr, _WeakObjectPtrCapsuleName, _DeleteWeakObjectPtrCapsule);
+    if (!capsule) {
+        delete ptr;
+        return nullptr;
+    }
+
+    PyObject *callback = PyCFunction_NewEx(&methodDef, capsule, nullptr);
+    Py_DECREF(capsule);
+    return callback;
+}
+
+} // anonymous namespace
+
 Tf_PyWeakObjectPtr
-Tf_PyWeakObject::GetOrCreate(pxr_boost::python::object const &obj)
+Tf_PyWeakObject::GetOrCreate(PyObject *obj)
 {
     // If it's in the registry, return it.
     if (Tf_PyWeakObjectPtr p =
-        Tf_PyWeakObjectRegistry::GetInstance().Lookup(obj.ptr()))
+        Tf_PyWeakObjectRegistry::GetInstance().Lookup(obj))
         return p;
-    // Otherwise, make sure we can create a python weak reference to the
-    // object.
-    if (PyObject *weakRef = PyWeakref_NewRef(obj.ptr(), NULL)) {
-        Py_DECREF(weakRef);
-        return TfCreateWeakPtr(new Tf_PyWeakObject(obj));
+
+    Tf_PyWeakObject *weakObj = new Tf_PyWeakObject(obj);
+    Tf_PyWeakObjectPtr self(weakObj);
+
+    PyObject *callback = _CreateWeakObjectDeletedCallback(self);
+    if (callback) {
+        weakObj->_weakRef = PyWeakref_NewRef(obj, callback);
+        Py_DECREF(callback);
     }
-    // Cannot create a weak reference to obj -- return a null pointer.
-    PyErr_Clear();
-    return Tf_PyWeakObjectPtr();
+
+    if (!weakObj->_weakRef) {
+        PyErr_Clear();
+        delete weakObj;
+        return Tf_PyWeakObjectPtr();
+    }
+
+    // Set our python identity, but release it immediately, since we are a weak
+    // reference and will expire as soon as the python object does.
+    Tf_PyReleasePythonIdentity(self, weakObj->GetObjectPtr());
+
+    // Install us in the registry.
+    Tf_PyWeakObjectRegistry::GetInstance().Insert(obj, self);
+
+    return self;
 }
 
-
-pxr_boost::python::object
-Tf_PyWeakObject::GetObject() const
+PyObject *
+Tf_PyWeakObject::GetObjectPtr() const
 {
-    return pxr_boost::python::object
-        (pxr_boost::python::handle<>
-         (pxr_boost::python::borrowed(PyWeakref_GetObject(_weakRef.get()))));
+    return _weakRef ? PyWeakref_GetObject(_weakRef) : nullptr;
 }
 
 void
 Tf_PyWeakObject::Delete()
 {
-    Tf_PyWeakObjectRegistry::GetInstance().Remove(GetObject().ptr());
+    Tf_PyWeakObjectRegistry::GetInstance().Remove(_objectKey);
     delete this;
 }
     
-Tf_PyWeakObject::Tf_PyWeakObject(pxr_boost::python::object const &obj)
-    : _weakRef(
-        PyWeakref_NewRef(
-            obj.ptr(), pxr_boost::python::
-            object(Tf_PyWeakObjectDeleter(TfCreateWeakPtr(this))).ptr()))
+Tf_PyWeakObject::Tf_PyWeakObject(PyObject *obj)
+    : _objectKey(obj)
+    , _weakRef(nullptr)
 {
-    Tf_PyWeakObjectPtr self(this);
-    
-    // Set our python identity, but release it immediately, since we are a weak
-    // reference and will expire as soon as the python object does.
-    Tf_PyReleasePythonIdentity(self, GetObject().ptr());
-    
-    // Install us in the registry.
-    Tf_PyWeakObjectRegistry::GetInstance().Insert(GetObject().ptr(), self);
+}
+
+Tf_PyWeakObject::~Tf_PyWeakObject()
+{
+    Py_XDECREF(_weakRef);
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE
