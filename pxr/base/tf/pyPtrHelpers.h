@@ -13,6 +13,7 @@
 #include "pxr/pxr.h"
 
 #include "pxr/base/tf/pyIdentity.h"
+#include "pxr/base/tf/pyMakePyPtr.h"
 #include "pxr/base/tf/pyObjectFinder.h"
 #include "pxr/base/tf/wrapTypeHelpers.h"
 
@@ -68,26 +69,7 @@ struct TfMakePyPtr {
     static Result ExecuteWithFactory(
         Ptr const& p, ObjectFactory const& objectFactory)
     {
-        // null pointers -> python None.
-        if (!p.GetUniqueIdentifier()) {
-            Py_INCREF(Py_None);
-            return Result(Py_None, false);
-        }
-
-        // Force instantiation.  We must do this before checking if we
-        // have a python identity, otherwise the identity might be set
-        // during instantiation and our caller will attempt to set it
-        // again, which isn't allowed.
-        get_pointer(p);
-
-        if (PyObject *id = Tf_PyGetPythonIdentity(p))
-            return Result(id, false);
-
-        // Just make a new python object holding this pointer.
-        PyObject *res = objectFactory(p);
-        // If we got back Py_None, no new object was made, so make sure
-        // to pass back false in result.
-        return Result(res, res != Py_None);
+        return Tf_MakePyPtrWithFactory(p, objectFactory);
     }
 
     // Return an existing PyObject for the pointer paired with false or

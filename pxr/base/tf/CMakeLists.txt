@@ -252,6 +252,7 @@ pxr_library(tf
 
     PYTHON_PUBLIC_HEADERS
         py3Compat.h
+        pyMakePyPtr.h
         pySafePython.h
         pySignatureExt.h
         pyStaticTokens.h
