@@ -94,10 +94,10 @@ struct TfType::_TypeInfo {
     size_t sizeofType;
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
-    // Python class handle.
-    // We use handle<> rather than pxr_boost::python::object in case Python
-    // has not yet been initialized.
-    pxr_boost::python::handle<> pyClass;
+    // Python class object.
+    // We store the raw PyObject* rather than a pxr_boost::python object so
+    // this representation is independent of the active binding layer.
+    PyObject *pyClass;
 #endif // PXR_PYTHON_SUPPORT_ENABLED
 
     // Direct base types.
@@ -136,7 +136,7 @@ struct TfType::_TypeInfo {
     // Python class object.
     inline bool IsDefined() {
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
-        return typeInfo.load() != nullptr || pyClass.get();
+        return typeInfo.load() != nullptr || pyClass;
 #else
         return typeInfo.load() != nullptr;
 #endif // PXR_PYTHON_SUPPORT_ENABLED
@@ -184,19 +184,11 @@ struct TfType::_TypeInfo {
         isEnumType(false),
         hasSentNotice(false)
     {
-    }
-};
-
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
-// Comparison for pxr_boost::python::handle.
-struct Tf_PyHandleLess
-{
-    bool operator()(const pxr_boost::python::handle<> &lhs,
-                    const pxr_boost::python::handle<> &rhs) const {
-        return lhs.get() < rhs.get();
+        pyClass = nullptr;
+#endif // PXR_PYTHON_SUPPORT_ENABLED
     }
 };
-#endif // PXR_PYTHON_SUPPORT_ENABLED
 
 // Registry for _TypeInfos.
 //
@@ -272,14 +264,12 @@ public:
     }
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
-    void SetPythonClass(TfType::_TypeInfo *info,
-                        const pxr_boost::python::object & classObj) {
-        // Hold a reference to this PyObject in our map.
-        pxr_boost::python::handle<> handle(
-            pxr_boost::python::borrowed(classObj.ptr()));
+    void SetPythonClass(TfType::_TypeInfo *info, PyObject *classObj) {
+        // Hold a reference to this PyObject in our registry.
+        Py_INCREF(classObj);
 
-        info->pyClass = handle;
-        _pyClassMap[handle] = info;
+        info->pyClass = classObj;
+        _pyClassMap[classObj] = info;
 
         // Do not overwrite the size of a C++ type.
         if (!info->sizeofType) {
@@ -306,10 +296,8 @@ public:
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
     TfType::_TypeInfo *
-    FindByPythonClass(const pxr_boost::python::object &classObj) const {
-        pxr_boost::python::handle<> handle(
-            pxr_boost::python::borrowed(classObj.ptr()));
-        auto it = _pyClassMap.find(handle);
+    FindByPythonClass(PyObject *classObj) const {
+        auto it = _pyClassMap.find(classObj);
         return it != _pyClassMap.end() ? it->second : nullptr;
     }
 #endif // PXR_PYTHON_SUPPORT_ENABLED
@@ -329,9 +317,8 @@ private:
     TfTypeInfoMap<TfType::_TypeInfo*> _typeInfoMap;
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
-    // Map of python class handles to _TypeInfo*.
-    typedef map<pxr_boost::python::handle<>,
-                TfType::_TypeInfo *, Tf_PyHandleLess> PyClassMap;
+    // Map of python class objects to _TypeInfo*.
+    typedef map<PyObject *, TfType::_TypeInfo *> PyClassMap;
     PyClassMap _pyClassMap;
 #endif // PXR_PYTHON_SUPPORT_ENABLED
 
@@ -510,7 +497,7 @@ TfType::FindByPythonClass(const TfPyObjWrapper & classObj)
     const auto &r = Tf_TypeRegistry::GetInstance();
 
     ScopedLock readLock(r.GetMutex(), /*write=*/false);
-    TfType::_TypeInfo *info = r.FindByPythonClass(classObj.Get());
+    TfType::_TypeInfo *info = r.FindByPythonClass(classObj.ptr());
 
     return info ? info->canonicalTfType : GetUnknownType();
 }
@@ -538,8 +525,8 @@ TfType::GetPythonClass() const
 
     ScopedLock lock(GetRegistryMutex(), /*write=*/false);
     
-    if (_info->pyClass.get()) {
-        return TfPyObjWrapper(pxr_boost::python::object(_info->pyClass));
+    if (_info->pyClass) {
+        return TfPyObjWrapper(_info->pyClass, TfPyBorrowedReference);
     }
     return TfPyObjWrapper();
 }
@@ -894,13 +881,13 @@ TfType::DefinePythonClass(const TfPyObjWrapper & classObj) const
     }
     auto &r = Tf_TypeRegistry::GetInstance();
     ScopedLock regLock(r.GetMutex(), /*write=*/true);
-    if (!TfPyIsNone(_info->pyClass)) {
+    if (_info->pyClass) {
         regLock.Release();
         TF_CODING_ERROR("TfType '%s' already has a defined Python type; "
                         "cannot redefine", GetTypeName().c_str());
         return;
     }
-    r.SetPythonClass(_info, classObj.Get());
+    r.SetPythonClass(_info, classObj.ptr());
 }
 #endif // PXR_PYTHON_SUPPORT_ENABLED
 
