@@ -18,6 +18,7 @@
 #include "pxr/base/tf/pyError.h"
 #include "pxr/base/tf/pyModuleNotice.h"
 #include "pxr/base/tf/pyTracing.h"
+#include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/pyWrapContext.h"
 #include "pxr/base/tf/scriptModuleLoader.h"
 #include "pxr/base/tf/stopwatch.h"

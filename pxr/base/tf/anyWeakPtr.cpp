@@ -141,11 +141,14 @@ TfAnyWeakPtr::GetType() const
 }
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
-pxr_boost::python::api::object
-TfAnyWeakPtr::_GetPythonObject() const
+PyObject *
+TfAnyWeakPtr::_GetPythonObjectPtr() const
 {
     TfPyLock pyLock;
-    return _Get()->GetPythonObject().Get();
+    TfPyObjWrapper obj = _Get()->GetPythonObject();
+    PyObject *ret = obj.ptr();
+    Py_INCREF(ret);
+    return ret;
 }
 #endif // PXR_PYTHON_SUPPORT_ENABLED
 

@@ -18,7 +18,12 @@
 #include "pxr/base/tf/weakPtr.h"
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyMakePyPtr.h"
+#ifndef Py_LIMITED_API
+#include "pxr/external/boost/python/object/make_ptr_instance.hpp"
+#include "pxr/external/boost/python/object/pointer_holder.hpp"
+#include "pxr/external/boost/python/object_fwd.hpp"
+#endif
 #endif // PXR_PYTHON_SUPPORT_ENABLED
 
 #include "pxr/base/tf/pyObjWrapper.h"
@@ -136,6 +141,7 @@ public:
 
   private:
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
+#ifndef Py_LIMITED_API
     // This grants friend access to a function in the wrapper file for this
     // class.  This lets the wrapper reach down into an AnyWeakPtr to get a
     // pxr_boost::python wrapped object corresponding to the held type.  This
@@ -145,6 +151,10 @@ public:
 
     TF_API
     pxr_boost::python::api::object _GetPythonObject() const;
+#endif // !Py_LIMITED_API
+
+    TF_API
+    PyObject *_GetPythonObjectPtr() const;
 #endif // PXR_PYTHON_SUPPORT_ENABLED
 
     template <class WeakPtr>
@@ -264,7 +274,40 @@ TfPyObjWrapper
 TfAnyWeakPtr::_PointerHolder<Ptr>::GetPythonObject() const
 {
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
-    return TfPyObject(_ptr);
+#ifndef Py_LIMITED_API
+    typedef typename Ptr::DataType Pointee;
+    typedef pxr_boost::python::objects::pointer_holder<Ptr, Pointee> Holder;
+    struct _BoostObjectFactory {
+        PyObject *operator()(Ptr const& ptr) const
+        {
+            return pxr_boost::python::objects::make_ptr_instance
+                <Pointee, Holder>::execute(ptr);
+        }
+    };
+#else
+    struct _UnavailableObjectFactory {
+        PyObject *operator()(Ptr const&) const
+        {
+            TF_CODING_ERROR(
+                "No Python object factory is available for TfAnyWeakPtr "
+                "under Py_LIMITED_API.");
+            Py_INCREF(Py_None);
+            return Py_None;
+        }
+    };
+#endif
+    std::pair<PyObject*, bool> ret =
+        Tf_MakePyPtrWithFactory(_ptr,
+#ifndef Py_LIMITED_API
+                                _BoostObjectFactory()
+#else
+                                _UnavailableObjectFactory()
+#endif
+        );
+    if (ret.second) {
+        Tf_PySetPythonIdentity(_ptr, ret.first);
+    }
+    return TfPyObjWrapper(ret.first, TfPyNewReference);
 #else
     return {};
 #endif // PXR_PYTHON_SUPPORT_ENABLED

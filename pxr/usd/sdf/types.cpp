@@ -24,6 +24,11 @@
 #include "pxr/base/ts/spline.h"
 #include "pxr/base/vt/valueComposeOver.h"
 
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+#include "pxr/external/boost/python/extract.hpp"
+#include "pxr/external/boost/python/handle.hpp"
+#endif // PXR_PYTHON_SUPPORT_ENABLED
+
 #include <array>
 #include <unordered_map>
 

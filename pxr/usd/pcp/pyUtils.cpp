@@ -8,6 +8,8 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/pcp/pyUtils.h"
 
+#include "pxr/external/boost/python/extract.hpp"
+
 using std::string;
 
 PXR_NAMESPACE_OPEN_SCOPE

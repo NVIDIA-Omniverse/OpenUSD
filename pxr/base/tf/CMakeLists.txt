@@ -10,7 +10,8 @@ endif()
 
 if(PXR_ENABLE_PYTHON_SUPPORT)
     set_property(
-        SOURCE pyError.cpp pyErrorImpl.cpp pyErrorInternal.cpp
+        SOURCE anyWeakPtr.cpp
+               pyError.cpp pyErrorImpl.cpp pyErrorInternal.cpp
                pyExceptionState.cpp pyIdentity.cpp pyLock.cpp pyObjectFinder.cpp
                pyObjWrapper.cpp pyWeakObject.cpp
                pyUtilsImpl.cpp singleton.cpp
@@ -272,6 +273,7 @@ pxr_library(tf
         pyUtilsImpl.h
 
     PYTHON_CPPFILES
+        anyWeakPtrBoost.cpp
         pyErrorBoost.cpp
         pyErrorImpl.cpp
         pyObjWrapperBoost.cpp
