@@ -44,33 +44,6 @@ TfPyIsNone(pxr_boost::python::handle<> const &obj)
     return !obj.get() || obj.get() == Py_None;
 }
 
-void Tf_PyLoadScriptModule(std::string const &moduleName)
-{
-    if (TfPyIsInitialized()) {
-        TfPyLock pyLock;
-        string tmp(moduleName);
-        PyObject *result =
-            PyImport_ImportModule(const_cast<char *>(tmp.c_str()));
-        if (!result) {
-            // CODE_COVERAGE_OFF
-            TF_WARN("Import failed for module '%s'!", moduleName.c_str());
-            TfPyPrintError();
-            // CODE_COVERAGE_ON
-        }
-    } else {
-        // CODE_COVERAGE_OFF
-        TF_WARN("Attempted to load module '%s' but Python is not initialized.",
-                moduleName.c_str());
-        // CODE_COVERAGE_ON
-    }
-}
-
-bool
-TfPyIsInitialized()
-{
-    return Py_IsInitialized();
-}
-
 pxr_boost::python::object
 TfPyEvaluate(std::string const &expr, dict const& extraGlobals)
 {
@@ -152,69 +125,6 @@ TfPyGetClassObject(std::type_info const &type) {
     TfPyLock pyLock;
     return pxr_boost::python::object
         (pxr_boost::python::objects::registered_class_object(type));
-}
-
-static object
-_GetOsEnviron()
-{
-    // In theory, we could just check that the os module has been imported,
-    // rather than forcing an import ourself.  However, it's possible that
-    // os.environ is actually a re-export from another module (ie. posix,
-    // which is the case as of CPython 2.6) that may have been imported
-    // without importing os.  Rather than check a hardcoded list of potential
-    // modules, we always import os if Python is initialized.  If this turns
-    // out to be problematic, we may want to consider the other approach.
-    pxr_boost::python::object
-        module(pxr_boost::python::handle<>(PyImport_ImportModule("os")));
-    pxr_boost::python::object environObj(module.attr("environ"));
-    return environObj;
-}
-
-bool
-TfPySetenv(const std::string & name, const std::string & value)
-{
-    if (!TfPyIsInitialized()) {
-        TF_CODING_ERROR("Python is uninitialized.");
-        return false;
-    }
-
-    TfPyLock lock;
-
-    try {
-        object environObj(_GetOsEnviron());
-        environObj[name] = value;
-        return true;
-    }
-    catch (pxr_boost::python::error_already_set&) {
-        PyErr_Clear();
-    }
-
-    return false;
-}
-
-bool
-TfPyUnsetenv(const std::string & name)
-{
-    if (!TfPyIsInitialized()) {
-        TF_CODING_ERROR("Python is uninitialized.");
-        return false;
-    }
-
-    TfPyLock lock;
-
-    try {
-        object environObj(_GetOsEnviron());
-        object has_key = environObj.attr("__contains__");
-        if (has_key(name)) {
-            environObj[name].del();
-        }
-        return true;
-    }
-    catch (pxr_boost::python::error_already_set&) {
-        PyErr_Clear();
-    }
-
-    return false;
 }
 
 bool Tf_PyEvaluateWithErrorCheck(
