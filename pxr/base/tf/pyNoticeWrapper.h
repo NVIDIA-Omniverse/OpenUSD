@@ -63,11 +63,10 @@ struct TfPyNoticeWrapperBase : public TfType::PyPolymorphicBase {
 template <class Notice>
 struct Tf_PyNoticeObjectFinder : public Tf_PyObjectFinderBase {
     virtual ~Tf_PyNoticeObjectFinder() {}
-    virtual pxr_boost::python::object Find(void const *objPtr) const {
-        using namespace pxr_boost::python;
+    virtual PyObject *Find(void const *objPtr) const {
         TfPyLock lock;
         Notice const *wrapper = static_cast<Notice const *>(objPtr);
-        return wrapper ? object(wrapper->GetNoticePythonObject()) : object();
+        return wrapper ? wrapper->GetNoticePythonObject().release() : nullptr;
     }
 };
 
