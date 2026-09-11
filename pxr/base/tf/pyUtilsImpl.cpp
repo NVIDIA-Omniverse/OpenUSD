@@ -11,10 +11,44 @@
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
 
+#include "pxr/base/tf/api.h"
 #include "pxr/base/tf/error.h"
+#include "pxr/base/tf/pyError.h"
+#include "pxr/base/tf/pyExceptionState.h"
 #include "pxr/base/tf/pyLock.h"
 
+#include <vector>
+
 PXR_NAMESPACE_OPEN_SCOPE
+
+namespace {
+
+void
+_ConvertCurrentPythonExceptionToTfErrors()
+{
+    if (PyErr_Occurred()) {
+        TfPyConvertPythonExceptionToTfErrors();
+    }
+}
+
+class _RestorePythonExceptionState
+{
+public:
+    _RestorePythonExceptionState()
+        : _state(TfPyExceptionState::Fetch())
+    {
+    }
+
+    ~_RestorePythonExceptionState()
+    {
+        _state.Restore();
+    }
+
+private:
+    TfPyExceptionState _state;
+};
+
+}
 
 std::string
 Tf_PyObjectRepr(PyObject *obj)
@@ -98,6 +132,98 @@ Tf_PyCopyBufferToByteArray(const char *buffer, size_t size)
 {
     TfPyLock lock;
     return PyByteArray_FromStringAndSize(buffer, size);
+}
+
+TF_API
+std::vector<std::string>
+TfPyGetTraceback()
+{
+    std::vector<std::string> result;
+
+    if (!Py_IsInitialized()) {
+        return result;
+    }
+
+    TfPyLock lock;
+    // Save the exception state so we can restore it -- getting a traceback
+    // should not affect the exception state.
+    _RestorePythonExceptionState restoreExceptionState;
+
+    PyObject *tbModule = PyImport_ImportModule("traceback");
+    if (!tbModule) {
+        _ConvertCurrentPythonExceptionToTfErrors();
+        return result;
+    }
+
+    PyObject *formatStack = PyObject_GetAttrString(tbModule, "format_stack");
+    Py_DECREF(tbModule);
+    if (!formatStack) {
+        _ConvertCurrentPythonExceptionToTfErrors();
+        return result;
+    }
+
+    PyObject *stack = PyObject_CallFunctionObjArgs(formatStack, nullptr);
+    Py_DECREF(formatStack);
+    if (!stack) {
+        _ConvertCurrentPythonExceptionToTfErrors();
+        return result;
+    }
+
+    Py_ssize_t size = PySequence_Size(stack);
+    if (size < 0) {
+        Py_DECREF(stack);
+        _ConvertCurrentPythonExceptionToTfErrors();
+        return result;
+    }
+
+    result.reserve(static_cast<size_t>(size));
+    for (Py_ssize_t i = 0; i != size; ++i) {
+        PyObject *item = PySequence_GetItem(stack, i);
+        if (!item) {
+            _ConvertCurrentPythonExceptionToTfErrors();
+            break;
+        }
+
+        if (const char *itemStr = PyUnicode_AsUTF8(item)) {
+            result.push_back(itemStr);
+        } else {
+            Py_DECREF(item);
+            _ConvertCurrentPythonExceptionToTfErrors();
+            break;
+        }
+        Py_DECREF(item);
+    }
+
+    Py_DECREF(stack);
+    return result;
+}
+
+TF_API
+void
+TfPyPrintError()
+{
+    if (!PyErr_ExceptionMatches(PyExc_KeyboardInterrupt)) {
+        PyErr_Print();
+    }
+}
+
+TF_API
+void
+Tf_PyObjectError(bool printError)
+{
+    // Silently pass these exceptions through.
+    if (PyErr_ExceptionMatches(PyExc_SystemExit) ||
+        PyErr_ExceptionMatches(PyExc_KeyboardInterrupt)) {
+        return;
+    }
+
+    // Report and clear.
+    if (printError) {
+        PyErr_Print();
+    }
+    else {
+        PyErr_Clear();
+    }
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

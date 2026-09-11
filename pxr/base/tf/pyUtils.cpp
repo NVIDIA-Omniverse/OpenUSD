@@ -25,10 +25,8 @@
 
 #include <mutex>
 #include <functional>
-#include <vector>
 
 using std::string;
-using std::vector;
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -156,32 +154,6 @@ TfPyGetClassObject(std::type_info const &type) {
         (pxr_boost::python::objects::registered_class_object(type));
 }
 
-vector<string> TfPyGetTraceback()
-{
-    vector<string> result;
-
-    if (!TfPyIsInitialized())
-        return result;
-
-    TfPyLock lock;
-    // Save the exception state so we can restore it -- getting a traceback
-    // should not affect the exception state.
-    TfPyExceptionStateScope exceptionStateScope;
-    try {
-        object tbModule(handle<>(PyImport_ImportModule("traceback")));
-        object stack = tbModule.attr("format_stack")();
-        size_t size = len(stack);
-        result.reserve(size);
-        for (size_t i = 0; i < size; ++i) {
-            string s = extract<string>(stack[i]);
-            result.push_back(s);
-        }
-    } catch (pxr_boost::python::error_already_set const &) {
-        TfPyConvertPythonExceptionToTfErrors();
-    }
-    return result;
-}
-
 static object
 _GetOsEnviron()
 {
@@ -251,32 +223,6 @@ bool Tf_PyEvaluateWithErrorCheck(
     TfErrorMark m;
     *obj = TfPyEvaluate(expr);
     return m.IsClean();
-}
-
-void
-TfPyPrintError()
-{
-    if (!PyErr_ExceptionMatches(PyExc_KeyboardInterrupt)) {
-        PyErr_Print();
-    }
-}
-
-void
-Tf_PyObjectError(bool printError)
-{
-    // Silently pass these exceptions through.
-    if (PyErr_ExceptionMatches(PyExc_SystemExit) ||
-        PyErr_ExceptionMatches(PyExc_KeyboardInterrupt)) {
-        return;
-    }
-
-    // Report and clear.
-    if (printError) {
-        PyErr_Print();
-    }
-    else {
-        PyErr_Clear();
-    }
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE
