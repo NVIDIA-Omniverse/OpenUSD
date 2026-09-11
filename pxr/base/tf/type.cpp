@@ -31,7 +31,7 @@
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/pyObjWrapper.h"
 #include "pxr/base/tf/pyObjectFinder.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsImpl.h"
 #endif // PXR_PYTHON_SUPPORT_ENABLED
 
 #include <atomic>
@@ -95,8 +95,8 @@ struct TfType::_TypeInfo {
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
     // Python class object.
-    // We store the raw PyObject* rather than a pxr_boost::python object so
-    // this representation is independent of the active binding layer.
+    // We store the raw PyObject* so this representation is independent of the
+    // active binding layer.
     PyObject *pyClass;
 #endif // PXR_PYTHON_SUPPORT_ENABLED
 
@@ -273,7 +273,7 @@ public:
 
         // Do not overwrite the size of a C++ type.
         if (!info->sizeofType) {
-            info->sizeofType = TfSizeofType<pxr_boost::python::object>::value;
+            info->sizeofType = TfSizeofType<TfPyObjWrapper>::value;
         }
     }
 #endif // PXR_PYTHON_SUPPORT_ENABLED

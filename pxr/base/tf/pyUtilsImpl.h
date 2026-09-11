@@ -11,11 +11,14 @@
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
 
+#include "pxr/base/tf/api.h"
 #include "pxr/base/tf/pySafePython.h"
 
 #include <string>
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+TF_API bool TfPyIsInitialized();
 
 std::string Tf_PyObjectRepr(PyObject *obj);
 std::string Tf_PyGetClassName(PyObject *obj);
