@@ -63,14 +63,16 @@ struct TfMakePyPtr {
     typedef pxr_boost::python::objects::pointer_holder<Ptr, Pointee> Holder;
     typedef std::pair<PyObject*, bool> Result;
 
-    // Return an existing PyObject for the pointer paired with false or
-    // create and return a new PyObject paired with true.  The PyObject
-    // ref count must have been incremented.
-    static Result Execute(Ptr const& p)
+    // ObjectFactory must return a new reference holding p.
+    template <typename ObjectFactory>
+    static Result ExecuteWithFactory(
+        Ptr const& p, ObjectFactory const& objectFactory)
     {
         // null pointers -> python None.
-        if (!p.GetUniqueIdentifier())
-            return Result(pxr_boost::python::detail::none(), false);
+        if (!p.GetUniqueIdentifier()) {
+            Py_INCREF(Py_None);
+            return Result(Py_None, false);
+        }
 
         // Force instantiation.  We must do this before checking if we
         // have a python identity, otherwise the identity might be set
@@ -82,12 +84,26 @@ struct TfMakePyPtr {
             return Result(id, false);
 
         // Just make a new python object holding this pointer.
-        // TODO: use existing to-python conversion?
-        PyObject *res = pxr_boost::python::objects::make_ptr_instance
-                            <Pointee, Holder>::execute(p);
+        PyObject *res = objectFactory(p);
         // If we got back Py_None, no new object was made, so make sure
         // to pass back false in result.
         return Result(res, res != Py_None);
+    }
+
+    // Return an existing PyObject for the pointer paired with false or
+    // create and return a new PyObject paired with true.  The PyObject
+    // ref count must have been incremented.
+    static Result Execute(Ptr const& p)
+    {
+        struct _BoostObjectFactory {
+            PyObject *operator()(Ptr const& ptr) const
+            {
+                // TODO: use existing to-python conversion?
+                return pxr_boost::python::objects::make_ptr_instance
+                    <Pointee, Holder>::execute(ptr);
+            }
+        };
+        return ExecuteWithFactory(p, _BoostObjectFactory());
     }
 };
 
