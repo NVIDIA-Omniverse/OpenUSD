@@ -265,6 +265,17 @@ pxr_library(tf
         pyCallContext
         pyErrorInternal
 
+    PYTHON_PRIVATE_HEADERS
+        pyErrorImpl.h
+        pyUtilsImpl.h
+
+    PYTHON_CPPFILES
+        pyErrorBoost.cpp
+        pyErrorImpl.cpp
+        pyObjWrapperBoost.cpp
+        pyUtilsBoost.cpp
+        pyUtilsImpl.cpp
+
     PRIVATE_HEADERS
         scopeDescriptionPrivate.h
         pxrDoubleConversion/ieee.h
@@ -280,9 +291,7 @@ pxr_library(tf
         pxrDoubleConversion/string-to-double.h
         pxrDoubleConversion/strtod.h
         pxrLZ4/lz4.h
-        pyErrorImpl.h
         pyLockImpl.h
-        pyUtilsImpl.h
         pyWeakObject.h
 
     CPPFILES
@@ -296,11 +305,6 @@ pxr_library(tf
         pxrDoubleConversion/string-to-double.cc
         pxrDoubleConversion/strtod.cc
         pxrLZ4/lz4.cpp
-        pyErrorBoost.cpp
-        pyErrorImpl.cpp
-        pyObjWrapperBoost.cpp
-        pyUtilsBoost.cpp
-        pyUtilsImpl.cpp
 
     PYMODULE_CPPFILES
         module.cpp
