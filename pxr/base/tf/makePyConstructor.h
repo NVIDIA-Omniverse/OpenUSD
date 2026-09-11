@@ -173,8 +173,12 @@ typedef bp::object object;
 
 template <typename T>
 struct InstallPolicy {
+    static void PostInstall(PyObject *self, T const &t,
+                            const void *uniqueId) {}
     static void PostInstall(object const &self, T const &t,
-                            const void *) {}
+                            const void *uniqueId) {
+        PostInstall(self.ptr(), t, uniqueId);
+    }
 };
 
 // Specialize install policy for refptrs.
@@ -182,12 +186,53 @@ template <typename T>
 struct InstallPolicy<TfRefPtr<T> > {
     static_assert(Tf_SupportsUniqueChanged<T>::Value,
                   "Type T must support refcount unique changed notification.");
-    static void PostInstall(object const &self, TfRefPtr<T> const &ptr,
+    static void PostInstall(PyObject *self, TfRefPtr<T> const &ptr,
                             const void *uniqueId) {
         // Stash a self-reference ref ptr into the python object that will
         // keep the object alive.  Need to get a ref ptr to the held type,
         // since that's what's wrapped.
-        Tf_PyAddPythonOwnership(ptr, uniqueId, self.ptr());
+        Tf_PyAddPythonOwnership(ptr, uniqueId, self);
+    }
+    static void PostInstall(object const &self, TfRefPtr<T> const &ptr,
+                            const void *uniqueId) {
+        PostInstall(self.ptr(), ptr, uniqueId);
+    }
+};
+
+template <typename WeakPtr, typename Ptr>
+PyObject *
+AdoptRefPtrFactoryResult(PyObject *self, Ptr const &p, WeakPtr const &weakPtr)
+{
+    if (!self) {
+        return nullptr;
+    }
+    InstallPolicy<Ptr>::PostInstall(self, p, weakPtr.GetUniqueIdentifier());
+    return self;
+}
+
+template <typename WeakPtr, typename Ptr, typename MakeObject>
+PyObject *
+ConvertRefPtrFactoryResult(Ptr const &p, MakeObject const &makeObject)
+{
+    WeakPtr ptr(static_cast<typename WeakPtr::DataType *>(get_pointer(p)));
+
+    // If resulting pointer is null, return None.
+    if (!ptr) {
+        Py_INCREF(Py_None);
+        return Py_None;
+    }
+
+    PyObject *result = makeObject(ptr);
+    return AdoptRefPtrFactoryResult(result, p, ptr);
+}
+
+struct BoostWeakPtrObjectFactory
+{
+    template <typename WeakPtr>
+    PyObject *operator()(WeakPtr const &ptr) const {
+        object result(ptr);
+        Py_INCREF(result.ptr());
+        return result.ptr();
     }
 };
 
@@ -241,19 +286,9 @@ struct _RefPtrFactoryConverter {
         return true;
     }
     PyObject *operator()(Ptr const &p) const {
-        typedef InstallPolicy<Ptr> Policy;
-        WeakPtr ptr(static_cast<typename WeakPtr::DataType *>
-                    (get_pointer(p)));
-
-        // If resulting pointer is null, return None.
-        if (!ptr)
-            return bp::incref(Py_None);
-
-        // The to-python converter will set identity here.
-        object result(ptr);
-
-        Policy::PostInstall(result, p, ptr.GetUniqueIdentifier());
-        return bp::incref(result.ptr());
+        // The to-python converter will set identity while creating the object.
+        return ConvertRefPtrFactoryResult<WeakPtr>(
+            p, BoostWeakPtrObjectFactory());
     }
     // Required for boost.python signature generator, in play when
     // BOOST_PYTHON_NO_PY_SIGNATURES is undefined.
