@@ -61,6 +61,45 @@ Tf_PyObjectRepr(PyObject *obj)
     return reprString;
 }
 
+std::string
+Tf_PyGetClassName(PyObject *obj)
+{
+    TfPyLock pyLock;
+
+    if (obj) {
+        PyObject *classObject = PyObject_GetAttrString(obj, "__class__");
+        if (classObject) {
+            PyObject *typeNameObject =
+                PyObject_GetAttrString(classObject, "__name__");
+            Py_DECREF(classObject);
+
+            if (typeNameObject) {
+                if (const char *typeName = PyUnicode_AsUTF8(typeNameObject)) {
+                    std::string result(typeName);
+                    Py_DECREF(typeNameObject);
+                    return result;
+                }
+                Py_DECREF(typeNameObject);
+            }
+        }
+    }
+
+    PyErr_Clear();
+
+    // CODE_COVERAGE_OFF This shouldn't really happen.
+    TF_WARN("Couldn't get class name for python object '%s'",
+            Tf_PyObjectRepr(obj).c_str());
+    return "<unknown>";
+    // CODE_COVERAGE_ON
+}
+
+PyObject *
+Tf_PyCopyBufferToByteArray(const char *buffer, size_t size)
+{
+    TfPyLock lock;
+    return PyByteArray_FromStringAndSize(buffer, size);
+}
+
 PXR_NAMESPACE_CLOSE_SCOPE
 
 #endif // PXR_PYTHON_SUPPORT_ENABLED

@@ -18,6 +18,8 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 std::string Tf_PyObjectRepr(PyObject *obj);
+std::string Tf_PyGetClassName(PyObject *obj);
+PyObject *Tf_PyCopyBufferToByteArray(const char *buffer, size_t size);
 
 PXR_NAMESPACE_CLOSE_SCOPE
 

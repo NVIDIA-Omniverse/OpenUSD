@@ -156,48 +156,6 @@ TfPyGetClassObject(std::type_info const &type) {
         (pxr_boost::python::objects::registered_class_object(type));
 }
 
-string TfPyGetClassName(object const &obj)
-{
-    // Take the interpreter lock as we're about to call back to Python.
-    TfPyLock pyLock;
-
-    object classObject(obj.attr("__class__"));
-    if (classObject) {
-        object typeNameObject(classObject.attr("__name__"));
-        extract<string> typeName(typeNameObject);
-        if (typeName.check())
-            return typeName();
-    }
-
-    // CODE_COVERAGE_OFF This shouldn't really happen.
-    TF_WARN("Couldn't get class name for python object '%s'",
-            TfPyRepr(obj).c_str());
-    return "<unknown>";
-    // CODE_COVERAGE_ON
-}
-
-pxr_boost::python::object
-TfPyCopyBufferToByteArray(const char* buffer, size_t size)
-{
-    TfPyLock lock;
-    pxr_boost::python::object result;
-
-    try {
-        // boost python doesn't include a bytearray object, but we can return
-        // one through the C api directly. The c api takes an array of char
-        // and a size, so uses the name FromString, but this is really just
-        // a buffer.
-        PyObject* buf = PyByteArray_FromStringAndSize(buffer, size);
-        pxr_boost::python::handle<> hbuf(buf);
-        result = pxr_boost::python::object(hbuf); 
-    } catch (pxr_boost::python::error_already_set const &) {
-        TfPyConvertPythonExceptionToTfErrors();
-        PyErr_Clear();
-    }
-
-    return result;
-}
-
 vector<string> TfPyGetTraceback()
 {
     vector<string> result;
