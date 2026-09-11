@@ -701,16 +701,22 @@ TfType::GetAllAncestorTypes(vector<TfType> *result) const
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
 TfType const &
 TfType::_FindImplPyPolymorphic(PyPolymorphicBase const *ptr) {
-    using namespace pxr_boost::python;
     TfType ret;
     if (TfPyIsInitialized()) {
         TfPyLock lock;
         // See if we can find a polymorphic python object...
-        object pyObj = Tf_FindPythonObject(
+        PyObject *pyObj = Tf_PyFindPythonObject(
             TfCastToMostDerivedType(ptr), typeid(*ptr));
-        if (!TfPyIsNone(pyObj))
-            ret = FindByPythonClass(
-                TfPyObjWrapper(pyObj.attr("__class__")));
+        if (pyObj) {
+            PyObject *pyClass = PyObject_GetAttrString(pyObj, "__class__");
+            Py_DECREF(pyObj);
+            if (pyClass) {
+                ret = FindByPythonClass(
+                    TfPyObjWrapper(pyClass, TfPyNewReference));
+            } else {
+                PyErr_Clear();
+            }
+        }
     }
     return !ret.IsUnknown() ? ret.GetCanonicalType() : Find(typeid(*ptr));
 }
