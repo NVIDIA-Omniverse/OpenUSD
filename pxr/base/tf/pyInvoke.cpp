@@ -9,10 +9,7 @@
 
 #include "pxr/base/tf/pyInvoke.h"
 
-#include "pxr/base/tf/diagnostic.h"
-#include "pxr/base/tf/errorMark.h"
-#include "pxr/base/tf/pyInterpreter.h"
-#include "pxr/base/tf/stringUtils.h"
+#include "pxr/base/tf/pyInvokeImpl.h"
 
 #include "pxr/external/boost/python.hpp"
 
@@ -48,45 +45,14 @@ bool Tf_PyInvokeImpl(
     const pxr_boost::python::dict &kwArgs,
     pxr_boost::python::object *resultObjOut)
 {
-    static const char* const listVarName = "_Tf_invokeList_";
-    static const char* const dictVarName = "_Tf_invokeDict_";
-    static const char* const resultVarName = "_Tf_invokeResult_";
-
-    // Build globals dict, containing builtins and args.
-    // No need for TfScriptModuleLoader; our python code performs import.
-    pxr_boost::python::dict globals;
-    pxr_boost::python::handle<> modHandle(
-        PyImport_ImportModule("builtins"));
-    globals["__builtins__"] = pxr_boost::python::object(modHandle);
-    globals[listVarName] = posArgs;
-    globals[dictVarName] = kwArgs;
-
-    // Build python code for interpreter.
-    // Import, look up callable, perform call, store result.
-    const std::string pyStr = TfStringPrintf(
-        "import %s\n"
-        "%s = %s.%s(*%s, **%s)\n",
-        moduleName.c_str(),
-        resultVarName,
-        moduleName.c_str(),
-        callableExpr.c_str(),
-        listVarName,
-        dictVarName);
-
-    TfErrorMark errorMark;
-
-    // Execute code.
-    TfPyRunString(pyStr, Py_file_input, globals);
-
-    // Bail if python code raised any TfErrors.
-    if (!errorMark.IsClean())
+    PyObject *result = nullptr;
+    if (!Tf_PyInvokeImpl(
+            moduleName, callableExpr, posArgs.ptr(), kwArgs.ptr(), &result)) {
         return false;
+    }
 
-    // Look up result.  If we got this far, it should be there.
-    if (!TF_VERIFY(globals.has_key(resultVarName)))
-        return false;
-    *resultObjOut = globals.get(resultVarName);
-
+    *resultObjOut = pxr_boost::python::object(
+        pxr_boost::python::handle<>(result));
     return true;
 }
 
