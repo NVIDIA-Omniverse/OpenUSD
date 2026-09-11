@@ -11,7 +11,7 @@ endif()
 if(PXR_ENABLE_PYTHON_SUPPORT)
     set_property(
         SOURCE pyError.cpp pyErrorImpl.cpp pyErrorInternal.cpp
-               pyExceptionState.cpp pyLock.cpp pyObjWrapper.cpp
+               pyExceptionState.cpp pyIdentity.cpp pyLock.cpp pyObjWrapper.cpp
                pyUtilsImpl.cpp singleton.cpp
         APPEND PROPERTY COMPILE_DEFINITIONS Py_LIMITED_API=0x030A0000)
 endif()

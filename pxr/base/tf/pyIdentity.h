@@ -11,7 +11,6 @@
 
 #include "pxr/base/tf/api.h"
 #include "pxr/base/tf/pyLock.h"
-#include "pxr/base/tf/pyUtils.h"
 
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/tf/diagnostic.h"
@@ -20,9 +19,11 @@
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/base/tf/weakPtr.h"
 
-#include "pxr/external/boost/python/handle.hpp"
+#include "pxr/external/boost/python/pointee.hpp"
 
 #include "pxr/base/tf/hashmap.h"
+
+#include <type_traits>
 
 // Specializations for pxr_boost::python::pointee and get_pointer for TfRefPtr and
 // TfWeakPtr.
@@ -125,15 +126,24 @@ struct Tf_PyOwnershipHelper<Ptr,
         // Create a capsule to hold on to a heap-allocated instance of
         // Ptr. We'll set this as an attribute on the Python object so
         // it keeps the C++ object alive.
-        pxr_boost::python::handle<> capsule(
-            PyCapsule_New(
-                new Ptr(ptr), "refptr",
-                +[](PyObject* capsule) {
-                    void* heldPtr = PyCapsule_GetPointer(capsule, "refptr");
-                    delete static_cast<Ptr*>(heldPtr);
-                }));
+        Ptr *heldPtr = new Ptr(ptr);
+        PyObject *capsule = PyCapsule_New(
+            heldPtr, "refptr",
+            +[](PyObject* capsule) {
+                void* heldPtr = PyCapsule_GetPointer(capsule, "refptr");
+                delete static_cast<Ptr*>(heldPtr);
+            });
+        if (!capsule) {
+            // CODE_COVERAGE_OFF
+            delete heldPtr;
+            TF_WARN("Could not create __owner capsule for python object!");
+            PyErr_Clear();
+            return;
+            // CODE_COVERAGE_ON
+        }
 
-        int ret = PyObject_SetAttrString(self, "__owner", capsule.get());
+        int ret = PyObject_SetAttrString(self, "__owner", capsule);
+        Py_DECREF(capsule);
         if (ret == -1) {
             // CODE_COVERAGE_OFF
             TF_WARN("Could not set __owner attribute on python object!");

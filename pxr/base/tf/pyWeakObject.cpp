@@ -8,6 +8,7 @@
 
 #include "pxr/base/tf/pyWeakObject.h"
 #include "pxr/base/tf/instantiateSingleton.h"
+#include "pxr/base/tf/pyUtils.h"
 
 #include "pxr/external/boost/python/class.hpp"
 

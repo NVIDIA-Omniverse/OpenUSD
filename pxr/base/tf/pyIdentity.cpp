@@ -161,16 +161,22 @@ static void _WeakBaseDied(void const *key) {
 };
 
 static std::string _GetTypeName(PyObject *obj) {
-    using namespace pxr_boost::python;
     TfPyLock lock;
-    handle<> typeHandle( borrowed<>( PyObject_Type(obj) ) );
-    if (typeHandle) {
-        object classObj(typeHandle);
-        object nameObj(classObj.attr("__name__"));
-        extract<string> name(nameObj);
-        if (name.check())
-            return name();
+
+    PyObject *typeObj = PyObject_Type(obj);
+    if (typeObj) {
+        PyObject *nameObj = PyObject_GetAttrString(typeObj, "__name__");
+        Py_DECREF(typeObj);
+        if (nameObj) {
+            if (const char *name = PyUnicode_AsUTF8(nameObj)) {
+                std::string result(name);
+                Py_DECREF(nameObj);
+                return result;
+            }
+            Py_DECREF(nameObj);
+        }
     }
+    PyErr_Clear();
     return "unknown";
 }
 
@@ -274,8 +280,9 @@ PyObject *Tf_PyIdentityHelper::Get(void const *key) {
         return 0;
     }
 
-    // use pxr_boost::python::xincref here, because it returns the increfed ptr.
-    return pxr_boost::python::xincref(i->second.Ptr());
+    PyObject *obj = i->second.Ptr();
+    Py_XINCREF(obj);
+    return obj;
 }
 
 
