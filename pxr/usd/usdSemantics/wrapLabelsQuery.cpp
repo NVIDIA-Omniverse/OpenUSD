@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/pxr.h"
+#include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/pySignatureExt.h" // wrap lvalue-ref-qualified mem fns.
 #include "pxr/usd/usdSemantics/labelsQuery.h"
 

@@ -8,6 +8,7 @@
 #include "pxr/usd/usdGeom/xformCache.h"
 
 #include "pxr/external/boost/python/class.hpp"
+#include "pxr/external/boost/python/tuple.hpp"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
