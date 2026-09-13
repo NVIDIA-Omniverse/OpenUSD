@@ -10,9 +10,37 @@
 #include "pxr/pxr.h"
 
 #include "pxr/base/tf/api.h"
+#include "pxr/base/tf/pyObjWrapper.h"
 #include "pxr/base/tf/pySafePython.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+class Tf_PyNoticeCallback
+{
+public:
+    Tf_PyNoticeCallback() = default;
+
+    TF_API explicit Tf_PyNoticeCallback(TfPyObjWrapper const &callback);
+
+    TF_API void Invoke(PyObject *notice, PyObject *sender) const;
+
+private:
+    enum class _Mode
+    {
+        Empty,
+        Strong,
+        Weak,
+        Method
+    };
+
+    static bool _IsLambda(PyObject *callable);
+
+    _Mode _mode = _Mode::Empty;
+    TfPyObjWrapper _callable;
+    TfPyObjWrapper _weakCallable;
+    TfPyObjWrapper _func;
+    TfPyObjWrapper _weakSelf;
+};
 
 TF_API bool Tf_PyNoticeInvokeCallback(
     PyObject *callable,
