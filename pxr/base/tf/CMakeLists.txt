@@ -13,7 +13,8 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
         SOURCE anyWeakPtr.cpp
                pyError.cpp pyErrorImpl.cpp pyErrorInternal.cpp
                pyExceptionState.cpp pyIdentity.cpp pyLock.cpp pyObjectFinder.cpp
-               pyInvokeImpl.cpp pyObjWrapper.cpp pyWeakObject.cpp type.cpp
+               pyInvokeImpl.cpp pyNoticeCallbackImpl.cpp pyObjWrapper.cpp
+               pyWeakObject.cpp type.cpp
                pyUtilsImpl.cpp singleton.cpp
         APPEND PROPERTY COMPILE_DEFINITIONS Py_LIMITED_API=0x030A0000)
 endif()
@@ -271,6 +272,7 @@ pxr_library(tf
     PYTHON_PRIVATE_HEADERS
         pyErrorImpl.h
         pyInvokeImpl.h
+        pyNoticeCallbackImpl.h
         pyUtilsImpl.h
 
     PYTHON_CPPFILES
@@ -278,6 +280,7 @@ pxr_library(tf
         pyErrorBoost.cpp
         pyErrorImpl.cpp
         pyInvokeImpl.cpp
+        pyNoticeCallbackImpl.cpp
         pyObjWrapperBoost.cpp
         pyObjectFinderBoost.cpp
         pyUtilsBoost.cpp

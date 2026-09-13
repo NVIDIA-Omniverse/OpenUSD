@@ -8,10 +8,13 @@
 #include "pxr/pxr.h"
 #include "pxr/base/tf/type.h"
 #include "pxr/base/tf/notice.h"
-#include "pxr/base/tf/pyFunction.h"
+#include "pxr/base/tf/pyError.h"
 #include "pxr/base/tf/pyIdentity.h"
+#include "pxr/base/tf/pyNoticeCallbackImpl.h"
 #include "pxr/base/tf/pyNoticeWrapper.h"
+#include "pxr/base/tf/pyObjWrapper.h"
 #include "pxr/base/tf/pyPtrHelpers.h"
+#include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/pyWeakObject.h"
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/base/tf/type.h"
@@ -22,8 +25,6 @@
 #include "pxr/external/boost/python/manage_new_object.hpp"
 #include "pxr/external/boost/python/return_value_policy.hpp"
 #include "pxr/external/boost/python/scope.hpp"
-
-#include <functional>
 
 using std::string;
 
@@ -54,14 +55,131 @@ namespace {
 // hierarchy.
 TF_INSTANTIATE_NOTICE_WRAPPER(TfNotice, TfNotice);
 
+class Tf_PyNoticeCallback
+{
+  public:
+    Tf_PyNoticeCallback() = default;
+
+    explicit Tf_PyNoticeCallback(TfPyObjWrapper const &callback) {
+        TfPyLock lock;
+
+        PyObject *pyCallable = callback.ptr();
+        if (pyCallable == Py_None) {
+            return;
+        }
+
+        if (!PyCallable_Check(pyCallable)) {
+            TfPyThrowTypeError("Notice callback must be callable");
+        }
+
+        PyObject *self =
+            PyMethod_Check(pyCallable) ? PyMethod_GET_SELF(pyCallable) : NULL;
+
+        if (self) {
+            _func = TfPyObjWrapper(
+                PyMethod_GET_FUNCTION(pyCallable), TfPyBorrowedReference);
+
+            if (PyObject *weakSelf = PyWeakref_NewRef(self, NULL)) {
+                _weakSelf = TfPyObjWrapper(weakSelf, TfPyNewReference);
+            } else {
+                pxr_boost::python::throw_error_already_set();
+            }
+
+            _mode = _Mode::Method;
+        } else if (_IsLambda(pyCallable)) {
+            _callable = callback;
+            _mode = _Mode::Strong;
+        } else if (PyObject *weakCallable =
+                       PyWeakref_NewRef(pyCallable, NULL)) {
+            _weakCallable = TfPyObjWrapper(weakCallable, TfPyNewReference);
+            _mode = _Mode::Weak;
+        } else {
+            PyErr_Clear();
+            _callable = callback;
+            _mode = _Mode::Strong;
+        }
+    }
+
+    void Invoke(PyObject *notice, PyObject *sender) const {
+        TfPyLock lock;
+
+        switch (_mode) {
+        case _Mode::Empty:
+            return;
+        case _Mode::Strong:
+            Tf_PyNoticeInvokeCallback(_callable.ptr(), notice, sender);
+            return;
+        case _Mode::Weak: {
+            PyObject *callable = PyWeakref_GetObject(_weakCallable.ptr());
+            if (callable == Py_None) {
+                TF_WARN("Tried to call an expired python callback");
+                return;
+            }
+            Tf_PyNoticeInvokeCallback(callable, notice, sender);
+            return;
+        }
+        case _Mode::Method: {
+            PyObject *self = PyWeakref_GetObject(_weakSelf.ptr());
+            if (self == Py_None) {
+                TF_WARN("Tried to call a method on an expired python instance");
+                return;
+            }
+
+            PyObject *method = PyMethod_New(_func.ptr(), self);
+            if (!method) {
+                TfPyConvertPythonExceptionToTfErrors();
+                PyErr_Clear();
+                return;
+            }
+
+            Tf_PyNoticeInvokeCallback(method, notice, sender);
+            Py_DECREF(method);
+            return;
+        }
+        }
+    }
+
+  private:
+    enum class _Mode
+    {
+        Empty,
+        Strong,
+        Weak,
+        Method
+    };
+
+    static bool _IsLambda(PyObject *callable) {
+        PyObject *name = PyObject_GetAttrString(callable, "__name__");
+        if (!name) {
+            PyErr_Clear();
+            return false;
+        }
+
+        const char *nameStr = PyUnicode_AsUTF8(name);
+        const bool result = nameStr && string(nameStr) == "<lambda>";
+        Py_DECREF(name);
+
+        if (!nameStr) {
+            PyErr_Clear();
+        }
+
+        return result;
+    }
+
+    _Mode _mode = _Mode::Empty;
+    TfPyObjWrapper _callable;
+    TfPyObjWrapper _weakCallable;
+    TfPyObjWrapper _func;
+    TfPyObjWrapper _weakSelf;
+};
+
 class Tf_PyNoticeInternal
 {
   public:
 
     struct Listener : public TfWeakBase {
 
-        typedef void CallbackSig(object const &, handle<> const &);
-        typedef std::function<CallbackSig> Callback;
+        typedef Tf_PyNoticeCallback Callback;
 
         static Listener *New(TfType const &noticeType,
                              Callback const &callback,
@@ -129,7 +247,7 @@ class Tf_PyNoticeInternal
                 handle<> pySender = sender ?
                     handle<>(allow_null(Tf_PyIdentityHelper::
                                         Get(senderUniqueId))) : handle<>();
-                _callback(pyNotice, pySender);
+                _callback.Invoke(pyNotice.ptr(), pySender.get());
             }
         }
 
@@ -140,15 +258,15 @@ class Tf_PyNoticeInternal
 
     static Listener *
     RegisterWithAnyWeakPtrSender(TfType const &noticeType,
-                                 Listener::Callback const &cb,
+                                 TfPyObjWrapper const &cb,
                                  TfAnyWeakPtr const &sender)
     {
-        return Listener::New(noticeType, cb, sender);
+        return Listener::New(noticeType, Listener::Callback(cb), sender);
     }
 
     static Listener *
     RegisterWithPythonSender(TfType const &noticeType,
-                             Listener::Callback const &cb,
+                             TfPyObjWrapper const &cb,
                              object const &sender) {
         Tf_PyWeakObjectPtr weakSender = Tf_PyWeakObject::GetOrCreate(sender);
         if (!weakSender)
@@ -161,7 +279,7 @@ class Tf_PyNoticeInternal
     }
     
     static Listener *
-    RegisterGlobally(TfType const &noticeType, Listener::Callback const &cb) {
+    RegisterGlobally(TfType const &noticeType, TfPyObjWrapper const &cb) {
         return RegisterWithAnyWeakPtrSender
             (noticeType, cb, TfAnyWeakPtr());
     }
@@ -200,9 +318,6 @@ class Tf_PyNoticeInternal
 
 void wrapNotice()
 {
-    // Make sure we can pass callbacks from python.
-    TfPyFunctionFromPython<Tf_PyNoticeInternal::Listener::CallbackSig>();
-
     // Passing TfNotice for both T and its base indicates that this is the root
     // of the notice hierarchy.
     scope notice = TfPyNoticeWrapper<TfNotice, TfNotice>::Wrap("Notice")
