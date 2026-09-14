@@ -41,6 +41,14 @@ Tf_PyNoticeObjectGenerator::Invoke(TfNotice const &n)
     return func ? func(n) : object();
 }
 
+PyObject *
+Tf_PyNoticeObjectGenerator::InvokeRaw(TfNotice const &n)
+{
+    TfPyLock lock;
+    object obj = Invoke(n);
+    return incref(obj.ptr());
+}
+
 TfStaticData<map<string, Tf_PyNoticeObjectGenerator::MakeObjectFunc> >
     Tf_PyNoticeObjectGenerator::_generators;
 

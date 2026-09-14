@@ -41,6 +41,10 @@ struct Tf_PyNoticeObjectGenerator {
     // Produce a pxr_boost::python::object for the correct derived type of \a n.
     TF_API static pxr_boost::python::object Invoke(TfNotice const &n);
 
+    // Produce a new reference to a Python object for the correct derived type
+    // of \a n.
+    TF_API static PyObject *InvokeRaw(TfNotice const &n);
+
 private:
 
     template <typename T>

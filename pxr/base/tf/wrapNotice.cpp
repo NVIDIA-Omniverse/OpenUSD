@@ -91,27 +91,35 @@ class Tf_PyNoticeInternal
                  noticeType, sender);
         }
 
-        object _GetDeliverableNotice(TfNotice const &notice,
-                                     TfType const &noticeType) {
+        TfPyObjWrapper _GetDeliverableNotice(TfNotice const &notice,
+                                             TfType const &noticeType) {
             // If the notice type is not wrapped, return the type name in a
             // string.
             TfPyLock lock;
             /// XXX noticeType is incorrect when the notice is
             /// python-implemented.  We should fix this when TfType optimization
             /// work is done.
-            object noticeClass = TfPyGetClassObject(typeid(notice));
-            if (TfPyIsNone(noticeClass))
-                return object(TfType::Find(notice).GetTypeName());
+            TfType noticeTfType = TfType::Find(notice);
+            TfPyObjWrapper noticeClass = noticeTfType.GetPythonClass();
+            if (noticeClass.ptr() == Py_None) {
+                return TfPyObjWrapper(
+                    PyUnicode_FromString(noticeTfType.GetTypeName().c_str()),
+                    TfPyNewReference);
+            }
 
             // If it's a python notice, use the embedded python object.
             if (TfPyNoticeWrapperBase const *pyNotice =
                 TfSafeDynamic_cast<TfPyNoticeWrapperBase const *>(&notice))
-                return object(pyNotice->GetNoticePythonObject());
+                return TfPyObjWrapper(
+                    pyNotice->GetNoticePythonObject().release(),
+                    TfPyNewReference);
 
             // Otherwise convert the notice to python like normal.  We
             // can't just use object(notice) because that won't produce
             // a notice of the correct derived type.
-            return Tf_PyNoticeObjectGenerator::Invoke(notice);
+            return TfPyObjWrapper(
+                Tf_PyNoticeObjectGenerator::InvokeRaw(notice),
+                TfPyNewReference);
         }
     
         void _HandleNotice(TfNotice const &notice,
@@ -120,8 +128,8 @@ class Tf_PyNoticeInternal
                            void const *senderUniqueId,
                            const std::type_info &) {
             TfPyLock lock;
-            object pyNotice = _GetDeliverableNotice(notice, type);
-            if (!TfPyIsNone(pyNotice)) {
+            TfPyObjWrapper pyNotice = _GetDeliverableNotice(notice, type);
+            if (pyNotice.ptr() != Py_None) {
                 // Get the python sender.
                 handle<> pySender = sender ?
                     handle<>(allow_null(Tf_PyIdentityHelper::
