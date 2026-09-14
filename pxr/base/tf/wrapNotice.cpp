@@ -116,7 +116,7 @@ class Tf_PyNoticeInternal
             // can't just use object(notice) because that won't produce
             // a notice of the correct derived type.
             return TfPyObjWrapper(
-                Tf_PyNoticeObjectGenerator::InvokeRaw(notice),
+                Tf_PyNoticeObjectGenerator::Invoke(notice),
                 TfPyNewReference);
         }
     

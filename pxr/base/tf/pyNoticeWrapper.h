@@ -29,7 +29,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 struct Tf_PyNoticeObjectGenerator {
     typedef Tf_PyNoticeObjectGenerator This;
-    typedef pxr_boost::python::object (*MakeObjectFunc)(TfNotice const &);
+    typedef PyObject *(*MakeObjectFunc)(TfNotice const &);
 
     // Register the generator for notice type T.
     template <typename T>
@@ -38,19 +38,17 @@ struct Tf_PyNoticeObjectGenerator {
         (*_generators)[typeid(T).name()] = This::_Generate<T>;
     }
     
-    // Produce a pxr_boost::python::object for the correct derived type of \a n.
-    TF_API static pxr_boost::python::object Invoke(TfNotice const &n);
-
     // Produce a new reference to a Python object for the correct derived type
     // of \a n.
-    TF_API static PyObject *InvokeRaw(TfNotice const &n);
+    TF_API static PyObject *Invoke(TfNotice const &n);
 
 private:
 
     template <typename T>
-    static pxr_boost::python::object _Generate(TfNotice const &n) {
+    static PyObject *_Generate(TfNotice const &n) {
         // Python locking is left to the caller.
-        return pxr_boost::python::object(static_cast<T const &>(n));
+        return pxr_boost::python::incref(
+            pxr_boost::python::object(static_cast<T const &>(n)).ptr());
     }
 
     static MakeObjectFunc _Lookup(TfNotice const &n);

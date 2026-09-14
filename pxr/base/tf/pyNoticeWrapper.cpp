@@ -33,20 +33,16 @@ Tf_PyNoticeObjectGenerator::_Lookup(TfNotice const &n)
 }
 
 
-object
+PyObject *
 Tf_PyNoticeObjectGenerator::Invoke(TfNotice const &n)
 {
     TfPyLock lock;  // Take python lock since generators call to python.
     MakeObjectFunc func = _Lookup(n);
-    return func ? func(n) : object();
-}
-
-PyObject *
-Tf_PyNoticeObjectGenerator::InvokeRaw(TfNotice const &n)
-{
-    TfPyLock lock;
-    object obj = Invoke(n);
-    return incref(obj.ptr());
+    if (func) {
+        return func(n);
+    }
+    Py_INCREF(Py_None);
+    return Py_None;
 }
 
 TfStaticData<map<string, Tf_PyNoticeObjectGenerator::MakeObjectFunc> >
