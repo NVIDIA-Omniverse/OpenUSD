@@ -18,10 +18,6 @@
 
 #include <tbb/spin_mutex.h>
 
-// These are from python, needed for PyFrameObject.
-#include <frameobject.h>
-#include <patchlevel.h>
-
 #include <list>
 #include <mutex>
 
@@ -89,7 +85,7 @@ static void _SetTraceFnEnabled(bool enable) {
 }
 
 
-#if PY_VERSION_HEX < 0x030900B1
+#if PY_VERSION_HEX < 0x030900B1 && !defined(Py_LIMITED_API)
 // Define PyFrame_GetCode() on Python 3.8 and older:
 // https://docs.python.org/3.11/whatsnew/3.11.html#id6
 static inline PyCodeObject* PyFrame_GetCode(PyFrameObject *frame)
@@ -99,21 +95,64 @@ static inline PyCodeObject* PyFrame_GetCode(PyFrameObject *frame)
 }
 #endif
 
+static char const *
+_GetUTF8(PyObject *obj)
+{
+    if (!obj) {
+        PyErr_Clear();
+        return "";
+    }
+
+    char const *result = PyUnicode_AsUTF8(obj);
+    if (!result) {
+        PyErr_Clear();
+        return "";
+    }
+    return result;
+}
+
+static int
+_GetInt(PyObject *obj)
+{
+    if (!obj) {
+        PyErr_Clear();
+        return 0;
+    }
+
+    long result = PyLong_AsLong(obj);
+    if (result == -1 && PyErr_Occurred()) {
+        PyErr_Clear();
+        return 0;
+    }
+    return static_cast<int>(result);
+}
 
 static int _TracePythonFn(PyObject *, PyFrameObject *frame,
                           int what, PyObject *arg)
 {
     // Build up a trace info struct.
     TfPyTraceInfo info;
-    PyCodeObject * code = PyFrame_GetCode(frame);
+    PyCodeObject *code = PyFrame_GetCode(frame);
+    PyObject *codeObj = reinterpret_cast<PyObject *>(code);
+    PyObject *codeName = codeObj
+        ? PyObject_GetAttrString(codeObj, "co_name") : nullptr;
+    PyObject *codeFileName = codeObj
+        ? PyObject_GetAttrString(codeObj, "co_filename") : nullptr;
+    PyObject *codeFirstLine = codeObj
+        ? PyObject_GetAttrString(codeObj, "co_firstlineno") : nullptr;
+
     info.arg = arg;
-    info.funcName = PyUnicode_AsUTF8(code->co_name);
-    info.fileName = PyUnicode_AsUTF8(code->co_filename);
-    info.funcLine = code->co_firstlineno;
+    info.funcName = _GetUTF8(codeName);
+    info.fileName = _GetUTF8(codeFileName);
+    info.funcLine = _GetInt(codeFirstLine);
     info.what = what;
-    Py_DECREF(code);
 
     _InvokeTraceFns(info);
+
+    Py_XDECREF(codeFirstLine);
+    Py_XDECREF(codeFileName);
+    Py_XDECREF(codeName);
+    Py_XDECREF(code);
 
     return 0;
 }

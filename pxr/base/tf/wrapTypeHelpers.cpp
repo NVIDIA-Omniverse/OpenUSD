@@ -32,7 +32,8 @@ TfType_DefinePythonTypeAndBases( const pxr_boost::python::object & classObj )
     {
         pxr_boost::python::object baseClass = basesObj[i];
 
-        TfType baseType = TfType::FindByPythonClass(baseClass);
+        TfType baseType = TfType::FindByPythonClass(
+            TfPyObjWrapper(baseClass.ptr(), TfPyBorrowedReference));
 
         if (baseType.IsUnknown())
             baseType = TfType_DefinePythonTypeAndBases(baseClass);
@@ -43,7 +44,8 @@ TfType_DefinePythonTypeAndBases( const pxr_boost::python::object & classObj )
     // Declare the new type w/ bases
     TfType newType = TfType::Declare( typeName, baseTypes );
 
-    newType.DefinePythonClass( classObj );
+    newType.DefinePythonClass(
+        TfPyObjWrapper(classObj.ptr(), TfPyBorrowedReference));
 
     return newType;
 }

@@ -21,6 +21,8 @@
 
 #include "pxr/external/boost/python/dict.hpp"
 #include "pxr/external/boost/python/extract.hpp"
+#include "pxr/external/boost/python/borrowed.hpp"
+#include "pxr/external/boost/python/handle.hpp"
 #include "pxr/external/boost/python/list.hpp"
 #include "pxr/external/boost/python/object.hpp"
 
@@ -115,7 +117,9 @@ void Tf_BuildPyInvokeKwArgs(
     RestArgs... rest)
 {
     // Store mapping in kwargs dict.
-    (*kwArgsOut)[kwArg.name] = kwArg.value.Get();
+    (*kwArgsOut)[kwArg.name] = pxr_boost::python::object(
+        pxr_boost::python::handle<>(
+            pxr_boost::python::borrowed(kwArg.value.ptr())));
 
     // Recurse to handle next arg.
     Tf_BuildPyInvokeKwArgs(kwArgsOut, rest...);

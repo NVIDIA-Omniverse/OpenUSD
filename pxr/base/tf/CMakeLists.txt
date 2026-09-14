@@ -9,13 +9,23 @@ if(WIN32)
 endif()
 
 if(PXR_ENABLE_PYTHON_SUPPORT)
+    # Keep non-Boost Python support sources in usd_tf building against the
+    # limited Python API. Boost bridge sources are excluded until they can move
+    # out of usd_tf or gain limited-API-compatible implementations.
     set_property(
         SOURCE anyWeakPtr.cpp
-               pyError.cpp pyErrorImpl.cpp pyErrorInternal.cpp
-               pyExceptionState.cpp pyIdentity.cpp pyLock.cpp pyObjectFinder.cpp
-               pyInvokeImpl.cpp pyNoticeCallbackImpl.cpp pyObjWrapper.cpp
-               pyWeakObject.cpp type.cpp
-               pyUtilsImpl.cpp singleton.cpp
+               makePyConstructor.cpp pyAnnotatedBoolResult.cpp pyArg.cpp
+               pyCall.cpp pyCallContext.cpp pyClassMethod.cpp
+               pyContainerConversions.cpp pyEnum.cpp pyError.cpp
+               pyErrorImpl.cpp pyErrorInternal.cpp pyExceptionState.cpp
+               pyFunction.cpp pyIdentity.cpp pyInterpreter.cpp pyInvoke.cpp
+               pyInvokeImpl.cpp pyLock.cpp pyModule.cpp pyModuleNotice.cpp
+               pyNoticeCallbackImpl.cpp pyNoticeWrapper.cpp pyObjectFinder.cpp
+               pyObjWrapper.cpp pyOptional.cpp pyOverride.cpp
+               pyPolymorphic.cpp pyPtrHelpers.cpp pyResultConversions.cpp
+               pySingleton.cpp pyTracing.cpp pyUtils.cpp pyUtilsImpl.cpp
+               pyWrapContext.cpp scriptModuleLoader.cpp singleton.cpp type.cpp
+               wrapTypeHelpers.cpp
         APPEND PROPERTY COMPILE_DEFINITIONS Py_LIMITED_API=0x030A0000)
 endif()
 

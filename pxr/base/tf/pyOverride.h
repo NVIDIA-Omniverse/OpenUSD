@@ -107,7 +107,7 @@ class TfPyOverride : public TfPyObjWrapper
 public:
     /// Clients must hold the GIL to construct.
     TfPyOverride(pxr_boost::python::handle<> callable)
-        : TfPyObjWrapper(pxr_boost::python::object(callable))
+        : TfPyObjWrapper(callable.release(), TfPyNewReference)
     {}
 
     /// Call the override.
