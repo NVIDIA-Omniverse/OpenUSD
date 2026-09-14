@@ -96,10 +96,8 @@ class Tf_PyNoticeInternal
             // If the notice type is not wrapped, return the type name in a
             // string.
             TfPyLock lock;
-            /// XXX noticeType is incorrect when the notice is
-            /// python-implemented.  We should fix this when TfType optimization
-            /// work is done.
-            TfType noticeTfType = TfType::Find(notice);
+            TfType noticeTfType = noticeType.IsUnknown() ?
+                TfType::Find(notice) : noticeType;
             TfPyObjWrapper noticeClass = noticeTfType.GetPythonClass();
             if (noticeClass.ptr() == Py_None) {
                 return TfPyObjWrapper(
