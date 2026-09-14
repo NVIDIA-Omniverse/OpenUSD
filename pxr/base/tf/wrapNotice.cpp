@@ -152,8 +152,9 @@ class Tf_PyNoticeInternal
     static Listener *
     RegisterWithPythonSender(TfType const &noticeType,
                              TfPyObjWrapper const &cb,
-                             object const &sender) {
-        Tf_PyWeakObjectPtr weakSender = Tf_PyWeakObject::GetOrCreate(sender);
+                             TfPyObjWrapper const &sender) {
+        Tf_PyWeakObjectPtr weakSender =
+            Tf_PyWeakObject::GetOrCreate(sender.ptr());
         if (!weakSender)
             TfPyThrowTypeError("Cannot register to listen to notices from the "
                                "provided sender.  The sender must support "
@@ -179,12 +180,13 @@ class Tf_PyNoticeInternal
     }
 
     static size_t
-    SendWithPythonSender(TfNotice const &self, object const &sender) {
+    SendWithPythonSender(TfNotice const &self, TfPyObjWrapper const &sender) {
         // Get a "WeakObjectPtr" corresponding to the sender -- this is a
         // TfWeakPtr to an object which holds a python weak reference.  This
         // object expires when the python object expires.  This is what lets us
         // use arbitrary python objects as senders in the notice system.
-        Tf_PyWeakObjectPtr weakSender = Tf_PyWeakObject::GetOrCreate(sender);
+        Tf_PyWeakObjectPtr weakSender =
+            Tf_PyWeakObject::GetOrCreate(sender.ptr());
         if (!weakSender)
             TfPyThrowTypeError("Cannot send notice from the provided sender.  "
                                "Sender must support python weak references.");
