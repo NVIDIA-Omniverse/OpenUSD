@@ -18,8 +18,7 @@
 
 #include "pxr/external/boost/python/bases.hpp"
 #include "pxr/external/boost/python/class.hpp"
-#include "pxr/external/boost/python/extract.hpp"
-#include "pxr/external/boost/python/handle.hpp"
+#include "pxr/external/boost/python/object.hpp"
 
 #include <type_traits>
 #include <map>
@@ -59,7 +58,8 @@ private:
 
 struct TfPyNoticeWrapperBase : public TfType::PyPolymorphicBase {
     TF_API virtual ~TfPyNoticeWrapperBase();
-    virtual pxr_boost::python::handle<> GetNoticePythonObject() const = 0;
+    // Return a new reference to the Python object implementing this notice.
+    virtual PyObject *GetNoticePythonObjectNewRef() const = 0;
 };
 
 template <class Notice>
@@ -68,7 +68,7 @@ struct Tf_PyNoticeObjectFinder : public Tf_PyObjectFinderBase {
     virtual PyObject *Find(void const *objPtr) const {
         TfPyLock lock;
         Notice const *wrapper = static_cast<Notice const *>(objPtr);
-        return wrapper ? wrapper->GetNoticePythonObject().release() : nullptr;
+        return wrapper ? wrapper->GetNoticePythonObjectNewRef() : nullptr;
     }
 };
 
@@ -118,9 +118,10 @@ public:
     }
 
     // Implement the base class's virtual method.
-    virtual pxr_boost::python::handle<> GetNoticePythonObject() const {
+    virtual PyObject *GetNoticePythonObjectNewRef() const {
         TfPyLock lock;
-        return pxr_boost::python::handle<>(pxr_boost::python::borrowed(_self));
+        Py_INCREF(_self);
+        return _self;
     }
 
     // Arbitrary argument constructor (with a leading PyObject *) which

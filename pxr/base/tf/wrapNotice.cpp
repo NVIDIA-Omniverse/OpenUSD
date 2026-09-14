@@ -109,7 +109,7 @@ class Tf_PyNoticeInternal
             if (TfPyNoticeWrapperBase const *pyNotice =
                 TfSafeDynamic_cast<TfPyNoticeWrapperBase const *>(&notice))
                 return TfPyObjWrapper(
-                    pyNotice->GetNoticePythonObject().release(),
+                    pyNotice->GetNoticePythonObjectNewRef(),
                     TfPyNewReference);
 
             // Otherwise convert the notice to python like normal.  We
