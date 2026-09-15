@@ -12,11 +12,6 @@
 #include "pxr/base/tf/api.h"
 #include "pxr/base/tf/pyIdentity.h"
 
-#ifndef Py_LIMITED_API
-#include "pxr/external/boost/python/handle.hpp"
-#include "pxr/external/boost/python/object.hpp"
-#endif
-
 #include <typeinfo>
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -49,12 +44,6 @@ void Tf_RegisterPythonObjectFinder() {
 
 PyObject *
 Tf_PyFindPythonObject(void const *objPtr, std::type_info const &type);
-
-#ifndef Py_LIMITED_API
-TF_API
-pxr_boost::python::object
-Tf_FindPythonObject(void const *objPtr, std::type_info const &type);
-#endif
 
 PXR_NAMESPACE_CLOSE_SCOPE
 

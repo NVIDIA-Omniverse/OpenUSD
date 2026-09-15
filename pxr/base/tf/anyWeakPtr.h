@@ -148,9 +148,6 @@ public:
     // facility is necessary to get the python API we want.
     friend pxr_boost::python::api::object
     Tf_GetPythonObjectFromAnyWeakPtr(This const &self);
-
-    TF_API
-    pxr_boost::python::api::object _GetPythonObject() const;
 #endif // !Py_LIMITED_API
 
     TF_API

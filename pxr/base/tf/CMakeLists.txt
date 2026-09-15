@@ -287,13 +287,11 @@ pxr_library(tf
         pyUtilsImpl.h
 
     PYTHON_CPPFILES
-        anyWeakPtrBoost.cpp
         pyErrorBoost.cpp
         pyErrorImpl.cpp
         pyInvokeImpl.cpp
         pyNoticeCallbackImpl.cpp
         pyObjWrapperBoost.cpp
-        pyObjectFinderBoost.cpp
         pyUtilsBoost.cpp
         pyUtilsImpl.cpp
 
