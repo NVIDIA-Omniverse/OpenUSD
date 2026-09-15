@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/pxr.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/usd/usd/prim.h"
 #include "pxr/usdValidation/usdValidation/validator.h"
 #include "pxr/usdValidation/usdValidation/error.h"

@@ -13,7 +13,7 @@
 #include "pxr/usd/sdf/specType.h"
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/tf/diagnostic.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/staticData.h"
 #include "pxr/base/tf/type.h"
 

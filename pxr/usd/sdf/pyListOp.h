@@ -11,7 +11,7 @@
 #include "pxr/usd/sdf/listOp.h"
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/tf/hash.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/external/boost/python.hpp"
 

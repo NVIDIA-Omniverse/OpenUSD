@@ -19,7 +19,7 @@
 #include "pxr/base/tf/pyFunction.h"
 #include "pxr/base/tf/pyPtrHelpers.h"
 #include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 
 #include "pxr/external/boost/python.hpp"
 #include "pxr/external/boost/python/overloads.hpp"

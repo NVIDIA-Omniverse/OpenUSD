@@ -11,7 +11,7 @@
 
 #include "pxr/pxr.h"
 
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/external/boost/python/converter/from_python.hpp"
 #include "pxr/external/boost/python/extract.hpp"
 #include "pxr/external/boost/python/to_python_converter.hpp"

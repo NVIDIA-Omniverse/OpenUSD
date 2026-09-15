@@ -12,7 +12,7 @@
 #include "pxr/base/gf/vec3d.h"
 
 #include "pxr/base/tf/stringUtils.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/wrapTypeHelpers.h"
 
 #include "pxr/external/boost/python/args.hpp"

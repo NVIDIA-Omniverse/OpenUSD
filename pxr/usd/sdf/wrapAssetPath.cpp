@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/pxr.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/usd/sdf/assetPath.h"
 #include "pxr/base/vt/valueFromPython.h"
 #include "pxr/base/tf/hash.h"

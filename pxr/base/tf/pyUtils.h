@@ -21,18 +21,8 @@
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/api.h"
 
-#include <functional>
-#include <typeinfo>
 #include <string>
 #include <vector>
-
-#ifndef Py_LIMITED_API
-#include "pxr/external/boost/python/dict.hpp"
-#include "pxr/external/boost/python/extract.hpp"
-#include "pxr/external/boost/python/handle.hpp"
-#include "pxr/external/boost/python/object.hpp"
-#include "pxr/external/boost/python/type_id.hpp"
-#endif
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -116,102 +106,13 @@ inline void TfPyThrowTypeError(std::string const &msg)
 /// Return true iff \a obj is null or None.
 TF_API bool TfPyIsNone(PyObject *obj);
 
-/// Return true iff \a obj is None.
-#ifndef Py_LIMITED_API
-TF_API bool TfPyIsNone(pxr_boost::python::object const &obj);
-
-/// Return true iff \a obj is None.
-TF_API bool TfPyIsNone(pxr_boost::python::handle<> const &obj);
-#endif
-
 // Helper for \c TfPyObject().
 TF_API void Tf_PyObjectError(bool printError);
-
-/// Return a python object for the given C++ object, loading the appropriate
-/// wrapper code if necessary. Spams users if complainOnFailure is true and
-/// conversion fails.
-#ifndef Py_LIMITED_API
-template <typename T>
-pxr_boost::python::object TfPyObject(T const &t, bool complainOnFailure = true) {
-    // initialize python if it isn't already, so at least we can try to return
-    // an object
-    if (!TfPyIsInitialized()) {
-        TF_CODING_ERROR("Called TfPyObject without python being initialized!");
-        TfPyInitialize();
-    }
-
-    TfPyLock pyLock;
-
-    // Will only be able to return objects which have been wrapped.
-    // Returns None otherwise
-    try {
-        return pxr_boost::python::object(t);
-    } catch (pxr_boost::python::error_already_set const &) {
-        Tf_PyObjectError(complainOnFailure);
-        return pxr_boost::python::object();
-   }
-}
-
-inline
-pxr_boost::python::object TfPyObject(PyObject* t, bool complainOnFailure = true) {
-    TfPyLock pyLock;
-    return pxr_boost::python::object(pxr_boost::python::handle<>(t));
-}
-#endif
 
 /// Return repr(t).
 ///
 /// Calls PyObject_Repr on the given python object.
 TF_API std::string TfPyObjectRepr(PyObject *t);
-
-/// Return repr(t).
-///
-/// Calls PyObject_Repr on the given python object.
-#ifndef Py_LIMITED_API
-TF_API std::string TfPyObjectRepr(pxr_boost::python::object const &t);
-#endif
-
-/// Return repr(t).
-///
-/// Converts t to its equivalent python object and then calls PyObject_Repr on
-/// that.
-#ifndef Py_LIMITED_API
-template <typename T>
-std::string TfPyRepr(T const &t) {
-    if (!TfPyIsInitialized())
-        return "<python not initialized>";
-    TfPyLock lock;
-    return TfPyObjectRepr(TfPyObject(t));
-}
-
-/// Return repr(t) for a vector as a python list.
-template <typename T>
-std::string TfPyRepr(const std::vector<T> &v) {
-    std::string result("[");
-    typename std::vector<T>::const_iterator i = v.begin();
-    if (i != v.end()) {
-        result += TfPyRepr(*i);
-        ++i;
-    }
-    while (i != v.end()) {
-        result += ", " + TfPyRepr(*i);
-        ++i;
-    }
-    result += "]";
-    return result;
-}
-#endif
-
-/// Evaluate python expression \a expr with all the known script modules
-/// imported under their standard names. Additional globals may be provided in
-/// the \p extraGlobals dictionary.
-#ifndef Py_LIMITED_API
-TF_API
-pxr_boost::python::object
-TfPyEvaluate(
-    std::string const &expr,
-    pxr_boost::python::dict const &extraGlobals = pxr_boost::python::dict());
-#endif
 
 /// Return a positive index in the range [0,size).  If \a throwError is true,
 /// this will throw an index error if the resulting index is out of range.
@@ -222,110 +123,12 @@ TfPyNormalizeIndex(int64_t index, uint64_t size, bool throwError = false);
 /// Return the name of the class of \a obj.
 TF_API std::string TfPyGetClassName(PyObject *obj);
 
-/// Return the name of the class of \a obj.
-#ifndef Py_LIMITED_API
-TF_API std::string TfPyGetClassName(pxr_boost::python::object const &obj);
-#endif
-
-
-/// Return the python class object for \a type if \a type has been wrapped.
-/// Otherwise return None.
-#ifndef Py_LIMITED_API
-TF_API pxr_boost::python::object
-TfPyGetClassObject(std::type_info const &type);
-
-/// Return the python class object for T if T has been wrapped.
-/// Otherwise return None.
-template <typename T>
-pxr_boost::python::object
-TfPyGetClassObject() {
-    return TfPyGetClassObject(typeid(T));
-}
-
-TF_API
-void
-Tf_PyWrapOnceImpl(pxr_boost::python::type_info const &,
-                  std::function<void()> const&,
-                  bool *);
-
-/// Invokes \p wrapFunc to wrap type \c T if \c T is not already wrapped.
-///
-/// Executing \p wrapFunc *must* register \c T with boost python.  Otherwise,
-/// \p wrapFunc may be executed more than once.
-///
-/// TfPyWrapOnce will acquire the GIL prior to invoking \p wrapFunc. Does not
-/// invoke \p wrapFunc if Python has not been initialized.
-template <typename T>
-void
-TfPyWrapOnce(std::function<void()> const &wrapFunc)
-{
-    // Don't try to wrap if python isn't initialized.
-    if (!TfPyIsInitialized()) {
-        return;
-    }
-
-    static bool isTypeWrapped = false;
-    if (isTypeWrapped) {
-        return;
-    }
-
-    Tf_PyWrapOnceImpl(pxr_boost::python::type_id<T>(), wrapFunc, &isTypeWrapped);
-}
-#endif
-
 /// Load the python module \a moduleName.  This is used by some low-level
 /// infrastructure code to load python wrapper modules corresponding to C++
 /// shared libraries when they are needed.  It should generally not need to be
 /// called from normal user code.
 TF_API
 void Tf_PyLoadScriptModule(std::string const &name);
-
-/// Creates a python dictionary from a std::map.
-#ifndef Py_LIMITED_API
-template <class Map>
-pxr_boost::python::dict TfPyCopyMapToDictionary(Map const &map) {
-    TfPyLock lock;
-    pxr_boost::python::dict d;
-    for (typename Map::const_iterator i = map.begin(); i != map.end(); ++i)
-        d[i->first] = i->second;
-    return d;
-}
-
-template<class Seq>
-pxr_boost::python::list TfPyCopySequenceToList(Seq const &seq) {
-    TfPyLock lock;
-    pxr_boost::python::list l;
-    for (typename Seq::const_iterator i = seq.begin();
-         i != seq.end(); ++i)
-        l.append(*i);
-    return l; 
-}
-
-/// Create a python set from an iterable sequence.
-///
-/// If Seq::value_type is not hashable, TypeError is raised via throwing
-/// pxr_boost::python::error_already_set.
-template <class Seq>
-pxr_boost::python::object TfPyCopySequenceToSet(Seq const &seq) {
-    TfPyLock lock;
-    pxr_boost::python::handle<> set{pxr_boost::python::allow_null(PySet_New(nullptr))};
-    if (!set) {
-        pxr_boost::python::throw_error_already_set();
-    }
-    for (auto const& item : seq) {
-        pxr_boost::python::object obj(item);
-        if (PySet_Add(set.get(), obj.ptr()) == -1) {
-            pxr_boost::python::throw_error_already_set();
-        }
-    }
-    return pxr_boost::python::object(set);
-}
-
-template<class Seq>
-pxr_boost::python::tuple TfPyCopySequenceToTuple(Seq const &seq) {
-    return pxr_boost::python::tuple(TfPyCopySequenceToList(seq));
-}
-#endif
 
 /// Create a python bytearray from an input buffer and size.
 ///
@@ -335,17 +138,6 @@ pxr_boost::python::tuple TfPyCopySequenceToTuple(Seq const &seq) {
 /// A new reference is returned on success; null is returned on failure.
 TF_API
 PyObject *TfPyCopyBufferToPyByteArray(const char* buffer, size_t size);
-
-#ifndef Py_LIMITED_API
-/// Create a python bytearray from an input buffer and size.
-///
-/// If a size of zero is passed in this function will return a valid python
-/// bytearray of size zero.
-///
-/// An invalid object handle is returned on failure.
-TF_API
-pxr_boost::python::object TfPyCopyBufferToByteArray(const char* buffer, size_t size);
-#endif
 
 /// Return a vector of strings containing the current python traceback.
 ///
@@ -402,43 +194,6 @@ bool TfPySetenv(const std::string & name, const std::string & value);
 /// it important that they appear in \c os.environ.
 TF_API
 bool TfPyUnsetenv(const std::string & name);
-
-// Private helper method to TfPyEvaluateAndExtract.
-//
-#ifndef Py_LIMITED_API
-TF_API bool Tf_PyEvaluateWithErrorCheck(
-    const std::string & expr, pxr_boost::python::object * obj);
-
-/// Safely evaluates \p expr and extracts the return object of type T. If
-/// successful, returns \c true and sets *t to the return value, otherwise
-/// returns \c false.
-template <typename T>
-bool TfPyEvaluateAndExtract(const std::string & expr, T * t)
-{
-    if (expr.empty())
-        return false;
-
-    // Take the lock before doing anything with pxr_boost::python.
-    TfPyLock lock;
-
-    // Though TfPyEvaluate (called by Tf_PyEvaluateWithErroCheck) takes the
-    // python lock, it is important that we lock before we initialize the 
-    // pxr_boost::python::object, since it will increment and decrement ref counts 
-    // outside of the call to TfPyEvaluate.
-    pxr_boost::python::object obj;
-    if (!Tf_PyEvaluateWithErrorCheck(expr, &obj))
-        return false;
-
-    pxr_boost::python::extract<T> extractor(obj);
-
-    if (!extractor.check())
-        return false;
-
-    *t = extractor();
-
-    return true;
-}
-#endif
 
 /// Print a standard traceback to sys.stderr and clear the error indicator.
 /// If the error is a KeyboardInterrupt then this does nothing.  Call this

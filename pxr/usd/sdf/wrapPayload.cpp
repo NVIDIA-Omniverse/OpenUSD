@@ -8,7 +8,7 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/payload.h"
 #include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/vt/valueFromPython.h"
 
 #include "pxr/external/boost/python.hpp"

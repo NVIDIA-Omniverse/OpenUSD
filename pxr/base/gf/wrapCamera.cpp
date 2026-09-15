@@ -8,6 +8,7 @@
 /// \file gf/wrapCamera.h
 
 #include "pxr/pxr.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/gf/camera.h"
 #include "pxr/base/gf/frustum.h"
 #include "pxr/base/tf/pyEnum.h"

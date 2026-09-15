@@ -7,6 +7,7 @@
 /// \file wrapSpec.cpp
 
 #include "pxr/pxr.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/usd/sdf/spec.h"
 #include "pxr/usd/sdf/path.h"
 #include "pxr/usd/sdf/pySpec.h"

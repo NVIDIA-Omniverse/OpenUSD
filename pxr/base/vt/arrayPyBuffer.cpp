@@ -18,7 +18,7 @@
 
 #include "pxr/base/tf/preprocessorUtilsLite.h"
 #include "pxr/base/tf/pyLock.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 
 #include "pxr/external/boost/python.hpp"
 

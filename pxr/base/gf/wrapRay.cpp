@@ -13,7 +13,7 @@
 #include "pxr/base/gf/plane.h"
 #include "pxr/base/gf/range3d.h"
 
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/wrapTypeHelpers.h"
 
 #include "pxr/external/boost/python/class.hpp"

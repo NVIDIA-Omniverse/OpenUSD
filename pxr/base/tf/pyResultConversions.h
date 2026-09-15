@@ -9,7 +9,7 @@
 
 #include "pxr/pxr.h"
 
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 
 #include "pxr/external/boost/python/tuple.hpp"
 #include "pxr/external/boost/python/list.hpp"

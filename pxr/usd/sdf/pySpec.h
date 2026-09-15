@@ -58,7 +58,7 @@
 #include "pxr/external/boost/python/tuple.hpp"
 
 #include "pxr/base/tf/pyError.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 
 #include "pxr/usd/sdf/declareHandles.h"
 #include "pxr/base/tf/tf.h"

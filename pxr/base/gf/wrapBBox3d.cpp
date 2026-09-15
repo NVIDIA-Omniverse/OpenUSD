@@ -7,7 +7,7 @@
 
 #include "pxr/pxr.h"
 #include "pxr/base/gf/bbox3d.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/pyContainerConversions.h"
 #include "pxr/base/tf/wrapTypeHelpers.h"
 

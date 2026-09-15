@@ -10,7 +10,7 @@
 #include "pxr/base/gf/matrix4d.h"
 #include "pxr/base/gf/range3d.h"
 
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/wrapTypeHelpers.h"
 #include "pxr/base/tf/pyContainerConversions.h"
 

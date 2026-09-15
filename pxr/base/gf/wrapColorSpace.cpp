@@ -9,7 +9,7 @@
 #include "pxr/base/gf/color.h"
 #include "pxr/base/gf/colorSpace.h"
 #include "pxr/base/tf/pyStaticTokens.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 
 #include "pxr/external/boost/python/class.hpp"

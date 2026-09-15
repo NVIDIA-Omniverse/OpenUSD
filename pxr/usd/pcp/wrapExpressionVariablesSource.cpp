@@ -10,7 +10,7 @@
 #include "pxr/usd/pcp/expressionVariablesSource.h"
 #include "pxr/usd/pcp/layerStackIdentifier.h"
 
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 
 #include "pxr/external/boost/python/class.hpp"

@@ -10,7 +10,7 @@
 #include "pxr/external/boost/python/return_arg.hpp"
 
 #include "pxr/usd/usd/stagePopulationMask.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/stringUtils.h"
 

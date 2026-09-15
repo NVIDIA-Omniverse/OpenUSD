@@ -5,6 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/pxr.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/usd/usd/attribute.h"
 #include "pxr/usd/usd/property.h"
 #include "pxr/usd/usd/relationship.h"

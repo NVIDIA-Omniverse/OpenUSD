@@ -6,6 +6,7 @@
 //
 
 #include "pxr/pxr.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/usd/pcp/dependency.h"
 #include "pxr/base/tf/pyEnum.h"
 #include "pxr/base/tf/makePyConstructor.h"

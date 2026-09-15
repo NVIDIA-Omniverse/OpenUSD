@@ -268,6 +268,7 @@ pxr_library(tf
         pySafePython.h
         pySignatureExt.h
         pyStaticTokens.h
+        pyUtilsBoost.h
 
     PRIVATE_CLASSES
         atomicRenameUtil

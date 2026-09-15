@@ -8,7 +8,7 @@
 #include "pxr/pxr.h"
 #include "pxr/base/gf/lineSeg.h"
 
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/wrapTypeHelpers.h"
 
 #include "pxr/external/boost/python/class.hpp"

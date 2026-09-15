@@ -25,7 +25,7 @@
 #include "pxr/base/tf/diagnostic.h"
 #include "pxr/base/tf/pyError.h"
 #include "pxr/base/tf/pyIdentity.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 
 #include "pxr/base/arch/demangle.h"

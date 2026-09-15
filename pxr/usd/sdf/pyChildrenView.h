@@ -12,7 +12,7 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/childrenView.h"
 #include "pxr/base/arch/demangle.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/external/boost/python.hpp"
 

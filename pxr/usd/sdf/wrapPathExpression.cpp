@@ -12,7 +12,7 @@
 #include "pxr/base/vt/valueFromPython.h"
 #include "pxr/base/tf/pyEnum.h"
 #include "pxr/base/tf/pyFunction.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/vt/wrapArray.h"
 
 #include "pxr/usd/sdf/pathExpression.h"

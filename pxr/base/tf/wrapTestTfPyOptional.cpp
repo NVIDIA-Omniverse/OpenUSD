@@ -8,6 +8,7 @@
 /// \file tf/wrapTestTfPython.cpp
 
 #include "pxr/pxr.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 
 #include "pxr/base/tf/pyOptional.h"
 

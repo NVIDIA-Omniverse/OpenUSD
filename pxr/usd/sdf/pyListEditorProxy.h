@@ -19,7 +19,7 @@
 #include "pxr/base/tf/pyCall.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/pyLock.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/external/boost/python.hpp"
 

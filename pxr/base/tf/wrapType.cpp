@@ -6,6 +6,7 @@
 //
 
 #include "pxr/pxr.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 
 #include "pxr/base/tf/type.h"
 #include "pxr/base/tf/wrapTypeHelpers.h"

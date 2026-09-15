@@ -13,7 +13,7 @@
 #include "pxr/usd/sdf/changeBlock.h"
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/tf/iterator.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/external/boost/python.hpp"
 

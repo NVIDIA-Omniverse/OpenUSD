@@ -24,7 +24,7 @@
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/pyObjWrapper.h"
 #include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/iterator.h"
 #include "pxr/base/tf/meta.h"
 #include "pxr/base/tf/span.h"
