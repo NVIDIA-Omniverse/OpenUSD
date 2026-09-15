@@ -109,6 +109,13 @@ TfPyIsInitialized()
     return Py_IsInitialized();
 }
 
+TF_API
+bool
+TfPyIsNone(PyObject *obj)
+{
+    return !obj || obj == Py_None;
+}
+
 std::string
 Tf_PyObjectRepr(PyObject *obj)
 {
@@ -154,6 +161,13 @@ Tf_PyObjectRepr(PyObject *obj)
     return reprString;
 }
 
+TF_API
+std::string
+TfPyObjectRepr(PyObject *obj)
+{
+    return Tf_PyObjectRepr(obj);
+}
+
 std::string
 Tf_PyGetClassName(PyObject *obj)
 {
@@ -186,11 +200,25 @@ Tf_PyGetClassName(PyObject *obj)
     // CODE_COVERAGE_ON
 }
 
+TF_API
+std::string
+TfPyGetClassName(PyObject *obj)
+{
+    return Tf_PyGetClassName(obj);
+}
+
 PyObject *
 Tf_PyCopyBufferToByteArray(const char *buffer, size_t size)
 {
     TfPyLock lock;
     return PyByteArray_FromStringAndSize(buffer, size);
+}
+
+TF_API
+PyObject *
+TfPyCopyBufferToPyByteArray(const char *buffer, size_t size)
+{
+    return Tf_PyCopyBufferToByteArray(buffer, size);
 }
 
 TF_API

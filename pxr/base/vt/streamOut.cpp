@@ -124,7 +124,7 @@ VtStreamOutArray(
 std::ostream &
 VtStreamOut(TfPyObjWrapper const &obj, std::ostream &stream)
 {
-    return stream << TfPyObjectRepr(obj.Get());
+    return stream << TfPyObjectRepr(obj.ptr());
 }
 #endif // PXR_PYTHON_SUPPORT_ENABLED
 

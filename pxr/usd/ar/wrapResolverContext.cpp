@@ -85,7 +85,7 @@ public:
     {
         std::vector<std::string> objReprs;
         for (const auto& data : ctx._contexts) {
-            objReprs.push_back(TfPyObjectRepr(data->GetPythonObj().Get()));
+            objReprs.push_back(TfPyObjectRepr(data->GetPythonObj().ptr()));
         }
         return TF_PY_REPR_PREFIX +
             TfStringPrintf("ResolverContext(%s)", 

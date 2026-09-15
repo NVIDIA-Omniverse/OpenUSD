@@ -11,6 +11,7 @@
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/def.hpp"
+#include "pxr/external/boost/python/handle.hpp"
 #include "pxr/external/boost/python/manage_new_object.hpp"
 #include "pxr/external/boost/python/return_arg.hpp"
 #include "pxr/external/boost/python/return_value_policy.hpp"
@@ -33,7 +34,8 @@ _GetFile(const SdfZipFile& zipFile, const std::string& filePath)
     if (iter == zipFile.end()) {
         return object();
     }
-    return TfPyCopyBufferToByteArray(iter.GetFile(), iter.GetFileInfo().size);
+    return object(handle<>(
+        TfPyCopyBufferToPyByteArray(iter.GetFile(), iter.GetFileInfo().size)));
 }
 
 static object

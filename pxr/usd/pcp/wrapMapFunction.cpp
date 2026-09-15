@@ -47,7 +47,7 @@ _Repr(const PcpMapFunction &f)
         const pxr_boost::python::dict sourceToTargetMap =
             TfPyCopyMapToDictionary(f.GetSourceToTargetMap());
 
-        s += TfPyObjectRepr(sourceToTargetMap);
+        s += TfPyObjectRepr(sourceToTargetMap.ptr());
         if (f.GetTimeOffset() != SdfLayerOffset()) {
             s += ", ";
             s += TfPyRepr(f.GetTimeOffset());

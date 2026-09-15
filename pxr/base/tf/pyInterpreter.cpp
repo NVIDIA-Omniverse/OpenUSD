@@ -144,10 +144,12 @@ TfPyRunString(const std::string &cmd , int start,
         handle<> 
             defaultGlobalsHandle(borrowed(PyModule_GetDict(mainModule.get())));
 
-        PyObject *pyGlobals =
-            TfPyIsNone(globals) ? defaultGlobalsHandle.get() : globals.ptr();
-        PyObject *pyLocals =
-            TfPyIsNone(locals) ? pyGlobals : locals.ptr();
+        PyObject *pyGlobals = TfPyIsNone(globals.ptr())
+            ? defaultGlobalsHandle.get()
+            : globals.ptr();
+        PyObject *pyLocals = TfPyIsNone(locals.ptr())
+            ? pyGlobals
+            : locals.ptr();
 
         // used passed-in objects for globals and locals, or default
         // to globals from main module if no locals/globals passed in.
@@ -178,10 +180,12 @@ TfPyRunFile(const std::string &filename, int start,
 
         // used passed-in objects for globals and locals, or default
         // to globals from main module if no locals/globals passed in.
-        PyObject *pyGlobals =
-            TfPyIsNone(globals) ? defaultGlobalsHandle.get() : globals.ptr();
-        PyObject *pyLocals =
-            TfPyIsNone(locals) ? pyGlobals : locals.ptr();
+        PyObject *pyGlobals = TfPyIsNone(globals.ptr())
+            ? defaultGlobalsHandle.get()
+            : globals.ptr();
+        PyObject *pyLocals = TfPyIsNone(locals.ptr())
+            ? pyGlobals
+            : locals.ptr();
         
         return handle<>(PyRun_FileEx(f, filename.c_str(), start,
                                      pyGlobals, pyLocals, 1 /* close file */));

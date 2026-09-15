@@ -26,11 +26,13 @@
 #include <string>
 #include <vector>
 
+#ifndef Py_LIMITED_API
 #include "pxr/external/boost/python/dict.hpp"
 #include "pxr/external/boost/python/extract.hpp"
 #include "pxr/external/boost/python/handle.hpp"
 #include "pxr/external/boost/python/object.hpp"
 #include "pxr/external/boost/python/type_id.hpp"
+#endif
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -111,11 +113,16 @@ inline void TfPyThrowTypeError(std::string const &msg)
     TfPyThrowTypeError(msg.c_str());
 }
 
+/// Return true iff \a obj is null or None.
+TF_API bool TfPyIsNone(PyObject *obj);
+
 /// Return true iff \a obj is None.
+#ifndef Py_LIMITED_API
 TF_API bool TfPyIsNone(pxr_boost::python::object const &obj);
 
 /// Return true iff \a obj is None.
 TF_API bool TfPyIsNone(pxr_boost::python::handle<> const &obj);
+#endif
 
 // Helper for \c TfPyObject().
 TF_API void Tf_PyObjectError(bool printError);
@@ -123,6 +130,7 @@ TF_API void Tf_PyObjectError(bool printError);
 /// Return a python object for the given C++ object, loading the appropriate
 /// wrapper code if necessary. Spams users if complainOnFailure is true and
 /// conversion fails.
+#ifndef Py_LIMITED_API
 template <typename T>
 pxr_boost::python::object TfPyObject(T const &t, bool complainOnFailure = true) {
     // initialize python if it isn't already, so at least we can try to return
@@ -149,16 +157,25 @@ pxr_boost::python::object TfPyObject(PyObject* t, bool complainOnFailure = true)
     TfPyLock pyLock;
     return pxr_boost::python::object(pxr_boost::python::handle<>(t));
 }
+#endif
 
 /// Return repr(t).
 ///
 /// Calls PyObject_Repr on the given python object.
+TF_API std::string TfPyObjectRepr(PyObject *t);
+
+/// Return repr(t).
+///
+/// Calls PyObject_Repr on the given python object.
+#ifndef Py_LIMITED_API
 TF_API std::string TfPyObjectRepr(pxr_boost::python::object const &t);
+#endif
 
 /// Return repr(t).
 ///
 /// Converts t to its equivalent python object and then calls PyObject_Repr on
 /// that.
+#ifndef Py_LIMITED_API
 template <typename T>
 std::string TfPyRepr(T const &t) {
     if (!TfPyIsInitialized())
@@ -183,15 +200,18 @@ std::string TfPyRepr(const std::vector<T> &v) {
     result += "]";
     return result;
 }
+#endif
 
 /// Evaluate python expression \a expr with all the known script modules
 /// imported under their standard names. Additional globals may be provided in
 /// the \p extraGlobals dictionary.
+#ifndef Py_LIMITED_API
 TF_API
 pxr_boost::python::object
 TfPyEvaluate(
     std::string const &expr,
     pxr_boost::python::dict const &extraGlobals = pxr_boost::python::dict());
+#endif
 
 /// Return a positive index in the range [0,size).  If \a throwError is true,
 /// this will throw an index error if the resulting index is out of range.
@@ -200,11 +220,17 @@ int64_t
 TfPyNormalizeIndex(int64_t index, uint64_t size, bool throwError = false);
 
 /// Return the name of the class of \a obj.
+TF_API std::string TfPyGetClassName(PyObject *obj);
+
+/// Return the name of the class of \a obj.
+#ifndef Py_LIMITED_API
 TF_API std::string TfPyGetClassName(pxr_boost::python::object const &obj);
+#endif
 
 
 /// Return the python class object for \a type if \a type has been wrapped.
 /// Otherwise return None.
+#ifndef Py_LIMITED_API
 TF_API pxr_boost::python::object
 TfPyGetClassObject(std::type_info const &type);
 
@@ -245,6 +271,7 @@ TfPyWrapOnce(std::function<void()> const &wrapFunc)
 
     Tf_PyWrapOnceImpl(pxr_boost::python::type_id<T>(), wrapFunc, &isTypeWrapped);
 }
+#endif
 
 /// Load the python module \a moduleName.  This is used by some low-level
 /// infrastructure code to load python wrapper modules corresponding to C++
@@ -254,6 +281,7 @@ TF_API
 void Tf_PyLoadScriptModule(std::string const &name);
 
 /// Creates a python dictionary from a std::map.
+#ifndef Py_LIMITED_API
 template <class Map>
 pxr_boost::python::dict TfPyCopyMapToDictionary(Map const &map) {
     TfPyLock lock;
@@ -297,7 +325,18 @@ template<class Seq>
 pxr_boost::python::tuple TfPyCopySequenceToTuple(Seq const &seq) {
     return pxr_boost::python::tuple(TfPyCopySequenceToList(seq));
 }
+#endif
 
+/// Create a python bytearray from an input buffer and size.
+///
+/// If a size of zero is passed in this function will return a valid python
+/// bytearray of size zero.
+///
+/// A new reference is returned on success; null is returned on failure.
+TF_API
+PyObject *TfPyCopyBufferToPyByteArray(const char* buffer, size_t size);
+
+#ifndef Py_LIMITED_API
 /// Create a python bytearray from an input buffer and size.
 ///
 /// If a size of zero is passed in this function will return a valid python
@@ -306,6 +345,7 @@ pxr_boost::python::tuple TfPyCopySequenceToTuple(Seq const &seq) {
 /// An invalid object handle is returned on failure.
 TF_API
 pxr_boost::python::object TfPyCopyBufferToByteArray(const char* buffer, size_t size);
+#endif
 
 /// Return a vector of strings containing the current python traceback.
 ///
@@ -365,6 +405,7 @@ bool TfPyUnsetenv(const std::string & name);
 
 // Private helper method to TfPyEvaluateAndExtract.
 //
+#ifndef Py_LIMITED_API
 TF_API bool Tf_PyEvaluateWithErrorCheck(
     const std::string & expr, pxr_boost::python::object * obj);
 
@@ -397,6 +438,7 @@ bool TfPyEvaluateAndExtract(const std::string & expr, T * t)
 
     return true;
 }
+#endif
 
 /// Print a standard traceback to sys.stderr and clear the error indicator.
 /// If the error is a KeyboardInterrupt then this does nothing.  Call this

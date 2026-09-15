@@ -32,7 +32,7 @@ std::string
 _SpecRepr(const bp::object& self, const SdfSpec* spec)
 {
     if (!spec || spec->IsDormant() || !spec->GetLayer()) {
-        return "<dormant " + TfPyGetClassName(self) + ">";
+        return "<dormant " + TfPyGetClassName(self.ptr()) + ">";
     }
     else {
         SdfLayerHandle layer = spec->GetLayer();
