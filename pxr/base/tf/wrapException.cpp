@@ -12,6 +12,7 @@
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/base/tf/ostreamMethods.h"
 #include "pxr/base/tf/pyCall.h"
+#include "pxr/base/tf/pyError.h"
 #include "pxr/base/tf/pyErrorInternal.h"
 
 #include "pxr/external/boost/python/def.hpp"
@@ -23,6 +24,15 @@ using namespace pxr_boost::python;
 
 // This is created below, in the wrap function.
 static PyObject *tfExceptionClass;
+
+static void _TranslatePyErrorAlreadySet(TfPyErrorAlreadySet const &)
+{
+    if (!PyErr_Occurred()) {
+        PyErr_SetString(
+            PyExc_SystemError,
+            "TfPyErrorAlreadySet escaped without an active Python exception");
+    }
+}
 
 static void Translate(TfBaseException const &exc)
 {
@@ -120,6 +130,8 @@ void wrapException()
     scope().attr("CppException") = pxr_boost::python::handle<>(tfExceptionClass);
     
     // Register the exception translator with pxr_boost::python.
+    register_exception_translator<TfPyErrorAlreadySet>(
+        _TranslatePyErrorAlreadySet);
     register_exception_translator<TfBaseException>(Translate);
 
     // Test support.

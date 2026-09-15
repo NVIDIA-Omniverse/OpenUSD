@@ -15,11 +15,26 @@
 #include "pxr/base/tf/api.h"
 #include "pxr/base/tf/errorMark.h"
 
+#include <exception>
+
 #ifndef Py_LIMITED_API
 #include "pxr/external/boost/python/default_call_policies.hpp"
 #endif
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+/// Binding-neutral sentinel for when Python's error indicator is set and C++
+/// control flow must exit immediately. Binding adapters should translate this
+/// to their own "Python error already set" mechanism.
+class TfPyErrorAlreadySet : public std::exception
+{
+public:
+    TF_API
+    virtual ~TfPyErrorAlreadySet();
+
+    TF_API
+    const char *what() const noexcept override;
+};
 
 /// Converts any \a TfError objects in \a m into python exceptions.  User code
 /// should generally not have to call this.  User code should generally not

@@ -46,8 +46,8 @@ PXR_NAMESPACE_OPEN_SCOPE
 TF_API bool TfPyIsInitialized();
 
 /// Raises a Python \c IndexError with the given error \p msg and throws a
-/// pxr_boost::python::error_already_set exception. Callers must hold the GIL
-/// before calling this function.
+/// TfPyErrorAlreadySet exception. Callers must hold the GIL before calling
+/// this function.
 TF_API void TfPyThrowIndexError(const char *msg);
 
 /// \overload
@@ -57,8 +57,8 @@ inline void TfPyThrowIndexError(std::string const &msg)
 }
 
 /// Raises a Python \c RuntimeError with the given error \p msg and throws a
-/// pxr_boost::python::error_already_set exception. Callers must hold the GIL
-/// before calling this function.
+/// TfPyErrorAlreadySet exception. Callers must hold the GIL before calling
+/// this function.
 TF_API void TfPyThrowRuntimeError(const char *msg);
 
 /// \overload
@@ -68,8 +68,8 @@ inline void TfPyThrowRuntimeError(std::string const &msg)
 }
 
 /// Raises a Python \c StopIteration with the given error \p msg and throws a
-/// pxr_boost::python::error_already_set exception. Callers must hold the GIL
-/// before calling this function.
+/// TfPyErrorAlreadySet exception. Callers must hold the GIL before calling
+/// this function.
 TF_API void TfPyThrowStopIteration(const char *msg);
 
 /// \overload
@@ -79,8 +79,8 @@ inline void TfPyThrowStopIteration(std::string const &msg)
 }
 
 /// Raises a Python \c KeyError with the given error \p msg and throws a
-/// pxr_boost::python::error_already_set exception. Callers must hold the GIL
-/// before calling this function.
+/// TfPyErrorAlreadySet exception. Callers must hold the GIL before calling
+/// this function.
 TF_API void TfPyThrowKeyError(const char *msg);
 
 /// \overload
@@ -90,8 +90,8 @@ inline void TfPyThrowKeyError(std::string const &msg)
 }
 
 /// Raises a Python \c ValueError with the given error \p msg and throws a
-/// pxr_boost::python::error_already_set exception. Callers must hold the GIL
-/// before calling this function.
+/// TfPyErrorAlreadySet exception. Callers must hold the GIL before calling
+/// this function.
 TF_API void TfPyThrowValueError(const char *msg);
 
 /// \overload
@@ -101,8 +101,8 @@ inline void TfPyThrowValueError(std::string const &msg)
 }
 
 /// Raises a Python \c TypeError with the given error \p msg and throws a
-/// pxr_boost::python::error_already_set exception. Callers must hold the GIL
-/// before calling this function.
+/// TfPyErrorAlreadySet exception. Callers must hold the GIL before calling
+/// this function.
 TF_API void TfPyThrowTypeError(const char *msg);
 
 /// \overload
