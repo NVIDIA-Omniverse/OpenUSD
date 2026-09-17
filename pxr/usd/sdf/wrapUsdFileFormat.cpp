@@ -8,7 +8,7 @@
 
 #include "pxr/usd/sdf/usdFileFormat.h"
 #include "pxr/usd/sdf/layer.h"
-#include "pxr/base/tf/pyStaticTokens.h"
+#include "pxr/base/tf/pyStaticTokensBoost.h"
 
 #include "pxr/external/boost/python/bases.hpp"
 #include "pxr/external/boost/python/class.hpp"

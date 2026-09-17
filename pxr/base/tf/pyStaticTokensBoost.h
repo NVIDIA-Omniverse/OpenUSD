@@ -5,10 +5,10 @@
 // https://openusd.org/license.
 //
 
-#ifndef PXR_BASE_TF_PY_STATIC_TOKENS_H
-#define PXR_BASE_TF_PY_STATIC_TOKENS_H
+#ifndef PXR_BASE_TF_PY_STATIC_TOKENS_BOOST_H
+#define PXR_BASE_TF_PY_STATIC_TOKENS_BOOST_H
 
-/// \file tf/pyStaticTokens.h
+/// \file tf/pyStaticTokensBoost.h
 
 #include "pxr/pxr.h"
 
@@ -77,4 +77,4 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
-#endif // PXR_BASE_TF_PY_STATIC_TOKENS_H
+#endif // PXR_BASE_TF_PY_STATIC_TOKENS_BOOST_H

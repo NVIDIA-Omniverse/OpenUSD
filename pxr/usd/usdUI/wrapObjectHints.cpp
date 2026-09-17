@@ -10,7 +10,7 @@
 
 #include "pxr/base/tf/pyContainerConversions.h"
 #include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyStaticTokens.h"
+#include "pxr/base/tf/pyStaticTokensBoost.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/operators.hpp"

@@ -8,7 +8,7 @@
 
 #include "pxr/pxr.h"
 
-#include "pxr/base/tf/pyStaticTokens.h"
+#include "pxr/base/tf/pyStaticTokensBoost.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 

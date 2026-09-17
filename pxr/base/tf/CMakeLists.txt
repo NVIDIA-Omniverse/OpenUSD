@@ -272,7 +272,7 @@ pxr_library(tf
         pySafePython.h
         pySignatureExt.h
         pySingletonBoost.h
-        pyStaticTokens.h
+        pyStaticTokensBoost.h
         pyUtilsBoost.h
         wrapTypeHelpersBoost.h
         scriptModuleLoaderBoost.h

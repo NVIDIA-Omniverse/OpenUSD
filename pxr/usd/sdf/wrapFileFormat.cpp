@@ -11,7 +11,7 @@
 #include "pxr/usd/sdf/fileFormat.h"
 #include "pxr/base/tf/pyCall.h"
 #include "pxr/base/tf/pyPtrHelpersBoost.h"
-#include "pxr/base/tf/pyStaticTokens.h"
+#include "pxr/base/tf/pyStaticTokensBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 
 #include "pxr/external/boost/python/class.hpp"

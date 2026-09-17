@@ -8,7 +8,7 @@
 #include "pxr/pxr.h"
 #include "pxr/base/gf/color.h"
 #include "pxr/base/gf/colorSpace.h"
-#include "pxr/base/tf/pyStaticTokens.h"
+#include "pxr/base/tf/pyStaticTokensBoost.h"
 #include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 

@@ -7,7 +7,7 @@
 
 #include "pxr/pxr.h"
 #include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyStaticTokens.h"
+#include "pxr/base/tf/pyStaticTokensBoost.h"
 #include "pxr/base/tf/weakPtr.h"
 #include "pxr/usd/sdr/shaderProperty.h"
 

@@ -10,7 +10,7 @@
 #include "pxr/usd/usdUtils/introspection.h"
 
 #include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyStaticTokens.h"
+#include "pxr/base/tf/pyStaticTokensBoost.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 

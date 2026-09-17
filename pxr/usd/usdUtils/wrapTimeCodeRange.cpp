@@ -7,7 +7,7 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/usdUtils/timeCodeRange.h"
 
-#include "pxr/base/tf/pyStaticTokens.h"
+#include "pxr/base/tf/pyStaticTokensBoost.h"
 #include "pxr/base/tf/pyUtils.h"
 #include "pxr/usd/usd/timeCode.h"
 

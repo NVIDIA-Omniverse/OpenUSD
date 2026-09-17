@@ -26,7 +26,7 @@
 
 #include "pxr/base/tf/pyContainerConversions.h"
 #include "pxr/base/tf/pyEnumBoost.h"
-#include "pxr/base/tf/pyStaticTokens.h"
+#include "pxr/base/tf/pyStaticTokensBoost.h"
 
 #include "pxr/base/vt/valueFromPython.h"
 
