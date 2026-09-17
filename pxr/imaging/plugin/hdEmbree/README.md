@@ -1,5 +1,7 @@
 ![Typhoon](doc/images/readme-header.png)
 
+# *** *This Typhoon branch is on hold while undergoing a large refactor. A new branch will be published soon* ***
+
 # Typhoon
 
 Typhoon is a reference path tracer built into OpenUSD. It is intended to be a readable, community-developed, shared reference for how to implement standard USD features, such as UsdLux lighting, and UsdShade-based MaterialX materials.
