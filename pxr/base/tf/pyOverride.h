@@ -110,6 +110,10 @@ public:
         : TfPyObjWrapper(callable.release(), TfPyNewReference)
     {}
 
+    explicit operator bool() const {
+        return ptr() != Py_None;
+    }
+
     /// Call the override.
     /// Clients need not hold the GIL to invoke the call operator.
     template <typename... Args>

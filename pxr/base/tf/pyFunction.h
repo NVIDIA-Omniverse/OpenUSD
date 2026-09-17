@@ -12,6 +12,7 @@
 #include "pxr/base/tf/pyCall.h"
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/pyObjWrapper.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/pyUtilsBoost.h"
 
 #include "pxr/external/boost/python/converter/from_python.hpp"
@@ -140,27 +141,29 @@ struct TfPyFunctionFromPython<Ret (Args...)>
                 object weakSelf(handle<>(PyWeakref_NewRef(self, NULL)));
                 new (storage)
                     FuncType(CallMethod{
-                            TfPyObjWrapper(func),
-                                TfPyObjWrapper(weakSelf)
+                            TfPyObjWrapperFromBoostObject(func),
+                                TfPyObjWrapperFromBoostObject(weakSelf)
                         });
                 
             } else if (PyObject_HasAttrString(pyCallable, "__name__") &&
                        extract<string>(callable.attr("__name__"))()
                                                                 == "<lambda>") {
                 // Explicitly hold on to strong references to lambdas.
-                new (storage) FuncType(Call{TfPyObjWrapper(callable)});
+                new (storage) FuncType(
+                    Call{TfPyObjWrapperFromBoostObject(callable)});
             } else {
                 // Attempt to get a weak reference to the callable.
                 if (PyObject *weakCallable =
                     PyWeakref_NewRef(pyCallable, NULL)) {
                     new (storage)
                         FuncType(
-                            CallWeak{TfPyObjWrapper(
+                            CallWeak{TfPyObjWrapperFromBoostObject(
                                     object(handle<>(weakCallable)))});
                 } else {
                     // Fall back to taking a strong reference.
                     PyErr_Clear();
-                    new (storage) FuncType(Call{TfPyObjWrapper(callable)});
+                    new (storage) FuncType(
+                        Call{TfPyObjWrapperFromBoostObject(callable)});
                 }
             }
         }

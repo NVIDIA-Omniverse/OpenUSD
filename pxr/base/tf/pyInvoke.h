@@ -18,6 +18,7 @@
 #include "pxr/base/tf/pyInterpreter.h"
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/pyObjWrapper.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 
 #include "pxr/external/boost/python/dict.hpp"
 #include "pxr/external/boost/python/extract.hpp"
@@ -78,7 +79,7 @@ struct TfPyKwArg
         TfPyLock lock;
 
         // The object constructor throws if the type is not convertible.
-        value = Tf_ArgToPy(valueIn);
+        value = TfPyObjWrapperFromBoostObject(Tf_ArgToPy(valueIn));
     }
 
     std::string name;
@@ -117,9 +118,7 @@ void Tf_BuildPyInvokeKwArgs(
     RestArgs... rest)
 {
     // Store mapping in kwargs dict.
-    (*kwArgsOut)[kwArg.name] = pxr_boost::python::object(
-        pxr_boost::python::handle<>(
-            pxr_boost::python::borrowed(kwArg.value.ptr())));
+    (*kwArgsOut)[kwArg.name] = TfPyObjWrapperToBoostObject(kwArg.value);
 
     // Recurse to handle next arg.
     Tf_BuildPyInvokeKwArgs(kwArgsOut, rest...);

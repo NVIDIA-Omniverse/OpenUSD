@@ -17,10 +17,6 @@
 #include "pxr/base/tf/weakBase.h"
 #include "pxr/base/tf/weakPtr.h"
 
-#ifndef Py_LIMITED_API
-#include "pxr/external/boost/python/object.hpp"
-#endif
-
 #include "pxr/base/tf/hashmap.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -32,11 +28,6 @@ struct Tf_PyWeakObject : public TfWeakBase
 {
 public:
     typedef Tf_PyWeakObject This;
-
-#ifndef Py_LIMITED_API
-    static Tf_PyWeakObjectPtr GetOrCreate(pxr_boost::python::object const &obj);
-    pxr_boost::python::object GetObject() const;
-#endif
 
     static Tf_PyWeakObjectPtr GetOrCreate(PyObject *obj);
     PyObject *GetObjectPtr() const;

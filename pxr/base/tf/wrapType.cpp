@@ -15,6 +15,7 @@
 #include "pxr/base/tf/makePyConstructor.h"
 #include "pxr/base/tf/pyContainerConversions.h"
 #include "pxr/base/tf/pyObjectFinder.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/pyPtrHelpers.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/iterator.h"
@@ -49,7 +50,8 @@ _GetTfTypeFromPython(PyObject *p)
     if (PyBytes_Check(p) || PyUnicode_Check(p))
         return TfType::FindByName( extract<string>(p)() );
     else
-        return TfType::FindByPythonClass( object(borrowed(p)) );
+        return TfType::FindByPythonClass(
+            TfPyObjWrapperFromBoostObject(object(borrowed(p))));
 }
 
 // A from-Python converter that uses the _GetTfTypeFromPython function.
@@ -211,7 +213,8 @@ _FindByPythonClass(const pxr_boost::python::object & classObj)
                            "want Tf.Type.FindByName() instead");
     }
 
-    return TfType::FindByPythonClass(classObj);
+    return TfType::FindByPythonClass(
+        TfPyObjWrapperFromBoostObject(classObj));
 }
 
 static void

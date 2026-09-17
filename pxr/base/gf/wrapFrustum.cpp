@@ -63,12 +63,13 @@ GetPerspectiveHelper( const GfFrustum &self, bool isFovVertical ) {
 
 static tuple
 GetOrthographicHelper( const GfFrustum &self ) {
-    double left, right, bottom, top, near, far;
+    double left, right, bottom, top, nearDist, farDist;
     bool result =
-        self.GetOrthographic( &left, &right, &bottom, &top, &near, &far );
+        self.GetOrthographic(
+            &left, &right, &bottom, &top, &nearDist, &farDist );
     return result ?
         pxr_boost::python::
-        make_tuple( left, right, bottom, top, near, far ) : tuple();
+        make_tuple( left, right, bottom, top, nearDist, farDist ) : tuple();
 }
 
 static tuple

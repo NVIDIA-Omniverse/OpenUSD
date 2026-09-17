@@ -14,6 +14,9 @@
 #include "pxr/base/tf/pyObjWrapper.h"
 
 #include "pxr/base/tf/pyLock.h"
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+#include "pxr/base/tf/pyObjWrapperBoost.h"
+#endif // PXR_PYTHON_SUPPORT_ENABLED
 
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/arch/hints.h"
@@ -425,7 +428,8 @@ class VtValue
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
             ProxiedType const &p = VtGetProxiedObject(obj);
             TfPyLock lock;
-            return pxr_boost::python::api::object(p);
+            return TfPyObjWrapperFromBoostObject(
+                pxr_boost::python::api::object(p));
 #else
             return {};
 #endif //PXR_PYTHON_SUPPORT_ENABLED
@@ -486,7 +490,8 @@ class VtValue
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
             VtValue const *val = VtGetErasedProxiedVtValue(obj);
             TfPyLock lock;
-            return pxr_boost::python::api::object(*val);
+            return TfPyObjWrapperFromBoostObject(
+                pxr_boost::python::api::object(*val));
 #else
             return {};
 #endif //PXR_PYTHON_SUPPORT_ENABLED

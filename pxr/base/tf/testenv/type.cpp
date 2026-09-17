@@ -13,7 +13,6 @@
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
 #include "pxr/base/tf/pyObjWrapper.h"
 #include "pxr/base/tf/pyUtils.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
 #endif // PXR_PYTHON_SUPPORT_ENABLED
 #include "pxr/base/tf/refPtr.h"
 #include "pxr/base/tf/regTest.h"
@@ -568,7 +567,7 @@ Test_TfType()
     // Start up Python.
     TfPyInitialize();
     TF_FOR_ALL(it, allTypeSet)
-        TF_AXIOM( TfPyIsNone( it->GetPythonClass().Get() ) );
+        TF_AXIOM( TfPyIsNone( it->GetPythonClass().ptr() ) );
 #endif // PXR_PYTHON_SUPPORT_ENABLED
 
     ////////////////////////////////////////////////////////////////////////

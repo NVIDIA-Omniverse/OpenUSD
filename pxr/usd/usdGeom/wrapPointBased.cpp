@@ -164,7 +164,7 @@ _ComputeExtent(object points) {
     // Check for proper conversion to VtVec3fArray
     if (!pointsAsVtValue.IsHolding<VtVec3fArray>()) {
         TF_CODING_ERROR("Improper value for 'points'");
-        return object();
+        return TfPyObjWrapperFromBoostObject(object());
     }
 
     // Convert from VtValue to VtVec3fArray
@@ -172,7 +172,7 @@ _ComputeExtent(object points) {
     if (UsdGeomPointBased::ComputeExtent(pointsArray, &extent)) {
         return UsdVtValueToPython(VtValue(extent));
     } else {
-        return object();
+        return TfPyObjWrapperFromBoostObject(object());
     }
 }
 

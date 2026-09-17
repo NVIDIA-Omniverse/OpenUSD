@@ -14,6 +14,9 @@
 #include "pxr/base/tf/pyObjWrapper.h"
 
 #include "pxr/base/tf/pyLock.h"
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+#include "pxr/base/tf/pyObjWrapperBoost.h"
+#endif // PXR_PYTHON_SUPPORT_ENABLED
 
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/arch/hints.h"
@@ -322,7 +325,8 @@ protected:
         static TfPyObjWrapper _GetPyObj(_RefdObjPtr storage) {
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
             TfPyLock lock;
-            return pxr_boost::python::api::object(GetObj(storage));
+            return TfPyObjWrapperFromBoostObject(
+                pxr_boost::python::api::object(GetObj(storage)));
 #else
             return {};
 #endif

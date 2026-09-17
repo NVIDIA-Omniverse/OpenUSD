@@ -11,6 +11,10 @@
 #include "pxr/usd/usd/api.h"
 #include "pxr/base/tf/pyObjWrapper.h"
 
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+#include "pxr/base/tf/pyObjWrapperBoost.h"
+#endif
+
 PXR_NAMESPACE_OPEN_SCOPE
 
 class VtValue;
@@ -32,6 +36,13 @@ USD_API
 VtValue UsdPythonToSdfType(TfPyObjWrapper pyVal,
                            SdfValueTypeName const &targetType);
 
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+USD_API
+VtValue
+UsdPythonToSdfType(pxr_boost::python::object const &pyVal,
+                   SdfValueTypeName const &targetType);
+#endif
+
 /// Helper for converting a python value to a metadata value for metadata
 /// known to the SdfSchema.  Generates a coding error if \p key is unknown
 /// to the SdfSchema.
@@ -47,6 +58,13 @@ USD_API
 bool UsdPythonToMetadataValue(const TfToken &key, const TfToken &keyPath, 
                               TfPyObjWrapper pyVal, VtValue *result);
 
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+USD_API
+bool
+UsdPythonToMetadataValue(const TfToken &key, const TfToken &keyPath,
+                         pxr_boost::python::object const &pyVal,
+                         VtValue *result);
+#endif
 
 PXR_NAMESPACE_CLOSE_SCOPE
 

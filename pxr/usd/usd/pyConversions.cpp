@@ -19,6 +19,7 @@
 #include "pxr/usd/sdf/types.h"
 
 #include "pxr/base/tf/pyLock.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/pyUtilsBoost.h"
 
 #include "pxr/external/boost/python/object.hpp"
@@ -33,7 +34,7 @@ UsdVtValueToPython(const VtValue &value)
 {
     // Convert to python.
     TfPyLock lock;
-    return TfPyObjWrapper(TfPyObject(value));
+    return TfPyObjWrapperFromBoostObject(TfPyObject(value));
 }
 
 VtValue 
@@ -43,9 +44,10 @@ UsdPythonToSdfType(TfPyObjWrapper pyVal, SdfValueTypeName const &targetType)
 
     // Extract VtValue from python object.
     VtValue val;
+    object pyObj = TfPyObjWrapperToBoostObject(pyVal);
     {
         TfPyLock lock;
-        val = extract<VtValue>(pyVal.Get())();
+        val = extract<VtValue>(pyObj)();
     }
 
     // Attempt to cast the value to what we want.  Get a default value for this
@@ -64,6 +66,14 @@ UsdPythonToSdfType(TfPyObjWrapper pyVal, SdfValueTypeName const &targetType)
     return val;
 }
 
+VtValue
+UsdPythonToSdfType(pxr_boost::python::object const &pyVal,
+                   SdfValueTypeName const &targetType)
+{
+    return UsdPythonToSdfType(
+        TfPyObjWrapperFromBoostObject(pyVal), targetType);
+}
+
 bool
 UsdPythonToMetadataValue(
     const TfToken &key, const TfToken &keyPath, 
@@ -80,7 +90,8 @@ UsdPythonToMetadataValue(
         return false;
     }
 
-    VtValue value = extract<VtValue>(pyVal.Get())();
+    object pyObj = TfPyObjWrapperToBoostObject(pyVal);
+    VtValue value = extract<VtValue>(pyObj)();
 
     // Empty values are always considered valid.
     if (value.IsEmpty()) {
@@ -112,7 +123,7 @@ UsdPythonToMetadataValue(
                     "Invalid value type for dictionary key-path '%s:%s': '%s'.",
                     key.GetString().c_str(),
                     keyPath.GetText(),
-                    TfPyRepr(pyVal.Get()).c_str()));
+                    TfPyRepr(pyObj).c_str()));
         }
         // Clear out the fallback here, since we allow any scene desc type in
         // dicts.
@@ -123,11 +134,11 @@ UsdPythonToMetadataValue(
     // types from Python.
     if (!fallback.IsEmpty()) {
         if (fallback.IsHolding<TfTokenVector>()) {
-            value = extract<TfTokenVector>(pyVal.Get())();
+            value = extract<TfTokenVector>(pyObj)();
         }
         else if (fallback.IsHolding< std::vector<std::string> >()) {
-            extract<std::vector<std::string> > getVecString(pyVal.Get());
-            extract<VtStringArray> getStringArray(pyVal.Get());
+            extract<std::vector<std::string> > getVecString(pyObj);
+            extract<VtStringArray> getStringArray(pyObj);
             if (getVecString.check()) {
                 value = getVecString();
             } else if (getStringArray.check()) {
@@ -145,11 +156,11 @@ UsdPythonToMetadataValue(
     if (value.IsEmpty() ||
         (fallback.IsEmpty() &&
          (!fieldDef->IsValidValue(value) || !schema.IsValidValue(value)))) {
-        VtValue origValue = extract<VtValue>(pyVal.Get())();
+        VtValue origValue = extract<VtValue>(pyObj)();
         TfPyThrowValueError(
             TfStringPrintf(
                 "Invalid value '%s' (type '%s') for key '%s%s'.%s",
-                TfPyRepr(pyVal.Get()).c_str(),
+                TfPyRepr(pyObj).c_str(),
                 origValue.GetTypeName().c_str(),
                 key.GetText(),
                 keyPath.IsEmpty() ? "" :
@@ -162,5 +173,13 @@ UsdPythonToMetadataValue(
     return true;
 }
 
-PXR_NAMESPACE_CLOSE_SCOPE
+bool
+UsdPythonToMetadataValue(const TfToken &key, const TfToken &keyPath,
+                         pxr_boost::python::object const &pyVal,
+                         VtValue *result)
+{
+    return UsdPythonToMetadataValue(
+        key, keyPath, TfPyObjWrapperFromBoostObject(pyVal), result);
+}
 
+PXR_NAMESPACE_CLOSE_SCOPE

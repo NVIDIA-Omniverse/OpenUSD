@@ -265,6 +265,7 @@ pxr_library(tf
     PYTHON_PUBLIC_HEADERS
         py3Compat.h
         pyMakePyPtr.h
+        pyObjWrapperBoost.h
         pySafePython.h
         pySignatureExt.h
         pyStaticTokens.h
@@ -287,12 +288,9 @@ pxr_library(tf
         pyUtilsImpl.h
 
     PYTHON_CPPFILES
-        pyErrorBoost.cpp
         pyErrorImpl.cpp
         pyInvokeImpl.cpp
         pyNoticeCallbackImpl.cpp
-        pyObjWrapperBoost.cpp
-        pyUtilsBoost.cpp
         pyUtilsImpl.cpp
 
     PRIVATE_HEADERS
@@ -328,7 +326,6 @@ pxr_library(tf
     PYMODULE_CPPFILES
         module.cpp
         pyWeakObject.cpp
-        pyWeakObjectBoost.cpp
         wrapAnyWeakPtr.cpp
         wrapCallContext.cpp
         wrapDebug.cpp

@@ -13,6 +13,12 @@
 #include "pxr/base/tf/preprocessorUtilsLite.h"
 #include "pxr/base/tf/tf.h"
 
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+#include "pxr/base/tf/pyObjWrapper.h"
+
+#include "pxr/external/boost/python/object_fwd.hpp"
+#endif // PXR_PYTHON_SUPPORT_ENABLED
+
 #include "pxr/base/vt/api.h"
 #include "pxr/base/vt/traits.h"
 #include "pxr/base/vt/types.h"

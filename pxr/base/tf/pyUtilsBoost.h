@@ -14,26 +14,41 @@
 
 #include "pxr/base/tf/pyUtils.h"
 
+#include "pxr/base/tf/diagnosticLite.h"
+#include "pxr/base/tf/errorMark.h"
+#include "pxr/base/tf/pyError.h"
+#include "pxr/base/tf/pyInterpreter.h"
+#include "pxr/base/tf/pyLock.h"
+#include "pxr/base/tf/scriptModuleLoader.h"
+
 #include "pxr/external/boost/python/dict.hpp"
 #include "pxr/external/boost/python/errors.hpp"
 #include "pxr/external/boost/python/extract.hpp"
 #include "pxr/external/boost/python/handle.hpp"
 #include "pxr/external/boost/python/list.hpp"
 #include "pxr/external/boost/python/object.hpp"
+#include "pxr/external/boost/python/object/class_detail.hpp"
 #include "pxr/external/boost/python/tuple.hpp"
 #include "pxr/external/boost/python/type_id.hpp"
 
 #include <functional>
+#include <mutex>
 #include <typeinfo>
 #include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
 /// Return true iff \a obj is None.
-TF_API bool TfPyIsNone(pxr_boost::python::object const &obj);
+inline bool TfPyIsNone(pxr_boost::python::object const &obj)
+{
+    return TfPyIsNone(obj.ptr());
+}
 
 /// Return true iff \a obj is None.
-TF_API bool TfPyIsNone(pxr_boost::python::handle<> const &obj);
+inline bool TfPyIsNone(pxr_boost::python::handle<> const &obj)
+{
+    return TfPyIsNone(obj.get());
+}
 
 /// Return a python object for the given C++ object, loading the appropriate
 /// wrapper code if necessary. Spams users if complainOnFailure is true and
@@ -70,7 +85,10 @@ pxr_boost::python::object TfPyObject(
 /// Return repr(t).
 ///
 /// Calls PyObject_Repr on the given python object.
-TF_API std::string TfPyObjectRepr(pxr_boost::python::object const &t);
+inline std::string TfPyObjectRepr(pxr_boost::python::object const &t)
+{
+    return TfPyObjectRepr(t.ptr());
+}
 
 /// Return repr(t).
 ///
@@ -104,19 +122,46 @@ std::string TfPyRepr(const std::vector<T> &v) {
 /// Evaluate python expression \a expr with all the known script modules
 /// imported under their standard names. Additional globals may be provided in
 /// the \p extraGlobals dictionary.
-TF_API
+inline
 pxr_boost::python::object
 TfPyEvaluate(
     std::string const &expr,
-    pxr_boost::python::dict const &extraGlobals = pxr_boost::python::dict());
+    pxr_boost::python::dict const &extraGlobals = pxr_boost::python::dict())
+{
+    TfPyLock lock;
+    try {
+        pxr_boost::python::dict modulesDict =
+            TfScriptModuleLoader::GetInstance().GetModulesDict();
+
+        pxr_boost::python::handle<> modHandle(
+            PyImport_ImportModule("builtins"));
+        modulesDict["__builtins__"] = pxr_boost::python::object(modHandle);
+        modulesDict.update(extraGlobals);
+
+        return pxr_boost::python::object(TfPyRunString(
+            expr, Py_eval_input, modulesDict, modulesDict));
+    } catch (pxr_boost::python::error_already_set const &) {
+        TfPyConvertPythonExceptionToTfErrors();
+        PyErr_Clear();
+    }
+    return pxr_boost::python::object();
+}
 
 /// Return the name of the class of \a obj.
-TF_API std::string TfPyGetClassName(pxr_boost::python::object const &obj);
+inline std::string TfPyGetClassName(pxr_boost::python::object const &obj)
+{
+    return TfPyGetClassName(obj.ptr());
+}
 
 /// Return the python class object for \a type if \a type has been wrapped.
 /// Otherwise return None.
-TF_API pxr_boost::python::object
-TfPyGetClassObject(std::type_info const &type);
+inline pxr_boost::python::object
+TfPyGetClassObject(std::type_info const &type)
+{
+    TfPyLock pyLock;
+    return pxr_boost::python::object(
+        pxr_boost::python::objects::registered_class_object(type));
+}
 
 /// Return the python class object for T if T has been wrapped.
 /// Otherwise return None.
@@ -126,11 +171,42 @@ TfPyGetClassObject() {
     return TfPyGetClassObject(typeid(T));
 }
 
-TF_API
-void
+inline void
 Tf_PyWrapOnceImpl(pxr_boost::python::type_info const &,
                   std::function<void()> const&,
                   bool *);
+
+inline void
+Tf_PyWrapOnceImpl(
+    pxr_boost::python::type_info const &type,
+    std::function<void()> const &wrapFunc,
+    bool *isTypeWrapped)
+{
+    static std::mutex pyWrapOnceMutex;
+
+    if (!wrapFunc) {
+        TF_CODING_ERROR("Got null wrapFunc");
+        return;
+    }
+
+    TfPyLock pyLock;
+    pyLock.BeginAllowThreads();
+    std::lock_guard<std::mutex> lock(pyWrapOnceMutex);
+    pyLock.EndAllowThreads();
+
+    if (*isTypeWrapped) {
+        return;
+    }
+
+    pxr_boost::python::type_handle pyType =
+        pxr_boost::python::objects::registered_class_object(type);
+
+    if (!pyType) {
+        wrapFunc();
+    }
+
+    *isTypeWrapped = true;
+}
 
 /// Invokes \p wrapFunc to wrap type \c T if \c T is not already wrapped.
 ///
@@ -208,14 +284,33 @@ pxr_boost::python::tuple TfPyCopySequenceToTuple(Seq const &seq) {
 /// bytearray of size zero.
 ///
 /// An invalid object handle is returned on failure.
-TF_API
-pxr_boost::python::object TfPyCopyBufferToByteArray(
-    const char* buffer, size_t size);
+inline pxr_boost::python::object TfPyCopyBufferToByteArray(
+    const char* buffer, size_t size)
+{
+    TfPyLock lock;
+    pxr_boost::python::object result;
+
+    try {
+        pxr_boost::python::handle<> hbuf(
+            TfPyCopyBufferToPyByteArray(buffer, size));
+        result = pxr_boost::python::object(hbuf);
+    } catch (pxr_boost::python::error_already_set const &) {
+        TfPyConvertPythonExceptionToTfErrors();
+        PyErr_Clear();
+    }
+
+    return result;
+}
 
 // Private helper method to TfPyEvaluateAndExtract.
 //
-TF_API bool Tf_PyEvaluateWithErrorCheck(
-    const std::string & expr, pxr_boost::python::object * obj);
+inline bool Tf_PyEvaluateWithErrorCheck(
+    const std::string & expr, pxr_boost::python::object * obj)
+{
+    TfErrorMark m;
+    *obj = TfPyEvaluate(expr);
+    return m.IsClean();
+}
 
 /// Safely evaluates \p expr and extracts the return object of type T. If
 /// successful, returns \c true and sets *t to the return value, otherwise

@@ -11,6 +11,7 @@
 
 #include "pxr/base/tf/api.h"
 #include "pxr/base/tf/pyObjWrapper.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/type.h"
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/def_visitor.hpp"
@@ -30,7 +31,8 @@ namespace TfType_WrapHelpers {
         template <class CLS, class T>
         void _Visit(CLS &c, T *) const {
             if (TfType t = TfType::Find<T>())
-                t.DefinePythonClass(c);
+                t.DefinePythonClass(
+                    TfPyObjWrapperFromBoostObject(object(c)));
         }
 
     public:

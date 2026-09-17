@@ -18,6 +18,7 @@
 
 #include "pxr/base/tf/preprocessorUtilsLite.h"
 #include "pxr/base/tf/pyLock.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/pyUtilsBoost.h"
 
 #include "pxr/external/boost/python.hpp"
@@ -507,7 +508,7 @@ Vt_WrapArrayFromBuffer(TfPyObjWrapper const &obj)
     VtArray<T> result;
     string err;
     if (Vt_ArrayFromBuffer(obj, &result, &err)) {
-        return bp::object(result);
+        return TfPyObjWrapperFromBoostObject(bp::object(result));
     }
     TfPyThrowValueError(
         TfStringPrintf("Failed to produce VtArray<%s> via python buffer "

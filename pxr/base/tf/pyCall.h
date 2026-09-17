@@ -18,6 +18,7 @@
 #include "pxr/base/tf/pyError.h"
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/pyObjWrapper.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 
 #include "pxr/external/boost/python/call.hpp"
 
@@ -38,10 +39,13 @@ PXR_NAMESPACE_OPEN_SCOPE
 /// call operator.
 template <typename Return>
 struct TfPyCall {
-    /// Construct with callable \a c.  Constructing with a \c
-    /// pxr_boost::python::object works, since those implicitly convert to \c
-    /// TfPyObjWrapper, however in that case the GIL must be held by the caller.
+    /// Construct with callable \a c.
     explicit TfPyCall(TfPyObjWrapper const &c) : _callable(c) {}
+
+    /// Construct with a Boost.Python callable \a c. The GIL must be held by
+    /// the caller.
+    explicit TfPyCall(pxr_boost::python::object const &c)
+        : TfPyCall(TfPyObjWrapperFromBoostObject(c)) {}
 
     template <typename... Args>
     Return operator()(Args... args);

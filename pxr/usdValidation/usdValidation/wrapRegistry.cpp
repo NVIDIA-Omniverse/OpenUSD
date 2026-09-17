@@ -15,6 +15,7 @@
 #include "pxr/base/tf/pyFunction.h"
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/pyObjWrapper.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/pyPtrHelpers.h"
 #include "pxr/base/tf/pyResultConversions.h"
 
@@ -144,11 +145,11 @@ struct _WrapTaskFnHelper<std::function<UsdValidationErrorVector(Args...)>>
     static std::function<UsdValidationErrorVector(Args...)> WrapPyTaskFn(
         object pyFn)
     {
-        TfPyObjWrapper wrapper(pyFn);
+        TfPyObjWrapper wrapper = TfPyObjWrapperFromBoostObject(pyFn);
         return [wrapper](Args&&... args) -> UsdValidationErrorVector {
             TfPyLock lock;
             try {
-                object result = wrapper.Get()(object(
+                object result = TfPyObjWrapperToBoostObject(wrapper)(object(
                     std::forward<Args>(args))...);
                 return _ExtractErrorsFromPyResult(result);
             }

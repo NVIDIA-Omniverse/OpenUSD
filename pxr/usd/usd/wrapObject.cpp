@@ -14,6 +14,7 @@
 
 #include "pxr/usd/usd/pyConversions.h"
 #include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/pyUtilsBoost.h"
 
@@ -145,7 +146,8 @@ __getattribute__(object selfObj, const char *name) {
         strcmp(name, "GetPrimPath") == 0 ||
         strcmp(name, "IsPseudoRoot") == 0){
         // Dispatch to object's __getattribute__.
-        return (*_object__getattribute__)(selfObj, name);
+        return TfPyObjWrapperToBoostObject(*_object__getattribute__)(
+            selfObj, name);
     } else {
         // Otherwise raise a runtime error.
         TfPyThrowRuntimeError(
@@ -256,7 +258,8 @@ void wrapUsdObject()
         ;
 
     // Save existing __getattribute__ and replace.
-    *_object__getattribute__ = object(clsObj.attr("__getattribute__"));
+    *_object__getattribute__ = TfPyObjWrapperFromBoostObject(
+        object(clsObj.attr("__getattribute__")));
     clsObj.def("__getattribute__", __getattribute__);
 
     TfPyRegisterStlSequencesFromPython<UsdObject>();

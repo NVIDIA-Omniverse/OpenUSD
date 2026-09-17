@@ -8,6 +8,7 @@
 #include "pxr/pxr.h"
 
 #include "pxr/base/tf/pyObjWrapper.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 
 #include "pxr/external/boost/python.hpp"
 
@@ -60,13 +61,16 @@ _RoundTripWrapperTest(TfPyObjWrapper const &wrapper)
 static TfPyObjWrapper
 _RoundTripWrapperCallTest(TfPyObjWrapper const &wrapper)
 {
-    return wrapper();
+    return TfPyObjWrapperFromBoostObject(
+        TfPyObjWrapperToBoostObject(wrapper)());
 }
 
 static TfPyObjWrapper
 _RoundTripWrapperIndexTest(TfPyObjWrapper const &wrapper, int index)
 {
-    return pxr_boost::python::object(wrapper[index]);
+    return TfPyObjWrapperFromBoostObject(
+        pxr_boost::python::object(
+            TfPyObjWrapperToBoostObject(wrapper)[index]));
 }
 
 } // anonymous namespace 

@@ -139,12 +139,12 @@ _ComputeExtent(object points, object widths) {
     // Check Proper conversion to VtVec3fArray
     if (!pointsAsVtValue.IsHolding<VtVec3fArray>()) {
         TF_CODING_ERROR("Improper value for 'points'");
-        return object();
+        return TfPyObjWrapperFromBoostObject(object());
     }
 
     if (!widthsAsVtValue.IsHolding<VtFloatArray>()) {
         TF_CODING_ERROR("Improper value for 'widths'");
-        return object();
+        return TfPyObjWrapperFromBoostObject(object());
     }
 
     // Convert from VtValue to VtVec3fArray
@@ -154,7 +154,7 @@ _ComputeExtent(object points, object widths) {
     if (UsdGeomCurves::ComputeExtent(pointsArray, widthsArray, &extent)) {
         return UsdVtValueToPython(VtValue(extent));
     } else {
-        return object();
+        return TfPyObjWrapperFromBoostObject(object());
     }
 }
 

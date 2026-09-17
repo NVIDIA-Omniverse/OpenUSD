@@ -11,6 +11,7 @@
 
 #include "pxr/usd/usd/pyConversions.h"
 #include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/wrapTypeHelpers.h"
@@ -141,8 +142,8 @@ _ComputeProxyPrim(UsdGeomImageable const &self)
     if (self){
         proxyPrim = self.ComputeProxyPrim(&renderPrim);
         if (proxyPrim){
-            return TfPyObjWrapper(pxr_boost::python::make_tuple(proxyPrim, 
-                                                            renderPrim));
+            return TfPyObjWrapperFromBoostObject(
+                pxr_boost::python::make_tuple(proxyPrim, renderPrim));
         }
     }
     return TfPyObjWrapper();

@@ -21,6 +21,7 @@
 // incompatible macro definitions in pyport.h on macOS.
 #include <locale>
 #include "pxr/base/tf/pyLock.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 #endif
 
 #include "pxr/base/tf/pyObjWrapper.h"
@@ -290,7 +291,8 @@ private:
         {
  #ifdef PXR_PYTHON_SUPPORT_ENABLED
             TfPyLock lock;
-            return pxr_boost::python::object(_context);
+            return TfPyObjWrapperFromBoostObject(
+                pxr_boost::python::object(_context));
 #else
             return {};
 #endif

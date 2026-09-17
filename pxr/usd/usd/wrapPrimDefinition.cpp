@@ -9,6 +9,7 @@
 #include "pxr/usd/usd/pyConversions.h"
 #include "pxr/usd/usd/prim.h"
 
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/staticData.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/external/boost/python.hpp"
@@ -113,7 +114,8 @@ __getattribute__(object selfObj, const char *name) {
         strcmp(name, "IsAttribute") == 0 ||
         strcmp(name, "IsRelationship") == 0) {
         // Dispatch to object's __getattribute__.
-        return (*_object__getattribute__)(selfObj, name);
+        return TfPyObjWrapperToBoostObject(*_object__getattribute__)(
+            selfObj, name);
     } else {
         // Otherwise raise a runtime error.
         TfPyThrowRuntimeError(
@@ -208,7 +210,8 @@ void wrapUsdPrimDefinition()
             ;
 
         // Save existing __getattribute__ and replace.
-        *_object__getattribute__ = object(clsObj.attr("__getattribute__"));
+        *_object__getattribute__ = TfPyObjWrapperFromBoostObject(
+            object(clsObj.attr("__getattribute__")));
         clsObj.def("__getattribute__", __getattribute__);
     }
 

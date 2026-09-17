@@ -16,6 +16,7 @@
 #include "pxr/usd/ar/resolverContext.h"
 
 #include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/stringUtils.h"
 
@@ -76,7 +77,7 @@ public:
     {
         pxr_boost::python::list l;
         for (const auto& data : ctx._contexts) {
-            l.append(data->GetPythonObj().Get());
+            l.append(TfPyObjWrapperToBoostObject(data->GetPythonObj()));
         }
         return l;
     }

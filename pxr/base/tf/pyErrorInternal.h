@@ -15,12 +15,21 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
+class TfError;
+
 enum Tf_PyExceptionErrorCode {
     TF_PYTHON_EXCEPTION
 };
 
 TF_API PyObject *Tf_PyGetErrorExceptionClass();
 TF_API void Tf_PySetErrorExceptionClass(PyObject *cls);
+
+using Tf_PyErrorToPythonFn = PyObject *(*)(TfError const &);
+using Tf_PyAppendErrorsFromExceptionFn = bool (*)(PyObject *);
+
+TF_API void Tf_PySetErrorExceptionHandlers(
+    Tf_PyErrorToPythonFn errorToPython,
+    Tf_PyAppendErrorsFromExceptionFn appendErrorsFromException);
 
 PyObject *Tf_PyCreateErrorException(TfErrorMark const &m);
 bool Tf_PyAppendErrorsFromException(PyObject *exception);

@@ -96,6 +96,31 @@ _GetErrors( const TfErrorMark & mark )
     return vector<TfError>(mark.GetBegin(), mark.GetEnd());
 }
 
+static PyObject *
+_ErrorToPython(TfError const &err)
+{
+    object obj(err);
+    Py_INCREF(obj.ptr());
+    return obj.ptr();
+}
+
+static bool
+_AppendErrorsFromException(PyObject *exception)
+{
+    object exceptionObj(handle<>(borrowed(exception)));
+    object args = exceptionObj.attr("args");
+    extract<vector<TfError>> extractor(args);
+    if (!extractor.check()) {
+        return false;
+    }
+
+    vector<TfError> errs = extractor();
+    TF_FOR_ALL(e, errs) {
+        TfDiagnosticMgr::GetInstance().AppendError(*e);
+    }
+    return true;
+}
+
 static void
 _RaiseIfNotClean(const TfErrorMark &mark)
 {
@@ -190,6 +215,9 @@ _SetPythonExceptionDebugTracingEnabled(bool enable)
 } // anonymous namespace 
 
 void wrapError() {
+    Tf_PySetErrorExceptionHandlers(
+        _ErrorToPython, _AppendErrorsFromException);
+
     def("_RaiseCodingError", &_RaiseCodingError);
     def("_RaiseRuntimeError", &_RaiseRuntimeError);
     def("_Fatal", &_Fatal);

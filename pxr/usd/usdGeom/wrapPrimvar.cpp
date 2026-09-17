@@ -8,6 +8,7 @@
 #include "pxr/usd/usdGeom/primvar.h"
 
 #include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/usd/usd/pyConversions.h"
 #include "pxr/base/tf/pyResultConversions.h"
 
@@ -119,7 +120,8 @@ __getattribute__(object selfObj, const char *name) {
         strcmp(name, "IsDefined") == 0 ||
         strcmp(name, "GetAttr") == 0) {
         // Dispatch to object's __getattribute__.
-        return (*_object__getattribute__)(selfObj, name);
+        return TfPyObjWrapperToBoostObject(*_object__getattribute__)(
+            selfObj, name);
     } else {
         // Otherwise raise a runtime error.
         TfPyThrowRuntimeError(
@@ -216,7 +218,8 @@ void wrapUsdGeomPrimvar()
     implicitly_convertible<Primvar, UsdAttribute>();
 
     // Save existing __getattribute__ and replace.
-    *_object__getattribute__ = object(clsObj.attr("__getattribute__"));
+    *_object__getattribute__ = TfPyObjWrapperFromBoostObject(
+        object(clsObj.attr("__getattribute__")));
     clsObj.def("__getattribute__", __getattribute__);
 }
 

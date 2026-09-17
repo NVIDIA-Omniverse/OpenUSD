@@ -10,6 +10,7 @@
 #include "pxr/usd/usd/pyConversions.h"
 #include "pxr/base/tf/pyContainerConversions.h"
 #include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/pyStaticTokens.h"
 
@@ -112,7 +113,8 @@ __getattribute__(object selfObj, const char *name) {
           strcmp(name, "GetOpTypeEnum") == 0 ||
           strcmp(name, "GetAttr") == 0) {
         // Dispatch to object's __getattribute__.
-        return (*_object__getattribute__)(selfObj, name);
+        return TfPyObjWrapperToBoostObject(*_object__getattribute__)(
+            selfObj, name);
     } else {
         // Otherwise raise a runtime error.
         TfPyThrowRuntimeError(
@@ -194,7 +196,8 @@ void wrapUsdGeomXformOp()
         TfPyContainerConversions::variable_capacity_policy >();
 
     // Save existing __getattribute__ and replace.
-    *_object__getattribute__ = object(cls.attr("__getattribute__"));
+    *_object__getattribute__ = TfPyObjWrapperFromBoostObject(
+        object(cls.attr("__getattribute__")));
     cls.def("__getattribute__", __getattribute__);
 }
 

@@ -6,6 +6,7 @@
 //
 
 #include "pxr/pxr.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/usd/pcp/node.h"
 #include "pxr/usd/pcp/node_Iterator.h"
@@ -63,7 +64,8 @@ __getattribute__(object selfObj, const char *name) {
     if ((name[0] == '_' && name[1] == '_') ||
         bool(extract<PcpNodeRef &>(selfObj)())){
         // Dispatch to object's __getattribute__.
-        return (*_object__getattribute__)(selfObj, name);
+        return TfPyObjWrapperToBoostObject(*_object__getattribute__)(
+            selfObj, name);
     } else {
         // Otherwise raise a runtime error.
         TfPyThrowRuntimeError(
@@ -138,6 +140,7 @@ wrapNode()
         ;
 
     // Save existing __getattribute__ and replace.
-    *_object__getattribute__ = object(clsObj.attr("__getattribute__"));
+    *_object__getattribute__ = TfPyObjWrapperFromBoostObject(
+        object(clsObj.attr("__getattribute__")));
     clsObj.def("__getattribute__", __getattribute__);
 }

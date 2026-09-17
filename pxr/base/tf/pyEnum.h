@@ -14,6 +14,7 @@
 
 #include "pxr/base/tf/api.h"
 #include "pxr/base/tf/pyObjWrapper.h"
+#include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/type.h"
 
@@ -438,7 +439,7 @@ public:
         // python class with .pythonclass
         const TfType &type = TfType::Find<T>();
         if (!type.IsUnknown())
-            type.DefinePythonClass(enumClass);
+            type.DefinePythonClass(TfPyObjWrapperFromBoostObject(enumClass));
     }
     
   private:
