@@ -11,7 +11,7 @@
 #include "pxr/base/tf/refPtr.h"
 #include "pxr/base/tf/weakPtr.h"
 #include "pxr/base/tf/refPtrTracker.h"
-#include "pxr/base/tf/pySingleton.h"
+#include "pxr/base/tf/pySingletonBoost.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include <sstream>

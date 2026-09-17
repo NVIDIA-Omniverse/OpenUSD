@@ -23,7 +23,7 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
                pyNoticeCallbackImpl.cpp pyNoticeWrapper.cpp pyObjectFinder.cpp
                pyObjWrapper.cpp pyOptional.cpp pyOverride.cpp
                pyPolymorphic.cpp pyResultConversions.cpp
-               pySingleton.cpp pyTracing.cpp pyUtils.cpp pyUtilsImpl.cpp
+               pyTracing.cpp pyUtils.cpp pyUtilsImpl.cpp
                pyWrapContext.cpp scriptModuleLoader.cpp singleton.cpp type.cpp
         APPEND PROPERTY COMPILE_DEFINITIONS Py_LIMITED_API=0x030A0000)
 endif()
@@ -224,7 +224,6 @@ pxr_library(tf
         pyOverride
         pyPolymorphic
         pyResultConversions
-        pySingleton
         pyUtils
         pyWrapContext
         scriptModuleLoader
@@ -272,6 +271,7 @@ pxr_library(tf
         pyPtrHelpersBoost.h
         pySafePython.h
         pySignatureExt.h
+        pySingletonBoost.h
         pyStaticTokens.h
         pyUtilsBoost.h
         wrapTypeHelpersBoost.h

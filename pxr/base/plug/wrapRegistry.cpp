@@ -11,7 +11,7 @@
 #include "pxr/base/tf/pyContainerConversions.h"
 #include "pxr/base/tf/pyFunction.h"
 #include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pySingleton.h"
+#include "pxr/base/tf/pySingletonBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 
 #include "pxr/external/boost/python.hpp"

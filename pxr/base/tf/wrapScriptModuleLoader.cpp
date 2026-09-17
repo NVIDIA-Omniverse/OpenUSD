@@ -10,7 +10,7 @@
 #include "pxr/base/tf/weakPtr.h"
 #include "pxr/base/tf/scriptModuleLoaderBoost.h"
 
-#include "pxr/base/tf/pySingleton.h"
+#include "pxr/base/tf/pySingletonBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 
 #include "pxr/external/boost/python/class.hpp"

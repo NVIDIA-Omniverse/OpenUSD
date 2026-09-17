@@ -4,12 +4,11 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#ifndef PXR_BASE_TF_PY_SINGLETON_H
-#define PXR_BASE_TF_PY_SINGLETON_H
+#ifndef PXR_BASE_TF_PY_SINGLETON_BOOST_H
+#define PXR_BASE_TF_PY_SINGLETON_BOOST_H
 
 #include "pxr/pxr.h"
 
-#include "pxr/base/tf/api.h"
 #include "pxr/base/tf/pyPtrHelpersBoost.h"
 #include "pxr/base/tf/pyUtils.h"
 
@@ -17,6 +16,7 @@
 #include "pxr/base/tf/weakPtr.h"
 
 #include "pxr/external/boost/python/def_visitor.hpp"
+#include "pxr/external/boost/python/extract.hpp"
 #include "pxr/external/boost/python/raw_function.hpp"
 
 #include <string>
@@ -27,9 +27,11 @@ namespace Tf_PySingleton {
 
 namespace bp = pxr_boost::python;
 
-TF_API
-bp::object _DummyInit(bp::tuple const & /* args */,
-                      bp::dict const & /* kw */);
+inline bp::object _DummyInit(bp::tuple const & /* args */,
+                             bp::dict const & /* kw */)
+{
+    return bp::object();
+}
 
 template <class T>
 TfWeakPtr<T> GetWeakPtr(T &t) {
@@ -53,8 +55,12 @@ PtrType _GetSingletonWeakPtr(bp::object const & /* classObj */) {
     return GetWeakPtr(Singleton::GetInstance());
 }
 
-TF_API
-std::string _Repr(bp::object const &self, std::string const &prefix);
+inline std::string _Repr(bp::object const &self, std::string const &prefix)
+{
+    std::string name(
+        bp::extract<std::string>(self.attr("__class__").attr("__name__")));
+    return prefix + name + "()";
+}
     
 struct Visitor : bp::def_visitor<Visitor> {
     explicit Visitor() {}
@@ -76,9 +82,11 @@ struct Visitor : bp::def_visitor<Visitor> {
 
 }
 
-TF_API
-Tf_PySingleton::Visitor TfPySingleton();
+inline Tf_PySingleton::Visitor TfPySingleton()
+{
+    return Tf_PySingleton::Visitor();
+}
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
-#endif // PXR_BASE_TF_PY_SINGLETON_H
+#endif // PXR_BASE_TF_PY_SINGLETON_BOOST_H

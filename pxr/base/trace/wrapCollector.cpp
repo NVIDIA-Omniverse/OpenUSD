@@ -9,7 +9,7 @@
 
 #include "pxr/base/trace/collector.h"
 
-#include "pxr/base/tf/pySingleton.h"
+#include "pxr/base/tf/pySingletonBoost.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/def.hpp"
