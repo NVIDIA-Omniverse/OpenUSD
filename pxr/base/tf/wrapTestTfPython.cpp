@@ -18,7 +18,7 @@
 #include "pxr/base/tf/pyClassMethod.h"
 #include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/base/tf/pyFunction.h"
-#include "pxr/base/tf/pyPtrHelpers.h"
+#include "pxr/base/tf/pyPtrHelpersBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/refPtr.h"
 #include "pxr/base/tf/staticData.h"

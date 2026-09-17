@@ -12,7 +12,7 @@
 #include "pxr/base/tf/pyIdentity.h"
 #include "pxr/base/tf/pyNoticeCallbackImpl.h"
 #include "pxr/base/tf/pyNoticeWrapperBoost.h"
-#include "pxr/base/tf/pyPtrHelpers.h"
+#include "pxr/base/tf/pyPtrHelpersBoost.h"
 #include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/pyWeakObject.h"
 #include "pxr/base/tf/stringUtils.h"

@@ -9,7 +9,7 @@
 #include "pxr/base/plug/plugin.h"
 #include "pxr/base/js/converter.h"
 #include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyPtrHelpers.h"
+#include "pxr/base/tf/pyPtrHelpersBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/iterator.h"
 

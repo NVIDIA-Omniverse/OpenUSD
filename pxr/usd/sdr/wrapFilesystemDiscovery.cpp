@@ -11,7 +11,7 @@
 #include "pxr/base/tf/pyContainerConversions.h"
 #include "pxr/base/tf/pyFunction.h"
 #include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyPtrHelpers.h"
+#include "pxr/base/tf/pyPtrHelpersBoost.h"
 #include "pxr/usd/sdr/declare.h"
 #include "pxr/usd/sdr/discoveryPlugin.h"
 #include "pxr/usd/sdr/filesystemDiscovery.h"

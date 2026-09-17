@@ -7,7 +7,7 @@
 
 #include "pxr/pxr.h"
 #include "pxr/base/tf/declarePtrs.h"
-#include "pxr/base/tf/pyPtrHelpers.h"
+#include "pxr/base/tf/pyPtrHelpersBoost.h"
 #include "pxr/usd/sdr/discoveryPlugin.h"
 
 #include "pxr/external/boost/python.hpp"

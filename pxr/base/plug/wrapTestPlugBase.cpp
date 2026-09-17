@@ -10,7 +10,7 @@
 #include "pxr/external/boost/python/def.hpp"
 #include "pxr/external/boost/python/args.hpp"
 #include "pxr/base/tf/makePyConstructor.h"
-#include "pxr/base/tf/pyPtrHelpers.h"
+#include "pxr/base/tf/pyPtrHelpersBoost.h"
 #include "pxr/base/tf/pyContainerConversions.h"
 
 #include "pxr/external/boost/python.hpp"

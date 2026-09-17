@@ -4,10 +4,10 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#ifndef PXR_BASE_TF_PY_PTR_HELPERS_H
-#define PXR_BASE_TF_PY_PTR_HELPERS_H
+#ifndef PXR_BASE_TF_PY_PTR_HELPERS_BOOST_H
+#define PXR_BASE_TF_PY_PTR_HELPERS_BOOST_H
 
-/// \file tf/pyPtrHelpers.h
+/// \file tf/pyPtrHelpersBoost.h
 /// Enables wrapping of Weak or Ref & Weak held types to python.
 
 #include "pxr/pxr.h"
@@ -416,4 +416,4 @@ struct TfPyRefAndWeakPtr : Tf_PyDefHelpers::RefAndWeakPtr {};
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
-#endif // PXR_BASE_TF_PY_PTR_HELPERS_H
+#endif // PXR_BASE_TF_PY_PTR_HELPERS_BOOST_H

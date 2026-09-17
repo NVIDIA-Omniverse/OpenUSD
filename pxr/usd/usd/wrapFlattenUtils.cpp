@@ -14,7 +14,7 @@
 #include "pxr/usd/sdf/layer.h"
 #include "pxr/base/tf/pyFunction.h"
 #include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyPtrHelpers.h"
+#include "pxr/base/tf/pyPtrHelpersBoost.h"
 #include "pxr/base/tf/makePyConstructor.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE

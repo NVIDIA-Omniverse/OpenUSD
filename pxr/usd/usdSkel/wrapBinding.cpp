@@ -7,7 +7,7 @@
 #include "pxr/usd/usdSkel/binding.h"
 
 #include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyPtrHelpers.h"
+#include "pxr/base/tf/pyPtrHelpersBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/wrapTypeHelpersBoost.h"

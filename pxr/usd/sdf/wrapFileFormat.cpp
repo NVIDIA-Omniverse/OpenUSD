@@ -10,7 +10,7 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/fileFormat.h"
 #include "pxr/base/tf/pyCall.h"
-#include "pxr/base/tf/pyPtrHelpers.h"
+#include "pxr/base/tf/pyPtrHelpersBoost.h"
 #include "pxr/base/tf/pyStaticTokens.h"
 #include "pxr/base/tf/pyResultConversions.h"
 

@@ -10,7 +10,7 @@
 #include "pxr/usd/usd/pyConversions.h"
 #include "pxr/base/tf/pyContainerConversions.h"
 #include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyPtrHelpers.h"
+#include "pxr/base/tf/pyPtrHelpersBoost.h"
 #include "pxr/base/tf/makePyConstructor.h"
 
 #include "pxr/external/boost/python/class.hpp"
