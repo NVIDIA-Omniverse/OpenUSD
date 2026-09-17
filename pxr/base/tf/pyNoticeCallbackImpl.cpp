@@ -13,6 +13,7 @@
 #include "pxr/base/tf/pyError.h"
 #include "pxr/base/tf/pyErrorImpl.h"
 #include "pxr/base/tf/pyLock.h"
+#include "pxr/base/tf/pyUtilsImpl.h"
 
 #include <string>
 
@@ -104,15 +105,16 @@ Tf_PyNoticeCallback::Invoke(PyObject *notice, PyObject *sender) const
             return;
         }
 
-        PyObject *method = PyMethod_New(_func.ptr(), self);
-        if (!method) {
+        PyObject *senderArg = sender ? sender : Py_None;
+        PyObject *result = PyObject_CallFunctionObjArgs(
+            _func.ptr(), self, notice, senderArg, nullptr);
+        if (!result) {
             TfPyConvertPythonExceptionToTfErrors();
             PyErr_Clear();
             return;
         }
 
-        Tf_PyNoticeInvokeCallback(method, notice, sender);
-        Py_DECREF(method);
+        Py_DECREF(result);
         return;
     }
     }
@@ -127,11 +129,12 @@ Tf_PyNoticeCallback::_IsLambda(PyObject *callable)
         return false;
     }
 
-    const char *nameStr = PyUnicode_AsUTF8(name);
-    const bool result = nameStr && string(nameStr) == "<lambda>";
+    string nameStr;
+    const bool result =
+        Tf_PyUnicodeToStdString(name, &nameStr) && nameStr == "<lambda>";
     Py_DECREF(name);
 
-    if (!nameStr) {
+    if (nameStr.empty() && PyErr_Occurred()) {
         PyErr_Clear();
     }
 

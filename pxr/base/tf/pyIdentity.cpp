@@ -10,6 +10,7 @@
 #include "pxr/base/tf/hash.h"
 #include "pxr/base/tf/mallocTag.h"
 #include "pxr/base/tf/pyIdentity.h"
+#include "pxr/base/tf/pyUtilsImpl.h"
 #include "pxr/base/tf/staticData.h"
 #include "pxr/base/tf/stackTrace.h"
 
@@ -168,8 +169,8 @@ static std::string _GetTypeName(PyObject *obj) {
         PyObject *nameObj = PyObject_GetAttrString(typeObj, "__name__");
         Py_DECREF(typeObj);
         if (nameObj) {
-            if (const char *name = PyUnicode_AsUTF8(nameObj)) {
-                std::string result(name);
+            std::string result;
+            if (Tf_PyUnicodeToStdString(nameObj, &result)) {
                 Py_DECREF(nameObj);
                 return result;
             }

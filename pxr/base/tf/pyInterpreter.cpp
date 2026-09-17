@@ -30,6 +30,38 @@ using std::string;
 
 PXR_NAMESPACE_OPEN_SCOPE
 
+namespace {
+
+PyObject *
+_CompileAndEval(
+    const std::string &cmd,
+    const std::string &filename,
+    int start,
+    PyObject *globals,
+    PyObject *locals)
+{
+    PyObject *code = Py_CompileString(cmd.c_str(), filename.c_str(), start);
+    if (!code) {
+        return nullptr;
+    }
+
+    PyObject *result = PyEval_EvalCode(code, globals, locals);
+    Py_DECREF(code);
+    return result;
+}
+
+bool
+_ReadFile(FILE *f, std::string *contents)
+{
+    char buffer[4096];
+    while (const size_t n = fread(buffer, 1, sizeof(buffer), f)) {
+        contents->append(buffer, n);
+    }
+    return ferror(f) == 0;
+}
+
+}
+
 void
 TfPyInitialize()
 {
@@ -127,7 +159,24 @@ TfPyRunSimpleString(const std::string & cmd)
 {
     TfPyInitialize();
     TfPyLock pyLock;
-    return PyRun_SimpleString(cmd.c_str());
+    PyObject *mainModule = PyImport_AddModule("__main__");
+    PyObject *globals = mainModule ? PyModule_GetDict(mainModule) : nullptr;
+    if (!globals) {
+        TfPyConvertPythonExceptionToTfErrors();
+        PyErr_Clear();
+        return -1;
+    }
+
+    PyObject *result = _CompileAndEval(cmd, "<string>", Py_file_input,
+                                       globals, globals);
+    if (!result) {
+        TfPyConvertPythonExceptionToTfErrors();
+        PyErr_Clear();
+        return -1;
+    }
+
+    Py_DECREF(result);
+    return 0;
 }
 
 PyObject *
@@ -148,9 +197,8 @@ TfPyRunString(const std::string &cmd , int start,
     PyObject *pyGlobals = TfPyIsNone(globals) ? defaultGlobals : globals;
     PyObject *pyLocals = TfPyIsNone(locals) ? pyGlobals : locals;
 
-    // Use passed-in objects for globals and locals, or default to globals from
-    // the main module if no locals/globals are passed in.
-    PyObject *result = PyRun_String(cmd.c_str(), start, pyGlobals, pyLocals);
+    PyObject *result = _CompileAndEval(cmd, "<string>", start,
+                                       pyGlobals, pyLocals);
     if (!result) {
         TfPyConvertPythonExceptionToTfErrors();
         PyErr_Clear();
@@ -168,13 +216,20 @@ TfPyRunFile(const std::string &filename, int start,
         return nullptr;
     }
         
+    std::string contents;
+    const bool readSuccess = _ReadFile(f, &contents);
+    fclose(f);
+    if (!readSuccess) {
+        TF_CODING_ERROR("Could not read file '%s'!", filename.c_str());
+        return nullptr;
+    }
+
     TfPyInitialize();
     TfPyLock pyLock;
 
     PyObject *mainModule = PyImport_AddModule("__main__");
     PyObject *defaultGlobals = mainModule ? PyModule_GetDict(mainModule) : nullptr;
     if (!defaultGlobals) {
-        fclose(f);
         TfPyConvertPythonExceptionToTfErrors();
         PyErr_Clear();
         return nullptr;
@@ -184,8 +239,8 @@ TfPyRunFile(const std::string &filename, int start,
     // the main module if no locals/globals are passed in.
     PyObject *pyGlobals = TfPyIsNone(globals) ? defaultGlobals : globals;
     PyObject *pyLocals = TfPyIsNone(locals) ? pyGlobals : locals;
-    PyObject *result = PyRun_FileEx(f, filename.c_str(), start,
-                                    pyGlobals, pyLocals, 1 /* close file */);
+    PyObject *result = _CompileAndEval(contents, filename, start,
+                                       pyGlobals, pyLocals);
     if (!result) {
         TfPyConvertPythonExceptionToTfErrors();
         PyErr_Clear();

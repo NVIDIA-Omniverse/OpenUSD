@@ -37,13 +37,28 @@ private:
 
 public:
     /// Implement copy to do python refcounting while holding the GIL.
-    TfPyMethodResult(TfPyMethodResult const &other);
+    TfPyMethodResult(TfPyMethodResult const &other)
+    {
+        TfPyLock lock;
+        m_obj = other.m_obj;
+    }
 
     /// Implement dtor to do python refcounting while holding the GIL.
-    ~TfPyMethodResult();
+    ~TfPyMethodResult()
+    {
+        TfPyLock lock;
+        m_obj.reset();
+    }
 
     /// Implement assign to do python refcounting while holding the GIL.
-    TfPyMethodResult &operator=(TfPyMethodResult const &other);
+    TfPyMethodResult &operator=(TfPyMethodResult const &other)
+    {
+        if (this != &other) {
+            TfPyLock lock;
+            m_obj = other.m_obj;
+        }
+        return *this;
+    }
 
     template <class T>
     operator T()

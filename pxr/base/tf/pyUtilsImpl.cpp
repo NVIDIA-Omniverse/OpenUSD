@@ -80,6 +80,29 @@ _PyStringFromStdString(const std::string &s)
 
 }
 
+bool
+Tf_PyUnicodeToStdString(PyObject *obj, std::string *result)
+{
+    if (!obj || !result) {
+        return false;
+    }
+
+    PyObject *bytes = PyUnicode_AsUTF8String(obj);
+    if (!bytes) {
+        return false;
+    }
+
+    char *buffer = nullptr;
+    Py_ssize_t size = 0;
+    const bool success = PyBytes_AsStringAndSize(bytes, &buffer, &size) == 0;
+    if (success) {
+        result->assign(buffer, static_cast<size_t>(size));
+    }
+
+    Py_DECREF(bytes);
+    return success;
+}
+
 TF_API
 void Tf_PyLoadScriptModule(std::string const &moduleName)
 {
@@ -139,9 +162,7 @@ Tf_PyObjectRepr(PyObject *obj)
         return reprString;
     }
 
-    if (const char *reprChars = PyUnicode_AsUTF8(repr)) {
-        reprString = reprChars;
-    } else {
+    if (!Tf_PyUnicodeToStdString(repr, &reprString)) {
         PyErr_Clear();
     }
     Py_DECREF(repr);
@@ -181,8 +202,8 @@ Tf_PyGetClassName(PyObject *obj)
             Py_DECREF(classObject);
 
             if (typeNameObject) {
-                if (const char *typeName = PyUnicode_AsUTF8(typeNameObject)) {
-                    std::string result(typeName);
+                std::string result;
+                if (Tf_PyUnicodeToStdString(typeNameObject, &result)) {
                     Py_DECREF(typeNameObject);
                     return result;
                 }
@@ -357,7 +378,8 @@ TfPyGetTraceback()
             break;
         }
 
-        if (const char *itemStr = PyUnicode_AsUTF8(item)) {
+        std::string itemStr;
+        if (Tf_PyUnicodeToStdString(item, &itemStr)) {
             result.push_back(itemStr);
         } else {
             Py_DECREF(item);

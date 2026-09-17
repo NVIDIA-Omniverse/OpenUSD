@@ -23,6 +23,7 @@ TF_API bool TfPyIsInitialized();
 std::string Tf_PyObjectRepr(PyObject *obj);
 std::string Tf_PyGetClassName(PyObject *obj);
 PyObject *Tf_PyCopyBufferToByteArray(const char *buffer, size_t size);
+bool Tf_PyUnicodeToStdString(PyObject *obj, std::string *result);
 
 PXR_NAMESPACE_CLOSE_SCOPE
 

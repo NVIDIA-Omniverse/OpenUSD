@@ -105,9 +105,11 @@ struct InitVisitor : bp::def_visitor<InitVisitor<CTOR> > {
 
 };
 
-TF_API
-bp::object _DummyInit(bp::tuple const & /* args */,
-                      bp::dict const & /* kw */);
+inline bp::object
+_DummyInit(bp::tuple const & /* args */, bp::dict const & /* kw */)
+{
+    return bp::object();
+}
 
 template <typename CTOR>
 struct NewVisitor : bp::def_visitor<NewVisitor<CTOR> > {

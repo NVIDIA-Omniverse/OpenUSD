@@ -14,6 +14,7 @@
 #include "pxr/base/tf/instantiateSingleton.h"
 #include "pxr/base/tf/iterator.h"
 #include "pxr/base/tf/mallocTag.h"
+#include "pxr/base/tf/pyUtilsImpl.h"
 #include "pxr/base/tf/pyWrapContext.h"
 #include "pxr/base/tf/stringUtils.h"
 
@@ -84,8 +85,10 @@ _GetStringAttr(PyObject *obj, const char *attrName)
         return string();
     }
 
-    const char *value = PyUnicode_AsUTF8(attr);
-    string result = value ? value : string();
+    string result;
+    if (!Tf_PyUnicodeToStdString(attr, &result)) {
+        PyErr_Clear();
+    }
     Py_DECREF(attr);
     return result;
 }

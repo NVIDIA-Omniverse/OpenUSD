@@ -8,26 +8,6 @@ if(WIN32)
     set(WINLIBS Shlwapi.lib)
 endif()
 
-if(PXR_ENABLE_PYTHON_SUPPORT)
-    # Keep non-Boost Python support sources in usd_tf building against the
-    # limited Python API. Boost bridge sources are excluded until they can move
-    # out of usd_tf or gain limited-API-compatible implementations.
-    set_property(
-        SOURCE anyWeakPtr.cpp
-               makePyConstructor.cpp pyArg.cpp
-               pyCall.cpp pyCallContext.cpp
-               pyContainerConversions.cpp pyEnum.cpp pyError.cpp
-               pyErrorImpl.cpp pyErrorInternal.cpp pyExceptionState.cpp
-               pyFunction.cpp pyIdentity.cpp pyInterpreter.cpp pyInvoke.cpp
-               pyInvokeImpl.cpp pyLock.cpp pyModule.cpp pyModuleNotice.cpp
-               pyNoticeCallbackImpl.cpp pyNoticeWrapper.cpp pyObjectFinder.cpp
-               pyObjWrapper.cpp pyOptional.cpp pyOverride.cpp
-               pyPolymorphic.cpp pyResultConversions.cpp
-               pyTracing.cpp pyUtils.cpp pyUtilsImpl.cpp
-               pyWrapContext.cpp scriptModuleLoader.cpp singleton.cpp type.cpp
-        APPEND PROPERTY COMPILE_DEFINITIONS Py_LIMITED_API=0x030A0000)
-endif()
-
 # Add a test that WindowsImportWrapper adds entries on the PATH in the correct order, to ensure
 # that the correct dlls needed by python modules are loaded
 function(add_py_dll_link_test)
@@ -203,14 +183,10 @@ pxr_library(tf
         weakPtrFacade
 
     PYTHON_PUBLIC_CLASSES
-        makePyConstructor
         pyArg
-        pyCall
-        pyContainerConversions
         pyEnum
         pyError
         pyExceptionState
-        pyFunction
         pyIdentity
         pyInterpreter
         pyInvoke
@@ -218,10 +194,6 @@ pxr_library(tf
         pyModuleNotice
         pyNoticeWrapper
         pyObjectFinder
-        pyOptional
-        pyOverride
-        pyPolymorphic
-        pyResultConversions
         pyUtils
         pyWrapContext
         scriptModuleLoader
@@ -257,13 +229,21 @@ pxr_library(tf
         type_Impl.h
 
     PYTHON_PUBLIC_HEADERS
+        makePyConstructor.h
         py3Compat.h
         pyAnnotatedBoolResultBoost.h
         pyArgBoost.h
+        pyCall.h
         pyClassMethodBoost.h
+        pyContainerConversions.h
         pyEnumBoost.h
+        pyFunction.h
         pyInterpreterBoost.h
         pyInvokeBoost.h
+        pyOptional.h
+        pyOverride.h
+        pyPolymorphic.h
+        pyResultConversions.h
         pyModuleBoost.h
         pyMakePyPtr.h
         pyNoticeWrapperBoost.h
@@ -390,6 +370,49 @@ pxr_library(tf
         overview.dox
         registryOverview.dox
 )
+
+if(PXR_ENABLE_PYTHON_SUPPORT)
+    target_compile_definitions(tf PRIVATE Py_LIMITED_API=0x030A0000)
+    if(WIN32 AND Python3_LIBRARY)
+        get_filename_component(_tf_python_library_dir
+            "${Python3_LIBRARY}" DIRECTORY)
+        get_filename_component(_tf_python_root
+            "${_tf_python_library_dir}" DIRECTORY)
+        set(_tf_python_stable_abi_lib
+            "${_tf_python_library_dir}/python3.lib")
+        set(_tf_python_stable_abi_dll "${_tf_python_root}/python3.dll")
+        if(EXISTS "${_tf_python_stable_abi_lib}" AND
+           EXISTS "${_tf_python_stable_abi_dll}")
+            get_target_property(_tf_link_libraries tf LINK_LIBRARIES)
+            if(_tf_link_libraries)
+                list(REMOVE_ITEM _tf_link_libraries
+                    ${PYTHON_LIBRARIES} Python3::Python)
+                set_property(TARGET tf
+                    PROPERTY LINK_LIBRARIES "${_tf_link_libraries}")
+            endif()
+
+            get_target_property(
+                _tf_interface_link_libraries tf INTERFACE_LINK_LIBRARIES)
+            if(_tf_interface_link_libraries)
+                list(REMOVE_ITEM _tf_interface_link_libraries
+                    ${PYTHON_LIBRARIES} Python3::Python)
+                set_property(TARGET tf PROPERTY INTERFACE_LINK_LIBRARIES
+                    "${_tf_interface_link_libraries}")
+            endif()
+
+            target_link_libraries(tf PRIVATE "${_tf_python_stable_abi_lib}")
+            add_custom_command(TARGET tf POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_tf_python_stable_abi_dll}"
+                    "$<TARGET_FILE_DIR:tf>"
+                COMMENT "Copying Python stable ABI DLL ...")
+            _get_install_dir(lib _tf_lib_install_dir)
+            install(
+                FILES "${_tf_python_stable_abi_dll}"
+                DESTINATION "${_tf_lib_install_dir}")
+        endif()
+    endif()
+endif()
 
 if(PXR_ENABLE_PYTHON_SUPPORT)
     pxr_build_test(testTfPyFunction

@@ -12,6 +12,7 @@
 #include "pxr/base/tf/diagnostic.h"
 #include "pxr/base/tf/errorMark.h"
 #include "pxr/base/tf/pyError.h"
+#include "pxr/base/tf/pyInterpreter.h"
 #include "pxr/base/tf/stringUtils.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -74,8 +75,7 @@ bool Tf_PyInvokeImpl(
     TfErrorMark errorMark;
 
     // Execute code.
-    PyObject *runResult = PyRun_String(
-        pyStr.c_str(), Py_file_input, globals, globals);
+    PyObject *runResult = TfPyRunString(pyStr, Py_file_input, globals, globals);
     if (!runResult) {
         Py_DECREF(globals);
         TfPyConvertPythonExceptionToTfErrors();

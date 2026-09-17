@@ -10,6 +10,7 @@
 #include "pxr/base/tf/pyExceptionState.h"
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/pySafePython.h"
+#include "pxr/base/tf/pyUtilsImpl.h"
 
 using std::string;
 
@@ -132,12 +133,12 @@ TfPyExceptionState::GetExceptionString() const
     if (iter) {
         PyObject *item = nullptr;
         while ((item = PyIter_Next(iter))) {
-            const char *itemStr = PyUnicode_AsUTF8(item);
-            if (itemStr) {
+            string itemStr;
+            if (Tf_PyUnicodeToStdString(item, &itemStr)) {
                 s += itemStr;
             }
             Py_DecRef(item);
-            if (!itemStr) {
+            if (itemStr.empty() && PyErr_Occurred()) {
                 PyErr_Clear();
                 break;
             }
