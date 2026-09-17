@@ -6,7 +6,7 @@
 //
 #include "pxr/pxr.h"
 #include "pxr/usd/usd/interpolation.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 

@@ -11,7 +11,7 @@
 #include "pxr/base/tf/pyPtrHelpers.h"
 #include "pxr/base/tf/pyResultConversions.h"
 
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/external/boost/python.hpp"
 
 PXR_NAMESPACE_USING_DIRECTIVE

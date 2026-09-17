@@ -9,50 +9,74 @@
 
 #include "pxr/base/tf/pyInvoke.h"
 
+#include "pxr/base/tf/diagnosticLite.h"
+#include "pxr/base/tf/pyError.h"
+#include "pxr/base/tf/pyInterpreter.h"
 #include "pxr/base/tf/pyInvokeImpl.h"
-
-#include "pxr/external/boost/python.hpp"
-
-#include <vector>
+#include "pxr/base/tf/pyLock.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-// Convert nullptr to None.
-pxr_boost::python::object Tf_ArgToPy(const std::nullptr_t &value)
-{
-    return pxr_boost::python::object();
-}
-
-void Tf_BuildPyInvokeKwArgs(
-    pxr_boost::python::dict *kwArgsOut)
-{
-    // Variadic template recursion base case: all args already processed, do
-    // nothing.
-}
-
-void Tf_BuildPyInvokeArgs(
-    pxr_boost::python::list *posArgsOut,
-    pxr_boost::python::dict *kwArgsOut)
-{
-    // Variadic template recursion base case: all args already processed, do
-    // nothing.
-}
-
-bool Tf_PyInvokeImpl(
+bool
+TfPyInvokeAndReturn(
     const std::string &moduleName,
     const std::string &callableExpr,
-    const pxr_boost::python::list &posArgs,
-    const pxr_boost::python::dict &kwArgs,
-    pxr_boost::python::object *resultObjOut)
+    PyObject *posArgs,
+    PyObject *kwArgs,
+    PyObject **resultObjOut)
 {
-    PyObject *result = nullptr;
-    if (!Tf_PyInvokeImpl(
-            moduleName, callableExpr, posArgs.ptr(), kwArgs.ptr(), &result)) {
+    if (!resultObjOut) {
+        TF_CODING_ERROR("Bad pointer to TfPyInvokeAndReturn");
         return false;
     }
 
-    *resultObjOut = pxr_boost::python::object(
-        pxr_boost::python::handle<>(result));
+    TfPyInitialize();
+    TfPyLock lock;
+
+    PyObject *ownedPosArgs = nullptr;
+    PyObject *ownedKwArgs = nullptr;
+    if (!posArgs) {
+        ownedPosArgs = PyTuple_New(0);
+        if (!ownedPosArgs) {
+            TfPyConvertPythonExceptionToTfErrors();
+            PyErr_Clear();
+            return false;
+        }
+        posArgs = ownedPosArgs;
+    }
+    if (!kwArgs) {
+        ownedKwArgs = PyDict_New();
+        if (!ownedKwArgs) {
+            Py_DECREF(ownedPosArgs);
+            TfPyConvertPythonExceptionToTfErrors();
+            PyErr_Clear();
+            return false;
+        }
+        kwArgs = ownedKwArgs;
+    }
+
+    const bool result = Tf_PyInvokeImpl(
+        moduleName, callableExpr, posArgs, kwArgs, resultObjOut);
+
+    Py_XDECREF(ownedKwArgs);
+    Py_XDECREF(ownedPosArgs);
+    return result;
+}
+
+bool
+TfPyInvoke(
+    const std::string &moduleName,
+    const std::string &callableExpr,
+    PyObject *posArgs,
+    PyObject *kwArgs)
+{
+    PyObject *result = nullptr;
+    if (!TfPyInvokeAndReturn(
+            moduleName, callableExpr, posArgs, kwArgs, &result)) {
+        return false;
+    }
+
+    Py_DECREF(result);
     return true;
 }
 

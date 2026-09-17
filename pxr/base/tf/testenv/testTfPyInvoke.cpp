@@ -6,7 +6,7 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyInvoke.h"
+#include "pxr/base/tf/pyInvokeBoost.h"
 
 #include "pxr/base/tf/diagnostic.h"
 #include "pxr/base/tf/diagnosticMgr.h"

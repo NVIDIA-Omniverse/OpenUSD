@@ -10,7 +10,7 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/layer.h"
 #include "pxr/usd/sdf/notice.h"
-#include "pxr/base/tf/pyNoticeWrapper.h"
+#include "pxr/base/tf/pyNoticeWrapperBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/external/boost/python.hpp"
 

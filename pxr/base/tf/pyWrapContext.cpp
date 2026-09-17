@@ -21,4 +21,22 @@ Tf_PyWrapContextManager::Tf_PyWrapContextManager()
     _contextStack.clear();
 }
 
+std::string
+Tf_PyGetCurrentWrapContext()
+{
+    return Tf_PyWrapContextManager::GetInstance().GetCurrentContext();
+}
+
+void
+Tf_PyPushWrapContext(std::string const &ctx)
+{
+    Tf_PyWrapContextManager::GetInstance().PushContext(ctx);
+}
+
+void
+Tf_PyPopWrapContext()
+{
+    Tf_PyWrapContextManager::GetInstance().PopContext();
+}
+
 PXR_NAMESPACE_CLOSE_SCOPE

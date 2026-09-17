@@ -10,7 +10,7 @@
 #include "pxr/base/gf/frustum.h"
 #include "pxr/base/gf/ray.h"
 
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/wrapTypeHelpers.h"
 

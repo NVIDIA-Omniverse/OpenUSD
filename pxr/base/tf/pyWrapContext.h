@@ -9,6 +9,7 @@
 
 #include "pxr/pxr.h"
 
+#include "pxr/base/tf/api.h"
 #include "pxr/base/tf/singleton.h"
 
 #include <string>
@@ -51,6 +52,15 @@ class Tf_PyWrapContextManager {
 
     std::vector<std::string> _contextStack;
 };
+
+TF_API
+std::string Tf_PyGetCurrentWrapContext();
+
+TF_API
+void Tf_PyPushWrapContext(std::string const &ctx);
+
+TF_API
+void Tf_PyPopWrapContext();
 
 PXR_NAMESPACE_CLOSE_SCOPE
 

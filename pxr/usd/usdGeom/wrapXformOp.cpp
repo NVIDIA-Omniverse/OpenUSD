@@ -9,7 +9,7 @@
 
 #include "pxr/usd/usd/pyConversions.h"
 #include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/pyStaticTokens.h"

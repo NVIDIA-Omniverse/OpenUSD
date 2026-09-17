@@ -25,7 +25,7 @@
 #include "pxr/usd/sdf/variantSpec.h"
 
 #include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/base/tf/pyStaticTokens.h"
 
 #include "pxr/base/vt/valueFromPython.h"

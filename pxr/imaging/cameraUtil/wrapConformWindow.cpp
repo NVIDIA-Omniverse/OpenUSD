@@ -15,7 +15,7 @@
 #include "pxr/base/gf/range2d.h"
 #include "pxr/base/gf/frustum.h"
 
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 
 #include "pxr/external/boost/python.hpp"
 

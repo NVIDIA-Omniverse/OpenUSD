@@ -6,7 +6,7 @@
 //
 #include "pxr/pxr.h"
 #include "pxr/usd/usdLux/blackbody.h"
-#include "pxr/base/tf/pyModule.h"
+#include "pxr/base/tf/pyModuleBoost.h"
 #include "pxr/external/boost/python/def.hpp"
 
 PXR_NAMESPACE_USING_DIRECTIVE

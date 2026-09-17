@@ -11,7 +11,7 @@
 #include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/gf/camera.h"
 #include "pxr/base/gf/frustum.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 
 #include "pxr/external/boost/python/operators.hpp"
 

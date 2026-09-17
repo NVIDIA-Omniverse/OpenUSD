@@ -5,7 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/external/boost/python/class.hpp"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -32,6 +32,8 @@ static pxr_boost::python::object _GetValueFromFullName(const std::string &fullNa
 
 void wrapEnum()
 {
+    Tf_PyEnumBoost::RegisterBaseConversions();
+
     class_<Tf_PyEnum>("Enum", no_init)
         .def("GetValueFromFullName", _GetValueFromFullName)
         .staticmethod("GetValueFromFullName")
@@ -43,7 +45,9 @@ void wrapEnum()
         .add_property("name", &Tf_PyEnumWrapper::GetName)
         .add_property("fullName", &Tf_PyEnumWrapper::GetFullName)
         .add_property("displayName", &Tf_PyEnumWrapper::GetDisplayName)
-        .def("__repr__", Tf_PyEnumRepr)
+        .def("__repr__",
+            static_cast<std::string (*)(pxr_boost::python::object const &)>(
+                Tf_PyEnumRepr))
         .def("__hash__", __hash__)
         .def(self == long())
         .def(self == self)

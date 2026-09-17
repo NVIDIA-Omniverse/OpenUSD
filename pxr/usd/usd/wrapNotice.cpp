@@ -6,9 +6,9 @@
 //
 #include "pxr/pxr.h"
 #include "pxr/usd/usd/notice.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyNoticeWrapper.h"
+#include "pxr/base/tf/pyNoticeWrapperBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/external/boost/python.hpp"
 

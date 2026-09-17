@@ -12,7 +12,7 @@
 
 #include "pxr/base/vt/valueFromPython.h"
 #include "pxr/base/tf/pyAnnotatedBoolResult.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/base/tf/pyFunction.h"
 
 #include "pxr/usd/sdf/pathPattern.h"

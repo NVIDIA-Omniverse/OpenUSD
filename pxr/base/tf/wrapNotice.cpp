@@ -11,7 +11,7 @@
 #include "pxr/base/tf/pyError.h"
 #include "pxr/base/tf/pyIdentity.h"
 #include "pxr/base/tf/pyNoticeCallbackImpl.h"
-#include "pxr/base/tf/pyNoticeWrapper.h"
+#include "pxr/base/tf/pyNoticeWrapperBoost.h"
 #include "pxr/base/tf/pyPtrHelpers.h"
 #include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/pyWeakObject.h"

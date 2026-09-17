@@ -110,7 +110,7 @@ void wrapUsdGeomXformable()
 // ===================================================================== //
 // --(BEGIN CUSTOM CODE)--
 
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/usd/usd/timeCode.h"
 
 namespace {

@@ -14,8 +14,6 @@ using std::string;
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-using namespace pxr_boost::python;
-
 TfPyNoticeWrapperBase::~TfPyNoticeWrapperBase()
 {
 }

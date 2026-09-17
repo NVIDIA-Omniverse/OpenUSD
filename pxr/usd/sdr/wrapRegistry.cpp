@@ -6,7 +6,7 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/base/tf/pyAnnotatedBoolResult.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/pySingleton.h"

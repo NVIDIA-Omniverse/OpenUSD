@@ -9,7 +9,7 @@
 #include "pxr/usd/usd/object.h"
 #include "pxr/usd/usd/stage.h"
 #include "pxr/usd/usd/stageCache.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 
 #include "pxr/external/boost/python/def.hpp"
 #include "pxr/external/boost/python/enum.hpp"

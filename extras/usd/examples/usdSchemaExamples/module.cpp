@@ -6,7 +6,7 @@
 //
 #include "pxr/base/tf/pySafePython.h"
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyModule.h"
+#include "pxr/base/tf/pyModuleBoost.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 

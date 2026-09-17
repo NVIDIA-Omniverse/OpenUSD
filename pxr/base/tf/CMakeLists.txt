@@ -265,8 +265,12 @@ pxr_library(tf
     PYTHON_PUBLIC_HEADERS
         py3Compat.h
         pyArgBoost.h
+        pyEnumBoost.h
         pyInterpreterBoost.h
+        pyInvokeBoost.h
+        pyModuleBoost.h
         pyMakePyPtr.h
+        pyNoticeWrapperBoost.h
         pyObjWrapperBoost.h
         pySafePython.h
         pySignatureExt.h

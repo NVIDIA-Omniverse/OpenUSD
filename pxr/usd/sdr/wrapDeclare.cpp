@@ -7,7 +7,7 @@
 
 #include "pxr/pxr.h"
 #include "pxr/usd/sdr/declare.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 

@@ -14,11 +14,6 @@
 #include "pxr/base/tf/type.h"
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/pyObjectFinder.h"
-#include "pxr/base/tf/wrapTypeHelpers.h"
-
-#include "pxr/external/boost/python/bases.hpp"
-#include "pxr/external/boost/python/class.hpp"
-#include "pxr/external/boost/python/object.hpp"
 
 #include <type_traits>
 #include <map>
@@ -32,9 +27,9 @@ struct Tf_PyNoticeObjectGenerator {
 
     // Register the generator for notice type T.
     template <typename T>
-    static void Register() {
+    static void Register(MakeObjectFunc func) {
         // XXX this stuff should be keyed directly off TfType now
-        (*_generators)[typeid(T).name()] = This::_Generate<T>;
+        (*_generators)[typeid(T).name()] = func;
     }
     
     // Produce a new reference to a Python object for the correct derived type
@@ -42,13 +37,6 @@ struct Tf_PyNoticeObjectGenerator {
     TF_API static PyObject *Invoke(TfNotice const &n);
 
 private:
-
-    template <typename T>
-    static PyObject *_Generate(TfNotice const &n) {
-        // Python locking is left to the caller.
-        return pxr_boost::python::incref(
-            pxr_boost::python::object(static_cast<T const &>(n)).ptr());
-    }
 
     static MakeObjectFunc _Lookup(TfNotice const &n);
 
@@ -71,77 +59,6 @@ struct Tf_PyNoticeObjectFinder : public Tf_PyObjectFinderBase {
         return wrapper ? wrapper->GetNoticePythonObjectNewRef() : nullptr;
     }
 };
-
-template <typename NoticeType, typename BaseType>
-struct TfPyNoticeWrapper : public NoticeType, public TfPyNoticeWrapperBase {
-private:
-    static_assert(std::is_base_of<TfNotice, NoticeType>::value
-                  || std::is_same<TfNotice, NoticeType>::value,
-                  "Notice type must be derived from or equal to TfNotice.");
-
-    static_assert(std::is_base_of<TfNotice, BaseType>::value
-                  || std::is_same<TfNotice, BaseType>::value,
-                  "BaseType type must be derived from or equal to TfNotice.");
-
-    static_assert(std::is_base_of<BaseType, NoticeType>::value
-                  || (std::is_same<NoticeType, TfNotice>::value
-                      && std::is_same<BaseType, TfNotice>::value),
-                  "BaseType type must be a base of notice, unless both "
-                  "BaseType and Notice type are equal to TfNotice.");
-
-public:
-
-    typedef TfPyNoticeWrapper<NoticeType, BaseType> This;
-
-    // If Notice is really TfNotice, then this is the root of the hierarchy and
-    // bases is empty, otherwise bases contains the base class.
-    using Bases = std::conditional_t<std::is_same<NoticeType, TfNotice>::value,
-                                     pxr_boost::python::bases<>,
-                                     pxr_boost::python::bases<BaseType>>;
-
-    typedef pxr_boost::python::class_<NoticeType, This, Bases> ClassType;
-
-    static ClassType Wrap(std::string const &name = std::string()) {
-        std::string wrappedName = name;
-        if (wrappedName.empty()) {
-            // Assume they want the last bit of a qualified name.
-            wrappedName = TfType::Find<NoticeType>().GetTypeName();
-            if (!TfStringGetSuffix(wrappedName, ':').empty())
-                wrappedName = TfStringGetSuffix(wrappedName, ':'); 
-        }
-        Tf_PyNoticeObjectGenerator::Register<NoticeType>();
-        Tf_RegisterPythonObjectFinderInternal
-            (typeid(TfPyNoticeWrapper),
-             new Tf_PyNoticeObjectFinder<TfPyNoticeWrapper>);
-        return ClassType(wrappedName.c_str(), pxr_boost::python::no_init)
-            .def(TfTypePythonClass());
-    }
-
-    // Implement the base class's virtual method.
-    virtual PyObject *GetNoticePythonObjectNewRef() const {
-        TfPyLock lock;
-        Py_INCREF(_self);
-        return _self;
-    }
-
-    // Arbitrary argument constructor (with a leading PyObject *) which
-    // forwards to the base Notice class's constructor.
-    template <typename... Args>
-    TfPyNoticeWrapper(PyObject *self, Args... args)
-        : NoticeType(args...)
-        , _self(self) {}
-    
-private:
-    PyObject *_self;
-
-};
-
-#define TF_INSTANTIATE_NOTICE_WRAPPER(T, Base) \
-TF_REGISTRY_FUNCTION(TfType) \
-{ \
-    TfType::Define< TfPyNoticeWrapper<T, Base>, \
-                    TfType::Bases<Base> >(); \
-}
 
 PXR_NAMESPACE_CLOSE_SCOPE
 

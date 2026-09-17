@@ -8,7 +8,7 @@
 #include "pxr/pxr.h"
 #include "pxr/base/ts/tsTest_SplineData.h"
 #include "pxr/base/tf/enum.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/base/tf/pyContainerConversions.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/stringUtils.h"

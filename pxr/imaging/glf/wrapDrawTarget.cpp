@@ -9,7 +9,7 @@
 #include "pxr/base/tf/makePyConstructor.h"
 #include "pxr/base/tf/pyPtrHelpers.h"
 #include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 
 #include "pxr/external/boost/python/bases.hpp"
 #include "pxr/external/boost/python/class.hpp"

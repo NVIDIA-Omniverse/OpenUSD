@@ -8,7 +8,7 @@
 #include "pxr/usd/usd/stageCacheContext.h"
 #include "pxr/usd/usd/stageCache.h"
 
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 
 #include <functional>

@@ -10,7 +10,7 @@
 #include "pxr/usdValidation/usdValidation/fixer.h"
 
 #include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/base/tf/pyPtrHelpers.h"
 #include "pxr/base/tf/pyResultConversions.h"
 

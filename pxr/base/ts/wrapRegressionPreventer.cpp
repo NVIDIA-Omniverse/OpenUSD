@@ -8,7 +8,7 @@
 #include "pxr/pxr.h"
 #include "pxr/base/ts/regressionPreventer.h"
 #include "pxr/base/ts/spline.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/make_constructor.hpp"

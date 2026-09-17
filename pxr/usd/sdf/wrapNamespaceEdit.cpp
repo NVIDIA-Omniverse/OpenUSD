@@ -11,7 +11,7 @@
 #include "pxr/usd/sdf/namespaceEdit.h"
 #include "pxr/base/tf/pyCall.h"
 #include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/extract.hpp"

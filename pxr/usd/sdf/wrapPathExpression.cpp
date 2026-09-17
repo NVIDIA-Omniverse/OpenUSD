@@ -10,7 +10,7 @@
 #include "pxr/base/tf/pySignatureExt.h" // wrap lvalue-ref-qualified mem fns.
 
 #include "pxr/base/vt/valueFromPython.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/base/tf/pyFunction.h"
 #include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/vt/wrapArray.h"

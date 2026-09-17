@@ -6,7 +6,7 @@
 //
 #include "pxr/pxr.h"
 #include "pxr/usd/usd/resolveInfo.h"
-#include "pxr/base/tf/pyEnum.h"
+#include "pxr/base/tf/pyEnumBoost.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/return_internal_reference.hpp"
