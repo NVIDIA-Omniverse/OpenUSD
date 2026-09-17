@@ -15,7 +15,7 @@
 #include "pxr/base/tf/makePyConstructor.h"
 #include "pxr/base/tf/notice.h"
 #include "pxr/base/tf/pyCall.h"
-#include "pxr/base/tf/pyClassMethod.h"
+#include "pxr/base/tf/pyClassMethodBoost.h"
 #include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/base/tf/pyFunction.h"
 #include "pxr/base/tf/pyPtrHelpersBoost.h"

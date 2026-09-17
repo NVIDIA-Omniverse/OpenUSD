@@ -15,7 +15,7 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
     set_property(
         SOURCE anyWeakPtr.cpp
                makePyConstructor.cpp pyArg.cpp
-               pyCall.cpp pyCallContext.cpp pyClassMethod.cpp
+               pyCall.cpp pyCallContext.cpp
                pyContainerConversions.cpp pyEnum.cpp pyError.cpp
                pyErrorImpl.cpp pyErrorInternal.cpp pyExceptionState.cpp
                pyFunction.cpp pyIdentity.cpp pyInterpreter.cpp pyInvoke.cpp
@@ -206,7 +206,6 @@ pxr_library(tf
         makePyConstructor
         pyArg
         pyCall
-        pyClassMethod
         pyContainerConversions
         pyEnum
         pyError
@@ -261,6 +260,7 @@ pxr_library(tf
         py3Compat.h
         pyAnnotatedBoolResultBoost.h
         pyArgBoost.h
+        pyClassMethodBoost.h
         pyEnumBoost.h
         pyInterpreterBoost.h
         pyInvokeBoost.h

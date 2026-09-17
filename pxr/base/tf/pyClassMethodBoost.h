@@ -4,8 +4,8 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#ifndef PXR_BASE_TF_PY_CLASS_METHOD_H
-#define PXR_BASE_TF_PY_CLASS_METHOD_H
+#ifndef PXR_BASE_TF_PY_CLASS_METHOD_BOOST_H
+#define PXR_BASE_TF_PY_CLASS_METHOD_BOOST_H
 
 #include "pxr/pxr.h"
 
@@ -82,4 +82,4 @@ typedef Tf_PyClassMethod::_TfPyClassMethod TfPyClassMethod;
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
-#endif // PXR_BASE_TF_PY_CLASS_METHOD_H
+#endif // PXR_BASE_TF_PY_CLASS_METHOD_BOOST_H
