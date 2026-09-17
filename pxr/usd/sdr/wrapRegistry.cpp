@@ -7,7 +7,7 @@
 
 #include "pxr/pxr.h"
 #include "pxr/base/tf/pyEnumBoost.h"
-#include "pxr/base/tf/pyAnnotatedBoolResult.h"
+#include "pxr/base/tf/pyAnnotatedBoolResultBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/pySingletonBoost.h"
 #include "pxr/usd/sdr/registry.h"

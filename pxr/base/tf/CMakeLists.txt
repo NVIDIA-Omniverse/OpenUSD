@@ -14,7 +14,7 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
     # out of usd_tf or gain limited-API-compatible implementations.
     set_property(
         SOURCE anyWeakPtr.cpp
-               makePyConstructor.cpp pyAnnotatedBoolResult.cpp pyArg.cpp
+               makePyConstructor.cpp pyArg.cpp
                pyCall.cpp pyCallContext.cpp pyClassMethod.cpp
                pyContainerConversions.cpp pyEnum.cpp pyError.cpp
                pyErrorImpl.cpp pyErrorInternal.cpp pyExceptionState.cpp
@@ -204,7 +204,6 @@ pxr_library(tf
 
     PYTHON_PUBLIC_CLASSES
         makePyConstructor
-        pyAnnotatedBoolResult
         pyArg
         pyCall
         pyClassMethod
@@ -260,6 +259,7 @@ pxr_library(tf
 
     PYTHON_PUBLIC_HEADERS
         py3Compat.h
+        pyAnnotatedBoolResultBoost.h
         pyArgBoost.h
         pyEnumBoost.h
         pyInterpreterBoost.h

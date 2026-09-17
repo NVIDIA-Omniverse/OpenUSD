@@ -14,7 +14,7 @@
 #include "pxr/usd/ar/assetInfo.h"
 #include "pxr/usd/ar/resolver.h"
 #include "pxr/usd/ar/resolverContext.h"
-#include "pxr/base/tf/pyAnnotatedBoolResult.h"
+#include "pxr/base/tf/pyAnnotatedBoolResultBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/refPtr.h"
 

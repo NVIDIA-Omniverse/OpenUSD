@@ -11,7 +11,7 @@
 
 #include "pxr/usd/usd/pyConversions.h"
 {% if cls.isAppliedAPISchema %}
-#include "pxr/base/tf/pyAnnotatedBoolResult.h"
+#include "pxr/base/tf/pyAnnotatedBoolResultBoost.h"
 {% endif %}
 #include "pxr/base/tf/pyContainerConversions.h"
 #include "pxr/base/tf/pyResultConversions.h"

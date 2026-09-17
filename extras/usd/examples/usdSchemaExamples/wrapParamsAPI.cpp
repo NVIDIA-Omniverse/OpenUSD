@@ -10,7 +10,7 @@
 #include "pxr/usd/sdf/primSpec.h"
 
 #include "pxr/usd/usd/pyConversions.h"
-#include "pxr/base/tf/pyAnnotatedBoolResult.h"
+#include "pxr/base/tf/pyAnnotatedBoolResultBoost.h"
 #include "pxr/base/tf/pyContainerConversions.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/pyUtils.h"

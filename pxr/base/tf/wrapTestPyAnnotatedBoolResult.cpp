@@ -6,7 +6,7 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyAnnotatedBoolResult.h"
+#include "pxr/base/tf/pyAnnotatedBoolResultBoost.h"
 
 #include "pxr/external/boost/python/def.hpp"
 #include <string>

@@ -10,7 +10,7 @@
 #include "pxr/base/ts/types.h"
 #include "pxr/base/ts/typeHelpers.h"
 #include "pxr/base/tf/diagnostic.h"
-#include "pxr/base/tf/pyAnnotatedBoolResult.h"
+#include "pxr/base/tf/pyAnnotatedBoolResultBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/base/vt/valueFromPython.h"
 

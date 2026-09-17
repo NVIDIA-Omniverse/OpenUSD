@@ -20,7 +20,7 @@
 #include "pxr/usd/sdf/payload.h"
 #include "pxr/usd/sdf/primSpec.h"
 
-#include "pxr/base/tf/pyAnnotatedBoolResult.h"
+#include "pxr/base/tf/pyAnnotatedBoolResultBoost.h"
 #include "pxr/base/tf/pyContainerConversions.h"
 #include "pxr/base/tf/pyFunction.h"
 #include "pxr/base/tf/pyResultConversions.h"

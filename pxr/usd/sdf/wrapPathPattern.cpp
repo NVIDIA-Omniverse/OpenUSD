@@ -11,7 +11,7 @@
 #include "pxr/base/tf/pySignatureExt.h" // wrap lvalue-ref-qualified mem fns.
 
 #include "pxr/base/vt/valueFromPython.h"
-#include "pxr/base/tf/pyAnnotatedBoolResult.h"
+#include "pxr/base/tf/pyAnnotatedBoolResultBoost.h"
 #include "pxr/base/tf/pyEnumBoost.h"
 #include "pxr/base/tf/pyFunction.h"
 
