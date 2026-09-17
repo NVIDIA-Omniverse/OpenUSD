@@ -1060,6 +1060,7 @@ function(_pxr_python_module NAME)
 
     _pxr_target_link_libraries(${LIBRARY_NAME}
         ${NAME}
+        python
         ${PXR_MALLOC_LIBRARY}
     )
 

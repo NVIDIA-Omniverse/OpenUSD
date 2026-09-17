@@ -204,6 +204,104 @@ function(pxr_cpp_bin BIN_NAME)
     )
 endfunction()
 
+function(pxr_library_use_python_limited_api TARGET_NAME)
+    if(NOT PXR_ENABLE_PYTHON_SUPPORT)
+        return()
+    endif()
+
+    target_compile_definitions(${TARGET_NAME}
+        PRIVATE Py_LIMITED_API=0x030A0000)
+
+    if(WIN32)
+        target_compile_definitions(${TARGET_NAME}
+            PUBLIC Py_NO_LINK_LIB)
+    endif()
+
+    # This target uses the Python C API but does not need to link against the
+    # Boost.Python binding implementation. Binding modules own that dependency.
+    get_target_property(_link_libraries ${TARGET_NAME} LINK_LIBRARIES)
+    if(_link_libraries)
+        list(REMOVE_ITEM _link_libraries python)
+        set_property(TARGET ${TARGET_NAME}
+            PROPERTY LINK_LIBRARIES "${_link_libraries}")
+    endif()
+
+    get_target_property(
+        _interface_link_libraries ${TARGET_NAME} INTERFACE_LINK_LIBRARIES)
+    if(_interface_link_libraries)
+        list(REMOVE_ITEM _interface_link_libraries python)
+        set_property(TARGET ${TARGET_NAME}
+            PROPERTY INTERFACE_LINK_LIBRARIES "${_interface_link_libraries}")
+    endif()
+
+    if(WIN32)
+        if(NOT Python3_LIBRARY)
+            message(FATAL_ERROR
+                "Python stable ABI requested for ${TARGET_NAME}, "
+                "but Python3_LIBRARY is not set")
+        endif()
+
+        get_filename_component(_python_library_dir
+            "${Python3_LIBRARY}" DIRECTORY)
+        get_filename_component(_python_versioned_lib
+            "${Python3_LIBRARY}" NAME)
+        get_filename_component(_python_root
+            "${_python_library_dir}" DIRECTORY)
+
+        target_link_options(${TARGET_NAME}
+            PRIVATE "/NODEFAULTLIB:${_python_versioned_lib}")
+        target_link_directories(${TARGET_NAME}
+            INTERFACE "${_python_library_dir}")
+
+        set(_python_stable_abi_lib
+            "${_python_library_dir}/python3.lib")
+        set(_python_stable_abi_dll
+            "${_python_root}/python3.dll")
+
+        if(NOT EXISTS "${_python_stable_abi_lib}" OR
+           NOT EXISTS "${_python_stable_abi_dll}")
+            message(FATAL_ERROR
+                "Python stable ABI requested for ${TARGET_NAME}, "
+                "but python3.lib/python3.dll were not found next to "
+                "${Python3_LIBRARY}")
+        endif()
+
+        get_target_property(_link_libraries ${TARGET_NAME} LINK_LIBRARIES)
+        if(_link_libraries)
+            list(REMOVE_ITEM _link_libraries
+                ${PYTHON_LIBRARIES}
+                Python3::Python)
+            set_property(TARGET ${TARGET_NAME}
+                PROPERTY LINK_LIBRARIES "${_link_libraries}")
+        endif()
+
+        get_target_property(
+            _interface_link_libraries ${TARGET_NAME} INTERFACE_LINK_LIBRARIES)
+        if(_interface_link_libraries)
+            list(REMOVE_ITEM _interface_link_libraries
+                ${PYTHON_LIBRARIES}
+                Python3::Python)
+            set_property(TARGET ${TARGET_NAME}
+                PROPERTY INTERFACE_LINK_LIBRARIES
+                "${_interface_link_libraries}")
+        endif()
+
+        target_link_libraries(${TARGET_NAME}
+            PRIVATE "${_python_stable_abi_lib}")
+
+        add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${_python_stable_abi_dll}"
+                "$<TARGET_FILE_DIR:${TARGET_NAME}>"
+            COMMENT "Copying Python stable ABI DLL ...")
+
+        _get_install_dir(lib _lib_install_dir)
+        install(
+            FILES "${_python_stable_abi_dll}"
+            DESTINATION "${_lib_install_dir}")
+    endif()
+endfunction()
+
 function(pxr_library NAME)
     set(options
         DISABLE_PRECOMPILED_HEADERS

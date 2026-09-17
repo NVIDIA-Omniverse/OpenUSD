@@ -371,53 +371,13 @@ pxr_library(tf
         registryOverview.dox
 )
 
-if(PXR_ENABLE_PYTHON_SUPPORT)
-    target_compile_definitions(tf PRIVATE Py_LIMITED_API=0x030A0000)
-    if(WIN32 AND Python3_LIBRARY)
-        get_filename_component(_tf_python_library_dir
-            "${Python3_LIBRARY}" DIRECTORY)
-        get_filename_component(_tf_python_root
-            "${_tf_python_library_dir}" DIRECTORY)
-        set(_tf_python_stable_abi_lib
-            "${_tf_python_library_dir}/python3.lib")
-        set(_tf_python_stable_abi_dll "${_tf_python_root}/python3.dll")
-        if(EXISTS "${_tf_python_stable_abi_lib}" AND
-           EXISTS "${_tf_python_stable_abi_dll}")
-            get_target_property(_tf_link_libraries tf LINK_LIBRARIES)
-            if(_tf_link_libraries)
-                list(REMOVE_ITEM _tf_link_libraries
-                    ${PYTHON_LIBRARIES} Python3::Python)
-                set_property(TARGET tf
-                    PROPERTY LINK_LIBRARIES "${_tf_link_libraries}")
-            endif()
-
-            get_target_property(
-                _tf_interface_link_libraries tf INTERFACE_LINK_LIBRARIES)
-            if(_tf_interface_link_libraries)
-                list(REMOVE_ITEM _tf_interface_link_libraries
-                    ${PYTHON_LIBRARIES} Python3::Python)
-                set_property(TARGET tf PROPERTY INTERFACE_LINK_LIBRARIES
-                    "${_tf_interface_link_libraries}")
-            endif()
-
-            target_link_libraries(tf PRIVATE "${_tf_python_stable_abi_lib}")
-            add_custom_command(TARGET tf POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${_tf_python_stable_abi_dll}"
-                    "$<TARGET_FILE_DIR:tf>"
-                COMMENT "Copying Python stable ABI DLL ...")
-            _get_install_dir(lib _tf_lib_install_dir)
-            install(
-                FILES "${_tf_python_stable_abi_dll}"
-                DESTINATION "${_tf_lib_install_dir}")
-        endif()
-    endif()
-endif()
+pxr_library_use_python_limited_api(tf)
 
 if(PXR_ENABLE_PYTHON_SUPPORT)
     pxr_build_test(testTfPyFunction
         LIBRARIES
             tf
+            python
         CPPFILES
             testenv/testTfPyFunction.cpp
     ) 
@@ -425,6 +385,7 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
     pxr_build_test(testTfPyInterpreter
         LIBRARIES
             tf
+            python
         CPPFILES
             testenv/testTfPyInterpreter.cpp
     )
@@ -432,6 +393,7 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
     pxr_build_test(testTfPyInvoke
         LIBRARIES
             tf
+            python
         CPPFILES
             testenv/testTfPyInvoke.cpp
     )
@@ -446,6 +408,7 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
     pxr_build_test(testTfPyResultConversions
         LIBRARIES
             tf
+            python
         CPPFILES
             testenv/testTfPyResultConversions.cpp
     )
@@ -505,6 +468,7 @@ pxr_build_test(testTfSpan
 pxr_build_test(testTf
     LIBRARIES
         tf
+        python
     CPPFILES
         testenv/main.cpp
         testenv/anyUniquePtr.cpp
