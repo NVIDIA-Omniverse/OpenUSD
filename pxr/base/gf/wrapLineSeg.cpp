@@ -9,7 +9,7 @@
 #include "pxr/base/gf/lineSeg.h"
 
 #include "pxr/base/tf/pyUtilsBoost.h"
-#include "pxr/base/tf/wrapTypeHelpers.h"
+#include "pxr/base/tf/wrapTypeHelpersBoost.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/def.hpp"

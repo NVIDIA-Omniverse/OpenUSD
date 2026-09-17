@@ -9,7 +9,7 @@
 #include "pxr/base/tf/pyUtilsBoost.h"
 
 #include "pxr/base/tf/type.h"
-#include "pxr/base/tf/wrapTypeHelpers.h"
+#include "pxr/base/tf/wrapTypeHelpersBoost.h"
 
 #include "pxr/base/tf/hash.h"
 #include "pxr/base/tf/makePyConstructor.h"

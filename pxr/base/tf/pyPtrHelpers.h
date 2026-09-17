@@ -15,7 +15,7 @@
 #include "pxr/base/tf/pyIdentity.h"
 #include "pxr/base/tf/pyMakePyPtr.h"
 #include "pxr/base/tf/pyObjectFinder.h"
-#include "pxr/base/tf/wrapTypeHelpers.h"
+#include "pxr/base/tf/wrapTypeHelpersBoost.h"
 
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/tf/diagnostic.h"

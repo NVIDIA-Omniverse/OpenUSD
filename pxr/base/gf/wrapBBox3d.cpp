@@ -9,7 +9,7 @@
 #include "pxr/base/gf/bbox3d.h"
 #include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/wrapTypeHelpers.h"
+#include "pxr/base/tf/wrapTypeHelpersBoost.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/copy_const_reference.hpp"

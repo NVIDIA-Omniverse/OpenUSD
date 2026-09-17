@@ -14,7 +14,7 @@
 #include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/pyResultConversions.h"
 #include "pxr/base/tf/pyUtilsBoost.h"
-#include "pxr/base/tf/wrapTypeHelpers.h"
+#include "pxr/base/tf/wrapTypeHelpersBoost.h"
 
 #include "pxr/external/boost/python.hpp"
 

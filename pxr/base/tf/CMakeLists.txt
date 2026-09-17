@@ -25,7 +25,6 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
                pyPolymorphic.cpp pyPtrHelpers.cpp pyResultConversions.cpp
                pySingleton.cpp pyTracing.cpp pyUtils.cpp pyUtilsImpl.cpp
                pyWrapContext.cpp scriptModuleLoader.cpp singleton.cpp type.cpp
-               wrapTypeHelpers.cpp
         APPEND PROPERTY COMPILE_DEFINITIONS Py_LIMITED_API=0x030A0000)
 endif()
 
@@ -230,7 +229,6 @@ pxr_library(tf
         pyUtils
         pyWrapContext
         scriptModuleLoader
-        wrapTypeHelpers
 
     PUBLIC_HEADERS
         api.h
@@ -276,6 +274,7 @@ pxr_library(tf
         pySignatureExt.h
         pyStaticTokens.h
         pyUtilsBoost.h
+        wrapTypeHelpersBoost.h
         scriptModuleLoaderBoost.h
 
     PRIVATE_CLASSES
@@ -332,6 +331,7 @@ pxr_library(tf
 
     PYMODULE_CPPFILES
         module.cpp
+        wrapTypeHelpers.cpp
         pyWeakObject.cpp
         wrapAnyWeakPtr.cpp
         wrapCallContext.cpp

@@ -4,12 +4,11 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#ifndef PXR_BASE_TF_WRAP_TYPE_HELPERS_H
-#define PXR_BASE_TF_WRAP_TYPE_HELPERS_H
+#ifndef PXR_BASE_TF_WRAP_TYPE_HELPERS_BOOST_H
+#define PXR_BASE_TF_WRAP_TYPE_HELPERS_BOOST_H
 
 #include "pxr/pxr.h"
 
-#include "pxr/base/tf/api.h"
 #include "pxr/base/tf/pyObjWrapper.h"
 #include "pxr/base/tf/pyObjWrapperBoost.h"
 #include "pxr/base/tf/type.h"
@@ -64,8 +63,8 @@ struct TfTypePythonClass : public TfType_WrapHelpers::_PythonClass {};
 /// A helper for wrapping C++ types.
 /// This method defines a TfType for the given python class object, and also
 /// recursively defines TfTypes for all the Python bases if necessary.
-TF_API TfType TfType_DefinePythonTypeAndBases( const pxr_boost::python::object & classObj );
+TfType TfType_DefinePythonTypeAndBases( const pxr_boost::python::object & classObj );
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
-#endif // PXR_BASE_TF_WRAP_TYPE_HELPERS_H
+#endif // PXR_BASE_TF_WRAP_TYPE_HELPERS_BOOST_H

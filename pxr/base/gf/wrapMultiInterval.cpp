@@ -10,7 +10,7 @@
 
 #include "pxr/base/tf/iterator.h"
 #include "pxr/base/tf/pyUtilsBoost.h"
-#include "pxr/base/tf/wrapTypeHelpers.h"
+#include "pxr/base/tf/wrapTypeHelpersBoost.h"
 
 #include "pxr/external/boost/python/iterator.hpp"
 #include "pxr/external/boost/python/class.hpp"

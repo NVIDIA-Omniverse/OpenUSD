@@ -13,7 +13,7 @@
 #include "pxr/pxr.h"
 
 #include "pxr/base/tf/pyNoticeWrapper.h"
-#include "pxr/base/tf/wrapTypeHelpers.h"
+#include "pxr/base/tf/wrapTypeHelpersBoost.h"
 
 #include "pxr/external/boost/python/bases.hpp"
 #include "pxr/external/boost/python/class.hpp"
