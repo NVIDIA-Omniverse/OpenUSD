@@ -264,12 +264,15 @@ pxr_library(tf
 
     PYTHON_PUBLIC_HEADERS
         py3Compat.h
+        pyArgBoost.h
+        pyInterpreterBoost.h
         pyMakePyPtr.h
         pyObjWrapperBoost.h
         pySafePython.h
         pySignatureExt.h
         pyStaticTokens.h
         pyUtilsBoost.h
+        scriptModuleLoaderBoost.h
 
     PRIVATE_CLASSES
         atomicRenameUtil

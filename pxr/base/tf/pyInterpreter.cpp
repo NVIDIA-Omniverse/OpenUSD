@@ -19,19 +19,16 @@
 #include "pxr/base/arch/systemInfo.h"
 #include "pxr/base/arch/threads.h"
 
-#include "pxr/external/boost/python.hpp"
-#include "pxr/external/boost/python/detail/api_placeholder.hpp"
+#include "pxr/base/tf/pySafePython.h"
 #include <atomic>
+#include <cstdio>
 #include <mutex>
 #include <string>
-#include "pxr/base/tf/pySafePython.h"
 #include <signal.h>
 
 using std::string;
 
 PXR_NAMESPACE_OPEN_SCOPE
-
-using namespace pxr_boost::python;
 
 void
 TfPyInitialize()
@@ -133,67 +130,67 @@ TfPyRunSimpleString(const std::string & cmd)
     return PyRun_SimpleString(cmd.c_str());
 }
 
-pxr_boost::python::handle<>
+PyObject *
 TfPyRunString(const std::string &cmd , int start,
-              object const &globals, object const &locals)
+              PyObject *globals, PyObject *locals)
 {
     TfPyInitialize();
     TfPyLock pyLock;
-    try {
-        handle<> mainModule(borrowed(PyImport_AddModule("__main__")));
-        handle<> 
-            defaultGlobalsHandle(borrowed(PyModule_GetDict(mainModule.get())));
 
-        PyObject *pyGlobals = TfPyIsNone(globals.ptr())
-            ? defaultGlobalsHandle.get()
-            : globals.ptr();
-        PyObject *pyLocals = TfPyIsNone(locals.ptr())
-            ? pyGlobals
-            : locals.ptr();
+    PyObject *mainModule = PyImport_AddModule("__main__");
+    PyObject *defaultGlobals = mainModule ? PyModule_GetDict(mainModule) : nullptr;
+    if (!defaultGlobals) {
+        TfPyConvertPythonExceptionToTfErrors();
+        PyErr_Clear();
+        return nullptr;
+    }
 
-        // used passed-in objects for globals and locals, or default
-        // to globals from main module if no locals/globals passed in.
-        return handle<>(PyRun_String(cmd.c_str(), start, pyGlobals, pyLocals));
-    } catch (error_already_set const &) {
+    PyObject *pyGlobals = TfPyIsNone(globals) ? defaultGlobals : globals;
+    PyObject *pyLocals = TfPyIsNone(locals) ? pyGlobals : locals;
+
+    // Use passed-in objects for globals and locals, or default to globals from
+    // the main module if no locals/globals are passed in.
+    PyObject *result = PyRun_String(cmd.c_str(), start, pyGlobals, pyLocals);
+    if (!result) {
         TfPyConvertPythonExceptionToTfErrors();
         PyErr_Clear();
     }
-    return handle<>();
+    return result;
 }
 
-pxr_boost::python::handle<>
+PyObject *
 TfPyRunFile(const std::string &filename, int start,
-            object const &globals, object const &locals)
+            PyObject *globals, PyObject *locals)
 {
     FILE *f = ArchOpenFile(filename.c_str(), "r");
     if (!f) {
         TF_CODING_ERROR("Could not open file '%s'!", filename.c_str());
-        return handle<>();
+        return nullptr;
     }
         
     TfPyInitialize();
     TfPyLock pyLock;
-    try {
-        handle<> mainModule(borrowed(PyImport_AddModule("__main__")));
-        handle<>
-            defaultGlobalsHandle(borrowed(PyModule_GetDict(mainModule.get())));
 
-        // used passed-in objects for globals and locals, or default
-        // to globals from main module if no locals/globals passed in.
-        PyObject *pyGlobals = TfPyIsNone(globals.ptr())
-            ? defaultGlobalsHandle.get()
-            : globals.ptr();
-        PyObject *pyLocals = TfPyIsNone(locals.ptr())
-            ? pyGlobals
-            : locals.ptr();
-        
-        return handle<>(PyRun_FileEx(f, filename.c_str(), start,
-                                     pyGlobals, pyLocals, 1 /* close file */));
-    } catch (error_already_set const &) {
+    PyObject *mainModule = PyImport_AddModule("__main__");
+    PyObject *defaultGlobals = mainModule ? PyModule_GetDict(mainModule) : nullptr;
+    if (!defaultGlobals) {
+        fclose(f);
+        TfPyConvertPythonExceptionToTfErrors();
+        PyErr_Clear();
+        return nullptr;
+    }
+
+    // Use passed-in objects for globals and locals, or default to globals from
+    // the main module if no locals/globals are passed in.
+    PyObject *pyGlobals = TfPyIsNone(globals) ? defaultGlobals : globals;
+    PyObject *pyLocals = TfPyIsNone(locals) ? pyGlobals : locals;
+    PyObject *result = PyRun_FileEx(f, filename.c_str(), start,
+                                    pyGlobals, pyLocals, 1 /* close file */);
+    if (!result) {
         TfPyConvertPythonExceptionToTfErrors();
         PyErr_Clear();
     }
-    return handle<>();
+    return result;
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

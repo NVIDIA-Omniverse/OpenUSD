@@ -7,7 +7,7 @@
 
 #include "pxr/pxr.h"
 #include "pxr/base/tf/pyFunction.h"
-#include "pxr/base/tf/pyInterpreter.h"
+#include "pxr/base/tf/pyInterpreterBoost.h"
 #include "pxr/base/tf/pyUtilsBoost.h"
 
 #include "pxr/external/boost/python/def.hpp"

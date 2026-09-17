@@ -8,76 +8,12 @@
 #include "pxr/pxr.h"
 
 #include "pxr/base/tf/pyArg.h"
-#include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/stringUtils.h"
-
-#include "pxr/external/boost/python/extract.hpp"
-#include "pxr/external/boost/python/list.hpp"
-#include "pxr/external/boost/python/slice.hpp"
-#include "pxr/external/boost/python/stl_iterator.hpp"
 
 using std::string;
 using std::vector;
 
 PXR_NAMESPACE_OPEN_SCOPE
-
-using namespace pxr_boost::python;
-
-static bool
-_ArgumentIsNamed(const std::string& name, const TfPyArg& arg)
-{
-    return arg.GetName() == name;
-}
-
-std::pair<tuple, dict>
-TfPyProcessOptionalArgs(
-    const tuple& args, const dict& kwargs, 
-    const TfPyArgs& expectedArgs,
-    bool allowExtraArgs)
-{
-    std::pair<tuple, dict> rval;
-
-    const unsigned int numArgs = static_cast<unsigned int>(len(args));
-    const unsigned int numExpectedArgs = static_cast<unsigned int>(expectedArgs.size());
-
-    if (!allowExtraArgs) {
-        if (numArgs > numExpectedArgs) {
-            TfPyThrowTypeError("Too many arguments for function");
-        }
-
-        const list keys = kwargs.keys();
-
-        typedef stl_input_iterator<string> KeyIterator;
-        for (KeyIterator it(keys), it_end; it != it_end; ++it) {
-            if (std::find_if(expectedArgs.begin(), expectedArgs.end(),
-                             std::bind(_ArgumentIsNamed, *it,
-                                       std::placeholders::_1))
-                == expectedArgs.end()) {
-
-                TfPyThrowTypeError("Unexpected keyword argument '%s'");
-            }
-        }
-    }
-
-    rval.second = kwargs;
-
-    for (unsigned int i = 0; i < std::min(numArgs, numExpectedArgs); ++i) {
-        const string& argName = expectedArgs[i].GetName();
-        if (rval.second.has_key(argName)) {
-            TfPyThrowTypeError(
-                TfStringPrintf("Multiple values for keyword argument '%s'",
-                               argName.c_str()));
-        }
-
-        rval.second[argName] = args[i];
-    }
-
-    if (numArgs > numExpectedArgs) {
-        rval.first = tuple(args[slice(numExpectedArgs, numArgs)]);
-    }
-
-    return rval;
-}
 
 static void
 _AddArgAndTypeDocStrings(

@@ -13,8 +13,7 @@
 #include "pxr/pxr.h"
 
 #include "pxr/base/tf/api.h"
-#include "pxr/external/boost/python/handle.hpp"
-#include "pxr/external/boost/python/object.hpp"
+#include "pxr/base/tf/pySafePython.h"
 #include <string>
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -49,16 +48,15 @@ extern int TfPyRunSimpleString(const std::string & cmd);
 /// Starts the interpreter if necessary. Deals with necessary thread state
 /// setup.
 ///
-/// Callers must hold the GIL before calling; see TfPyLock.  This is true for
-/// any pxr_boost::python call, including constructing and destroying the default
-/// values of \p globals and \p locals.  Holding the GIL will also make it safe
-/// to inspect the returned pxr_boost::python::handle.
+/// Pass null for \p globals and \p locals to use globals from the main module.
+/// If only \p globals is non-null, it will also be used as \p locals.
+///
+/// A new reference is returned on success; null is returned on failure.
 TF_API
-extern pxr_boost::python::handle<>
+extern PyObject *
 TfPyRunString(const std::string & cmd, int start,
-              pxr_boost::python::object const &globals = pxr_boost::python::object(),
-              pxr_boost::python::object const &locals = pxr_boost::python::object()
-              );
+              PyObject *globals,
+              PyObject *locals);
 
 /// Runs the given file using PyRun_File().
 ///
@@ -70,16 +68,15 @@ TfPyRunString(const std::string & cmd, int start,
 /// Starts the interpreter if necessary. Deals with necessary thread state
 /// setup.
 ///
-/// Callers must hold the GIL before calling; see TfPyLock.  This is true for
-/// any pxr_boost::python call, including constructing and destroying the default
-/// values of \p globals and \p locals.  Holding the GIL will also make it safe
-/// to inspect the returned pxr_boost::python::handle.
+/// Pass null for \p globals and \p locals to use globals from the main module.
+/// If only \p globals is non-null, it will also be used as \p locals.
+///
+/// A new reference is returned on success; null is returned on failure.
 TF_API
-extern pxr_boost::python::handle<>
+extern PyObject *
 TfPyRunFile(const std::string &filename, int start,
-            pxr_boost::python::object const &globals = pxr_boost::python::object(),
-            pxr_boost::python::object const &locals = pxr_boost::python::object()
-            );
+            PyObject *globals,
+            PyObject *locals);
 
 PXR_NAMESPACE_CLOSE_SCOPE
 

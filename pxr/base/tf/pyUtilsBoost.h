@@ -17,9 +17,9 @@
 #include "pxr/base/tf/diagnosticLite.h"
 #include "pxr/base/tf/errorMark.h"
 #include "pxr/base/tf/pyError.h"
-#include "pxr/base/tf/pyInterpreter.h"
+#include "pxr/base/tf/pyInterpreterBoost.h"
 #include "pxr/base/tf/pyLock.h"
-#include "pxr/base/tf/scriptModuleLoader.h"
+#include "pxr/base/tf/scriptModuleLoaderBoost.h"
 
 #include "pxr/external/boost/python/dict.hpp"
 #include "pxr/external/boost/python/errors.hpp"
@@ -131,7 +131,8 @@ TfPyEvaluate(
     TfPyLock lock;
     try {
         pxr_boost::python::dict modulesDict =
-            TfScriptModuleLoader::GetInstance().GetModulesDict();
+            TfScriptModuleLoader_GetModulesDict(
+                TfScriptModuleLoader::GetInstance());
 
         pxr_boost::python::handle<> modHandle(
             PyImport_ImportModule("builtins"));

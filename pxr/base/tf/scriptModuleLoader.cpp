@@ -19,10 +19,6 @@
 
 #include "pxr/base/arch/fileSystem.h"
 
-#include "pxr/external/boost/python/borrowed.hpp"
-#include "pxr/external/boost/python/dict.hpp"
-#include "pxr/external/boost/python/handle.hpp"
-
 /*
 
 Notes for those who venture into this dark crevice:
@@ -123,11 +119,6 @@ using std::pair;
 using std::string;
 using std::vector;
 
-using pxr_boost::python::borrowed;
-using pxr_boost::python::dict;
-using pxr_boost::python::handle;
-using pxr_boost::python::object;
-
 TfScriptModuleLoader::TfScriptModuleLoader() = default;
 TfScriptModuleLoader::~TfScriptModuleLoader() = default;
 
@@ -163,12 +154,12 @@ RegisterLibrary(TfToken const &lib, TfToken const &moduleName,
     }
 }
 
-dict
+PyObject *
 TfScriptModuleLoader::GetModulesDict() const
 {
     if (!TfPyIsInitialized()) {
         TF_CODING_ERROR("Python is not initialized.");
-        return dict();
+        return nullptr;
     }
 
     // Subscribe to the registry function so any loaded libraries with script
@@ -190,12 +181,24 @@ TfScriptModuleLoader::GetModulesDict() const
 
     // Get the sys.modules dict from python, so we can see if modules are
     // already loaded.
-    dict modulesDict(handle<>(borrowed(PyImport_GetModuleDict())));
-    dict ret;
+    PyObject *modulesDict = PyImport_GetModuleDict();
+    PyObject *ret = PyDict_New();
+    if (!modulesDict || !ret) {
+        Py_XDECREF(ret);
+        TfPyConvertPythonExceptionToTfErrors();
+        PyErr_Clear();
+        return nullptr;
+    }
 
     for (auto const &[lib, mod]: libAndModNames) {
-        if (modulesDict.has_key(mod.GetText())) {
-            handle<> modHandle(PyImport_ImportModule(mod.GetText()));
+        if (PyDict_GetItemString(modulesDict, mod.GetText())) {
+            PyObject *modObj = PyImport_ImportModule(mod.GetText());
+            if (!modObj) {
+                Py_DECREF(ret);
+                TfPyConvertPythonExceptionToTfErrors();
+                PyErr_Clear();
+                return nullptr;
+            }
 
             // Use the upper-cased form of the library name as
             // the Python module name.
@@ -220,7 +223,16 @@ TfScriptModuleLoader::GetModulesDict() const
             //
             // For now, we just upper-case the library name.
             //
-            ret[TfStringCapitalize(lib.GetString())] = object(modHandle);
+            const std::string key = TfStringCapitalize(lib.GetString());
+            const int setResult = PyDict_SetItemString(
+                ret, key.c_str(), modObj);
+            Py_DECREF(modObj);
+            if (setResult == -1) {
+                Py_DECREF(ret);
+                TfPyConvertPythonExceptionToTfErrors();
+                PyErr_Clear();
+                return nullptr;
+            }
         }
     }
     return ret;

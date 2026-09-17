@@ -15,11 +15,7 @@
 #include "pxr/base/tf/spinRWMutex.h"
 #include "pxr/base/tf/token.h"
 #include "pxr/base/tf/weakBase.h"
-
-// XXX: This include is a hack to avoid build errors due to
-// incompatible macro definitions in pyport.h on macOS.
-#include <locale>
-#include "pxr/external/boost/python/dict.hpp"
+#include "pxr/base/tf/pySafePython.h"
 
 #include <deque>
 #include <string>
@@ -69,9 +65,10 @@ class TfScriptModuleLoader : public TfWeakBase {
     void LoadModulesForLibrary(TfToken const &name);
     
     /// Return a python dict containing all currently known modules under
-    /// their canonical names.
+    /// their canonical names. A new reference is returned on success; null is
+    /// returned on failure.
     TF_API
-    pxr_boost::python::dict GetModulesDict() const;
+    PyObject *GetModulesDict() const;
     
     /// Write a graphviz dot-file for the dependency graph of all currently
     /// registered libraries/modules to \a file.

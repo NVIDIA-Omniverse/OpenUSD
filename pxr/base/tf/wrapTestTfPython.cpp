@@ -24,7 +24,7 @@
 #include "pxr/base/tf/staticData.h"
 #include "pxr/base/tf/weakPtr.h"
 
-#include "pxr/base/tf/pyArg.h"
+#include "pxr/base/tf/pyArgBoost.h"
 #include "pxr/base/tf/pyPolymorphic.h"
 
 #include "pxr/external/boost/python/class.hpp"

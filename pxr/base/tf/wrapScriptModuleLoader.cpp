@@ -8,7 +8,7 @@
 #include "pxr/pxr.h"
 
 #include "pxr/base/tf/weakPtr.h"
-#include "pxr/base/tf/scriptModuleLoader.h"
+#include "pxr/base/tf/scriptModuleLoaderBoost.h"
 
 #include "pxr/base/tf/pySingleton.h"
 #include "pxr/base/tf/pyResultConversions.h"
@@ -19,12 +19,18 @@ PXR_NAMESPACE_USING_DIRECTIVE
 
 using namespace pxr_boost::python;
 
+static dict
+_GetModulesDict(TfScriptModuleLoader *loader)
+{
+    return TfScriptModuleLoader_GetModulesDict(*loader);
+}
+
 void wrapScriptModuleLoader() {
     typedef TfScriptModuleLoader This;
     class_<This, TfWeakPtr<This>,
         noncopyable>("ScriptModuleLoader", no_init)
         .def(TfPySingleton())
-        .def("GetModulesDict", &This::GetModulesDict)
+        .def("GetModulesDict", _GetModulesDict)
         .def("WriteDotFile", &This::WriteDotFile)
 
         // For testing purposes only.

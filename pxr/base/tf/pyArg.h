@@ -10,8 +10,6 @@
 #include "pxr/pxr.h"
 #include "pxr/base/tf/api.h"
 
-#include "pxr/external/boost/python/dict.hpp"
-#include "pxr/external/boost/python/tuple.hpp"
 #include <string>
 #include <vector>
 
@@ -21,8 +19,8 @@ PXR_NAMESPACE_OPEN_SCOPE
 ///
 /// Class representing a function argument.
 ///
-/// This is similar to \c pxr_boost::python::arg, except it's not opaque and
-/// provides more fields for documentation purposes.
+/// This is similar to a binding-layer named argument descriptor, except it's
+/// not opaque and provides more fields for documentation purposes.
 class TfPyArg
 {
 public:
@@ -54,25 +52,6 @@ private:
 };
 
 typedef std::vector<TfPyArg> TfPyArgs;
-
-/// Helper function for processing optional arguments given as a tuple of
-/// positional arguments and a dictionary of keyword arguments.
-///
-/// This function will match the given positional arguments in \p args with
-/// the ordered list of allowed arguments in \p optionalArgs. Arguments that
-/// are matched up in this way will be stored as (name, value) pairs and
-/// merged with \p kwargs in the returned dictionary.
-///
-/// If \p allowExtraArgs is \c false, any unrecognized keyword or positional
-/// arguments will cause a Python TypeError to be emitted. Otherwise,
-/// unmatched arguments will be added to the returned tuple or dict.
-TF_API
-std::pair<pxr_boost::python::tuple, pxr_boost::python::dict>
-TfPyProcessOptionalArgs(
-    const pxr_boost::python::tuple& args, 
-    const pxr_boost::python::dict& kwargs,
-    const TfPyArgs& expectedArgs,
-    bool allowExtraArgs = false);
 
 /// Create a doc string for a function with the given \p functionName,
 /// \p requiredArguments and \p optionalArguments. An extra \p description

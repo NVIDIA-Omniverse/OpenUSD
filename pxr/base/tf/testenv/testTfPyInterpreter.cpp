@@ -7,7 +7,7 @@
 // testTfPyInterpreter.mm
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyInterpreter.h"
+#include "pxr/base/tf/pyInterpreterBoost.h"
 #include "pxr/base/tf/pyLock.h"
 
 #include "pxr/external/boost/python/handle.hpp"

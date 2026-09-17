@@ -14,6 +14,7 @@
 #include "pxr/base/tf/stringUtils.h"
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
+#include "pxr/base/tf/pyInterpreterBoost.h"
 #include "pxr/base/tf/pyUtils.h"
 
 #include "pxr/external/boost/python/handle.hpp"
