@@ -7,7 +7,7 @@
 #ifndef PXR_BASE_TF_SCRIPT_MODULE_LOADER_BOOST_H
 #define PXR_BASE_TF_SCRIPT_MODULE_LOADER_BOOST_H
 
-/// \file tf/scriptModuleLoaderBoost.h
+/// \file tf/boost/scriptModuleLoaderBoost.h
 /// Boost.Python adapters for TfScriptModuleLoader.
 
 #include "pxr/pxr.h"

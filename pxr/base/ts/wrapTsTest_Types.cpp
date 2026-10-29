@@ -8,7 +8,7 @@
 #include "pxr/pxr.h"
 #include "pxr/base/ts/tsTest_Types.h"
 #include "pxr/base/ts/spline.h"
-#include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
 #include "pxr/base/vt/value.h"
 
 #include "pxr/external/boost/python/class.hpp"

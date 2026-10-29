@@ -340,7 +340,9 @@ function(pxr_library NAME)
                     list(APPEND args_LIBRARIES ${PYTHON_LIBRARIES})
                 endif()
             else()
-                list(APPEND args_LIBRARIES ${PYTHON_LIBRARIES} python)
+                # Libraries that still contain binding code use the shared
+                # binding interface for its headers and implementation deps.
+                list(APPEND args_LIBRARIES ${PYTHON_LIBRARIES} tfBoostPython)
             endif()
             list(APPEND args_INCLUDE_DIRS ${PYTHON_INCLUDE_DIRS})
         endif()
@@ -472,7 +474,10 @@ function(pxr_library NAME)
             # Keep only our libraries in the module dependencies
             foreach(library ${args_LIBRARIES})
                 if (TARGET ${library}) 
-                    list(APPEND localLibs ${library})
+                    get_target_property(libraryType ${library} TYPE)
+                    if(NOT libraryType STREQUAL "INTERFACE_LIBRARY")
+                        list(APPEND localLibs ${library})
+                    endif()
                 endif()
             endforeach()
 

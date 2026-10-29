@@ -13,8 +13,8 @@
 
 #include "pxr/usd/sdf/layer.h"
 
-#include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 

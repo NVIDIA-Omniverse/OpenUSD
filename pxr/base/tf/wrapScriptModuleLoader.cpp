@@ -8,10 +8,10 @@
 #include "pxr/pxr.h"
 
 #include "pxr/base/tf/weakPtr.h"
-#include "pxr/base/tf/scriptModuleLoaderBoost.h"
+#include "pxr/base/tf/boost/scriptModuleLoaderBoost.h"
 
-#include "pxr/base/tf/pySingletonBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pySingletonBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/external/boost/python/class.hpp"
 

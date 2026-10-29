@@ -6,7 +6,7 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 
 #include <set>
 #include <utility>
@@ -14,9 +14,9 @@
 #include <locale>
 
 #include "pxr/usd/sdf/path.h"
-#include "pxr/base/tf/pyAnnotatedBoolResultBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyAnnotatedBoolResultBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
 #include "pxr/base/tf/hash.h"
 #include "pxr/base/vt/valueFromPython.h"
 

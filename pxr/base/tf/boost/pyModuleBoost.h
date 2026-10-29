@@ -9,7 +9,7 @@
 #endif
 #define PXR_BASE_TF_PY_MODULE_BOOST_H
 
-/// \file tf/pyModuleBoost.h
+/// \file tf/boost/pyModuleBoost.h
 /// Boost.Python module initialization helpers.
 
 #include "pxr/pxr.h"

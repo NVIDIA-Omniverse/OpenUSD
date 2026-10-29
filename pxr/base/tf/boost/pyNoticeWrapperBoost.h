@@ -7,13 +7,13 @@
 #ifndef PXR_BASE_TF_PY_NOTICE_WRAPPER_BOOST_H
 #define PXR_BASE_TF_PY_NOTICE_WRAPPER_BOOST_H
 
-/// \file tf/pyNoticeWrapperBoost.h
+/// \file tf/boost/pyNoticeWrapperBoost.h
 /// Boost.Python adapters for notice wrapping.
 
 #include "pxr/pxr.h"
 
 #include "pxr/base/tf/pyNoticeWrapper.h"
-#include "pxr/base/tf/wrapTypeHelpersBoost.h"
+#include "pxr/base/tf/boost/wrapTypeHelpersBoost.h"
 
 #include "pxr/external/boost/python/bases.hpp"
 #include "pxr/external/boost/python/class.hpp"

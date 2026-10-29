@@ -6,7 +6,7 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyModuleBoost.h"
+#include "pxr/base/tf/boost/pyModuleBoost.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 

@@ -7,10 +7,10 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/usd/timeCode.h"
 
-#include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyStaticTokensBoost.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyStaticTokensBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 
 #include "pxr/external/boost/python/class.hpp"

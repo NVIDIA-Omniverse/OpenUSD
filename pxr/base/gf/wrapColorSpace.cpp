@@ -8,8 +8,8 @@
 #include "pxr/pxr.h"
 #include "pxr/base/gf/color.h"
 #include "pxr/base/gf/colorSpace.h"
-#include "pxr/base/tf/pyStaticTokensBoost.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyStaticTokensBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 
 #include "pxr/external/boost/python/class.hpp"

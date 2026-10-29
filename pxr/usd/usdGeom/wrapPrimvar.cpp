@@ -7,10 +7,10 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/usdGeom/primvar.h"
 
-#include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyObjWrapperBoost.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
 #include "pxr/usd/usd/pyConversions.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/operators.hpp"

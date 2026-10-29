@@ -8,8 +8,8 @@
 #include "pxr/pxr.h"
 #include "pxr/base/ts/tsTest_SampleTimes.h"
 #include "pxr/base/ts/tsTest_SplineData.h"
-#include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/base/tf/diagnostic.h"
 

@@ -7,9 +7,9 @@
 
 #include "pxr/pxr.h"
 #include "pxr/base/tf/declarePtrs.h"
-#include "pxr/base/tf/pyPtrHelpersBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyStaticTokensBoost.h"
+#include "pxr/base/tf/boost/pyPtrHelpersBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyStaticTokensBoost.h"
 #include "pxr/base/tf/weakPtr.h"
 #include "pxr/usd/sdr/shaderNode.h"
 #include "pxr/usd/sdr/shaderProperty.h"

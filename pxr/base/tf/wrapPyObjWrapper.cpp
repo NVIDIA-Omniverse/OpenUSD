@@ -8,7 +8,7 @@
 #include "pxr/pxr.h"
 
 #include "pxr/base/tf/pyObjWrapper.h"
-#include "pxr/base/tf/pyObjWrapperBoost.h"
+#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
 
 #include "pxr/external/boost/python.hpp"
 

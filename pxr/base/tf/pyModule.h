@@ -10,7 +10,7 @@
 /// \file tf/pyModule.h
 /// Binding-neutral placeholder for Python module support.
 ///
-/// Boost.Python module initialization helpers live in tf/pyModuleBoost.h.
+/// Boost.Python module initialization helpers live in tf/boost/pyModuleBoost.h.
 
 #include "pxr/pxr.h"
 

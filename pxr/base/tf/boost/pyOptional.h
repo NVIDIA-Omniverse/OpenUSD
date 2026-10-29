@@ -7,11 +7,11 @@
 #ifndef PXR_BASE_TF_PY_OPTIONAL_H
 #define PXR_BASE_TF_PY_OPTIONAL_H
 
-/// \file tf/pyOptional.h
+/// \file tf/boost/pyOptional.h
 
 #include "pxr/pxr.h"
 
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 #include "pxr/external/boost/python/converter/from_python.hpp"
 #include "pxr/external/boost/python/extract.hpp"
 #include "pxr/external/boost/python/to_python_converter.hpp"

@@ -6,11 +6,11 @@
 //
 #include "pxr/usd/usdSkel/binding.h"
 
-#include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyPtrHelpersBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyPtrHelpersBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/tf/pyUtils.h"
-#include "pxr/base/tf/wrapTypeHelpersBoost.h"
+#include "pxr/base/tf/boost/wrapTypeHelpersBoost.h"
 
 #include "pxr/usd/usd/pyConversions.h"
 

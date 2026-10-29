@@ -9,8 +9,8 @@
 
 #include "pxr/base/tf/token.h"
 
-#include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyOptional.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyOptional.h"
 
 #include "pxr/external/boost/python/def.hpp"
 #include "pxr/external/boost/python/to_python_converter.hpp"

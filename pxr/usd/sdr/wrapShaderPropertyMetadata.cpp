@@ -6,8 +6,8 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyStaticTokensBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyStaticTokensBoost.h"
 #include "pxr/usd/sdr/shaderPropertyMetadata.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE

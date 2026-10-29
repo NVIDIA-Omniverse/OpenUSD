@@ -7,7 +7,7 @@
 #ifndef PXR_BASE_TF_PY_ERROR_BOOST_H
 #define PXR_BASE_TF_PY_ERROR_BOOST_H
 
-/// \file tf/pyErrorBoost.h
+/// \file tf/boost/pyErrorBoost.h
 /// Boost.Python error call policies.
 
 #include "pxr/base/tf/pyError.h"

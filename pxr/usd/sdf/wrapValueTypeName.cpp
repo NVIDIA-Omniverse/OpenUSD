@@ -9,7 +9,7 @@
 #include "pxr/usd/sdf/valueTypeName.h"
 #include "pxr/base/tf/type.h"
 #include "pxr/base/vt/value.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/external/boost/python.hpp"
 

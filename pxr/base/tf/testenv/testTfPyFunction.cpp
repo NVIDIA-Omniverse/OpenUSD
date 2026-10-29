@@ -6,9 +6,9 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyFunction.h"
-#include "pxr/base/tf/pyInterpreterBoost.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyFunction.h"
+#include "pxr/base/tf/boost/pyInterpreterBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 
 #include "pxr/external/boost/python/def.hpp"
 #include "pxr/external/boost/python/dict.hpp"

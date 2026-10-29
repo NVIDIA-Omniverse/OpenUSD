@@ -10,11 +10,11 @@
 #include "pxr/usd/sdf/primSpec.h"
 
 #include "pxr/usd/usd/pyConversions.h"
-#include "pxr/base/tf/pyAnnotatedBoolResultBoost.h"
-#include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
-#include "pxr/base/tf/wrapTypeHelpersBoost.h"
+#include "pxr/base/tf/boost/pyAnnotatedBoolResultBoost.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/wrapTypeHelpersBoost.h"
 
 #include "pxr/external/boost/python.hpp"
 
@@ -141,7 +141,7 @@ void wrapUsdLuxLightListAPI()
 // --(BEGIN CUSTOM CODE)--
 
 #include "pxr/usd/usd/primRange.h"
-#include "pxr/base/tf/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
 
 namespace {
 

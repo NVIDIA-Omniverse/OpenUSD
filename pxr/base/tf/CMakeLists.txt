@@ -105,8 +105,8 @@ function(add_py_dll_link_test)
 
 endfunction()
 
-# These headers belong to the Boost.Python binding interface. Keep this explicit
-# so the core dependency test covers all other installed public Tf headers.
+# These headers are owned by the reusable Boost.Python binding interface, not
+# the core Tf library. Both in-tree and external bindings use tfBoostPython.
 set(tfBindingHeaders
     makePyConstructor.h
     pyAnnotatedBoolResultBoost.h
@@ -134,6 +134,41 @@ set(tfBindingHeaders
     scriptModuleLoaderBoost.h
     wrapTypeHelpersBoost.h
 )
+list(TRANSFORM tfBindingHeaders PREPEND "boost/")
+
+if(PXR_ENABLE_PYTHON_SUPPORT)
+    add_library(tfBoostPython INTERFACE)
+    target_link_libraries(tfBoostPython INTERFACE tf python)
+    if(PXR_BUILD_MONOLITHIC)
+        # Installed object-library targets supply usage requirements, while
+        # their implementations live in the monolithic library.
+        if(BUILD_SHARED_LIBS)
+            target_link_libraries(tfBoostPython INTERFACE "$<INSTALL_INTERFACE:usd_m>")
+        else()
+            target_link_libraries(tfBoostPython INTERFACE
+                "$<INSTALL_INTERFACE:$<LINK_LIBRARY:WHOLE_ARCHIVE,usd_m>>")
+        endif()
+    endif()
+    target_compile_features(tfBoostPython INTERFACE cxx_std_17)
+
+    _copy_headers(tfBoostPython FILES ${tfBindingHeaders} PREFIX "${PXR_PREFIX}")
+    set(tfBindingIncludeRoot "${PROJECT_BINARY_DIR}/${PXR_INSTALL_SUBDIR}/include")
+    set(tfBindingBuildHeaders "")
+    foreach(header IN LISTS tfBindingHeaders)
+        list(APPEND tfBindingBuildHeaders "${tfBindingIncludeRoot}/${PXR_PREFIX}/tf/${header}")
+    endforeach()
+    target_sources(tfBoostPython INTERFACE
+        FILE_SET HEADERS
+        BASE_DIRS "${tfBindingIncludeRoot}"
+        FILES ${tfBindingBuildHeaders}
+    )
+    _get_install_dir(include tfBindingInstallDir)
+    install(TARGETS tfBoostPython EXPORT pxrTargets
+        FILE_SET HEADERS DESTINATION "${tfBindingInstallDir}")
+    export(TARGETS tfBoostPython APPEND
+        FILE "${PROJECT_BINARY_DIR}/pxrTargets.cmake")
+    set(tfBindingDoxygenFiles ${tfBindingHeaders})
+endif()
 
 pxr_library(tf
     PYTHON_LIMITED_API
@@ -260,7 +295,6 @@ pxr_library(tf
         type_Impl.h
 
     PYTHON_PUBLIC_HEADERS
-        ${tfBindingHeaders}
         py3Compat.h
         pyMakePyPtr.h
         pySafePython.h
@@ -371,6 +405,7 @@ pxr_library(tf
         testenv/testTfPyInvoke_callees.py
 
     DOXYGEN_FILES
+        ${tfBindingDoxygenFiles}
         diagnosticOverview.dox
         errorOverview.dox
         mallocTagOverview.dox
@@ -382,11 +417,12 @@ pxr_library(tf
 if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND NOT PXR_BUILD_MONOLITHIC
         AND BUILD_SHARED_LIBS)
     get_target_property(tfCoreHeaders tf PXR_PUBLIC_HEADERS)
-    list(REMOVE_ITEM tfCoreHeaders ${tfBindingHeaders})
     list(REMOVE_DUPLICATES tfCoreHeaders)
     list(SORT tfCoreHeaders)
     string(REPLACE ";" "\n" tfCoreHeaders "${tfCoreHeaders}")
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt" "${tfCoreHeaders}\n")
+    string(REPLACE ";" "\n" tfBindingHeaderManifest "${tfBindingHeaders}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/bindingHeaders.txt" "${tfBindingHeaderManifest}\n")
     file(GENERATE
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/coreLinkLibraries-$<CONFIG>.txt"
         CONTENT "$<TARGET_PROPERTY:tf,LINK_LIBRARIES>\n$<TARGET_PROPERTY:tf,INTERFACE_LINK_LIBRARIES>\n")
@@ -403,13 +439,24 @@ if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND NOT PXR_BUILD_MONOLITHIC
             --generator "${CMAKE_GENERATOR}"
             --config "$<CONFIG>"
     )
+    add_test(NAME testTfBindingHelpers
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testTfBindingHelpers.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testTfBindingHelpers"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testTfBindingHelpers/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --headers "${CMAKE_CURRENT_BINARY_DIR}/bindingHeaders.txt"
+            --cmake "${CMAKE_COMMAND}"
+            --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>"
+    )
 endif()
 
 if(PXR_ENABLE_PYTHON_SUPPORT)
     pxr_build_test(testTfPyFunction
         LIBRARIES
             tf
-            python
+            tfBoostPython
         CPPFILES
             testenv/testTfPyFunction.cpp
     ) 
@@ -417,7 +464,7 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
     pxr_build_test(testTfPyInterpreter
         LIBRARIES
             tf
-            python
+            tfBoostPython
         CPPFILES
             testenv/testTfPyInterpreter.cpp
     )
@@ -425,7 +472,7 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
     pxr_build_test(testTfPyInvoke
         LIBRARIES
             tf
-            python
+            tfBoostPython
         CPPFILES
             testenv/testTfPyInvoke.cpp
     )
@@ -440,7 +487,7 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
     pxr_build_test(testTfPyResultConversions
         LIBRARIES
             tf
-            python
+            tfBoostPython
         CPPFILES
             testenv/testTfPyResultConversions.cpp
     )
@@ -500,7 +547,7 @@ pxr_build_test(testTfSpan
 pxr_build_test(testTf
     LIBRARIES
         tf
-        python
+        tfBoostPython
     CPPFILES
         testenv/main.cpp
         testenv/anyUniquePtr.cpp

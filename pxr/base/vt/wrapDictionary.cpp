@@ -11,8 +11,8 @@
 #include "pxr/base/vt/value.h"
 
 #include "pxr/base/tf/mallocTag.h"
-#include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 
 #include "pxr/base/tf/iterator.h"
 

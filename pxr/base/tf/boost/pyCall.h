@@ -7,7 +7,7 @@
 #ifndef PXR_BASE_TF_PY_CALL_H
 #define PXR_BASE_TF_PY_CALL_H
 
-/// \file tf/pyCall.h
+/// \file tf/boost/pyCall.h
 /// Utilities for calling python callables.
 /// 
 /// These functions handle trapping python errors and converting them to \a
@@ -18,7 +18,7 @@
 #include "pxr/base/tf/pyError.h"
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/pyObjWrapper.h"
-#include "pxr/base/tf/pyObjWrapperBoost.h"
+#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
 
 #include "pxr/external/boost/python/call.hpp"
 

@@ -14,9 +14,9 @@
 #include "pxr/base/gf/dualQuath.h"
 
 #include "pxr/base/tf/hash.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
-#include "pxr/base/tf/wrapTypeHelpersBoost.h"
-#include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/wrapTypeHelpersBoost.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/copy_const_reference.hpp"

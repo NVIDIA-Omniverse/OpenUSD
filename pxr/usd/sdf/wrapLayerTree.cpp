@@ -7,10 +7,10 @@
 
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/layerTree.h"
-#include "pxr/base/tf/makePyConstructor.h"
-#include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyPtrHelpersBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/makePyConstructor.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyPtrHelpersBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/external/boost/python.hpp"
 
 PXR_NAMESPACE_USING_DIRECTIVE

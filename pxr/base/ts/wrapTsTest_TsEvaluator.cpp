@@ -11,7 +11,7 @@
 #include "pxr/base/ts/tsTest_SplineData.h"
 #include "pxr/base/ts/tsTest_SampleTimes.h"
 
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/external/boost/python/class.hpp"
 

@@ -11,7 +11,7 @@
 #include "pxr/external/boost/python/extract.hpp"
 
 #include "pxr/usd/usdUtils/stitchClips.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 
 #include <limits>
 

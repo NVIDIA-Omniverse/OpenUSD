@@ -7,7 +7,7 @@
 #include "pxr/external/boost/python/def.hpp"
 #include "pxr/external/boost/python/tuple.hpp"
 
-#include "pxr/base/tf/pyFunction.h"
+#include "pxr/base/tf/boost/pyFunction.h"
 #include "pxr/base/tf/pyUtils.h"
 
 #include "pxr/pxr.h"

@@ -1,0 +1,57 @@
+cmake_minimum_required(VERSION 3.26)
+project(TfBindingHelpers LANGUAGES CXX)
+
+find_package(pxr CONFIG REQUIRED PATHS "${USD_PREFIX}" NO_DEFAULT_PATH)
+if(NOT TARGET tfBoostPython)
+    message(FATAL_ERROR "The installed package has no Tf Boost.Python interface")
+endif()
+get_target_property(bindingType tfBoostPython TYPE)
+if(NOT bindingType STREQUAL "INTERFACE_LIBRARY")
+    message(FATAL_ERROR "Tf binding helpers must not introduce a compiled library")
+endif()
+get_target_property(bindingDependencies tfBoostPython INTERFACE_LINK_LIBRARIES)
+if(NOT "tf" IN_LIST bindingDependencies OR NOT "python" IN_LIST bindingDependencies)
+    message(FATAL_ERROR "The binding interface does not supply Tf and Boost.Python")
+endif()
+get_target_property(exportedHeaders tfBoostPython HEADER_SET)
+
+if(WIN32)
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
+
+# Compile every exported binding helper. Signature extension overloads must be
+# visible before Boost.Python's other headers, as documented by that helper.
+file(STRINGS "${BINDING_HEADERS}" headers)
+file(TO_CMAKE_PATH "${USD_PREFIX}" USD_PREFIX)
+set(headerSource "#include \"pxr/base/tf/boost/pySignatureExt.h\"\n")
+foreach(header IN LISTS headers)
+    if(NOT header MATCHES "^boost/")
+        message(FATAL_ERROR "Binding header is outside the binding surface: ${header}")
+    endif()
+    if(NOT "${USD_PREFIX}/include/pxr/base/tf/${header}" IN_LIST exportedHeaders)
+        message(FATAL_ERROR "The binding target does not own installed header ${header}")
+    endif()
+    if(NOT header STREQUAL "boost/pySignatureExt.h")
+        string(APPEND headerSource "#include \"pxr/base/tf/${header}\"\n")
+    endif()
+endforeach()
+string(APPEND headerSource "PXR_NAMESPACE_USING_DIRECTIVE\nTF_WRAP_MODULE {}\n")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/headers.cpp" "${headerSource}")
+add_library(tfBindingHeaderCheck OBJECT "${CMAKE_CURRENT_BINARY_DIR}/headers.cpp")
+target_compile_definitions(tfBindingHeaderCheck PRIVATE
+    MFB_PACKAGE_NAME=tfBindingHeaderCheck
+    MFB_PACKAGE_MODULE=TfBindingHeaderCheck
+    MFB_ALT_PACKAGE_NAME=TfBindingHeaderCheck)
+target_link_libraries(tfBindingHeaderCheck PRIVATE tfBoostPython)
+
+add_library(tfBindingConsumer MODULE module.cpp)
+target_link_libraries(tfBindingConsumer PRIVATE tfBoostPython)
+set_target_properties(tfBindingConsumer PROPERTIES PREFIX "")
+if(WIN32)
+    set_target_properties(tfBindingConsumer PROPERTIES SUFFIX ".pyd")
+endif()
+if(APPLE)
+    target_link_options(tfBindingConsumer PRIVATE "LINKER:-undefined,dynamic_lookup")
+endif()
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/module-$<CONFIG>.txt"
+    CONTENT "$<TARGET_FILE:tfBindingConsumer>\n")

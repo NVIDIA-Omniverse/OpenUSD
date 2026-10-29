@@ -7,13 +7,13 @@
 /// \file wrapSpec.cpp
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 #include "pxr/usd/sdf/spec.h"
 #include "pxr/usd/sdf/path.h"
 #include "pxr/usd/sdf/pySpec.h"
 #include "pxr/usd/sdf/schema.h"
 #include "pxr/usd/sdf/types.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/tf/ostreamMethods.h"
 
 #include "pxr/external/boost/python/class.hpp"

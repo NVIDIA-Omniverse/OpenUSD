@@ -6,13 +6,13 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 #include "pxr/base/gf/frustum.h"
 #include "pxr/base/gf/ray.h"
 
-#include "pxr/base/tf/pyEnumBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/wrapTypeHelpersBoost.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
+#include "pxr/base/tf/boost/wrapTypeHelpersBoost.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/copy_const_reference.hpp"

@@ -6,10 +6,10 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyEnumBoost.h"
-#include "pxr/base/tf/pyAnnotatedBoolResultBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pySingletonBoost.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyAnnotatedBoolResultBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
+#include "pxr/base/tf/boost/pySingletonBoost.h"
 #include "pxr/usd/sdr/registry.h"
 #include "pxr/usd/sdr/shaderNode.h"
 

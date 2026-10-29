@@ -8,7 +8,7 @@
 /// \file tf/wrapOptional.cpp
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyOptional.h"
+#include "pxr/base/tf/boost/pyOptional.h"
 
 #include <string>
 #include <vector>

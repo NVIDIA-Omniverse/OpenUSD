@@ -9,7 +9,7 @@
 
 #include "pxr/pxr.h"
 
-#include "pxr/base/tf/pyPtrHelpersBoost.h"
+#include "pxr/base/tf/boost/pyPtrHelpersBoost.h"
 #include "pxr/base/tf/pyUtils.h"
 
 #include "pxr/base/tf/singleton.h"

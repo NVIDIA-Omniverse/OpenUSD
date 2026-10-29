@@ -7,7 +7,7 @@
 #ifndef PXR_BASE_TF_PY_ARG_BOOST_H
 #define PXR_BASE_TF_PY_ARG_BOOST_H
 
-/// \file tf/pyArgBoost.h
+/// \file tf/boost/pyArgBoost.h
 /// Boost.Python adapters for TfPyArg utilities.
 
 #include "pxr/pxr.h"

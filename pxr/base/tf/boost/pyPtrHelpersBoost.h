@@ -7,7 +7,7 @@
 #ifndef PXR_BASE_TF_PY_PTR_HELPERS_BOOST_H
 #define PXR_BASE_TF_PY_PTR_HELPERS_BOOST_H
 
-/// \file tf/pyPtrHelpersBoost.h
+/// \file tf/boost/pyPtrHelpersBoost.h
 /// Enables wrapping of Weak or Ref & Weak held types to python.
 
 #include "pxr/pxr.h"
@@ -15,7 +15,7 @@
 #include "pxr/base/tf/pyIdentity.h"
 #include "pxr/base/tf/pyMakePyPtr.h"
 #include "pxr/base/tf/pyObjectFinder.h"
-#include "pxr/base/tf/wrapTypeHelpersBoost.h"
+#include "pxr/base/tf/boost/wrapTypeHelpersBoost.h"
 
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/tf/diagnostic.h"

@@ -18,8 +18,8 @@
 
 #include "pxr/base/tf/preprocessorUtilsLite.h"
 #include "pxr/base/tf/pyLock.h"
-#include "pxr/base/tf/pyObjWrapperBoost.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 
 #include "pxr/external/boost/python.hpp"
 

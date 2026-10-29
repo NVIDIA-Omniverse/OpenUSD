@@ -7,7 +7,7 @@
 #include "pxr/pxr.h"
 #include "pxr/imaging/pxOsd/tokens.h"
 
-#include "pxr/base/tf/pyStaticTokensBoost.h"
+#include "pxr/base/tf/boost/pyStaticTokensBoost.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 

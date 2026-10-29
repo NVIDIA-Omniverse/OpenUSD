@@ -12,9 +12,9 @@
 #include "pxr/external/boost/python/list.hpp"
 #include "pxr/external/boost/python/tuple.hpp"
 
-#include "pxr/base/tf/makePyConstructor.h"
-#include "pxr/base/tf/pyFunction.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/makePyConstructor.h"
+#include "pxr/base/tf/boost/pyFunction.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/usd/sdf/assetPath.h"
 #include "pxr/usd/usdUtils/dependencies.h"

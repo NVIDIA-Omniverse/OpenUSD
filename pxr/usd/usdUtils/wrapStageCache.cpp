@@ -9,7 +9,7 @@
 
 #include "pxr/usd/usdUtils/stageCache.h"
 
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 

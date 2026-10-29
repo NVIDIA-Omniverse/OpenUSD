@@ -7,16 +7,16 @@
 #ifndef PXR_BASE_TF_PY_POLYMORPHIC_H
 #define PXR_BASE_TF_PY_POLYMORPHIC_H
 
-/// \file tf/pyPolymorphic.h
+/// \file tf/boost/pyPolymorphic.h
 
 #include "pxr/pxr.h"
 
-#include "pxr/base/tf/pyOverride.h"
+#include "pxr/base/tf/boost/pyOverride.h"
 
 #include "pxr/base/tf/refPtr.h"
 #include "pxr/base/tf/weakPtr.h"
 #include "pxr/base/tf/diagnostic.h"
-#include "pxr/base/tf/pyCall.h"
+#include "pxr/base/tf/boost/pyCall.h"
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/type.h"
 

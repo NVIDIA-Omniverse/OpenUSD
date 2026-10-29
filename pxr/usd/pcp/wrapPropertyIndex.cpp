@@ -10,7 +10,7 @@
 #include "pxr/usd/pcp/primIndex.h"
 #include "pxr/usd/pcp/cache.h"
 
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/def.hpp"

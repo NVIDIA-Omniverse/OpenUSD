@@ -120,6 +120,24 @@ For a detailed explanation of topics specific to C++, see these additional Relat
     <li> \subpage page_tf_MallocTag   </li> 
 </ul> 
 
+\section tf_binding_helpers Python binding helpers
+
+The \c tf CMake target supplies the core C++ library and its Python C API
+dependencies. Its core public headers are independent of Boost.Python.
+
+Boost.Python helpers are installed separately under \c pxr/base/tf/boost.
+For example, include \c pxr/base/tf/boost/pyResultConversions.h when using
+TfPySequenceToList. Existing includes of these helpers directly under
+\c pxr/base/tf must be updated to the \c boost subdirectory.
+
+Binding consumers should link the \c tfBoostPython CMake interface target:
+\code
+target_link_libraries(myPythonModule PRIVATE tfBoostPython)
+\endcode
+This target supplies the binding headers, core Tf and the existing Boost.Python
+implementation. It introduces no compiled library. The helpers compile into
+their consumers, including Python modules and downstream binding utilities.
+
 */
 
 

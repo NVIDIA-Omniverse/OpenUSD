@@ -6,7 +6,7 @@
 //
 #include "pxr/imaging/pxOsd/meshTopology.h"
 
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/copy_const_reference.hpp"

@@ -6,9 +6,9 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 
-#include "pxr/base/tf/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
 
 #include "pxr/usd/sdf/predicateLibrary.h"
 

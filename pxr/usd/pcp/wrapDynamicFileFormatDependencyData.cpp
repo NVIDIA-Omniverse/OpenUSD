@@ -7,7 +7,7 @@
 
 #include "pxr/pxr.h"
 #include "pxr/usd/pcp/dynamicFileFormatDependencyData.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/vt/value.h"
 
 #include "pxr/external/boost/python/class.hpp"

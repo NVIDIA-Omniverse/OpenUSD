@@ -15,9 +15,9 @@
 #include "pxr/usdImaging/usdImaging/delegate.h"
 
 #include "pxr/usd/usd/prim.h"
-#include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyEnumBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 using namespace std;
 

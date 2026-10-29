@@ -6,14 +6,14 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 
-#include "pxr/base/tf/pySignatureExt.h" // wrap lvalue-ref-qualified mem fns.
+#include "pxr/base/tf/boost/pySignatureExt.h" // wrap lvalue-ref-qualified mem fns.
 
 #include "pxr/base/vt/valueFromPython.h"
-#include "pxr/base/tf/pyAnnotatedBoolResultBoost.h"
-#include "pxr/base/tf/pyEnumBoost.h"
-#include "pxr/base/tf/pyFunction.h"
+#include "pxr/base/tf/boost/pyAnnotatedBoolResultBoost.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyFunction.h"
 
 #include "pxr/usd/sdf/pathPattern.h"
 

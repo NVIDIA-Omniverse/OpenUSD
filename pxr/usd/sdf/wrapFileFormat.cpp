@@ -9,10 +9,10 @@
 
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/fileFormat.h"
-#include "pxr/base/tf/pyCall.h"
-#include "pxr/base/tf/pyPtrHelpersBoost.h"
-#include "pxr/base/tf/pyStaticTokensBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyCall.h"
+#include "pxr/base/tf/boost/pyPtrHelpersBoost.h"
+#include "pxr/base/tf/boost/pyStaticTokensBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/scope.hpp"

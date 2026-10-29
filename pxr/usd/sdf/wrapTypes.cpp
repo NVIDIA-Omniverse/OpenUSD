@@ -6,7 +6,7 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 #include "pxr/usd/sdf/types.h"
 #include "pxr/usd/sdf/attributeSpec.h"
 #include "pxr/usd/sdf/listOp.h"
@@ -24,9 +24,9 @@
 #include "pxr/usd/sdf/variantSetSpec.h"
 #include "pxr/usd/sdf/variantSpec.h"
 
-#include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyEnumBoost.h"
-#include "pxr/base/tf/pyStaticTokensBoost.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyStaticTokensBoost.h"
 
 #include "pxr/base/vt/valueFromPython.h"
 

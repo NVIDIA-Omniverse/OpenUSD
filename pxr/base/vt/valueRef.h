@@ -15,7 +15,7 @@
 
 #include "pxr/base/tf/pyLock.h"
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
-#include "pxr/base/tf/pyObjWrapperBoost.h"
+#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
 #endif // PXR_PYTHON_SUPPORT_ENABLED
 
 #include "pxr/base/arch/demangle.h"

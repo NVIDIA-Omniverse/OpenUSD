@@ -12,9 +12,9 @@
 #include "pxr/base/trace/aggregateTree.h"
 #include "pxr/base/trace/reporterDataSourceCollector.h"
 
-#include "pxr/base/tf/makePyConstructor.h"
-#include "pxr/base/tf/pyPtrHelpersBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/makePyConstructor.h"
+#include "pxr/base/tf/boost/pyPtrHelpersBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/scope.hpp"

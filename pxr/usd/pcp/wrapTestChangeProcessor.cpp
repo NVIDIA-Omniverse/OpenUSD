@@ -12,7 +12,7 @@
 #include "pxr/usd/sdf/changeList.h"
 #include "pxr/usd/sdf/notice.h"
 
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/tf/weakBase.h"
 #include "pxr/external/boost/python.hpp"
 

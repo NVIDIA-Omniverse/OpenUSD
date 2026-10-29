@@ -6,7 +6,7 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyFunction.h"
+#include "pxr/base/tf/boost/pyFunction.h"
 #include "pxr/base/tf/pyObjWrapper.h"
 
 #include "pxr/external/boost/python/object.hpp"

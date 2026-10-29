@@ -10,7 +10,7 @@
 #include "pxr/base/tf/diagnosticLite.h"
 #include "pxr/base/tf/fileUtils.h"
 #include "pxr/base/tf/iterator.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/tf/stringUtils.h"
 
 #include "pxr/base/arch/fileSystem.h"

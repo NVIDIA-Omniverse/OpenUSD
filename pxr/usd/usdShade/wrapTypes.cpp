@@ -9,7 +9,7 @@
 #include "pxr/usd/usdShade/types.h"
 #include "pxr/usd/usdShade/connectableAPI.h"
 
-#include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
 
 #include "pxr/external/boost/python/enum.hpp"
 

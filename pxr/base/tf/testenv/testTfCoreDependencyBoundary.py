@@ -42,7 +42,7 @@ def main():
     dependencies = re.findall(r'TfToken\("([^\"]+)"\)', module_deps)
     if not dependencies:
         raise RuntimeError("No generated Tf module dependencies found")
-    if any(dep in ("python", "boost") or dep.startswith("Python3::")
+    if any(dep in ("python", "boost", "tfBoostPython") or dep.startswith("Python3::")
            for dep in dependencies):
         raise RuntimeError(f"Binding/runtime targets in module metadata: {dependencies}")
 
@@ -51,7 +51,7 @@ def main():
     if sys.platform != "win32":
         # Non-Windows runtime linkage is intentionally unchanged by this slice.
         checked_links = checked_links.replace("Python3::Python", "")
-    if re.search(r"(^|[;:\n<>])(boost|python)($|[;:\n<>])", checked_links, re.I):
+    if re.search(r"(^|[;:\n<>])(boost|python|tfBoostPython)($|[;:\n<>])", checked_links, re.I):
         raise RuntimeError(f"Binding or versioned Python targets in Tf build graph: {links}")
     if sys.platform == "win32" and re.search(r"python[0-9]{2,}(_d)?\.(lib|dll)", links, re.I):
         raise RuntimeError(f"Versioned Python library in Tf build graph: {links}")

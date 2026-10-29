@@ -5,7 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/external/boost/python/class.hpp"
-#include "pxr/base/tf/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 

@@ -9,7 +9,7 @@
 
 #include "pxr/pxr.h"
 #include "pxr/usd/usd/stage.h"
-#include "pxr/base/tf/makePyConstructor.h"
+#include "pxr/base/tf/boost/makePyConstructor.h"
 
 #include "pxr/external/boost/python/def.hpp"
 

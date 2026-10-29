@@ -7,7 +7,7 @@
 #ifndef PXR_BASE_TF_PY_OBJ_WRAPPER_BOOST_H
 #define PXR_BASE_TF_PY_OBJ_WRAPPER_BOOST_H
 
-/// \file tf/pyObjWrapperBoost.h
+/// \file tf/boost/pyObjWrapperBoost.h
 /// Boost.Python adapters for TfPyObjWrapper.
 
 #include "pxr/pxr.h"

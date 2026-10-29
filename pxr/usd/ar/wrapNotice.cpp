@@ -8,7 +8,7 @@
 
 #include "pxr/usd/ar/notice.h"
 
-#include "pxr/base/tf/pyNoticeWrapperBoost.h"
+#include "pxr/base/tf/boost/pyNoticeWrapperBoost.h"
 
 #include "pxr/external/boost/python/scope.hpp"
 #include "pxr/external/boost/python/class.hpp"

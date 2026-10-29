@@ -8,7 +8,7 @@
 
 #include "pxr/usd/usdUtils/sparseValueWriter.h"
 #include "pxr/usd/usd/pyConversions.h"
-#include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
 
 #include "pxr/external/boost/python.hpp"
 #include "pxr/external/boost/python/make_constructor.hpp"

@@ -12,8 +12,8 @@
 #include "pxr/base/gf/vec3d.h"
 
 #include "pxr/base/tf/stringUtils.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
-#include "pxr/base/tf/wrapTypeHelpersBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/wrapTypeHelpersBoost.h"
 
 #include "pxr/external/boost/python/args.hpp"
 #include "pxr/external/boost/python/class.hpp"

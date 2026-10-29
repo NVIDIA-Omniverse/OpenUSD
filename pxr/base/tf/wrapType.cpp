@@ -6,18 +6,18 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 
 #include "pxr/base/tf/type.h"
-#include "pxr/base/tf/wrapTypeHelpersBoost.h"
+#include "pxr/base/tf/boost/wrapTypeHelpersBoost.h"
 
 #include "pxr/base/tf/hash.h"
-#include "pxr/base/tf/makePyConstructor.h"
-#include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/boost/makePyConstructor.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
 #include "pxr/base/tf/pyObjectFinder.h"
-#include "pxr/base/tf/pyObjWrapperBoost.h"
-#include "pxr/base/tf/pyPtrHelpersBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
+#include "pxr/base/tf/boost/pyPtrHelpersBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/tf/iterator.h"
 #include "pxr/base/tf/weakBase.h"
 
