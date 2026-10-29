@@ -21,6 +21,8 @@ PXR_NAMESPACE_OPEN_SCOPE
 // Return an existing PyObject for the pointer paired with false or create and
 // return a new PyObject paired with true. The returned PyObject ref count must
 // have been incremented. ObjectFactory must return a new reference holding p.
+// On failure, return {nullptr, false}, leaving the factory's Python exception
+// set. Returning a new reference to None also reports that no object was made.
 template <typename Ptr, typename ObjectFactory>
 std::pair<PyObject*, bool>
 Tf_MakePyPtrWithFactory(Ptr const& p, ObjectFactory const& objectFactory)
@@ -45,7 +47,7 @@ Tf_MakePyPtrWithFactory(Ptr const& p, ObjectFactory const& objectFactory)
     PyObject *res = objectFactory(p);
     // If we got back Py_None, no new object was made, so make sure to pass
     // back false in result.
-    return std::pair<PyObject*, bool>(res, res != Py_None);
+    return std::pair<PyObject*, bool>(res, res && res != Py_None);
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE
