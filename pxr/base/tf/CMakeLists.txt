@@ -105,7 +105,38 @@ function(add_py_dll_link_test)
 
 endfunction()
 
+# These headers belong to the Boost.Python binding interface. Keep this explicit
+# so the core dependency test covers all other installed public Tf headers.
+set(tfBindingHeaders
+    makePyConstructor.h
+    pyAnnotatedBoolResultBoost.h
+    pyArgBoost.h
+    pyCall.h
+    pyClassMethodBoost.h
+    pyContainerConversions.h
+    pyEnumBoost.h
+    pyErrorBoost.h
+    pyFunction.h
+    pyInterpreterBoost.h
+    pyInvokeBoost.h
+    pyModuleBoost.h
+    pyNoticeWrapperBoost.h
+    pyObjWrapperBoost.h
+    pyOptional.h
+    pyOverride.h
+    pyPolymorphic.h
+    pyPtrHelpersBoost.h
+    pyResultConversions.h
+    pySignatureExt.h
+    pySingletonBoost.h
+    pyStaticTokensBoost.h
+    pyUtilsBoost.h
+    scriptModuleLoaderBoost.h
+    wrapTypeHelpersBoost.h
+)
+
 pxr_library(tf
+    PYTHON_LIMITED_API
     LIBRARIES
         arch
         ${WINLIBS}
@@ -229,34 +260,10 @@ pxr_library(tf
         type_Impl.h
 
     PYTHON_PUBLIC_HEADERS
-        makePyConstructor.h
+        ${tfBindingHeaders}
         py3Compat.h
-        pyAnnotatedBoolResultBoost.h
-        pyArgBoost.h
-        pyCall.h
-        pyClassMethodBoost.h
-        pyContainerConversions.h
-        pyEnumBoost.h
-        pyErrorBoost.h
-        pyFunction.h
-        pyInterpreterBoost.h
-        pyInvokeBoost.h
-        pyOptional.h
-        pyOverride.h
-        pyPolymorphic.h
-        pyResultConversions.h
-        pyModuleBoost.h
         pyMakePyPtr.h
-        pyNoticeWrapperBoost.h
-        pyObjWrapperBoost.h
-        pyPtrHelpersBoost.h
         pySafePython.h
-        pySignatureExt.h
-        pySingletonBoost.h
-        pyStaticTokensBoost.h
-        pyUtilsBoost.h
-        wrapTypeHelpersBoost.h
-        scriptModuleLoaderBoost.h
 
     PRIVATE_CLASSES
         atomicRenameUtil
@@ -372,7 +379,31 @@ pxr_library(tf
         registryOverview.dox
 )
 
-pxr_library_use_python_limited_api(tf)
+if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND NOT PXR_BUILD_MONOLITHIC
+        AND BUILD_SHARED_LIBS)
+    get_target_property(tfCoreHeaders tf PXR_PUBLIC_HEADERS)
+    list(REMOVE_ITEM tfCoreHeaders ${tfBindingHeaders})
+    list(REMOVE_DUPLICATES tfCoreHeaders)
+    list(SORT tfCoreHeaders)
+    string(REPLACE ";" "\n" tfCoreHeaders "${tfCoreHeaders}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt" "${tfCoreHeaders}\n")
+    file(GENERATE
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/coreLinkLibraries-$<CONFIG>.txt"
+        CONTENT "$<TARGET_PROPERTY:tf,LINK_LIBRARIES>\n$<TARGET_PROPERTY:tf,INTERFACE_LINK_LIBRARIES>\n")
+    add_test(NAME testTfCoreDependencyBoundary
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testTfCoreDependencyBoundary.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testTfCoreDependencyBoundary"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testTfCoreDependencyBoundary/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --headers "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt"
+            --module-deps "${CMAKE_CURRENT_BINARY_DIR}/moduleDeps.cpp"
+            --link-libraries "${CMAKE_CURRENT_BINARY_DIR}/coreLinkLibraries-$<CONFIG>.txt"
+            --cmake "${CMAKE_COMMAND}"
+            --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>"
+    )
+endif()
 
 if(PXR_ENABLE_PYTHON_SUPPORT)
     pxr_build_test(testTfPyFunction

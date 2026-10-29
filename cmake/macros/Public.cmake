@@ -217,24 +217,8 @@ function(pxr_library_use_python_limited_api TARGET_NAME)
             PUBLIC Py_NO_LINK_LIB)
     endif()
 
-    # This target uses the Python C API but does not need to link against the
-    # Boost.Python binding implementation. Binding modules own that dependency.
-    get_target_property(_link_libraries ${TARGET_NAME} LINK_LIBRARIES)
-    if(_link_libraries)
-        list(REMOVE_ITEM _link_libraries python)
-        set_property(TARGET ${TARGET_NAME}
-            PROPERTY LINK_LIBRARIES "${_link_libraries}")
-    endif()
-
-    get_target_property(
-        _interface_link_libraries ${TARGET_NAME} INTERFACE_LINK_LIBRARIES)
-    if(_interface_link_libraries)
-        list(REMOVE_ITEM _interface_link_libraries python)
-        set_property(TARGET ${TARGET_NAME}
-            PROPERTY INTERFACE_LINK_LIBRARIES "${_interface_link_libraries}")
-    endif()
-
     if(WIN32)
+        find_package(Python3 REQUIRED COMPONENTS Development.SABIModule)
         if(NOT Python3_LIBRARY)
             message(FATAL_ERROR
                 "Python stable ABI requested for ${TARGET_NAME}, "
@@ -250,8 +234,11 @@ function(pxr_library_use_python_limited_api TARGET_NAME)
 
         target_link_options(${TARGET_NAME}
             PRIVATE "/NODEFAULTLIB:${_python_versioned_lib}")
+        # Existing non-Limited-API libraries can still carry Python auto-link
+        # directives. Keep their build-tree search path without exporting the
+        # Python installation's library directory to core consumers.
         target_link_directories(${TARGET_NAME}
-            INTERFACE "${_python_library_dir}")
+            INTERFACE "$<BUILD_INTERFACE:${_python_library_dir}>")
 
         set(_python_stable_abi_lib
             "${_python_library_dir}/python3.lib")
@@ -266,28 +253,8 @@ function(pxr_library_use_python_limited_api TARGET_NAME)
                 "${Python3_LIBRARY}")
         endif()
 
-        get_target_property(_link_libraries ${TARGET_NAME} LINK_LIBRARIES)
-        if(_link_libraries)
-            list(REMOVE_ITEM _link_libraries
-                ${PYTHON_LIBRARIES}
-                Python3::Python)
-            set_property(TARGET ${TARGET_NAME}
-                PROPERTY LINK_LIBRARIES "${_link_libraries}")
-        endif()
-
-        get_target_property(
-            _interface_link_libraries ${TARGET_NAME} INTERFACE_LINK_LIBRARIES)
-        if(_interface_link_libraries)
-            list(REMOVE_ITEM _interface_link_libraries
-                ${PYTHON_LIBRARIES}
-                Python3::Python)
-            set_property(TARGET ${TARGET_NAME}
-                PROPERTY INTERFACE_LINK_LIBRARIES
-                "${_interface_link_libraries}")
-        endif()
-
         target_link_libraries(${TARGET_NAME}
-            PRIVATE "${_python_stable_abi_lib}")
+            PUBLIC Python3::SABIModule)
 
         add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -306,6 +273,7 @@ function(pxr_library NAME)
     set(options
         DISABLE_PRECOMPILED_HEADERS
         INCLUDE_SCHEMA_FILES
+        PYTHON_LIMITED_API
     )
     set(oneValueArgs
         TYPE
@@ -364,7 +332,16 @@ function(pxr_library NAME)
         endif()
 
         if(libraryRequiresPython)
-            list(APPEND args_LIBRARIES ${PYTHON_LIBRARIES} python)
+            if(args_PYTHON_LIMITED_API)
+                # Windows uses python3.lib below. Preserve the existing Python
+                # runtime linkage on other platforms until their stable-ABI
+                # link strategy is implemented.
+                if(NOT WIN32)
+                    list(APPEND args_LIBRARIES ${PYTHON_LIBRARIES})
+                endif()
+            else()
+                list(APPEND args_LIBRARIES ${PYTHON_LIBRARIES} python)
+            endif()
             list(APPEND args_INCLUDE_DIRS ${PYTHON_INCLUDE_DIRS})
         endif()
     endif()
@@ -499,6 +476,11 @@ function(pxr_library NAME)
                 endif()
             endforeach()
 
+            if(args_PYTHON_LIMITED_API)
+                # Python runtime targets have no USD script modules.
+                list(REMOVE_ITEM localLibs ${PYTHON_LIBRARIES})
+            endif()
+
             # Generate moduleDeps.cpp
             _get_python_module_name(${NAME} pyModuleName)
             add_custom_command(
@@ -524,6 +506,14 @@ function(pxr_library NAME)
         PRECOMPILED_HEADER_NAME "${args_PRECOMPILED_HEADER_NAME}"
         LIB_INSTALL_PREFIX_RESULT libInstallPrefix
     )
+
+    if(TARGET ${NAME})
+        set_property(TARGET ${NAME} PROPERTY PXR_PUBLIC_HEADERS
+            "${args_PUBLIC_HEADERS};${${NAME}_PUBLIC_HEADERS}")
+        if(args_PYTHON_LIMITED_API)
+            pxr_library_use_python_limited_api(${NAME})
+        endif()
+    endif()
 
     if(PXR_ENABLE_PYTHON_SUPPORT AND (args_PYMODULE_CPPFILES OR args_PYMODULE_FILES OR args_PYSIDE_UI_FILES))
         list(APPEND pythonModuleIncludeDirs ${PYTHON_INCLUDE_DIRS})

@@ -42,11 +42,18 @@ if(@PXR_ENABLE_PYTHON_SUPPORT@)
         endif()
     endif()
 
-    if (NOT DEFINED Python3_VERSION)
-        find_dependency(Python3 "@Python3_VERSION_MAJOR@.@Python3_VERSION_MINOR@" EXACT COMPONENTS Development)
-    else()
-        find_dependency(Python3 COMPONENTS Development)
+    set(_pxr_python_components Development)
+    if(WIN32)
+        # Tf's public inline helpers use the Python C API. Propagate the
+        # stable ABI import library rather than a versioned Python library.
+        list(APPEND _pxr_python_components Development.SABIModule)
     endif()
+    if (NOT DEFINED Python3_VERSION)
+        find_dependency(Python3 "@Python3_VERSION_MAJOR@.@Python3_VERSION_MINOR@" EXACT COMPONENTS ${_pxr_python_components})
+    else()
+        find_dependency(Python3 COMPONENTS ${_pxr_python_components})
+    endif()
+    unset(_pxr_python_components)
 endif()
 
 if (NOT DEFINED PXR_FIND_TBB_IN_CONFIG)
