@@ -453,6 +453,16 @@ if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND NOT PXR_BUILD_MONOLITHIC
 endif()
 
 if(PXR_ENABLE_PYTHON_SUPPORT)
+    if(PXR_BUILD_TESTS AND BUILD_SHARED_LIBS AND NOT PXR_BUILD_MONOLITHIC)
+        pxr_build_test(testTfPyRuntimeContracts
+            LIBRARIES tf
+            CPPFILES testenv/testTfPyRuntimeContracts.cpp)
+        target_compile_definitions(testTfPyRuntimeContracts PRIVATE
+            Py_LIMITED_API=0x030A0000)
+        pxr_register_test(testTfPyRuntimeContracts
+            COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testTfPyRuntimeContracts")
+        set_tests_properties(testTfPyRuntimeContracts PROPERTIES TIMEOUT 60)
+    endif()
     pxr_build_test(testTfPyFunction
         LIBRARIES
             tf
@@ -615,6 +625,7 @@ pxr_test_scripts(
     testenv/testTfPython.py
     testenv/testTfPyDllLink.py
     testenv/testTfPyNotice.py
+    testenv/testTfPyNoticeLifecycle.py
     testenv/testTfPyOptional.py
     testenv/testTfPyScopeDescription.py
     testenv/testTfPyStaticTokens.py
@@ -909,6 +920,9 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
         PYTHON
         COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testTfPyNotice"
     )
+    pxr_register_test(testTfPyNoticeLifecycle
+        PYTHON
+        COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testTfPyNoticeLifecycle")
     pxr_register_test(testTfPyInterpreter
         COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testTfPyInterpreter"
     )

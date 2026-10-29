@@ -31,6 +31,10 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
+// Factories run with the caller's GIL held and return a new Python reference,
+// or nullptr with a Python exception set. The registered function pointer is
+// non-owning and must outlive every invocation, including in-flight calls when
+// the registration is replaced.
 using Tf_PyAnyWeakPtrObjectFactory = PyObject *(*)(void const *);
 
 TF_API
