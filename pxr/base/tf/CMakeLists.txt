@@ -237,6 +237,7 @@ pxr_library(tf
         pyClassMethodBoost.h
         pyContainerConversions.h
         pyEnumBoost.h
+        pyErrorBoost.h
         pyFunction.h
         pyInterpreterBoost.h
         pyInvokeBoost.h

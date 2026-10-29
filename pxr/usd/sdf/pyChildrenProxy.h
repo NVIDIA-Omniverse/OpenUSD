@@ -12,7 +12,7 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/childrenProxy.h"
 #include "pxr/base/arch/demangle.h"
-#include "pxr/base/tf/pyError.h"
+#include "pxr/base/tf/pyErrorBoost.h"
 #include "pxr/base/tf/pyUtilsBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/external/boost/python.hpp"

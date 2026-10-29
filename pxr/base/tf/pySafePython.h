@@ -24,10 +24,35 @@
 ARCH_PRAGMA_PUSH_MACRO(slots)
 #undef slots
 
-#ifdef Py_LIMITED_API
+// Include the CRT headers with the caller's debug settings before temporarily
+// hiding _DEBUG from Python.h. A debug C++ build normally uses release Python;
+// PXR_USE_DEBUG_PYTHON explicitly requests the debug Python runtime instead.
+#if defined(_MSC_VER) && !defined(PXR_USE_DEBUG_PYTHON)
+#if defined(_DEBUG)
+#include <stddef.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <assert.h>
+#include <errno.h>
+#include <ctype.h>
+#include <wchar.h>
+#include <basetsd.h>
+#include <io.h>
+#include <limits.h>
+#include <float.h>
+#include <string.h>
+#include <math.h>
+#include <time.h>
+#endif
+ARCH_PRAGMA_PUSH_MACRO(_DEBUG)
+#undef _DEBUG
+#endif
+
 #include <Python.h>
-#else
-#include "pxr/external/boost/python/detail/wrap_python.hpp"
+
+#if defined(_MSC_VER) && !defined(PXR_USE_DEBUG_PYTHON)
+ARCH_PRAGMA_POP_MACRO(_DEBUG)
 #endif
 
 ARCH_PRAGMA_POP_MACRO(slots)
