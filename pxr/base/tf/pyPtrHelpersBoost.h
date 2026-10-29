@@ -34,10 +34,30 @@
 #include "pxr/external/boost/python/def_visitor.hpp"
 #include "pxr/external/boost/python/handle.hpp"
 #include "pxr/external/boost/python/implicit.hpp"
+#include "pxr/external/boost/python/object/make_ptr_instance.hpp"
+#include "pxr/external/boost/python/object/pointer_holder.hpp"
+#include "pxr/external/boost/python/pointee.hpp"
 #include "pxr/external/boost/python/to_python_converter.hpp"
 
 #include <memory>
 #include <type_traits>
+
+// Specializations for pxr_boost::python::pointee for TfRefPtr and TfWeakPtr.
+namespace PXR_BOOST_NAMESPACE { namespace python {
+
+// TfWeakPtrFacade
+template <template <class> class X, class Y>
+struct pointee< PXR_NS::TfWeakPtrFacade<X, Y> > {
+    typedef Y type;
+};
+
+// TfRefPtr
+template <typename T>
+struct pointee< PXR_NS::TfRefPtr<T> > {
+    typedef T type;
+};
+
+}}
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -250,6 +270,16 @@ struct _PtrToPython {
     }
 };
 
+template <typename Ptr>
+PyObject *
+_MakeAnyWeakPtrPythonObject(void const *ptr)
+{
+    typedef typename _PtrInterface<Ptr>::Pointee Pointee;
+    typedef pxr_boost::python::objects::pointer_holder<Ptr, Pointee> Holder;
+    return pxr_boost::python::objects::make_ptr_instance<
+        Pointee, Holder>::execute(*static_cast<Ptr const *>(ptr));
+}
+
 template <typename SrcPtr, typename DstPtr>
 struct _ConvertPtrToPython {
     _ConvertPtrToPython() {
@@ -345,6 +375,13 @@ struct WeakPtr : def_visitor<WeakPtr> {
         
         if (!std::is_same<Wrapper, T>::value)
             _PtrToPython<PtrType>();
+
+        Tf_PyRegisterAnyWeakPtrObjectFactory(
+            typeid(PtrType), _MakeAnyWeakPtrPythonObject<PtrType>);
+        Tf_PyRegisterAnyWeakPtrObjectFactory(
+            typeid(typename _PtrInterface<PtrType>::ConstPtr),
+            _MakeAnyWeakPtrPythonObject<
+                typename _PtrInterface<PtrType>::ConstPtr>);
 
     }
 

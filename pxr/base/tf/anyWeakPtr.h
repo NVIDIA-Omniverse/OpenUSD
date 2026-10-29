@@ -19,20 +19,30 @@
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
 #include "pxr/base/tf/pyMakePyPtr.h"
-#ifndef Py_LIMITED_API
-#include "pxr/external/boost/python/object/make_ptr_instance.hpp"
-#include "pxr/external/boost/python/object/pointer_holder.hpp"
-#include "pxr/external/boost/python/object_fwd.hpp"
-#endif
 #endif // PXR_PYTHON_SUPPORT_ENABLED
 
 #include "pxr/base/tf/pyObjWrapper.h"
 
 #include <cstddef>
 #include <type_traits>
+#include <typeinfo>
 #include <utility>
 
 PXR_NAMESPACE_OPEN_SCOPE
+
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+using Tf_PyAnyWeakPtrObjectFactory = PyObject *(*)(void const *);
+
+TF_API
+void Tf_PyRegisterAnyWeakPtrObjectFactory(
+    std::type_info const &ptrType,
+    Tf_PyAnyWeakPtrObjectFactory factory);
+
+TF_API
+PyObject *Tf_PyMakePythonObjectFromAnyWeakPtr(
+    std::type_info const &ptrType,
+    void const *ptr);
+#endif // PXR_PYTHON_SUPPORT_ENABLED
 
 /// \class TfAnyWeakPtr
 ///
@@ -141,14 +151,12 @@ public:
 
   private:
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
-#ifndef Py_LIMITED_API
     // This grants friend access to a function in the wrapper file for this
     // class.  This lets the wrapper reach down into an AnyWeakPtr to get a
-    // pxr_boost::python wrapped object corresponding to the held type.  This
+    // Python object corresponding to the held type.  This
     // facility is necessary to get the python API we want.
-    friend pxr_boost::python::api::object
-    Tf_GetPythonObjectFromAnyWeakPtr(This const &self);
-#endif // !Py_LIMITED_API
+    friend PyObject *
+    Tf_GetPythonObjectPtrFromAnyWeakPtr(This const &self);
 
     TF_API
     PyObject *_GetPythonObjectPtr() const;
@@ -271,36 +279,14 @@ TfPyObjWrapper
 TfAnyWeakPtr::_PointerHolder<Ptr>::GetPythonObject() const
 {
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
-#ifndef Py_LIMITED_API
-    typedef typename Ptr::DataType Pointee;
-    typedef pxr_boost::python::objects::pointer_holder<Ptr, Pointee> Holder;
-    struct _BoostObjectFactory {
+    struct _RegisteredObjectFactory {
         PyObject *operator()(Ptr const& ptr) const
         {
-            return pxr_boost::python::objects::make_ptr_instance
-                <Pointee, Holder>::execute(ptr);
+            return Tf_PyMakePythonObjectFromAnyWeakPtr(typeid(Ptr), &ptr);
         }
     };
-#else
-    struct _UnavailableObjectFactory {
-        PyObject *operator()(Ptr const&) const
-        {
-            TF_CODING_ERROR(
-                "No Python object factory is available for TfAnyWeakPtr "
-                "under Py_LIMITED_API.");
-            Py_INCREF(Py_None);
-            return Py_None;
-        }
-    };
-#endif
     std::pair<PyObject*, bool> ret =
-        Tf_MakePyPtrWithFactory(_ptr,
-#ifndef Py_LIMITED_API
-                                _BoostObjectFactory()
-#else
-                                _UnavailableObjectFactory()
-#endif
-        );
+        Tf_MakePyPtrWithFactory(_ptr, _RegisteredObjectFactory());
     if (ret.second) {
         Tf_PySetPythonIdentity(_ptr, ret.first);
     }

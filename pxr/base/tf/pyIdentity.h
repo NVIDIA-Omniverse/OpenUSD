@@ -19,29 +19,9 @@
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/base/tf/weakPtr.h"
 
-#include "pxr/external/boost/python/pointee.hpp"
-
 #include "pxr/base/tf/hashmap.h"
 
 #include <type_traits>
-
-// Specializations for pxr_boost::python::pointee and get_pointer for TfRefPtr and
-// TfWeakPtr.
-namespace PXR_BOOST_NAMESPACE { namespace python {
-
-// TfWeakPtrFacade
-template <template <class> class X, class Y>
-struct pointee< PXR_NS::TfWeakPtrFacade<X, Y> > {
-    typedef Y type;
-};
-
-// TfRefPtr
-template <typename T>
-struct pointee< PXR_NS::TfRefPtr<T> > {
-    typedef T type;
-};
-
-}}
 
 PXR_NAMESPACE_OPEN_SCOPE
 

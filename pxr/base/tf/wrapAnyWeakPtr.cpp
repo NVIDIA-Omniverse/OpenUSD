@@ -22,8 +22,12 @@ PXR_NAMESPACE_OPEN_SCOPE
 // Put this in the pxr namespace so that we can declare it a friend in
 // anyWeakPtr.h
 
+PyObject *Tf_GetPythonObjectPtrFromAnyWeakPtr(TfAnyWeakPtr const &self) {
+    return self._GetPythonObjectPtr();
+}
+
 object Tf_GetPythonObjectFromAnyWeakPtr(TfAnyWeakPtr const &self) {
-    return object(handle<>(self._GetPythonObjectPtr()));
+    return object(handle<>(Tf_GetPythonObjectPtrFromAnyWeakPtr(self)));
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE
