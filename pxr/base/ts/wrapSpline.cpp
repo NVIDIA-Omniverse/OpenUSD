@@ -12,7 +12,7 @@
 #include "pxr/base/tf/diagnostic.h"
 #include "pxr/base/tf/boost/pyAnnotatedBoolResultBoost.h"
 #include "pxr/base/tf/stringUtils.h"
-#include "pxr/base/vt/valueFromPython.h"
+#include "pxr/base/vt/boost/valueFromPythonBoost.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/make_constructor.hpp"

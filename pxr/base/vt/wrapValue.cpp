@@ -12,7 +12,7 @@
 #include "pxr/base/vt/arrayEdit.h"
 #include "pxr/base/vt/types.h"
 #include "pxr/base/vt/typeHeaders.h"
-#include "pxr/base/vt/valueFromPython.h"
+#include "pxr/base/vt/boost/valueFromPythonBoost.h"
 #include "pxr/base/vt/wrapArray.h"
 
 #include "pxr/base/arch/demangle.h"
@@ -220,6 +220,9 @@ struct Vt_ValueFromPython {
 
         // Attempt a registered conversion via the registry.
         VtValue v = Vt_ValueFromPythonRegistry::Invoke(obj_ptr);
+        if (PyErr_Occurred()) {
+            throw_error_already_set();
+        }
 
         if (!v.IsEmpty()) {
             new (storage) VtValue(v);

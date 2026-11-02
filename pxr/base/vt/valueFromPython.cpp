@@ -4,12 +4,13 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-
-#include "pxr/pxr.h"
 #include "pxr/base/vt/valueFromPython.h"
-
+#include "pxr/base/vt/value.h"
+#include "pxr/base/tf/diagnostic.h"
 #include "pxr/base/tf/pyLock.h"
+#include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/instantiateSingleton.h"
+#include <memory>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -17,55 +18,105 @@ TF_INSTANTIATE_SINGLETON(Vt_ValueFromPythonRegistry);
 
 Vt_ValueFromPythonRegistry::~Vt_ValueFromPythonRegistry() = default;
 
-VtValue
-Vt_ValueFromPythonRegistry::Invoke(PyObject *obj) {
+Vt_ValueFromPythonRegistry &
+Vt_ValueFromPythonRegistry::_GetInstance()
+{
+    return TfSingleton<Vt_ValueFromPythonRegistry>::GetInstance();
+}
+
+bool
+Vt_ValueFromPythonRegistry::HasConversions()
+{
     TfPyLock lock;
-    // Iterate over the extractors in reverse registration order.  We walk the
-    // lvalue extractors first, looking for an exact match.  If none match, we
-    // walk the rvalue extractors, which allow conversions.
-    Vt_ValueFromPythonRegistry &self = _GetInstance();
+    auto &self = _GetInstance();
+    return !self._lvalueExtractors.empty() && !self._rvalueExtractors.empty();
+}
 
-    // Check to see if we have a cached lvalue extractor for the python type
-    // object.
-    pxr_boost::python::handle<> h(PyObject_Type(obj));
-    _LValueExtractorCache::iterator i =
-        self._lvalueExtractorCache.find(h.get());
-    if (i != self._lvalueExtractorCache.end()) {
-        // attempt conversion.
-        VtValue result = i->second.Invoke(obj);
-        if (!result.IsEmpty())
-            return result;
+void
+Vt_ValueFromPythonRegistry::Register(Extractor lvalue, Extractor rvalue)
+{
+    if (!TfPyIsInitialized()) {
+        TF_FATAL_ERROR("Tried to register a VtValue from python conversion "
+                       "but python is not initialized!");
     }
+    if (!lvalue) {
+        TF_CODING_ERROR("A VtValue conversion requires an lvalue callback");
+        return;
+    }
+    TfPyLock lock;
+    auto &self = _GetInstance();
+    self._lvalueExtractors.push_back(lvalue);
+    if (rvalue) {
+        self._rvalueExtractors.push_back(rvalue);
+    }
+    ++self._registrationGeneration;
+    // Releasing type owners may reenter Python and register more callbacks.
+    // Retire entries outside the live container.
+    _LValueExtractorCache retired;
+    retired.swap(self._lvalueExtractorCache);
+}
 
-    // Fall back to trying extractors in reverse registration order.
-    for (size_t i = self._lvalueExtractors.size(); i != 0; --i) {
-        VtValue result = self._lvalueExtractors[i-1].Invoke(obj);
+VtValue
+Vt_ValueFromPythonRegistry::Invoke(PyObject *obj)
+{
+    TfPyLock lock;
+    if (PyErr_Occurred()) {
+        return VtValue();
+    }
+    if (!obj) {
+        PyErr_SetString(PyExc_TypeError, "Cannot convert a null Python object");
+        return VtValue();
+    }
+    auto &self = _GetInstance();
+    std::unique_ptr<PyObject, decltype(&Py_DecRef)> type(
+        PyObject_Type(obj), &Py_DecRef);
+    if (!type) {
+        return VtValue();
+    }
+    // Callbacks can register more callbacks. Copy function pointers before
+    // calling them and keep this invocation's original search bounds.
+    const size_t generation = self._registrationGeneration;
+    const size_t lvalueCount = self._lvalueExtractors.size();
+    const size_t rvalueCount = self._rvalueExtractors.size();
+    auto cached = self._lvalueExtractorCache.find(type.get());
+    if (cached != self._lvalueExtractorCache.end()) {
+        Extractor extract = cached->second.extract;
+        VtValue result = extract(obj);
+        if (PyErr_Occurred()) {
+            return VtValue();
+        }
         if (!result.IsEmpty()) {
-            // Cache the result.
-            self._lvalueExtractorCache.insert(
-                {PyObject_Type(obj), self._lvalueExtractors[i-1]});
             return result;
         }
     }
-
-    // No lvalue extraction worked -- try rvalue conversions.
-    for (size_t i = self._rvalueExtractors.size(); i != 0; --i) {
-        VtValue result = self._rvalueExtractors[i-1].Invoke(obj);
-        if (!result.IsEmpty())
+    for (size_t i = lvalueCount; i != 0; --i) {
+        Extractor extract = self._lvalueExtractors[i - 1];
+        VtValue result = extract(obj);
+        if (PyErr_Occurred()) {
+            return VtValue();
+        }
+        if (!result.IsEmpty()) {
+            if (generation == self._registrationGeneration) {
+                self._lvalueExtractorCache.erase(type.get());
+                self._lvalueExtractorCache.insert(
+                    {type.get(), _CachedExtractor{
+                        TfPyObjWrapper(type.get(), TfPyBorrowedReference),
+                        extract}});
+            }
             return result;
+        }
+    }
+    for (size_t i = rvalueCount; i != 0; --i) {
+        Extractor extract = self._rvalueExtractors[i - 1];
+        VtValue result = extract(obj);
+        if (PyErr_Occurred()) {
+            return VtValue();
+        }
+        if (!result.IsEmpty()) {
+            return result;
+        }
     }
     return VtValue();
-}
-
-
-void
-Vt_ValueFromPythonRegistry::_RegisterLValue(_Extractor const &e) {
-    _lvalueExtractors.push_back(e);
-}
-
-void
-Vt_ValueFromPythonRegistry::_RegisterRValue(_Extractor const &e) {
-    _rvalueExtractors.push_back(e);
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

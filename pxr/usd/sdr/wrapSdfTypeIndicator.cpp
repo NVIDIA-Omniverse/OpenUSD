@@ -6,7 +6,6 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/vt/valueFromPython.h"
 #include "pxr/usd/sdr/sdfTypeIndicator.h"
 
 #include "pxr/external/boost/python.hpp"

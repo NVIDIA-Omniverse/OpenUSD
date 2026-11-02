@@ -8,7 +8,7 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/layerOffset.h"
 #include "pxr/usd/sdf/timeCode.h"
-#include "pxr/base/vt/valueFromPython.h"
+#include "pxr/base/vt/boost/valueFromPythonBoost.h"
 #include "pxr/base/tf/boost/pyContainerConversions.h"
 #include "pxr/base/tf/pyUtils.h"
 

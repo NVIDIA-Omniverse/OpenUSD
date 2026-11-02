@@ -9,7 +9,7 @@
 #include "pxr/base/vt/array.h"
 #include "pxr/base/vt/wrapArray.h"
 #include "pxr/base/vt/wrapArrayEdit.h"
-#include "pxr/base/vt/valueFromPython.h"
+#include "pxr/base/vt/boost/valueFromPythonBoost.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 

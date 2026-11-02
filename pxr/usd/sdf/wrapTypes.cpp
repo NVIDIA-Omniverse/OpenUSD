@@ -28,7 +28,7 @@
 #include "pxr/base/tf/boost/pyEnumBoost.h"
 #include "pxr/base/tf/boost/pyStaticTokensBoost.h"
 
-#include "pxr/base/vt/valueFromPython.h"
+#include "pxr/base/vt/boost/valueFromPythonBoost.h"
 
 #include "pxr/external/boost/python.hpp"
 

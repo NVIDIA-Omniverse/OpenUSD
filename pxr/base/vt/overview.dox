@@ -11,6 +11,32 @@ Defines classes that provide for type abstraction (VtValue) and enhanced array t
 \section vt_value Type Erasure with VtValue
 The VtValue class wraps type objects (float, int, bool, GfVec3d, and so on) in a type-agnostic container that includes functions for determining the content type within the container.  The VtValue class is found in the C++ API only, since Python does not have the strong type restrictions of C++.  Python to C++ type conversion is handled automatically by the system.  
 
+\section vt_python_registry Python conversion registry
+
+Vt_ValueFromPythonRegistry owns the shared from-Python conversion registry in
+the C++ library. Its header, vt/valueFromPython.h, accepts plain callback
+pointers and does not include a binding implementation. Include vt/value.h
+separately when defining callbacks that return VtValue.
+
+Boost.Python modules should include vt/boost/valueFromPythonBoost.h and link
+the CMake interface target vtBoostPython. It supplies the binding requirements
+and selects Vt or the configured monolithic library; it adds no compiled
+library. The existing VtValueFromPython<T>() and VtValueFromPythonLValue<T>()
+helpers now live in that adapter header rather than vt/valueFromPython.h.
+Modules register callbacks into the one core registry, including registrations
+from downstream modules; they do not link against the _vt module.
+
+Callbacks borrow their input, execute with the GIL held, and return an empty
+value on a non-match. A failed conversion sets a Python exception and returns
+an empty value; the module caller must propagate that exception. The Boost
+adapter translates error_already_set into this contract. Registered callback
+code must remain loaded for the registry's lifetime. New registrations
+invalidate cached lvalue choices and take effect on the next invocation.
+
+This separation covers the from-Python registry. Other Vt value and buffer
+helpers still use Boost.Python and the full Python API during the remaining
+stages of the Vt migration.
+
 \section vt_array Shared Arrays - VtArray
 The VtArray class represents an arbitrary length homogeneous container.  In the C++ API, the constructor lets you create an array of a specified size.  The VtArray interface on the Python side is implemented as a set of typed array classes (for example, BoolArray, StringArray, Vec4dArray).
 */

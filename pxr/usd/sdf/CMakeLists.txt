@@ -234,6 +234,12 @@ pxr_test_scripts(
     testenv/testSdfZipFileLimits.py
 )
 
+foreach(module _sdf _sdf_d)
+    if(TARGET ${module})
+        target_link_libraries(${module} PRIVATE vtBoostPython)
+    endif()
+endforeach()
+
 pxr_build_test_shared_lib(TestSdfFileFormatCapabilities
     INSTALL_PREFIX SdfPlugins
     LIBRARIES

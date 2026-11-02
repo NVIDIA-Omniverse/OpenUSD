@@ -7,7 +7,7 @@
 #include "pxr/pxr.h"
 #include "pxr/base/tf/boost/pyUtilsBoost.h"
 #include "pxr/usd/sdf/assetPath.h"
-#include "pxr/base/vt/valueFromPython.h"
+#include "pxr/base/vt/boost/valueFromPythonBoost.h"
 #include "pxr/base/tf/hash.h"
 #include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/tf/stringUtils.h"

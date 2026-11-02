@@ -6,7 +6,7 @@
 //
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/timeCode.h"
-#include "pxr/base/vt/valueFromPython.h"
+#include "pxr/base/vt/boost/valueFromPythonBoost.h"
 #include "pxr/base/tf/hash.h"
 #include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/tf/stringUtils.h"

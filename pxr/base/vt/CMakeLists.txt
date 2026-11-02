@@ -64,6 +64,43 @@ pxr_library(vt
         overview.dox
 )
 
+if(PXR_ENABLE_PYTHON_SUPPORT)
+    # Reusable binding adapters, without another compiled library. Core Vt
+    # owns the registry; modules own the registered extraction callbacks.
+    add_library(vtBoostPython INTERFACE)
+    target_link_libraries(vtBoostPython INTERFACE tfBoostPython)
+    if(NOT PXR_BUILD_MONOLITHIC)
+        target_link_libraries(vtBoostPython INTERFACE vt)
+    endif()
+    set(vtBindingHeaders boost/valueFromPythonBoost.h)
+    _copy_headers(vtBoostPython FILES ${vtBindingHeaders} PREFIX "${PXR_PREFIX}")
+    set(vtBindingIncludeRoot "${PROJECT_BINARY_DIR}/${PXR_INSTALL_SUBDIR}/include")
+    _get_install_dir(include vtBindingInstallDir)
+    target_sources(vtBoostPython INTERFACE FILE_SET HEADERS
+        BASE_DIRS "${vtBindingIncludeRoot}"
+        FILES "${vtBindingIncludeRoot}/${PXR_PREFIX}/vt/boost/valueFromPythonBoost.h")
+    install(TARGETS vtBoostPython EXPORT pxrTargets
+        FILE_SET HEADERS DESTINATION "${vtBindingInstallDir}")
+    export(TARGETS vtBoostPython APPEND FILE "${PROJECT_BINARY_DIR}/pxrTargets.cmake")
+    foreach(module _vt _vt_d)
+        if(TARGET ${module})
+            target_link_libraries(${module} PRIVATE vtBoostPython)
+        endif()
+    endforeach()
+endif()
+
+if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
+    add_test(NAME testVtConversionRegistry
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testVtConversionRegistry.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testVtConversionRegistry"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testVtConversionRegistry/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --cmake "${CMAKE_COMMAND}"
+            --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
+endif()
+
 pxr_build_test(testVtCpp
     LIBRARIES
         tf

@@ -9,7 +9,7 @@
 #include "pxr/usd/sdf/payload.h"
 #include "pxr/base/tf/boost/pyContainerConversions.h"
 #include "pxr/base/tf/boost/pyUtilsBoost.h"
-#include "pxr/base/vt/valueFromPython.h"
+#include "pxr/base/vt/boost/valueFromPythonBoost.h"
 
 #include "pxr/external/boost/python.hpp"
 

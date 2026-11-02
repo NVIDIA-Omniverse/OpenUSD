@@ -8,7 +8,8 @@
 #include "pxr/usd/sdf/opaqueValue.h"
 
 #include "pxr/base/tf/boost/pyStaticTokensBoost.h"
-#include "pxr/base/vt/valueFromPython.h"
+#include "pxr/base/vt/boost/valueFromPythonBoost.h"
+#include "pxr/base/tf/pyUtils.h"
 
 #include "pxr/external/boost/python.hpp"
 #include <string>

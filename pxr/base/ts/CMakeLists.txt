@@ -54,6 +54,12 @@ set(pycpp
     wrapTypes.cpp
 )
 
+foreach(module _ts _ts_d)
+    if(TARGET ${module})
+        target_link_libraries(${module} PRIVATE vtBoostPython)
+    endif()
+endforeach()
+
 if (${PXR_BUILD_TESTS})
     list(APPEND classes
         tsTest_Museum

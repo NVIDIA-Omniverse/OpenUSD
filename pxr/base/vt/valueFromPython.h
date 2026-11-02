@@ -8,142 +8,76 @@
 #define PXR_BASE_VT_VALUE_FROM_PYTHON_H
 
 /// \file vt/valueFromPython.h
-
 #include "pxr/pxr.h"
 #include "pxr/base/vt/api.h"
-#include "pxr/base/vt/value.h"
-
 #include "pxr/base/tf/hash.h"
 #include "pxr/base/tf/hashmap.h"
-#include "pxr/base/tf/pyUtils.h"
-#include "pxr/base/tf/singleton.h"
-
+#include "pxr/base/tf/pyObjWrapper.h"
 #include "pxr/base/tf/pySafePython.h"
-
+#include "pxr/base/tf/singleton.h"
 #include <vector>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-/// \class Vt_ValueFromPythonRegistry
+class VtValue;
+
+/// Shared, binding-independent registry of Python-to-VtValue conversions.
 ///
+/// Registration and invocation acquire the GIL. Callbacks borrow their input
+/// and run with the GIL held. Return an empty value for a non-match; set a
+/// Python exception and return an empty value for a failed conversion. Errors
+/// stop the search and are left for the caller to propagate. Callbacks must
+/// not throw binding-library exceptions across this interface.
+///
+/// Callbacks are non-owning function pointers and must remain valid for the
+/// lifetime of the registry. Unloading registered binding code is unsupported.
 class Vt_ValueFromPythonRegistry {
 public:
+    using Extractor = VtValue (*)(PyObject *);
 
-    static bool HasConversions() {
-        return !_GetInstance()._lvalueExtractors.empty() &&
-               !_GetInstance()._rvalueExtractors.empty();
-    }
-    
+    /// True once both lvalue and rvalue conversions have been registered.
+    VT_API static bool HasConversions();
+
+    /// Try lvalue callbacks before rvalue callbacks, newest first in each
+    /// group. A successful lvalue callback is cached by Python type. A cached
+    /// callback may decline an object, causing the normal search to resume.
+    /// Lvalue callbacks should test type compatibility: a cached choice is
+    /// assumed to remain appropriate until the next registration.
+    /// Pending Python exceptions are preserved without invoking callbacks.
     VT_API static VtValue Invoke(PyObject *obj);
 
-    template <class T>
-    static void Register(bool registerRvalue) {
-        if (!TfPyIsInitialized()) {
-            TF_FATAL_ERROR("Tried to register a VtValue from python conversion "
-                           "but python is not initialized!");
-        }
-        _GetInstance()._RegisterLValue(_Extractor::MakeLValue<T>());
-        if (registerRvalue)
-            _GetInstance()._RegisterRValue(_Extractor::MakeRValue<T>());
-    }
+    /// Register a required lvalue callback and an optional rvalue callback.
+    /// Registration invalidates cached choices. Registration from a callback
+    /// takes effect on the next invocation, not the invocation in progress.
+    VT_API static void Register(Extractor lvalue, Extractor rvalue = nullptr);
 
     Vt_ValueFromPythonRegistry(Vt_ValueFromPythonRegistry const&) = delete;
     Vt_ValueFromPythonRegistry& operator=(
         Vt_ValueFromPythonRegistry const&) = delete;
-
     Vt_ValueFromPythonRegistry(Vt_ValueFromPythonRegistry &&) = delete;
     Vt_ValueFromPythonRegistry& operator=(
         Vt_ValueFromPythonRegistry &&) = delete;
 
 private:
-    Vt_ValueFromPythonRegistry() {}
+    Vt_ValueFromPythonRegistry() = default;
     VT_API ~Vt_ValueFromPythonRegistry();
-
     friend class TfSingleton<Vt_ValueFromPythonRegistry>;
+    VT_API static Vt_ValueFromPythonRegistry &_GetInstance();
 
-    class _Extractor {
-    private:
-        using _ExtractFunc = VtValue (*)(PyObject *);
-
-        // _ExtractLValue will attempt to obtain an l-value T from the python
-        // object it's passed.  This effectively disallows type conversions
-        // (other than things like derived-to-base type conversions).
-        template <class T>
-        static VtValue _ExtractLValue(PyObject *);
-
-        // _ExtractRValue will attempt to obtain an r-value T from the python
-        // object it's passed.  This allows boost.python to invoke type
-        // conversions to produce the T.
-        template <class T>
-        static VtValue _ExtractRValue(PyObject *);
-
-    public:
-
-        template <class T>
-        static _Extractor MakeLValue() {
-            return _Extractor(&_ExtractLValue<T>);
-        }
-        
-        template <class T>
-        static _Extractor MakeRValue() {
-            return _Extractor(&_ExtractRValue<T>);
-        }
-        
-        VtValue Invoke(PyObject *obj) const {
-            return _extract(obj);
-        }
-
-    private:
-        explicit _Extractor(_ExtractFunc extract) : _extract(extract) {}
-
-        _ExtractFunc _extract;
+    std::vector<Extractor> _lvalueExtractors;
+    std::vector<Extractor> _rvalueExtractors;
+    struct _CachedExtractor {
+        TfPyObjWrapper type;
+        Extractor extract;
     };
-
-    VT_API static Vt_ValueFromPythonRegistry &_GetInstance() {
-        return TfSingleton<Vt_ValueFromPythonRegistry>::GetInstance();
-    }
-    
-    VT_API void _RegisterLValue(_Extractor const &e);
-    VT_API void _RegisterRValue(_Extractor const &e);
-    
-    std::vector<_Extractor> _lvalueExtractors;
-    std::vector<_Extractor> _rvalueExtractors;
-
-    typedef TfHashMap<PyObject *, _Extractor, TfHash> _LValueExtractorCache;
+    // Compare type identity, without calling a user-defined metaclass hash.
+    using _LValueExtractorCache =
+        TfHashMap<PyObject *, _CachedExtractor, TfHash>;
     _LValueExtractorCache _lvalueExtractorCache;
-
+    size_t _registrationGeneration = 0;
 };
 
 VT_API_TEMPLATE_CLASS(TfSingleton<Vt_ValueFromPythonRegistry>);
 
-template <class T>
-VtValue Vt_ValueFromPythonRegistry::
-_Extractor::_ExtractLValue(PyObject *obj) {
-    pxr_boost::python::extract<T &> x(obj);
-    if (x.check())
-        return VtValue(x());
-    return VtValue();
-}
-
-template <class T>
-VtValue Vt_ValueFromPythonRegistry::
-_Extractor::_ExtractRValue(PyObject *obj) {
-    pxr_boost::python::extract<T> x(obj);
-    if (x.check())
-        return VtValue(x());
-    return VtValue();
-}
-
-template <class T>
-void VtValueFromPython() {
-    Vt_ValueFromPythonRegistry::Register<T>(/* registerRvalue = */ true);
-}
-
-template <class T>
-void VtValueFromPythonLValue() {
-    Vt_ValueFromPythonRegistry::Register<T>(/* registerRvalue = */ false);
-}
-
 PXR_NAMESPACE_CLOSE_SCOPE
-
 #endif // PXR_BASE_VT_VALUE_FROM_PYTHON_H

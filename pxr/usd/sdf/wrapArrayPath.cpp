@@ -8,7 +8,7 @@
 #include "pxr/usd/sdf/path.h"
 #include "pxr/base/vt/array.h"
 #include "pxr/base/vt/wrapArray.h"
-#include "pxr/base/vt/valueFromPython.h"
+#include "pxr/base/vt/boost/valueFromPythonBoost.h"
 
 PXR_NAMESPACE_OPEN_SCOPE
 
