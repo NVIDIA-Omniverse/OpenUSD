@@ -17,7 +17,8 @@ else()
         PATHS "${USD_PREFIX}" NO_DEFAULT_PATH)
 endif()
 
-if(PACKAGE_COMPONENT STREQUAL "tf" OR PACKAGE_COMPONENT STREQUAL "vt")
+if(PACKAGE_COMPONENT STREQUAL "tf" OR PACKAGE_COMPONENT STREQUAL "vt"
+        OR PACKAGE_COMPONENT STREQUAL "ar")
     if(TARGET Python3::Python OR NOT TARGET Python3::SABIModule)
         message(FATAL_ERROR "Core discovery must supply only the stable Python target")
     endif()
@@ -29,6 +30,10 @@ if(PACKAGE_COMPONENT STREQUAL "tf" OR PACKAGE_COMPONENT STREQUAL "vt")
     if(PACKAGE_COMPONENT STREQUAL "vt")
         set(componentIncludes "#include <pxr/base/vt/value.h>")
         set(componentCheck "PXR_NS::VtValue vtValue(42); valid = valid && vtValue.Get<int>() == 42;")
+    endif()
+    if(PACKAGE_COMPONENT STREQUAL "ar")
+        set(componentIncludes "#include <pxr/usd/ar/defaultResolverContext.h>\n#include <pxr/usd/ar/resolverContext.h>")
+        set(componentCheck "PXR_NS::ArResolverContext context{PXR_NS::ArDefaultResolverContext()}; valid = valid && context.Get<PXR_NS::ArDefaultResolverContext>() != nullptr;")
     endif()
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/consumer.cpp" "
 #include <pxr/base/tf/token.h>

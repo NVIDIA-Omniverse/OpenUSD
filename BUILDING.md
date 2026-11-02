@@ -691,7 +691,7 @@ version-specific Python code from other core components.
 
 The same distinction applies to Vt: use the `vt` component and target for its
 stable core in a non-monolithic package, or `vtBoostPython` for downstream
-Boost.Python modules. Core components `tf`, `gf`, and `vt` do not request the
+Boost.Python modules. Core components `tf`, `gf`, `vt`, and `ar` do not request the
 bindings' exact Python minor version on Windows. Binding components and the
 default complete package retain that requirement. Python runtime deployment
 belongs to the consuming application.
@@ -701,6 +701,10 @@ component and target, and include `pxr/usd/ar/boost/pyResolverContext.h`.
 This interface target supplies headers and binding dependencies without another
 compiled library, and selects the appropriate core linkage in either build
 mode. Native resolver plugins include `pxr/usd/ar/resolverContext.h` directly.
+For a non-monolithic package, `COMPONENTS ar` selects the core library and its
+stable Python dependency on Windows; `arBoostPython` selects the version-specific
+binding interface. Link native consumers to `ar` and binding modules to
+`arBoostPython`.
 
 > [!WARNING]
 > Due to the need to link to the static monolithic library with the

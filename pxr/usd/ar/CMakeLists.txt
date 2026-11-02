@@ -2,6 +2,7 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE ar)
 
 pxr_library(ar
+    PYTHON_LIMITED_API
     LIBRARIES
         arch
         js
@@ -69,6 +70,9 @@ pxr_library(ar
         overview.dox
 )
 
+# Preserve the native header requirement independently of binding helpers.
+target_compile_features(ar PUBLIC cxx_std_17)
+
 if(PXR_ENABLE_PYTHON_SUPPORT)
     # Headers for downstream resolver bindings; no additional compiled library.
     add_library(arBoostPython INTERFACE)
@@ -102,6 +106,56 @@ if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
             --prefix "${CMAKE_INSTALL_PREFIX}"
             --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
             --config "$<CONFIG>")
+endif()
+
+if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS
+        AND NOT PXR_BUILD_MONOLITHIC)
+    get_target_property(arCoreHeaders ar PXR_PUBLIC_HEADERS)
+    list(REMOVE_DUPLICATES arCoreHeaders)
+    list(SORT arCoreHeaders)
+    string(REPLACE ";" "\n" arCoreHeaders "${arCoreHeaders}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt" "${arCoreHeaders}\n")
+    get_target_property(arSources ar SOURCES)
+    set(arCoreSources "")
+    foreach(source IN LISTS arSources)
+        if(source MATCHES "[.]cpp$" AND NOT source MATCHES "pch[.]cpp$")
+            if(NOT IS_ABSOLUTE "${source}")
+                if(source STREQUAL "moduleDeps.cpp")
+                    set(source "${CMAKE_CURRENT_BINARY_DIR}/${source}")
+                else()
+                    set(source "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+                endif()
+            endif()
+            string(APPEND arCoreSources "${source}\n")
+        endif()
+    endforeach()
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/coreSources.txt" "${arCoreSources}")
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/coreBoundary-$<CONFIG>.txt"
+        CONTENT "links\t$<TARGET_PROPERTY:ar,LINK_LIBRARIES>\ninterface_links\t$<TARGET_PROPERTY:ar,INTERFACE_LINK_LIBRARIES>\ndefinitions\t$<TARGET_PROPERTY:ar,COMPILE_DEFINITIONS>\ninterface_definitions\t$<TARGET_PROPERTY:ar,INTERFACE_COMPILE_DEFINITIONS>\n")
+    add_test(NAME testArCoreDependencyBoundary
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testArCoreDependencyBoundary.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testArCoreDependencyBoundary"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testArCoreDependencyBoundary/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --headers "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt"
+            --sources "${CMAKE_CURRENT_BINARY_DIR}/coreSources.txt"
+            --ownership "${CMAKE_CURRENT_BINARY_DIR}/coreBoundary-$<CONFIG>.txt"
+            --module-deps "${CMAKE_CURRENT_BINARY_DIR}/moduleDeps.cpp"
+            --install-manifest "${PROJECT_BINARY_DIR}/install_manifest.txt"
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
+    if(WIN32)
+        add_test(NAME testArPackageComponents
+            COMMAND "${PYTHON_EXECUTABLE}"
+                "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents.py"
+                --source-dir "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents"
+                --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testArPackageComponents/$<CONFIG>"
+                --prefix "${CMAKE_INSTALL_PREFIX}"
+                --core-component ar --binding-component arBoostPython
+                --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+                --config "$<CONFIG>")
+    endif()
 endif()
 
 pxr_test_scripts(
