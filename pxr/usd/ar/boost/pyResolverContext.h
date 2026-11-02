@@ -4,10 +4,10 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#ifndef PXR_USD_AR_PY_RESOLVER_CONTEXT_H
-#define PXR_USD_AR_PY_RESOLVER_CONTEXT_H
+#ifndef PXR_USD_AR_BOOST_PY_RESOLVER_CONTEXT_H
+#define PXR_USD_AR_BOOST_PY_RESOLVER_CONTEXT_H
 
-/// \file ar/pyResolverContext.h
+/// \file ar/boost/pyResolverContext.h
 /// Macros for creating Python bindings for objects used with 
 /// ArResolverContext.
 
@@ -22,6 +22,11 @@ PXR_NAMESPACE_OPEN_SCOPE
 /// Python into a ArResolverContext object in C++.  This typically would be
 /// called in the source file where the Python wrapping for the context object
 /// is defined.
+/// Include this header and link arBoostPython only from the binding module.
+/// Native resolver/context implementations need neither this helper nor Boost.
+/// The Python class binding also supplies conversion back to Python for
+/// ResolverContext.Get() and repr(), including contexts created before the
+/// binding module was loaded.
 template <class Context>
 void 
 ArWrapResolverContextForPython();

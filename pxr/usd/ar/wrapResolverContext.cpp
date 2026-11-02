@@ -5,6 +5,8 @@
 // https://openusd.org/license.
 //
 #include "pxr/external/boost/python/class.hpp"
+#include "pxr/external/boost/python/converter/registry.hpp"
+#include "pxr/external/boost/python/converter/registrations.hpp"
 #include "pxr/external/boost/python/def.hpp"
 #include "pxr/external/boost/python/list.hpp"
 #include "pxr/external/boost/python/make_constructor.hpp"
@@ -16,7 +18,6 @@
 #include "pxr/usd/ar/resolverContext.h"
 
 #include "pxr/base/tf/boost/pyContainerConversions.h"
-#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
 #include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/stringUtils.h"
 
@@ -72,12 +73,22 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 class Ar_ResolverContextPythonAccess
 {
+    static object _GetPythonObject(const ArResolverContext::_Untyped& data)
+    {
+        // Resolve the converter when the object is requested, rather than
+        // instantiating binding code wherever a native context is created.
+        // The registered converter returns a new reference to a Python copy.
+        return object(handle<>(converter::registry::lookup(
+            pxr_boost::python::type_info(data.GetTypeid()))
+                .to_python(data.GetData())));
+    }
+
 public:
     static pxr_boost::python::list GetAsList(const ArResolverContext& ctx)
     {
         pxr_boost::python::list l;
         for (const auto& data : ctx._contexts) {
-            l.append(TfPyObjWrapperToBoostObject(data->GetPythonObj()));
+            l.append(_GetPythonObject(*data));
         }
         return l;
     }
@@ -86,7 +97,7 @@ public:
     {
         std::vector<std::string> objReprs;
         for (const auto& data : ctx._contexts) {
-            objReprs.push_back(TfPyObjectRepr(data->GetPythonObj().ptr()));
+            objReprs.push_back(TfPyObjectRepr(_GetPythonObject(*data).ptr()));
         }
         return TF_PY_REPR_PREFIX +
             TfStringPrintf("ResolverContext(%s)", 

@@ -244,6 +244,36 @@ For more details, see:
 - \ref ArResolver_context "Asset Resolver Context Operations"
 - \ref ArResolver_contextImplementation "Context Operations Implementation"
 
+\subsection ar_context_python_bindings Python Bindings for Custom Contexts
+
+Native context types and resolver implementations include
+\c pxr/usd/ar/resolverContext.h and require no Python binding adapters.
+The context stores the C++ object independently of whether its Python binding
+has been loaded.
+
+To expose a custom context to Python, include
+\c pxr/usd/ar/boost/pyResolverContext.h in its binding module and link that
+module to the \c arBoostPython CMake target. This is an interface target
+supplying headers and binding dependencies, not another compiled library.
+It selects the core linkage in both ordinary and monolithic builds.
+Installed consumers can request \c COMPONENTS arBoostPython from
+\c find_package(pxr).
+
+After defining the Python class, call
+\c ArWrapResolverContextForPython<Context>() to enable implicit conversion
+from that class to ArResolverContext. The class's registered to-Python
+converter supplies the copies returned by \c Ar.ResolverContext.Get() and
+used by its \c repr(). Conversion is looked up when requested, so contexts
+created before the binding module loads work after it loads. A held type
+without a Python converter raises TypeError when exposed through these
+Python operations; native context operations remain available.
+
+The former \c pxr/usd/ar/pyResolverContext.h include has moved to the
+explicit \c boost/ location. Downstream binding sources must update that
+include and link \c arBoostPython. Native sources need no replacement include.
+The internal type-erasure virtual interface has changed, so existing native
+resolver plugins must also be rebuilt against the updated headers.
+
 \section ar_resolver_scoped_cache Resolver Scoped Caches
 
 A resolver scoped cache is a cache of asset resolution results that is

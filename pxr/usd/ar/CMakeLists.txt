@@ -44,9 +44,6 @@ pxr_library(ar
     CPPFILES
         debugCodes.cpp
 
-    PYTHON_PUBLIC_CLASSES
-        pyResolverContext
-
     PYMODULE_CPPFILES
         module.cpp
         wrapAsset.cpp
@@ -71,6 +68,41 @@ pxr_library(ar
     DOXYGEN_FILES
         overview.dox
 )
+
+if(PXR_ENABLE_PYTHON_SUPPORT)
+    # Headers for downstream resolver bindings; no additional compiled library.
+    add_library(arBoostPython INTERFACE)
+    target_link_libraries(arBoostPython INTERFACE tfBoostPython)
+    if(NOT PXR_BUILD_MONOLITHIC)
+        target_link_libraries(arBoostPython INTERFACE ar)
+    endif()
+    set(arBindingHeaders boost/pyResolverContext.h)
+    _copy_headers(arBoostPython FILES ${arBindingHeaders} PREFIX "${PXR_PREFIX}")
+    set(arBindingIncludeRoot "${PROJECT_BINARY_DIR}/${PXR_INSTALL_SUBDIR}/include")
+    _get_install_dir(include arBindingInstallDir)
+    target_sources(arBoostPython INTERFACE FILE_SET HEADERS
+        BASE_DIRS "${arBindingIncludeRoot}"
+        FILES "${arBindingIncludeRoot}/${PXR_PREFIX}/ar/boost/pyResolverContext.h")
+    install(TARGETS arBoostPython EXPORT pxrTargets
+        FILE_SET HEADERS DESTINATION "${arBindingInstallDir}")
+    export(TARGETS arBoostPython APPEND FILE "${PROJECT_BINARY_DIR}/pxrTargets.cmake")
+    foreach(module _ar _ar_d)
+        if(TARGET ${module})
+            target_link_libraries(${module} PRIVATE arBoostPython)
+        endif()
+    endforeach()
+endif()
+
+if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
+    add_test(NAME testArContextBindingHelpers
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testArContextBindingHelpers.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testArContextBindingHelpers"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testArContextBindingHelpers/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
+endif()
 
 pxr_test_scripts(
     testenv/testArAssetInfo.py

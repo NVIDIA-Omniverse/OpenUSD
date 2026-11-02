@@ -8,7 +8,7 @@
 
 #include "resolverContext.h"
 
-#include "pxr/usd/ar/pyResolverContext.h"
+#include "pxr/usd/ar/boost/pyResolverContext.h"
 #include "pxr/base/tf/pyUtils.h"
 
 #include "pxr/external/boost/python/class.hpp"

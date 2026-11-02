@@ -16,16 +16,6 @@
 #include "pxr/base/tf/hash.h"
 #include "pxr/base/tf/safeTypeCompare.h"
 
-#ifdef PXR_PYTHON_SUPPORT_ENABLED
-// XXX: This include is a hack to avoid build errors due to
-// incompatible macro definitions in pyport.h on macOS.
-#include <locale>
-#include "pxr/base/tf/pyLock.h"
-#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
-#endif
-
-#include "pxr/base/tf/pyObjWrapper.h"
-
 #include <algorithm>
 #include <memory>
 #include <string>
@@ -245,7 +235,9 @@ private:
         virtual bool Equals(const _Untyped& rhs) const = 0;
         virtual size_t Hash() const = 0;
         virtual std::string GetDebugString() const = 0;
-        virtual TfPyObjWrapper GetPythonObj() const = 0;
+        // Non-owning access for binding adapters. The address remains valid
+        // while this stored context object is alive.
+        virtual const void* GetData() const = 0;
     };
 
     template <class Context>
@@ -287,15 +279,9 @@ private:
             return ArGetDebugString(_context);            
         }
 
-        virtual TfPyObjWrapper GetPythonObj() const
+        virtual const void* GetData() const
         {
- #ifdef PXR_PYTHON_SUPPORT_ENABLED
-            TfPyLock lock;
-            return TfPyObjWrapperFromBoostObject(
-                pxr_boost::python::object(_context));
-#else
-            return {};
-#endif
+            return &_context;
         }
 
         Context _context;
@@ -308,9 +294,7 @@ private:
         h.Append(context->Hash());
     }
 
-#ifdef PXR_PYTHON_SUPPORT_ENABLED
     friend class Ar_ResolverContextPythonAccess;
-#endif
 
     std::vector<std::shared_ptr<_Untyped>> _contexts;
 };

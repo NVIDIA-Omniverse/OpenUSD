@@ -5,6 +5,8 @@
 // https://openusd.org/license.
 //
 #include "pxr/pxr.h"
+#include "pxr/external/boost/python/converter/registry.hpp"
+#include "pxr/external/boost/python/converter/registrations.hpp"
 #include "pxr/usd/usd/wrapUtils.h"
 
 PXR_NAMESPACE_OPEN_SCOPE

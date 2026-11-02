@@ -696,6 +696,12 @@ bindings' exact Python minor version on Windows. Binding components and the
 default complete package retain that requirement. Python runtime deployment
 belongs to the consuming application.
 
+Custom resolver context binding modules similarly use the `arBoostPython`
+component and target, and include `pxr/usd/ar/boost/pyResolverContext.h`.
+This interface target supplies headers and binding dependencies without another
+compiled library, and selects the appropriate core linkage in either build
+mode. Native resolver plugins include `pxr/usd/ar/resolverContext.h` directly.
+
 > [!WARNING]
 > Due to the need to link to the static monolithic library with the
 > `WHOLE_ARCHIVE` option (see [Linking Whole Archives](#linking-whole-archives)),
