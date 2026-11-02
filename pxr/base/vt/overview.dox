@@ -76,8 +76,19 @@ FromNumpy methods keep their existing API and copying behavior. The buffer
 implementation uses the full Python API in the module, without changing the
 Limited API floor of the core services.
 
-The final Vt target/package dependency boundary and cross-Python core reuse
-validation remain separate work.
+When Python support is enabled, core Vt compiles with Py_LIMITED_API targeting
+Python 3.10 or later. That define is private: binding modules use the full API.
+The core exports no Boost.Python usage requirements. On Windows it links the
+stable Python ABI target rather than a versioned Python runtime.
+
+For a non-monolithic package, find_package(pxr COMPONENTS vt) and the vt target
+select the stable core without requesting the bindings' exact Python minor
+version on Windows. The vtBoostPython component selects the version-specific
+binding requirements. With a monolithic package use usd_m for implementation
+or vtBoostPython for bindings; other monolithic components still use the full
+Python API. Always use CMake targets rather than assuming output filenames.
+Existing non-Python dependency discovery is unchanged. OpenUSD does not bundle
+a Python runtime; deployment remains the downstream application's decision.
 
 \section vt_array Shared Arrays - VtArray
 The VtArray class represents an arbitrary length homogeneous container.  In the C++ API, the constructor lets you create an array of a specified size.  The VtArray interface on the Python side is implemented as a set of typed array classes (for example, BoolArray, StringArray, Vec4dArray).

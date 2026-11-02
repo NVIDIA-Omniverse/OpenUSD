@@ -17,17 +17,24 @@ else()
         PATHS "${USD_PREFIX}" NO_DEFAULT_PATH)
 endif()
 
-if(PACKAGE_COMPONENT STREQUAL "tf")
+if(PACKAGE_COMPONENT STREQUAL "tf" OR PACKAGE_COMPONENT STREQUAL "vt")
     if(TARGET Python3::Python OR NOT TARGET Python3::SABIModule)
-        message(FATAL_ERROR "Tf core discovery must supply only the stable Python target")
+        message(FATAL_ERROR "Core discovery must supply only the stable Python target")
     endif()
-    if(NOT PXR_LIBRARIES STREQUAL "tf")
+    if(NOT PXR_LIBRARIES STREQUAL PACKAGE_COMPONENT)
         message(FATAL_ERROR "Core component exposes unrelated libraries: ${PXR_LIBRARIES}")
+    endif()
+    set(componentIncludes "")
+    set(componentCheck "")
+    if(PACKAGE_COMPONENT STREQUAL "vt")
+        set(componentIncludes "#include <pxr/base/vt/value.h>")
+        set(componentCheck "PXR_NS::VtValue vtValue(42); valid = valid && vtValue.Get<int>() == 42;")
     endif()
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/consumer.cpp" "
 #include <pxr/base/tf/token.h>
 #include <pxr/base/tf/pyLock.h>
 #include <cstdio>
+${componentIncludes}
 static_assert(PY_MINOR_VERSION == ${PYTHON_MINOR}, \"Incorrect consumer Python headers\");
 int main() {
     Py_Initialize();
@@ -37,6 +44,7 @@ int main() {
     if (!value) return 1;
     bool valid = PyLong_AsLong(value) == 42;
     Py_DECREF(value);
+    ${componentCheck}
     std::puts(Py_GetVersion());
     return valid && token.GetString() == \"version-neutral consumer\" ? 0 : 1;
 }
@@ -45,7 +53,7 @@ int main() {
     target_compile_features(tfPackageConsumer PRIVATE cxx_std_17)
     target_compile_definitions(tfPackageConsumer PRIVATE Py_LIMITED_API=0x030A0000
         NOMINMAX WIN32_LEAN_AND_MEAN)
-    target_link_libraries(tfPackageConsumer PRIVATE tf)
+    target_link_libraries(tfPackageConsumer PRIVATE ${PACKAGE_COMPONENT})
     file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/consumer-$<CONFIG>.txt"
         CONTENT "$<TARGET_FILE:tfPackageConsumer>\n")
 elseif(NOT PACKAGE_COMPONENT STREQUAL "optional")

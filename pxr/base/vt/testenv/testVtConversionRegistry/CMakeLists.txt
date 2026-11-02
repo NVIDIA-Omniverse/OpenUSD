@@ -32,6 +32,7 @@ endforeach()
 
 add_executable(registryContracts contracts.cpp)
 target_compile_features(registryContracts PRIVATE cxx_std_17)
+target_compile_definitions(registryContracts PRIVATE Py_LIMITED_API=0x030A0000)
 if(TARGET usd_m)
     get_target_property(coreType usd_m TYPE)
     if(coreType STREQUAL "STATIC_LIBRARY")

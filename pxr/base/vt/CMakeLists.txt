@@ -2,6 +2,7 @@ set(PXR_PREFIX pxr/base)
 set(PXR_PACKAGE vt)
 
 pxr_library(vt
+    PYTHON_LIMITED_API
     LIBRARIES
         arch
         tf
@@ -62,6 +63,9 @@ pxr_library(vt
     DOXYGEN_FILES
         overview.dox
 )
+
+# Preserve Vt's C++ requirement without relying on a binding target to supply it.
+target_compile_features(vt PUBLIC cxx_std_17)
 
 if(PXR_ENABLE_PYTHON_SUPPORT)
     # Reusable binding adapters, without another compiled library. Core Vt
@@ -141,6 +145,56 @@ if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
             --cmake "${CMAKE_COMMAND}"
             --generator "${CMAKE_GENERATOR}"
             --config "$<CONFIG>")
+endif()
+
+if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS
+        AND NOT PXR_BUILD_MONOLITHIC)
+    get_target_property(vtCoreHeaders vt PXR_PUBLIC_HEADERS)
+    list(REMOVE_DUPLICATES vtCoreHeaders)
+    list(SORT vtCoreHeaders)
+    string(REPLACE ";" "\n" vtCoreHeaders "${vtCoreHeaders}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt" "${vtCoreHeaders}\n")
+    get_target_property(vtSources vt SOURCES)
+    set(vtCoreSources "")
+    foreach(source IN LISTS vtSources)
+        if(source MATCHES "[.]cpp$" AND NOT source MATCHES "pch[.]cpp$")
+            if(NOT IS_ABSOLUTE "${source}")
+                if(source STREQUAL "moduleDeps.cpp")
+                    set(source "${CMAKE_CURRENT_BINARY_DIR}/${source}")
+                else()
+                    set(source "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+                endif()
+            endif()
+            string(APPEND vtCoreSources "${source}\n")
+        endif()
+    endforeach()
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/coreSources.txt" "${vtCoreSources}")
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/coreBoundary-$<CONFIG>.txt"
+        CONTENT "links\t$<TARGET_PROPERTY:vt,LINK_LIBRARIES>\ninterface_links\t$<TARGET_PROPERTY:vt,INTERFACE_LINK_LIBRARIES>\ndefinitions\t$<TARGET_PROPERTY:vt,COMPILE_DEFINITIONS>\ninterface_definitions\t$<TARGET_PROPERTY:vt,INTERFACE_COMPILE_DEFINITIONS>\n")
+    add_test(NAME testVtCoreDependencyBoundary
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testVtCoreDependencyBoundary.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testVtCoreDependencyBoundary"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testVtCoreDependencyBoundary/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --headers "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt"
+            --sources "${CMAKE_CURRENT_BINARY_DIR}/coreSources.txt"
+            --ownership "${CMAKE_CURRENT_BINARY_DIR}/coreBoundary-$<CONFIG>.txt"
+            --module-deps "${CMAKE_CURRENT_BINARY_DIR}/moduleDeps.cpp"
+            --install-manifest "${PROJECT_BINARY_DIR}/install_manifest.txt"
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
+    if(WIN32)
+        add_test(NAME testVtPackageComponents
+            COMMAND "${PYTHON_EXECUTABLE}"
+                "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents.py"
+                --source-dir "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents"
+                --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testVtPackageComponents/$<CONFIG>"
+                --prefix "${CMAKE_INSTALL_PREFIX}"
+                --core-component vt --binding-component vtBoostPython
+                --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+                --config "$<CONFIG>")
+    endif()
 endif()
 
 pxr_build_test(testVtCpp

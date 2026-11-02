@@ -24,19 +24,26 @@ int oldCalls = 0, newCalls = 0, rvalueCalls = 0;
 bool declineNew = false, raiseError = false;
 PyObject *ownedType = nullptr;
 
-VtValue None(PyObject *) { CHECK(PyGILState_Check()); return VtValue(); }
+void CheckGIL() {
+    // Ensure/Release are in the stable API; PyGILState_Check is not.
+    PyGILState_STATE state = PyGILState_Ensure();
+    const bool held = state == PyGILState_LOCKED;
+    PyGILState_Release(state);
+    CHECK(held);
+}
+VtValue None(PyObject *) { CheckGIL(); return VtValue(); }
 VtValue Old(PyObject *obj) {
-    CHECK(PyGILState_Check());
+    CheckGIL();
     ++oldCalls;
     return PyLong_Check(obj) ? VtValue(1) : VtValue();
 }
 VtValue New(PyObject *obj) {
-    CHECK(PyGILState_Check());
+    CheckGIL();
     ++newCalls;
     return PyLong_Check(obj) && !declineNew ? VtValue(2) : VtValue();
 }
 VtValue RValue(PyObject *obj) {
-    CHECK(PyGILState_Check());
+    CheckGIL();
     ++rvalueCalls;
     return PyUnicode_Check(obj) ? VtValue(3) :
         PyLong_Check(obj) ? VtValue(9) : VtValue();
@@ -125,10 +132,9 @@ int Run() {
     CHECK(Result(bytes) == 5); // Reentrant registration wasn't hidden by cache.
 
     // Cache entries own their type and release it when invalidated.
-    PyObject *globals = PyDict_New();
-    PyDict_SetItemString(globals, "__builtins__", PyEval_GetBuiltins());
-    ownedType = PyRun_String("type('Ephemeral', (), {})", Py_eval_input,
-                             globals, globals);
+    ownedType = PyObject_CallFunction(
+        PyDict_GetItemString(PyEval_GetBuiltins(), "type"),
+        "s(){}", "Ephemeral");
     CHECK(ownedType);
     PyObject *weak = PyWeakref_NewRef(ownedType, nullptr);
     PyObject *instance = PyObject_CallObject(ownedType, nullptr);
@@ -144,7 +150,6 @@ int Run() {
     PyGC_Collect();
     CHECK(PyWeakref_GetObject(weak) == Py_None);
     Py_DECREF(weak);
-    Py_DECREF(globals);
 
     std::exception_ptr failure;
     lock.BeginAllowThreads();

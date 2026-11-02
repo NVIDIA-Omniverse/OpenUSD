@@ -28,6 +28,8 @@ def main():
     for name in ("prefix", "source-dir", "build-dir", "cmake", "generator", "config"):
         parser.add_argument(f"--{name}", required=True)
     parser.add_argument("--alternate-python")
+    parser.add_argument("--core-component", default="tf")
+    parser.add_argument("--binding-component", default="tfBoostPython")
     args = parser.parse_args()
     prefix = Path(args.prefix)
     build = Path(args.build_dir)
@@ -69,7 +71,7 @@ def main():
             if expected not in result.stdout or "Syntax error" in result.stdout:
                 raise RuntimeError(f"{name} failed for an unexpected reason:\n{result.stdout}")
             return
-        if component == "tf":
+        if component == args.core_component:
             run([args.cmake, "--build", case, "--config", args.config, "--parallel", "2"],
                 log_path=build / (name + "-build.log"))
             consumer = (case / f"consumer-{args.config}.txt").read_text().strip()
@@ -84,20 +86,20 @@ def main():
             if not output.startswith(f"3.{info['minor']}."):
                 raise RuntimeError(f"Unexpected embedded Python runtime: {output}")
 
-    configure("core", "tf", original)
-    configure("bindings", "tfBoostPython", original)
+    configure("core", args.core_component, original)
+    configure("bindings", args.binding_component, original)
     configure("default", "default", original)
     configure("unknown", "unavailable", original, succeeds=False)
     configure("optional", "optional", original)
     if alternate:
         if alternate["minor"] <= original["minor"]:
             raise RuntimeError("Alternate Python must be newer than the package's original Python")
-        configure("core-alternate", "tf", alternate)
-        configure("bindings-alternate", "tfBoostPython", alternate, succeeds=False)
-        configure("bindings-prefound-alternate", "tfBoostPython", alternate,
+        configure("core-alternate", args.core_component, alternate)
+        configure("bindings-alternate", args.binding_component, alternate, succeeds=False)
+        configure("bindings-prefound-alternate", args.binding_component, alternate,
                   prefind=True, succeeds=False)
         configure("default-alternate", "default", alternate, succeeds=False)
-    print("PASS: stable Tf core and versioned binding package components;")
+    print(f"PASS: stable {args.core_component} core and versioned binding package components;")
     print("no build-time Python paths in installed config or target exports.")
 
 

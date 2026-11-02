@@ -689,6 +689,13 @@ including whole-archive linkage for a static monolith. The `tf` package componen
 is available only in non-monolithic packages; the monolith still contains
 version-specific Python code from other core components.
 
+The same distinction applies to Vt: use the `vt` component and target for its
+stable core in a non-monolithic package, or `vtBoostPython` for downstream
+Boost.Python modules. Core components `tf`, `gf`, and `vt` do not request the
+bindings' exact Python minor version on Windows. Binding components and the
+default complete package retain that requirement. Python runtime deployment
+belongs to the consuming application.
+
 > [!WARNING]
 > Due to the need to link to the static monolithic library with the
 > `WHOLE_ARCHIVE` option (see [Linking Whole Archives](#linking-whole-archives)),

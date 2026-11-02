@@ -11,7 +11,9 @@
 #include "pxr/base/vt/api.h"
 #include "pxr/base/vt/valueCommon.h"
 #include "pxr/base/tf/pyObjWrapper.h"
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
 #include "pxr/base/tf/pySafePython.h"
+#endif
 #include <memory>
 #include <typeinfo>
 #include <type_traits>

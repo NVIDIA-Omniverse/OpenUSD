@@ -10,7 +10,9 @@
 #include "pxr/pxr.h"
 
 #include "pxr/base/tf/pyObjWrapper.h"
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
 #include "pxr/base/vt/valueToPython.h"
+#endif
 
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/arch/hints.h"
