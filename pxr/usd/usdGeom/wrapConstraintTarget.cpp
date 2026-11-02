@@ -8,7 +8,7 @@
 #include "pxr/usd/usdGeom/constraintTarget.h"
 
 #include "pxr/usd/usd/pyConversions.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/operators.hpp"

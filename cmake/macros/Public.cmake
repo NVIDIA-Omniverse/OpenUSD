@@ -218,7 +218,9 @@ function(pxr_library_use_python_limited_api TARGET_NAME)
     endif()
 
     if(WIN32)
-        find_package(Python3 REQUIRED COMPONENTS Development.SABIModule)
+        # The static monolith also consumes this dependency from the top-level
+        # directory, outside the component that first requests Limited API.
+        find_package(Python3 REQUIRED GLOBAL COMPONENTS Development.SABIModule)
         if(NOT Python3_LIBRARY)
             message(FATAL_ERROR
                 "Python stable ABI requested for ${TARGET_NAME}, "
@@ -229,8 +231,6 @@ function(pxr_library_use_python_limited_api TARGET_NAME)
             "${Python3_LIBRARY}" DIRECTORY)
         get_filename_component(_python_versioned_lib
             "${Python3_LIBRARY}" NAME)
-        get_filename_component(_python_root
-            "${_python_library_dir}" DIRECTORY)
 
         target_link_options(${TARGET_NAME}
             PRIVATE "/NODEFAULTLIB:${_python_versioned_lib}")
@@ -240,32 +240,11 @@ function(pxr_library_use_python_limited_api TARGET_NAME)
         target_link_directories(${TARGET_NAME}
             INTERFACE "$<BUILD_INTERFACE:${_python_library_dir}>")
 
-        set(_python_stable_abi_lib
-            "${_python_library_dir}/python3.lib")
-        set(_python_stable_abi_dll
-            "${_python_root}/python3.dll")
-
-        if(NOT EXISTS "${_python_stable_abi_lib}" OR
-           NOT EXISTS "${_python_stable_abi_dll}")
-            message(FATAL_ERROR
-                "Python stable ABI requested for ${TARGET_NAME}, "
-                "but python3.lib/python3.dll were not found next to "
-                "${Python3_LIBRARY}")
-        endif()
-
+        # FindPython supplies the stable ABI import library. Runtime discovery
+        # and deployment belong to the downstream application; do not copy or
+        # install a Python runtime as part of OpenUSD.
         target_link_libraries(${TARGET_NAME}
             PUBLIC Python3::SABIModule)
-
-        add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${_python_stable_abi_dll}"
-                "$<TARGET_FILE_DIR:${TARGET_NAME}>"
-            COMMENT "Copying Python stable ABI DLL ...")
-
-        _get_install_dir(lib _lib_install_dir)
-        install(
-            FILES "${_python_stable_abi_dll}"
-            DESTINATION "${_lib_install_dir}")
     endif()
 endfunction()
 
@@ -340,7 +319,10 @@ function(pxr_library NAME)
                     list(APPEND args_LIBRARIES ${PYTHON_LIBRARIES})
                 endif()
             else()
-                list(APPEND args_LIBRARIES ${PYTHON_LIBRARIES} python)
+                # Core components must not depend on the finished-module
+                # interface: in monolithic builds that interface links usd_m,
+                # which is itself assembled from these components.
+                list(APPEND args_LIBRARIES ${PYTHON_LIBRARIES} tfBoostPythonInternal)
             endif()
             list(APPEND args_INCLUDE_DIRS ${PYTHON_INCLUDE_DIRS})
         endif()
@@ -472,7 +454,10 @@ function(pxr_library NAME)
             # Keep only our libraries in the module dependencies
             foreach(library ${args_LIBRARIES})
                 if (TARGET ${library}) 
-                    list(APPEND localLibs ${library})
+                    get_target_property(libraryType ${library} TYPE)
+                    if(NOT libraryType STREQUAL "INTERFACE_LIBRARY")
+                        list(APPEND localLibs ${library})
+                    endif()
                 endif()
             endforeach()
 

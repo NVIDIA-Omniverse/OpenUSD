@@ -10,7 +10,7 @@
 #include "pxr/pxr.h"
 
 #include "pxr/base/tf/pyLock.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/operators.hpp"

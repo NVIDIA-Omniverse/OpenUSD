@@ -8,7 +8,7 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/usdUtils/conditionalAbortDiagnosticDelegate.h"
 
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include <iostream>
 #include <string>

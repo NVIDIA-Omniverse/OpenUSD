@@ -21,7 +21,7 @@
 // incompatible macro definitions in pyport.h on macOS.
 #include <locale>
 #include "pxr/base/tf/pyLock.h"
-#include "pxr/base/tf/pyObjWrapperBoost.h"
+#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
 #endif
 
 #include "pxr/base/tf/pyObjWrapper.h"

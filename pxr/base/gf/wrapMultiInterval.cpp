@@ -9,8 +9,8 @@
 #include "pxr/base/gf/multiInterval.h"
 
 #include "pxr/base/tf/iterator.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
-#include "pxr/base/tf/wrapTypeHelpersBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/wrapTypeHelpersBoost.h"
 
 #include "pxr/external/boost/python/iterator.hpp"
 #include "pxr/external/boost/python/class.hpp"

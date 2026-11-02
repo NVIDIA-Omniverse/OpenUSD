@@ -8,7 +8,7 @@
 #ifndef PXR_BASE_TF_PY_STATIC_TOKENS_BOOST_H
 #define PXR_BASE_TF_PY_STATIC_TOKENS_BOOST_H
 
-/// \file tf/pyStaticTokensBoost.h
+/// \file tf/boost/pyStaticTokensBoost.h
 
 #include "pxr/pxr.h"
 

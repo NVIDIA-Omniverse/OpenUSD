@@ -7,12 +7,12 @@
 
 #include "pxr/pxr.h"
 #include "pxr/usd/pcp/mapFunction.h"
-#include "pxr/base/tf/makePyConstructor.h"
-#include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyEnumBoost.h"
-#include "pxr/base/tf/pyPtrHelpersBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/makePyConstructor.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyPtrHelpersBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 #include "pxr/external/boost/python.hpp"
 
 using std::string;

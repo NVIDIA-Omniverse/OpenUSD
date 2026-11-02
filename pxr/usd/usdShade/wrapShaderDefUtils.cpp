@@ -11,7 +11,7 @@
 #include "pxr/external/boost/python/scope.hpp"
 #include "pxr/external/boost/python/tuple.hpp"
 
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/usd/usdShade/shaderDefUtils.h"
 #include "pxr/usd/usdShade/shader.h"

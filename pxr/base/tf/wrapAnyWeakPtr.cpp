@@ -7,7 +7,7 @@
 
 #include "pxr/base/tf/anyWeakPtr.h"
 #include "pxr/base/tf/pyUtils.h"
-#include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
 
 #include "pxr/external/boost/python/handle.hpp"
 #include "pxr/external/boost/python/object.hpp"

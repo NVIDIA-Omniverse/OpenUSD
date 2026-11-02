@@ -5,7 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/base/tf/diagnostic.h"
-#include "pxr/base/tf/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
 
 #include "pxr/external/boost/python/def.hpp"
 

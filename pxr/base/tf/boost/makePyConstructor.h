@@ -8,7 +8,7 @@
 #ifndef PXR_BASE_TF_MAKE_PY_CONSTRUCTOR_H
 #define PXR_BASE_TF_MAKE_PY_CONSTRUCTOR_H
 
-/// \file tf/makePyConstructor.h
+/// \file tf/boost/makePyConstructor.h
 /// An injected constructor mechanism that works with polymorphic wrapped
 /// classes.
 
@@ -25,7 +25,7 @@
 #include "pxr/base/tf/diagnostic.h"
 #include "pxr/base/tf/pyError.h"
 #include "pxr/base/tf/pyIdentity.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 
 #include "pxr/base/arch/demangle.h"

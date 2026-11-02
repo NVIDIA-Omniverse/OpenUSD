@@ -16,8 +16,8 @@
 #include "pxr/usd/sdf/pyChildrenProxy.h"
 #include "pxr/usd/sdf/pySpec.h"
 #include "pxr/usd/sdf/relationshipSpec.h"
-#include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/base/ts/spline.h"
 

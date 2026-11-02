@@ -10,7 +10,7 @@
 #include "pxr/usd/pcp/layerStack.h"
 #include "pxr/usd/pcp/diagnostic.h"
 #include "pxr/usd/sdf/siteUtils.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/external/boost/python.hpp"
 
 PXR_NAMESPACE_USING_DIRECTIVE

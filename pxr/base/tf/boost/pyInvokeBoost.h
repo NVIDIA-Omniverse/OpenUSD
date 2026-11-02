@@ -18,7 +18,7 @@
 #include "pxr/base/tf/pyInvoke.h"
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/pyObjWrapper.h"
-#include "pxr/base/tf/pyObjWrapperBoost.h"
+#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
 
 #include "pxr/external/boost/python/dict.hpp"
 #include "pxr/external/boost/python/extract.hpp"

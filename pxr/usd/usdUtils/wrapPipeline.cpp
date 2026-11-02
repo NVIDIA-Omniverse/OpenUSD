@@ -13,7 +13,7 @@
 #include "pxr/usd/sdf/booleanExpression.h"
 #include "pxr/usd/usd/prim.h"
 
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/vt/dictionary.h"
 #include "pxr/base/vt/value.h"
 #include "pxr/external/boost/python/return_by_value.hpp"

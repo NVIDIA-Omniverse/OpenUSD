@@ -12,10 +12,10 @@
 
 #include "pxr/usd/usd/flattenUtils.h"
 #include "pxr/usd/sdf/layer.h"
-#include "pxr/base/tf/pyFunction.h"
-#include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyPtrHelpersBoost.h"
-#include "pxr/base/tf/makePyConstructor.h"
+#include "pxr/base/tf/boost/pyFunction.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyPtrHelpersBoost.h"
+#include "pxr/base/tf/boost/makePyConstructor.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 

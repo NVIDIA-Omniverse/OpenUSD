@@ -7,7 +7,7 @@
 #ifndef PXR_BASE_TF_PY_UTILS_BOOST_H
 #define PXR_BASE_TF_PY_UTILS_BOOST_H
 
-/// \file tf/pyUtilsBoost.h
+/// \file tf/boost/pyUtilsBoost.h
 /// Boost.Python utilities for dealing with script.
 
 #include "pxr/pxr.h"
@@ -17,9 +17,9 @@
 #include "pxr/base/tf/diagnosticLite.h"
 #include "pxr/base/tf/errorMark.h"
 #include "pxr/base/tf/pyError.h"
-#include "pxr/base/tf/pyInterpreterBoost.h"
+#include "pxr/base/tf/boost/pyInterpreterBoost.h"
 #include "pxr/base/tf/pyLock.h"
-#include "pxr/base/tf/scriptModuleLoaderBoost.h"
+#include "pxr/base/tf/boost/scriptModuleLoaderBoost.h"
 
 #include "pxr/external/boost/python/dict.hpp"
 #include "pxr/external/boost/python/errors.hpp"

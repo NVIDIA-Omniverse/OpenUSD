@@ -7,8 +7,8 @@
 
 #include "pxr/pxr.h"
 
-#include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyFunction.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyFunction.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/def.hpp"

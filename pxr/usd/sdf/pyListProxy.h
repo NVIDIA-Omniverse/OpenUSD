@@ -14,8 +14,8 @@
 #include "pxr/usd/sdf/listProxy.h"
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/tf/pyLock.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/tf/stringUtils.h"
 #include <stdexcept>
 #include "pxr/external/boost/python.hpp"

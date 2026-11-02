@@ -7,7 +7,7 @@
 
 #include "pxr/pxr.h"
 #include "pxr/usd/pcp/types.h"
-#include "pxr/base/tf/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 

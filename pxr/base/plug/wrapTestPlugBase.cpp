@@ -9,9 +9,9 @@
 #include "pxr/base/plug/testPlugBase.h"
 #include "pxr/external/boost/python/def.hpp"
 #include "pxr/external/boost/python/args.hpp"
-#include "pxr/base/tf/makePyConstructor.h"
-#include "pxr/base/tf/pyPtrHelpersBoost.h"
-#include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/boost/makePyConstructor.h"
+#include "pxr/base/tf/boost/pyPtrHelpersBoost.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
 
 #include "pxr/external/boost/python.hpp"
 

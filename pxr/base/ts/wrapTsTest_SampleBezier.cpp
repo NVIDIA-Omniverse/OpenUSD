@@ -7,7 +7,7 @@
 
 #include "pxr/pxr.h"
 #include "pxr/base/ts/tsTest_SampleBezier.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/external/boost/python/def.hpp"
 #include "pxr/external/boost/python/return_value_policy.hpp"

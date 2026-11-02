@@ -8,9 +8,9 @@
 /// \file tf/wrapTestTfPython.cpp
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 
-#include "pxr/base/tf/pyOptional.h"
+#include "pxr/base/tf/boost/pyOptional.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/tuple.hpp"

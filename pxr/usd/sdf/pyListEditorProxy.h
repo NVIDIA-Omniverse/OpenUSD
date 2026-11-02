@@ -16,10 +16,10 @@
 
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/tf/diagnostic.h"
-#include "pxr/base/tf/pyCall.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyCall.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/tf/pyLock.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/external/boost/python.hpp"
 

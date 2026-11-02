@@ -10,8 +10,8 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/layer.h"
 #include "pxr/usd/sdf/notice.h"
-#include "pxr/base/tf/pyNoticeWrapperBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyNoticeWrapperBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/external/boost/python.hpp"
 
 PXR_NAMESPACE_USING_DIRECTIVE

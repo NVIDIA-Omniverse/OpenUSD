@@ -8,7 +8,7 @@
 #include "pxr/pxr.h"
 #include "pxr/usdValidation/usdValidation/notice.h"
 #include "pxr/usdValidation/usdValidation/validator.h"
-#include "pxr/base/tf/pyNoticeWrapperBoost.h"
+#include "pxr/base/tf/boost/pyNoticeWrapperBoost.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/scope.hpp"

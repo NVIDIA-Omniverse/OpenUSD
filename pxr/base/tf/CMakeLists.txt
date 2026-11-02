@@ -105,8 +105,8 @@ function(add_py_dll_link_test)
 
 endfunction()
 
-# These headers belong to the Boost.Python binding interface. Keep this explicit
-# so the core dependency test covers all other installed public Tf headers.
+# These headers are owned by the reusable Boost.Python binding interface, not
+# the core Tf library. Both in-tree and external bindings use tfBoostPython.
 set(tfBindingHeaders
     makePyConstructor.h
     pyAnnotatedBoolResultBoost.h
@@ -134,6 +134,55 @@ set(tfBindingHeaders
     scriptModuleLoaderBoost.h
     wrapTypeHelpersBoost.h
 )
+list(TRANSFORM tfBindingHeaders PREPEND "boost/")
+
+if(PXR_ENABLE_PYTHON_SUPPORT)
+    # Legacy core components still compile Boost.Python code. Give them only
+    # its compile requirements and runtime target, without a dependency back
+    # to Tf or usd_m. In a monolithic build those components form usd_m itself.
+    add_library(tfBoostPythonInternal INTERFACE)
+    target_link_libraries(tfBoostPythonInternal INTERFACE python)
+    target_compile_features(tfBoostPythonInternal INTERFACE cxx_std_17)
+
+    add_library(tfBoostPython INTERFACE)
+    target_link_libraries(tfBoostPython INTERFACE tfBoostPythonInternal)
+    if(PXR_BUILD_MONOLITHIC)
+        # Finished binding modules consume the monolith, which propagates
+        # the component targets' usage requirements as well as their code.
+        if(BUILD_SHARED_LIBS)
+            target_link_libraries(tfBoostPython INTERFACE usd_m)
+        else()
+            target_link_libraries(tfBoostPython INTERFACE
+                "$<LINK_LIBRARY:WHOLE_ARCHIVE,usd_m>")
+        endif()
+    else()
+        target_link_libraries(tfBoostPython INTERFACE tf)
+    endif()
+
+    _copy_headers(tfBoostPythonInternal FILES ${tfBindingHeaders} PREFIX "${PXR_PREFIX}")
+    set(tfBindingIncludeRoot "${PROJECT_BINARY_DIR}/${PXR_INSTALL_SUBDIR}/include")
+    _get_install_dir(include tfBindingInstallDir)
+    target_include_directories(tfBoostPythonInternal INTERFACE
+        "$<BUILD_INTERFACE:${tfBindingIncludeRoot}>"
+        "$<INSTALL_INTERFACE:${tfBindingInstallDir}>")
+    set(tfBindingBuildHeaders "")
+    foreach(header IN LISTS tfBindingHeaders)
+        list(APPEND tfBindingBuildHeaders "${tfBindingIncludeRoot}/${PXR_PREFIX}/tf/${header}")
+    endforeach()
+    target_sources(tfBoostPython INTERFACE
+        FILE_SET HEADERS
+        BASE_DIRS "${tfBindingIncludeRoot}"
+        FILES ${tfBindingBuildHeaders}
+    )
+    install(TARGETS tfBoostPython EXPORT pxrTargets
+        FILE_SET HEADERS DESTINATION "${tfBindingInstallDir}")
+    # Export the internal requirements because legacy component interfaces
+    # reference them. Binding consumers should use tfBoostPython instead.
+    install(TARGETS tfBoostPythonInternal EXPORT pxrTargets)
+    export(TARGETS tfBoostPython tfBoostPythonInternal APPEND
+        FILE "${PROJECT_BINARY_DIR}/pxrTargets.cmake")
+    set(tfBindingDoxygenFiles ${tfBindingHeaders})
+endif()
 
 pxr_library(tf
     PYTHON_LIMITED_API
@@ -260,7 +309,6 @@ pxr_library(tf
         type_Impl.h
 
     PYTHON_PUBLIC_HEADERS
-        ${tfBindingHeaders}
         py3Compat.h
         pyMakePyPtr.h
         pySafePython.h
@@ -371,6 +419,7 @@ pxr_library(tf
         testenv/testTfPyInvoke_callees.py
 
     DOXYGEN_FILES
+        ${tfBindingDoxygenFiles}
         diagnosticOverview.dox
         errorOverview.dox
         mallocTagOverview.dox
@@ -379,10 +428,14 @@ pxr_library(tf
         registryOverview.dox
 )
 
+if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
+    string(REPLACE ";" "\n" tfBindingHeaderManifest "${tfBindingHeaders}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/bindingHeaders.txt" "${tfBindingHeaderManifest}\n")
+endif()
+
 if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND NOT PXR_BUILD_MONOLITHIC
         AND BUILD_SHARED_LIBS)
     get_target_property(tfCoreHeaders tf PXR_PUBLIC_HEADERS)
-    list(REMOVE_ITEM tfCoreHeaders ${tfBindingHeaders})
     list(REMOVE_DUPLICATES tfCoreHeaders)
     list(SORT tfCoreHeaders)
     string(REPLACE ";" "\n" tfCoreHeaders "${tfCoreHeaders}")
@@ -405,11 +458,25 @@ if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND NOT PXR_BUILD_MONOLITHIC
     )
 endif()
 
+if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
+    add_test(NAME testTfBindingHelpers
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testTfBindingHelpers.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testTfBindingHelpers"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testTfBindingHelpers/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --headers "${CMAKE_CURRENT_BINARY_DIR}/bindingHeaders.txt"
+            --cmake "${CMAKE_COMMAND}"
+            --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>"
+    )
+endif()
+
 if(PXR_ENABLE_PYTHON_SUPPORT)
     pxr_build_test(testTfPyFunction
         LIBRARIES
             tf
-            python
+            tfBoostPython
         CPPFILES
             testenv/testTfPyFunction.cpp
     ) 
@@ -417,7 +484,7 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
     pxr_build_test(testTfPyInterpreter
         LIBRARIES
             tf
-            python
+            tfBoostPython
         CPPFILES
             testenv/testTfPyInterpreter.cpp
     )
@@ -425,7 +492,7 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
     pxr_build_test(testTfPyInvoke
         LIBRARIES
             tf
-            python
+            tfBoostPython
         CPPFILES
             testenv/testTfPyInvoke.cpp
     )
@@ -440,7 +507,7 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
     pxr_build_test(testTfPyResultConversions
         LIBRARIES
             tf
-            python
+            tfBoostPython
         CPPFILES
             testenv/testTfPyResultConversions.cpp
     )
@@ -500,7 +567,7 @@ pxr_build_test(testTfSpan
 pxr_build_test(testTf
     LIBRARIES
         tf
-        python
+        tfBoostPython
     CPPFILES
         testenv/main.cpp
         testenv/anyUniquePtr.cpp

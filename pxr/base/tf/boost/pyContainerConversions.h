@@ -7,7 +7,7 @@
 #ifndef PXR_BASE_TF_PY_CONTAINER_CONVERSIONS_H
 #define PXR_BASE_TF_PY_CONTAINER_CONVERSIONS_H
 
-/// \file tf/pyContainerConversions.h
+/// \file tf/boost/pyContainerConversions.h
 /// Utilities for providing C++ <-> Python container support.
 
 /*
@@ -25,7 +25,7 @@
 #include "pxr/base/tf/weakPtr.h"
 #include "pxr/base/tf/diagnostic.h"
 #include "pxr/base/tf/iterator.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 
 #include "pxr/external/boost/python/list.hpp"
 #include "pxr/external/boost/python/tuple.hpp"

@@ -13,10 +13,10 @@
 #include "pxr/usd/pcp/pyUtils.h"
 #include "pxr/usd/pcp/types.h"
 #include "pxr/usd/sdf/primSpec.h"
-#include "pxr/base/tf/makePyConstructor.h"
-#include "pxr/base/tf/pyEnumBoost.h"
-#include "pxr/base/tf/pyPtrHelpersBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/makePyConstructor.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyPtrHelpersBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/external/boost/python.hpp"
 #include <memory>

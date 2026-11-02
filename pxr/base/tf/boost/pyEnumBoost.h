@@ -7,7 +7,7 @@
 #ifndef PXR_BASE_TF_PY_ENUM_BOOST_H
 #define PXR_BASE_TF_PY_ENUM_BOOST_H
 
-/// \file tf/pyEnumBoost.h
+/// \file tf/boost/pyEnumBoost.h
 /// Boost.Python adapters for Tf enum wrapping.
 
 #include "pxr/pxr.h"
@@ -15,7 +15,7 @@
 #include "pxr/base/tf/pyEnum.h"
 
 #include "pxr/base/arch/demangle.h"
-#include "pxr/base/tf/pyObjWrapperBoost.h"
+#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/base/tf/type.h"
 

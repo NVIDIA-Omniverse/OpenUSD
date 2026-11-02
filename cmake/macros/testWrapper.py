@@ -379,6 +379,12 @@ if __name__ == '__main__':
     pathDelim = ';' if platform.system() == 'Windows' else ':'
     paths = env.get('PATH', '').split(pathDelim)
     paths = args.prePaths + paths + args.postPaths
+    if platform.system() == 'Windows':
+        # Native tests and extension modules use the selected interpreter's
+        # runtime in place. OpenUSD does not bundle Python DLLs. base_prefix
+        # also handles virtual environments, whose Scripts directory does not
+        # contain the runtime libraries.
+        paths.append(sys.base_prefix)
     env['PATH'] = pathDelim.join(paths)
 
     # Avoid the just-in-time debugger where possible when running tests.

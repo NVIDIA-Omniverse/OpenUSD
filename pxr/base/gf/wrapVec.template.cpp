@@ -14,10 +14,10 @@
 #include "pxr/base/gf/pyBufferUtils.h"
 
 #include "pxr/base/tf/hash.h"
-#include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 #include "pxr/base/tf/stringUtils.h"
-#include "pxr/base/tf/wrapTypeHelpersBoost.h"
+#include "pxr/base/tf/boost/wrapTypeHelpersBoost.h"
 
 {% if IS_FLOATING_POINT(SCL) -%}
 // Include headers for other vec types to support wrapping conversions and

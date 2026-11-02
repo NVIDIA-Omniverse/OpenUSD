@@ -6,8 +6,8 @@
 //
 #include "pxr/imaging/glf/texture.h"
 
-#include "pxr/base/tf/makePyConstructor.h"
-#include "pxr/base/tf/pyPtrHelpersBoost.h"
+#include "pxr/base/tf/boost/makePyConstructor.h"
+#include "pxr/base/tf/boost/pyPtrHelpersBoost.h"
 
 #include "pxr/external/boost/python/bases.hpp"
 #include "pxr/external/boost/python/class.hpp"

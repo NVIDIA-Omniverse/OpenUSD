@@ -10,8 +10,8 @@
 #include "pxr/external/boost/python/return_arg.hpp"
 
 #include "pxr/usd/usd/stagePopulationMask.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/tf/stringUtils.h"
 
 using std::string;

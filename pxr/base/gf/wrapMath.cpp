@@ -8,7 +8,7 @@
 
 #include "pxr/pxr.h"
 #include "pxr/base/tf/pyUtils.h"
-#include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
 
 #include "pxr/base/gf/math.h"
 

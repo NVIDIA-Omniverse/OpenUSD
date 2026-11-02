@@ -11,7 +11,7 @@
 #include "pxr/base/tf/exception.h"
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/base/tf/ostreamMethods.h"
-#include "pxr/base/tf/pyCall.h"
+#include "pxr/base/tf/boost/pyCall.h"
 #include "pxr/base/tf/pyError.h"
 #include "pxr/base/tf/pyErrorInternal.h"
 

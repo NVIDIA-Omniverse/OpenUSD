@@ -9,11 +9,11 @@
 
 #include "pxr/pxr.h"
 
-#include "pxr/base/tf/pyCall.h"
+#include "pxr/base/tf/boost/pyCall.h"
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/pyObjWrapper.h"
-#include "pxr/base/tf/pyObjWrapperBoost.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 
 #include "pxr/external/boost/python/converter/from_python.hpp"
 #include "pxr/external/boost/python/converter/registered.hpp"

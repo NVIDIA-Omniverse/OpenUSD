@@ -8,7 +8,7 @@
 
 #include "pxr/usd/sdf/variableExpression.h"
 
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/vt/value.h"
 

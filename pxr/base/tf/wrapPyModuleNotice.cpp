@@ -8,7 +8,7 @@
 #include "pxr/pxr.h"
 
 #include "pxr/base/tf/pyModuleNotice.h"
-#include "pxr/base/tf/pyNoticeWrapperBoost.h"
+#include "pxr/base/tf/boost/pyNoticeWrapperBoost.h"
 
 #include "pxr/external/boost/python/return_by_value.hpp"
 #include "pxr/external/boost/python/return_value_policy.hpp"

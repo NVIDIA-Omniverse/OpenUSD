@@ -5,7 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyModuleBoost.h"
+#include "pxr/base/tf/boost/pyModuleBoost.h"
 
 
 PXR_NAMESPACE_USING_DIRECTIVE

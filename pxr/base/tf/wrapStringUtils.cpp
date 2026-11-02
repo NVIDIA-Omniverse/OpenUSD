@@ -16,7 +16,7 @@
 #include "pxr/external/boost/python/return_value_policy.hpp"
 #include "pxr/external/boost/python/type_id.hpp"
 
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include <string>
 #include <limits>

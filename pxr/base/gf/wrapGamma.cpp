@@ -13,7 +13,7 @@
 #include "pxr/base/gf/vec4f.h"
 #include "pxr/base/gf/vec4d.h"
 
-#include "pxr/base/tf/wrapTypeHelpersBoost.h"
+#include "pxr/base/tf/boost/wrapTypeHelpersBoost.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 

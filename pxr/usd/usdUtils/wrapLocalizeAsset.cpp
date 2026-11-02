@@ -7,8 +7,8 @@
 
 #include "pxr/pxr.h"
 
-#include "pxr/base/tf/pyEnumBoost.h"
-#include "pxr/base/tf/pyFunction.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyFunction.h"
 
 #include "pxr/usd/usdUtils/localizeAsset.h"
 

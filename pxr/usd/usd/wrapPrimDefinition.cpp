@@ -9,9 +9,9 @@
 #include "pxr/usd/usd/pyConversions.h"
 #include "pxr/usd/usd/prim.h"
 
-#include "pxr/base/tf/pyObjWrapperBoost.h"
+#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
 #include "pxr/base/tf/staticData.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/external/boost/python.hpp"
 
 PXR_NAMESPACE_USING_DIRECTIVE

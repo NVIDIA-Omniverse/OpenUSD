@@ -9,7 +9,7 @@
 #include "pxr/usd/sdf/variableExpression.h"
 #include "pxr/usd/sdf/variableExpressionAST.h"
 
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/external/boost/python/bases.hpp"
 #include "pxr/external/boost/python/class.hpp"

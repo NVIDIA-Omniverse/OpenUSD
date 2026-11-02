@@ -7,11 +7,11 @@
 /// \file wrapNamespaceEdit.cpp
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 #include "pxr/usd/sdf/namespaceEdit.h"
-#include "pxr/base/tf/pyCall.h"
-#include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyCall.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/extract.hpp"

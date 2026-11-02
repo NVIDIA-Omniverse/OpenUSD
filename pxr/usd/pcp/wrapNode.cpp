@@ -6,12 +6,12 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyObjWrapperBoost.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 #include "pxr/usd/pcp/node.h"
 #include "pxr/usd/pcp/node_Iterator.h"
 
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/external/boost/python.hpp"
 

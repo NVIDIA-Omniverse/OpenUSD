@@ -7,7 +7,7 @@
 
 #include "pxr/pxr.h"
 
-#include "pxr/base/tf/wrapTypeHelpersBoost.h"
+#include "pxr/base/tf/boost/wrapTypeHelpersBoost.h"
 
 #include "pxr/external/boost/python/extract.hpp"
 #include "pxr/external/boost/python/object.hpp"

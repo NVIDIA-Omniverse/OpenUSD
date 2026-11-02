@@ -7,7 +7,7 @@
 #ifndef PXR_BASE_TF_PY_INTERPRETER_BOOST_H
 #define PXR_BASE_TF_PY_INTERPRETER_BOOST_H
 
-/// \file tf/pyInterpreterBoost.h
+/// \file tf/boost/pyInterpreterBoost.h
 /// Boost.Python adapters for Python runtime utilities.
 
 #include "pxr/pxr.h"

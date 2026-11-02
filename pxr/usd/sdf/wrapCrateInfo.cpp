@@ -7,8 +7,8 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/crateInfo.h"
 
-#include "pxr/base/tf/pyContainerConversions.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/external/boost/python.hpp"
 

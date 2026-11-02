@@ -11,7 +11,7 @@
 #include <utility>
 #include <locale>
 
-#include "pxr/base/tf/pyContainerConversions.h"
+#include "pxr/base/tf/boost/pyContainerConversions.h"
 #include "pxr/base/tf/token.h"
 
 #include "pxr/external/boost/python/class.hpp"

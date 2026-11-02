@@ -10,8 +10,8 @@
 
 #include "pxr/usd/usdUtils/registeredVariantSet.h"
 
-#include "pxr/base/tf/pyResultConversions.h"
-#include "pxr/base/tf/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 

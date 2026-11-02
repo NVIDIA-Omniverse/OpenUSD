@@ -6,10 +6,10 @@
 //
 
 #include "pxr/pxr.h"
-#include "pxr/base/tf/pyUtilsBoost.h"
+#include "pxr/base/tf/boost/pyUtilsBoost.h"
 #include "pxr/base/ts/types.h"
-#include "pxr/base/tf/pyEnumBoost.h"
-#include "pxr/base/tf/pyOptional.h"
+#include "pxr/base/tf/boost/pyEnumBoost.h"
+#include "pxr/base/tf/boost/pyOptional.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/operators.hpp"

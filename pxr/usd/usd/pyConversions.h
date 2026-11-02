@@ -12,7 +12,7 @@
 #include "pxr/base/tf/pyObjWrapper.h"
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
-#include "pxr/base/tf/pyObjWrapperBoost.h"
+#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
 #endif
 
 PXR_NAMESPACE_OPEN_SCOPE

@@ -9,9 +9,9 @@
 #include "pxr/usd/pcp/layerStack.h"
 #include "pxr/usd/pcp/expressionVariables.h"
 #include "pxr/usd/sdf/layer.h"
-#include "pxr/base/tf/makePyConstructor.h"
-#include "pxr/base/tf/pyPtrHelpersBoost.h"
-#include "pxr/base/tf/pyResultConversions.h"
+#include "pxr/base/tf/boost/makePyConstructor.h"
+#include "pxr/base/tf/boost/pyPtrHelpersBoost.h"
+#include "pxr/base/tf/boost/pyResultConversions.h"
 
 #include "pxr/external/boost/python.hpp"
 

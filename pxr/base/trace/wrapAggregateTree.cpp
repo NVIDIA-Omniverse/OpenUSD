@@ -9,8 +9,8 @@
 
 #include "pxr/base/trace/aggregateTree.h"
 
-#include "pxr/base/tf/makePyConstructor.h"
-#include "pxr/base/tf/pyPtrHelpersBoost.h"
+#include "pxr/base/tf/boost/makePyConstructor.h"
+#include "pxr/base/tf/boost/pyPtrHelpersBoost.h"
 
 #include "pxr/external/boost/python/class.hpp"
 
