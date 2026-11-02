@@ -4,15 +4,15 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#ifndef PXR_BASE_VT_WRAP_ARRAY_EDIT_H
-#define PXR_BASE_VT_WRAP_ARRAY_EDIT_H
+#ifndef PXR_BASE_VT_BOOST_WRAP_ARRAY_EDIT_H
+#define PXR_BASE_VT_BOOST_WRAP_ARRAY_EDIT_H
 
 #include "pxr/pxr.h"
 #include "pxr/base/vt/api.h"
 #include "pxr/base/vt/arrayEdit.h"
 #include "pxr/base/vt/arrayEditBuilder.h"
 #include "pxr/base/vt/types.h"
-#include "pxr/base/vt/wrapArray.h"
+#include "pxr/base/vt/boost/wrapArray.h"
 
 #include "pxr/external/boost/python/class.hpp"
 
@@ -99,5 +99,5 @@ void VtWrapArrayEdit()
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
-#endif // PXR_BASE_VT_WRAP_ARRAY_EDIT_H
+#endif // PXR_BASE_VT_BOOST_WRAP_ARRAY_EDIT_H
 

@@ -23,8 +23,8 @@
 // define Vec / double.
 #include "pxr/pxr.h"
 #include "pxr/base/vt/typeHeaders.h"
-#include "pxr/base/vt/wrapArray.h"
-#include "pxr/base/vt/wrapArrayEdit.h"
+#include "pxr/base/vt/boost/wrapArray.h"
+#include "pxr/base/vt/boost/wrapArrayEdit.h"
 #include "pxr/base/tf/preprocessorUtilsLite.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE

@@ -26,10 +26,8 @@ pxr_library(vt
         valueTransform
 
     PYTHON_PUBLIC_CLASSES
-        arrayPyBuffer
         valueFromPython
         valueToPython
-        wrapArray
 
     PUBLIC_HEADERS
         addExtVisitValueType.h
@@ -38,11 +36,11 @@ pxr_library(vt
         typeHeaders.h
         visitValue.h
     
-    PYTHON_PUBLIC_HEADERS
-        pyOperators.h
-        wrapArrayEdit.h
+    PRIVATE_HEADERS
+        arrayPyBuffer.h
 
     PYMODULE_CPPFILES
+        arrayPyBuffer.cpp
         module.cpp
         wrapArrayBase.cpp
         wrapArrayDualQuaternion.cpp
@@ -74,6 +72,9 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
         target_link_libraries(vtBoostPython INTERFACE vt)
     endif()
     set(vtBindingHeaders
+        boost/pyOperators.h
+        boost/wrapArray.h
+        boost/wrapArrayEdit.h
         boost/valueBoost.h
         boost/valueFromPythonBoost.h
         boost/valueToPythonBoost.h)
@@ -98,7 +99,30 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
     endforeach()
 endif()
 
+if(PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
+    set(vtPythonTarget _vt)
+    if(WIN32 AND PXR_USE_DEBUG_PYTHON)
+        set(vtPythonTarget _vt_d)
+    endif()
+    set(vtCoreTarget vt)
+    if(PXR_BUILD_MONOLITHIC)
+        set(vtCoreTarget usd_m)
+    endif()
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/arrayOwnership-$<CONFIG>.txt"
+        CONTENT "core\t$<TARGET_PROPERTY:vt,SOURCES>\nmodule\t$<TARGET_PROPERTY:${vtPythonTarget},SOURCES>\ncore_file\t$<TARGET_FILE:${vtCoreTarget}>\nmodule_file\t$<TARGET_FILE:${vtPythonTarget}>\n")
+endif()
+
 if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
+    add_test(NAME testVtArrayBindingHelpers
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testVtArrayBindingHelpers.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testVtArrayBindingHelpers"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testVtArrayBindingHelpers/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --ownership "${CMAKE_CURRENT_BINARY_DIR}/arrayOwnership-$<CONFIG>.txt"
+            --install-manifest "${PROJECT_BINARY_DIR}/install_manifest.txt"
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
     add_test(NAME testVtValueBindingExtraction
         COMMAND "${PYTHON_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testVtValueBindingExtraction.py"
@@ -136,9 +160,14 @@ pxr_build_test(testVtArrayEditCpp
         testenv/testVtArrayEdit.cpp
 )
 pxr_test_scripts(
+    testenv/testVtBufferProtocol.py
     testenv/testVtArray.py
     testenv/testVtArrayEdit.py
     testenv/testVtValue.py
+)
+pxr_register_test(testVtBufferProtocol
+    PYTHON
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testVtBufferProtocol"
 )
 pxr_register_test(testVtValue
     PYTHON

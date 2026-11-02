@@ -13,7 +13,7 @@
 #include "pxr/base/vt/types.h"
 #include "pxr/base/vt/typeHeaders.h"
 #include "pxr/base/vt/boost/valueFromPythonBoost.h"
-#include "pxr/base/vt/wrapArray.h"
+#include "pxr/base/vt/boost/wrapArray.h"
 
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/arch/inttypes.h"

@@ -4,15 +4,15 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#ifndef PXR_BASE_VT_WRAP_ARRAY_H
-#define PXR_BASE_VT_WRAP_ARRAY_H
+#ifndef PXR_BASE_VT_BOOST_WRAP_ARRAY_H
+#define PXR_BASE_VT_BOOST_WRAP_ARRAY_H
 
 #include "pxr/pxr.h"
 #include "pxr/base/vt/api.h"
 #include "pxr/base/vt/array.h"
 #include "pxr/base/vt/types.h"
 #include "pxr/base/vt/value.h"
-#include "pxr/base/vt/pyOperators.h"
+#include "pxr/base/vt/boost/pyOperators.h"
 
 #include "pxr/base/arch/math.h"
 #include "pxr/base/arch/inttypes.h"
@@ -250,7 +250,17 @@ setitem_slice(VtArray<T> &self, slice idx, object value)
 
 
 template <class T>
-VT_API string GetVtArrayName();
+string GetVtArrayName();
+
+// Builtin names belong to binding code. Inline definitions let downstream
+// modules reuse these wrappers without linking against the _vt module.
+#define VT_BINDING_ARRAY_NAME(unused, elem) \
+template <> inline string GetVtArrayName<VT_TYPE(elem)>() { \
+    return TF_PP_STRINGIZE(VT_TYPE_NAME(elem)); \
+}
+TF_PP_SEQ_FOR_EACH(VT_BINDING_ARRAY_NAME, ~, VT_ARRAY_VALUE_TYPES)
+#undef VT_BINDING_ARRAY_NAME
+
 
 template <class T, class... Ts>
 constexpr bool Vt_IsAnySameImpl(TfMetaList<Ts...>) {
@@ -303,10 +313,26 @@ static void streamValue(std::ostringstream &stream, T const &value) {
     }
 }
 
-VT_API
-unsigned int
+inline unsigned int
 Vt_ComputeEffectiveRankAndLastDimSize(
-    Vt_ShapeData const *sd, size_t *lastDimSize);
+    Vt_ShapeData const *sd, size_t *lastDimSize)
+{
+    unsigned int rank = sd->GetRank();
+    if (rank == 1)
+        return rank;
+
+    size_t divisor = std::accumulate(
+        sd->otherDims, sd->otherDims + rank-1,
+        size_t{1}, [](size_t x, size_t y) { return x * y; });
+
+    size_t remainder = divisor ? sd->totalSize % divisor : 0;
+    *lastDimSize = divisor ? sd->totalSize / divisor : 0;
+
+    if (remainder)
+        rank = 1;
+
+    return rank;
+}
 
 template <typename T>
 string __repr__(VtArray<T> const &self)
@@ -576,4 +602,4 @@ void VtRegisterValueCastsFromPythonSequencesToArray()
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
-#endif // PXR_BASE_VT_WRAP_ARRAY_H
+#endif // PXR_BASE_VT_BOOST_WRAP_ARRAY_H

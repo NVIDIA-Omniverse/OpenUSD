@@ -63,8 +63,21 @@ at compile time rather than silently storing a binding object in core values.
 The specialization is not installed by including the core headers.
 
 This separation covers the from-Python registry and the value interfaces.
-Other Vt array and buffer helpers still use Boost.Python and the full Python
-API during the remaining stages of the Vt migration.
+Reusable array binding helpers are installed as vt/boost/wrapArray.h,
+vt/boost/wrapArrayEdit.h and vt/boost/pyOperators.h, owned by vtBoostPython.
+Use this target for downstream VtWrapArray, VtWrapArrayEdit and sequence-cast
+registration. Array names and the legacy shape helper are inline binding code;
+modules do not link against _vt to use them.
+
+The buffer producer, buffer consumer and their conversion registrations live
+only in _vt. arrayPyBuffer.h is private and is not installed. The unused
+VtArrayFromPyBuffer C++ entry point has been removed. Python FromBuffer and
+FromNumpy methods keep their existing API and copying behavior. The buffer
+implementation uses the full Python API in the module, without changing the
+Limited API floor of the core services.
+
+The final Vt target/package dependency boundary and cross-Python core reuse
+validation remain separate work.
 
 \section vt_array Shared Arrays - VtArray
 The VtArray class represents an arbitrary length homogeneous container.  In the C++ API, the constructor lets you create an array of a specified size.  The VtArray interface on the Python side is implemented as a set of typed array classes (for example, BoolArray, StringArray, Vec4dArray).

@@ -13,7 +13,7 @@
 #include "pxr/base/tf/boost/pyEnumBoost.h"
 #include "pxr/base/tf/boost/pyFunction.h"
 #include "pxr/base/tf/boost/pyUtilsBoost.h"
-#include "pxr/base/vt/wrapArray.h"
+#include "pxr/base/vt/boost/wrapArray.h"
 
 #include "pxr/usd/sdf/pathExpression.h"
 #include "pxr/usd/sdf/pathExpressionEval.h"

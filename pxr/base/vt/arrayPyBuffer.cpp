@@ -12,7 +12,7 @@
 #include "pxr/base/vt/types.h"
 #include "pxr/base/vt/typeHeaders.h"
 #include "pxr/base/vt/value.h"
-#include "pxr/base/vt/wrapArray.h"
+#include "pxr/base/vt/boost/wrapArray.h"
 
 #include "pxr/base/gf/traits.h"
 
@@ -519,24 +519,7 @@ Vt_WrapArrayFromBuffer(TfPyObjWrapper const &obj)
 
 } // anon
 
-template <class T>
-std::optional<VtArray<T> >
-VtArrayFromPyBuffer(TfPyObjWrapper const &obj, std::string *err)
-{
-    VtArray<T> array;
-    std::optional<VtArray<T> > result;
-    if (Vt_ArrayFromBuffer(obj, &array, err))
-        result = array;
-    return result;
-}
-
-#define INSTANTIATE(unused, elem)                                          \
-template std::optional<VtArray<VT_TYPE(elem)> >                            \
-VtArrayFromPyBuffer<VT_TYPE(elem)>(TfPyObjWrapper const &obj, string *err);
-TF_PP_SEQ_FOR_EACH(INSTANTIATE, ~, VT_ARRAY_PYBUFFER_TYPES)
-#undef INSTANTIATE
-
-VT_API void Vt_AddBufferProtocolSupportToVtArrays()
+void Vt_AddBufferProtocolSupportToVtArrays()
 {
 
 // Add the buffer protocol support to every array type that we support it for.

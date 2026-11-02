@@ -10,7 +10,7 @@
 #include "pxr/base/tf/hash.h"
 #include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/tf/stringUtils.h"
-#include "pxr/base/vt/wrapArray.h"
+#include "pxr/base/vt/boost/wrapArray.h"
 
 #include "pxr/external/boost/python/class.hpp"
 #include "pxr/external/boost/python/def.hpp"

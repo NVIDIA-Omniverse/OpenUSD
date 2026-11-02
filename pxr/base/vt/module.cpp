@@ -8,12 +8,7 @@
 #include "pxr/pxr.h"
 #include "pxr/base/tf/boost/pyModuleBoost.h"
 
-PXR_NAMESPACE_OPEN_SCOPE
-
-// Defined in arrayPyBuffer.cpp
-void Vt_AddBufferProtocolSupportToVtArrays();
-
-PXR_NAMESPACE_CLOSE_SCOPE
+#include "pxr/base/vt/arrayPyBuffer.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
