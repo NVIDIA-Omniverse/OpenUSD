@@ -4,7 +4,7 @@
 # (the resolved location of each selected compiled library).
 # Static builds also define PXR_STATIC as before.
 #
-# Components tf and tfBoostPython select the stable Tf core and the
+# Components tf/gf and tfBoostPython select the stable core libraries and the
 # version-specific Boost.Python binding interface respectively. No components
 # selects the complete package for compatibility with existing consumers.
 #
@@ -26,13 +26,14 @@ include(CMakeFindDependencyMacro)
 
 set(_pxr_binding_python TRUE)
 set(_pxr_libraries "@PXR_ALL_LIBS@")
+set(_pxr_stable_components tf gf)
 if(pxr_FIND_COMPONENTS)
     set(_pxr_binding_python FALSE)
     set(_pxr_libraries "")
     foreach(_pxr_component IN LISTS pxr_FIND_COMPONENTS)
         set(pxr_${_pxr_component}_FOUND FALSE)
-        if(_pxr_component STREQUAL "tf" AND NOT @PXR_BUILD_MONOLITHIC@)
-            set(pxr_tf_FOUND TRUE)
+        if(_pxr_component IN_LIST _pxr_stable_components AND NOT @PXR_BUILD_MONOLITHIC@)
+            set(pxr_${_pxr_component}_FOUND TRUE)
         elseif(_pxr_component STREQUAL "tfBoostPython" AND @PXR_ENABLE_PYTHON_SUPPORT@)
             set(pxr_tfBoostPython_FOUND TRUE)
             set(_pxr_binding_python TRUE)
@@ -42,7 +43,7 @@ if(pxr_FIND_COMPONENTS)
         elseif(pxr_FIND_REQUIRED_${_pxr_component})
             set(pxr_FOUND FALSE)
             set(pxr_NOT_FOUND_MESSAGE
-                "Unsupported pxr component '${_pxr_component}'. The tf core component requires a non-monolithic build; tfBoostPython requires Python support.")
+                "Unsupported pxr component '${_pxr_component}'. Core components tf/gf require a non-monolithic build; tfBoostPython requires Python support.")
             return()
         endif()
     endforeach()

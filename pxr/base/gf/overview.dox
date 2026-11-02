@@ -51,4 +51,22 @@ and a camera model.</li>
   	<li> \link group_gf_Gamma Gamma Mapping</li> \endlink -->
 </ul>
 
+\section gf_python_boundary Core and Python bindings
+
+The \c gf library provides the C++ graphics types without direct Python or
+Boost.Python dependencies. It retains its dependency on Tf, whose Python-enabled
+core supplies stable Python C API services on Windows.
+
+Non-monolithic installed consumers can request just the core package surface:
+\code
+find_package(pxr CONFIG REQUIRED COMPONENTS gf)
+target_link_libraries(myApplication PRIVATE gf)
+\endcode
+
+The \c _gf module owns the Python bindings, including vector and matrix buffer
+protocol support. The \c pyBufferUtils.h helper is private to that module and is
+not installed. \c Gf_GetPyBufferFmtFor is no longer exported from the core Gf
+library or offered as a C++ export from \c _gf. External bindings that used this
+internal helper must provide their own format mapping.
+
 */

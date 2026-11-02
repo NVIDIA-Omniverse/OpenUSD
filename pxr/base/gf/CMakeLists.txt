@@ -66,9 +66,6 @@ pxr_library(gf
         vec4h
         vec4i
 
-    PYTHON_PUBLIC_CLASSES
-        pyBufferUtils
-
     PUBLIC_HEADERS
         api.h
         declare.h
@@ -88,9 +85,11 @@ pxr_library(gf
         ilmbase_eLut.h
         ilmbase_toFloat.h
         nc/nanocolor.h
+        pyBufferUtils.h
 
     PYMODULE_CPPFILES
         module.cpp
+        pyBufferUtils.cpp
         wrapBBox3d.cpp
         wrapCamera.cpp
         wrapColor.cpp
@@ -170,6 +169,41 @@ else()
                 --validate 
     )
 endif()
+
+if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS
+        AND NOT PXR_BUILD_MONOLITHIC)
+    get_target_property(gfCoreHeaders gf PXR_PUBLIC_HEADERS)
+    list(REMOVE_DUPLICATES gfCoreHeaders)
+    list(SORT gfCoreHeaders)
+    string(REPLACE ";" "\n" gfCoreHeaders "${gfCoreHeaders}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt" "${gfCoreHeaders}\n")
+    set(gfPythonTarget _gf)
+    if(WIN32 AND PXR_USE_DEBUG_PYTHON)
+        set(gfPythonTarget _gf_d)
+    endif()
+    string(CONCAT gfCoreOwnership
+        "core\t$<TARGET_PROPERTY:gf,SOURCES>\n"
+        "module\t$<TARGET_PROPERTY:${gfPythonTarget},SOURCES>\n"
+        "links\t$<TARGET_PROPERTY:gf,LINK_LIBRARIES>\n"
+        "module_file\t$<TARGET_FILE_NAME:${gfPythonTarget}>\n"
+        "binding_file\t$<TARGET_FILE_NAME:python>\n")
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/coreOwnership-$<CONFIG>.txt"
+        CONTENT "${gfCoreOwnership}")
+    add_test(NAME testGfCoreDependencyBoundary
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testGfCoreDependencyBoundary.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testGfCoreDependencyBoundary"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testGfCoreDependencyBoundary/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --headers "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt"
+            --ownership "${CMAKE_CURRENT_BINARY_DIR}/coreOwnership-$<CONFIG>.txt"
+            --module-deps "${CMAKE_CURRENT_BINARY_DIR}/moduleDeps.cpp"
+            --install-manifest "${PROJECT_BINARY_DIR}/install_manifest.txt"
+            --cmake "${CMAKE_COMMAND}"
+            --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>"
+    )
+endif()
         
 pxr_build_test(testGfHardToReach
     LIBRARIES
@@ -186,6 +220,7 @@ pxr_build_test(testGfColorCpp
 )
 
 pxr_test_scripts(
+    testenv/testGfBufferProtocol.py
     testenv/testGfBBox3d.py
     testenv/testGfCamera.py
     testenv/testGfColorPy.py
@@ -214,6 +249,10 @@ pxr_test_scripts(
 pxr_register_test(testGfBBox3d
     PYTHON
     COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testGfBBox3d"
+)
+pxr_register_test(testGfBufferProtocol
+    PYTHON
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testGfBufferProtocol"
 )
 pxr_register_test(testGfColorPy
     PYTHON

@@ -14,11 +14,12 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 ////////////////////////////////////////////////////////////////////////
 // Format strings matching Python buffer proto / struct module scheme.
+// Private to Gf's Python bindings; instantiated in _gf, not the core library.
 
 // This function template is explicitly instantiated for T =
 //    bool, [unsigned] (char, short, int, long), half, float, and double.
 template <class T>
-char *Gf_GetPyBufferFmtFor();
+GF_LOCAL char *Gf_GetPyBufferFmtFor();
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
