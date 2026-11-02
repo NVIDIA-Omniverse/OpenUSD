@@ -29,14 +29,25 @@ def run(command, log_path=None, **kwargs):
     return result.stdout
 
 
+def check_no_bundled_python(manifest):
+    """Runtime deployment belongs to the application, including on Windows."""
+    runtime_name = re.compile(
+        r"python\d*(?:_d)?\.dll|libpython.*\.(?:so(?:\.\d+)*|dylib)", re.I)
+    bundled = [path for path in Path(manifest).read_text().splitlines()
+               if runtime_name.fullmatch(Path(path).name)]
+    if bundled:
+        raise RuntimeError("OpenUSD installs Python runtimes:\n" + "\n".join(bundled))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("source-dir", "build-dir", "prefix", "headers", "module-deps", "link-libraries",
-                 "cmake", "generator", "config"):
+                 "cmake", "generator", "config", "install-manifest"):
         parser.add_argument(f"--{name}", required=True)
     args = parser.parse_args()
     build = Path(args.build_dir)
     prefix = Path(args.prefix)
+    check_no_bundled_python(args.install_manifest)
 
     module_deps = Path(args.module_deps).read_text()
     dependencies = re.findall(r'TfToken\("([^\"]+)"\)', module_deps)

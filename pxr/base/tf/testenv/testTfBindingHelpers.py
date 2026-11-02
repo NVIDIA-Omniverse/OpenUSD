@@ -12,17 +12,18 @@ import os
 from pathlib import Path
 import sys
 
-from testTfCoreDependencyBoundary import run
+from testTfCoreDependencyBoundary import check_no_bundled_python, run
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("source-dir", "build-dir", "prefix", "headers", "cmake",
-                 "generator", "config"):
+                 "generator", "config", "install-manifest"):
         parser.add_argument(f"--{name}", required=True)
     args = parser.parse_args()
     build = Path(args.build_dir)
     prefix = Path(args.prefix)
+    check_no_bundled_python(args.install_manifest)
 
     run([args.cmake, "-S", args.source_dir, "-B", build,
          "-G", args.generator, f"-DUSD_PREFIX={prefix}",

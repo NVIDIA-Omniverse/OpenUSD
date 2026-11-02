@@ -1387,10 +1387,20 @@ function(_pxr_library NAME)
     # as system include directories so that compiler warnings from these
     # headers are ignored, since we have no control over the contents
     # of those headers.
+    set(interfaceIncludeDirs "")
+    foreach(includeDir IN LISTS args_INCLUDE_DIRS)
+        if(includeDir IN_LIST PYTHON_INCLUDE_DIRS)
+            # Imported targets supply the consumer's Python headers. Do not
+            # export this build's Python installation directory.
+            list(APPEND interfaceIncludeDirs "$<BUILD_INTERFACE:${includeDir}>")
+        else()
+            list(APPEND interfaceIncludeDirs "${includeDir}")
+        endif()
+    endforeach()
     target_include_directories(${NAME}
         SYSTEM
         PUBLIC
-            ${args_INCLUDE_DIRS}
+            ${interfaceIncludeDirs}
     )
 
     # If we're building documentation, we need to copy the files we want

@@ -8,7 +8,7 @@ endif()
 
 # Exercise the installed package as an independent consumer, without inheriting
 # include directories, compiler definitions or link libraries from USD's build.
-find_package(pxr CONFIG REQUIRED PATHS "${USD_PREFIX}" NO_DEFAULT_PATH)
+find_package(pxr CONFIG REQUIRED COMPONENTS tf PATHS "${USD_PREFIX}" NO_DEFAULT_PATH)
 
 function(check_core_dependencies target)
     get_property(visited GLOBAL PROPERTY checkedTargets)

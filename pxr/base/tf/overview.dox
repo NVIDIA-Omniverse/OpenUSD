@@ -125,6 +125,30 @@ For a detailed explanation of topics specific to C++, see these additional Relat
 The \c tf CMake target supplies the core C++ library and its Python C API
 dependencies. Its core public headers are independent of Boost.Python.
 
+The target name identifies the Tf component, whose implementation is packaged
+differently by build mode. In a non-monolithic build, \c tf is a shared or static
+library. In a monolithic build tree it is an object library incorporated into
+\c usd_m; in the installed monolithic package it is an interface target carrying
+usage requirements, with no separate Tf implementation to link.
+
+Downstream core consumers link \c tf for a non-monolithic package or \c usd_m
+for a monolithic package, without explicitly listing both. Header include paths
+are unchanged. Static monolithic consumers need whole-archive linkage.
+The \c usd_m name denotes the CMake target; the actual library filename can
+differ through its configured prefix, output name, or imported location.
+Binding consumers can use \c tfBoostPython below to select the implementation
+and static monolithic linkage automatically.
+
+Installed consumers can request just the Tf core dependency surface:
+\code
+find_package(pxr CONFIG REQUIRED COMPONENTS tf)
+target_link_libraries(myApplication PRIVATE tf)
+\endcode
+On Windows this discovers the consumer's Python stable ABI development files
+(Python 3.10 or newer), without selecting a version-specific Python target.
+Python development paths from the OpenUSD build are not exported. Other
+platforms retain their existing version-specific Python linkage.
+
 Boost.Python helpers are installed separately under \c pxr/base/tf/boost.
 For example, include \c pxr/base/tf/boost/pyResultConversions.h when using
 TfPySequenceToList. Existing includes of these helpers directly under
@@ -132,6 +156,7 @@ TfPySequenceToList. Existing includes of these helpers directly under
 
 Binding consumers should link the \c tfBoostPython CMake interface target:
 \code
+find_package(pxr CONFIG REQUIRED COMPONENTS tfBoostPython)
 target_link_libraries(myPythonModule PRIVATE tfBoostPython)
 \endcode
 This target supplies the binding headers, core Tf and the existing Boost.Python
@@ -146,6 +171,20 @@ legacy core components that still compile Boost.Python code. It supplies the
 binding include path and Boost.Python requirements without depending on
 \c tf or \c usd_m, avoiding a dependency cycle when assembling the monolith.
 External binding consumers should use \c tfBoostPython.
+
+The binding component requires the Python major/minor version used to build
+the installed Boost.Python runtime. Calling \c find_package(pxr) without
+components retains the full package's Python version requirement. The \c tf
+core-only component is unavailable for monolithic builds, since other core
+components in the monolith still contain version-specific Python code.
+Components control dependency selection; they do not remove unrequested
+targets from the package's export set.
+
+Python runtime deployment is the downstream application's responsibility.
+OpenUSD links the required Python import library but does not copy or install
+Python runtime libraries. On Windows the application must make a compatible
+\c python3.dll available to core libraries using the stable ABI, together with
+the version-specific runtime required by its chosen binding modules.
 
 */
 

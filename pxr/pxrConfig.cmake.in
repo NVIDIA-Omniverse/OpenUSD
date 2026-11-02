@@ -1,59 +1,68 @@
-# - Configuration file for the pxr project
-# Defines the following variables:
-# PXR_MAJOR_VERSION - Major version number.
-# PXR_MINOR_VERSION - Minor version number.
-# PXR_PATCH_VERSION - Patch version number.
-# PXR_VERSION       - Complete pxr version string.
-# PXR_INCLUDE_DIRS  - Root include directory for the installed project.
-# PXR_LIBRARIES     - List of all libraries, by target name.
-# PXR_foo_LIBRARY   - Absolute path to individual libraries.
-# The preprocessor definition PXR_STATIC will be defined if appropriate
+# Configuration for the installed pxr package.
+# Defines PXR_MAJOR_VERSION, PXR_MINOR_VERSION, PXR_PATCH_VERSION, PXR_VERSION,
+# PXR_INCLUDE_DIRS, PXR_LIBRARIES (the selected targets), and PXR_foo_LIBRARY
+# (the resolved location of each selected compiled library).
+# Static builds also define PXR_STATIC as before.
+#
+# Components tf and tfBoostPython select the stable Tf core and the
+# version-specific Boost.Python binding interface respectively. No components
+# selects the complete package for compatibility with existing consumers.
+#
+# Downstream linkage: use tf for non-monolithic core libraries, or usd_m for a
+# monolithic package; there is no need to explicitly link both. In monolithic
+# build trees tf is an object library; the installed tf target is interface-only.
+# usd_m is the CMake target name, not a filename: its configured output name,
+# prefix, or IMPORTED_LOCATION determines the actual library file.
+# Boost.Python modules can link tfBoostPython in either mode; it selects tf or
+# usd_m and supplies whole-archive linkage for a static monolith.
+# See BUILDING.md, "Choosing a Downstream Link Target", and Tf's binding docs.
 
 get_filename_component(PXR_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
-
 set(PXR_MAJOR_VERSION "@PXR_MAJOR_VERSION@")
 set(PXR_MINOR_VERSION "@PXR_MINOR_VERSION@")
 set(PXR_PATCH_VERSION "@PXR_PATCH_VERSION@")
 set(PXR_VERSION "@PXR_VERSION@")
-
 include(CMakeFindDependencyMacro)
 
-# If Python support was enabled for this USD build, find the import
-# targets by invoking the appropriate FindPython module. Use the same
-# LIBRARY and INCLUDE_DIR settings from the original build if they
-# were set. This can be overridden by specifying different values when
-# running cmake.
-if(@PXR_ENABLE_PYTHON_SUPPORT@)
-    if (NOT DEFINED Python3_EXECUTABLE)
-        if (NOT [[@Python3_EXECUTABLE@]] STREQUAL "")
-            set(Python3_EXECUTABLE [[@Python3_EXECUTABLE@]])
+set(_pxr_binding_python TRUE)
+set(_pxr_libraries "@PXR_ALL_LIBS@")
+if(pxr_FIND_COMPONENTS)
+    set(_pxr_binding_python FALSE)
+    set(_pxr_libraries "")
+    foreach(_pxr_component IN LISTS pxr_FIND_COMPONENTS)
+        set(pxr_${_pxr_component}_FOUND FALSE)
+        if(_pxr_component STREQUAL "tf" AND NOT @PXR_BUILD_MONOLITHIC@)
+            set(pxr_tf_FOUND TRUE)
+        elseif(_pxr_component STREQUAL "tfBoostPython" AND @PXR_ENABLE_PYTHON_SUPPORT@)
+            set(pxr_tfBoostPython_FOUND TRUE)
+            set(_pxr_binding_python TRUE)
         endif()
-    endif()
-
-    if (NOT DEFINED Python3_LIBRARY)
-        if (NOT [[@Python3_LIBRARY@]] STREQUAL "")
-            set(Python3_LIBRARY [[@Python3_LIBRARY@]])
+        if(pxr_${_pxr_component}_FOUND)
+            list(APPEND _pxr_libraries "${_pxr_component}")
+        elseif(pxr_FIND_REQUIRED_${_pxr_component})
+            set(pxr_FOUND FALSE)
+            set(pxr_NOT_FOUND_MESSAGE
+                "Unsupported pxr component '${_pxr_component}'. The tf core component requires a non-monolithic build; tfBoostPython requires Python support.")
+            return()
         endif()
-    endif()
+    endforeach()
+endif()
 
-    if (NOT DEFINED Python3_INCLUDE_DIR)
-        if (NOT [[@Python3_INCLUDE_DIR@]] STREQUAL "")
-            set(Python3_INCLUDE_DIR [[@Python3_INCLUDE_DIR@]])
+if(@PXR_ENABLE_PYTHON_SUPPORT@ AND _pxr_libraries)
+    if(_pxr_binding_python OR NOT WIN32)
+        # Installed bindings and legacy core code require the build's Python
+        # minor version. A pre-found incompatible Python cannot bypass this.
+        set(_pxr_python_components Development)
+        if(WIN32)
+            list(APPEND _pxr_python_components Development.SABIModule)
         endif()
-    endif()
-
-    set(_pxr_python_components Development)
-    if(WIN32)
-        # Tf's public inline helpers use the Python C API. Propagate the
-        # stable ABI import library rather than a versioned Python library.
-        list(APPEND _pxr_python_components Development.SABIModule)
-    endif()
-    if (NOT DEFINED Python3_VERSION)
-        find_dependency(Python3 "@Python3_VERSION_MAJOR@.@Python3_VERSION_MINOR@" EXACT COMPONENTS ${_pxr_python_components})
+        find_dependency(Python3 "@Python3_VERSION_MAJOR@.@Python3_VERSION_MINOR@"
+            EXACT COMPONENTS ${_pxr_python_components})
     else()
-        find_dependency(Python3 COMPONENTS ${_pxr_python_components})
+        # The Limited API floor used by Tf is 3.10. Discover the consumer's
+        # stable import library and headers without a versioned Python target.
+        find_dependency(Python3 3.10 COMPONENTS Development.SABIModule)
     endif()
-    unset(_pxr_python_components)
 endif()
 
 if (NOT DEFINED PXR_FIND_TBB_IN_CONFIG)
@@ -123,23 +132,21 @@ if(NOT "@PXR_WORK_IMPL_PACKAGE@" STREQUAL "")
 endif()
 
 include("${PXR_CMAKE_DIR}/cmake/pxrTargets.cmake")
-if (TARGET usd_m)
-    set(libs "usd_m")
-else()
-    set(libs "@PXR_ALL_LIBS@")
+if(NOT pxr_FIND_COMPONENTS AND TARGET usd_m)
+    set(_pxr_libraries usd_m)
 endif()
 set(PXR_LIBRARIES "")
 set(PXR_INCLUDE_DIRS "${PXR_CMAKE_DIR}/include")
-string(REPLACE " " ";" libs "${libs}")
-foreach(lib ${libs})
-    get_target_property(location ${lib} LOCATION)
-    set(PXR_${lib}_LIBRARY ${location})
+foreach(lib IN LISTS _pxr_libraries)
+    get_target_property(_pxr_type ${lib} TYPE)
+    if(NOT _pxr_type STREQUAL "INTERFACE_LIBRARY")
+        get_target_property(PXR_${lib}_LIBRARY ${lib} LOCATION)
+    endif()
     list(APPEND PXR_LIBRARIES ${lib})
 endforeach()
 if(NOT @BUILD_SHARED_LIBS@)
     if(WIN32)
-        list(APPEND PXR_LIBRARIES Shlwapi.lib)
-        list(APPEND PXR_LIBRARIES Dbghelp.lib)
+        list(APPEND PXR_LIBRARIES Shlwapi.lib Dbghelp.lib)
     endif()
     add_definitions(-DPXR_STATIC)
 endif()

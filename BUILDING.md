@@ -653,6 +653,42 @@ cmake -DPXR_BUILD_MONOLITHIC=ON -DBUILD_SHARED_LIBS=OFF ...
 > library is `usd_ms` while the static monolithic library is named `usd_m`. In
 > both cases the CMake target is `usd_m`.
 
+###### Choosing a Downstream Link Target
+
+Core component target names, such as `tf`, do not always represent separate
+library files:
+
+| Configuration | `tf` target | Where Tf's implementation lives |
+| --- | --- | --- |
+| Non-monolithic | Shared or static library | Separate Tf library |
+| Monolithic build tree | Object library | Objects incorporated into `usd_m` |
+| Installed monolithic package | Interface library carrying usage requirements | Inside `usd_m` |
+
+Downstream consumers link `tf` for a non-monolithic package or `usd_m` for a
+monolithic package. There is no need to explicitly link both. Header include
+paths remain the same. An installed monolithic `tf` target alone supplies no
+compiled implementation. Static monolithic consumers must use the whole-archive
+linkage described in [Linking Whole Archives](#linking-whole-archives).
+
+`usd_m` is the CMake target name, not a required filename. CMake resolves the
+target's configured prefix (including `PXR_LIB_PREFIX`) and output name, or its
+`IMPORTED_LOCATION` for an external monolith supplied through
+`PXR_MONOLITHIC_IMPORT`. Link the target
+rather than constructing a library filename.
+
+Downstream Python modules using Tf's Boost.Python helpers can use one interface
+in either configuration:
+
+```cmake
+find_package(pxr CONFIG REQUIRED COMPONENTS tfBoostPython)
+target_link_libraries(myPythonModule PRIVATE tfBoostPython)
+```
+
+`tfBoostPython` supplies the binding requirements and selects `tf` or `usd_m`,
+including whole-archive linkage for a static monolith. The `tf` package component
+is available only in non-monolithic packages; the monolith still contains
+version-specific Python code from other core components.
+
 > [!WARNING]
 > Due to the need to link to the static monolithic library with the
 > `WHOLE_ARCHIVE` option (see [Linking Whole Archives](#linking-whole-archives)),

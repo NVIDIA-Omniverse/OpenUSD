@@ -452,10 +452,23 @@ if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND NOT PXR_BUILD_MONOLITHIC
             --headers "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt"
             --module-deps "${CMAKE_CURRENT_BINARY_DIR}/moduleDeps.cpp"
             --link-libraries "${CMAKE_CURRENT_BINARY_DIR}/coreLinkLibraries-$<CONFIG>.txt"
+            --install-manifest "${PROJECT_BINARY_DIR}/install_manifest.txt"
             --cmake "${CMAKE_COMMAND}"
             --generator "${CMAKE_GENERATOR}"
             --config "$<CONFIG>"
     )
+    if(WIN32)
+        add_test(NAME testTfPackageComponents
+            COMMAND "${PYTHON_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testTfPackageComponents.py"
+                --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testTfPackageComponents"
+                --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testTfPackageComponents/$<CONFIG>"
+                --prefix "${CMAKE_INSTALL_PREFIX}"
+                --cmake "${CMAKE_COMMAND}"
+                --generator "${CMAKE_GENERATOR}"
+                --config "$<CONFIG>"
+        )
+    endif()
 endif()
 
 if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
@@ -466,6 +479,7 @@ if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
             --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testTfBindingHelpers/$<CONFIG>"
             --prefix "${CMAKE_INSTALL_PREFIX}"
             --headers "${CMAKE_CURRENT_BINARY_DIR}/bindingHeaders.txt"
+            --install-manifest "${PROJECT_BINARY_DIR}/install_manifest.txt"
             --cmake "${CMAKE_COMMAND}"
             --generator "${CMAKE_GENERATOR}"
             --config "$<CONFIG>"
