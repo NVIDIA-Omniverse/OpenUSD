@@ -235,8 +235,13 @@ private:
         virtual bool Equals(const _Untyped& rhs) const = 0;
         virtual size_t Hash() const = 0;
         virtual std::string GetDebugString() const = 0;
-        // Non-owning access for binding adapters. The address remains valid
-        // while this stored context object is alive.
+        // Private type-erased access for the binding friend. GetTypeid()
+        // identifies the exact C++ type at this address; the address is
+        // non-owning and remains valid while this stored object is alive.
+        // Keeping this access untyped lets the binding module use its own
+        // converter registry without instantiating binding code in _Typed
+        // (and hence in native resolver plugins), or adding a second registry
+        // to the core. Downstream C++ callers use the typed Get<T>() above.
         virtual const void* GetData() const = 0;
     };
 

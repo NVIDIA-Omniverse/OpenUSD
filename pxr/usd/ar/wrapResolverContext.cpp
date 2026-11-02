@@ -75,8 +75,11 @@ class Ar_ResolverContextPythonAccess
 {
     static object _GetPythonObject(const ArResolverContext::_Untyped& data)
     {
-        // Resolve the converter when the object is requested, rather than
-        // instantiating binding code wherever a native context is created.
+        // The private storage supplies the matching type and object address;
+        // only this binding layer passes them to Boost's converter registry.
+        // Look up the converter on each request so contexts created before
+        // their Python binding loads also work after registration, including
+        // retries after an earlier request found no converter.
         // The registered converter returns a new reference to a Python copy.
         return object(handle<>(converter::registry::lookup(
             pxr_boost::python::type_info(data.GetTypeid()))
