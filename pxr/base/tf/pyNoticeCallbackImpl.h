@@ -42,6 +42,10 @@ private:
     TfPyObjWrapper _weakSelf;
 };
 
+// Borrows the arguments and acquires the GIL. A null sender is passed as None.
+// Callback exceptions become Tf errors with Python's error indicator cleared;
+// a pre-existing Python error prevents invocation and is left untouched.
+// The callback's result is discarded and its returned reference is released.
 TF_API bool Tf_PyNoticeInvokeCallback(
     PyObject *callable,
     PyObject *notice,

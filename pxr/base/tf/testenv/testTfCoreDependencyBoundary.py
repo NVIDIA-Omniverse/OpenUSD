@@ -76,7 +76,8 @@ def main():
     if sys.platform == "win32":
         linker = Path((build / "linker.txt").read_text().strip())
         dumpbin = linker.with_name("dumpbin.exe")
-        for binary in (prefix / "lib/usd_tf.dll", consumer):
+        for binary in (prefix / "lib/usd_tf.dll", consumer,
+                       prefix / "tests/testTfPyRuntimeContracts.exe"):
             imports = run([dumpbin, "/DEPENDENTS", binary])
             (build / f"{binary.stem}-imports.log").write_text(imports)
             if "python3.dll" not in imports.lower():

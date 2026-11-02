@@ -193,8 +193,9 @@ Tf_PySetPythonIdentity(Ptr const &ptr, PyObject *obj)
 {
     if (ptr.GetUniqueIdentifier()) {
         Tf_PyIdentityHelper::Set(ptr.GetUniqueIdentifier(), obj);
-        // Make sure we hear about it when this weak base dies so we can remove
-        // it from the map.
+        // Remove the identity when the weak-pointer remnant dies. The remnant
+        // and cached wrapper can outlive the pointee; adapters must explicitly
+        // manage strong/weak Python ownership to avoid retention cycles.
         ptr.EnableExtraNotification();
     }
 }
