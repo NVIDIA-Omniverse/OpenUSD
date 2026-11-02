@@ -502,6 +502,14 @@ VtValue::_GetPythonObject() const
         _info.Get()->GetPyObj(_storage) : TfPyObjWrapper();
 }
 
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+TfPyObjWrapper
+Vt_GetPythonObjectFromHeldValue(VtValue const &self)
+{
+    return self._GetPythonObject();
+}
+#endif
+
 const void *
 VtValue::_GetHeldObjectPtrForDebugger() const
 {

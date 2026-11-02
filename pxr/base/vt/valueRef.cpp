@@ -125,6 +125,14 @@ VtValueRef::_GetPythonObject() const
     return _info ? _info->GetPyObj(_ptr) : TfPyObjWrapper();
 }
 
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+TfPyObjWrapper
+Vt_GetPythonObjectFromHeldValue(VtValueRef const &self)
+{
+    return self._GetPythonObject();
+}
+#endif
+
 void const *
 VtValueRef::_FailGet(Vt_DefaultValueHolder (*factory)(),
                      std::type_info const &queryType) const
@@ -199,22 +207,3 @@ VtMutableValueRef::_FailSwap(std::type_info const &t)
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE
-
-#ifdef PXR_PYTHON_SUPPORT_ENABLED
-
-namespace PXR_BOOST_NAMESPACE::python::converter {
-
-arg_rvalue_from_python<VtValueRef>::arg_rvalue_from_python(PyObject* obj)
-    : base_type(obj)
-{
-}
-
-VtValueRef &
-arg_rvalue_from_python<VtValueRef>::operator()() {
-    optValueRef = VtValueRef { base_type::operator()() };
-    return *optValueRef;
-}
-
-} // namespace PXR_BOOST_NAMESPACE::python::converter
-
-#endif // PXR_PYTHON_SUPPORT_ENABLED

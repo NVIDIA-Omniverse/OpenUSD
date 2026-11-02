@@ -33,6 +33,9 @@
 #include "pxr/external/boost/python/return_arg.hpp"
 #include "pxr/external/boost/python/type_id.hpp"
 #include "pxr/external/boost/python/str.hpp"
+#include "pxr/external/boost/python/converter/registrations.hpp"
+#include "pxr/external/boost/python/converter/shared_ptr_deleter.hpp"
+#include <complex>
 
 #include <iostream>
 #include <limits>
@@ -55,11 +58,6 @@ TF_REGISTRY_FUNCTION(VtValue)
     VtRegisterValueCastsFromPythonSequencesToArray<TfToken>();
 }
 
-TfPyObjWrapper
-Vt_GetPythonObjectFromHeldValue(VtValue const &self)
-{
-    return self._GetPythonObject();
-}
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
@@ -109,9 +107,59 @@ struct Vt_ValueWrapper {
 
 struct Vt_ValueToPython {
     static PyObject *convert(VtValue const &val) {
-        return incref(Vt_GetPythonObjectFromHeldValue(val).ptr());
+        TfPyObjWrapper result = Vt_GetPythonObjectFromHeldValue(val);
+        return PyErr_Occurred() ? nullptr : incref(result.ptr());
     }
 };
+
+// Boost's arithmetic/string/object-manager converters are selected by C++
+// templates rather than stored in its runtime registry. Keep those adapters
+// here; other registered classes can be resolved by RTTI, including classes
+// wrapped by modules imported after an existing VtValue was constructed.
+static PyObject *
+_ValueToPythonFallback(
+    std::type_info const &type, void const *value,
+    std::shared_ptr<void const> const *sharedOwner)
+{
+    if (sharedOwner) {
+        if (auto *deleter =
+                std::get_deleter<converter::shared_ptr_deleter>(*sharedOwner)) {
+            return incref(deleter->owner.get());
+        }
+    }
+#define TRY_BUILTIN(T)                                                     \
+    if (TfSafeTypeCompare(type, typeid(T)))                                 \
+        return Vt_BoostPythonDetail::ToPython<T>(value)
+    TRY_BUILTIN(bool);
+    TRY_BUILTIN(char);
+    TRY_BUILTIN(signed char);
+    TRY_BUILTIN(unsigned char);
+    TRY_BUILTIN(short);
+    TRY_BUILTIN(unsigned short);
+    TRY_BUILTIN(int);
+    TRY_BUILTIN(unsigned int);
+    TRY_BUILTIN(long);
+    TRY_BUILTIN(unsigned long);
+    TRY_BUILTIN(long long);
+    TRY_BUILTIN(unsigned long long);
+    TRY_BUILTIN(float);
+    TRY_BUILTIN(double);
+    TRY_BUILTIN(long double);
+    TRY_BUILTIN(std::string);
+    TRY_BUILTIN(std::wstring);
+    TRY_BUILTIN(char const *);
+    TRY_BUILTIN(char *);
+    TRY_BUILTIN(std::complex<float>);
+    TRY_BUILTIN(std::complex<double>);
+    TRY_BUILTIN(std::complex<long double>);
+#undef TRY_BUILTIN
+    try {
+        return converter::registry::lookup(
+            pxr_boost::python::type_info(type)).to_python(value);
+    } catch (error_already_set const &) {
+        return nullptr;
+    }
+}
 
 struct Vt_ValueWrapperFromPython {
     Vt_ValueWrapperFromPython() {
@@ -242,6 +290,7 @@ struct Vt_ValueFromPython {
 
 void wrapValue()
 {
+    Vt_ValueToPythonRegistry::RegisterFallback(&_ValueToPythonFallback);
     def("_test_ValueTypeName", _test_ValueTypeName);
     def("_test_Ident", _test_Ident);
     def("_test_Str", _test_Str);

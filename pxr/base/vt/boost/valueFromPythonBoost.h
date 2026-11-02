@@ -8,7 +8,7 @@
 #define PXR_BASE_VT_BOOST_VALUE_FROM_PYTHON_BOOST_H
 
 #include "pxr/base/vt/valueFromPython.h"
-#include "pxr/base/vt/value.h"
+#include "pxr/base/vt/boost/valueBoost.h"
 #include "pxr/external/boost/python/extract.hpp"
 #include "pxr/external/boost/python/errors.hpp"
 
@@ -35,6 +35,7 @@ VtValue Extract(PyObject *obj)
 template <class T>
 void VtValueFromPython()
 {
+    VtValueToPython<T>();
     Vt_ValueFromPythonRegistry::Register(
         &Vt_BoostPythonDetail::Extract<T &>,
         &Vt_BoostPythonDetail::Extract<T>);
@@ -44,6 +45,7 @@ void VtValueFromPython()
 template <class T>
 void VtValueFromPythonLValue()
 {
+    VtValueToPython<T>();
     Vt_ValueFromPythonRegistry::Register(
         &Vt_BoostPythonDetail::Extract<T &>);
 }

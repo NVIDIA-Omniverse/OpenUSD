@@ -9,14 +9,8 @@
 
 #include "pxr/pxr.h"
 
-// XXX: Include pyLock.h after pyObjWrapper.h to work around
-// Python include ordering issues.
 #include "pxr/base/tf/pyObjWrapper.h"
-
-#include "pxr/base/tf/pyLock.h"
-#ifdef PXR_PYTHON_SUPPORT_ENABLED
-#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
-#endif // PXR_PYTHON_SUPPORT_ENABLED
+#include "pxr/base/vt/valueToPython.h"
 
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/arch/hints.h"
@@ -427,9 +421,7 @@ class VtValue
         static TfPyObjWrapper GetPyObj(T const &obj) {
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
             ProxiedType const &p = VtGetProxiedObject(obj);
-            TfPyLock lock;
-            return TfPyObjWrapperFromBoostObject(
-                pxr_boost::python::api::object(p));
+            return Vt_ConvertValueToPython(p);
 #else
             return {};
 #endif //PXR_PYTHON_SUPPORT_ENABLED
@@ -489,9 +481,7 @@ class VtValue
         static TfPyObjWrapper GetPyObj(ErasedProxy const &obj) {
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
             VtValue const *val = VtGetErasedProxiedVtValue(obj);
-            TfPyLock lock;
-            return TfPyObjWrapperFromBoostObject(
-                pxr_boost::python::api::object(*val));
+            return val->_GetPythonObject();
 #else
             return {};
 #endif //PXR_PYTHON_SUPPORT_ENABLED
@@ -817,7 +807,16 @@ class VtValue
                 TypeInfo::CopyInitObj(obj, val->_storage);
             }
             else {
-                TypeInfo::CopyInitObj(StoredType {obj}, val->_storage);
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+                if constexpr (std::is_same_v<StoredType, TfPyObjWrapper>) {
+                    TypeInfo::CopyInitObj(
+                        TfPyObjWrapper(obj.ptr(), TfPyBorrowedReference),
+                        val->_storage);
+                } else
+#endif
+                {
+                    TypeInfo::CopyInitObj(StoredType{obj}, val->_storage);
+                }
             }
         }
     };
@@ -840,8 +839,8 @@ public:
     /// Construct a VtValue holding a copy of \p obj.
     /// 
     /// If T is a char pointer or array, produce a VtValue holding a
-    /// std::string. If T is pxr_boost::python::object, produce a VtValue
-    /// holding a TfPyObjWrapper.
+    /// std::string. Binding adapters may map their Python object type to
+    /// TfPyObjWrapper; include the adapter before constructing such a value.
     template <class T>
     explicit VtValue(T const &obj) {
         _Init<T>::Init(this, obj);
@@ -1445,10 +1444,8 @@ ARCH_PRAGMA_POP
         return VtValue(To(val.UncheckedGet<From>()));
     }
 
-    // This grants friend access to a function in the wrapper file for this
-    // class.  This lets the wrapper reach down into a value to get a
-    // pxr_boost::python wrapped object corresponding to the held type.  This
-    // facility is necessary to get the python API we want.
+    // The binding-neutral conversion entry point can access this value's
+    // type-erased to-Python callback.
     friend TfPyObjWrapper
     Vt_GetPythonObjectFromHeldValue(VtValue const &self);
 

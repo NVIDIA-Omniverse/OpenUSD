@@ -15,8 +15,6 @@
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
 #include "pxr/base/tf/pyObjWrapper.h"
-
-#include "pxr/external/boost/python/object_fwd.hpp"
 #endif // PXR_PYTHON_SUPPORT_ENABLED
 
 #include "pxr/base/vt/api.h"
@@ -78,7 +76,26 @@ Vt_FindOrCreateDefaultValue(std::type_info const &type,
 #define VT_VALUE_SET_STORED_TYPE(SRC, DST)                              \
     template <> struct Vt_ValueStoredType<SRC> { typedef DST Type; }
 
-template <class T> struct Vt_ValueStoredType { typedef T Type; };
+// A Python object manager must opt into neutral storage through its binding
+// adapter. Reject it otherwise, so include order cannot silently cause the same
+// type to be stored differently in separate translation units.
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+template <class T, class = void>
+struct Vt_IsPythonObjectManager : std::false_type {};
+template <class T>
+struct Vt_IsPythonObjectManager<T, std::void_t<
+    decltype(std::declval<T const &>().ptr())>>
+    : std::is_same<decltype(std::declval<T const &>().ptr()), PyObject *> {};
+#endif
+template <class T> struct Vt_ValueStoredType {
+#ifdef PXR_PYTHON_SUPPORT_ENABLED
+    static_assert(!Vt_IsPythonObjectManager<T>::value ||
+                  std::is_same_v<T, TfPyObjWrapper>,
+                  "Include the binding's Vt value adapter before storing a "
+                  "Python object manager");
+#endif
+    using Type = T;
+};
 VT_VALUE_SET_STORED_TYPE(char const *, std::string);
 VT_VALUE_SET_STORED_TYPE(char *, std::string);
 
@@ -86,10 +103,6 @@ template <size_t N>
 struct Vt_ValueStoredType<char [N]> {
     using Type = std::string;
 };
-
-#ifdef PXR_PYTHON_SUPPORT_ENABLED
-VT_VALUE_SET_STORED_TYPE(pxr_boost::python::object, TfPyObjWrapper);
-#endif // PXR_PYTHON_SUPPORT_ENABLED
 
 #undef VT_VALUE_SET_STORED_TYPE
 

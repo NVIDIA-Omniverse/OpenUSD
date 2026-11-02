@@ -33,9 +33,38 @@ adapter translates error_already_set into this contract. Registered callback
 code must remain loaded for the registry's lifetime. New registrations
 invalidate cached lvalue choices and take effect on the next invocation.
 
-This separation covers the from-Python registry. Other Vt value and buffer
-helpers still use Boost.Python and the full Python API during the remaining
-stages of the Vt migration.
+\subsection vt_to_python To-Python dispatch and binding adapters
+
+The value.h, valueRef.h and valueCommon.h headers contain no Boost.Python
+includes. Their per-type tables call Vt_ValueToPythonRegistry, declared in
+vt/valueToPython.h. Values created in ordinary C++ code before bindings load
+use the current registry when converted, including typed and erased proxies.
+Vt_GetPythonObjectFromHeldValue accepts a value or a view and returns an owned
+TfPyObjWrapper. Empty values produce None; failures leave a Python exception
+set, which the caller must check before using the result.
+
+The _vt module installs a Boost runtime lookup and keeps arithmetic, string
+and complex conversions in the module. Downstream class registration is found
+at conversion time, without negative caching or a required Vt registration.
+For types whose conversion is selected by C++ templates rather than Boost's
+runtime registry, include vt/boost/valueToPythonBoost.h and call
+VtValueToPython<T>(). The from-Python registration helpers also register the
+corresponding typed to-Python adapter. Registry callbacks return a new Python
+reference or null with an exception set; they run under the GIL and must not
+throw binding-specific exceptions into the core.
+
+Include vt/boost/valueBoost.h in binding code that constructs a VtValue from
+boost::python::object or accepts VtValueRef arguments. The adapter maps the
+Python object to TfPyObjWrapper storage and owns the inline Boost argument
+converter that keeps a temporary value alive for the duration of its view.
+Include it before the first such construction, even if a core value header
+was already included. Missing adapters for Python object managers are rejected
+at compile time rather than silently storing a binding object in core values.
+The specialization is not installed by including the core headers.
+
+This separation covers the from-Python registry and the value interfaces.
+Other Vt array and buffer helpers still use Boost.Python and the full Python
+API during the remaining stages of the Vt migration.
 
 \section vt_array Shared Arrays - VtArray
 The VtArray class represents an arbitrary length homogeneous container.  In the C++ API, the constructor lets you create an array of a specified size.  The VtArray interface on the Python side is implemented as a set of typed array classes (for example, BoolArray, StringArray, Vec4dArray).

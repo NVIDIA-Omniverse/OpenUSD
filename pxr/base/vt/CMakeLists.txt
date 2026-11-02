@@ -28,6 +28,7 @@ pxr_library(vt
     PYTHON_PUBLIC_CLASSES
         arrayPyBuffer
         valueFromPython
+        valueToPython
         wrapArray
 
     PUBLIC_HEADERS
@@ -72,13 +73,21 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
     if(NOT PXR_BUILD_MONOLITHIC)
         target_link_libraries(vtBoostPython INTERFACE vt)
     endif()
-    set(vtBindingHeaders boost/valueFromPythonBoost.h)
+    set(vtBindingHeaders
+        boost/valueBoost.h
+        boost/valueFromPythonBoost.h
+        boost/valueToPythonBoost.h)
     _copy_headers(vtBoostPython FILES ${vtBindingHeaders} PREFIX "${PXR_PREFIX}")
     set(vtBindingIncludeRoot "${PROJECT_BINARY_DIR}/${PXR_INSTALL_SUBDIR}/include")
     _get_install_dir(include vtBindingInstallDir)
+    set(vtBindingBuildHeaders "")
+    foreach(header IN LISTS vtBindingHeaders)
+        list(APPEND vtBindingBuildHeaders
+            "${vtBindingIncludeRoot}/${PXR_PREFIX}/vt/${header}")
+    endforeach()
     target_sources(vtBoostPython INTERFACE FILE_SET HEADERS
         BASE_DIRS "${vtBindingIncludeRoot}"
-        FILES "${vtBindingIncludeRoot}/${PXR_PREFIX}/vt/boost/valueFromPythonBoost.h")
+        FILES ${vtBindingBuildHeaders})
     install(TARGETS vtBoostPython EXPORT pxrTargets
         FILE_SET HEADERS DESTINATION "${vtBindingInstallDir}")
     export(TARGETS vtBoostPython APPEND FILE "${PROJECT_BINARY_DIR}/pxrTargets.cmake")
@@ -90,6 +99,15 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
 endif()
 
 if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
+    add_test(NAME testVtValueBindingExtraction
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testVtValueBindingExtraction.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testVtValueBindingExtraction"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testVtValueBindingExtraction/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --cmake "${CMAKE_COMMAND}"
+            --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
     add_test(NAME testVtConversionRegistry
         COMMAND "${PYTHON_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testVtConversionRegistry.py"

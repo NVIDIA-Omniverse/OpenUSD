@@ -30,6 +30,7 @@
 
 #include "pxr/base/tf/errorMark.h"
 #include "pxr/base/tf/errorTransport.h"
+#include "pxr/base/tf/pyLock.h"
 #include "pxr/base/trace/trace.h"
 #include "pxr/base/work/loops.h"
 #include "pxr/base/work/isolatingDispatcher.h"

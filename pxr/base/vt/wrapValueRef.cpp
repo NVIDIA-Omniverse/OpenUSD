@@ -5,7 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/pxr.h"
-#include "pxr/base/vt/valueRef.h"
+#include "pxr/base/vt/boost/valueBoost.h"
 
 #include "pxr/external/boost/python/def.hpp"
 

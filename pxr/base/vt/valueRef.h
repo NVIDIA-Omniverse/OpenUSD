@@ -9,14 +9,8 @@
 
 #include "pxr/pxr.h"
 
-// XXX: Include pyLock.h after pyObjWrapper.h to work around
-// Python include ordering issues.
 #include "pxr/base/tf/pyObjWrapper.h"
-
-#include "pxr/base/tf/pyLock.h"
-#ifdef PXR_PYTHON_SUPPORT_ENABLED
-#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
-#endif // PXR_PYTHON_SUPPORT_ENABLED
+#include "pxr/base/vt/valueToPython.h"
 
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/arch/hints.h"
@@ -324,9 +318,7 @@ protected:
 
         static TfPyObjWrapper _GetPyObj(_RefdObjPtr storage) {
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
-            TfPyLock lock;
-            return TfPyObjWrapperFromBoostObject(
-                pxr_boost::python::api::object(GetObj(storage)));
+            return Vt_ConvertValueToPython(GetObj(storage));
 #else
             return {};
 #endif
@@ -605,10 +597,8 @@ protected:
 
     VT_API void _FailRemove(std::type_info const &);
 
-    // This grants friend access to a function in the wrapper file for this
-    // class.  This lets the wrapper reach down into a value to get a
-    // pxr_boost::python wrapped object corresponding to the viewed type.  This
-    // facility is necessary to get the python API we want.
+    // The binding-neutral conversion entry point can access this view's
+    // type-erased to-Python callback.
     friend TfPyObjWrapper
     Vt_GetPythonObjectFromHeldValue(VtValueRef const &self);
 
@@ -793,38 +783,4 @@ VtValueRef::_TypeInfoImpl<T, B>::_GetVtValue(_RefdObjPtr storage) {
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
-#ifdef PXR_PYTHON_SUPPORT_ENABLED
-
-#include "pxr/external/boost/python/converter/arg_from_python.hpp"
-#include <optional>
-
-namespace PXR_BOOST_NAMESPACE::python::converter {
-
-// We specialize arg_rvalue_from_python<VtValueRef> to derive
-// arg_rvalue_from_python<VtValue>.  This way we get storage for both -- an
-// `rvalue_from_python_data<VtValue &> m_data` in the base and a VtValueRef in
-// this class.  There's no other way afaict to "add space" in an rvalue
-// converter to support a "view" type where we need to also conjure a temporary
-// for that view.  This way we can create the `VtValue` in the base as usual and
-// let the `VtValueRef` here refer to it for the lifetime of the arg.
-template <>
-struct arg_rvalue_from_python<PXR_NS::VtValueRef>
-    : public arg_rvalue_from_python<PXR_NS::VtValue>
-{
-    using base_type = arg_rvalue_from_python<PXR_NS::VtValue>;
-    using base_type::convertible;
-    using result_type = PXR_NS::VtValueRef &; // boost.python convention.
-
-    VT_API arg_rvalue_from_python(PyObject* obj);
-
-    VT_API result_type operator()();
-    
-    std::optional<PXR_NS::VtValueRef> optValueRef;
-};
-
-} // namespace PXR_BOOST_NAMESPACE::python::converter
-
-#endif // PXR_PYTHON_SUPPORT_ENABLED
-
 #endif // PXR_BASE_VT_VALUEREF_H
-
