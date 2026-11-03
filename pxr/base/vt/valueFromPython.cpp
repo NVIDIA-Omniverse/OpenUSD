@@ -33,6 +33,44 @@ Vt_ValueFromPythonRegistry::HasConversions()
 }
 
 void
+Vt_ValueFromPythonRegistry::RegisterTyped(
+    const std::type_info& type, TypedExtractor extract)
+{
+    if (!TfPyIsInitialized()) {
+        TF_FATAL_ERROR("Tried to register a typed VtValue conversion "
+                       "but python is not initialized!");
+    }
+    if (!extract) {
+        TF_CODING_ERROR("A typed VtValue conversion requires a callback");
+        return;
+    }
+    TfPyLock lock;
+    _GetInstance()._typedExtractors[std::type_index(type)] = extract;
+}
+
+bool
+Vt_ValueFromPythonRegistry::InvokeTyped(
+    PyObject* object, const std::type_info& type, VtValue* value)
+{
+    TfPyLock lock;
+    if (PyErr_Occurred()) return false;
+    if (!object || !value) {
+        PyErr_SetString(PyExc_TypeError, "Null typed VtValue conversion argument");
+        return false;
+    }
+    const auto& converters = _GetInstance()._typedExtractors;
+    auto found = converters.find(std::type_index(type));
+    if (found == converters.end()) return false;
+    // A callback can register more converters and rehash the map.
+    TypedExtractor extract = found->second;
+    VtValue converted;
+    const bool matched = extract(object, &converted);
+    if (!matched || PyErr_Occurred()) return false;
+    value->Swap(converted);
+    return true;
+}
+
+void
 Vt_ValueFromPythonRegistry::Register(Extractor lvalue, Extractor rvalue)
 {
     if (!TfPyIsInitialized()) {

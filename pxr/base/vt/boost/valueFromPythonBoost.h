@@ -16,6 +16,21 @@ PXR_NAMESPACE_OPEN_SCOPE
 
 namespace Vt_BoostPythonDetail {
 template <class T>
+bool ExtractTyped(PyObject *obj, VtValue *value)
+{
+    try {
+        pxr_boost::python::extract<T> extract(obj);
+        if (extract.check()) {
+            *value = VtValue(extract());
+            return true;
+        }
+    } catch (pxr_boost::python::error_already_set const &) {
+        // Only the pending Python error crosses the core callback boundary.
+    }
+    return false;
+}
+
+template <class T>
 VtValue Extract(PyObject *obj)
 {
     try {
@@ -30,12 +45,21 @@ VtValue Extract(PyObject *obj)
 }
 }
 
+/// Register requested-type extraction without altering generic type inference.
+template <class T>
+void VtValueFromPythonTyped()
+{
+    Vt_ValueFromPythonRegistry::RegisterTyped(
+        typeid(T), &Vt_BoostPythonDetail::ExtractTyped<T>);
+}
+
 /// Register Boost.Python lvalue and converting rvalue extraction for T.
 /// Include this adapter and link vtBoostPython in binding code.
 template <class T>
 void VtValueFromPython()
 {
     VtValueToPython<T>();
+    VtValueFromPythonTyped<T>();
     Vt_ValueFromPythonRegistry::Register(
         &Vt_BoostPythonDetail::Extract<T &>,
         &Vt_BoostPythonDetail::Extract<T>);
@@ -46,6 +70,8 @@ template <class T>
 void VtValueFromPythonLValue()
 {
     VtValueToPython<T>();
+    Vt_ValueFromPythonRegistry::RegisterTyped(
+        typeid(T), &Vt_BoostPythonDetail::ExtractTyped<T &>);
     Vt_ValueFromPythonRegistry::Register(
         &Vt_BoostPythonDetail::Extract<T &>);
 }

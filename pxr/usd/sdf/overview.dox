@@ -215,6 +215,24 @@ Note that metadata that "appliesTo" prims also applies to variants, as variants 
 
 A plugin metadata field may be associated with a display group by specifying a value for the "displayGroup" field.  This is purely an affordance to allow external applications to group metadata fields together for display purposes.  Sdf does not consume this data itself.
 
+\subsection sdf_metadata_conversion Metadata Dictionary Conversion
+
+SdfConvertToValidMetadataDictionary handles native dictionaries and value
+vectors in the C++ library. For values holding Python sequences, the core
+uses stable Python sequence APIs and Vt's binding-neutral requested-type
+conversion registry. Python modules supply the extraction callbacks; the
+metadata implementation does not depend on a particular binding backend.
+
+The two paths intentionally retain different conversion rules. A native
+vector of VtValue uses VtValue::Cast, whereas a wrapped Python sequence uses
+the binding's extraction rules for the type inferred from its first element.
+For example, native value-vector conversion can cast a floating-point value
+to an integer, while Boost's requested integer extraction rejects that value.
+Loading Vt supplies its builtin conversions without requiring the Sdf Python
+module; Sdf-specific types become available when their bindings are registered.
+Sequence-access exceptions propagate to the binding caller; normal conversion
+failures retain the diagnostic string and invalid-value replacement behavior.
+
 \section sdf_file_format_plugins File Format Plugins
 
 See \subpage Sdf_Page_FileFormatPlugin for information about creating file format plugins..

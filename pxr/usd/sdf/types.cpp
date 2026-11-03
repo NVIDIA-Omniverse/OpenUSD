@@ -25,8 +25,10 @@
 #include "pxr/base/vt/valueComposeOver.h"
 
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
-#include "pxr/external/boost/python/extract.hpp"
-#include "pxr/external/boost/python/handle.hpp"
+#include "pxr/base/tf/pyError.h"
+#include "pxr/base/tf/pyLock.h"
+#include "pxr/base/tf/pyObjWrapper.h"
+#include "pxr/base/vt/valueFromPython.h"
 #endif // PXR_PYTHON_SUPPORT_ENABLED
 
 #include <array>
@@ -663,35 +665,39 @@ bool _PySeqToVtArray(VtValue *value,
     TfPyLock lock;
     TfPyObjWrapper obj = value->UncheckedGet<TfPyObjWrapper>();
     Py_ssize_t len = PySequence_Length(obj.ptr());
+    if (len < 0) throw TfPyErrorAlreadySet();
     VtArray<T> result(len);
     ElemType *elem = result.data();
     for (Py_ssize_t i = 0; i != len; ++i) {
-        pxr_boost::python::handle<> h(PySequence_ITEM(obj.ptr(), i));
-        if (!h) {
-            if (PyErr_Occurred()) {
-                PyErr_Clear();
-            }
-            errMsgs->push_back(
-                TfStringPrintf("failed to obtain element %s from sequence%s",
-                               TfStringify(i).c_str(),
-                               _GetKeyPathText(*keyPath).c_str()));
-            allValid = false;
-        }
-        pxr_boost::python::extract<ElemType> e(h.get());
-        if (!e.check()) {
+        PyObject* item = PySequence_GetItem(obj.ptr(), i);
+        if (!item) throw TfPyErrorAlreadySet();
+        TfPyObjWrapper owner(item, TfPyNewReference);
+        VtValue converted;
+        // Exact backend extraction is intentionally different from the native
+        // vector<VtValue> branch's VtValue::Cast (notably float-to-int coercion).
+        if (!Vt_ValueFromPythonRegistry::InvokeTyped(
+                item, typeid(ElemType), &converted)) {
+            if (PyErr_Occurred()) throw TfPyErrorAlreadySet();
+            VtValue diagnostic;
+            Vt_ValueFromPythonRegistry::InvokeTyped(
+                item, typeid(VtValue), &diagnostic);
+            if (PyErr_Occurred()) throw TfPyErrorAlreadySet();
             errMsgs->push_back(
                 TfStringPrintf("failed to cast sequence element "
                                "%s: %s%s to <%s>",
                                TfStringify(i).c_str(),
-                               _GetDiagnosticStringForValue(
-                                   pxr_boost::python::extract<VtValue>(
-                                       h.get())).c_str(),
+                               _GetDiagnosticStringForValue(diagnostic).c_str(),
                                _GetKeyPathText(*keyPath).c_str(),
                                ArchGetDemangled<ElemType>().c_str()));
             allValid = false;
         }
         else {
-            *elem++ = e();
+            if (!converted.IsHolding<ElemType>()) {
+                PyErr_SetString(PyExc_TypeError,
+                    "Metadata extractor returned an unexpected value type");
+                throw TfPyErrorAlreadySet();
+            }
+            *elem++ = converted.UncheckedGet<ElemType>();
         }
     }
     if (!allValid) {
@@ -746,6 +752,7 @@ _PyObjToAnyVtArray(VtValue *value, std::vector<std::string> *errMsgs,
     }
 
     Py_ssize_t len = PySequence_Length(obj.ptr());
+    if (len < 0) throw TfPyErrorAlreadySet();
     // If this is an empty sequence, we cannot sensibly choose any type for the
     // VtArray.  Error.
     if (len == 0) {
@@ -757,28 +764,21 @@ _PyObjToAnyVtArray(VtValue *value, std::vector<std::string> *errMsgs,
         *value = VtValue();
         return false;
     }
-    // Pull the type from the first element, and try to invoke the conversion
-    // function to convert all elements.
-    pxr_boost::python::handle<> h(PySequence_ITEM(obj.ptr(), 0));
-    if (!h) {
-        if (PyErr_Occurred()) {
-            PyErr_Clear();
-        }
+    // Infer the first element through the binding's complete VtValue
+    // conversion, including builtin special cases and explicit Vt wrappers.
+    PyObject* item = PySequence_GetItem(obj.ptr(), 0);
+    if (!item) throw TfPyErrorAlreadySet();
+    TfPyObjWrapper owner(item, TfPyNewReference);
+    VtValue firstVal;
+    if (!Vt_ValueFromPythonRegistry::InvokeTyped(
+            item, typeid(VtValue), &firstVal)) {
+        if (PyErr_Occurred()) throw TfPyErrorAlreadySet();
         errMsgs->push_back(
             TfStringPrintf("failed to obtain first element from sequence%s",
                            _GetKeyPathText(*keyPath).c_str()));
         *value = VtValue();
         return false;
     }
-    pxr_boost::python::extract<VtValue> e(h.get());
-    if (!e.check()) {
-        errMsgs->push_back(
-            TfStringPrintf("failed to obtain first element from sequence%s",
-                           _GetKeyPathText(*keyPath).c_str()));
-        *value = VtValue();
-        return false;
-    }
-    VtValue firstVal = e();
     if (SdfValueHasValidType(firstVal)) {
         return _GetTypedPySeqToVtArrayFn(
             firstVal.GetType())(value, errMsgs, keyPath);

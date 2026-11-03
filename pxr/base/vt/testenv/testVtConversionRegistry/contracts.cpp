@@ -71,6 +71,43 @@ int Result(PyObject *obj) {
     return value.UncheckedGet<int>();
 }
 
+bool Typed(PyObject*, VtValue* value) {
+    CheckGIL();
+    *value = VtValue(31);
+    return true;
+}
+bool TypedReentrant(PyObject*, VtValue* value) {
+    CheckGIL();
+    Registry::RegisterTyped(typeid(int), Typed);
+    *value = VtValue(30);
+    return true;
+}
+void TestTyped(PyObject* object) {
+    VtValue value(7);
+    CHECK(!Registry::InvokeTyped(object, typeid(int), &value));
+    CHECK(value.Get<int>() == 7);
+    Registry::RegisterTyped(typeid(int), TypedReentrant);
+    CHECK(Registry::InvokeTyped(object, typeid(int), &value) && value.Get<int>() == 30);
+    CHECK(Registry::InvokeTyped(object, typeid(int), &value) && value.Get<int>() == 31);
+    Registry::RegisterTyped(typeid(int), +[](PyObject*, VtValue* out) {
+        *out = VtValue(99);
+        PyErr_SetString(PyExc_ValueError, "typed conversion failed");
+        return true;
+    });
+    CHECK(!Registry::InvokeTyped(object, typeid(int), &value));
+    CHECK(value.Get<int>() == 31 && PyErr_ExceptionMatches(PyExc_ValueError));
+    Registry::RegisterTyped(typeid(int), Typed);
+    CHECK(!Registry::InvokeTyped(object, typeid(int), &value));
+    CHECK(PyErr_ExceptionMatches(PyExc_ValueError));
+    PyErr_Clear();
+    Registry::RegisterTyped(typeid(VtValue), +[](PyObject*, VtValue* out) {
+        *out = VtValue();
+        return true;
+    });
+    CHECK(Registry::InvokeTyped(object, typeid(VtValue), &value) && value.IsEmpty());
+    CHECK(!Registry::HasConversions()); // Typed callbacks never change inference.
+}
+
 int Run() {
     Py_Initialize();
     TfPyLock lock;
@@ -78,6 +115,7 @@ int Run() {
     PyObject *number = PyLong_FromLong(17);
     PyObject *text = PyUnicode_FromString("test");
     PyObject *bytes = PyBytes_FromString("test");
+    TestTyped(number);
     CHECK(Registry::Invoke(number).IsEmpty());
     {
         TfErrorMark mark;
@@ -157,6 +195,9 @@ int Run() {
         try {
             Registry::Register(None);
             CHECK(Result(number) == 2);
+            VtValue typed;
+            CHECK(Registry::InvokeTyped(number, typeid(int), &typed));
+            CHECK(typed.Get<int>() == 31);
         } catch (...) { failure = std::current_exception(); }
     });
     worker.join();

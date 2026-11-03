@@ -33,6 +33,16 @@ adapter translates error_already_set into this contract. Registered callback
 code must remain loaded for the registry's lifetime. New registrations
 invalidate cached lvalue choices and take effect on the next invocation.
 
+Requested-type conversion uses RegisterTyped/InvokeTyped independently of
+generic type inference. A typed callback returns a success flag separately
+from its VtValue, so a successful empty value is distinguishable from a
+non-match. Failure preserves the caller's output and any Python exception.
+VtValueFromPythonTyped<T>() installs the Boost adapter without changing
+generic conversion ordering; the existing registration helpers also install
+their corresponding typed extraction. Builtins and complete VtValue extraction
+are registered by the Vt Python module. This lets native callers retain the
+backend's extraction rules instead of substituting VtValue::Cast semantics.
+
 \subsection vt_to_python To-Python dispatch and binding adapters
 
 The value.h, valueRef.h and valueCommon.h headers contain no Boost.Python

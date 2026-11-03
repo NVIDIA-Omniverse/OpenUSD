@@ -16,6 +16,8 @@
 #include "pxr/base/tf/pySafePython.h"
 #include "pxr/base/tf/singleton.h"
 #include <vector>
+#include <typeindex>
+#include <unordered_map>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
@@ -34,6 +36,23 @@ class VtValue;
 class Vt_ValueFromPythonRegistry {
 public:
     using Extractor = VtValue (*)(PyObject *);
+    using TypedExtractor = bool (*)(PyObject *, VtValue *);
+
+    /// Register extraction with a requested C++ type, independently of the
+    /// generic inference order. New registrations replace the previous callback.
+    /// The callback borrows its input and returns true with a converted value,
+    /// false for a non-match, or false with a pending Python exception on error.
+    /// It must not throw binding-library exceptions. GIL and lifetime rules are
+    /// the same as Register(). Requesting typeid(VtValue) denotes the backend's
+    /// complete generic conversion, including builtins and empty values.
+    VT_API static void RegisterTyped(const std::type_info&, TypedExtractor);
+
+    /// Invoke a requested-type extractor, preserving backend conversion rules
+    /// rather than casting a generically inferred VtValue. Missing registration
+    /// or non-match returns false; errors leave a Python exception pending.
+    /// Output is unchanged on failure. An existing Python error is preserved
+    /// without invoking callbacks. Both operations acquire the GIL internally.
+    VT_API static bool InvokeTyped(PyObject*, const std::type_info&, VtValue*);
 
     /// True once both lvalue and rvalue conversions have been registered.
     VT_API static bool HasConversions();
@@ -66,6 +85,7 @@ private:
 
     std::vector<Extractor> _lvalueExtractors;
     std::vector<Extractor> _rvalueExtractors;
+    std::unordered_map<std::type_index, TypedExtractor> _typedExtractors;
     struct _CachedExtractor {
         TfPyObjWrapper type;
         Extractor extract;

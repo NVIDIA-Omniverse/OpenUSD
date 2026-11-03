@@ -299,6 +299,14 @@ void wrapValue()
     Vt_ValueFromPython();
     Vt_ValueWrapperFromPython();
 
+    // Native clients may request an exact extraction (for example Sdf's raw
+    // metadata sequences), without changing the generic inference ordering.
+    VtValueFromPythonTyped<VtValue>();
+#define REGISTER_TYPED_EXTRACTION(unused, elem) \
+    VtValueFromPythonTyped<VT_TYPE(elem)>();
+    TF_PP_SEQ_FOR_EACH(REGISTER_TYPED_EXTRACTION, ~, VT_BUILTIN_VALUE_TYPES)
+#undef REGISTER_TYPED_EXTRACTION
+
     class_<Vt_ValueWrapper>("_ValueWrapper", no_init)
         .def(self == self)
         .def(self != self)

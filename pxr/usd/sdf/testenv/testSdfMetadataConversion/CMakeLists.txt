@@ -1,0 +1,30 @@
+cmake_minimum_required(VERSION 3.26)
+project(SdfMetadataConversion LANGUAGES CXX)
+find_package(pxr CONFIG REQUIRED PATHS "${USD_PREFIX}" NO_DEFAULT_PATH)
+set(core sdf)
+if(TARGET usd_m)
+    set(core usd_m)
+endif()
+add_library(sdfMetadataNative SHARED native.cpp)
+target_link_libraries(sdfMetadataNative PRIVATE ${core})
+target_compile_features(sdfMetadataNative PRIVATE cxx_std_17)
+target_compile_definitions(sdfMetadataNative PRIVATE
+    Py_LIMITED_API=0x030A0000 Py_NO_LINK_LIB NOMINMAX WIN32_LEAN_AND_MEAN)
+if(MSVC)
+    target_compile_options(sdfMetadataNative PRIVATE /showIncludes)
+endif()
+if(CHECK_METADATA_SOURCE)
+    add_library(sdfMetadataSourceLimited OBJECT ../../types.cpp)
+    target_link_libraries(sdfMetadataSourceLimited PRIVATE ${core})
+    target_compile_features(sdfMetadataSourceLimited PRIVATE cxx_std_17)
+    target_compile_definitions(sdfMetadataSourceLimited PRIVATE
+        SDF_EXPORTS Py_LIMITED_API=0x030A0000 Py_NO_LINK_LIB NOMINMAX WIN32_LEAN_AND_MEAN
+        MFB_PACKAGE_NAME=sdf MFB_ALT_PACKAGE_NAME=sdf MFB_PACKAGE_MODULE=Sdf)
+    if(MSVC)
+        target_compile_options(sdfMetadataSourceLimited PRIVATE /showIncludes)
+    endif()
+endif()
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/native-$<CONFIG>.txt"
+    CONTENT "$<TARGET_FILE:sdfMetadataNative>")
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/runtime-$<CONFIG>.txt"
+    CONTENT "$<TARGET_FILE_DIR:TBB::tbb>")

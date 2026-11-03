@@ -198,6 +198,17 @@ pxr_library(sdf
         doxygen/variableExpressions.dox
 )
 
+if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
+    add_test(NAME testSdfMetadataConversion
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testSdfMetadataConversion.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testSdfMetadataConversion"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testSdfMetadataConversion/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
+endif()
+
 pxr_test_scripts(
     testenv/testSdfAssetPath.py
     testenv/testSdfAttribute.py
