@@ -10,7 +10,7 @@
 #include "pxr/usd/pcp/changes.h"
 #include "pxr/usd/pcp/errors.h"
 #include "pxr/usd/pcp/layerStack.h"
-#include "pxr/usd/pcp/pyUtils.h"
+#include "pxr/usd/pcp/boost/pyUtils.h"
 #include "pxr/usd/pcp/types.h"
 #include "pxr/usd/sdf/primSpec.h"
 #include "pxr/base/tf/boost/makePyConstructor.h"

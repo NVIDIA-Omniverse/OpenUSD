@@ -721,6 +721,14 @@ restrict downstream binding modules. Python-disabled builds retain native
 Sdf functionality without a Python dependency. The complete monolith still
 contains version-specific Python code from components not yet migrated.
 
+Pcp's Python dictionary-to-variant-fallback-map adapter is installed as
+`pxr/usd/pcp/boost/pyUtils.h`. Downstream binding modules request
+`COMPONENTS pcpBoostPython` and link `pcpBoostPython`, an interface target that
+supplies the header, binding requirements, and appropriate core linkage in
+ordinary and monolithic builds. It adds no compiled library. Replace the former
+`pxr/usd/pcp/pyUtils.h` include and rebuild affected binding modules; the helper
+is now inline and is no longer exported by core Pcp.
+
 > [!WARNING]
 > Due to the need to link to the static monolithic library with the
 > `WHOLE_ARCHIVE` option (see [Linking Whole Archives](#linking-whole-archives)),

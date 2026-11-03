@@ -192,10 +192,11 @@ else()
     )
 endif()
 
-# Sdf's reusable file-format argument adapter is used only by the wrap layer.
+# Sdf's file-format and Pcp's variant-fallback adapters belong to the wrap layer.
 foreach(module _usd _usd_d)
     if(TARGET ${module})
         target_link_libraries(${module} PRIVATE sdfBoostPython)
+        target_link_libraries(${module} PRIVATE pcpBoostPython)
     endif()
 endforeach()
 

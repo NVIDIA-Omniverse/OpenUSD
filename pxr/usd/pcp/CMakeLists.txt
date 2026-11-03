@@ -45,9 +45,6 @@ pxr_library(pcp
         targetIndex
         types
 
-    PYTHON_PUBLIC_CLASSES
-        pyUtils
-
     PRIVATE_CLASSES
         debugCodes
         dependencies
@@ -91,6 +88,44 @@ pxr_library(pcp
     DOXYGEN_FILES
         overview.dox
 )
+
+if(PXR_ENABLE_PYTHON_SUPPORT)
+    # The dictionary adapter belongs to binding consumers, not core Pcp.
+    add_library(pcpBoostPython INTERFACE)
+    target_link_libraries(pcpBoostPython INTERFACE tfBoostPython)
+    if(NOT PXR_BUILD_MONOLITHIC)
+        target_link_libraries(pcpBoostPython INTERFACE pcp)
+    endif()
+    _copy_headers(pcpBoostPython FILES boost/pyUtils.h PREFIX "${PXR_PREFIX}")
+    set(pcpBindingIncludeRoot "${PROJECT_BINARY_DIR}/${PXR_INSTALL_SUBDIR}/include")
+    _get_install_dir(include pcpBindingInstallDir)
+    target_sources(pcpBoostPython INTERFACE FILE_SET HEADERS
+        BASE_DIRS "${pcpBindingIncludeRoot}"
+        FILES "${pcpBindingIncludeRoot}/${PXR_PREFIX}/pcp/boost/pyUtils.h")
+    install(TARGETS pcpBoostPython EXPORT pxrTargets
+        FILE_SET HEADERS DESTINATION "${pcpBindingInstallDir}")
+    export(TARGETS pcpBoostPython APPEND FILE "${PROJECT_BINARY_DIR}/pxrTargets.cmake")
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/bindingSurface-$<CONFIG>.txt"
+        CONTENT "headers\t$<TARGET_PROPERTY:pcp,PXR_PUBLIC_HEADERS>\nsources\t$<TARGET_PROPERTY:pcp,SOURCES>\n")
+    foreach(module _pcp _pcp_d)
+        if(TARGET ${module})
+            target_link_libraries(${module} PRIVATE pcpBoostPython)
+        endif()
+    endforeach()
+endif()
+
+if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
+    add_test(NAME testPcpBindingHelpers
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testPcpBindingHelpers.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testPcpBindingHelpers"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testPcpBindingHelpers/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --ownership "${CMAKE_CURRENT_BINARY_DIR}/bindingSurface-$<CONFIG>.txt"
+            --install-manifest "${PROJECT_BINARY_DIR}/install_manifest.txt"
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
+endif()
 
 pxr_test_scripts(
     testenv/testPcpCache.py

@@ -216,4 +216,21 @@ To help analyze the system we provide a few features:
    \li TF_DEBUG runtime debugging flags -- see pcp/debugCodes.h
    \li Optional additional runtime validation that must be compiled in: \p PCP_DIAGNOSTIC_VALIDATION
 
+\subsection pcp_PythonBindingHelpers Python Binding Helpers
+
+PcpVariantFallbackMapFromPython is an inline Boost.Python binding adapter in
+\c pxr/usd/pcp/boost/pyUtils.h. Binding modules request the \c pcpBoostPython
+component from \c find_package(pxr CONFIG REQUIRED) and link the interface
+target of the same name. The target supplies the adapter header and binding
+requirements, selecting ordinary or monolithic core linkage without adding a
+compiled helper library. Core Pcp does not install this header as part of its
+public header surface or compile the conversion implementation.
+
+The helper reports invalid keys or values using the existing Tf diagnostics.
+Empty keys and empty fallback vectors are ignored; entries applied before a
+failure remain in the output map. Sequence-element extraction errors retain
+their Python exception behavior. Consumers of the former flat
+\c pxr/usd/pcp/pyUtils.h header must update the include and rebuild their binding
+modules, since core Pcp no longer exports the helper function.
+
 */
