@@ -4,15 +4,15 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#ifndef PXR_USD_SDF_PY_LIST_EDITOR_PROXY_H
-#define PXR_USD_SDF_PY_LIST_EDITOR_PROXY_H
+#ifndef PXR_USD_SDF_BOOST_PY_LIST_EDITOR_PROXY_H
+#define PXR_USD_SDF_BOOST_PY_LIST_EDITOR_PROXY_H
 
-/// \file sdf/pyListEditorProxy.h
+/// \file sdf/boost/pyListEditorProxy.h
 
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/listEditorProxy.h"
 #include "pxr/usd/sdf/listOp.h"
-#include "pxr/usd/sdf/pyListProxy.h"
+#include "pxr/usd/sdf/boost/pyListProxy.h"
 
 #include "pxr/base/arch/demangle.h"
 #include "pxr/base/tf/diagnostic.h"
@@ -242,4 +242,4 @@ private:
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
-#endif // PXR_USD_SDF_PY_LIST_EDITOR_PROXY_H
+#endif // PXR_USD_SDF_BOOST_PY_LIST_EDITOR_PROXY_H

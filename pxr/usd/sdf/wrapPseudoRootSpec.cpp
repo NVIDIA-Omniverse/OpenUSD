@@ -8,7 +8,7 @@
 
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/pseudoRootSpec.h"
-#include "pxr/usd/sdf/pySpec.h"
+#include "pxr/usd/sdf/boost/pySpec.h"
 
 #include "pxr/external/boost/python.hpp"
 

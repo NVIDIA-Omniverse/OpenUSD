@@ -4,10 +4,10 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 
-#ifndef PXR_USD_SDF_PY_SPEC_H
-#define PXR_USD_SDF_PY_SPEC_H
+#ifndef PXR_USD_SDF_BOOST_PY_SPEC_H
+#define PXR_USD_SDF_BOOST_PY_SPEC_H
 
-/// \file sdf/pySpec.h
+/// \file sdf/boost/pySpec.h
 ///
 /// SdfSpec Python wrapping utilities.
 ///
@@ -506,4 +506,4 @@ struct NewCtor<R(Args...)> : CtorBase<R(Args...)> {
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
-#endif // PXR_USD_SDF_PY_SPEC_H
+#endif // PXR_USD_SDF_BOOST_PY_SPEC_H

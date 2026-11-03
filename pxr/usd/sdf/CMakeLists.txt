@@ -89,17 +89,7 @@ pxr_library(sdf
         zipFile
    
     PYTHON_PUBLIC_CLASSES
-        pyChildrenProxy
-        pyChildrenView
-        pyListEditorProxy
-        pyListOp
-        pyListProxy
-        pyMapEditProxy
         pySpecRegistry
-        pyUtils
-
-    PYTHON_PUBLIC_HEADERS
-        pySpec.h
 
     PUBLIC_HEADERS
         api.h
@@ -201,7 +191,56 @@ pxr_library(sdf
         doxygen/variableExpressions.dox
 )
 
+if(PXR_ENABLE_PYTHON_SUPPORT)
+    # Reusable adapters live in binding modules; the neutral registry stays core.
+    add_library(sdfBoostPython INTERFACE)
+    target_link_libraries(sdfBoostPython INTERFACE tfBoostPython)
+    if(NOT PXR_BUILD_MONOLITHIC)
+        target_link_libraries(sdfBoostPython INTERFACE sdf)
+    endif()
+    set(sdfBindingHeaders
+        boost/pyChildrenProxy.h
+        boost/pyChildrenView.h
+        boost/pyListEditorProxy.h
+        boost/pyListOp.h
+        boost/pyListProxy.h
+        boost/pyMapEditProxy.h
+        boost/pySpec.h
+        boost/pyUtils.h)
+    _copy_headers(sdfBoostPython FILES ${sdfBindingHeaders} PREFIX "${PXR_PREFIX}")
+    set(sdfBindingIncludeRoot "${PROJECT_BINARY_DIR}/${PXR_INSTALL_SUBDIR}/include")
+    _get_install_dir(include sdfBindingInstallDir)
+    set(sdfBindingBuildHeaders "")
+    foreach(header IN LISTS sdfBindingHeaders)
+        list(APPEND sdfBindingBuildHeaders
+            "${sdfBindingIncludeRoot}/${PXR_PREFIX}/sdf/${header}")
+    endforeach()
+    target_sources(sdfBoostPython INTERFACE FILE_SET HEADERS
+        BASE_DIRS "${sdfBindingIncludeRoot}"
+        FILES ${sdfBindingBuildHeaders})
+    install(TARGETS sdfBoostPython EXPORT pxrTargets
+        FILE_SET HEADERS DESTINATION "${sdfBindingInstallDir}")
+    export(TARGETS sdfBoostPython APPEND FILE "${PROJECT_BINARY_DIR}/pxrTargets.cmake")
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/bindingSurface-$<CONFIG>.txt"
+        CONTENT "headers\t$<TARGET_PROPERTY:sdf,PXR_PUBLIC_HEADERS>\nsources\t$<TARGET_PROPERTY:sdf,SOURCES>\n")
+    foreach(module _sdf _sdf_d)
+        if(TARGET ${module})
+            target_link_libraries(${module} PRIVATE sdfBoostPython)
+        endif()
+    endforeach()
+endif()
+
 if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
+    add_test(NAME testSdfBindingHelpers
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testSdfBindingHelpers.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testSdfBindingHelpers"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testSdfBindingHelpers/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --ownership "${CMAKE_CURRENT_BINARY_DIR}/bindingSurface-$<CONFIG>.txt"
+            --install-manifest "${PROJECT_BINARY_DIR}/install_manifest.txt"
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
     add_test(NAME testSdfMetadataConversion
         COMMAND "${PYTHON_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testSdfMetadataConversion.py"

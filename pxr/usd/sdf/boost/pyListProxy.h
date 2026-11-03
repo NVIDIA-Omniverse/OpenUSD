@@ -4,10 +4,10 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#ifndef PXR_USD_SDF_PY_LIST_PROXY_H
-#define PXR_USD_SDF_PY_LIST_PROXY_H
+#ifndef PXR_USD_SDF_BOOST_PY_LIST_PROXY_H
+#define PXR_USD_SDF_BOOST_PY_LIST_PROXY_H
 
-/// \file sdf/pyListProxy.h
+/// \file sdf/boost/pyListProxy.h
 
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/changeBlock.h"
@@ -266,4 +266,4 @@ private:
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
-#endif // PXR_USD_SDF_PY_LIST_PROXY_H
+#endif // PXR_USD_SDF_BOOST_PY_LIST_PROXY_H

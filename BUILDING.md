@@ -706,6 +706,13 @@ stable Python dependency on Windows; `arBoostPython` selects the version-specifi
 binding interface. Link native consumers to `ar` and binding modules to
 `arBoostPython`.
 
+Sdf's reusable wrapping helpers use the `sdfBoostPython` component and target,
+with headers under `pxr/usd/sdf/boost/`. This is also an interface target with
+no compiled helper library. Downstream binding modules can use its spec/proxy
+adapters and inline file-format argument conversion without linking to the
+`_sdf` Python module. Former flat `sdf/py*.h` binding includes must be updated
+and affected binding modules rebuilt.
+
 > [!WARNING]
 > Due to the need to link to the static monolithic library with the
 > `WHOLE_ARCHIVE` option (see [Linking Whole Archives](#linking-whole-archives)),

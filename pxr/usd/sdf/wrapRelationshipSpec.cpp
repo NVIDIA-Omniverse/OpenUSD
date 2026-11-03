@@ -10,7 +10,7 @@
 #include "pxr/usd/sdf/relationshipSpec.h"
 #include "pxr/usd/sdf/path.h"
 #include "pxr/usd/sdf/primSpec.h"
-#include "pxr/usd/sdf/pySpec.h"
+#include "pxr/usd/sdf/boost/pySpec.h"
 #include "pxr/usd/sdf/types.h"
 
 #include "pxr/external/boost/python.hpp"

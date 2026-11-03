@@ -10,7 +10,7 @@
 #include "pxr/base/tf/boost/pyUtilsBoost.h"
 #include "pxr/usd/sdf/spec.h"
 #include "pxr/usd/sdf/path.h"
-#include "pxr/usd/sdf/pySpec.h"
+#include "pxr/usd/sdf/boost/pySpec.h"
 #include "pxr/usd/sdf/schema.h"
 #include "pxr/usd/sdf/types.h"
 #include "pxr/base/tf/boost/pyResultConversions.h"

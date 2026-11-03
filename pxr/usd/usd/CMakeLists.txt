@@ -192,6 +192,13 @@ else()
     )
 endif()
 
+# Sdf's reusable file-format argument adapter is used only by the wrap layer.
+foreach(module _usd _usd_d)
+    if(TARGET ${module})
+        target_link_libraries(${module} PRIVATE sdfBoostPython)
+    endif()
+endforeach()
+
 pxr_test_scripts(
     testenv/testUsdAppliedAPISchemas.py
     testenv/testUsdAttributeBlocking.py

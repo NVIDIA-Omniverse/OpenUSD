@@ -10,8 +10,8 @@
 #include "pxr/usd/sdf/primSpec.h"
 #include "pxr/usd/sdf/attributeSpec.h"
 #include "pxr/usd/sdf/layer.h"
-#include "pxr/usd/sdf/pyChildrenProxy.h"
-#include "pxr/usd/sdf/pySpec.h"
+#include "pxr/usd/sdf/boost/pyChildrenProxy.h"
+#include "pxr/usd/sdf/boost/pySpec.h"
 #include "pxr/usd/sdf/relationshipSpec.h"
 #include "pxr/usd/sdf/variantSetSpec.h"
 

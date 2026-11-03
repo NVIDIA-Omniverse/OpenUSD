@@ -4,10 +4,10 @@
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
 //
-#ifndef PXR_USD_SDF_PY_MAP_EDIT_PROXY_H
-#define PXR_USD_SDF_PY_MAP_EDIT_PROXY_H
+#ifndef PXR_USD_SDF_BOOST_PY_MAP_EDIT_PROXY_H
+#define PXR_USD_SDF_BOOST_PY_MAP_EDIT_PROXY_H
 
-/// \file sdf/pyMapEditProxy.h
+/// \file sdf/boost/pyMapEditProxy.h
 
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/changeBlock.h"
@@ -336,4 +336,4 @@ private:
 
 PXR_NAMESPACE_CLOSE_SCOPE
 
-#endif // PXR_USD_SDF_PY_MAP_EDIT_PROXY_H
+#endif // PXR_USD_SDF_BOOST_PY_MAP_EDIT_PROXY_H

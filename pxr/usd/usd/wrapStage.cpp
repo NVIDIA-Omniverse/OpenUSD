@@ -16,7 +16,7 @@
 
 #include "pxr/usd/usd/pyConversions.h"
 #include "pxr/usd/pcp/pyUtils.h"
-#include "pxr/usd/sdf/pyUtils.h"
+#include "pxr/usd/sdf/boost/pyUtils.h"
 
 #include "pxr/base/tf/weakPtr.h"
 #include "pxr/base/tf/boost/pyContainerConversions.h"

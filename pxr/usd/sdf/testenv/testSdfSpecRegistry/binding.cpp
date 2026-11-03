@@ -3,7 +3,7 @@
 // https://openusd.org/license.
 #include "native.h"
 #include "pxr/usd/sdf/primSpec.h"
-#include "pxr/usd/sdf/pySpec.h"
+#include "pxr/usd/sdf/boost/pySpec.h"
 #include "pxr/external/boost/python.hpp"
 PXR_NAMESPACE_USING_DIRECTIVE
 static SdfSpecHandle Prim() { return SdfSpecHandle(NativePrim()); }

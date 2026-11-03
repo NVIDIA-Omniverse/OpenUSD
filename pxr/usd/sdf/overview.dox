@@ -233,6 +233,23 @@ module; Sdf-specific types become available when their bindings are registered.
 Sequence-access exceptions propagate to the binding caller; normal conversion
 failures retain the diagnostic string and invalid-value replacement behavior.
 
+\subsection sdf_binding_helpers Reusable Python Binding Helpers
+
+Boost.Python helpers for child views/proxies, list operations/editors/proxies,
+map proxies, spec wrapping, and file-format arguments are installed under
+\c pxr/usd/sdf/boost/. Binding modules include those headers and link the
+\c sdfBoostPython CMake interface target. Installed consumers can request
+\c COMPONENTS sdfBoostPython from \c find_package(pxr CONFIG REQUIRED).
+The interface owns these eight headers and supplies the binding requirements
+and core linkage in ordinary and monolithic builds; it adds no compiled
+library. The helpers are separate from the core's public header/source lists.
+
+SdfFileFormatArgumentsFromPython is an inline binding helper, including for
+downstream modules such as Usd. It preserves argument validation and leaves
+the output map unchanged on failure. Consumers do not link to the _sdf module
+to use this helper. Update former flat sdf/py*.h binding includes to their
+sdf/boost/py*.h locations and rebuild affected binding modules.
+
 \subsection sdf_spec_holder_registry Python Spec Holder Registry
 
 The binding-neutral sdf/pySpecRegistry.h interface declares the shared holder
@@ -249,7 +266,7 @@ allowing reentrant registration. Registration is also synchronized before the
 interpreter starts. Registered callback code must remain loaded while used;
 the registry does not own or unload binding modules.
 
-Boost.Python constructor, repr, and holder adapters remain in sdf/pySpec.h.
+Boost.Python constructor, repr, and holder adapters remain in sdf/boost/pySpec.h.
 They translate Boost exceptions to the raw Python error contract at the
 callback boundary. The repr helper always uses Sdf.Find, including when
 compiled in a downstream module. Native callers of the registry require
