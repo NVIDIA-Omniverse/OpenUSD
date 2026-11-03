@@ -2,6 +2,7 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE pcp)
 
 pxr_library(pcp
+    PYTHON_LIMITED_API
     LIBRARIES
         tf
         trace
@@ -89,6 +90,8 @@ pxr_library(pcp
         overview.dox
 )
 
+target_compile_features(pcp PUBLIC cxx_std_17)
+
 if(PXR_ENABLE_PYTHON_SUPPORT)
     # The dictionary adapter belongs to binding consumers, not core Pcp.
     add_library(pcpBoostPython INTERFACE)
@@ -125,6 +128,56 @@ if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
             --install-manifest "${PROJECT_BINARY_DIR}/install_manifest.txt"
             --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
             --config "$<CONFIG>")
+endif()
+
+if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS
+        AND NOT PXR_BUILD_MONOLITHIC)
+    get_target_property(pcpCoreHeaders pcp PXR_PUBLIC_HEADERS)
+    list(REMOVE_DUPLICATES pcpCoreHeaders)
+    list(SORT pcpCoreHeaders)
+    string(REPLACE ";" "\n" pcpCoreHeaders "${pcpCoreHeaders}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt" "${pcpCoreHeaders}\n")
+    get_target_property(pcpSources pcp SOURCES)
+    set(pcpCoreSources "")
+    foreach(source IN LISTS pcpSources)
+        if(source MATCHES "[.]cpp$" AND NOT source MATCHES "pch[.]cpp$")
+            if(NOT IS_ABSOLUTE "${source}")
+                if(source STREQUAL "moduleDeps.cpp")
+                    set(source "${CMAKE_CURRENT_BINARY_DIR}/${source}")
+                else()
+                    set(source "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+                endif()
+            endif()
+            string(APPEND pcpCoreSources "${source}\n")
+        endif()
+    endforeach()
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/coreSources.txt" "${pcpCoreSources}")
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/coreBoundary-$<CONFIG>.txt"
+        CONTENT "links\t$<TARGET_PROPERTY:pcp,LINK_LIBRARIES>\ninterface_links\t$<TARGET_PROPERTY:pcp,INTERFACE_LINK_LIBRARIES>\ndefinitions\t$<TARGET_PROPERTY:pcp,COMPILE_DEFINITIONS>\ninterface_definitions\t$<TARGET_PROPERTY:pcp,INTERFACE_COMPILE_DEFINITIONS>\n")
+    add_test(NAME testPcpCoreDependencyBoundary
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testPcpCoreDependencyBoundary.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testPcpCoreDependencyBoundary"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testPcpCoreDependencyBoundary/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --headers "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt"
+            --sources "${CMAKE_CURRENT_BINARY_DIR}/coreSources.txt"
+            --ownership "${CMAKE_CURRENT_BINARY_DIR}/coreBoundary-$<CONFIG>.txt"
+            --module-deps "${CMAKE_CURRENT_BINARY_DIR}/moduleDeps.cpp"
+            --install-manifest "${PROJECT_BINARY_DIR}/install_manifest.txt"
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
+    if(WIN32)
+        add_test(NAME testPcpPackageComponents
+            COMMAND "${PYTHON_EXECUTABLE}"
+                "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents.py"
+                --source-dir "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents"
+                --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testPcpPackageComponents/$<CONFIG>"
+                --prefix "${CMAKE_INSTALL_PREFIX}"
+                --core-component pcp --binding-component pcpBoostPython
+                --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+                --config "$<CONFIG>")
+    endif()
 endif()
 
 pxr_test_scripts(

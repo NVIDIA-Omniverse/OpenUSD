@@ -691,7 +691,7 @@ version-specific Python code from other core components.
 
 The same distinction applies to Vt: use the `vt` component and target for its
 stable core in a non-monolithic package, or `vtBoostPython` for downstream
-Boost.Python modules. Core components `tf`, `gf`, `vt`, `ar`, and `sdf` do not
+Boost.Python modules. Core components `tf`, `gf`, `vt`, `ar`, `sdf`, and `pcp` do not
 request the bindings' exact Python minor version on Windows. Binding components and the
 default complete package retain that requirement. Python runtime deployment
 belongs to the consuming application.
@@ -728,6 +728,13 @@ supplies the header, binding requirements, and appropriate core linkage in
 ordinary and monolithic builds. It adds no compiled library. Replace the former
 `pxr/usd/pcp/pyUtils.h` include and rebuild affected binding modules; the helper
 is now inline and is no longer exported by core Pcp.
+
+Native consumers of a non-monolithic Windows package request `COMPONENTS pcp`
+and link `pcp`. Core Pcp compiles with a private `Py_LIMITED_API` definition;
+its exported interface carries the stable Python dependency through its core
+dependencies, without requiring the bindings' exact Python minor version.
+Python-disabled builds support native composition without Python. The complete
+monolith still contains version-specific code from unmigrated components.
 
 > [!WARNING]
 > Due to the need to link to the static monolithic library with the

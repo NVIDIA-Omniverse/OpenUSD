@@ -4,7 +4,7 @@
 # (the resolved location of each selected compiled library).
 # Static builds also define PXR_STATIC as before.
 #
-# Components tf/gf/vt/ar/sdf select the stable core libraries; the *BoostPython components
+# Components tf/gf/vt/ar/sdf/pcp select the stable core libraries; the *BoostPython components
 # select the version-specific Boost.Python binding interfaces. No components
 # selects the complete package for compatibility with existing consumers.
 #
@@ -26,7 +26,7 @@ include(CMakeFindDependencyMacro)
 
 set(_pxr_binding_python TRUE)
 set(_pxr_libraries "@PXR_ALL_LIBS@")
-set(_pxr_stable_components tf gf vt ar sdf)
+set(_pxr_stable_components tf gf vt ar sdf pcp)
 set(_pxr_binding_components tfBoostPython vtBoostPython arBoostPython sdfBoostPython pcpBoostPython)
 if(pxr_FIND_COMPONENTS)
     set(_pxr_binding_python FALSE)
@@ -44,7 +44,7 @@ if(pxr_FIND_COMPONENTS)
         elseif(pxr_FIND_REQUIRED_${_pxr_component})
             set(pxr_FOUND FALSE)
             set(pxr_NOT_FOUND_MESSAGE
-                "Unsupported pxr component '${_pxr_component}'. Core components tf/gf/vt/ar/sdf require a non-monolithic build; tfBoostPython/vtBoostPython/arBoostPython/sdfBoostPython/pcpBoostPython require Python support.")
+                "Unsupported pxr component '${_pxr_component}'. Core components tf/gf/vt/ar/sdf/pcp require a non-monolithic build; tfBoostPython/vtBoostPython/arBoostPython/sdfBoostPython/pcpBoostPython require Python support.")
             return()
         endif()
     endforeach()

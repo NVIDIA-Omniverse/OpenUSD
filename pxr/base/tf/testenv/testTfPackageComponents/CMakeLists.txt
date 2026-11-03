@@ -18,7 +18,8 @@ else()
 endif()
 
 if(PACKAGE_COMPONENT STREQUAL "tf" OR PACKAGE_COMPONENT STREQUAL "vt"
-        OR PACKAGE_COMPONENT STREQUAL "ar" OR PACKAGE_COMPONENT STREQUAL "sdf")
+        OR PACKAGE_COMPONENT STREQUAL "ar" OR PACKAGE_COMPONENT STREQUAL "sdf"
+        OR PACKAGE_COMPONENT STREQUAL "pcp")
     if(TARGET Python3::Python OR NOT TARGET Python3::SABIModule)
         message(FATAL_ERROR "Core discovery must supply only the stable Python target")
     endif()
@@ -38,6 +39,10 @@ if(PACKAGE_COMPONENT STREQUAL "tf" OR PACKAGE_COMPONENT STREQUAL "vt"
     if(PACKAGE_COMPONENT STREQUAL "sdf")
         set(componentIncludes "#include <pxr/usd/sdf/types.h>\n#include <pxr/base/vt/dictionary.h>")
         set(componentCheck "PXR_NS::VtDictionary dictionary; dictionary[\"value\"] = PXR_NS::VtValue(42); std::string error; valid = valid && PXR_NS::SdfConvertToValidMetadataDictionary(&dictionary, &error) && error.empty();")
+    endif()
+    if(PACKAGE_COMPONENT STREQUAL "pcp")
+        set(componentIncludes "#include <pxr/usd/pcp/mapFunction.h>")
+        set(componentCheck "valid = valid && PXR_NS::PcpMapFunction::Identity().MapSourceToTarget(PXR_NS::SdfPath(\"/Root\")) == PXR_NS::SdfPath(\"/Root\");")
     endif()
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/consumer.cpp" "
 #include <pxr/base/tf/token.h>

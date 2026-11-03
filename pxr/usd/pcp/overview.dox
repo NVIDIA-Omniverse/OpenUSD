@@ -218,6 +218,14 @@ To help analyze the system we provide a few features:
 
 \subsection pcp_PythonBindingHelpers Python Binding Helpers
 
+Core Pcp compiles against the Python Limited API when Python support is enabled.
+Native consumers of a non-monolithic Windows package request the \c pcp
+component and link the \c pcp target, whose core dependencies supply the stable
+Python interface without requiring the bindings' exact Python minor version.
+The Limited API definition is private and does not restrict binding modules.
+Python-disabled builds retain native composition without Python. This guarantee
+does not extend to the complete monolith while other components remain unmigrated.
+
 PcpVariantFallbackMapFromPython is an inline Boost.Python binding adapter in
 \c pxr/usd/pcp/boost/pyUtils.h. Binding modules request the \c pcpBoostPython
 component from \c find_package(pxr CONFIG REQUIRED) and link the interface
