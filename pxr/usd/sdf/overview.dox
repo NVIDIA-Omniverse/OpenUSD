@@ -233,6 +233,30 @@ module; Sdf-specific types become available when their bindings are registered.
 Sequence-access exceptions propagate to the binding caller; normal conversion
 failures retain the diagnostic string and invalid-value replacement behavior.
 
+\subsection sdf_spec_holder_registry Python Spec Holder Registry
+
+The binding-neutral sdf/pySpecRegistry.h interface declares the shared holder
+registry compiled into the C++ Sdf library. A backend registers a creator taking
+an SdfSpec reference and returning a new Python reference, or null with an
+exception set. Native spec/schema casting selects the actual spec type,
+including the requested-type distinction between variant and prim views.
+Dormant or incompatible specs return None. Unknown registrations, duplicates,
+and missing creators retain the existing Tf diagnostic behavior; duplicate
+registration never replaces the original creator.
+
+Dispatch acquires the GIL and invokes callbacks outside the registry mutex,
+allowing reentrant registration. Registration is also synchronized before the
+interpreter starts. Registered callback code must remain loaded while used;
+the registry does not own or unload binding modules.
+
+Boost.Python constructor, repr, and holder adapters remain in sdf/pySpec.h.
+They translate Boost exceptions to the raw Python error contract at the
+callback boundary. The repr helper always uses Sdf.Find, including when
+compiled in a downstream module. Native callers of the registry require
+neither this adapter header nor a link to the _sdf Python module.
+Binding modules using the former out-of-line constructor/repr helpers must be
+rebuilt against the updated adapter header.
+
 \section sdf_file_format_plugins File Format Plugins
 
 See \subpage Sdf_Page_FileFormatPlugin for information about creating file format plugins..

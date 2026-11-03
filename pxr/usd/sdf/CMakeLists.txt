@@ -95,8 +95,11 @@ pxr_library(sdf
         pyListOp
         pyListProxy
         pyMapEditProxy
-        pySpec
+        pySpecRegistry
         pyUtils
+
+    PYTHON_PUBLIC_HEADERS
+        pySpec.h
 
     PUBLIC_HEADERS
         api.h
@@ -204,6 +207,14 @@ if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
             "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testSdfMetadataConversion.py"
             --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testSdfMetadataConversion"
             --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testSdfMetadataConversion/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
+    add_test(NAME testSdfSpecRegistry
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testSdfSpecRegistry.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testSdfSpecRegistry"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testSdfSpecRegistry/$<CONFIG>"
             --prefix "${CMAKE_INSTALL_PREFIX}"
             --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
             --config "$<CONFIG>")

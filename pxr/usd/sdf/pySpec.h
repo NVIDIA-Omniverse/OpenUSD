@@ -48,6 +48,9 @@
 
 #include "pxr/pxr.h"
 #include "pxr/usd/sdf/api.h"
+#include "pxr/usd/sdf/pySpecRegistry.h"
+#include "pxr/usd/sdf/layer.h"
+#include "pxr/usd/sdf/spec.h"
 
 #include "pxr/external/boost/python/def_visitor.hpp"
 #include "pxr/external/boost/python/dict.hpp"
@@ -88,7 +91,11 @@ namespace Sdf_PySpecDetail {
 
 namespace bp = pxr_boost::python;
 
-SDF_API bp::object _DummyInit(bp::tuple const & /* args */, bp::dict const & /* kw */);
+inline bp::object
+_DummyInit(bp::tuple const & /* args */, bp::dict const & /* kw */)
+{
+    return bp::object();
+}
 
 template <typename CTOR>
 struct NewVisitor : bp::def_visitor<NewVisitor<CTOR> > {
@@ -190,14 +197,18 @@ SdfMakePySpecConstructor(T *func, const std::string &doc = std::string())
 
 namespace Sdf_PySpecDetail {
 
-// Create the repr for a spec using Sdf.Find().
-SDF_API std::string _SpecRepr(const bp::object&, const SdfSpec*);
-
-// Registration for spec types to functions to create a holder with the spec
-// corresponding to the spec type.
-typedef PyObject* (*_HolderCreator)(const SdfSpec&);
-SDF_API void _RegisterHolderCreator(const std::type_info&, _HolderCreator);
-SDF_API PyObject* _CreateHolder(const std::type_info&, const SdfSpec&);
+// Binding-only repr helper. Keep the canonical Sdf prefix even when this
+// header is instantiated in a downstream module with another package name.
+inline std::string
+_SpecRepr(const bp::object& self, const SdfSpec* spec)
+{
+    if (!spec || spec->IsDormant() || !spec->GetLayer()) {
+        return "<dormant " + TfPyGetClassName(self.ptr()) + ">";
+    }
+    const SdfLayerHandle layer = spec->GetLayer();
+    return "Sdf.Find(" + TfPyRepr(layer->GetIdentifier()) + ", " +
+        TfPyRepr(spec->GetPath().GetString()) + ")";
+}
 
 template <class _SpecType>
 struct _ConstHandleToPython {
@@ -229,14 +240,21 @@ public:
 
     static PyObject* convert(const Handle& x)
     {
-        return _CreateHolder(typeid(SpecType), x.GetSpec());
+        PyObject* result = _CreateHolder(typeid(SpecType), x.GetSpec());
+        if (!result) bp::throw_error_already_set();
+        return result;
     }
 
 private:
     static PyObject* _Creator(const SdfSpec& spec)
     {
-        Handle x(Sdf_CastAccess::CastSpec<SpecType,SdfSpec>(spec));
-        return bp::objects::make_ptr_instance<SpecType, Holder>::execute(x);
+        try {
+            Handle x(Sdf_CastAccess::CastSpec<SpecType,SdfSpec>(spec));
+            return bp::objects::make_ptr_instance<SpecType, Holder>::execute(x);
+        } catch (bp::error_already_set const&) {
+            // Pass only the Python error state through the neutral registry.
+            return nullptr;
+        }
     }
 
     template <class T>
@@ -267,7 +285,7 @@ private:
     static PyObject* _Convert(const void* p)
     {
         const Handle& x = *static_cast<const Handle*>(p);
-        return _CreateHolder(typeid(SpecType), x.GetSpec());
+        return convert(x);
     }
 
 private:
