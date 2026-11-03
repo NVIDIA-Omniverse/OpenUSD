@@ -2,6 +2,7 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE sdf)
 
 pxr_library(sdf
+    PYTHON_LIMITED_API
     LIBRARIES
         arch
         tf
@@ -191,6 +192,8 @@ pxr_library(sdf
         doxygen/variableExpressions.dox
 )
 
+target_compile_features(sdf PUBLIC cxx_std_17)
+
 if(PXR_ENABLE_PYTHON_SUPPORT)
     # Reusable adapters live in binding modules; the neutral registry stays core.
     add_library(sdfBoostPython INTERFACE)
@@ -257,6 +260,56 @@ if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
             --prefix "${CMAKE_INSTALL_PREFIX}"
             --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
             --config "$<CONFIG>")
+endif()
+
+if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS
+        AND NOT PXR_BUILD_MONOLITHIC)
+    get_target_property(sdfCoreHeaders sdf PXR_PUBLIC_HEADERS)
+    list(REMOVE_DUPLICATES sdfCoreHeaders)
+    list(SORT sdfCoreHeaders)
+    string(REPLACE ";" "\n" sdfCoreHeaders "${sdfCoreHeaders}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt" "${sdfCoreHeaders}\n")
+    get_target_property(sdfSources sdf SOURCES)
+    set(sdfCoreSources "")
+    foreach(source IN LISTS sdfSources)
+        if(source MATCHES "[.]cpp$" AND NOT source MATCHES "pch[.]cpp$")
+            if(NOT IS_ABSOLUTE "${source}")
+                if(source STREQUAL "moduleDeps.cpp")
+                    set(source "${CMAKE_CURRENT_BINARY_DIR}/${source}")
+                else()
+                    set(source "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+                endif()
+            endif()
+            string(APPEND sdfCoreSources "${source}\n")
+        endif()
+    endforeach()
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/coreSources.txt" "${sdfCoreSources}")
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/coreBoundary-$<CONFIG>.txt"
+        CONTENT "links\t$<TARGET_PROPERTY:sdf,LINK_LIBRARIES>\ninterface_links\t$<TARGET_PROPERTY:sdf,INTERFACE_LINK_LIBRARIES>\ndefinitions\t$<TARGET_PROPERTY:sdf,COMPILE_DEFINITIONS>\ninterface_definitions\t$<TARGET_PROPERTY:sdf,INTERFACE_COMPILE_DEFINITIONS>\n")
+    add_test(NAME testSdfCoreDependencyBoundary
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testSdfCoreDependencyBoundary.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testSdfCoreDependencyBoundary"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testSdfCoreDependencyBoundary/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --headers "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt"
+            --sources "${CMAKE_CURRENT_BINARY_DIR}/coreSources.txt"
+            --ownership "${CMAKE_CURRENT_BINARY_DIR}/coreBoundary-$<CONFIG>.txt"
+            --module-deps "${CMAKE_CURRENT_BINARY_DIR}/moduleDeps.cpp"
+            --install-manifest "${PROJECT_BINARY_DIR}/install_manifest.txt"
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
+    if(WIN32)
+        add_test(NAME testSdfPackageComponents
+            COMMAND "${PYTHON_EXECUTABLE}"
+                "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents.py"
+                --source-dir "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents"
+                --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testSdfPackageComponents/$<CONFIG>"
+                --prefix "${CMAKE_INSTALL_PREFIX}"
+                --core-component sdf --binding-component sdfBoostPython
+                --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+                --config "$<CONFIG>")
+    endif()
 endif()
 
 pxr_test_scripts(

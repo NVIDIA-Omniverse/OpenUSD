@@ -691,8 +691,8 @@ version-specific Python code from other core components.
 
 The same distinction applies to Vt: use the `vt` component and target for its
 stable core in a non-monolithic package, or `vtBoostPython` for downstream
-Boost.Python modules. Core components `tf`, `gf`, `vt`, and `ar` do not request the
-bindings' exact Python minor version on Windows. Binding components and the
+Boost.Python modules. Core components `tf`, `gf`, `vt`, `ar`, and `sdf` do not
+request the bindings' exact Python minor version on Windows. Binding components and the
 default complete package retain that requirement. Python runtime deployment
 belongs to the consuming application.
 
@@ -712,6 +712,14 @@ no compiled helper library. Downstream binding modules can use its spec/proxy
 adapters and inline file-format argument conversion without linking to the
 `_sdf` Python module. Former flat `sdf/py*.h` binding includes must be updated
 and affected binding modules rebuilt.
+
+For native Sdf consumers in a non-monolithic package, request `COMPONENTS sdf`
+and link `sdf`. On Windows this selects the stable Python dependency without
+requiring the Python minor version used to build the bindings. Sdf's core
+sources compile with `Py_LIMITED_API`; the definition is private and does not
+restrict downstream binding modules. Python-disabled builds retain native
+Sdf functionality without a Python dependency. The complete monolith still
+contains version-specific Python code from components not yet migrated.
 
 > [!WARNING]
 > Due to the need to link to the static monolithic library with the

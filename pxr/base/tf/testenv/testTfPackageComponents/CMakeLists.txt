@@ -18,7 +18,7 @@ else()
 endif()
 
 if(PACKAGE_COMPONENT STREQUAL "tf" OR PACKAGE_COMPONENT STREQUAL "vt"
-        OR PACKAGE_COMPONENT STREQUAL "ar")
+        OR PACKAGE_COMPONENT STREQUAL "ar" OR PACKAGE_COMPONENT STREQUAL "sdf")
     if(TARGET Python3::Python OR NOT TARGET Python3::SABIModule)
         message(FATAL_ERROR "Core discovery must supply only the stable Python target")
     endif()
@@ -34,6 +34,10 @@ if(PACKAGE_COMPONENT STREQUAL "tf" OR PACKAGE_COMPONENT STREQUAL "vt"
     if(PACKAGE_COMPONENT STREQUAL "ar")
         set(componentIncludes "#include <pxr/usd/ar/defaultResolverContext.h>\n#include <pxr/usd/ar/resolverContext.h>")
         set(componentCheck "PXR_NS::ArResolverContext context{PXR_NS::ArDefaultResolverContext()}; valid = valid && context.Get<PXR_NS::ArDefaultResolverContext>() != nullptr;")
+    endif()
+    if(PACKAGE_COMPONENT STREQUAL "sdf")
+        set(componentIncludes "#include <pxr/usd/sdf/types.h>\n#include <pxr/base/vt/dictionary.h>")
+        set(componentCheck "PXR_NS::VtDictionary dictionary; dictionary[\"value\"] = PXR_NS::VtValue(42); std::string error; valid = valid && PXR_NS::SdfConvertToValidMetadataDictionary(&dictionary, &error) && error.empty();")
     endif()
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/consumer.cpp" "
 #include <pxr/base/tf/token.h>

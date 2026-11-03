@@ -235,6 +235,14 @@ failures retain the diagnostic string and invalid-value replacement behavior.
 
 \subsection sdf_binding_helpers Reusable Python Binding Helpers
 
+The C++ Sdf library compiles against the Python Limited API when Python support
+is enabled. Native consumers of a non-monolithic Windows package request the
+\c sdf component and link the \c sdf target, which supplies the stable Python
+dependency without selecting the binding layer's exact Python minor version.
+The Limited API definition is private to the core build. Python-disabled
+builds have no Python dependency. This guarantee does not extend to the whole
+monolithic library while other components still use the full Python API.
+
 Boost.Python helpers for child views/proxies, list operations/editors/proxies,
 map proxies, spec wrapping, and file-format arguments are installed under
 \c pxr/usd/sdf/boost/. Binding modules include those headers and link the
