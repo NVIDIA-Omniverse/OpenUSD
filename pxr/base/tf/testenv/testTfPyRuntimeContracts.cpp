@@ -12,6 +12,7 @@
 #include "pxr/base/tf/pyError.h"
 #include "pxr/base/tf/pyExceptionState.h"
 #include "pxr/base/tf/pyIdentity.h"
+#include "pxr/base/tf/pyInterpreter.h"
 #include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/pyMakePyPtr.h"
 #include "pxr/base/tf/pyNoticeCallbackImpl.h"
@@ -358,6 +359,58 @@ void TestExceptionOwnership()
     PyErr_Clear();
 }
 
+void TestInterpreterErrorContracts()
+{
+    // Capture Python's error output without importing any binding module.
+    struct StderrRestorer {
+        TfPyObjWrapper previous{PySys_GetObject("stderr"), TfPyBorrowedReference};
+        ~StderrRestorer() { PySys_SetObject("stderr", previous.ptr()); }
+    } restore;
+    TfPyObjWrapper errorOutput(Eval("__import__('io').StringIO()"), TfPyNewReference);
+    CHECK(PySys_SetObject("stderr", errorOutput.ptr()) == 0);
+
+    TfErrorMark errors;
+    CHECK(TfPyRunSimpleString("tf_simple_string_contract = 42") == 0);
+    CHECK(errors.IsClean() && !PyErr_Occurred());
+    for (const char* command : {"raise NameError('simple string runtime failure')",
+                                "if :"}) {
+        const int status = TfPyRunSimpleString(command);
+        const bool clean = errors.IsClean();
+        errors.Clear(); // Keep the failing-regression case from leaking errors.
+        CHECK(status == -1 && !PyErr_Occurred());
+        CHECK(clean);
+    }
+    TfPyObjWrapper output(PyObject_CallMethod(errorOutput.ptr(), "getvalue", nullptr),
+                          TfPyNewReference);
+    CHECK(output.ptr());
+    TfPyObjWrapper bytes(PyUnicode_AsEncodedString(output.ptr(), "utf-8", "strict"),
+                         TfPyNewReference);
+    CHECK(bytes.ptr());
+    const std::string printed(PyBytes_AsString(bytes.ptr()));
+    CHECK(printed.find("Traceback (most recent call last):") != std::string::npos);
+    CHECK(printed.find("NameError: simple string runtime failure") != std::string::npos);
+    CHECK(printed.find("SyntaxError") != std::string::npos);
+
+    // A failure must not poison subsequent calls or the shared __main__ scope.
+    CHECK(TfPyRunSimpleString("tf_simple_string_contract += 1") == 0);
+    PyObject* mainModule = PyImport_AddModule("__main__");
+    CHECK(mainModule);
+    PyObject* value = PyDict_GetItemString(PyModule_GetDict(mainModule),
+                                         "tf_simple_string_contract");
+    CHECK(value && PyLong_AsLong(value) == 43);
+    CHECK(errors.IsClean() && !PyErr_Occurred());
+
+    // RunString intentionally transports the original exception as a Tf error.
+    PyObject* result = TfPyRunString("raise NameError('transported failure')",
+        Py_file_input, nullptr, nullptr);
+    const bool failed = !result;
+    Py_XDECREF(result);
+    CHECK(failed && !errors.IsClean() && !PyErr_Occurred());
+    const auto* exception = errors.GetBegin()->GetInfo<TfPyExceptionState>();
+    CHECK(exception && exception->GetType() == PyExc_NameError);
+    errors.Clear();
+}
+
 int RunContracts()
 {
     Py_Initialize();
@@ -376,6 +429,7 @@ int RunContracts()
     run("Python/C++ ownership transfer", TestRefPtrOwnership);
     run("callback references, errors and worker-thread GIL", [&] { TestCallbackContracts(lock); });
     run("exception-state reference ownership", TestExceptionOwnership);
+    run("SimpleString reporting versus RunString exception transport", TestInterpreterErrorContracts);
     CHECK(!PyErr_Occurred());
     CHECK(!PyDict_GetItemString(PyImport_GetModuleDict(), "pxr.Tf"));
     Py_DECREF(_boxType);

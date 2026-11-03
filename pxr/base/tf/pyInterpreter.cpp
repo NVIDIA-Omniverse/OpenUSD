@@ -162,16 +162,18 @@ TfPyRunSimpleString(const std::string & cmd)
     PyObject *mainModule = PyImport_AddModule("__main__");
     PyObject *globals = mainModule ? PyModule_GetDict(mainModule) : nullptr;
     if (!globals) {
-        TfPyConvertPythonExceptionToTfErrors();
-        PyErr_Clear();
+        PyErr_Print();
         return -1;
     }
 
     PyObject *result = _CompileAndEval(cmd, "<string>", Py_file_input,
                                        globals, globals);
     if (!result) {
-        TfPyConvertPythonExceptionToTfErrors();
-        PyErr_Clear();
+        // Match PyRun_SimpleString: print and clear the Python exception,
+        // then return failure. Unlike TfPyRunString, this must not save the
+        // exception as a Tf error: callers such as Plug report their own
+        // failure, which must not be replaced by the original Python error.
+        PyErr_Print();
         return -1;
     }
 

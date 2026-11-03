@@ -27,7 +27,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 TF_API
 extern void TfPyInitialize();
 
-/// Runs the given string using PyRun_SimpleString().
+/// Runs the given string with the semantics of PyRun_SimpleString().
 ///
 /// Starts the interpreter if necessary. Deals with necessary thread state
 /// setup.
@@ -35,6 +35,9 @@ extern void TfPyInitialize();
 /// Callers are not required to hold the GIL, though of course they may.
 ///
 /// Returns zero on success, nonzero on failure.
+/// Python exceptions are printed to Python's standard error stream and
+/// cleared, rather than converted to Tf errors as in TfPyRunString().
+/// As with PyRun_SimpleString(), an unhandled SystemExit may exit the process.
 TF_API
 extern int TfPyRunSimpleString(const std::string & cmd);
 
