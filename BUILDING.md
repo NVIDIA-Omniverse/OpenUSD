@@ -736,6 +736,15 @@ dependencies, without requiring the bindings' exact Python minor version.
 Python-disabled builds support native composition without Python. The complete
 monolith still contains version-specific code from unmigrated components.
 
+Usd's binding-neutral conversion services are declared in
+`pxr/usd/usd/pyConversionRuntime.h`. They use Vt's shared conversion registries,
+the Python Limited API, and native Sdf schema validation. The compatibility
+`pyConversions.h` facade supplies inline Boost.Python overloads; binding modules
+must rebuild against it because those overloads are no longer exported by core
+Usd. Native consumers can include the runtime header without Boost. This split
+does not yet make the entire Usd target or its installed binding surface stable;
+the remaining binding helpers and package interface still need separation.
+
 > [!WARNING]
 > Due to the need to link to the static monolithic library with the
 > `WHOLE_ARCHIVE` option (see [Linking Whole Archives](#linking-whole-archives)),

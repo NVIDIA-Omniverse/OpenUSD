@@ -63,7 +63,10 @@ pxr_library(usd
 
     PYTHON_PUBLIC_CLASSES
         pyEditContext
-        pyConversions
+        pyConversionRuntime
+
+    PYTHON_PUBLIC_HEADERS
+        pyConversions.h
 
     PRIVATE_CLASSES
         clip
@@ -199,6 +202,17 @@ foreach(module _usd _usd_d)
         target_link_libraries(${module} PRIVATE pcpBoostPython)
     endif()
 endforeach()
+
+if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
+    add_test(NAME testUsdConversionRuntime
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testUsdConversionRuntime.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testUsdConversionRuntime"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testUsdConversionRuntime/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
+endif()
 
 pxr_test_scripts(
     testenv/testUsdAppliedAPISchemas.py

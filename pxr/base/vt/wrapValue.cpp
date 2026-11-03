@@ -302,6 +302,12 @@ void wrapValue()
     // Native clients may request an exact extraction (for example Sdf's raw
     // metadata sequences), without changing the generic inference ordering.
     VtValueFromPythonTyped<VtValue>();
+    // Usd metadata distinguishes mandatory token-vector extraction from the
+    // checked string-vector/array alternatives. Keep those backend rules in
+    // the module, available even before Usd's bindings have been loaded.
+    VtValueFromPythonTyped<TfTokenVector, true>();
+    VtValueFromPythonTyped<std::vector<std::string>>();
+    VtValueFromPythonTyped<VtStringArray>();
 #define REGISTER_TYPED_EXTRACTION(unused, elem) \
     VtValueFromPythonTyped<VT_TYPE(elem)>();
     TF_PP_SEQ_FOR_EACH(REGISTER_TYPED_EXTRACTION, ~, VT_BUILTIN_VALUE_TYPES)

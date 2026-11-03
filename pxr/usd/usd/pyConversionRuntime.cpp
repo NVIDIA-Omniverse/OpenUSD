@@ -5,7 +5,7 @@
 // https://openusd.org/license.
 //
 #include "pxr/pxr.h"
-#include "pxr/usd/usd/pyConversions.h"
+#include "pxr/usd/usd/pyConversionRuntime.h"
 
 #include "pxr/base/vt/dictionary.h"
 #include "pxr/base/vt/value.h"
@@ -19,36 +19,63 @@
 #include "pxr/usd/sdf/types.h"
 
 #include "pxr/base/tf/pyLock.h"
-#include "pxr/base/tf/boost/pyObjWrapperBoost.h"
-#include "pxr/base/tf/boost/pyUtilsBoost.h"
+#include "pxr/base/tf/pyError.h"
+#include "pxr/base/tf/pyUtils.h"
+#include "pxr/base/vt/valueFromPython.h"
+#include "pxr/base/vt/valueToPython.h"
 
-#include "pxr/external/boost/python/object.hpp"
 #include <string>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
 
-// XXX: This function is no longer required -- remove.
+namespace {
+void _CheckPythonError()
+{
+    if (PyErr_Occurred()) throw TfPyErrorAlreadySet();
+}
+
+template <class T>
+bool _ExtractTyped(PyObject* object, VtValue* value)
+{
+    VtValue converted;
+    if (!Vt_ValueFromPythonRegistry::InvokeTyped(object, typeid(T), &converted)) {
+        _CheckPythonError();
+        return false;
+    }
+    if (!converted.IsHolding<T>()) {
+        TfPyThrowTypeError("Metadata extractor returned an unexpected value type");
+    }
+    value->Swap(converted);
+    return true;
+}
+
+VtValue _ExtractValue(PyObject* object)
+{
+    VtValue value;
+    if (!Vt_ValueFromPythonRegistry::InvokeTyped(object, typeid(VtValue), &value)) {
+        _CheckPythonError();
+        TfPyThrowTypeError("No Python-to-VtValue conversion is registered");
+    }
+    return value;
+}
+}
+
 TfPyObjWrapper
 UsdVtValueToPython(const VtValue &value)
 {
-    // Convert to python.
     TfPyLock lock;
-    return TfPyObjWrapperFromBoostObject(TfPyObject(value));
+    _CheckPythonError();
+    auto result = Vt_GetPythonObjectFromHeldValue(value);
+    _CheckPythonError();
+    return result;
 }
 
-VtValue 
+VtValue
 UsdPythonToSdfType(TfPyObjWrapper pyVal, SdfValueTypeName const &targetType)
 {
-    using namespace pxr_boost::python;
-
-    // Extract VtValue from python object.
-    VtValue val;
-    object pyObj = TfPyObjWrapperToBoostObject(pyVal);
-    {
-        TfPyLock lock;
-        val = extract<VtValue>(pyObj)();
-    }
+    TfPyLock lock;
+    VtValue val = _ExtractValue(pyVal.ptr());
 
     // Attempt to cast the value to what we want.  Get a default value for this
     // attribute's type name.
@@ -60,18 +87,11 @@ UsdPythonToSdfType(TfPyObjWrapper pyVal, SdfValueTypeName const &targetType)
     // continue with the given value.  Deeper in the 'Set()' implementation,
     // we'll issue a detailed type mismatch error.
     VtValue cast = VtValue::CastToTypeOf(val, defVal);
+    _CheckPythonError();
     if (!cast.IsEmpty())
         cast.Swap(val);
 
     return val;
-}
-
-VtValue
-UsdPythonToSdfType(pxr_boost::python::object const &pyVal,
-                   SdfValueTypeName const &targetType)
-{
-    return UsdPythonToSdfType(
-        TfPyObjWrapperFromBoostObject(pyVal), targetType);
 }
 
 bool
@@ -79,7 +99,8 @@ UsdPythonToMetadataValue(
     const TfToken &key, const TfToken &keyPath, 
     TfPyObjWrapper pyVal, VtValue *result)
 {
-    using namespace pxr_boost::python;
+    TfPyLock lock;
+    _CheckPythonError();
 
     SdfSchema const &schema = SdfSchema::GetInstance();
 
@@ -90,8 +111,8 @@ UsdPythonToMetadataValue(
         return false;
     }
 
-    object pyObj = TfPyObjWrapperToBoostObject(pyVal);
-    VtValue value = extract<VtValue>(pyObj)();
+    PyObject* pyObj = pyVal.ptr();
+    VtValue value = _ExtractValue(pyObj);
 
     // Empty values are always considered valid.
     if (value.IsEmpty()) {
@@ -123,7 +144,7 @@ UsdPythonToMetadataValue(
                     "Invalid value type for dictionary key-path '%s:%s': '%s'.",
                     key.GetString().c_str(),
                     keyPath.GetText(),
-                    TfPyRepr(pyObj).c_str()));
+                    TfPyObjectRepr(pyObj).c_str()));
         }
         // Clear out the fallback here, since we allow any scene desc type in
         // dicts.
@@ -134,16 +155,20 @@ UsdPythonToMetadataValue(
     // types from Python.
     if (!fallback.IsEmpty()) {
         if (fallback.IsHolding<TfTokenVector>()) {
-            value = extract<TfTokenVector>(pyObj)();
+            if (!_ExtractTyped<TfTokenVector>(pyObj, &value)) {
+                _CheckPythonError();
+                TfPyThrowTypeError("No Python-to-token-vector conversion is registered");
+            }
         }
         else if (fallback.IsHolding< std::vector<std::string> >()) {
-            extract<std::vector<std::string> > getVecString(pyObj);
-            extract<VtStringArray> getStringArray(pyObj);
-            if (getVecString.check()) {
-                value = getVecString();
-            } else if (getStringArray.check()) {
-                VtStringArray a = getStringArray();
-                value = std::vector<std::string>(a.begin(), a.end());
+            if (!_ExtractTyped<std::vector<std::string>>(pyObj, &value)) {
+                _CheckPythonError();
+                VtValue array;
+                if (_ExtractTyped<VtStringArray>(pyObj, &array)) {
+                    auto const& strings = array.Get<VtStringArray>();
+                    value = std::vector<std::string>(strings.begin(), strings.end());
+                }
+                _CheckPythonError();
             }
         }
         else {
@@ -156,11 +181,11 @@ UsdPythonToMetadataValue(
     if (value.IsEmpty() ||
         (fallback.IsEmpty() &&
          (!fieldDef->IsValidValue(value) || !schema.IsValidValue(value)))) {
-        VtValue origValue = extract<VtValue>(pyObj)();
+        VtValue origValue = _ExtractValue(pyObj);
         TfPyThrowValueError(
             TfStringPrintf(
                 "Invalid value '%s' (type '%s') for key '%s%s'.%s",
-                TfPyRepr(pyObj).c_str(),
+                TfPyObjectRepr(pyObj).c_str(),
                 origValue.GetTypeName().c_str(),
                 key.GetText(),
                 keyPath.IsEmpty() ? "" :
@@ -169,17 +194,9 @@ UsdPythonToMetadataValue(
                 TfStringPrintf(" Expected type '%s'", fallback.GetType().
                                GetTypeName().c_str()).c_str()));
     }
+    _CheckPythonError();
     result->Swap(value);
     return true;
-}
-
-bool
-UsdPythonToMetadataValue(const TfToken &key, const TfToken &keyPath,
-                         pxr_boost::python::object const &pyVal,
-                         VtValue *result)
-{
-    return UsdPythonToMetadataValue(
-        key, keyPath, TfPyObjWrapperFromBoostObject(pyVal), result);
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

@@ -15,12 +15,12 @@
 PXR_NAMESPACE_OPEN_SCOPE
 
 namespace Vt_BoostPythonDetail {
-template <class T>
+template <class T, bool Required = false>
 bool ExtractTyped(PyObject *obj, VtValue *value)
 {
     try {
         pxr_boost::python::extract<T> extract(obj);
-        if (extract.check()) {
+        if (Required || extract.check()) {
             *value = VtValue(extract());
             return true;
         }
@@ -46,11 +46,13 @@ VtValue Extract(PyObject *obj)
 }
 
 /// Register requested-type extraction without altering generic type inference.
-template <class T>
+/// Required extraction invokes the backend's mandatory conversion, including
+/// its Python TypeError on a non-match, rather than returning a checked miss.
+template <class T, bool Required = false>
 void VtValueFromPythonTyped()
 {
     Vt_ValueFromPythonRegistry::RegisterTyped(
-        typeid(T), &Vt_BoostPythonDetail::ExtractTyped<T>);
+        typeid(T), &Vt_BoostPythonDetail::ExtractTyped<T, Required>);
 }
 
 /// Register Boost.Python lvalue and converting rvalue extraction for T.
