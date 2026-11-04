@@ -19,7 +19,7 @@ endif()
 
 if(PACKAGE_COMPONENT STREQUAL "tf" OR PACKAGE_COMPONENT STREQUAL "vt"
         OR PACKAGE_COMPONENT STREQUAL "ar" OR PACKAGE_COMPONENT STREQUAL "sdf"
-        OR PACKAGE_COMPONENT STREQUAL "pcp")
+        OR PACKAGE_COMPONENT STREQUAL "pcp" OR PACKAGE_COMPONENT STREQUAL "usd")
     if(TARGET Python3::Python OR NOT TARGET Python3::SABIModule)
         message(FATAL_ERROR "Core discovery must supply only the stable Python target")
     endif()
@@ -43,6 +43,10 @@ if(PACKAGE_COMPONENT STREQUAL "tf" OR PACKAGE_COMPONENT STREQUAL "vt"
     if(PACKAGE_COMPONENT STREQUAL "pcp")
         set(componentIncludes "#include <pxr/usd/pcp/mapFunction.h>")
         set(componentCheck "valid = valid && PXR_NS::PcpMapFunction::Identity().MapSourceToTarget(PXR_NS::SdfPath(\"/Root\")) == PXR_NS::SdfPath(\"/Root\");")
+    endif()
+    if(PACKAGE_COMPONENT STREQUAL "usd")
+        set(componentIncludes "#include <pxr/usd/usd/timeCode.h>")
+        set(componentCheck "valid = valid && PXR_NS::UsdTimeCode(42).GetValue() == 42;")
     endif()
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/consumer.cpp" "
 #include <pxr/base/tf/token.h>

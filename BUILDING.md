@@ -691,7 +691,7 @@ version-specific Python code from other core components.
 
 The same distinction applies to Vt: use the `vt` component and target for its
 stable core in a non-monolithic package, or `vtBoostPython` for downstream
-Boost.Python modules. Core components `tf`, `gf`, `vt`, `ar`, `sdf`, and `pcp` do not
+Boost.Python modules. Core components `tf`, `gf`, `vt`, `ar`, `sdf`, `pcp`, and `usd` do not
 request the bindings' exact Python minor version on Windows. Binding components and the
 default complete package retain that requirement. Python runtime deployment
 belongs to the consuming application.
@@ -718,8 +718,7 @@ and link `sdf`. On Windows this selects the stable Python dependency without
 requiring the Python minor version used to build the bindings. Sdf's core
 sources compile with `Py_LIMITED_API`; the definition is private and does not
 restrict downstream binding modules. Python-disabled builds retain native
-Sdf functionality without a Python dependency. The complete monolith still
-contains version-specific Python code from components not yet migrated.
+Sdf functionality without a Python dependency.
 
 Pcp's Python dictionary-to-variant-fallback-map adapter is installed as
 `pxr/usd/pcp/boost/pyUtils.h`. Downstream binding modules request
@@ -733,8 +732,7 @@ Native consumers of a non-monolithic Windows package request `COMPONENTS pcp`
 and link `pcp`. Core Pcp compiles with a private `Py_LIMITED_API` definition;
 its exported interface carries the stable Python dependency through its core
 dependencies, without requiring the bindings' exact Python minor version.
-Python-disabled builds support native composition without Python. The complete
-monolith still contains version-specific code from unmigrated components.
+Python-disabled builds support native composition without Python.
 
 Usd's binding-neutral conversion services are declared in
 `pxr/usd/usd/pyConversionRuntime.h`. They use Vt's shared conversion registries,
@@ -746,8 +744,19 @@ interface target, which selects `usd` or the configured monolith through
 backend-neutral C++ type used by Usd, UsdShade, and downstream modules; its
 constructors and conversion adapters are inline. Update former flat includes
 and rebuild affected binding modules. Core Usd no longer owns these headers or
-exports the carrier constructors. Whole-library Limited API enforcement and
-stable `usd` package discovery remain a separate step.
+exports the carrier constructors. All core Usd sources compile with a private
+`Py_LIMITED_API` definition. Native consumers of a non-monolithic Windows package
+request `COMPONENTS usd` and link `usd`; this selects the stable Python dependency
+without requiring the bindings' Python minor version. Python-disabled builds
+retain native stage composition, values, metadata, variants, and serialization.
+
+These stable-core guarantees apply to the individual shared libraries. With
+Python enabled, the existing monolithic build folds the compiled Boost.Python
+runtime (`python`, typically named `usd_python` in a non-monolithic build) into
+the monolith, even though the Python extension modules remain separate. The
+complete monolith therefore still requires the bindings' Python version.
+Separating that runtime from the monolith is additional work; Limited API
+compilation of the core sources alone does not make the whole monolith stable.
 
 In-tree schema libraries declare wrapper-only requirements with
 `PYMODULE_LIBRARIES usdBoostPython` in `pxr_library()` (or `pxr_plugin()`). These

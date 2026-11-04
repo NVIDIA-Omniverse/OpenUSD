@@ -2,6 +2,7 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usd)
 
 pxr_library(usd
+    PYTHON_LIMITED_API
     PYMODULE_LIBRARIES
         usdBoostPython
 
@@ -170,6 +171,8 @@ pxr_library(usd
         examples_usd.cpp
 )
 
+target_compile_features(usd PUBLIC cxx_std_17)
+
 if(PXR_ENABLE_PYTHON_SUPPORT)
     add_library(usdBoostPython INTERFACE)
     target_link_libraries(usdBoostPython INTERFACE tfBoostPython)
@@ -251,6 +254,56 @@ if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
             --prefix "${CMAKE_INSTALL_PREFIX}"
             --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
             --config "$<CONFIG>")
+endif()
+
+if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS
+        AND NOT PXR_BUILD_MONOLITHIC)
+    get_target_property(usdCoreHeaders usd PXR_PUBLIC_HEADERS)
+    list(REMOVE_DUPLICATES usdCoreHeaders)
+    list(SORT usdCoreHeaders)
+    string(REPLACE ";" "\n" usdCoreHeaders "${usdCoreHeaders}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt" "${usdCoreHeaders}\n")
+    get_target_property(usdSources usd SOURCES)
+    set(usdCoreSources "")
+    foreach(source IN LISTS usdSources)
+        if(source MATCHES "[.]cpp$" AND NOT source MATCHES "pch[.]cpp$")
+            if(NOT IS_ABSOLUTE "${source}")
+                if(source STREQUAL "moduleDeps.cpp")
+                    set(source "${CMAKE_CURRENT_BINARY_DIR}/${source}")
+                else()
+                    set(source "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+                endif()
+            endif()
+            string(APPEND usdCoreSources "${source}\n")
+        endif()
+    endforeach()
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/coreSources.txt" "${usdCoreSources}")
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/coreBoundary-$<CONFIG>.txt"
+        CONTENT "links\t$<TARGET_PROPERTY:usd,LINK_LIBRARIES>\ninterface_links\t$<TARGET_PROPERTY:usd,INTERFACE_LINK_LIBRARIES>\ndefinitions\t$<TARGET_PROPERTY:usd,COMPILE_DEFINITIONS>\ninterface_definitions\t$<TARGET_PROPERTY:usd,INTERFACE_COMPILE_DEFINITIONS>\n")
+    add_test(NAME testUsdCoreDependencyBoundary
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testUsdCoreDependencyBoundary.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testUsdCoreDependencyBoundary"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testUsdCoreDependencyBoundary/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --headers "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt"
+            --sources "${CMAKE_CURRENT_BINARY_DIR}/coreSources.txt"
+            --ownership "${CMAKE_CURRENT_BINARY_DIR}/coreBoundary-$<CONFIG>.txt"
+            --module-deps "${CMAKE_CURRENT_BINARY_DIR}/moduleDeps.cpp"
+            --install-manifest "${PROJECT_BINARY_DIR}/install_manifest.txt"
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
+    if(WIN32)
+        add_test(NAME testUsdPackageComponents
+            COMMAND "${PYTHON_EXECUTABLE}"
+                "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents.py"
+                --source-dir "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents"
+                --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testUsdPackageComponents/$<CONFIG>"
+                --prefix "${CMAKE_INSTALL_PREFIX}"
+                --core-component usd --binding-component usdBoostPython
+                --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+                --config "$<CONFIG>")
+    endif()
 endif()
 
 pxr_test_scripts(
