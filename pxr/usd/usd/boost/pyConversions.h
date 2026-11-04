@@ -1,10 +1,10 @@
 // Copyright 2016 Pixar
 // Licensed under the terms set forth in the LICENSE.txt file available at
 // https://openusd.org/license.
-#ifndef PXR_USD_USD_PY_CONVERSIONS_H
-#define PXR_USD_USD_PY_CONVERSIONS_H
+#ifndef PXR_USD_USD_BOOST_PY_CONVERSIONS_H
+#define PXR_USD_USD_BOOST_PY_CONVERSIONS_H
 
-// Compatibility binding facade. Native callers include pyConversionRuntime.h.
+// Boost.Python adapters. Native callers include pyConversionRuntime.h.
 #include "pxr/usd/usd/pyConversionRuntime.h"
 #ifdef PXR_PYTHON_SUPPORT_ENABLED
 #include "pxr/base/tf/boost/pyObjWrapperBoost.h"
@@ -27,4 +27,4 @@ UsdPythonToMetadataValue(const TfToken& key, const TfToken& keyPath,
 }
 PXR_NAMESPACE_CLOSE_SCOPE
 #endif
-#endif // PXR_USD_USD_PY_CONVERSIONS_H
+#endif // PXR_USD_USD_BOOST_PY_CONVERSIONS_H

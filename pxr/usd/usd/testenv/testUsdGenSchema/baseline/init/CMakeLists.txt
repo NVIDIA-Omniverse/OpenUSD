@@ -4,6 +4,9 @@ set(PXR_PACKAGE init)
 pxr_library(init
     INCLUDE_SCHEMA_FILES
 
+    PYMODULE_LIBRARIES
+        usdBoostPython
+
     LIBRARIES
         # List dependency libraries
 

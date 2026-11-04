@@ -738,12 +738,23 @@ monolith still contains version-specific code from unmigrated components.
 
 Usd's binding-neutral conversion services are declared in
 `pxr/usd/usd/pyConversionRuntime.h`. They use Vt's shared conversion registries,
-the Python Limited API, and native Sdf schema validation. The compatibility
-`pyConversions.h` facade supplies inline Boost.Python overloads; binding modules
-must rebuild against it because those overloads are no longer exported by core
-Usd. Native consumers can include the runtime header without Boost. This split
-does not yet make the entire Usd target or its installed binding surface stable;
-the remaining binding helpers and package interface still need separation.
+the Python Limited API, and native Sdf schema validation. Boost.Python modules
+request `COMPONENTS usdBoostPython` and link the header-only `usdBoostPython`
+interface target, which selects `usd` or the configured monolith through
+`tfBoostPython`. Its two headers are `pxr/usd/usd/boost/pyConversions.h` and
+`pxr/usd/usd/boost/pyEditContext.h`. The edit-context carrier remains a shared,
+backend-neutral C++ type used by Usd, UsdShade, and downstream modules; its
+constructors and conversion adapters are inline. Update former flat includes
+and rebuild affected binding modules. Core Usd no longer owns these headers or
+exports the carrier constructors. Whole-library Limited API enforcement and
+stable `usd` package discovery remain a separate step.
+
+In-tree schema libraries declare wrapper-only requirements with
+`PYMODULE_LIBRARIES usdBoostPython` in `pxr_library()` (or `pxr_plugin()`). These
+requirements apply privately to the Python module and do not enter the C++
+library's link interface or generated module dependencies. Generated schema
+CMake files use the same argument. Standalone downstream modules use
+`target_link_libraries(myModule PRIVATE usdBoostPython)` after package discovery.
 
 > [!WARNING]
 > Due to the need to link to the static monolithic library with the

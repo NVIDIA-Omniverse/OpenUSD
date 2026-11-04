@@ -14,7 +14,7 @@
 #include "pxr/base/tf/pyUtils.h"
 #include "pxr/base/tf/boost/wrapTypeHelpersBoost.h"
 
-#include "pxr/usd/usd/pyConversions.h"
+#include "pxr/usd/usd/boost/pyConversions.h"
 
 #include "pxr/external/boost/python.hpp"
 

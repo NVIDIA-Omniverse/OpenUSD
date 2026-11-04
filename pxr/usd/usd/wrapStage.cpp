@@ -14,7 +14,7 @@
 
 #include "pxr/usd/ar/resolverContext.h"
 
-#include "pxr/usd/usd/pyConversions.h"
+#include "pxr/usd/usd/boost/pyConversions.h"
 #include "pxr/usd/pcp/boost/pyUtils.h"
 #include "pxr/usd/sdf/boost/pyUtils.h"
 

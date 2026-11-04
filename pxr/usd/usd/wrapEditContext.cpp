@@ -6,7 +6,7 @@
 //
 #include "pxr/pxr.h"
 #include "pxr/usd/usd/editContext.h"
-#include "pxr/usd/usd/pyEditContext.h"
+#include "pxr/usd/usd/boost/pyEditContext.h"
 
 #include "pxr/external/boost/python.hpp"
 

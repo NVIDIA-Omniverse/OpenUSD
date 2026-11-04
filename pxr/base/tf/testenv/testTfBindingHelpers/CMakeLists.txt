@@ -36,7 +36,7 @@ else()
 endif()
 # Binding interfaces may compose other binding interfaces. This check applies
 # to the core component targets, not those reusable helper targets.
-list(REMOVE_ITEM coreComponents tfBoostPython vtBoostPython arBoostPython sdfBoostPython pcpBoostPython)
+list(REMOVE_ITEM coreComponents tfBoostPython vtBoostPython arBoostPython sdfBoostPython pcpBoostPython usdBoostPython)
 foreach(component IN LISTS coreComponents)
     if(TARGET "${component}")
         get_target_property(componentDependencies "${component}" INTERFACE_LINK_LIBRARIES)

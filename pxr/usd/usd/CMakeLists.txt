@@ -2,6 +2,9 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usd)
 
 pxr_library(usd
+    PYMODULE_LIBRARIES
+        usdBoostPython
+
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES
@@ -62,11 +65,7 @@ pxr_library(usd
         variantSets
 
     PYTHON_PUBLIC_CLASSES
-        pyEditContext
         pyConversionRuntime
-
-    PYTHON_PUBLIC_HEADERS
-        pyConversions.h
 
     PRIVATE_CLASSES
         clip
@@ -171,6 +170,36 @@ pxr_library(usd
         examples_usd.cpp
 )
 
+if(PXR_ENABLE_PYTHON_SUPPORT)
+    add_library(usdBoostPython INTERFACE)
+    target_link_libraries(usdBoostPython INTERFACE tfBoostPython)
+    if(NOT PXR_BUILD_MONOLITHIC)
+        target_link_libraries(usdBoostPython INTERFACE usd)
+    endif()
+    set(usdBindingHeaders boost/pyConversions.h boost/pyEditContext.h)
+    _copy_headers(usdBoostPython FILES ${usdBindingHeaders} PREFIX "${PXR_PREFIX}")
+    set(usdBindingIncludeRoot "${PROJECT_BINARY_DIR}/${PXR_INSTALL_SUBDIR}/include")
+    _get_install_dir(include usdBindingInstallDir)
+    set(usdBindingBuildHeaders "")
+    foreach(header IN LISTS usdBindingHeaders)
+        list(APPEND usdBindingBuildHeaders
+            "${usdBindingIncludeRoot}/${PXR_PREFIX}/usd/${header}")
+    endforeach()
+    target_sources(usdBoostPython INTERFACE FILE_SET HEADERS
+        BASE_DIRS "${usdBindingIncludeRoot}" FILES ${usdBindingBuildHeaders})
+    install(TARGETS usdBoostPython EXPORT pxrTargets
+        FILE_SET HEADERS DESTINATION "${usdBindingInstallDir}")
+    export(TARGETS usdBoostPython APPEND FILE "${PROJECT_BINARY_DIR}/pxrTargets.cmake")
+    set(usdBindingOwnership "headers\t$<TARGET_PROPERTY:usd,PXR_PUBLIC_HEADERS>\nsources\t$<TARGET_PROPERTY:usd,SOURCES>\nlinks\t$<TARGET_PROPERTY:usd,LINK_LIBRARIES>\n")
+    foreach(module _usd _usd_d)
+        if(TARGET ${module})
+            string(APPEND usdBindingOwnership "module_links\t$<TARGET_PROPERTY:${module},LINK_LIBRARIES>\n")
+        endif()
+    endforeach()
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/bindingSurface-$<CONFIG>.txt"
+        CONTENT "${usdBindingOwnership}")
+endif()
+
 if (NOT PXR_ENABLE_PYTHON_SUPPORT)
     message(STATUS "Skipping building usdGenSchema, Python modules required.")
 elseif (NOT JINJA2_FOUND)
@@ -204,6 +233,16 @@ foreach(module _usd _usd_d)
 endforeach()
 
 if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)
+    add_test(NAME testUsdBindingHelpers
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testUsdBindingHelpers.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testUsdBindingHelpers"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testUsdBindingHelpers/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --ownership "${CMAKE_CURRENT_BINARY_DIR}/bindingSurface-$<CONFIG>.txt"
+            --install-manifest "${PROJECT_BINARY_DIR}/install_manifest.txt"
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
     add_test(NAME testUsdConversionRuntime
         COMMAND "${PYTHON_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testUsdConversionRuntime.py"

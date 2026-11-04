@@ -2,6 +2,9 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usdSkel)
 
 pxr_library(usdSkel
+    PYMODULE_LIBRARIES
+        usdBoostPython
+
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES

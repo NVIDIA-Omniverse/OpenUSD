@@ -6,7 +6,7 @@
 //
 #include "pxr/pxr.h"
 #include "pxr/usd/usd/primDefinition.h"
-#include "pxr/usd/usd/pyConversions.h"
+#include "pxr/usd/usd/boost/pyConversions.h"
 #include "pxr/usd/usd/prim.h"
 
 #include "pxr/base/tf/boost/pyObjWrapperBoost.h"

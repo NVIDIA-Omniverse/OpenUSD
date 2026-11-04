@@ -2,6 +2,9 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usdUtils)
 
 pxr_library(usdUtils
+    PYMODULE_LIBRARIES
+        usdBoostPython
+
     LIBRARIES
         arch
         tf

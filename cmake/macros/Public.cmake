@@ -274,6 +274,7 @@ function(pxr_library NAME)
         PYTHON_PRIVATE_HEADERS
         PYTHON_CPPFILES
         PYMODULE_CPPFILES
+        PYMODULE_LIBRARIES
         PYMODULE_FILES
         PYSIDE_UI_FILES
     )
@@ -509,6 +510,7 @@ function(pxr_library NAME)
             PYTHON_FILES ${args_PYMODULE_FILES}
             PYSIDE_UI_FILES ${args_PYSIDE_UI_FILES}
             CPPFILES ${args_PYMODULE_CPPFILES}
+            LIBRARIES ${args_PYMODULE_LIBRARIES}
             INCLUDE_DIRS "${args_INCLUDE_DIRS};${pythonModuleIncludeDirs}"
             PRECOMPILED_HEADERS ${pch}
             PRECOMPILED_HEADER_NAME ${args_PRECOMPILED_HEADER_NAME}

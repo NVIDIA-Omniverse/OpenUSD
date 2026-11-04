@@ -950,6 +950,7 @@ function(_pxr_python_module NAME)
         WRAPPED_LIB_INSTALL_PREFIX
     )
     set(multiValueArgs
+        LIBRARIES
         CPPFILES
         PYTHON_FILES
         PYSIDE_UI_FILES
@@ -1063,6 +1064,11 @@ function(_pxr_python_module NAME)
         tfBoostPython
         ${PXR_MALLOC_LIBRARY}
     )
+
+    # Explicit wrapper requirements must not become core library dependencies.
+    if(args_LIBRARIES)
+        target_link_libraries(${LIBRARY_NAME} PRIVATE ${args_LIBRARIES})
+    endif()
 
     # All Python modules require support code from tf.  Linking with the
     # monolithic library will (deliberately) not pick up the dependency

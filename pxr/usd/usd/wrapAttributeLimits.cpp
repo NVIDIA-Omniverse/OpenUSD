@@ -7,7 +7,7 @@
 
 #include "pxr/pxr.h"
 #include "pxr/usd/usd/attributeLimits.h"
-#include "pxr/usd/usd/pyConversions.h"
+#include "pxr/usd/usd/boost/pyConversions.h"
 
 #include "pxr/base/tf/boost/pyContainerConversions.h"
 #include "pxr/base/tf/boost/pyResultConversions.h"

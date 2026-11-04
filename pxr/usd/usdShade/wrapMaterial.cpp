@@ -9,7 +9,7 @@
 
 #include "pxr/usd/sdf/primSpec.h"
 
-#include "pxr/usd/usd/pyConversions.h"
+#include "pxr/usd/usd/boost/pyConversions.h"
 #include "pxr/base/tf/boost/pyContainerConversions.h"
 #include "pxr/base/tf/boost/pyResultConversions.h"
 #include "pxr/base/tf/boost/pyUtilsBoost.h"
@@ -142,7 +142,7 @@ void wrapUsdShadeMaterial()
 // --(BEGIN CUSTOM CODE)--
 
 #include "pxr/usd/usd/editContext.h"
-#include "pxr/usd/usd/pyEditContext.h"
+#include "pxr/usd/usd/boost/pyEditContext.h"
 #include "pxr/usd/usdShade/utils.h"
 
 #include "pxr/external/boost/python/tuple.hpp"

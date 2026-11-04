@@ -9,7 +9,7 @@
 
 #include "pxr/usd/sdf/primSpec.h"
 
-#include "pxr/usd/usd/pyConversions.h"
+#include "pxr/usd/usd/boost/pyConversions.h"
 {% if cls.isAppliedAPISchema %}
 #include "pxr/base/tf/boost/pyAnnotatedBoolResultBoost.h"
 {% endif %}

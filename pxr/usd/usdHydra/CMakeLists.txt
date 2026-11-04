@@ -2,6 +2,9 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usdHydra)
 
 pxr_library(usdHydra
+    PYMODULE_LIBRARIES
+        usdBoostPython
+
 
     INCLUDE_SCHEMA_FILES
 

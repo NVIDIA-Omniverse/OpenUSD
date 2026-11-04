@@ -7,7 +7,7 @@
 #include "pxr/pxr.h"
 #include "pxr/usd/usdGeom/xformOp.h"
 
-#include "pxr/usd/usd/pyConversions.h"
+#include "pxr/usd/usd/boost/pyConversions.h"
 #include "pxr/base/tf/boost/pyContainerConversions.h"
 #include "pxr/base/tf/boost/pyEnumBoost.h"
 #include "pxr/base/tf/boost/pyObjWrapperBoost.h"

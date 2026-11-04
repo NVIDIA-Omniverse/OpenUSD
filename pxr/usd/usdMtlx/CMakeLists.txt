@@ -40,6 +40,9 @@ if (MATERIALX_STDLIB_DIR)
 endif()
 
 pxr_library(usdMtlx
+    PYMODULE_LIBRARIES
+        usdBoostPython
+
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES

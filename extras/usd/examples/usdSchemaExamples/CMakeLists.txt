@@ -1,6 +1,9 @@
 set(PXR_PACKAGE usdSchemaExamples)
 
 pxr_plugin(${PXR_PACKAGE}
+    PYMODULE_LIBRARIES
+        usdBoostPython
+
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES

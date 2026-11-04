@@ -8,7 +8,7 @@
 #include "pxr/usd/usdShade/output.h"
 #include "pxr/usd/usdShade/connectableAPI.h"
 
-#include "pxr/usd/usd/pyConversions.h"
+#include "pxr/usd/usd/boost/pyConversions.h"
 #include "pxr/base/tf/boost/pyContainerConversions.h"
 #include "pxr/base/tf/boost/pyResultConversions.h"
 
