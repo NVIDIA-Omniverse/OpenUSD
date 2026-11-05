@@ -30,7 +30,7 @@ def main():
     if 'usdBoostPython' in ownership['links'].split(';'):
         raise RuntimeError('Module-only dependencies leaked into core Usd')
     if 'module_links' in ownership and 'usdBoostPython' not in ownership['module_links'].split(';'):
-        raise RuntimeError('PYMODULE_LIBRARIES did not supply the binding requirement')
+        raise RuntimeError('pxr_module did not supply the binding requirement')
     manifest = {Path(p).as_posix() for p in Path(args.install_manifest).read_text().splitlines()}
     for helper in helpers:
         old = prefix / 'include/pxr/usd/usd' / helper

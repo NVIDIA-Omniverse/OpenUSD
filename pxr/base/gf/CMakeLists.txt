@@ -87,7 +87,14 @@ pxr_library(gf
         nc/nanocolor.h
         pyBufferUtils.h
 
-    PYMODULE_CPPFILES
+    DOXYGEN_FILES
+        overview.dox
+)
+
+pxr_module(gf
+    LIBRARY gf
+
+    CPPFILES
         module.cpp
         pyBufferUtils.cpp
         wrapBBox3d.cpp
@@ -143,11 +150,8 @@ pxr_library(gf
         wrapVec4h.cpp
         wrapVec4i.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
-
-    DOXYGEN_FILES
-        overview.dox
 )
 
 # gfGenCode --validate ensures that the generated GfVec, GfMatrix, GfRange, etc.

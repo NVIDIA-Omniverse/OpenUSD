@@ -40,9 +40,6 @@ if (MATERIALX_STDLIB_DIR)
 endif()
 
 pxr_library(usdMtlx
-    PYMODULE_LIBRARIES
-        usdBoostPython
-
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES
@@ -76,18 +73,26 @@ pxr_library(usdMtlx
     PUBLIC_HEADERS
         api.h
 
-    PYMODULE_CPPFILES
-        wrapBackdoor.cpp
-
-    PYMODULE_FILES
-        __init__.py
-
     RESOURCE_FILES
         plugInfo.json
         ${MATERIALX_STDLIB_RESOURCES}
 
     DOXYGEN_FILES
         overview.dox
+)
+
+pxr_module(usdMtlx
+    LIBRARY usdMtlx
+    INCLUDE_SCHEMA_FILES
+
+    LIBRARIES
+        usdBoostPython
+
+    CPPFILES
+        wrapBackdoor.cpp
+
+    PYTHON_FILES
+        __init__.py
 )
 
 pxr_test_scripts(

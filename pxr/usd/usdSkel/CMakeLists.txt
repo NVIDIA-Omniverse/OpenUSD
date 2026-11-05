@@ -2,9 +2,6 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usdSkel)
 
 pxr_library(usdSkel
-    PYMODULE_LIBRARIES
-        usdBoostPython
-
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES
@@ -41,22 +38,6 @@ pxr_library(usdSkel
         cacheImpl
         skelDefinition
 
-    PYMODULE_FILES
-        __init__.py
-
-    PYMODULE_CPPFILES
-        wrapAnimMapper.cpp
-        wrapAnimQuery.cpp
-        wrapBakeSkinning.cpp
-        wrapBlendShapeQuery.cpp
-        wrapBinding.cpp
-        wrapCache.cpp
-        wrapInbetweenShape.cpp
-        wrapSkeletonQuery.cpp
-        wrapSkinningQuery.cpp
-        wrapTopology.cpp
-        wrapUtils.cpp
-
     DOXYGEN_FILES
         overview.dox
         doxygen/apiIntro.dox
@@ -71,6 +52,30 @@ pxr_library(usdSkel
         images/blendshapesWithInbetweens.svg
         images/influencesPrimvarLayout.svg
         images/unboundedInterpolationExample.svg
+)
+
+pxr_module(usdSkel
+    LIBRARY usdSkel
+    INCLUDE_SCHEMA_FILES
+
+    LIBRARIES
+        usdBoostPython
+
+    CPPFILES
+        wrapAnimMapper.cpp
+        wrapAnimQuery.cpp
+        wrapBakeSkinning.cpp
+        wrapBlendShapeQuery.cpp
+        wrapBinding.cpp
+        wrapCache.cpp
+        wrapInbetweenShape.cpp
+        wrapSkeletonQuery.cpp
+        wrapSkinningQuery.cpp
+        wrapTopology.cpp
+        wrapUtils.cpp
+
+    PYTHON_FILES
+        __init__.py
 )
 
 pxr_test_scripts(

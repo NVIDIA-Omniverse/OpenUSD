@@ -4,15 +4,20 @@ set(PXR_PACKAGE init)
 pxr_library(init
     INCLUDE_SCHEMA_FILES
 
-    PYMODULE_LIBRARIES
-        usdBoostPython
-
     LIBRARIES
         # List dependency libraries
 
     CPPFILES
         # List non-schema cpp files
+)
 
-    PYMODULE_FILES
+pxr_module(init
+    LIBRARY init
+    INCLUDE_SCHEMA_FILES
+
+    LIBRARIES
+        usdBoostPython
+
+    PYTHON_FILES
         __init__.py
 )

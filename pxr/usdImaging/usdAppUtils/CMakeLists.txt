@@ -25,21 +25,25 @@ pxr_library(usdAppUtils
         camera
         frameRecorder
 
-    PYMODULE_CPPFILES
+    DOXYGEN_FILES
+        overview.dox
+)
+
+pxr_module(usdAppUtils
+    LIBRARY usdAppUtils
+
+    CPPFILES
         module.cpp
         wrapCamera.cpp
         wrapFrameRecorder.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
         cameraArgs.py
         colorArgs.py
         complexityArgs.py
         framesArgs.py
         rendererArgs.py
-
-    DOXYGEN_FILES
-        overview.dox
 )
 
 pxr_test_scripts(

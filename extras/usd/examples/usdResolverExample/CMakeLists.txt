@@ -16,18 +16,24 @@ pxr_plugin(${PXR_PACKAGE}
     PUBLIC_HEADERS
         api.h
 
-    PYMODULE_CPPFILES
-        module.cpp
-        wrapResolverContext.cpp
-
-    PYMODULE_FILES
-        __init__.py
-
     RESOURCE_FILES
         plugInfo.json
 
     DOXYGEN_FILES
         overview.dox
+
+    DISABLE_PRECOMPILED_HEADERS
+)
+
+pxr_module(${PXR_PACKAGE}
+    LIBRARY ${PXR_PACKAGE}
+
+    CPPFILES
+        module.cpp
+        wrapResolverContext.cpp
+
+    PYTHON_FILES
+        __init__.py
 
     DISABLE_PRECOMPILED_HEADERS
 )

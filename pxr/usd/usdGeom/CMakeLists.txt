@@ -2,9 +2,6 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usdGeom)
 
 pxr_library(usdGeom
-    PYMODULE_LIBRARIES
-        usdBoostPython
-
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES
@@ -35,17 +32,6 @@ pxr_library(usdGeom
     PRIVATE_CLASSES
         samplingUtils
 
-    PYMODULE_CPPFILES
-        wrapBBoxCache.cpp
-        wrapConstraintTarget.cpp
-        wrapMetrics.cpp
-        wrapPrimvar.cpp
-        wrapXformCache.cpp
-        wrapXformOp.cpp
-
-    PYMODULE_FILES
-        __init__.py
-
     DOXYGEN_FILES
         overview.dox
         snippets.dox
@@ -55,6 +41,25 @@ pxr_library(usdGeom
         images/USDTetMeshRightHanded.svg
         images/USDTetMeshLeftHanded.svg
         examples_usdGeom.cpp
+)
+
+pxr_module(usdGeom
+    LIBRARY usdGeom
+    INCLUDE_SCHEMA_FILES
+
+    LIBRARIES
+        usdBoostPython
+
+    CPPFILES
+        wrapBBoxCache.cpp
+        wrapConstraintTarget.cpp
+        wrapMetrics.cpp
+        wrapPrimvar.cpp
+        wrapXformCache.cpp
+        wrapXformOp.cpp
+
+    PYTHON_FILES
+        __init__.py
 )
 
 pxr_test_scripts(

@@ -2,10 +2,6 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usdHydra)
 
 pxr_library(usdHydra
-    PYMODULE_LIBRARIES
-        usdBoostPython
-
-
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES
@@ -20,14 +16,22 @@ pxr_library(usdHydra
     PUBLIC_HEADERS
         api.h
 
-    PYMODULE_FILES
-        __init__.py
-
     RESOURCE_FILES
         shaders/shaderDefs.usda
         shaders/empty.glslfx
 
     DOXYGEN_FILES
         overview.dox
+)
+
+pxr_module(usdHydra
+    LIBRARY usdHydra
+    INCLUDE_SCHEMA_FILES
+
+    LIBRARIES
+        usdBoostPython
+
+    PYTHON_FILES
+        __init__.py
 )
 

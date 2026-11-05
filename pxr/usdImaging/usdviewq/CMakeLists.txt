@@ -20,12 +20,20 @@ pxr_library(usdviewq
     PUBLIC_HEADERS
         api.h
 
-    PYMODULE_CPPFILES
+    DOXYGEN_FILES
+        README.md
+        blackBoxTesting.md
+)
+
+pxr_module(usdviewq
+    LIBRARY usdviewq
+
+    CPPFILES
         module.cpp
         wrapHydraObserver.cpp
         wrapUtils.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
         appEventFilter.py
         arrayAttributeView.py
@@ -77,10 +85,6 @@ pxr_library(usdviewq
         preferencesUI.ui
         primLegendUI.ui
         propertyLegendUI.ui
-
-    DOXYGEN_FILES
-        README.md
-        blackBoxTesting.md
 )
 
 install(DIRECTORY

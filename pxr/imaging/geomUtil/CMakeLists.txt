@@ -22,8 +22,12 @@ pxr_library(geomUtil
         
     PUBLIC_HEADERS
         api.h
+)
 
-    PYMODULE_CPPFILES
+pxr_module(geomUtil
+    LIBRARY geomUtil
+
+    CPPFILES
         module.cpp
         wrapCapsuleMeshGenerator.cpp
         wrapConeMeshGenerator.cpp
@@ -34,7 +38,7 @@ pxr_library(geomUtil
         wrapSphereMeshGenerator.cpp
         wrapTokens.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
 )
 

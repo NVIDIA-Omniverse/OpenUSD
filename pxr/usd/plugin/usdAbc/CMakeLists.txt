@@ -58,18 +58,27 @@ pxr_plugin(usdAbc
     PRIVATE_HEADERS
         api.h
 
-    PYMODULE_CPPFILES
-        module.cpp
-        wrapAlembicTest.cpp
-
-    PYMODULE_FILES
-        __init__.py
-
     RESOURCE_FILES
         plugInfo.json
 
     DOXYGEN_FILES
         overview.dox
+)
+
+pxr_module(usdAbc
+    LIBRARY usdAbc
+
+    INCLUDE_DIRS
+        ${ALEMBIC_INCLUDE_DIR}
+        ${__ALEMBIC_IMATH_INCLUDES}
+        ${optionalIncludeDirs}
+
+    CPPFILES
+        module.cpp
+        wrapAlembicTest.cpp
+
+    PYTHON_FILES
+        __init__.py
 )
 
 pxr_test_scripts(

@@ -2,9 +2,6 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usdShade)
 
 pxr_library(usdShade
-    PYMODULE_LIBRARIES
-        usdBoostPython
-
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES
@@ -30,7 +27,18 @@ pxr_library(usdShade
         api.h
         types.h
 
-    PYMODULE_CPPFILES
+    DOXYGEN_FILES
+        overview.dox
+)
+
+pxr_module(usdShade
+    LIBRARY usdShade
+    INCLUDE_SCHEMA_FILES
+
+    LIBRARIES
+        usdBoostPython
+
+    CPPFILES
         wrapInput.cpp
         wrapOutput.cpp
         wrapShaderDefParser.cpp
@@ -39,11 +47,8 @@ pxr_library(usdShade
         wrapUdimUtils.cpp
         wrapUtils.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
-
-    DOXYGEN_FILES
-        overview.dox
 )
 
 pxr_build_test(testUsdShadeHasConnectableAPI

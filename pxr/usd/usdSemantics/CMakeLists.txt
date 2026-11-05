@@ -2,9 +2,6 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usdSemantics)
 
 pxr_library(usdSemantics
-    PYMODULE_LIBRARIES
-        usdBoostPython
-
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES
@@ -18,14 +15,22 @@ pxr_library(usdSemantics
     PUBLIC_HEADERS
         api.h
 
-    PYMODULE_CPPFILES
-        wrapLabelsQuery.cpp
-
-    PYMODULE_FILES
-        __init__.py
-
     DOXYGEN_FILES
         overview.md
+)
+
+pxr_module(usdSemantics
+    LIBRARY usdSemantics
+    INCLUDE_SCHEMA_FILES
+
+    LIBRARIES
+        usdBoostPython
+
+    CPPFILES
+        wrapLabelsQuery.cpp
+
+    PYTHON_FILES
+        __init__.py
 )
 
 pxr_test_scripts(

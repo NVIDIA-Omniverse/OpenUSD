@@ -33,7 +33,20 @@ pxr_library(sdr
         shaderProperty
         shaderPropertyMetadata
 
-    PYMODULE_CPPFILES
+    RESOURCE_FILES
+        plugInfo.json
+
+    DOXYGEN_FILES
+        docs/front.md
+        docs/registry.md
+        docs/shaderNode.md
+        docs/shaderProperty.md
+)
+
+pxr_module(sdr
+    LIBRARY sdr
+
+    CPPFILES
         module.cpp
         wrapDeclare.cpp
         wrapDiscoveryPlugin.cpp
@@ -50,18 +63,9 @@ pxr_library(sdr
         wrapShaderProperty.cpp
         wrapShaderPropertyMetadata.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
         shaderParserTestUtils.py
-
-    RESOURCE_FILES
-        plugInfo.json
-
-    DOXYGEN_FILES
-        docs/front.md
-        docs/registry.md
-        docs/shaderNode.md
-        docs/shaderProperty.md
 )
 
 pxr_test_scripts(

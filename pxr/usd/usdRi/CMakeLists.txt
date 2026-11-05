@@ -2,9 +2,6 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usdRi)
 
 pxr_library(usdRi
-    PYMODULE_LIBRARIES
-        usdBoostPython
-
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES
@@ -24,14 +21,22 @@ pxr_library(usdRi
     PRIVATE_CLASSES
         typeUtils
 
-    PYMODULE_CPPFILES
-        wrapRmanUtilities.cpp
-
-    PYMODULE_FILES
-        __init__.py
-
     DOXYGEN_FILES
         overview.dox
+)
+
+pxr_module(usdRi
+    LIBRARY usdRi
+    INCLUDE_SCHEMA_FILES
+
+    LIBRARIES
+        usdBoostPython
+
+    CPPFILES
+        wrapRmanUtilities.cpp
+
+    PYTHON_FILES
+        __init__.py
 )
 
 pxr_test_scripts(

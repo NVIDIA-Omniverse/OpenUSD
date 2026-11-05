@@ -28,11 +28,17 @@ pxr_library(usdBakeMtlx
     PUBLIC_HEADERS
         api.h
 
-    PYMODULE_CPPFILES
+    DISABLE_PRECOMPILED_HEADERS
+)
+
+pxr_module(usdBakeMtlx
+    LIBRARY usdBakeMtlx
+
+    CPPFILES
         module.cpp
         wrapBakeMaterialX.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
 
     DISABLE_PRECOMPILED_HEADERS

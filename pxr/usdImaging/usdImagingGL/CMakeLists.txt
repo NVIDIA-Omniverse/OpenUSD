@@ -45,18 +45,22 @@ pxr_library(usdImagingGL
     PRIVATE_HEADERS
         unitTestGLDrawing.h
 
-    PYMODULE_CPPFILES
+    RESOURCE_FILES
+        plugInfo.json
+)
+
+pxr_module(usdImagingGL
+    LIBRARY usdImagingGL
+
+    CPPFILES
         module.cpp
         wrapEngine.cpp
         wrapRenderParams.cpp
         wrapRendererCommands.cpp
         wrapRendererSettings.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
-
-    RESOURCE_FILES
-        plugInfo.json
 )
 
 #

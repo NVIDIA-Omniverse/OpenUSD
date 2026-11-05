@@ -46,7 +46,15 @@ pxr_library(trace
         stringHash.h
         trace.h
 
-    PYMODULE_CPPFILES
+    DOXYGEN_FILES
+        overview.dox
+        detailedOverview.dox
+)
+
+pxr_module(trace
+    LIBRARY trace
+
+    CPPFILES
         module.cpp
         wrapAggregateNode.cpp
         wrapAggregateTree.cpp
@@ -54,13 +62,9 @@ pxr_library(trace
         wrapReporter.cpp
         wrapTestTrace.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
         __main__.py
-
-    DOXYGEN_FILES
-        overview.dox
-        detailedOverview.dox
 )
 
 if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS

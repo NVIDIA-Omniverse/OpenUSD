@@ -3,9 +3,6 @@ set(PXR_PACKAGE usd)
 
 pxr_library(usd
     PYTHON_LIMITED_API
-    PYMODULE_LIBRARIES
-        usdBoostPython
-
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES
@@ -87,7 +84,54 @@ pxr_library(usd
         wrapUtils.h
         testenv/TestUsdResolverChangedResolver.h
 
-    PYMODULE_CPPFILES
+    RESOURCE_FILES
+        codegenTemplates/__init__.py
+        codegenTemplates/api.h
+        codegenTemplates/CMakeLists.txt
+        codegenTemplates/generatedSchema.classes.txt
+        codegenTemplates/generatedSchema.module.h
+        codegenTemplates/module.cpp
+        codegenTemplates/moduleDeps.cpp
+        codegenTemplates/plugInfo.json:no_subst
+        codegenTemplates/schema.usda
+        codegenTemplates/schemaUserDoc.usda
+        codegenTemplates/schemaClass.cpp
+        codegenTemplates/schemaClass.h
+        codegenTemplates/tokens.cpp
+        codegenTemplates/tokens.h
+        codegenTemplates/wrapSchemaClass.cpp
+        codegenTemplates/wrapTokens.cpp
+
+    DOXYGEN_FILES
+        docs/advancedFeatures.md
+        docs/authoringEditing.md
+        docs/bestPractices.md
+        docs/commonIdioms.md
+        docs/datatypes.md
+        docs/dynamicFileFormat.md
+        docs/front.md
+        docs/generatingSchemas.md
+        docs/instancing.md
+        docs/multiThreading.md
+        docs/objectModel.md
+        docs/propertiesOfSceneDescription.md
+        docs/utf8Overview.md
+        docs/valueClips.md
+        docs/images/instancing/Instancing_Example.png
+        docs/images/instancing/Nested_Instancing_Example.png
+        docs/images/instancing/Relationship_Example.png
+        docs/images/instancing/Uninstanced_vs_Instanced.png
+        examples_usd.cpp
+)
+
+pxr_module(usd
+    LIBRARY usd
+    INCLUDE_SCHEMA_FILES
+
+    LIBRARIES
+        usdBoostPython
+
+    CPPFILES
         wrapAttribute.cpp
         wrapAttributeLimits.cpp
         wrapAttributeQuery.cpp
@@ -126,49 +170,10 @@ pxr_library(usd
         wrapVariantSets.cpp
         wrapVersion.cpp 
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
         usdGenSchema.py
         usdInitSchema.py
-
-    RESOURCE_FILES
-        codegenTemplates/__init__.py
-        codegenTemplates/api.h
-        codegenTemplates/CMakeLists.txt
-        codegenTemplates/generatedSchema.classes.txt
-        codegenTemplates/generatedSchema.module.h
-        codegenTemplates/module.cpp
-        codegenTemplates/moduleDeps.cpp
-        codegenTemplates/plugInfo.json:no_subst
-        codegenTemplates/schema.usda
-        codegenTemplates/schemaUserDoc.usda
-        codegenTemplates/schemaClass.cpp
-        codegenTemplates/schemaClass.h
-        codegenTemplates/tokens.cpp
-        codegenTemplates/tokens.h
-        codegenTemplates/wrapSchemaClass.cpp
-        codegenTemplates/wrapTokens.cpp
-
-    DOXYGEN_FILES
-        docs/advancedFeatures.md
-        docs/authoringEditing.md
-        docs/bestPractices.md
-        docs/commonIdioms.md
-        docs/datatypes.md
-        docs/dynamicFileFormat.md
-        docs/front.md
-        docs/generatingSchemas.md
-        docs/instancing.md
-        docs/multiThreading.md
-        docs/objectModel.md
-        docs/propertiesOfSceneDescription.md 
-        docs/utf8Overview.md
-        docs/valueClips.md
-        docs/images/instancing/Instancing_Example.png
-        docs/images/instancing/Nested_Instancing_Example.png
-        docs/images/instancing/Relationship_Example.png
-        docs/images/instancing/Uninstanced_vs_Instanced.png
-        examples_usd.cpp
 )
 
 target_compile_features(usd PUBLIC cxx_std_17)

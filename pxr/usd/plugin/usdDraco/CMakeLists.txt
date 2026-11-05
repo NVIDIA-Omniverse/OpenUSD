@@ -31,18 +31,25 @@ pxr_plugin(${PXR_PACKAGE}
         importTranslator.cpp
         writer.cpp
 
-    PYMODULE_CPPFILES
-        module.cpp
-        wrapDraco.cpp
-
-    PYMODULE_FILES
-        __init__.py
-
     RESOURCE_FILES
         plugInfo.json
 
     DOXYGEN_FILES
         overview.dox
+)
+
+pxr_module(${PXR_PACKAGE}
+    LIBRARY ${PXR_PACKAGE}
+
+    INCLUDE_DIRS
+        ${DRACO_INCLUDES}
+
+    CPPFILES
+        module.cpp
+        wrapDraco.cpp
+
+    PYTHON_FILES
+        __init__.py
 )
 
 if(USD_DRACO_SET_WINDOWS_EXPORT)

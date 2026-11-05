@@ -138,7 +138,20 @@ pxr_library(sdf
         shared.h
         valueTypePrivate.h
 
-    PYMODULE_CPPFILES
+    RESOURCE_FILES
+        plugInfo.json
+
+    DOXYGEN_FILES
+        overview.dox
+        doxygen/booleanExpressions.md
+        doxygen/fileFormatPlugin.dox
+        doxygen/variableExpressions.dox
+)
+
+pxr_module(sdf
+    LIBRARY sdf
+
+    CPPFILES
         module.cpp
         wrapArrayAssetPath.cpp
         wrapArrayPath.cpp
@@ -179,17 +192,8 @@ pxr_library(sdf
         wrapVariantSetSpec.cpp
         wrapZipFile.cpp
 
-    PYMODULE_FILES 
+    PYTHON_FILES
         __init__.py
-
-    RESOURCE_FILES
-        plugInfo.json
-
-    DOXYGEN_FILES
-        overview.dox
-        doxygen/booleanExpressions.md
-        doxygen/fileFormatPlugin.dox
-        doxygen/variableExpressions.dox
 )
 
 target_compile_features(sdf PUBLIC cxx_std_17)

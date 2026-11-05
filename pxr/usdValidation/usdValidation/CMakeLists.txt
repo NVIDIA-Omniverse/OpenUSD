@@ -26,7 +26,17 @@ pxr_library(usdValidation
     CPPFILES
         coreValidators.cpp
 
-    PYMODULE_CPPFILES
+    RESOURCE_FILES
+        plugInfo.json
+
+    DOXYGEN_FILES
+        README.md
+)
+
+pxr_module(usdValidation
+    LIBRARY usdValidation
+
+    CPPFILES
         module.cpp
         wrapContext.cpp
         wrapError.cpp
@@ -36,14 +46,8 @@ pxr_library(usdValidation
         wrapTimeRange.cpp
         wrapValidator.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
-
-    RESOURCE_FILES
-        plugInfo.json
-
-    DOXYGEN_FILES
-        README.md        
 )
 
 pxr_test_scripts(

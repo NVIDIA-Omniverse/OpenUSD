@@ -13,14 +13,18 @@ pxr_library(cameraUtil
         
     PUBLIC_HEADERS
         api.h
+)
 
-    PYMODULE_CPPFILES
+pxr_module(cameraUtil
+    LIBRARY cameraUtil
+
+    CPPFILES
         module.cpp
         wrapConformWindow.cpp
         wrapFraming.cpp
         wrapScreenWindowParameters.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
 )
 

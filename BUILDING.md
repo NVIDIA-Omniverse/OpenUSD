@@ -766,11 +766,42 @@ complete monolith therefore still requires the bindings' Python version.
 Separating that runtime from the monolith is additional work; Limited API
 compilation of the core sources alone does not make the whole monolith stable.
 
-In-tree schema libraries declare wrapper-only requirements with
-`PYMODULE_LIBRARIES usdBoostPython` in `pxr_library()` (or `pxr_plugin()`). These
-requirements apply privately to the Python module and do not enter the C++
-library's link interface or generated module dependencies. Generated schema
-CMake files use the same argument. Standalone downstream modules use
+Native and Python targets use separate declarations. `pxr_library()` (or
+`pxr_plugin()`) owns native sources, public headers, resources and dependencies.
+`pxr_module()` owns wrapper sources, Python/UI files and binding requirements:
+
+```cmake
+pxr_library(mySchema
+    INCLUDE_SCHEMA_FILES
+    LIBRARIES usd
+)
+pxr_module(mySchema
+    LIBRARY mySchema
+    INCLUDE_SCHEMA_FILES
+    LIBRARIES usdBoostPython
+    PYTHON_FILES __init__.py
+)
+```
+
+`LIBRARY` identifies the wrapped native target; it can differ from the module
+name, and its declaration must precede the module declaration. Module
+`LIBRARIES` apply privately to the extension and do not enter the native
+library's link interface or generated module dependencies. The native target's
+`moduleDeps.cpp` remains native runtime registration metadata, attached when the
+compiled module is declared. Core `PYTHON_*` sources remain conditional native
+sources. `pxr_library()` no longer accepts `PYMODULE_*` or `PYSIDE_UI_FILES`.
+
+Both declarations use `INCLUDE_SCHEMA_FILES` to select their respective sections
+of the generated schema manifest. Schema templates emit the two calls. Python-only
+packages use `pxr_module()` without `LIBRARY` or `CPPFILES`. Codeless schema
+packages can associate Python files with a resource-only native declaration.
+Modules skip cleanly
+when Python support is disabled. Their PCH and extra include-directory settings
+are specified independently from the native library. Wrapped and additional native
+dependencies use the configured monolithic target when appropriate, including
+whole-archive linkage for static monolithic builds. Existing extension filenames,
+Python package names, installation paths and monolithic linkage are preserved.
+Standalone downstream modules using ordinary CMake targets continue to use
 `target_link_libraries(myModule PRIVATE usdBoostPython)` after package discovery.
 
 > [!WARNING]

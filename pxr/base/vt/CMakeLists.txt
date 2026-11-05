@@ -40,7 +40,14 @@ pxr_library(vt
     PRIVATE_HEADERS
         arrayPyBuffer.h
 
-    PYMODULE_CPPFILES
+    DOXYGEN_FILES
+        overview.dox
+)
+
+pxr_module(vt
+    LIBRARY vt
+
+    CPPFILES
         arrayPyBuffer.cpp
         module.cpp
         wrapArrayBase.cpp
@@ -57,11 +64,8 @@ pxr_library(vt
         wrapValue.cpp
         wrapValueRef.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
-
-    DOXYGEN_FILES
-        overview.dox
 )
 
 # Preserve Vt's C++ requirement without relying on a binding target to supply it.

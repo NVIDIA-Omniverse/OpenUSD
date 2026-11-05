@@ -58,6 +58,16 @@ endif()
 
 if (PXR_BUILD_TESTS)
     pxr_tests_prologue()
+    if(PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS AND NOT PXR_BUILD_MONOLITHIC)
+        add_test(NAME testPXRModuleSplit
+            COMMAND "${PYTHON_EXECUTABLE}"
+                "${PROJECT_SOURCE_DIR}/cmake/testenv/testPXRModuleSplit.py"
+                --source "${PROJECT_SOURCE_DIR}"
+                --build "${PROJECT_BINARY_DIR}/testPXRModuleSplit/$<CONFIG>"
+                --prefix "${CMAKE_INSTALL_PREFIX}"
+                --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+                --config "$<CONFIG>")
+    endif()
 endif()
 
 if (PXR_BUILD_DOCUMENTATION)

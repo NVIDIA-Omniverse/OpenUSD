@@ -2,9 +2,6 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usdVol)
 
 pxr_library(usdVol
-    PYMODULE_LIBRARIES
-        usdBoostPython
-
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES
@@ -15,11 +12,19 @@ pxr_library(usdVol
     PUBLIC_HEADERS
         api.h
 
-    PYMODULE_FILES
-        __init__.py
-
     DOXYGEN_FILES
         overview.dox
+)
+
+pxr_module(usdVol
+    LIBRARY usdVol
+    INCLUDE_SCHEMA_FILES
+
+    LIBRARIES
+        usdBoostPython
+
+    PYTHON_FILES
+        __init__.py
 )
 
 pxr_test_scripts(

@@ -29,18 +29,22 @@ pxr_library(plug
     CPPFILES
         initConfig.cpp
 
-    PYMODULE_CPPFILES
+    DOXYGEN_FILES
+        overview.dox
+)
+
+pxr_module(plug
+    LIBRARY plug
+
+    CPPFILES
         module.cpp
         wrapNotice.cpp
         wrapPlugin.cpp
         wrapRegistry.cpp
         wrapTestPlugBase.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
-
-    DOXYGEN_FILES
-        overview.dox
 )
 
 pxr_test_scripts(

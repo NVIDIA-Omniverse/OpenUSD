@@ -2,9 +2,6 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usdUtils)
 
 pxr_library(usdUtils
-    PYMODULE_LIBRARIES
-        usdBoostPython
-
     LIBRARIES
         arch
         tf
@@ -43,7 +40,17 @@ pxr_library(usdUtils
         api.h
         userProcessingFunc.h
 
-    PYMODULE_CPPFILES
+    DOXYGEN_FILES
+        overview.dox
+)
+
+pxr_module(usdUtils
+    LIBRARY usdUtils
+
+    LIBRARIES
+        usdBoostPython
+
+    CPPFILES
         module.cpp
         wrapAuthoring.cpp
         wrapCoalescingDiagnosticDelegate.cpp
@@ -61,16 +68,13 @@ pxr_library(usdUtils
         wrapTimeCodeRange.cpp
         wrapUserProcessingFunc.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
         constantsGroup.py
         fixBrokenPixarSchemas.py
         toolPaths.py
         updateSchemaWithSdrNode.py
         usdzUtils.py
-
-    DOXYGEN_FILES
-        overview.dox
 )
 
 pxr_test_scripts(

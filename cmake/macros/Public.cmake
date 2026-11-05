@@ -273,10 +273,6 @@ function(pxr_library NAME)
         PYTHON_PUBLIC_HEADERS
         PYTHON_PRIVATE_HEADERS
         PYTHON_CPPFILES
-        PYMODULE_CPPFILES
-        PYMODULE_LIBRARIES
-        PYMODULE_FILES
-        PYSIDE_UI_FILES
     )
 
     cmake_parse_arguments(args
@@ -285,6 +281,12 @@ function(pxr_library NAME)
         "${multiValueArgs}"
         ${ARGN}
     )
+
+    foreach(argument IN LISTS ARGN)
+        if(argument MATCHES "^(PYMODULE_CPPFILES|PYMODULE_LIBRARIES|PYMODULE_FILES|PYSIDE_UI_FILES)$")
+            message(FATAL_ERROR "${argument} belongs in a separate pxr_module() declaration")
+        endif()
+    endforeach()
 
     # If python support is enabled, merge the python specific categories
     # with the more general before setting up compilation.
@@ -329,60 +331,10 @@ function(pxr_library NAME)
         endif()
     endif()
 
-    # If this is a schema library, add schema classes
-    if (args_INCLUDE_SCHEMA_FILES)
-        set(filePath "generatedSchema.classes.txt")
-
-        # Register a dependency so that cmake will regenerate the build
-        # system if generatedSchema.classes.txt changes
-        set_property(
-            DIRECTORY 
-            APPEND 
-            PROPERTY CMAKE_CONFIGURE_DEPENDS 
-            ${filePath}
-        )
-
-        # Read the generated classes
-        file(STRINGS ${filePath} fileContents)
-
-        # fileType potential values:
-        # -1: Skip line
-        # 0: Public Classes
-        # 1: Python Module Files
-        # 2: Resource Files
-        set(fileType -1)
-
-        foreach(line ${fileContents})
-            # Determine which section of the generated file we are in.
-            if (${fileType} EQUAL -1)
-                string(FIND ${line} "# Public Classes" found)
-                if (NOT ${found} EQUAL -1)
-                    set(fileType 0)
-                    continue()
-                endif()
-            elseif(${fileType} EQUAL 0)
-                string(FIND ${line} "# Python Module Files" found)
-                if (NOT ${found} EQUAL -1)
-                    set(fileType 1)
-                    continue()
-                endif()
-            elseif(${fileType} EQUAL 1)
-                string(FIND ${line} "# Resource Files" found)
-                if (NOT ${found} EQUAL -1)
-                    set(fileType 2)
-                    continue()
-                endif()
-            endif()
-
-            # Depending on the file type, append to the appropriate list.
-            if (${fileType} EQUAL 0)
-                list(APPEND args_PUBLIC_CLASSES ${line})
-            elseif(${fileType} EQUAL 1)
-                list(APPEND args_PYMODULE_CPPFILES ${line})
-            elseif(${fileType} EQUAL 2)
-                list(APPEND args_RESOURCE_FILES ${line})
-            endif()
-        endforeach()
+    if(args_INCLUDE_SCHEMA_FILES)
+        _pxr_read_schema_files(schemaClasses schemaModules schemaResources)
+        list(APPEND args_PUBLIC_CLASSES ${schemaClasses})
+        list(APPEND args_RESOURCE_FILES ${schemaResources})
     endif()
 
     # Collect libraries.
@@ -444,36 +396,20 @@ function(pxr_library NAME)
         set(pch "OFF")
     endif()
 
-    if (PXR_ENABLE_PYTHON_SUPPORT AND args_PYMODULE_CPPFILES)
-        # If moduleDeps.cpp does not exist, create one
-        set(moduleDepsFileName "moduleDeps.cpp")
-        list(FIND args_PYTHON_CPPFILES ${moduleDepsFileName} foundModuleDeps)
-        if (${foundModuleDeps} EQUAL -1)
-            # Add moduleDeps.cpp as a built file
-            list(APPEND args_CPPFILES ${moduleDepsFileName})
-
-            # Keep only our libraries in the module dependencies
-            foreach(library ${args_LIBRARIES})
-                if (TARGET ${library}) 
-                    get_target_property(libraryType ${library} TYPE)
-                    if(NOT libraryType STREQUAL "INTERFACE_LIBRARY")
-                        list(APPEND localLibs ${library})
-                    endif()
-                endif()
-            endforeach()
-
-            if(args_PYTHON_LIMITED_API)
-                # Python runtime targets have no USD script modules.
-                list(REMOVE_ITEM localLibs ${PYTHON_LIBRARIES})
+    # Save the native dependency description for a later pxr_module() call.
+    # Reading LINK_LIBRARIES later would lose the component identities after
+    # monolithic linkage has been resolved.
+    set(localLibs "")
+    foreach(library IN LISTS args_LIBRARIES)
+        if(TARGET ${library})
+            get_target_property(libraryType ${library} TYPE)
+            if(NOT libraryType STREQUAL "INTERFACE_LIBRARY")
+                list(APPEND localLibs ${library})
             endif()
-
-            # Generate moduleDeps.cpp
-            _get_python_module_name(${NAME} pyModuleName)
-            add_custom_command(
-                OUTPUT ${moduleDepsFileName}
-                COMMAND ${CMAKE_COMMAND} -DlibraryName=${NAME} -DmoduleName=${pyModuleName} -DsourceDir=${PROJECT_SOURCE_DIR} -Dlibraries="${localLibs}" -Doutfile=${moduleDepsFileName} -P "${PROJECT_SOURCE_DIR}/cmake/macros/genModuleDepsCpp.cmake"
-                DEPENDS "CMakeLists.txt")
         endif()
+    endforeach()
+    if(args_PYTHON_LIMITED_API)
+        list(REMOVE_ITEM localLibs ${PYTHON_LIBRARIES})
     endif()
 
     _pxr_library(${NAME}
@@ -494,6 +430,13 @@ function(pxr_library NAME)
     )
 
     if(TARGET ${NAME})
+        list(LENGTH args_CPPFILES moduleDepsIndex)
+        set_property(TARGET ${NAME} PROPERTY PXR_MODULE_DEPS_SOURCE_INDEX ${moduleDepsIndex})
+        set_property(TARGET ${NAME} PROPERTY PXR_MODULE_DEPENDENCIES "${localLibs}")
+        set_property(TARGET ${NAME} PROPERTY PXR_LIBRARY_INSTALL_PREFIX "${libInstallPrefix}")
+        if("moduleDeps.cpp" IN_LIST args_PYTHON_CPPFILES)
+            set_property(TARGET ${NAME} PROPERTY PXR_HAS_MODULE_DEPS TRUE)
+        endif()
         set_property(TARGET ${NAME} PROPERTY PXR_PUBLIC_HEADERS
             "${args_PUBLIC_HEADERS};${${NAME}_PUBLIC_HEADERS}")
         if(args_PYTHON_LIMITED_API)
@@ -501,20 +444,61 @@ function(pxr_library NAME)
         endif()
     endif()
 
-    if(PXR_ENABLE_PYTHON_SUPPORT AND (args_PYMODULE_CPPFILES OR args_PYMODULE_FILES OR args_PYSIDE_UI_FILES))
-        list(APPEND pythonModuleIncludeDirs ${PYTHON_INCLUDE_DIRS})
+endfunction()
 
-        _pxr_python_module(
-            ${NAME}
+# Declare bindings separately from the native target. LIBRARY names the wrapped
+# native target; LIBRARIES contains additional, module-only requirements.
+function(pxr_module NAME)
+    set(options INCLUDE_SCHEMA_FILES DISABLE_PRECOMPILED_HEADERS)
+    set(oneValueArgs LIBRARY PRECOMPILED_HEADER_NAME)
+    set(multiValueArgs LIBRARIES CPPFILES PYTHON_FILES PYSIDE_UI_FILES INCLUDE_DIRS)
+    cmake_parse_arguments(args "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+    if(args_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR "Unrecognized pxr_module arguments: ${args_UNPARSED_ARGUMENTS}")
+    endif()
+    if(NOT PXR_ENABLE_PYTHON_SUPPORT)
+        return()
+    endif()
+    if(args_INCLUDE_SCHEMA_FILES)
+        _pxr_read_schema_files(schemaClasses schemaModules schemaResources)
+        list(APPEND args_CPPFILES ${schemaModules})
+    endif()
+    set(libInstallPrefix "lib")
+    if(args_LIBRARY AND NOT TARGET "${args_LIBRARY}")
+        if(NOT args_CPPFILES)
+            # Codeless schemas/resources can have Python files without a
+            # compiled native target. There is no native linkage to resolve.
+            set(args_LIBRARY "")
+        elseif(NOT TARGET shared_libs)
+            return()
+        else()
+            message(FATAL_ERROR "pxr_module(${NAME}) requires native target ${args_LIBRARY}")
+        endif()
+    endif()
+    if(args_LIBRARY)
+        get_target_property(prefix ${args_LIBRARY} PXR_LIBRARY_INSTALL_PREFIX)
+        if(prefix)
+            set(libInstallPrefix "${prefix}")
+        endif()
+        if(args_CPPFILES)
+            _pxr_register_python_module(${args_LIBRARY} ${NAME})
+        endif()
+    endif()
+    set(pch ON)
+    if(args_DISABLE_PRECOMPILED_HEADERS)
+        set(pch OFF)
+    endif()
+    if(args_CPPFILES OR args_PYTHON_FILES OR args_PYSIDE_UI_FILES)
+        _pxr_python_module(${NAME}
+            WRAPPED_LIBRARY "${args_LIBRARY}"
             WRAPPED_LIB_INSTALL_PREFIX "${libInstallPrefix}"
-            PYTHON_FILES ${args_PYMODULE_FILES}
+            CPPFILES ${args_CPPFILES}
+            PYTHON_FILES ${args_PYTHON_FILES}
             PYSIDE_UI_FILES ${args_PYSIDE_UI_FILES}
-            CPPFILES ${args_PYMODULE_CPPFILES}
-            LIBRARIES ${args_PYMODULE_LIBRARIES}
-            INCLUDE_DIRS "${args_INCLUDE_DIRS};${pythonModuleIncludeDirs}"
+            LIBRARIES ${args_LIBRARIES}
+            INCLUDE_DIRS ${args_INCLUDE_DIRS}
             PRECOMPILED_HEADERS ${pch}
-            PRECOMPILED_HEADER_NAME ${args_PRECOMPILED_HEADER_NAME}
-        )
+            PRECOMPILED_HEADER_NAME "${args_PRECOMPILED_HEADER_NAME}")
     endif()
 endfunction()
 

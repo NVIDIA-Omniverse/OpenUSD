@@ -365,7 +365,20 @@ pxr_library(tf
         pxrDoubleConversion/strtod.cc
         pxrLZ4/lz4.cpp
 
-    PYMODULE_CPPFILES
+    DOXYGEN_FILES
+        ${tfBindingDoxygenFiles}
+        diagnosticOverview.dox
+        errorOverview.dox
+        mallocTagOverview.dox
+        noteOverview.dox
+        overview.dox
+        registryOverview.dox
+)
+
+pxr_module(tf
+    LIBRARY tf
+
+    CPPFILES
         module.cpp
         wrapTypeHelpers.cpp
         pyWeakObject.cpp
@@ -405,8 +418,7 @@ pxr_library(tf
         wrapType.cpp
         wrapWarning.cpp
 
-
-    PYMODULE_FILES 
+    PYTHON_FILES
         __init__.py
         testenv/__init__.py
         testenv/testTfScriptModuleLoader_AAA_RaisesError.py
@@ -417,15 +429,6 @@ pxr_library(tf
         testenv/testTfScriptModuleLoader_Test.py
         testenv/testTfScriptModuleLoader_Unknown.py
         testenv/testTfPyInvoke_callees.py
-
-    DOXYGEN_FILES
-        ${tfBindingDoxygenFiles}
-        diagnosticOverview.dox
-        errorOverview.dox
-        mallocTagOverview.dox
-        noteOverview.dox
-        overview.dox
-        registryOverview.dox
 )
 
 if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)

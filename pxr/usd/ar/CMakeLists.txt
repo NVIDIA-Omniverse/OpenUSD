@@ -45,7 +45,17 @@ pxr_library(ar
     CPPFILES
         debugCodes.cpp
 
-    PYMODULE_CPPFILES
+    RESOURCE_FILES
+        plugInfo.json
+
+    DOXYGEN_FILES
+        overview.dox
+)
+
+pxr_module(ar
+    LIBRARY ar
+
+    CPPFILES
         module.cpp
         wrapAsset.cpp
         wrapAssetInfo.cpp
@@ -60,14 +70,8 @@ pxr_library(ar
         wrapResolver.cpp
         wrapTimestamp.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
-
-    RESOURCE_FILES
-        plugInfo.json
-
-    DOXYGEN_FILES
-        overview.dox
 )
 
 # Preserve the native header requirement independently of binding helpers.

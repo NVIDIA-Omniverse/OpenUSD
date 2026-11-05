@@ -102,12 +102,6 @@ pxr_library(ts
     PUBLIC_HEADERS
         ${headers}
 
-    PYMODULE_CPPFILES
-        ${pycpp}
-
-    PYMODULE_FILES
-        ${pyfiles}
-
     DOXYGEN_FILES
         doxygen/overview.md
         doxygen/status.md
@@ -125,6 +119,19 @@ pxr_library(ts
         doxygen/images/regressiveSStandard.png
         doxygen/images/startVert.png
         doxygen/images/tanLens.png
+)
+
+pxr_module(ts
+    LIBRARY ts
+
+    INCLUDE_DIRS
+        ${include}
+
+    CPPFILES
+        ${pycpp}
+
+    PYTHON_FILES
+        ${pyfiles}
 )
 
 if (${PXR_BUILD_TESTS})

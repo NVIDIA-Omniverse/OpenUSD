@@ -35,6 +35,11 @@ pxr_library(execIr
         README.md
 )
 
+pxr_module(execIr
+    LIBRARY execIr
+    INCLUDE_SCHEMA_FILES
+)
+
 #
 # Tests
 #

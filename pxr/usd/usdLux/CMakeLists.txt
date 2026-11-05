@@ -2,9 +2,6 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usdLux)
 
 pxr_library(usdLux
-    PYMODULE_LIBRARIES
-        usdBoostPython
-
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES
@@ -26,11 +23,19 @@ pxr_library(usdLux
         discoveryPlugin
         lightDefParser
 
-    PYMODULE_FILES 
-        __init__.py
-
     DOXYGEN_FILES
         overview.dox
+)
+
+pxr_module(usdLux
+    LIBRARY usdLux
+    INCLUDE_SCHEMA_FILES
+
+    LIBRARIES
+        usdBoostPython
+
+    PYTHON_FILES
+        __init__.py
 )
 
 pxr_test_scripts(

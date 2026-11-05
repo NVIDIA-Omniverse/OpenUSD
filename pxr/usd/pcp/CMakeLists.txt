@@ -61,7 +61,14 @@ pxr_library(pcp
     PRIVATE_HEADERS
         traversalCache.h
 
-    PYMODULE_CPPFILES
+    DOXYGEN_FILES
+        overview.dox
+)
+
+pxr_module(pcp
+    LIBRARY pcp
+
+    CPPFILES
         module.cpp
         wrapCache.cpp
         wrapDependency.cpp
@@ -83,11 +90,8 @@ pxr_library(pcp
         wrapTestChangeProcessor.cpp
         wrapTypes.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
-
-    DOXYGEN_FILES
-        overview.dox
 )
 
 target_compile_features(pcp PUBLIC cxx_std_17)

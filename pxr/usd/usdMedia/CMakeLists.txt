@@ -2,9 +2,6 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usdMedia)
 
 pxr_library(usdMedia
-    PYMODULE_LIBRARIES
-        usdBoostPython
-
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES
@@ -17,11 +14,19 @@ pxr_library(usdMedia
     PUBLIC_HEADERS
         api.h
 
-    PYMODULE_FILES 
-        __init__.py
-
     DOXYGEN_FILES
         overview.dox
+)
+
+pxr_module(usdMedia
+    LIBRARY usdMedia
+    INCLUDE_SCHEMA_FILES
+
+    LIBRARIES
+        usdBoostPython
+
+    PYTHON_FILES
+        __init__.py
 )
 
 pxr_test_scripts(

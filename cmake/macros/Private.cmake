@@ -833,8 +833,7 @@ function(_pxr_transitive_internal_libraries libs transitive_libs)
     set(${transitive_libs} "${result}" PARENT_SCOPE)
 endfunction()
 
-# This function is equivalent to target_link_libraries except it does
-# a few extra things:
+# Resolve dependencies for target_link_libraries with these adjustments:
 #
 #    - If the target is not an OBJECT library and this is a monolithic
 #      build and we're linking to core libraries, then link against the
@@ -850,10 +849,9 @@ endfunction()
 #      side effects then those constructors and side effects will not
 #      run.  We depend on these constructs (e.g. TF_REGISTRY_FUNCTION).
 #
-#    - We link against PXR_MALLOC_LIBRARY and PXR_THREAD_LIBS because we
-#      always want those.
-#
-function(_pxr_target_link_libraries NAME)
+# Resolve links independently of their PUBLIC/PRIVATE scope so module-only
+# requirements can use the same monolithic/static mapping as native libraries.
+function(_pxr_resolve_link_libraries NAME OUTPUT)
     # Split core libraries from non-core libraries.
     _pxr_split_libraries("${ARGN}" internal external)
     get_property(type TARGET ${NAME} PROPERTY TYPE)
@@ -931,23 +929,98 @@ function(_pxr_target_link_libraries NAME)
         endforeach()
         set(internal ${final})
     endif()
+    set(${OUTPUT} "${internal};${external}" PARENT_SCOPE)
+endfunction()
+
+# Native/public linkage also supplies mandatory allocator and thread support.
+function(_pxr_target_link_libraries NAME)
+    _pxr_resolve_link_libraries(${NAME} libraries ${ARGN})
     target_link_libraries(${NAME}
         PUBLIC
-            ${internal}
-            ${external}
+            ${libraries}
             ${PXR_MALLOC_LIBRARY}
             ${PXR_THREAD_LIBS}
     )
 endfunction()
 
-# Add a python module for the target named NAME.  It implicitly links
-# against the library named NAME (or the monolithic library if
-# PXR_BUILD_MONOLITHIC is enabled).
+# Read the native, binding and resource sections of a generated schema manifest.
+function(_pxr_read_schema_files publicClasses moduleFiles resourceFiles)
+    set(path "${CMAKE_CURRENT_SOURCE_DIR}/generatedSchema.classes.txt")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${path}")
+    file(STRINGS "${path}" lines)
+    set(classes "")
+    set(modules "")
+    set(resources "")
+    set(section "")
+    foreach(line IN LISTS lines)
+        if(line STREQUAL "# Public Classes")
+            set(section classes)
+        elseif(line STREQUAL "# Python Module Files")
+            set(section modules)
+        elseif(line STREQUAL "# Resource Files")
+            set(section resources)
+        elseif(NOT line MATCHES "^[ \t]*(#|$)")
+            if(section)
+                list(APPEND ${section} "${line}")
+            endif()
+        endif()
+    endforeach()
+    set(${publicClasses} "${classes}" PARENT_SCOPE)
+    set(${moduleFiles} "${modules}" PARENT_SCOPE)
+    set(${resourceFiles} "${resources}" PARENT_SCOPE)
+endfunction()
+
+# Module registration is native runtime metadata, not binding implementation.
+# Keep it on the wrapped library even though the module is declared separately.
+function(_pxr_register_python_module LIBRARY MODULE)
+    get_target_property(imported ${LIBRARY} IMPORTED)
+    get_target_property(hasModuleDeps ${LIBRARY} PXR_HAS_MODULE_DEPS)
+    if(imported OR hasModuleDeps)
+        return()
+    endif()
+    get_target_property(existing ${LIBRARY} PXR_PYTHON_MODULE)
+    if(existing)
+        message(FATAL_ERROR "${LIBRARY} already has Python module ${existing}")
+    endif()
+    get_target_property(libraries ${LIBRARY} PXR_MODULE_DEPENDENCIES)
+    if(NOT libraries)
+        set(libraries "")
+    endif()
+    list(JOIN libraries " " libraryNames)
+    get_target_property(binaryDir ${LIBRARY} BINARY_DIR)
+    _get_python_module_name(${MODULE} pyModuleName)
+    set(output "${binaryDir}/moduleDeps.cpp")
+    add_custom_command(OUTPUT "${output}"
+        COMMAND "${CMAKE_COMMAND}" -DlibraryName=${LIBRARY} -DmoduleName=${pyModuleName}
+            -DsourceDir=${PROJECT_SOURCE_DIR} "-Dlibraries=${libraryNames}"
+            -Doutfile=${output} -P "${PROJECT_SOURCE_DIR}/cmake/macros/genModuleDepsCpp.cmake"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt"
+            "${PROJECT_SOURCE_DIR}/cmake/macros/genModuleDepsCpp.cmake"
+            "${PROJECT_SOURCE_DIR}/cmake/macros/moduleDeps.cpp.in"
+        VERBATIM)
+    # The explicit dependency also supports declaring the module in another
+    # directory than its wrapped native target.
+    add_custom_target(${LIBRARY}_moduleDeps DEPENDS "${output}")
+    add_dependencies(${LIBRARY} ${LIBRARY}_moduleDeps)
+    target_sources(${LIBRARY} PRIVATE "${output}")
+    # Preserve the native source/object order used by the combined declaration.
+    get_target_property(index ${LIBRARY} PXR_MODULE_DEPS_SOURCE_INDEX)
+    if(NOT index STREQUAL "index-NOTFOUND")
+        get_target_property(sources ${LIBRARY} SOURCES)
+        list(REMOVE_ITEM sources "${output}")
+        list(INSERT sources ${index} "${output}")
+        set_property(TARGET ${LIBRARY} PROPERTY SOURCES "${sources}")
+    endif()
+    set_property(TARGET ${LIBRARY} PROPERTY PXR_PYTHON_MODULE "${MODULE}")
+endfunction()
+
+# Build a Python extension and install its accompanying Python/UI files.
 function(_pxr_python_module NAME)
     set(oneValueArgs
         PRECOMPILED_HEADERS
         PRECOMPILED_HEADER_NAME
         WRAPPED_LIB_INSTALL_PREFIX
+        WRAPPED_LIBRARY
     )
     set(multiValueArgs
         LIBRARIES
@@ -1052,22 +1125,29 @@ function(_pxr_python_module NAME)
         )
     endif()
 
+    # The extension entry point follows NAME; runtime dependency loading uses
+    # the wrapped native library's identity, which may be different.
+    set(wrappedLibrary "${NAME}")
+    if(args_WRAPPED_LIBRARY)
+        set(wrappedLibrary "${args_WRAPPED_LIBRARY}")
+    endif()
     target_compile_definitions(${LIBRARY_NAME}
         PRIVATE
-            MFB_PACKAGE_NAME=${PXR_PACKAGE}
-            MFB_ALT_PACKAGE_NAME=${PXR_PACKAGE}
+            MFB_PACKAGE_NAME=${NAME}
+            MFB_ALT_PACKAGE_NAME=${wrappedLibrary}
             MFB_PACKAGE_MODULE=${pyModuleName}
     )
 
     _pxr_target_link_libraries(${LIBRARY_NAME}
-        ${NAME}
+        ${args_WRAPPED_LIBRARY}
         tfBoostPython
         ${PXR_MALLOC_LIBRARY}
     )
 
     # Explicit wrapper requirements must not become core library dependencies.
     if(args_LIBRARIES)
-        target_link_libraries(${LIBRARY_NAME} PRIVATE ${args_LIBRARIES})
+        _pxr_resolve_link_libraries(${LIBRARY_NAME} moduleLibraries ${args_LIBRARIES})
+        target_link_libraries(${LIBRARY_NAME} PRIVATE ${moduleLibraries})
     endif()
 
     # All Python modules require support code from tf.  Linking with the

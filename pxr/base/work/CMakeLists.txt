@@ -88,15 +88,19 @@ pxr_library(work
         zeroAllocator.h
         ${work_impl_headers}
 
-    PYMODULE_CPPFILES
+    DOXYGEN_FILES
+        overview.dox
+)
+
+pxr_module(work
+    LIBRARY work
+
+    CPPFILES
         module.cpp
         wrapThreadLimits.cpp
 
-    PYMODULE_FILES
+    PYTHON_FILES
         __init__.py
-
-    DOXYGEN_FILES
-        overview.dox
 )
 
 pxr_build_test(testWorkDispatcher

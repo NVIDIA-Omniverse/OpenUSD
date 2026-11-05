@@ -10,9 +10,6 @@ pxr_plugin(usdShaders
     PRIVATE_CLASSES
         discoveryPlugin
 
-    PYMODULE_FILES
-        __init__.py
-
     RESOURCE_FILES
         plugInfo.json
         shaders/shaderDefs.usda
@@ -23,4 +20,11 @@ pxr_plugin(usdShaders
 
     DOXYGEN_FILES
         overview.dox
+)
+
+pxr_module(usdShaders
+    LIBRARY usdShaders
+
+    PYTHON_FILES
+        __init__.py
 )

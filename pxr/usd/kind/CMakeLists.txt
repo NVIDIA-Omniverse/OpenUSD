@@ -12,16 +12,20 @@ pxr_library(kind
     PUBLIC_HEADERS
         api.h
 
-    PYMODULE_CPPFILES
+    DOXYGEN_FILES
+        overview.dox
+)
+
+pxr_module(kind
+    LIBRARY kind
+
+    CPPFILES
         module.cpp
         wrapRegistry.cpp
         wrapTokens.cpp
 
-    PYMODULE_FILES 
+    PYTHON_FILES
         __init__.py
-
-    DOXYGEN_FILES
-        overview.dox
 )
 
 pxr_test_scripts(

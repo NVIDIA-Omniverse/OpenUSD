@@ -47,17 +47,6 @@ pxr_library(glf
     PUBLIC_HEADERS
         api.h
 
-    PYMODULE_CPPFILES
-        module.cpp
-        wrapDiagnostic.cpp
-        wrapDrawTarget.cpp
-        wrapSimpleLight.cpp
-        wrapSimpleMaterial.cpp
-        wrapTexture.cpp
-
-    PYMODULE_FILES
-        __init__.py
-
     RESOURCE_FILES
         plugInfo.json
         shaders/pcfShader.glslfx
@@ -65,4 +54,19 @@ pxr_library(glf
 
     DOXYGEN_FILES
         overview.dox
+)
+
+pxr_module(glf
+    LIBRARY glf
+
+    CPPFILES
+        module.cpp
+        wrapDiagnostic.cpp
+        wrapDrawTarget.cpp
+        wrapSimpleLight.cpp
+        wrapSimpleMaterial.cpp
+        wrapTexture.cpp
+
+    PYTHON_FILES
+        __init__.py
 )

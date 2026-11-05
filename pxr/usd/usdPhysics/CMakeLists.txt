@@ -2,9 +2,6 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE usdPhysics)
 
 pxr_library(usdPhysics
-    PYMODULE_LIBRARIES
-        usdBoostPython
-
     INCLUDE_SCHEMA_FILES
 
     LIBRARIES
@@ -28,13 +25,6 @@ pxr_library(usdPhysics
         parseUtils.h
         parseDesc.h   
         
-    PYMODULE_CPPFILES
-        wrapMetrics.cpp
-        wrapParseUtils.cpp
-
-    PYMODULE_FILES
-        __init__.py
-
     DOXYGEN_FILES
         overview.dox
         parsingUtils.dox        
@@ -46,6 +36,21 @@ pxr_library(usdPhysics
         examples/usdPhysicsNestedArticulation.usda
         examples/usdPhysicsPairFiltering.usda
         examples/usdPhysicsSpheresWithMaterial.usda
+)
+
+pxr_module(usdPhysics
+    LIBRARY usdPhysics
+    INCLUDE_SCHEMA_FILES
+
+    LIBRARIES
+        usdBoostPython
+
+    CPPFILES
+        wrapMetrics.cpp
+        wrapParseUtils.cpp
+
+    PYTHON_FILES
+        __init__.py
 )
 
 pxr_test_scripts(
