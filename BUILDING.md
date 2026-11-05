@@ -686,12 +686,20 @@ target_link_libraries(myPythonModule PRIVATE tfBoostPython)
 
 `tfBoostPython` supplies the binding requirements and selects `tf` or `usd_m`,
 including whole-archive linkage for a static monolith. The `tf` package component
-is available only in non-monolithic packages; the monolith still contains
-version-specific Python code from other core components.
+is available only in non-monolithic packages; the monolith still incorporates
+the version-specific Boost.Python runtime, as described below.
+
+Core Trace also compiles with a private Limited API definition. Native Windows
+consumers of a non-monolithic package request `COMPONENTS trace` and link `trace`
+to select stable Python discovery. Native tracing
+callbacks use the `TfPyTraceEvent` constants from `tf/pyTracing.h` instead of
+CPython's full-API `PyTrace_*` macros. `TfPyTraceInfo::what` retains its `int`
+type and existing numeric values for source and ABI compatibility. Trace's
+Python extension remains a separate full-API binding module.
 
 The same distinction applies to Vt: use the `vt` component and target for its
 stable core in a non-monolithic package, or `vtBoostPython` for downstream
-Boost.Python modules. Core components `tf`, `gf`, `vt`, `ar`, `sdf`, `pcp`, and `usd` do not
+Boost.Python modules. Core components `tf`, `gf`, `trace`, `vt`, `ar`, `sdf`, `pcp`, and `usd` do not
 request the bindings' exact Python minor version on Windows. Binding components and the
 default complete package retain that requirement. Python runtime deployment
 belongs to the consuming application.

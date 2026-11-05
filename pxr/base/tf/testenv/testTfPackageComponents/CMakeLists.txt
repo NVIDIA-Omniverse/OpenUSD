@@ -17,7 +17,8 @@ else()
         PATHS "${USD_PREFIX}" NO_DEFAULT_PATH)
 endif()
 
-if(PACKAGE_COMPONENT STREQUAL "tf" OR PACKAGE_COMPONENT STREQUAL "vt"
+if(PACKAGE_COMPONENT STREQUAL "tf" OR PACKAGE_COMPONENT STREQUAL "trace"
+        OR PACKAGE_COMPONENT STREQUAL "vt"
         OR PACKAGE_COMPONENT STREQUAL "ar" OR PACKAGE_COMPONENT STREQUAL "sdf"
         OR PACKAGE_COMPONENT STREQUAL "pcp" OR PACKAGE_COMPONENT STREQUAL "usd")
     if(TARGET Python3::Python OR NOT TARGET Python3::SABIModule)
@@ -28,6 +29,10 @@ if(PACKAGE_COMPONENT STREQUAL "tf" OR PACKAGE_COMPONENT STREQUAL "vt"
     endif()
     set(componentIncludes "")
     set(componentCheck "")
+    if(PACKAGE_COMPONENT STREQUAL "trace")
+        set(componentIncludes "#include <pxr/base/trace/collector.h>")
+        set(componentCheck "valid = valid && !PXR_NS::TraceCollector::GetInstance().IsPythonTracingEnabled();")
+    endif()
     if(PACKAGE_COMPONENT STREQUAL "vt")
         set(componentIncludes "#include <pxr/base/vt/value.h>")
         set(componentCheck "PXR_NS::VtValue vtValue(42); valid = valid && vtValue.Get<int>() == 42;")

@@ -34,6 +34,43 @@ def GetNodesByKey(reporter, key):
     return getNodesRecur(reporter.aggregateTreeRoot, key)
 
 class TestTrace(unittest.TestCase):
+    def test_PythonEvents(self):
+        collector = Trace.Collector()
+        reporter = Trace.Reporter.globalReporter
+        collector.Clear()
+        reporter.ClearTree()
+
+        def trace_python_events(depth):
+            if depth:
+                return trace_python_events(depth - 1)
+            Trace.TestAuto()
+            try:
+                raise ValueError('expected')
+            except ValueError:
+                return 42
+
+        try:
+            collector.enabled = True
+            collector.pythonTracingEnabled = True
+            self.assertEqual(trace_python_events(2), 42)
+        finally:
+            collector.pythonTracingEnabled = False
+            collector.enabled = False
+
+        reporter.UpdateTraceTrees()
+        nodes = list(TraverseTraceTree(reporter.aggregateTreeRoot))
+        self.assertEqual(sum(n.count for n in nodes if n.key.startswith(
+            'trace_python_events() (py)')), 3)
+        # Module wrapping fabricates a scope for the Python -> C++ transition.
+        # Its event values must agree with the native collector's contract.
+        bindingScopes = [n for n in nodes if
+            n.key.startswith('pxr.Trace.TestAuto() (py)')]
+        self.assertEqual(len(bindingScopes), 1)
+        self.assertTrue(any(n.key == 'TestAuto' for n in
+                            TraverseTraceTree(bindingScopes[0])))
+        collector.Clear()
+        reporter.ClearTree()
+
     def test_Trace(self):
         gc = Trace.Collector()
         self.assertIsInstance(gc, Trace.Collector)

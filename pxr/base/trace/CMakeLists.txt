@@ -2,6 +2,7 @@ set(PXR_PREFIX pxr/base)
 set(PXR_PACKAGE trace)
 
 pxr_library(trace
+    PYTHON_LIMITED_API
     LIBRARIES
         arch
         js
@@ -62,12 +63,57 @@ pxr_library(trace
         detailedOverview.dox
 )
 
+if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS
+        AND NOT PXR_BUILD_MONOLITHIC)
+    get_target_property(traceCoreHeaders trace PXR_PUBLIC_HEADERS)
+    list(REMOVE_DUPLICATES traceCoreHeaders)
+    list(SORT traceCoreHeaders)
+    string(REPLACE ";" "\n" traceCoreHeaders "${traceCoreHeaders}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt" "${traceCoreHeaders}\n")
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/coreBoundary-$<CONFIG>.txt"
+        CONTENT "links\t$<TARGET_PROPERTY:trace,LINK_LIBRARIES>\ninterface_links\t$<TARGET_PROPERTY:trace,INTERFACE_LINK_LIBRARIES>\ndefinitions\t$<TARGET_PROPERTY:trace,COMPILE_DEFINITIONS>\ninterface_definitions\t$<TARGET_PROPERTY:trace,INTERFACE_COMPILE_DEFINITIONS>\n")
+    add_test(NAME testTraceCoreDependencyBoundary
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testTraceCoreDependencyBoundary.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testTraceCoreDependencyBoundary"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testTraceCoreDependencyBoundary/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --headers "${CMAKE_CURRENT_BINARY_DIR}/coreHeaders.txt"
+            --ownership "${CMAKE_CURRENT_BINARY_DIR}/coreBoundary-$<CONFIG>.txt"
+            --install-manifest "${PROJECT_BINARY_DIR}/install_manifest.txt"
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
+    if(WIN32)
+        add_test(NAME testTracePackageComponents
+            COMMAND "${PYTHON_EXECUTABLE}"
+                "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents.py"
+                --source-dir "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents"
+                --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testTracePackageComponents/$<CONFIG>"
+                --prefix "${CMAKE_INSTALL_PREFIX}"
+                --core-component trace --binding-component tfBoostPython
+                --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+                --config "$<CONFIG>")
+    endif()
+endif()
+
 pxr_build_test(testTraceCategory
     LIBRARIES
         trace
     CPPFILES
         testenv/testTraceCategory.cpp
 )
+
+if(PXR_ENABLE_PYTHON_SUPPORT)
+    pxr_build_test(testTracePythonEvents
+        LIBRARIES trace tf
+        CPPFILES testenv/testTracePythonEvents.cpp)
+    if(TARGET testTracePythonEvents)
+        target_compile_definitions(testTracePythonEvents PRIVATE
+            Py_LIMITED_API=0x030A0000)
+        pxr_register_test(testTracePythonEvents
+            COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testTracePythonEvents")
+    endif()
+endif()
 
 pxr_build_test(testTraceData
     LIBRARIES

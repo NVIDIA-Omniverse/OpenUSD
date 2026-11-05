@@ -263,11 +263,11 @@ _MakePythonScopeKey(const TfPyTraceInfo& info)
 inline void
 TraceCollector::_PyTracingCallback(const TfPyTraceInfo& info)
 {
-    if (info.what == PyTrace_CALL) {
+    if (info.what == TfPyTraceCall) {
         // If this is a CALL, push a scope for this \a frame in the collector.
         _PerThreadData *threadData = _GetThreadData();
         threadData->PushPyScope(_MakePythonScopeKey(info), IsEnabled());
-    } else if (info.what == PyTrace_RETURN) {
+    } else if (info.what == TfPyTraceReturn) {
         // If instead this is a RETURN, pop the current scope in the collector.
         // We may be called with no active scopes if python tracing is enabled
         // in the middle of some call stack and then the code returns out of

@@ -25,16 +25,6 @@
 
 using std::list;
 
-#ifndef PyTrace_CALL
-#define PyTrace_CALL 0
-#define PyTrace_EXCEPTION 1
-#define PyTrace_LINE 2
-#define PyTrace_RETURN 3
-#define PyTrace_C_CALL 4
-#define PyTrace_C_EXCEPTION 5
-#define PyTrace_C_RETURN 6
-#endif
-
 PXR_NAMESPACE_OPEN_SCOPE
 
 typedef list<std::weak_ptr<TfPyTraceFn> > TraceFnList;
@@ -189,19 +179,19 @@ static int
 _TraceEventNameToWhat(std::string const &eventName)
 {
     if (eventName == "call") {
-        return PyTrace_CALL;
+        return TfPyTraceCall;
     } else if (eventName == "exception") {
-        return PyTrace_EXCEPTION;
+        return TfPyTraceException;
     } else if (eventName == "line") {
-        return PyTrace_LINE;
+        return TfPyTraceLine;
     } else if (eventName == "return") {
-        return PyTrace_RETURN;
+        return TfPyTraceReturn;
     } else if (eventName == "c_call") {
-        return PyTrace_C_CALL;
+        return TfPyTraceCCall;
     } else if (eventName == "c_exception") {
-        return PyTrace_C_EXCEPTION;
+        return TfPyTraceCException;
     } else if (eventName == "c_return") {
-        return PyTrace_C_RETURN;
+        return TfPyTraceCReturn;
     }
 
     return -1;

@@ -167,13 +167,13 @@ public:
             info.fileName = _fileName.c_str();
             info.funcLine = 0;
 
-            info.what = PyTrace_CALL;
+            info.what = TfPyTraceCall;
             Tf_PyFabricateTraceEvent(info);
 
             TfErrorMark m;
             PyObject *ret = PyObject_Call(_fn.ptr(), args, kw);
 
-            info.what = PyTrace_RETURN;
+            info.what = TfPyTraceReturn;
             Tf_PyFabricateTraceEvent(info);
 
             if (ARCH_UNLIKELY(!ret)) {

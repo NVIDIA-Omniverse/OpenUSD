@@ -186,7 +186,7 @@ _SetErrorExceptionClass(pxr_boost::python::object const &cls)
 static void
 _PythonExceptionDebugTracer(TfPyTraceInfo const &info)
 {
-    if (info.what == PyTrace_EXCEPTION) {
+    if (info.what == TfPyTraceException) {
         string excName = "<unknown>";
         if (PyObject *excType = PyTuple_GET_ITEM(info.arg, 0)) {
             if (PyObject *r = PyObject_Repr(excType)) {
