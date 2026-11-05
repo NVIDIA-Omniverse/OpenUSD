@@ -1,1 +1,1 @@
-from ._bindingProbe import answer
+from ._bindingProbe import answer, runtimeAnswer

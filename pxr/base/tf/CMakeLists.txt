@@ -185,7 +185,6 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
 endif()
 
 pxr_library(tf
-    PYTHON_LIMITED_API
     LIBRARIES
         arch
         ${WINLIBS}
@@ -530,6 +529,11 @@ if(PXR_ENABLE_PYTHON_SUPPORT)
         CPPFILES
             testenv/testTfPyLock.cpp
     )
+    # Exercise the core runtime implementation of the inline GIL check.  The
+    # full-API implementation requires an explicit versioned Python dependency.
+    if(TARGET testTfPyLock)
+        target_compile_definitions(testTfPyLock PRIVATE Py_LIMITED_API=0x030A0000)
+    endif()
 
     pxr_build_test(testTfPyResultConversions
         LIBRARIES

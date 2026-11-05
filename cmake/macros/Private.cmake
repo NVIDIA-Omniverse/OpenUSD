@@ -6,6 +6,132 @@
 #
 include(Version)
 
+# Python compilation roles are independent of shared/static/plugin packaging.
+function(_pxr_set_python_role TARGET_NAME ROLE)
+    set_property(TARGET ${TARGET_NAME} PROPERTY PXR_PYTHON_ROLE "${ROLE}")
+    get_target_property(imported ${TARGET_NAME} IMPORTED)
+    if(NOT imported)
+        set_property(TARGET ${TARGET_NAME} APPEND PROPERTY EXPORT_PROPERTIES PXR_PYTHON_ROLE)
+    endif()
+endfunction()
+
+function(_pxr_apply_native_python_policy TARGET_NAME)
+    _pxr_set_python_role(${TARGET_NAME} NATIVE)
+    if(PXR_ENABLE_PYTHON_SUPPORT)
+        target_compile_definitions(${TARGET_NAME} PRIVATE Py_LIMITED_API=0x030A0000)
+        if(WIN32)
+            target_compile_definitions(${TARGET_NAME} PRIVATE Py_NO_LINK_LIB)
+        endif()
+        if(TARGET Python3::Python)
+            _pxr_set_python_role(Python3::Python FULL_PYTHON)
+        endif()
+    endif()
+endfunction()
+
+# Header/link requirements for native Python users, with no compile restriction
+# on consumers. Merely enforcing the Limited API must not add this dependency.
+function(_pxr_setup_python_runtime)
+    if(TARGET pythonRuntime)
+        return()
+    endif()
+    if(DEFINED Python3_VERSION AND Python3_VERSION VERSION_LESS "3.10")
+        message(FATAL_ERROR "Native Python Limited API requires Python 3.10 or newer")
+    endif()
+    add_library(pythonRuntime INTERFACE)
+    _pxr_set_python_role(pythonRuntime RUNTIME)
+    if(WIN32)
+        find_package(Python3 3.10 REQUIRED GLOBAL COMPONENTS Development.SABIModule)
+        target_compile_definitions(pythonRuntime INTERFACE Py_NO_LINK_LIB)
+        target_link_libraries(pythonRuntime INTERFACE Python3::SABIModule)
+        # Python 3.12/3.13 headers do not honor Py_NO_LINK_LIB. Suppress their
+        # versioned default-library directives without adding a search path.
+        # Explicit full-API linkage in binding modules remains effective.
+        foreach(suffix "" "_d")
+            target_link_options(pythonRuntime INTERFACE
+                "$<BUILD_INTERFACE:/NODEFAULTLIB:python${Python3_VERSION_MAJOR}${Python3_VERSION_MINOR}${suffix}.lib>")
+        endforeach()
+    elseif(PYTHON_LIBRARIES)
+        # Preserve the existing non-Windows runtime link strategy.
+        target_link_libraries(pythonRuntime INTERFACE ${PYTHON_LIBRARIES})
+    else()
+        # Undefined-dynamic-lookup builds still need consumer-resolved headers.
+        target_link_libraries(pythonRuntime INTERFACE Python3::Module)
+    endif()
+    install(TARGETS pythonRuntime EXPORT pxrTargets)
+    export(TARGETS pythonRuntime APPEND FILE "${PROJECT_BINARY_DIR}/pxrTargets.cmake")
+endfunction()
+
+function(_pxr_check_native_python_dependencies TARGET_NAME)
+    get_property(checked GLOBAL PROPERTY _PXR_PYTHON_DEPENDENCIES_CHECKED)
+    if(TARGET_NAME IN_LIST checked)
+        return()
+    endif()
+    get_target_property(role ${TARGET_NAME} PXR_PYTHON_ROLE)
+    if(role STREQUAL "BINDING_SUPPORT" OR role STREQUAL "MODULE"
+            OR (WIN32 AND role STREQUAL "FULL_PYTHON"))
+        message(FATAL_ERROR "Native Python dependency reaches binding/full API: ${ARGN};${TARGET_NAME}")
+    endif()
+    if(role STREQUAL "AGGREGATE")
+        # The existing monolith includes the binding runtime. Its partition is
+        # separate work; individual native implementation units remain Limited.
+        return()
+    endif()
+    set_property(GLOBAL APPEND PROPERTY _PXR_PYTHON_DEPENDENCIES_CHECKED "${TARGET_NAME}")
+    get_target_property(links ${TARGET_NAME} LINK_LIBRARIES)
+    get_target_property(interfaceLinks ${TARGET_NAME} INTERFACE_LINK_LIBRARIES)
+    foreach(dependency IN LISTS links interfaceLinks)
+        if(TARGET "${dependency}")
+            _pxr_check_native_python_dependencies("${dependency}" ${ARGN} ${TARGET_NAME})
+        endif()
+    endforeach()
+endfunction()
+
+function(_pxr_validate_native_python_directory DIRECTORY_NAME)
+    if(NOT PXR_ENABLE_PYTHON_SUPPORT)
+        return()
+    endif()
+    get_property(targets DIRECTORY "${DIRECTORY_NAME}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(target IN LISTS targets)
+        get_target_property(role ${target} PXR_PYTHON_ROLE)
+        if(role STREQUAL "NATIVE")
+            _pxr_check_native_python_dependencies(${target})
+        endif()
+    endforeach()
+    get_property(children DIRECTORY "${DIRECTORY_NAME}" PROPERTY SUBDIRECTORIES)
+    foreach(child IN LISTS children)
+        _pxr_validate_native_python_directory("${child}")
+    endforeach()
+endfunction()
+
+function(_pxr_validate_native_python_targets DIRECTORY_NAME)
+    set_property(GLOBAL PROPERTY _PXR_PYTHON_DEPENDENCIES_CHECKED "")
+    _pxr_validate_native_python_directory("${DIRECTORY_NAME}")
+endfunction()
+
+function(_pxr_write_python_policy DIRECTORY_NAME OUTPUT)
+    get_property(targets DIRECTORY "${DIRECTORY_NAME}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(target IN LISTS targets)
+        get_target_property(role ${target} PXR_PYTHON_ROLE)
+        if(NOT role)
+            continue()
+        endif()
+        set(row "${target}\t${role}")
+        foreach(property TYPE COMPILE_DEFINITIONS INTERFACE_COMPILE_DEFINITIONS
+                LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+            get_target_property(value ${target} ${property})
+            if(value MATCHES "-NOTFOUND$")
+                set(value "")
+            endif()
+            string(APPEND row "\t${value}")
+        endforeach()
+        file(APPEND "${OUTPUT}" "${row}\n")
+    endforeach()
+    get_property(children DIRECTORY "${DIRECTORY_NAME}" PROPERTY SUBDIRECTORIES)
+    foreach(child IN LISTS children)
+        _pxr_write_python_policy("${child}" "${OUTPUT}")
+    endforeach()
+endfunction()
+
 # Copy headers to the build tree.  Under pxr/ the include paths match the
 # source tree paths but elsewhere they do not. Instead we use include
 # paths like rmanArgsParser/rmanArgsParser.h.  So if /pxr/ is not in the
@@ -1071,6 +1197,7 @@ function(_pxr_python_module NAME)
         SHARED
         ${args_CPPFILES}
     )
+    _pxr_set_python_role(${LIBRARY_NAME} MODULE)
     add_dependencies(python_modules ${LIBRARY_NAME})
     if(args_PYTHON_FILES)
         add_dependencies(${LIBRARY_NAME} ${LIBRARY_NAME}_pythonfiles)

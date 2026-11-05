@@ -2,7 +2,6 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE ar)
 
 pxr_library(ar
-    PYTHON_LIMITED_API
     LIBRARIES
         arch
         js

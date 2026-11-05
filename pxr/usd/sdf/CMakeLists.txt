@@ -2,7 +2,6 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE sdf)
 
 pxr_library(sdf
-    PYTHON_LIMITED_API
     LIBRARIES
         arch
         tf

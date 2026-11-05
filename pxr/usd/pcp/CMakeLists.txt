@@ -2,7 +2,6 @@ set(PXR_PREFIX pxr/usd)
 set(PXR_PACKAGE pcp)
 
 pxr_library(pcp
-    PYTHON_LIMITED_API
     LIBRARIES
         tf
         trace

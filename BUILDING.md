@@ -689,8 +689,28 @@ including whole-archive linkage for a static monolith. The `tf` package componen
 is available only in non-monolithic packages; the monolith still incorporates
 the version-specific Boost.Python runtime, as described below.
 
-Core Trace also compiles with a private Limited API definition. Native Windows
-consumers of a non-monolithic package request `COMPONENTS trace` and link `trace`
+Native libraries and plugins declared with `pxr_library()`/`pxr_plugin()` compile
+with private `Py_LIMITED_API=0x030A0000` when Python support is enabled. There is
+no per-library opt-in. The compile guard adds no Python header or link dependency
+to Python-free targets. Conditional native `PYTHON_*` sources/headers select
+the `pythonRuntime` interface target, which supplies headers and runtime linkage
+without imposing the compile restriction on consumers. It uses the stable import
+library on Windows; non-Windows runtime linkage retains its existing strategy.
+Windows consumers may keep full Python headers; implicit versioned auto-link
+directives are suppressed. Consumers that call full-API functions must explicitly
+link their versioned Python target, as the binding interfaces do.
+No Python runtime is copied or installed by OpenUSD.
+
+Python extension modules remain full API. Compiled binding support explicitly
+uses `PYTHON_BINDING_SUPPORT` in its library declaration; the bundled Boost.Python
+runtime and its support target use this role. Native target dependency graphs
+are checked against binding modules/support and Windows full-Python linkage.
+`PXR_PYTHON_ROLE` records this compilation role; it does not classify a target
+as a public package component or distinguish linkable APIs from runtime plugins.
+The existing monolith is an aggregate of native and binding support objects,
+so its embedded Boost.Python runtime remains a separate partitioning task.
+
+Native Windows consumers of a non-monolithic package request `COMPONENTS trace` and link `trace`
 to select stable Python discovery. Native tracing
 callbacks use the `TfPyTraceEvent` constants from `tf/pyTracing.h` instead of
 CPython's full-API `PyTrace_*` macros. `TfPyTraceInfo::what` retains its `int`

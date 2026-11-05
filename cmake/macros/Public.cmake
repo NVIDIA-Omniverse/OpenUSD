@@ -204,55 +204,11 @@ function(pxr_cpp_bin BIN_NAME)
     )
 endfunction()
 
-function(pxr_library_use_python_limited_api TARGET_NAME)
-    if(NOT PXR_ENABLE_PYTHON_SUPPORT)
-        return()
-    endif()
-
-    target_compile_definitions(${TARGET_NAME}
-        PRIVATE Py_LIMITED_API=0x030A0000)
-
-    if(WIN32)
-        target_compile_definitions(${TARGET_NAME}
-            PUBLIC Py_NO_LINK_LIB)
-    endif()
-
-    if(WIN32)
-        # The static monolith also consumes this dependency from the top-level
-        # directory, outside the component that first requests Limited API.
-        find_package(Python3 REQUIRED GLOBAL COMPONENTS Development.SABIModule)
-        if(NOT Python3_LIBRARY)
-            message(FATAL_ERROR
-                "Python stable ABI requested for ${TARGET_NAME}, "
-                "but Python3_LIBRARY is not set")
-        endif()
-
-        get_filename_component(_python_library_dir
-            "${Python3_LIBRARY}" DIRECTORY)
-        get_filename_component(_python_versioned_lib
-            "${Python3_LIBRARY}" NAME)
-
-        target_link_options(${TARGET_NAME}
-            PRIVATE "/NODEFAULTLIB:${_python_versioned_lib}")
-        # Existing non-Limited-API libraries can still carry Python auto-link
-        # directives. Keep their build-tree search path without exporting the
-        # Python installation's library directory to core consumers.
-        target_link_directories(${TARGET_NAME}
-            INTERFACE "$<BUILD_INTERFACE:${_python_library_dir}>")
-
-        # FindPython supplies the stable ABI import library. Runtime discovery
-        # and deployment belong to the downstream application; do not copy or
-        # install a Python runtime as part of OpenUSD.
-        target_link_libraries(${TARGET_NAME}
-            PUBLIC Python3::SABIModule)
-    endif()
-endfunction()
-
 function(pxr_library NAME)
     set(options
         DISABLE_PRECOMPILED_HEADERS
         INCLUDE_SCHEMA_FILES
-        PYTHON_LIMITED_API
+        PYTHON_BINDING_SUPPORT
     )
     set(oneValueArgs
         TYPE
@@ -283,6 +239,9 @@ function(pxr_library NAME)
     )
 
     foreach(argument IN LISTS ARGN)
+        if(argument STREQUAL "PYTHON_LIMITED_API")
+            message(FATAL_ERROR "Native libraries always use the Limited API; remove PYTHON_LIMITED_API")
+        endif()
         if(argument MATCHES "^(PYMODULE_CPPFILES|PYMODULE_LIBRARIES|PYMODULE_FILES|PYSIDE_UI_FILES)$")
             message(FATAL_ERROR "${argument} belongs in a separate pxr_module() declaration")
         endif()
@@ -313,21 +272,9 @@ function(pxr_library NAME)
             set(libraryRequiresPython 1)
         endif()
 
-        if(libraryRequiresPython)
-            if(args_PYTHON_LIMITED_API)
-                # Windows uses python3.lib below. Preserve the existing Python
-                # runtime linkage on other platforms until their stable-ABI
-                # link strategy is implemented.
-                if(NOT WIN32)
-                    list(APPEND args_LIBRARIES ${PYTHON_LIBRARIES})
-                endif()
-            else()
-                # Core components must not depend on the finished-module
-                # interface: in monolithic builds that interface links usd_m,
-                # which is itself assembled from these components.
-                list(APPEND args_LIBRARIES ${PYTHON_LIBRARIES} tfBoostPythonInternal)
-            endif()
-            list(APPEND args_INCLUDE_DIRS ${PYTHON_INCLUDE_DIRS})
+        if(libraryRequiresPython AND NOT args_PYTHON_BINDING_SUPPORT)
+            _pxr_setup_python_runtime()
+            list(APPEND args_LIBRARIES pythonRuntime)
         endif()
     endif()
 
@@ -408,9 +355,8 @@ function(pxr_library NAME)
             endif()
         endif()
     endforeach()
-    if(args_PYTHON_LIMITED_API)
-        list(REMOVE_ITEM localLibs ${PYTHON_LIBRARIES})
-    endif()
+    # Python runtimes do not provide USD script modules, in any compilation role.
+    list(REMOVE_ITEM localLibs ${PYTHON_LIBRARIES})
 
     _pxr_library(${NAME}
         TYPE "${args_TYPE}"
@@ -439,8 +385,10 @@ function(pxr_library NAME)
         endif()
         set_property(TARGET ${NAME} PROPERTY PXR_PUBLIC_HEADERS
             "${args_PUBLIC_HEADERS};${${NAME}_PUBLIC_HEADERS}")
-        if(args_PYTHON_LIMITED_API)
-            pxr_library_use_python_limited_api(${NAME})
+        if(args_PYTHON_BINDING_SUPPORT)
+            _pxr_set_python_role(${NAME} BINDING_SUPPORT)
+        else()
+            _pxr_apply_native_python_policy(${NAME})
         endif()
     endif()
 
@@ -1281,6 +1229,10 @@ function(pxr_toplevel_prologue)
         endif()
     endif()
 
+    if(TARGET usd_m)
+        _pxr_set_python_role(usd_m AGGREGATE)
+    endif()
+
     # Create a target for shared libraries.  We currently use this only
     # to test its existence.
     if(BUILD_SHARED_LIBS)
@@ -1291,6 +1243,9 @@ function(pxr_toplevel_prologue)
     # itself as a dependency to the "python_modules" target.
     if(TARGET shared_libs AND PXR_ENABLE_PYTHON_SUPPORT)
         add_custom_target(python_modules ALL)
+    endif()
+    if(PXR_ENABLE_PYTHON_SUPPORT)
+        _pxr_setup_python_runtime()
     endif()
 endfunction() # pxr_toplevel_prologue
 
@@ -1363,6 +1318,13 @@ function(pxr_toplevel_epilogue)
                     POSITION_INDEPENDENT_CODE ON
             )
         endif()
+    endif()
+
+    _pxr_validate_native_python_targets("${PROJECT_SOURCE_DIR}")
+    if(PXR_BUILD_TESTS)
+        set(policyManifest "${PROJECT_BINARY_DIR}/pythonPolicy.txt")
+        file(WRITE "${policyManifest}" "")
+        _pxr_write_python_policy("${PROJECT_SOURCE_DIR}" "${policyManifest}")
     endif()
 
     # Setup the plugins in the top epilogue to ensure that everybody has had a

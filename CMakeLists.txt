@@ -58,6 +58,12 @@ endif()
 
 if (PXR_BUILD_TESTS)
     pxr_tests_prologue()
+    add_test(NAME testPXRNativePythonPolicy
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${PROJECT_SOURCE_DIR}/cmake/testenv/testPXRNativePythonPolicy.py"
+            --manifest "${PROJECT_BINARY_DIR}/pythonPolicy.txt"
+            --python-enabled "$<BOOL:${PXR_ENABLE_PYTHON_SUPPORT}>"
+            --windows "$<BOOL:${WIN32}>")
     if(PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS AND NOT PXR_BUILD_MONOLITHIC)
         add_test(NAME testPXRModuleSplit
             COMMAND "${PYTHON_EXECUTABLE}"

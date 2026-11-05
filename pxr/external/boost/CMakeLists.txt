@@ -8,6 +8,7 @@ if (NOT PXR_ENABLE_PYTHON_SUPPORT AND NOT TARGET python_modules)
 endif()
 
 pxr_library(boost
+    PYTHON_BINDING_SUPPORT
     PUBLIC_HEADERS
         python.hpp
 

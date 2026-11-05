@@ -59,6 +59,12 @@ if(PACKAGE_COMPONENT STREQUAL "tf" OR PACKAGE_COMPONENT STREQUAL "trace"
 #include <cstdio>
 ${componentIncludes}
 static_assert(PY_MINOR_VERSION == ${PYTHON_MINOR}, \"Incorrect consumer Python headers\");
+#ifdef EXPECT_FULL_HEADERS
+#ifdef Py_LIMITED_API
+#error The core must not restrict consumer headers
+#endif
+static_assert(sizeof(PyTypeObject) > 0, \"Full consumer headers must remain usable\");
+#endif
 int main() {
     Py_Initialize();
     PXR_NS::TfPyLock lock;
@@ -77,8 +83,14 @@ int main() {
     target_compile_definitions(tfPackageConsumer PRIVATE Py_LIMITED_API=0x030A0000
         NOMINMAX WIN32_LEAN_AND_MEAN)
     target_link_libraries(tfPackageConsumer PRIVATE ${PACKAGE_COMPONENT})
+    add_executable(tfPackageConsumerFullHeaders "${CMAKE_CURRENT_BINARY_DIR}/consumer.cpp")
+    target_compile_features(tfPackageConsumerFullHeaders PRIVATE cxx_std_17)
+    target_compile_definitions(tfPackageConsumerFullHeaders PRIVATE EXPECT_FULL_HEADERS
+        NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(tfPackageConsumerFullHeaders PRIVATE ${PACKAGE_COMPONENT})
     file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/consumer-$<CONFIG>.txt"
-        CONTENT "$<TARGET_FILE:tfPackageConsumer>\n")
+        CONTENT "$<TARGET_FILE:tfPackageConsumer>\n$<TARGET_FILE:tfPackageConsumerFullHeaders>\n")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/linker.txt" "${CMAKE_LINKER}")
 elseif(NOT PACKAGE_COMPONENT STREQUAL "optional")
     if(NOT TARGET Python3::Python)
         message(FATAL_ERROR "Binding discovery must supply the versioned Python target")

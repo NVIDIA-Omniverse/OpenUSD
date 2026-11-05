@@ -2,7 +2,6 @@ set(PXR_PREFIX pxr/base)
 set(PXR_PACKAGE vt)
 
 pxr_library(vt
-    PYTHON_LIMITED_API
     LIBRARIES
         arch
         tf

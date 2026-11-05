@@ -60,7 +60,8 @@ def main():
                  'handles = [os.add_dll_directory(str(p)) for p in paths if p.is_dir()] '
                  'if os.name == "nt" else []; '
                  'from pxr import BindingProbe, PureProbe, ResourceProbe; '
-                 'assert BindingProbe.answer() == 42 and PureProbe.answer == 7 '
+                 'assert BindingProbe.answer() == 42 and BindingProbe.runtimeAnswer() == 42 '
+                 'and PureProbe.answer == 7 '
                  'and ResourceProbe.answer == 11'],
                 'runtime', env=env)
         elif (case / 'native/moduleDeps.cpp').exists() or (prefix / 'lib/python/pxr/BindingProbe').exists():
@@ -72,7 +73,24 @@ def main():
                 'obsolete-arguments', succeeds=False)
     if 'separate pxr_module()' not in output:
         raise RuntimeError(output)
-    print('PASS: explicit modules, separate directories/names, pure Python/resources, monolithic links, disabled Python and legacy argument rejection')
+    for name, option in (('illegal-api', 'ILLEGAL_PYTHON_API'),
+                         ('binding-dependency', 'BINDING_DEPENDENCY')):
+        case = build / name
+        command = [args.cmake, '-S', project, '-B', case, '-G', args.generator,
+                   f'-DUSD_PREFIX={args.prefix}', f'-DPython3_EXECUTABLE={sys.executable}',
+                   f'-DPython3_ROOT_DIR={sys.base_prefix}', '-DPXR_ENABLE_PYTHON_SUPPORT=ON',
+                   f'-D{option}=ON']
+        if name == 'binding-dependency':
+            output = run(command, name, succeeds=False)
+            if 'reaches binding/full API' not in output:
+                raise RuntimeError(output)
+        else:
+            run(command, 'configure-' + name)
+            output = run([args.cmake, '--build', case, '--config', args.config,
+                          '--target', 'illegalProbe', '--parallel', '2'], name, succeeds=False)
+            if 'PyTypeObject' not in output and '_typeobject' not in output:
+                raise RuntimeError(output)
+    print('PASS: explicit modules, native stable ABI, full-API support, monolithic links, disabled Python and invalid API/dependency rejection')
 
 
 if __name__ == '__main__':

@@ -88,3 +88,4 @@ file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/native-$<CONFIG>.txt"
 if(PXR_ENABLE_PYTHON_SUPPORT)
     install(FILES pxr-init.py DESTINATION lib/python/pxr RENAME __init__.py)
 endif()
+_pxr_validate_native_python_targets("${CMAKE_CURRENT_SOURCE_DIR}")

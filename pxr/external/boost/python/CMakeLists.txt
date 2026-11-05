@@ -22,6 +22,7 @@ foreach(config RELEASE RELWITHDEBINFO MINSIZEREL)
 endforeach()
 
 pxr_library(python
+    PYTHON_BINDING_SUPPORT
     LIBRARIES
         boost
         # Use PYTHON_LIBRARIES instead of the Python3::Python target

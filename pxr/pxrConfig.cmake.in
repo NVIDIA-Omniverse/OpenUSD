@@ -52,8 +52,8 @@ endif()
 
 if(@PXR_ENABLE_PYTHON_SUPPORT@ AND _pxr_libraries)
     if(_pxr_binding_python OR NOT WIN32)
-        # Installed bindings and legacy core code require the build's Python
-        # minor version. A pre-found incompatible Python cannot bypass this.
+        # Bindings and the current non-Windows runtime linkage require the
+        # build's Python minor version. A pre-found Python cannot bypass this.
         set(_pxr_python_components Development)
         if(WIN32)
             list(APPEND _pxr_python_components Development.SABIModule)
@@ -134,6 +134,15 @@ if(NOT "@PXR_WORK_IMPL_PACKAGE@" STREQUAL "")
 endif()
 
 include("${PXR_CMAKE_DIR}/cmake/pxrTargets.cmake")
+if(WIN32 AND TARGET pythonRuntime AND DEFINED Python3_VERSION_MINOR)
+    # Full headers in supported Python releases can auto-link their versioned
+    # import library. Resolve the suppression using the consumer's Python,
+    # rather than embedding the build's minor version in installed interfaces.
+    foreach(_pxr_python_suffix "" "_d")
+        set_property(TARGET pythonRuntime APPEND PROPERTY INTERFACE_LINK_OPTIONS
+            "/NODEFAULTLIB:python${Python3_VERSION_MAJOR}${Python3_VERSION_MINOR}${_pxr_python_suffix}.lib")
+    endforeach()
+endif()
 if(NOT pxr_FIND_COMPONENTS AND TARGET usd_m)
     set(_pxr_libraries usd_m)
 endif()

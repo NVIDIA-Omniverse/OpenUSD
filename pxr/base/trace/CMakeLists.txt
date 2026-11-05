@@ -2,7 +2,6 @@ set(PXR_PREFIX pxr/base)
 set(PXR_PACKAGE trace)
 
 pxr_library(trace
-    PYTHON_LIMITED_API
     LIBRARIES
         arch
         js

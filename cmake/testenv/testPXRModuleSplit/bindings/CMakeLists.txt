@@ -8,7 +8,7 @@ if(VERIFY_MONOLITHIC_LINKS)
 endif()
 pxr_module(bindingProbe
     LIBRARY nativeProbe
-    LIBRARIES bindingOnly ${coreRequirements}
+    LIBRARIES bindingOnly runtimeProbe ${coreRequirements}
     CPPFILES module.cpp
     PYTHON_FILES __init__.py
     DISABLE_PRECOMPILED_HEADERS)

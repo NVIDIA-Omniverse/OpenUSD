@@ -74,17 +74,23 @@ def main():
         if component == args.core_component:
             run([args.cmake, "--build", case, "--config", args.config, "--parallel", "2"],
                 log_path=build / (name + "-build.log"))
-            consumer = (case / f"consumer-{args.config}.txt").read_text().strip()
+            consumers = (case / f"consumer-{args.config}.txt").read_text().splitlines()
             env = os.environ.copy()
             env["PYTHONHOME"] = str(root)
             env["PYTHONPATH"] = ""
             env["PYTHONNOUSERSITE"] = "1"
             env["PATH"] = os.pathsep.join([
                 str(root), str(prefix / "lib"), str(prefix / "bin"), env.get("PATH", "")])
-            output = run([consumer], env=env, timeout=60,
-                         log_path=build / (name + "-run.log"))
-            if not output.startswith(f"3.{info['minor']}."):
-                raise RuntimeError(f"Unexpected embedded Python runtime: {output}")
+            for index, consumer in enumerate(consumers):
+                output = run([consumer], env=env, timeout=60,
+                             log_path=build / (name + f"-run-{index}.log"))
+                if not output.startswith(f"3.{info['minor']}."):
+                    raise RuntimeError(f"Unexpected embedded Python runtime: {output}")
+                if sys.platform == "win32":
+                    dumpbin = Path((case / 'linker.txt').read_text()).with_name('dumpbin.exe')
+                    imports = run([dumpbin, '/DEPENDENTS', consumer])
+                    if 'python3.dll' not in imports.lower() or f'python3{info["minor"]}.dll' in imports.lower():
+                        raise RuntimeError('Core consumer did not retain stable Python linkage: ' + imports)
 
     configure("core", args.core_component, original)
     configure("bindings", args.binding_component, original)
