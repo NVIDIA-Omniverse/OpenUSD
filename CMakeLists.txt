@@ -58,6 +58,12 @@ endif()
 
 if (PXR_BUILD_TESTS)
     pxr_tests_prologue()
+    add_test(NAME testPXRUnixPythonRuntime
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${PROJECT_SOURCE_DIR}/cmake/testenv/testPXRUnixPythonRuntime.py"
+            --source "${PROJECT_SOURCE_DIR}"
+            --build "${PROJECT_BINARY_DIR}/testPXRUnixPythonRuntime"
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}")
     add_test(NAME testPXRNativePythonPolicy
         COMMAND "${PYTHON_EXECUTABLE}"
             "${PROJECT_SOURCE_DIR}/cmake/testenv/testPXRNativePythonPolicy.py"

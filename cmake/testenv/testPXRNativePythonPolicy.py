@@ -33,7 +33,7 @@ for name, target in targets.items():
             if dependency in seen:
                 continue
             seen.add(dependency)
-            if args.windows and dependency == 'Python3::Python':
+            if dependency == 'Python3::Python':
                 raise RuntimeError('Native closure uses versioned Python: ' + name)
             info = targets.get(dependency)
             if not info or info['role'] == 'AGGREGATE':

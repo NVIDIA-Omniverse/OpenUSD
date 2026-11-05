@@ -51,18 +51,16 @@ if(pxr_FIND_COMPONENTS)
 endif()
 
 if(@PXR_ENABLE_PYTHON_SUPPORT@ AND _pxr_libraries)
-    if(_pxr_binding_python OR NOT WIN32)
-        # Bindings and the current non-Windows runtime linkage require the
-        # build's Python minor version. A pre-found Python cannot bypass this.
-        set(_pxr_python_components Development)
-        if(WIN32)
-            list(APPEND _pxr_python_components Development.SABIModule)
-        endif()
+    if(_pxr_binding_python)
+        # Bindings require the build's Python minor version. A pre-found
+        # incompatible Python cannot bypass this.
+        set(_pxr_python_components Development Development.SABIModule)
         find_dependency(Python3 "@Python3_VERSION_MAJOR@.@Python3_VERSION_MINOR@"
             EXACT COMPONENTS ${_pxr_python_components})
     else()
-        # The core Limited API floor is 3.10. Discover the consumer's
-        # stable import library and headers without a versioned Python target.
+        # Core discovery supplies the consumer's headers and host-runtime
+        # linkage (the stable import library on Windows). Unix applications
+        # embedding Python explicitly select Development.Embed themselves.
         find_dependency(Python3 3.10 COMPONENTS Development.SABIModule)
     endif()
 endif()

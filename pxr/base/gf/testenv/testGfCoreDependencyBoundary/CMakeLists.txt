@@ -5,7 +5,7 @@ find_package(pxr CONFIG REQUIRED COMPONENTS gf PATHS "${USD_PREFIX}" NO_DEFAULT_
 if(NOT PXR_LIBRARIES STREQUAL "gf")
     message(FATAL_ERROR "Gf component exposes unrelated libraries: ${PXR_LIBRARIES}")
 endif()
-if(WIN32 AND TARGET Python3::Python)
+if(TARGET Python3::Python)
     message(FATAL_ERROR "Gf core discovery requested version-specific Python")
 endif()
 
@@ -18,7 +18,7 @@ function(check_dependencies target)
     get_target_property(dependencies ${target} INTERFACE_LINK_LIBRARIES)
     foreach(dependency IN LISTS dependencies)
         if(dependency MATCHES "(^|::)(boost|python)(::|$)|tfBoostPython"
-                OR (WIN32 AND dependency STREQUAL "Python3::Python"))
+                OR dependency STREQUAL "Python3::Python")
             message(FATAL_ERROR "${target} exposes binding/versioned Python dependency ${dependency}")
         endif()
         if(TARGET "${dependency}")
@@ -63,6 +63,10 @@ int main() {
 add_executable(gfCoreConsumer "${CMAKE_CURRENT_BINARY_DIR}/consumer.cpp")
 target_compile_features(gfCoreConsumer PRIVATE cxx_std_17)
 target_link_libraries(gfCoreConsumer PRIVATE gf)
+if(NOT WIN32)
+    find_package(Python3 3.10 REQUIRED COMPONENTS Development.Embed)
+    target_link_libraries(gfCoreConsumer PRIVATE Python3::Python)
+endif()
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/consumer-$<CONFIG>.txt"
     CONTENT "$<TARGET_FILE:gfCoreConsumer>\n")
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/core-$<CONFIG>.txt"

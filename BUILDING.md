@@ -695,7 +695,10 @@ no per-library opt-in. The compile guard adds no Python header or link dependenc
 to Python-free targets. Conditional native `PYTHON_*` sources/headers select
 the `pythonRuntime` interface target, which supplies headers and runtime linkage
 without imposing the compile restriction on consumers. It uses the stable import
-library on Windows; non-Windows runtime linkage retains its existing strategy.
+library on Windows. On Linux/macOS, native libraries leave Python symbols for
+the host interpreter to supply, using dynamic lookup on macOS. They record no
+dependency on a minor-version libpython or Python framework. The host must make
+its Python symbols available when loading these libraries.
 Windows consumers may keep full Python headers; implicit versioned auto-link
 directives are suppressed. Consumers that call full-API functions must explicitly
 link their versioned Python target, as the binding interfaces do.
@@ -704,13 +707,13 @@ No Python runtime is copied or installed by OpenUSD.
 Python extension modules remain full API. Compiled binding support explicitly
 uses `PYTHON_BINDING_SUPPORT` in its library declaration; the bundled Boost.Python
 runtime and its support target use this role. Native target dependency graphs
-are checked against binding modules/support and Windows full-Python linkage.
+are checked against binding modules/support and full-Python linkage on all platforms.
 `PXR_PYTHON_ROLE` records this compilation role; it does not classify a target
 as a public package component or distinguish linkable APIs from runtime plugins.
 The existing monolith is an aggregate of native and binding support objects,
 so its embedded Boost.Python runtime remains a separate partitioning task.
 
-Native Windows consumers of a non-monolithic package request `COMPONENTS trace` and link `trace`
+Native consumers of a non-monolithic package request `COMPONENTS trace` and link `trace`
 to select stable Python discovery. Native tracing
 callbacks use the `TfPyTraceEvent` constants from `tf/pyTracing.h` instead of
 CPython's full-API `PyTrace_*` macros. `TfPyTraceInfo::what` retains its `int`
@@ -720,9 +723,45 @@ Python extension remains a separate full-API binding module.
 The same distinction applies to Vt: use the `vt` component and target for its
 stable core in a non-monolithic package, or `vtBoostPython` for downstream
 Boost.Python modules. Core components `tf`, `gf`, `trace`, `vt`, `ar`, `sdf`, `pcp`, and `usd` do not
-request the bindings' exact Python minor version on Windows. Binding components and the
+request the bindings' exact Python minor version. Binding components and the
 default complete package retain that requirement. Python runtime deployment
 belongs to the consuming application.
+
+On Linux/macOS, a native application embedding Python selects its interpreter
+explicitly. That executable may depend on a particular runtime while the core
+shared libraries remain reusable. For example:
+
+```cmake
+find_package(pxr CONFIG REQUIRED COMPONENTS usd)
+find_package(Python3 3.10 REQUIRED COMPONENTS Development.Embed)
+target_link_libraries(myApplication PRIVATE usd Python3::Python)
+```
+
+The application's selected runtime must match any Python binding modules it
+loads. Applications built within OpenUSD receive this private embedding
+dependency automatically when their link graph uses Python. Python-free
+applications acquire no interpreter dependency from this policy. A core plugin
+loaded into an existing interpreter links only its core requirements; it does
+not select another runtime. Python headers and runtime selection must describe
+the same supported interpreter configuration.
+
+`testTfPackageComponents` exercises both native embedding and loading a shared
+native probe from Python. To validate reuse with a second installed Python,
+run its driver with the build's Python and add `--alternate-python`:
+
+```sh
+python3 pxr/base/tf/testenv/testTfPackageComponents.py \
+  --prefix /path/to/usd-install \
+  --source-dir "$PWD/pxr/base/tf/testenv/testTfPackageComponents" \
+  --build-dir /path/to/package-check --cmake cmake \
+  --generator Ninja --config Release --alternate-python /path/to/python3.13
+```
+
+The driver checks runtime dependencies and loads the same unchanged probe and
+core library in both interpreters. Binding/default package discovery still
+rejects the incompatible minor version. The CMake-only
+`testPXRUnixPythonRuntime` also checks Unix discovery and embedding decisions
+with test doubles on any host; it does not validate Unix binaries.
 
 Custom resolver context binding modules similarly use the `arBoostPython`
 component and target, and include `pxr/usd/ar/boost/pyResolverContext.h`.
@@ -730,7 +769,7 @@ This interface target supplies headers and binding dependencies without another
 compiled library, and selects the appropriate core linkage in either build
 mode. Native resolver plugins include `pxr/usd/ar/resolverContext.h` directly.
 For a non-monolithic package, `COMPONENTS ar` selects the core library and its
-stable Python dependency on Windows; `arBoostPython` selects the version-specific
+stable Python dependency; `arBoostPython` selects the version-specific
 binding interface. Link native consumers to `ar` and binding modules to
 `arBoostPython`.
 
@@ -906,20 +945,22 @@ expression:
 target_link_libraries(mylib "$<LINK_LIBRARY:WHOLE_ARCHIVE,usd_m>")
 ```
 
-###### Avoiding linking statically to Python
+###### Python runtime linkage
 
-The default build with python support will link to the python static lib for
-your interpreter. This is to support running python code from C++. If that is
-not desirable, python static linking can be disabled using the flag
+Native libraries use the stable runtime policy described above. On Linux/macOS,
+Python bindings and their compiled support normally link the build's Python
+runtime. To instead resolve their Python symbols from the host interpreter, use
 
 ```
 -DPXR_PY_UNDEFINED_DYNAMIC_LOOKUP=ON
 ```
 
-The primary motivating case for this is generating wheel packages for PyPI, but
-the parameter was made more generic in case it has other uses in the future. It
-is useful when we want to take advantage of python's approach to ABI
-compatibility.
+This option is useful for wheel packaging and interpreters that export Python
+symbols from the executable. It controls binding-runtime linkage; it does not
+make Boost.Python bindings compatible with another Python minor version.
+Native applications embedding Python still select an embedding runtime, and
+native libraries never acquire a version-specific runtime dependency from this
+option. No Python runtime is bundled by OpenUSD.
 
 Note that this flag has no effect on Windows, see 
 [here for more info](https://docs.python.org/3/extending/windows.html)

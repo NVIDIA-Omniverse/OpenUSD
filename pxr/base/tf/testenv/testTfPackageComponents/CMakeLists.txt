@@ -27,6 +27,11 @@ if(PACKAGE_COMPONENT STREQUAL "tf" OR PACKAGE_COMPONENT STREQUAL "trace"
     if(NOT PXR_LIBRARIES STREQUAL PACKAGE_COMPONENT)
         message(FATAL_ERROR "Core component exposes unrelated libraries: ${PXR_LIBRARIES}")
     endif()
+    # On Unix an embedding application selects its own interpreter. This
+    # dependency belongs to the executable, never the imported core target.
+    if(NOT WIN32)
+        find_package(Python3 3.10 REQUIRED COMPONENTS Development.Embed)
+    endif()
     set(componentIncludes "")
     set(componentCheck "")
     if(PACKAGE_COMPONENT STREQUAL "trace")
@@ -88,6 +93,40 @@ int main() {
     target_compile_definitions(tfPackageConsumerFullHeaders PRIVATE EXPECT_FULL_HEADERS
         NOMINMAX WIN32_LEAN_AND_MEAN)
     target_link_libraries(tfPackageConsumerFullHeaders PRIVATE ${PACKAGE_COMPONENT})
+    if(NOT WIN32)
+        target_link_libraries(tfPackageConsumer PRIVATE Python3::Python)
+        target_link_libraries(tfPackageConsumerFullHeaders PRIVATE Python3::Python)
+    endif()
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/probe.cpp" "
+#include <pxr/base/tf/token.h>
+#include <pxr/base/tf/pySafePython.h>
+extern \"C\"
+#ifdef _WIN32
+__declspec(dllexport)
+#endif
+int ProbeAnswer() {
+    PXR_NS::TfToken token(\"stable core\");
+    PyObject *value = PyLong_FromLong(42);
+    if (!value) return -1;
+    long result = PyLong_AsLong(value);
+    Py_DECREF(value);
+    return token.GetString() == \"stable core\" ? int(result) : -1;
+}
+extern \"C\"
+#ifdef _WIN32
+__declspec(dllexport)
+#endif
+const char *ProbePythonVersion() { return Py_GetVersion(); }
+")
+    add_library(tfPackageProbe SHARED "${CMAKE_CURRENT_BINARY_DIR}/probe.cpp")
+    target_compile_features(tfPackageProbe PRIVATE cxx_std_17)
+    target_compile_definitions(tfPackageProbe PRIVATE Py_LIMITED_API=0x030A0000
+        NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(tfPackageProbe PRIVATE ${PACKAGE_COMPONENT})
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/probe-$<CONFIG>.txt"
+        CONTENT "$<TARGET_FILE:tfPackageProbe>\n")
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/core-$<CONFIG>.txt"
+        CONTENT "$<TARGET_FILE:${PACKAGE_COMPONENT}>\n")
     file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/consumer-$<CONFIG>.txt"
         CONTENT "$<TARGET_FILE:tfPackageConsumer>\n$<TARGET_FILE:tfPackageConsumerFullHeaders>\n")
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/linker.txt" "${CMAKE_LINKER}")

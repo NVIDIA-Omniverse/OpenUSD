@@ -297,17 +297,15 @@ if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS
             --install-manifest "${PROJECT_BINARY_DIR}/install_manifest.txt"
             --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
             --config "$<CONFIG>")
-    if(WIN32)
-        add_test(NAME testUsdPackageComponents
-            COMMAND "${PYTHON_EXECUTABLE}"
-                "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents.py"
-                --source-dir "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents"
-                --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testUsdPackageComponents/$<CONFIG>"
-                --prefix "${CMAKE_INSTALL_PREFIX}"
-                --core-component usd --binding-component usdBoostPython
-                --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
-                --config "$<CONFIG>")
-    endif()
+    add_test(NAME testUsdPackageComponents
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents.py"
+            --source-dir "${PROJECT_SOURCE_DIR}/pxr/base/tf/testenv/testTfPackageComponents"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testUsdPackageComponents/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --core-component usd --binding-component usdBoostPython
+            --cmake "${CMAKE_COMMAND}" --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>")
 endif()
 
 pxr_test_scripts(

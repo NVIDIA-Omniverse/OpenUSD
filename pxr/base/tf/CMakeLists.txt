@@ -459,18 +459,16 @@ if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND NOT PXR_BUILD_MONOLITHIC
             --generator "${CMAKE_GENERATOR}"
             --config "$<CONFIG>"
     )
-    if(WIN32)
-        add_test(NAME testTfPackageComponents
-            COMMAND "${PYTHON_EXECUTABLE}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testTfPackageComponents.py"
-                --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testTfPackageComponents"
-                --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testTfPackageComponents/$<CONFIG>"
-                --prefix "${CMAKE_INSTALL_PREFIX}"
-                --cmake "${CMAKE_COMMAND}"
-                --generator "${CMAKE_GENERATOR}"
-                --config "$<CONFIG>"
-        )
-    endif()
+    add_test(NAME testTfPackageComponents
+        COMMAND "${PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testTfPackageComponents.py"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/testenv/testTfPackageComponents"
+            --build-dir "${CMAKE_CURRENT_BINARY_DIR}/testTfPackageComponents/$<CONFIG>"
+            --prefix "${CMAKE_INSTALL_PREFIX}"
+            --cmake "${CMAKE_COMMAND}"
+            --generator "${CMAKE_GENERATOR}"
+            --config "$<CONFIG>"
+    )
 endif()
 
 if(PXR_BUILD_TESTS AND PXR_ENABLE_PYTHON_SUPPORT AND BUILD_SHARED_LIBS)

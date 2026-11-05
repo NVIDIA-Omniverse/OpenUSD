@@ -25,8 +25,8 @@ function(check_core_dependencies target)
                 OR dependencyName MATCHES "^(lib|usd_)?python([_.]|$)")
             message(FATAL_ERROR "${target} exposes binding dependency ${dependency}")
         endif()
-        if(WIN32 AND (dependency STREQUAL "Python3::Python"
-                OR dependencyName MATCHES "^(lib)?python[0-9][0-9]+"))
+        if(dependency STREQUAL "Python3::Python"
+                OR dependencyName MATCHES "^(lib)?python[0-9][0-9]+")
             message(FATAL_ERROR "${target} exposes versioned Python dependency ${dependency}")
         endif()
         if(TARGET "${dependency}")
@@ -67,6 +67,10 @@ add_executable(tfCoreConsumer consumer.cpp)
 target_compile_features(tfCoreConsumer PRIVATE cxx_std_17)
 target_compile_definitions(tfCoreConsumer PRIVATE Py_LIMITED_API=0x030A0000)
 target_link_libraries(tfCoreConsumer PRIVATE tf)
+if(NOT WIN32)
+    find_package(Python3 3.10 REQUIRED COMPONENTS Development.Embed)
+    target_link_libraries(tfCoreConsumer PRIVATE Python3::Python)
+endif()
 
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/consumer-$<CONFIG>.txt"
     CONTENT "$<TARGET_FILE:tfCoreConsumer>\n")

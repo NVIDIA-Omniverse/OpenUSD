@@ -1320,6 +1320,7 @@ function(pxr_toplevel_epilogue)
         endif()
     endif()
 
+    _pxr_link_python_executables("${PROJECT_SOURCE_DIR}")
     _pxr_validate_native_python_targets("${PROJECT_SOURCE_DIR}")
     if(PXR_BUILD_TESTS)
         set(policyManifest "${PROJECT_BINARY_DIR}/pythonPolicy.txt")

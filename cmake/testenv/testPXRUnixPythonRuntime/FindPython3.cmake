@@ -1,0 +1,27 @@
+# A discovery double: these tests check CMake decisions, not a Unix compiler.
+set(Python3_VERSION "3.${MOCK_PYTHON_MINOR}.0")
+set(Python3_VERSION_MAJOR 3)
+set(Python3_VERSION_MINOR "${MOCK_PYTHON_MINOR}")
+set(Python3_INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}")
+set_property(GLOBAL PROPERTY pythonRequestVersion "${Python3_FIND_VERSION}")
+set_property(GLOBAL PROPERTY pythonRequestExact "${Python3_FIND_VERSION_EXACT}")
+foreach(component IN LISTS Python3_FIND_COMPONENTS)
+    set(Python3_${component}_FOUND TRUE)
+endforeach()
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(Python3 REQUIRED_VARS Python3_INCLUDE_DIRS
+    VERSION_VAR Python3_VERSION HANDLE_COMPONENTS)
+if(NOT Python3_FOUND)
+    return()
+endif()
+if("Development.SABIModule" IN_LIST Python3_FIND_COMPONENTS AND NOT TARGET Python3::SABIModule)
+    add_library(Python3::SABIModule INTERFACE IMPORTED GLOBAL)
+    if(APPLE)
+        set_property(TARGET Python3::SABIModule PROPERTY
+            INTERFACE_LINK_OPTIONS "LINKER:-undefined,dynamic_lookup")
+    endif()
+endif()
+if(("Development" IN_LIST Python3_FIND_COMPONENTS
+        OR "Development.Embed" IN_LIST Python3_FIND_COMPONENTS) AND NOT TARGET Python3::Python)
+    add_library(Python3::Python INTERFACE IMPORTED GLOBAL)
+endif()

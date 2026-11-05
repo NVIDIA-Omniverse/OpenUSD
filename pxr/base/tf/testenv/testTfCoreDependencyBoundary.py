@@ -59,9 +59,6 @@ def main():
 
     links = Path(args.link_libraries).read_text()
     checked_links = links
-    if sys.platform != "win32":
-        # Non-Windows runtime linkage is intentionally unchanged by this slice.
-        checked_links = checked_links.replace("Python3::Python", "")
     if re.search(r"(^|[;:\n<>])(boost|python|tfBoostPython)($|[;:\n<>])", checked_links, re.I):
         raise RuntimeError(f"Binding or versioned Python targets in Tf build graph: {links}")
     if sys.platform == "win32" and re.search(r"python[0-9]{2,}(_d)?\.(lib|dll)", links, re.I):
