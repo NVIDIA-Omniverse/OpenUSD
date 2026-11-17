@@ -307,9 +307,11 @@ void wrapNotice()
         .def("RevokeAndWait", &Tf_PyNoticeInternal::Listener::RevokeAndWait,
             "RevokeAndWait() \n\n"
             "Revoke interest and wait for in-flight callbacks to finish. "
-            "Use this before releasing a listener that may receive notices "
-            "from other threads. Do not call it from that listener's callback "
-            "or concurrently with Revoke(). "
+            "Call this instead of Revoke() before releasing a listener that "
+            "may receive notices from other threads. A prior Revoke() "
+            "invalidates the key, so this method cannot then wait for an "
+            "in-flight callback. Do not call it from that listener's "
+            "callback or concurrently with Revoke(). "
         )
         ;
 }
