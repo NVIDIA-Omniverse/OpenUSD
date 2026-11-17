@@ -26,7 +26,9 @@
 #include "pxr/external/boost/python/scope.hpp"
 
 #include <functional>
+#include <memory>
 #include <mutex>
+#include <unordered_map>
 
 using std::string;
 
@@ -82,19 +84,44 @@ class Tf_PyNoticeInternal
             // CODE_COVERAGE_ON
         }
 
-        ~Listener() { Revoke(); }
+        ~Listener() {
+            Revoke();
+            // The lock lives outside Listener to preserve its existing ABI.
+            auto &locks = _GetRevokeAndWaitLocks();
+            std::lock_guard<std::mutex> lock(locks.mutex);
+            locks.byListener.erase(this);
+        }
         void Revoke() { TfNotice::Revoke(_key); }
         void RevokeAndWait() {
+            auto &locks = _GetRevokeAndWaitLocks();
+            std::shared_ptr<std::mutex> waitMutex;
+            {
+                std::lock_guard<std::mutex> lock(locks.mutex);
+                auto &entry = locks.byListener[this];
+                if (!entry) {
+                    entry = std::make_shared<std::mutex>();
+                }
+                waitMutex = entry;
+            }
             // A notice handler may be waiting to acquire the GIL.  Release it
             // while waiting so the handler can finish before this listener is
             // destroyed.  Serialize callers so a second waiter cannot observe
             // the invalidated key before the first wait has finished.
             TF_PY_ALLOW_THREADS_IN_SCOPE();
-            std::lock_guard<std::mutex> lock(_revokeAndWaitMutex);
+            std::lock_guard<std::mutex> lock(*waitMutex);
             TfNotice::RevokeAndWait(_key);
         }
 
       private:
+        struct RevokeAndWaitLocks {
+            std::mutex mutex;
+            std::unordered_map<Listener *, std::shared_ptr<std::mutex>> byListener;
+        };
+
+        static RevokeAndWaitLocks &_GetRevokeAndWaitLocks() {
+            static RevokeAndWaitLocks locks;
+            return locks;
+        }
     
         Listener(TfType const &noticeType,
                  Callback const &callback,
@@ -147,7 +174,6 @@ class Tf_PyNoticeInternal
 
         Callback _callback;
         TfNotice::Key _key;
-        std::mutex _revokeAndWaitMutex;
         TfType _noticeType;
     };
 
