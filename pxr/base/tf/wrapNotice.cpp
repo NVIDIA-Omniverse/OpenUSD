@@ -10,6 +10,7 @@
 #include "pxr/base/tf/notice.h"
 #include "pxr/base/tf/pyFunction.h"
 #include "pxr/base/tf/pyIdentity.h"
+#include "pxr/base/tf/pyLock.h"
 #include "pxr/base/tf/pyNoticeWrapper.h"
 #include "pxr/base/tf/pyPtrHelpers.h"
 #include "pxr/base/tf/pyWeakObject.h"
@@ -81,6 +82,13 @@ class Tf_PyNoticeInternal
 
         ~Listener() { Revoke(); }
         void Revoke() { TfNotice::Revoke(_key); }
+        void RevokeAndWait() {
+            // A notice handler may be waiting to acquire the GIL.  Release it
+            // while waiting so the handler can finish before this listener is
+            // destroyed.
+            TF_PY_ALLOW_THREADS_IN_SCOPE();
+            TfNotice::RevokeAndWait(_key);
+        }
 
       private:
     
@@ -290,6 +298,12 @@ void wrapNotice()
             "This function revokes interest in the "
             "particular notice type and call-back method that its "
             "Listener object was registered for. "
+        )
+        .def("RevokeAndWait", &Tf_PyNoticeInternal::Listener::RevokeAndWait,
+            "RevokeAndWait() \n\n"
+            "Revoke interest and wait for in-flight callbacks to finish. "
+            "Use this before releasing a listener that may receive notices "
+            "from other threads. Do not call it from that listener's callback. "
         )
         ;
 }

@@ -7,6 +7,7 @@
 #
 
 from pxr import Tf
+import threading
 import unittest
 
 
@@ -103,6 +104,44 @@ class TestTfPyNotice(unittest.TestCase):
             Tf.Notice.Register("TfNotice", cb, 3)
         with self.assertRaises(TypeError):
             Tf.Notice().Send(3)
+
+    def test_RevokeAndWait(self):
+        entered = threading.Event()
+        release = threading.Event()
+        waiting = threading.Event()
+        revoked = threading.Event()
+        received = []
+
+        def callback(notice, sender):
+            received.append(notice)
+            entered.set()
+            release.wait()
+
+        listener = Tf.Notice.RegisterGlobally(Tf.Notice, callback)
+        sender = threading.Thread(target=lambda: Tf.Notice().SendGlobally())
+        def revoke():
+            waiting.set()
+            listener.RevokeAndWait()
+            revoked.set()
+
+        waiter = threading.Thread(target=revoke)
+        try:
+            sender.start()
+            self.assertTrue(entered.wait(5))
+            waiter.start()
+            self.assertTrue(waiting.wait(5))
+            self.assertFalse(revoked.wait(0.05))
+        finally:
+            release.set()
+            sender.join(5)
+            if waiter.ident is not None:
+                waiter.join(5)
+
+        self.assertFalse(sender.is_alive())
+        self.assertFalse(waiter.is_alive())
+        self.assertTrue(revoked.is_set())
+        Tf.Notice().SendGlobally()
+        self.assertEqual(len(received), 1)
     
 if __name__ == '__main__':
     unittest.main()
