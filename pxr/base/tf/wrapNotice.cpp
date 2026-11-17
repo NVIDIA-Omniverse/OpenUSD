@@ -14,6 +14,7 @@
 #include "pxr/base/tf/pyNoticeWrapper.h"
 #include "pxr/base/tf/pyPtrHelpers.h"
 #include "pxr/base/tf/pyWeakObject.h"
+
 #include "pxr/base/tf/stringUtils.h"
 #include "pxr/base/tf/type.h"
 
@@ -25,6 +26,7 @@
 #include "pxr/external/boost/python/scope.hpp"
 
 #include <functional>
+#include <mutex>
 
 using std::string;
 
@@ -85,8 +87,10 @@ class Tf_PyNoticeInternal
         void RevokeAndWait() {
             // A notice handler may be waiting to acquire the GIL.  Release it
             // while waiting so the handler can finish before this listener is
-            // destroyed.
+            // destroyed.  Serialize callers so a second waiter cannot observe
+            // the invalidated key before the first wait has finished.
             TF_PY_ALLOW_THREADS_IN_SCOPE();
+            std::lock_guard<std::mutex> lock(_revokeAndWaitMutex);
             TfNotice::RevokeAndWait(_key);
         }
 
@@ -143,6 +147,7 @@ class Tf_PyNoticeInternal
 
         Callback _callback;
         TfNotice::Key _key;
+        std::mutex _revokeAndWaitMutex;
         TfType _noticeType;
     };
 
@@ -303,7 +308,8 @@ void wrapNotice()
             "RevokeAndWait() \n\n"
             "Revoke interest and wait for in-flight callbacks to finish. "
             "Use this before releasing a listener that may receive notices "
-            "from other threads. Do not call it from that listener's callback. "
+            "from other threads. Do not call it from that listener's callback "
+            "or concurrently with Revoke(). "
         )
         ;
 }

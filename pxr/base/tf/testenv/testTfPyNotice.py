@@ -108,8 +108,8 @@ class TestTfPyNotice(unittest.TestCase):
     def test_RevokeAndWait(self):
         entered = threading.Event()
         release = threading.Event()
-        waiting = threading.Event()
-        revoked = threading.Event()
+        waiting = [threading.Event(), threading.Event()]
+        revoked = [threading.Event(), threading.Event()]
         received = []
 
         def callback(notice, sender):
@@ -119,27 +119,34 @@ class TestTfPyNotice(unittest.TestCase):
 
         listener = Tf.Notice.RegisterGlobally(Tf.Notice, callback)
         sender = threading.Thread(target=lambda: Tf.Notice().SendGlobally())
-        def revoke():
-            waiting.set()
+        def revoke(index):
+            waiting[index].set()
             listener.RevokeAndWait()
-            revoked.set()
+            revoked[index].set()
 
-        waiter = threading.Thread(target=revoke)
+        waiters = [threading.Thread(target=revoke, args=(index,))
+                   for index in range(2)]
         try:
             sender.start()
             self.assertTrue(entered.wait(5))
-            waiter.start()
-            self.assertTrue(waiting.wait(5))
-            self.assertFalse(revoked.wait(0.05))
+            for waiter in waiters:
+                waiter.start()
+            for event in waiting:
+                self.assertTrue(event.wait(5))
+            for event in revoked:
+                self.assertFalse(event.wait(0.05))
         finally:
             release.set()
             sender.join(5)
-            if waiter.ident is not None:
-                waiter.join(5)
+            for waiter in waiters:
+                if waiter.ident is not None:
+                    waiter.join(5)
 
         self.assertFalse(sender.is_alive())
-        self.assertFalse(waiter.is_alive())
-        self.assertTrue(revoked.is_set())
+        for waiter in waiters:
+            self.assertFalse(waiter.is_alive())
+        for event in revoked:
+            self.assertTrue(event.is_set())
         Tf.Notice().SendGlobally()
         self.assertEqual(len(received), 1)
     
